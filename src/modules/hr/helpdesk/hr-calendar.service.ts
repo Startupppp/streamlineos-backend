@@ -14,6 +14,7 @@ import { listCompatibleHolidays } from "../../../db/compat/organization-holidays
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { HrCalendarInput } from "./dto/hr-calendar.schemas";
 import { CelebrationsService } from "../directory/celebrations.service";
+import { AccessService } from "../../access/access.service";
 
 export type CalendarEventType =
   | "HOLIDAY"
@@ -40,6 +41,7 @@ export class HrCalendarService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly celebrations: CelebrationsService,
+    private readonly access: AccessService,
   ) {}
 
   async getEvents(user: CurrentUserContext, input: HrCalendarInput): Promise<CalendarEvent[]> {
@@ -68,9 +70,9 @@ export class HrCalendarService {
       "INTERVIEW",
     ];
 
-    const isAdmin = user.isOrgOwner || user.permissions.includes("hr:helpdesk:manage");
-    const canSeeTravel = isAdmin || user.permissions.includes("hr:travel:view");
-    const canSeeInterviews = isAdmin || user.permissions.includes("hr:interviews:view");
+    const isAdmin = await this.access.holds(user, "hr:helpdesk:manage");
+    const canSeeTravel = isAdmin || await this.access.holds(user, "hr:travel:view");
+    const canSeeInterviews = isAdmin || await this.access.holds(user, "hr:interviews:view");
 
     const events: CalendarEvent[] = [];
     const fetches: Promise<void>[] = [];

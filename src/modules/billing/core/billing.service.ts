@@ -11,6 +11,7 @@ import {
   billingProfiles,
   coupons,
   couponRedemptions,
+  dunningAttempts,
   invoices,
   organizationMembers,
   organizations,
@@ -18,6 +19,7 @@ import {
   subscriptionPayments,
   subscriptions,
 } from "../../../db/schema";
+import { providerWebhookEvents } from "../../../db/schema/billing/provider-webhook-events";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -28,6 +30,8 @@ import {
 } from "./platform-payment-provider";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
+import { RevenueAnalyticsService } from "./revenue-analytics.service";
+import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import {
   planSchema,
   webhookEventSchema,
@@ -47,7 +51,11 @@ import {
   buildPlanCatalog,
   TRIAL_PLAN,
 } from "./plan-entitlements.constants";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../../common/tenant/run-in-tenant-transaction";
+import { ExternalEffectLedger, ExternalEffectLeaseBusyError } from "../../../common/outbox/external-effect-ledger";
 
 interface WebhookResult {
   status: number;
@@ -63,6 +71,9 @@ export class BillingService {
     private readonly audit: AuditService,
     private readonly aiCredits: AiCreditsService,
     private readonly planLimits: PlanLimitsService,
+    private readonly revenueAnalytics: RevenueAnalyticsService,
+    private readonly providers: PaymentProviderResolver,
+    private readonly externalEffectLedger: ExternalEffectLedger,
   ) {}
 
   async getSubscription(orgId: string) {
@@ -239,9 +250,43 @@ export class BillingService {
           status: "captured",
           paidAt: now,
         });
+
+        if (input.couponId !== undefined) {
+          const [lockedCoupon] = await tx
+            .select({
+              id: coupons.id,
+              maxUses: coupons.maxUses,
+              usedCount: coupons.usedCount,
+            })
+            .from(coupons)
+            .where(and(eq(coupons.id, input.couponId), eq(coupons.isActive, true)))
+            .for("update")
+            .limit(1);
+
+          if (lockedCoupon) {
+            if (lockedCoupon.maxUses !== null && lockedCoupon.usedCount >= lockedCoupon.maxUses) {
+              throw new BadRequestException("This coupon has reached its usage limit");
+            }
+
+            await tx
+              .update(coupons)
+              .set({ usedCount: sql`${coupons.usedCount} + 1` })
+              .where(eq(coupons.id, input.couponId));
+
+            await tx.insert(couponRedemptions).values({
+              couponId: input.couponId,
+              orgId,
+              userId,
+            });
+          }
+        }
       });
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505") {
+      const pgErr = err as { code?: string; constraint?: string };
+      if (pgErr.code === "23505") {
+        if (pgErr.constraint === "uq_coupon_redemptions_coupon_org") {
+          throw new ConflictException("This coupon has already been used by your organization");
+        }
         return { success: true, plan: input.plan, status: "ACTIVE" };
       }
       throw err;
@@ -257,11 +302,36 @@ export class BillingService {
       metadata: { plan: input.plan, paymentId: input.razorpay_payment_id },
     });
 
-    this.aiCredits
-      .grantPlanCredits(orgId, input.plan, userId, input.razorpay_payment_id)
-      .catch((err: unknown) =>
-        logger.warn("[billing] plan credit grant failed (non-fatal)", { orgId, plan: input.plan, err }),
+    try {
+      await this.externalEffectLedger.execute(
+        {
+          organizationId: orgId,
+          producerEventId: input.razorpay_payment_id,
+          effectKey: `${input.razorpay_payment_id}:plan-credit-grant`,
+          effectType: "billing.plan-credit-grant",
+          providerIdempotency: "NONE",
+        },
+        () => this.aiCredits.grantPlanCredits(orgId, input.plan, userId, input.razorpay_payment_id),
       );
+    } catch (err: unknown) {
+      if (err instanceof ExternalEffectLeaseBusyError) {
+        logger.warn("[billing] plan credit grant already in flight", { orgId, plan: input.plan });
+      } else {
+        logger.error("[billing] plan credit grant failed", { orgId, plan: input.plan, err });
+        throw new ServiceUnavailableException("Payment recorded but credits could not be granted. The system will retry automatically.");
+      }
+    }
+
+    void this.revenueAnalytics
+      .recordEvent({
+        type: "new_subscription",
+        orgId,
+        plan: input.plan,
+        mrr: PLAN_PRICES_PAISE[input.plan],
+        amount: PLAN_PRICES_PAISE[input.plan],
+        metadata: { paymentId: input.razorpay_payment_id, billingCycle: "monthly" },
+      })
+      .catch((err: unknown) => logger.warn("[billing] revenue event record failed", { orgId, err }));
 
     return { success: true, plan: input.plan, status: "ACTIVE" };
   }
@@ -324,36 +394,91 @@ export class BillingService {
     };
   }
 
-  async handleRazorpayWebhook(rawBody: string, signature: string): Promise<WebhookResult> {
-    if (!this.razorpay.verifyWebhookSignature(rawBody, signature)) {
-      logger.warn("[razorpay] invalid webhook signature");
+  /**
+   * Provider-neutral webhook entry point. Provider-specific signature verification and envelope
+   * parsing stay inside the configured adapter; billing only applies the normalized event.
+   */
+  async handlePaymentProviderWebhook(
+    orgId: string,
+    providerKey: string,
+    rawBody: string,
+    signature: string,
+  ): Promise<WebhookResult> {
+    const adapter = await this.providers.resolve(orgId, providerKey);
+    if (!adapter) {
+      logger.warn("[billing] no payment provider registered for webhook verification");
+      return { status: 503, body: { ok: false } };
+    }
+    if (!adapter.verifyWebhookSignature({ rawBody, signature })) {
+      logger.warn(`[billing:${providerKey}] invalid webhook signature`);
       return { status: 401, body: { ok: false } };
     }
 
-    let event: WebhookEvent;
-    try {
-      const raw: unknown = JSON.parse(rawBody);
-      const parsed = webhookEventSchema.safeParse(raw);
-      if (!parsed.success) {
-        logger.warn("[razorpay] webhook payload validation failed", { issues: parsed.error.issues });
-        return { status: 400, body: { ok: false, error: "invalid payload" } };
-      }
-      event = parsed.data;
-    } catch {
-      return { status: 400, body: { ok: false, error: "invalid JSON" } };
+    const normalized = adapter.normalizeWebhook(rawBody);
+    if (!normalized.ok) {
+      return {
+        status: 400,
+        body: { ok: false, error: normalized.error === "invalid_json" ? "invalid JSON" : "invalid payload" },
+      };
     }
+
+    const parsed = webhookEventSchema.safeParse({ event: normalized.eventType, payload: normalized.payload });
+    if (!parsed.success) {
+      logger.warn(`[billing:${providerKey}] normalized webhook payload validation failed`, {
+        issues: parsed.error.issues,
+      });
+      return { status: 400, body: { ok: false, error: "invalid payload" } };
+    }
+    const event: WebhookEvent = parsed.data;
 
     const payment = event.payload.payment?.entity;
     if (!payment) {
       return { status: 200, body: { ok: true, ignored: event.event } };
     }
 
+    const providerEventId = normalized.providerEventId ?? payment.id;
+    try {
+      // The tenant interceptor resolves an org from the portal header or the
+      // authenticated user, and this route is @Public() with neither — so no
+      // transaction is open and no GUC is set. Every table touched here has RLS,
+      // and app.current_org_id() raises 42501 rather than returning null, so a
+      // bare this.db write is denied outright. The URL orgId is this route's
+      // tenant selector, so it is what opens the transaction.
+      const inserted = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+        tx
+          .insert(providerWebhookEvents)
+          .values({
+            orgId,
+            provider: providerKey,
+            providerEventId,
+            eventType: event.event,
+            rawPayload: JSON.parse(rawBody),
+          })
+          .onConflictDoNothing({
+            target: [providerWebhookEvents.provider, providerWebhookEvents.providerEventId],
+          })
+          .returning({ id: providerWebhookEvents.id }),
+      );
+      if (inserted.length === 0) {
+        logger.warn(`[billing:${providerKey}] duplicate event ignored`, { providerEventId });
+        return { status: 200, body: { ok: true, duplicate: true } };
+      }
+    } catch (error) {
+      logger.error(`[billing:${providerKey}] failed to record provider event`, { error });
+      return { status: 500, body: { ok: false } };
+    }
+
     const org = await this.findOrgFromNotes(payment.notes);
+    if (org && org.id !== orgId) {
+      logger.warn(`[billing:${providerKey}] webhook organization does not match endpoint organization`);
+      return { status: 400, body: { ok: false, error: "organization mismatch" } };
+    }
+    const resolvedOrg = org ?? { id: orgId };
 
     try {
-      await this.persistPayment(payment, org?.id ?? null);
+      await this.persistPayment(payment, resolvedOrg.id);
     } catch (error) {
-      logger.error("[razorpay] failed to persist payment", { error });
+      logger.error(`[billing:${providerKey}] failed to persist payment`, { error });
       return { status: 500, body: { ok: false } };
     }
 
@@ -361,34 +486,58 @@ export class BillingService {
       event.event === "payment.captured" &&
       payment.status === "captured" &&
       payment.notes?.packId &&
-      org
+      resolvedOrg
     ) {
       const packId = parseInt(String(payment.notes.packId), 10);
       if (!isNaN(packId)) {
-        this.aiCredits
-          .grantAiPackCreditsFromWebhook(org.id, packId, payment.id)
-          .catch((err: unknown) =>
-            logger.warn("[razorpay] ai pack credit grant failed (non-fatal)", {
-              orgId: org.id,
-              packId,
-              paymentId: payment.id,
-              err,
-            }),
+        try {
+          await this.externalEffectLedger.execute(
+            {
+              organizationId: resolvedOrg.id,
+              producerEventId: payment.id,
+              effectKey: `${payment.id}:pack-credit-grant`,
+              effectType: "billing.ai-pack-credit-grant",
+              providerIdempotency: "NONE",
+            },
+            () => this.aiCredits.grantAiPackCreditsFromWebhook(resolvedOrg.id, packId, payment.id),
           );
+        } catch (err: unknown) {
+          if (err instanceof ExternalEffectLeaseBusyError)
+            return { status: 503, body: { ok: false, error: "grant in-flight" } };
+          logger.error(`[billing:${providerKey}] ai pack credit grant failed`, { orgId: resolvedOrg.id, packId, paymentId: payment.id, err });
+          return { status: 500, body: { ok: false } };
+        }
       }
     }
 
-    if (event.event === "payment.failed" && payment.status === "failed" && org) {
-      this.transitionToPastDue(org.id, payment.id).catch((err: unknown) =>
-        logger.warn("[razorpay] PAST_DUE transition failed (non-fatal)", {
-          orgId: org.id,
-          paymentId: payment.id,
-          err,
-        }),
-      );
+    if (event.event === "payment.failed" && payment.status === "failed" && resolvedOrg) {
+      try {
+        await this.transitionToPastDue(resolvedOrg.id, payment.id);
+      } catch (err: unknown) {
+        logger.error(`[billing:${providerKey}] PAST_DUE transition failed`, { orgId: resolvedOrg.id, paymentId: payment.id, err });
+        return { status: 500, body: { ok: false } };
+      }
     }
 
+    await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx
+        .update(providerWebhookEvents)
+        .set({ processedAt: new Date() })
+        .where(
+          and(
+            eq(providerWebhookEvents.orgId, orgId),
+            eq(providerWebhookEvents.provider, providerKey),
+            eq(providerWebhookEvents.providerEventId, providerEventId),
+          ),
+        ),
+    );
+
     return { status: 200, body: { ok: true } };
+  }
+
+  /** Compatibility API for internal callers that still use the original method name. */
+  handleRazorpayWebhook(orgId: string, rawBody: string, signature: string): Promise<WebhookResult> {
+    return this.handlePaymentProviderWebhook(orgId, "razorpay", rawBody, signature);
   }
 
   private async persistPayment(payment: RazorpayPayment, orgId: string | null): Promise<void> {
@@ -467,10 +616,27 @@ export class BillingService {
             ...meta,
             pastDueAt: now.toISOString(),
             lastFailedPaymentId: paymentId,
-            dunningAttempts: [] as number[],
           },
         })
         .where(eq(subscriptions.id, existing.id));
+      await tx
+        .insert(dunningAttempts)
+        .values({
+          orgId,
+          subscriptionId: existing.id,
+          periodStart: now,
+          milestone: "D+1",
+          status: "PENDING",
+          providerRetryId: paymentId,
+        })
+        .onConflictDoNothing({
+          target: [
+            dunningAttempts.orgId,
+            dunningAttempts.subscriptionId,
+            dunningAttempts.periodStart,
+            dunningAttempts.milestone,
+          ],
+        });
     }, { orgId });
     await this.planLimits.bust(orgId);
     logger.info("[billing] subscription transitioned to PAST_DUE", { orgId, paymentId });
@@ -490,6 +656,9 @@ export class BillingService {
       const packs = await this.aiCredits.listPacks();
       const pack = packs.find((p) => p.id === packId);
       if (!pack) throw new BadRequestException("AI credit pack not found");
+      if (!this.razorpay.isConfigured()) {
+        throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
+      }
       const order = await this.razorpay.createOrder({
         amount: pack.priceInPaise * quantity,
         // The second of the two sites that becomes tenant-aware with a second

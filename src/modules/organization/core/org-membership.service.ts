@@ -39,7 +39,6 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { bustUsersStatsCache } from "../../../common/cache/bust-users-stats";
 import {
   bumpPermissionsVersion,
   type DbOrTx,
@@ -180,10 +179,10 @@ export class OrgMembershipService {
 
   private async invalidateMemberListCaches(orgId: string): Promise<void> {
     await Promise.all([
-      this.cache.invalidateNamespace(CACHE_KEYS.orgMembersListNamespace(orgId)),
-      this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(orgId)),
-      this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(orgId)),
-      bustUsersStatsCache(this.cache, orgId),
+      this.cache.invalidateNamespaceForOrg(orgId, "org:members:list"),
+      this.cache.invalidateForOrg(orgId, "rbac:members"),
+      this.cache.invalidateForOrg(orgId, "module-access:candidates"),
+      this.cache.invalidateForOrg(orgId, "users:stats"),
     ]);
   }
 
@@ -353,8 +352,9 @@ export class OrgMembershipService {
       userIds: userIds ? [...userIds].sort() : null,
       includeInactive,
     });
-    return this.cache.cachedVersioned(
-      CACHE_KEYS.orgMembersListNamespace(orgId),
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "org:members:list",
       hash,
       () =>
         this.fetchMembers(orgId, page, limit, search, userIds, includeInactive),
@@ -803,7 +803,7 @@ export class OrgMembershipService {
 
     await Promise.all([
       this.invalidateMemberListCaches(orgId),
-      this.cache.invalidateNamespace(CACHE_KEYS.orgProfileNamespace(orgId)),
+      this.cache.invalidateNamespaceForOrg(orgId, "org:profile"),
       bustMembershipStatusCache(this.cache, memberUserId, orgId),
     ]);
 
@@ -921,7 +921,7 @@ export class OrgMembershipService {
 
       await Promise.all([
         this.revokeOrgScopedAccess(orgId, userId),
-        this.cache.invalidateNamespace(CACHE_KEYS.orgProfileNamespace(orgId)),
+        this.cache.invalidateNamespaceForOrg(orgId, "org:profile"),
         this.invalidateMemberListCaches(orgId),
       ]);
       this.audit.log({

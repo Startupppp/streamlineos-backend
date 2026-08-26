@@ -45,10 +45,8 @@ export class WhiteboardsService {
     private readonly access: AccessService,
   ) {}
 
-  async hasManagePermission(userId: string, orgId: string): Promise<boolean> {
-    const perms = await this.access.resolveUserPermissions(orgId, userId);
-    const scope = perms.get("build:whiteboards:manage");
-    return scope !== undefined && scope !== "none";
+  async hasManagePermission(user: CurrentUserContext): Promise<boolean> {
+    return this.access.holds(user, "build:whiteboards:manage");
   }
 
   private async loadShares(whiteboardId: number): Promise<ShareEntry[]> {
@@ -124,7 +122,7 @@ export class WhiteboardsService {
     const row = rows[0];
     if (!row) throw new NotFoundException("Whiteboard not found");
 
-    const hasManage = await this.hasManagePermission(u.userId, u.orgId);
+    const hasManage = await this.hasManagePermission(u);
     const access = resolveWhiteboardAccess({
       board: { createdBy: row.board.createdBy, visibility: row.board.visibility },
       shareRole: row.shareRole ?? null,

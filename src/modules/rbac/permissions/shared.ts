@@ -234,14 +234,25 @@ export const SHARED_PERMISSIONS: Permission[] = [
     description: "Manage custom fields",
   },
   {
-    // Rearranging a record type is administration, and separate from reading
-    // one: an arrangement carries no record data, only field names the layout
-    // description already publishes, so every member reads their tenant's in
-    // order to render anything at all.
+    /**
+     * Arranging a record type is administration; reading the arrangement is not.
+     *
+     * `GET /renderer/layouts/:layoutKey` carries no key at all, deliberately: an
+     * arrangement holds only field names the description already publishes, and
+     * every user has to read their tenant's in order to render a list, a detail
+     * view or a form at all. Gating the read would make an unprivileged user's
+     * screens differ from a privileged one's, which is the opposite of the
+     * point. Changing it is what this key buys.
+     *
+     * It grants nothing about the records themselves. Hiding a field is display
+     * only — the value keeps arriving and keeps being stored — so this key can
+     * neither widen nor narrow what anybody may read.
+     */
     name: "settings:record-layouts:manage",
     resource: "settings:record-layouts",
     action: "manage",
-    description: "Reorder, hide and group the fields of a record type for this organisation",
+    description:
+      "Arrange which fields a record type shows, in what order, and under which headings",
   },
   {
     name: "settings:email-templates:manage",

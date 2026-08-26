@@ -11,6 +11,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { TenantTx } from "../../db/drizzle.types";
 import { logger } from "../../common/logger/logger.service";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { AccessService } from "../access/access.service";
 import { EmailService } from "../email/email.service";
 import { appUrl } from "../email/app-url";
@@ -371,7 +372,8 @@ export class LeadConversionService {
           await this.email.sendEmail({ to: crmUser.email, subject, html });
         }
       }
-    } catch {
+    } catch (err) {
+      logSideEffectFailure("conversion notification emails", { orgId, leadId: lead.id })(err);
       return;
     }
   }

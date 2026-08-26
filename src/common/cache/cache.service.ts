@@ -160,4 +160,40 @@ export class CacheService {
     return this.invalidate(key);
   }
 
+  private applyJitter(baseTtl: number): number {
+    return Math.round(baseTtl * (0.85 + Math.random() * 0.3));
+  }
+
+  cachedForOrg<T>(
+    orgId: string,
+    localKey: string,
+    fetcher: () => Promise<T>,
+    baseTtl = 300,
+  ): Promise<T> {
+    return this.cached(`${orgId}:${localKey}`, fetcher, this.applyJitter(baseTtl));
+  }
+
+  cachedVersionedForOrg<T>(
+    orgId: string,
+    namespace: string,
+    localKey: string,
+    fetcher: () => Promise<T>,
+    baseTtl = 300,
+  ): Promise<T> {
+    return this.cachedVersioned(
+      `${orgId}:${namespace}`,
+      localKey,
+      fetcher,
+      this.applyJitter(baseTtl),
+    );
+  }
+
+  invalidateNamespaceForOrg(orgId: string, namespace: string): Promise<void> {
+    return this.invalidateNamespace(`${orgId}:${namespace}`);
+  }
+
+  invalidateForOrg(orgId: string, localKey: string): Promise<void> {
+    return this.invalidate(`${orgId}:${localKey}`);
+  }
+
 }

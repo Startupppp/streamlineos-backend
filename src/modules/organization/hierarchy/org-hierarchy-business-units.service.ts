@@ -11,7 +11,6 @@ import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
   CreateBusinessUnitInput,
@@ -137,7 +136,7 @@ export class OrgHierarchyBusinessUnitsService {
 
     if (!row) throw new Error("Failed to create business unit");
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BUSINESS_UNIT"));
+    await this.cache.invalidateForOrg(orgId, "org:units:BUSINESS_UNIT");
     await this.audit.logCritical({ action: "org.businessUnit.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
     return toOrgBusinessUnit(row);
@@ -167,7 +166,7 @@ export class OrgHierarchyBusinessUnitsService {
 
     if (!row) throw new NotFoundException("Business unit not found");
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BUSINESS_UNIT"));
+    await this.cache.invalidateForOrg(orgId, "org:units:BUSINESS_UNIT");
     await this.audit.logCritical({ action: "org.businessUnit.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
     return toOrgBusinessUnit(row);
@@ -182,7 +181,7 @@ export class OrgHierarchyBusinessUnitsService {
       .set({ deletedAt: new Date() })
       .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BUSINESS_UNIT")));
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BUSINESS_UNIT"));
+    await this.cache.invalidateForOrg(orgId, "org:units:BUSINESS_UNIT");
     await this.audit.logCritical({ action: "org.businessUnit.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
   }
 

@@ -1,16 +1,18 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gt, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, lte, sql } from "drizzle-orm";
 import {
   leaveBalances,
   leaveRequests,
   leaveTypes,
   organizationMembers,
+  users,
   leavePolicies,
   hrLeaveLedger,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
+import { logger } from "../../common/logger/logger.service";
 
 function toDateStr(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -19,6 +21,8 @@ function toDateStr(date: Date): string {
 function buildPeriodLabel(year: number, month: number): string {
   return `${year}-${String(month + 1).padStart(2, "0")}`;
 }
+
+const ACCRUAL_BATCH_SIZE = 500;
 
 @Injectable()
 export class CronLeaveService {
@@ -37,6 +41,8 @@ export class CronLeaveService {
     let totalYearlyResetCount: number | null = null;
 
     await forEachOrg(this.db, "monthly-leave-reset", async (_tx, orgId) => {
+      const sweepStart = Date.now();
+
       const accrual = await this.accrueMonthlyLeaves(now, orgId);
       totalAccruedCount += accrual.accruedCount;
 
@@ -44,10 +50,20 @@ export class CronLeaveService {
       totalExpiredCount += expiry.expiredCount;
 
       const yearStartMonth = await this.resolveLeaveYearStartMonth(orgId);
+      let resetCount: number | undefined;
       if (yearStartMonth === currentMonth) {
         const result = await this.resetYearlyLeaveBalances(orgId, now.getFullYear());
         totalYearlyResetCount = (totalYearlyResetCount ?? 0) + result.resetCount;
+        resetCount = result.resetCount;
       }
+
+      logger.info("[monthly-leave-reset] org sweep complete", {
+        orgId,
+        durationMs: Date.now() - sweepStart,
+        accruedCount: accrual.accruedCount,
+        expiredCount: expiry.expiredCount,
+        ...(resetCount !== undefined ? { yearlyResetCount: resetCount } : {}),
+      });
     });
 
     return {
@@ -57,7 +73,7 @@ export class CronLeaveService {
     };
   }
 
-  private async accrueMonthlyLeaves(now: Date, orgId: string): Promise<{ accruedCount: number }> {
+  async accrueMonthlyLeaves(now: Date, orgId: string): Promise<{ accruedCount: number }> {
     const year = now.getFullYear();
     const monthIdx = now.getMonth();
     const periodLabel = buildPeriodLabel(year, monthIdx);
@@ -68,8 +84,6 @@ export class CronLeaveService {
         leaveTypeId: leavePolicies.leaveTypeId,
         accrualRate: leavePolicies.accrualRate,
         maxBalance: leavePolicies.maxBalance,
-        orgId: leavePolicies.orgId,
-        probationRestricted: leavePolicies.probationRestricted,
       })
       .from(leavePolicies)
       .where(
@@ -82,88 +96,157 @@ export class CronLeaveService {
 
     if (monthlyPolicies.length === 0) return { accruedCount: 0 };
 
-    let accruedCount = 0;
+    const leaveTypeIds = monthlyPolicies.map((p) => p.leaveTypeId);
+
+    const activeMembers = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
+
+    if (activeMembers.length === 0) return { accruedCount: 0 };
+
+    const existingLedgerEntries = await this.db
+      .select({
+        userId: hrLeaveLedger.userId,
+        leaveTypeId: hrLeaveLedger.leaveTypeId,
+      })
+      .from(hrLeaveLedger)
+      .where(
+        and(
+          eq(hrLeaveLedger.orgId, orgId),
+          inArray(hrLeaveLedger.leaveTypeId, leaveTypeIds),
+          eq(hrLeaveLedger.txnType, "accrual"),
+          eq(hrLeaveLedger.period, periodLabel),
+          eq(hrLeaveLedger.source, "cron"),
+        ),
+      );
+
+    const alreadyAccruedSet = new Set(
+      existingLedgerEntries.map((e) => `${e.userId}:${e.leaveTypeId}`),
+    );
+
+    const existingBalances = await this.db
+      .select({
+        userId: leaveBalances.userId,
+        leaveTypeId: leaveBalances.leaveTypeId,
+        balance: leaveBalances.balance,
+      })
+      .from(leaveBalances)
+      .where(
+        and(
+          eq(leaveBalances.orgId, orgId),
+          inArray(leaveBalances.leaveTypeId, leaveTypeIds),
+          eq(leaveBalances.year, year),
+        ),
+      );
+
+    const balanceMap = new Map(
+      existingBalances.map((b) => [`${b.userId}:${b.leaveTypeId}`, Number(b.balance)]),
+    );
+
+    type AccrualCandidate = {
+      userId: string;
+      leaveTypeId: number;
+      rate: number;
+      maxBalance: number | null;
+      newBalance: number;
+      granted: number;
+      hasExistingBalance: boolean;
+    };
+
+    const candidates: AccrualCandidate[] = [];
 
     for (const policy of monthlyPolicies) {
       const rate = Number(policy.accrualRate);
       if (!Number.isFinite(rate) || rate <= 0) continue;
+      const maxBalance =
+        policy.maxBalance !== null && Number.isFinite(Number(policy.maxBalance))
+          ? Number(policy.maxBalance)
+          : null;
 
-      const members = await this.db.query.organizationMembers.findMany({
-        where: eq(organizationMembers.orgId, policy.orgId),
-        columns: { userId: true },
-        with: { user: { columns: { id: true, isActive: true } } },
-      });
+      for (const member of activeMembers) {
+        const key = `${member.userId}:${policy.leaveTypeId}`;
+        if (alreadyAccruedSet.has(key)) continue;
 
-      for (const member of members) {
-        if (!member.user?.isActive) continue;
-
-        const existingLedger = await this.db.query.hrLeaveLedger.findFirst({
-          where: and(
-            eq(hrLeaveLedger.orgId, policy.orgId),
-            eq(hrLeaveLedger.userId, member.userId),
-            eq(hrLeaveLedger.leaveTypeId, policy.leaveTypeId),
-            eq(hrLeaveLedger.txnType, "accrual"),
-            eq(hrLeaveLedger.period, periodLabel),
-            eq(hrLeaveLedger.source, "cron"),
-          ),
-          columns: { id: true },
-        });
-        if (existingLedger) continue;
-
-        const [balance] = await this.db
-          .select()
-          .from(leaveBalances)
-          .where(
-            and(
-              eq(leaveBalances.orgId, policy.orgId),
-              eq(leaveBalances.userId, member.userId),
-              eq(leaveBalances.leaveTypeId, policy.leaveTypeId),
-              eq(leaveBalances.year, year),
-            ),
-          )
-          .limit(1);
-
-        const current = balance ? Number(balance.balance) : 0;
-        let next = current + rate;
-        if (policy.maxBalance != null) {
-          const max = Number(policy.maxBalance);
-          if (Number.isFinite(max)) next = Math.min(next, max);
-        }
+        const current = balanceMap.get(key) ?? 0;
+        const next =
+          maxBalance !== null ? Math.min(current + rate, maxBalance) : current + rate;
         const granted = next - current;
         if (granted <= 0) continue;
 
-        await this.db.transaction(async (tx) => {
-          if (balance) {
-            await tx
-              .update(leaveBalances)
-              .set({ balance: next.toFixed(2) })
-              .where(eq(leaveBalances.id, balance.id));
-          } else {
-            await tx.insert(leaveBalances).values({
-              orgId: policy.orgId,
-              userId: member.userId,
-              leaveTypeId: policy.leaveTypeId,
-              year,
-              balance: next.toFixed(2),
-            });
-          }
-
-          await tx.insert(hrLeaveLedger).values({
-            orgId: policy.orgId,
-            userId: member.userId,
-            leaveTypeId: policy.leaveTypeId,
-            txnType: "accrual",
-            days: granted.toFixed(2),
-            effectiveDate,
-            period: periodLabel,
-            source: "cron",
-            note: "Monthly leave accrual from leave_policies",
-            payrollStatus: "pending",
-          });
+        candidates.push({
+          userId: member.userId,
+          leaveTypeId: policy.leaveTypeId,
+          rate,
+          maxBalance,
+          newBalance: next,
+          granted,
+          hasExistingBalance: balanceMap.has(key),
         });
-
-        accruedCount += 1;
       }
+    }
+
+    if (candidates.length === 0) return { accruedCount: 0 };
+
+    let accruedCount = 0;
+
+    for (let i = 0; i < candidates.length; i += ACCRUAL_BATCH_SIZE) {
+      const batch = candidates.slice(i, i + ACCRUAL_BATCH_SIZE);
+
+      await this.db.transaction(async (tx) => {
+        const newBalanceRows = batch
+          .filter((c) => !c.hasExistingBalance)
+          .map((c) => ({
+            orgId,
+            userId: c.userId,
+            leaveTypeId: c.leaveTypeId,
+            year,
+            balance: c.newBalance.toFixed(2),
+          }));
+
+        if (newBalanceRows.length > 0)
+          await tx.insert(leaveBalances).values(newBalanceRows).onConflictDoNothing();
+
+        const updateRows = batch.filter((c) => c.hasExistingBalance);
+
+        if (updateRows.length > 0) {
+          const valsSql = sql.join(
+            updateRows.map((c) => sql`(${c.userId}, ${c.leaveTypeId}, ${c.rate}, ${c.maxBalance})`),
+            sql`, `,
+          );
+          await tx.execute(sql`
+            UPDATE leave_balances AS lb
+            SET balance = CASE
+              WHEN v.max_b IS NOT NULL
+                THEN LEAST(lb.balance::decimal + v.rate::decimal, v.max_b::decimal)
+              ELSE lb.balance::decimal + v.rate::decimal
+            END
+            FROM (VALUES ${valsSql}) AS v(uid, ltid, rate, max_b)
+            WHERE lb.org_id = ${orgId}
+              AND lb.user_id = v.uid
+              AND lb.leave_type_id = v.ltid::integer
+              AND lb.year = ${year}
+          `);
+        }
+
+        const ledgerRows = batch.map((c) => ({
+          orgId,
+          userId: c.userId,
+          leaveTypeId: c.leaveTypeId,
+          txnType: "accrual" as const,
+          days: c.granted.toFixed(2),
+          effectiveDate,
+          period: periodLabel,
+          source: "cron" as const,
+          note: "Monthly leave accrual from leave_policies",
+          payrollStatus: "pending" as const,
+        }));
+
+        await tx.insert(hrLeaveLedger).values(ledgerRows);
+      });
+
+      accruedCount += batch.length;
     }
 
     return { accruedCount };

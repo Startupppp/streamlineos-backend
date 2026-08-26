@@ -46,13 +46,52 @@ export class DealsActivitiesService {
       .limit(100);
   }
 
-  listActivities(orgId: string, dealId: number) {
-    return this.db
-      .select()
-      .from(dealActivities)
-      .where(and(eq(dealActivities.dealId, dealId), eq(dealActivities.orgId, orgId)))
-      .orderBy(desc(dealActivities.createdAt))
-      .limit(50);
+  /**
+   * Reads the table `addActivity` writes to.
+   *
+   * It did not. `addActivity` moved to the one activity model so a call logged
+   * against a deal reaches the same timeline as a call logged against a party,
+   * but this read stayed on `deal_activities` — so a rep logged a call, got a
+   * 201, and the deal's activity list did not contain it. What the list did show
+   * was the stage-change rows `deals.service` still writes to the old table,
+   * which made it look populated and working.
+   *
+   * Both are read during the migration, newest first across the two. The legacy
+   * half goes when the stage-change writer moves, and the union goes with it.
+   */
+  async listActivities(orgId: string, dealId: number) {
+    const [current, legacy] = await Promise.all([
+      this.activities.timeline(orgId, { dealId: String(dealId), limit: 50 }),
+      this.db
+        .select()
+        .from(dealActivities)
+        .where(and(eq(dealActivities.dealId, dealId), eq(dealActivities.orgId, orgId)))
+        .orderBy(desc(dealActivities.createdAt))
+        .limit(50),
+    ]);
+
+    const merged = [
+      ...current.data.map((item) => ({
+        activityId: item.activityId,
+        kind: item.kind,
+        subject: item.subject,
+        body: item.body,
+        occurredAt: item.occurredAt,
+        source: "activities" as const,
+      })),
+      ...legacy.map((row) => ({
+        activityId: String(row.id),
+        kind: row.type,
+        subject: row.subject,
+        body: row.notes,
+        occurredAt: row.createdAt,
+        source: "deal_activities" as const,
+      })),
+    ];
+
+    return merged
+      .sort((a, b) => (b.occurredAt?.getTime() ?? 0) - (a.occurredAt?.getTime() ?? 0))
+      .slice(0, 50);
   }
 
   /**

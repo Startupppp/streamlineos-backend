@@ -109,7 +109,7 @@ export class ArDocumentPdfService {
       .limit(1);
 
     if (cached?.pdfStorageKey) {
-      const stored = await this.readStored(cached.pdfStorageKey);
+      const stored = await this.readStored(orgId, cached.pdfStorageKey);
       if (stored) return { buffer: stored, fileName, contentType: "application/pdf", fromStore: true };
     }
 
@@ -121,10 +121,10 @@ export class ArDocumentPdfService {
 
   /* --------------------------------------------------------------- store */
 
-  private async readStored(key: string): Promise<Buffer | null> {
+  private async readStored(orgId: string, key: string): Promise<Buffer | null> {
     if (!this.storage.isConfigured()) return null;
     try {
-      const stream = await this.storage.getFileStream(key);
+      const stream = await this.storage.getFileStream(orgId, key);
       const chunks: Buffer[] = [];
       for await (const chunk of stream.body) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
@@ -158,7 +158,7 @@ export class ArDocumentPdfService {
     if (!this.storage.isConfigured()) return;
     try {
       const folder = `accounting/${view.bookId}/${view.documentType === "CREDIT_NOTE" ? "credit-notes" : "invoices"}`;
-      const uploaded = await this.storage.uploadFile(buffer, folder, fileName, "application/pdf");
+      const uploaded = await this.storage.uploadFile(orgId, buffer, folder, fileName, "application/pdf");
       await this.db
         .update(arDocuments)
         .set({ pdfStorageKey: uploaded.key, pdfStorageUrl: uploaded.url })

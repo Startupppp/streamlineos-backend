@@ -20,11 +20,14 @@ import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { ModuleAccessService } from "./module-access.service";
 import { ModuleAccessGroupsService } from "./module-access-groups.service";
+import { ModuleStandingRosterService } from "./module-standing-roster.service";
+import { ModuleStandingMutationsService } from "./module-standing-mutations.service";
 import {
   addFlatMemberSchema,
   addModuleGroupMemberSchema,
   auditLogQuerySchema,
   createModuleGroupSchema,
+  directTransferOwnerSchema,
   flatMemberParamSchema,
   initiateOwnershipTransferSchema,
   listMembersQuerySchema,
@@ -35,11 +38,13 @@ import {
   moduleRoleParamSchema,
   renameModuleGroupSchema,
   setModuleRolePermissionsSchema,
+  standingMemberParamSchema,
   updateMemberGroupsSchema,
   type AddFlatMemberInput,
   type AddModuleGroupMemberInput,
   type AuditLogQuery,
   type CreateModuleGroupInput,
+  type DirectTransferOwnerInput,
   type FlatMemberParam,
   type InitiateOwnershipTransferInput,
   type ListMembersQuery,
@@ -50,6 +55,7 @@ import {
   type ModuleRoleParam,
   type RenameModuleGroupInput,
   type SetModuleRolePermissionsInput,
+  type StandingMemberParam,
   type UpdateMemberGroupsInput,
 } from "./dto/module-access.schemas";
 
@@ -59,7 +65,59 @@ export class ModuleAccessController {
   constructor(
     private readonly svc: ModuleAccessService,
     private readonly groups: ModuleAccessGroupsService,
+    private readonly standing: ModuleStandingRosterService,
+    private readonly mutations: ModuleStandingMutationsService,
   ) {}
+
+  @Get(":moduleKey/standing")
+  listStanding(
+    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.standing.listStanding(u, params.moduleKey);
+  }
+
+  @Get(":moduleKey/standing/grantable")
+  describeGrantable(
+    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.standing.describeGrantable(u, params.moduleKey);
+  }
+
+  @Post(":moduleKey/standing/transfer-owner")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("module-access:ownership-transfer")
+  directTransferOwnership(
+    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @Body(new ZodValidationPipe(directTransferOwnerSchema)) body: DirectTransferOwnerInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.mutations.directTransferOwnership(u, params.moduleKey, body.toMembershipId);
+  }
+
+  @Post(":moduleKey/standing/:membershipId")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("module-access:group-mutate")
+  grantAdminStanding(
+    @Param(new ZodValidationPipe(standingMemberParamSchema)) params: StandingMemberParam,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.mutations.grantAdminStanding(u, params.moduleKey, params.membershipId);
+  }
+
+  @Delete(":moduleKey/standing/:membershipId")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("module-access:group-mutate")
+  revokeStanding(
+    @Param(new ZodValidationPipe(standingMemberParamSchema)) params: StandingMemberParam,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.mutations.revokeStanding(u, params.moduleKey, params.membershipId);
+  }
 
   @Get(":moduleKey/catalog")
   catalog(

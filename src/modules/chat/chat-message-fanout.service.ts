@@ -1,48 +1,56 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { logger } from "../../common/logger/logger.service";
+import { AuditService } from "../../common/audit/audit.service";
+import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { users } from "../../db/schema";
-import { logger } from "../../common/logger/logger.service";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
-import type { ChatAttachmentPayload, PersistedMessage } from "./chat-message.types";
+import {
+  messageFanoutIdempotencyKey,
+  type FanoutDeliveryContext,
+  type FanoutInput,
+  type MessageFanoutProvider,
+} from "./message-fanout.interface";
 
-export interface FanoutInput {
-  orgId: string;
-  channelId: number;
-  /** Realtime publish runs first; push, DM-notification and mention-notification are concurrent and independent. */
-  channelType: string | null;
-  message: PersistedMessage;
-  content: string | null;
-  mentionedUserIds: string[] | undefined;
-  attachments: ChatAttachmentPayload[];
-  strippedMetadata: Record<string, unknown> | null;
-}
+export type { FanoutInput };
+
+type FanoutChannel = "push" | "dm_notification" | "mention_notification";
 
 @Injectable()
-export class ChatMessageFanoutService {
+export class ChatMessageFanoutService implements MessageFanoutProvider {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ably: AblyService,
     private readonly webPush: WebPushService,
     private readonly notifications: ChatNotificationsService,
+    private readonly audit: AuditService,
+    private readonly effects: ExternalEffectLedger,
   ) {}
 
-  async dispatch(input: FanoutInput): Promise<void> {
-    const { orgId, channelId, channelType, message, attachments, mentionedUserIds, strippedMetadata } = input;
+  async dispatch(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void> {
+    await this.dispatchRealtime(input, context);
+    await this.dispatchDeferred(input, context);
+  }
 
-    const [sender] = await this.db
-      .select({ name: users.name, image: users.image })
-      .from(users)
-      .where(eq(users.id, message.senderId))
-      .limit(1);
+  /**
+   * Realtime delivery is the latency-sensitive part of sending a message. It runs once from the
+   * post-commit send hook; the durable outbox consumer deliberately does not repeat it.
+   */
+  async dispatchRealtime(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void> {
+    const {
+      orgId,
+      channelId,
+      message,
+      attachments,
+      strippedMetadata,
+      senderName,
+      senderImage,
+    } = input;
 
-    const senderName = sender?.name ?? null;
-    const senderImage = sender?.image ?? null;
-
-    await this.ably.publishChatMessage(orgId, channelId, {
+    const send = () => this.ably.publishChatMessage(orgId, channelId, {
       id: message.id,
       channelId: message.channelId,
       senderId: message.senderId,
@@ -54,56 +62,130 @@ export class ChatMessageFanoutService {
       metadata: strippedMetadata,
       messageType: message.messageType,
       attachments,
-    });
+      idempotencyKey: context?.idempotencyKey ?? messageFanoutIdempotencyKey(input),
+    }, { requireConfigured: true });
+    if (!context?.producerEventId) return send();
+    await this.effects.execute({
+      organizationId: orgId,
+      producerEventId: context.producerEventId,
+      effectKey: `${context.idempotencyKey}:realtime`,
+      effectType: "chat.realtime",
+      providerIdempotency: "STABLE_KEY_PROPAGATED",
+    }, send);
+  }
 
+  /**
+   * Push and notification delivery is intentionally retryable. The chat message outbox consumer
+   * calls this method, so a rejected task causes the event to be retried or dead-lettered by the
+   * common relay instead of being lost behind a log line.
+   */
+  async dispatchDeferred(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void> {
+    const {
+      orgId,
+      channelId,
+      channelType,
+      message,
+      mentionedUserIds,
+      senderName,
+    } = input;
+
+    const failures: unknown[] = [];
+    const idempotencyKey = context?.idempotencyKey ?? messageFanoutIdempotencyKey(input);
+    const producerEventId = context?.producerEventId ?? idempotencyKey;
+    const runEffect = (channel: FanoutChannel, send: () => Promise<void>) =>
+      this.effects.execute({
+        organizationId: orgId,
+        producerEventId,
+        effectKey: `${idempotencyKey}:${channel}`,
+        effectType: `chat.${channel}`,
+        providerIdempotency: "STABLE_KEY_PROPAGATED",
+      }, () => runInNewTenantTransaction(this.db, orgId, async () => send())).then(() => undefined);
     const tasks: Promise<void>[] = [
-      this.webPush
-        .sendToChannelMembers(orgId, channelId, message.senderId, { category: "CHAT" })
+      runEffect("push", () => this.webPush
+        .sendToChannelMembers(orgId, channelId, message.senderId, { category: "CHAT" }, `${idempotencyKey}:push`))
         .catch((err: unknown) => {
           logger.error("chat: push fan-out failed", {
             orgId,
             channelId,
             error: err instanceof Error ? err.message : "unknown",
           });
+          this.recordFailure(orgId, channelId, message.senderId, message.id, "push", err);
+          failures.push(err);
         }),
     ];
 
     if (channelType === "DIRECT")
       tasks.push(
-        this.notifications
+        runEffect("dm_notification", () => this.notifications
           .publishNewMessageNotification(
             orgId,
             channelId,
             { id: message.id, senderId: message.senderId, senderName },
             channelType,
-          )
+            `${idempotencyKey}:dm_notification`,
+          ))
           .catch((err: unknown) => {
             logger.error("chat: DM notification failed", {
               orgId,
               channelId,
               error: err instanceof Error ? err.message : "unknown",
             });
+            this.recordFailure(orgId, channelId, message.senderId, message.id, "dm_notification", err);
+            failures.push(err);
           }),
       );
 
     if (mentionedUserIds && mentionedUserIds.length > 0)
       tasks.push(
-        this.notifications
+        runEffect("mention_notification", () => this.notifications
           .publishMentionNotification(
             orgId,
             channelId,
             { id: message.id, senderId: message.senderId, senderName: senderName ?? "" },
             mentionedUserIds,
-          )
+            `${idempotencyKey}:mention_notification`,
+          ))
           .catch((err: unknown) => {
             logger.error("chat: mention notification failed", {
               orgId,
               channelId,
               error: err instanceof Error ? err.message : "unknown",
             });
+            this.recordFailure(orgId, channelId, message.senderId, message.id, "mention_notification", err);
+            failures.push(err);
           }),
       );
 
     await Promise.all(tasks);
+    if (failures.length > 0) {
+      throw new AggregateError(failures, `chat fan-out failed in ${failures.length} channel(s)`);
+    }
+  }
+
+  private recordFailure(
+    orgId: string,
+    channelId: number,
+    senderId: string,
+    messageId: number,
+    channel: FanoutChannel,
+    err: unknown,
+  ): void {
+    try {
+      this.audit.log({
+        action: "chat:fanout:failure",
+        userId: senderId,
+        orgId,
+        targetType: "chat_channel",
+        targetId: String(channelId),
+        result: "FAILURE",
+        metadata: {
+          channel,
+          messageId,
+          error: err instanceof Error ? err.message : "unknown",
+        },
+      });
+    } catch {
+      // Never propagate an audit failure into the send path.
+    }
   }
 }

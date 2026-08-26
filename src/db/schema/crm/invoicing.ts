@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   invoiceStatusEnum, quoteStatusEnum,
@@ -16,7 +16,6 @@ export const invoices = pgTable("invoices", {
   projectId: integer("project_id").references(() => projects.id),
   invoiceNumber: text("invoice_number").notNull(),
   status: invoiceStatusEnum("status").default("DRAFT").notNull(),
-  lineItems: jsonb("line_items").$type<{ description: string; quantity: number; rate: number; amount: number }[]>().default([]).notNull(),
   subtotal: decimal("subtotal", { precision: 18, scale: 4 }).default("0").notNull(),
   taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("0").notNull(),
   taxAmount: decimal("tax_amount", { precision: 18, scale: 4 }).default("0").notNull(),
@@ -189,6 +188,14 @@ export const quotes = pgTable("quotes", {
   approvedAt: timestamp("approved_at"),
   signedAt: timestamp("signed_at"),
   signedDocumentRef: text("signed_document_ref"),
+  /**
+   * The generated quote as it was sent.
+   *
+   * Not `signedDocumentRef`, which is the counter-signed copy that came back —
+   * keeping them apart is what preserves the difference between what was
+   * offered and what was agreed. Null until a document is generated.
+   */
+  documentKey: text("document_key"),
   convertedInvoiceId: integer("converted_invoice_id").references(() => invoices.id, { onDelete: "set null" }),
   // Rate snapshot at issue time, matching `invoices` and `purchase_bills`.
   // Without it a quote's historical value silently re-prices whenever

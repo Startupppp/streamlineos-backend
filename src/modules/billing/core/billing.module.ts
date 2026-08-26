@@ -17,9 +17,11 @@ import { PlanLimitsService } from "./plan-limits.service";
 import { StripeService } from "./stripe.service";
 import { PlatformPaymentRegistry } from "./platform-payment-registry";
 import { NotificationsModule } from "../../notifications/notifications.module";
+import { PaymentsModule } from "../payments/payments.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, PaymentsModule, OutboxModule],
   controllers: [BillingController, RazorpayWebhookController],
   providers: [
     BillingService,

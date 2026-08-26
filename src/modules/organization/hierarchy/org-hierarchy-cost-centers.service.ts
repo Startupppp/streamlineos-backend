@@ -10,7 +10,6 @@ import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
   CreateCostCenterInput,
@@ -139,7 +138,7 @@ export class OrgHierarchyCostCentersService {
 
     if (!row) throw new Error("Failed to create cost center");
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "COST_CENTER"));
+    await this.cache.invalidateForOrg(orgId, "org:units:COST_CENTER");
     await this.audit.logCritical({ action: "org.costCenter.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
     return toOrgCostCenter(row);
@@ -168,7 +167,7 @@ export class OrgHierarchyCostCentersService {
 
     if (!row) throw new NotFoundException("Cost center not found");
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "COST_CENTER"));
+    await this.cache.invalidateForOrg(orgId, "org:units:COST_CENTER");
     await this.audit.logCritical({ action: "org.costCenter.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
     return toOrgCostCenter(row);
@@ -189,7 +188,7 @@ export class OrgHierarchyCostCentersService {
         ),
       );
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "COST_CENTER"));
+    await this.cache.invalidateForOrg(orgId, "org:units:COST_CENTER");
     await this.audit.logCritical({ action: "org.costCenter.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
   }
 }

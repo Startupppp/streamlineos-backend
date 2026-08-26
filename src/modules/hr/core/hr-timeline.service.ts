@@ -14,6 +14,7 @@ import {
 } from "../../../db/schema/hr/core-people";
 import { hrAuditLogs } from "../../../db/schema/hr/core-audit";
 import { organizationMembers } from "../../../db/schema/common/auth";
+import { organizationPeople } from "../../../db/schema/directory/organization-people";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { applyScope } from "../../access/apply-scope";
@@ -341,11 +342,18 @@ export class HrTimelineService {
         probationEndDate: hrEmployments.probationEndDate,
         confirmationDate: hrEmployments.confirmationDate,
         isPrimary: hrEmployments.isPrimary,
-        personFirstName: hrPeople.firstName,
-        personLastName: hrPeople.lastName,
-        personWorkEmail: hrPeople.workEmail,
+        personFirstName: organizationPeople.firstName,
+        personLastName: organizationPeople.lastName,
+        personWorkEmail: organizationPeople.workEmail,
       })
       .from(hrPeople)
+      .innerJoin(
+        organizationPeople,
+        and(
+          eq(organizationPeople.organizationId, hrPeople.orgId),
+          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+        ),
+      )
       .innerJoin(
         hrEmployments,
         and(

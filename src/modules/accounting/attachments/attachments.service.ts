@@ -131,7 +131,7 @@ export class AttachmentsService {
       throw new ServiceUnavailableException("File storage is not configured");
     }
 
-    const stream = await this.storage.getFileStream(row.storageKey);
+    const stream = await this.storage.getFileStream(orgId, row.storageKey);
     const chunks: Buffer[] = [];
     for await (const chunk of stream.body) {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
@@ -177,6 +177,7 @@ export class AttachmentsService {
     }
 
     const uploaded = await this.storage.uploadFile(
+      orgId,
       buffer,
       `accounting/${bookId}/attachments/${documentType}`,
       input.fileName,

@@ -1,15 +1,12 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
-import {
-  moduleAvailability,
-  moduleAvailabilityResolver,
-} from "../../common/rbac/module-availability";
+import { moduleAvailability } from "../../common/rbac/module-availability";
+import type { ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import {
   allCatalogScopes,
   CATALOG_MODULES,
   EMPTY_DENIED_MODULES,
-  isPlanGatedModule,
 } from "./access-policy";
 import { EntitlementsService } from "./entitlements.service";
 import { MfaPolicyService } from "./mfa-policy.service";
@@ -31,6 +28,13 @@ export class AccessSnapshotResolver {
       orgId: string,
       userId: string,
     ) => Promise<boolean>,
+    private readonly buildModuleAvailabilityResolver: (
+      getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+      getDeniedModules?: (
+        orgId: string,
+        userId: string,
+      ) => Promise<Set<string>>,
+    ) => ModuleAvailabilityResolver,
   ) {}
 
   async computeAccessSnapshot(
@@ -99,32 +103,21 @@ export class AccessSnapshotResolver {
     };
   }
 
-  /** Same inputs `authorize` uses, so the snapshot cannot promise what a request then refuses. */
   private async resolveModuleFlags(
     orgId: string,
     userId: string,
     denied: ReadonlySet<string>,
   ): Promise<Record<string, boolean>> {
     const deniedModules = new Set(denied);
-    const effective = await this.entitlements.getEffectiveModuleMap(orgId);
-    const resolver = moduleAvailabilityResolver(
-      {
-        isCoreModule: (moduleKey) =>
-          !isPlanGatedModule(moduleKey) || !(moduleKey in effective),
-        getModuleMap: async () => effective,
-        getPlanLockedModules: async () => [],
-      },
-      { getUserDeniedModules: async () => deniedModules },
+    const rawMap = await this.entitlements.getModuleMap(orgId);
+    const resolver = this.buildModuleAvailabilityResolver(
+      async () => rawMap,
+      async () => deniedModules,
     );
 
     const modules: Record<string, boolean> = {};
     for (const moduleKey of CATALOG_MODULES) {
-      const availability = await moduleAvailability(
-        resolver,
-        orgId,
-        userId,
-        moduleKey,
-      );
+      const availability = await moduleAvailability(resolver, orgId, userId, moduleKey);
       modules[moduleKey] = availability.available;
     }
     return modules;

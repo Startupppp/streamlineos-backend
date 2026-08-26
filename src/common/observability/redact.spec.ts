@@ -67,6 +67,25 @@ describe("redact", () => {
     expect(typeof out.stack).toBe("string");
   });
 
+  it("includes the cause when an Error wraps a deeper one", () => {
+    const cause = new Error("driver: connection refused");
+    const error = new Error("query failed", { cause });
+    const out = redact(error) as Record<string, unknown>;
+    expect(out).toMatchObject({ name: "Error", message: "query failed" });
+    expect(out.cause).toMatchObject({ name: "Error", message: "driver: connection refused" });
+  });
+
+  it("includes a non-Error cause verbatim", () => {
+    const error = new Error("outer", { cause: "ECONNREFUSED" });
+    const out = redact(error) as Record<string, unknown>;
+    expect(out.cause).toBe("ECONNREFUSED");
+  });
+
+  it("omits the cause key when the error has none", () => {
+    const out = redact(new Error("standalone")) as Record<string, unknown>;
+    expect(out).not.toHaveProperty("cause");
+  });
+
   it("survives a circular structure", () => {
     const node: Record<string, unknown> = { name: "root" };
     node.self = node;

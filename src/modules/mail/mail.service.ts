@@ -6,15 +6,20 @@ import { OutlookMailProvider } from "./providers/outlook-mail.provider";
 import {
   decodeCursor,
   encodeCursor,
+  isPartialGmailCursor,
   mergeMessagesByDate,
+  type AccountCursorValue,
   type NormalizerConnectionMeta,
+  type OpaqueCursor,
 } from "./providers/mail-normalizers";
 import { MailAccountsService, type MailAccount } from "./mail-accounts.service";
+import { MailMetadataService } from "./mail-metadata.service";
 import type {
   MailDownloadResponse,
   MailFolder,
   MailListResponse,
   MailMessageDetail,
+  MailMessageSummary,
 } from "./dto/mail-schemas";
 
 const CACHE_TTL_SECONDS = 45;
@@ -26,6 +31,7 @@ export class MailService {
     private readonly gmail: GmailMailProvider,
     private readonly outlook: OutlookMailProvider,
     private readonly cache: CacheService,
+    private readonly metadata: MailMetadataService,
   ) {}
 
   async listAccounts(orgId: string, userId: string) {
@@ -50,23 +56,65 @@ export class MailService {
       return { messages: [], nextCursor: null, accountErrors: [] };
     }
 
+    const isFirstPage = !cursor;
+    if (isFirstPage && !query && accountIdParam !== "all") {
+      const singleAcc = targetAccounts[0];
+      if (singleAcc) {
+        const cached = await this.metadata.listCached(userId, orgId, singleAcc.id, folder, limit);
+        if (cached.isFresh && cached.hasData) {
+          return {
+            messages: cached.messages.map((m) => ({
+              id: m.messageId,
+              threadId: m.threadId,
+              accountId: m.accountId,
+              provider: singleAcc.provider,
+              from: { email: m.senderEmail, name: m.senderName },
+              to: [],
+              subject: m.subject,
+              snippet: "",
+              date: m.date,
+              isRead: m.isRead,
+              isStarred: m.isStarred,
+              hasAttachments: m.hasAttachment,
+            } satisfies MailMessageSummary)),
+            nextCursor: null,
+            accountErrors: [],
+          };
+        }
+      }
+    }
+
     const parsedCursor = cursor ? decodeCursor(cursor) : {};
     const skipCache = Boolean(query);
 
     const settled = await Promise.allSettled(
-      targetAccounts.map((acc) => this.fetchMessagesForAccount(userId, acc, folder, limit, parsedCursor, query, skipCache)),
+      targetAccounts.map((acc) => this.fetchMessagesForAccount(orgId, userId, acc, folder, limit, parsedCursor, query, skipCache)),
     );
 
     const allMessages: ReturnType<typeof mergeMessagesByDate> = [];
     const accountErrors: MailListResponse["accountErrors"] = [];
-    const nextCursorMap: Record<number, string | number | undefined> = {};
+    const accountFetches: Array<{
+      accId: number;
+      provider: string;
+      messages: ReturnType<typeof mergeMessagesByDate>;
+      nextPageToken: string | undefined;
+      outlookHasMore: boolean;
+      currentCursorValue: AccountCursorValue;
+    }> = [];
 
     settled.forEach((outcome, i) => {
       const acc = targetAccounts[i];
       if (!acc) return;
       if (outcome.status === "fulfilled") {
         allMessages.push(...outcome.value.messages);
-        nextCursorMap[acc.id] = outcome.value.nextProviderCursor;
+        accountFetches.push({
+          accId: acc.id,
+          provider: acc.provider,
+          messages: outcome.value.messages,
+          nextPageToken: outcome.value.nextPageToken,
+          outlookHasMore: outcome.value.outlookHasMore,
+          currentCursorValue: parsedCursor[acc.id],
+        });
       } else {
         const err = outcome.reason;
         const message = err instanceof Error ? err.message : "Failed to load messages";
@@ -78,6 +126,33 @@ export class MailService {
     });
 
     const merged = mergeMessagesByDate(allMessages).slice(0, limit);
+    const mergedIds = new Set(merged.map((m) => `${m.accountId}:${m.id}`));
+
+    const nextCursorMap: OpaqueCursor = {};
+    for (const fetch of accountFetches) {
+      const consumed = fetch.messages.filter((m) => mergedIds.has(`${m.accountId}:${m.id}`)).length;
+      if (fetch.provider === "outlook") {
+        if (!fetch.outlookHasMore && consumed === fetch.messages.length) {
+          nextCursorMap[fetch.accId] = undefined;
+        } else {
+          const prevSkip = typeof fetch.currentCursorValue === "number" ? fetch.currentCursorValue : 0;
+          nextCursorMap[fetch.accId] = prevSkip + consumed;
+        }
+      } else if (consumed === fetch.messages.length) {
+        nextCursorMap[fetch.accId] = fetch.nextPageToken;
+      } else {
+        const prevToken = isPartialGmailCursor(fetch.currentCursorValue)
+          ? fetch.currentCursorValue.token
+          : typeof fetch.currentCursorValue === "string"
+            ? fetch.currentCursorValue
+            : "";
+        const prevSkip = isPartialGmailCursor(fetch.currentCursorValue) ? fetch.currentCursorValue.skip : 0;
+        nextCursorMap[fetch.accId] = consumed > 0
+          ? { token: prevToken, skip: prevSkip + consumed }
+          : fetch.currentCursorValue;
+      }
+    }
+
     const hasMore = Object.values(nextCursorMap).some((v) => v !== undefined && v !== null);
     const nextCursor = hasMore ? encodeCursor(nextCursorMap) : null;
 
@@ -85,27 +160,43 @@ export class MailService {
   }
 
   private async fetchMessagesForAccount(
+    orgId: string,
     userId: string,
     acc: MailAccount,
     folder: MailFolder,
     limit: number,
-    parsedCursor: Record<number, string | number | undefined>,
+    parsedCursor: OpaqueCursor,
     query: string | undefined,
     skipCache: boolean,
-  ): Promise<{ messages: ReturnType<typeof mergeMessagesByDate>; nextProviderCursor: string | number | undefined }> {
+  ): Promise<{ messages: ReturnType<typeof mergeMessagesByDate>; nextPageToken: string | undefined; outlookHasMore: boolean }> {
     const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     const cursorValue = parsedCursor[acc.id];
-    const cacheKey = `${folder}:${String(cursorValue ?? "")}:${query ?? ""}`;
+    const cacheKey = `${folder}:${JSON.stringify(cursorValue ?? "")}:${query ?? ""}`;
 
     const fetcher = async () => {
+      let result: { messages: ReturnType<typeof mergeMessagesByDate>; nextPageToken: string | undefined; outlookHasMore: boolean };
       if (acc.provider === "gmail") {
-        const pageToken = typeof cursorValue === "string" ? cursorValue : undefined;
-        const result = await this.gmail.listMessages(userId, conn, folder, limit, pageToken, query);
-        return { messages: result.messages, nextProviderCursor: result.nextPageToken ?? undefined };
+        let pageToken: string | undefined;
+        let withinPageSkip = 0;
+        if (isPartialGmailCursor(cursorValue)) {
+          pageToken = cursorValue.token || undefined;
+          withinPageSkip = cursorValue.skip;
+        } else if (typeof cursorValue === "string") {
+          pageToken = cursorValue;
+        }
+        const raw = await this.gmail.listMessages(userId, conn, folder, limit + withinPageSkip, pageToken, query);
+        result = { messages: raw.messages.slice(withinPageSkip), nextPageToken: raw.nextPageToken ?? undefined, outlookHasMore: false };
+      } else {
+        const skip = typeof cursorValue === "number" ? cursorValue : 0;
+        const raw = await this.outlook.listMessages(userId, conn, folder, limit, skip, query);
+        result = { messages: raw.messages, nextPageToken: undefined, outlookHasMore: raw.nextSkip !== null && raw.nextSkip !== undefined };
       }
-      const skip = typeof cursorValue === "number" ? cursorValue : 0;
-      const result = await this.outlook.listMessages(userId, conn, folder, limit, skip, query);
-      return { messages: result.messages, nextProviderCursor: result.nextSkip ?? undefined };
+
+      if (!query && result.messages.length > 0) {
+        this.metadata.deferUpsertBatch(acc.id, userId, orgId, folder, result.messages);
+      }
+
+      return result;
     };
 
     if (skipCache) return fetcher();
@@ -249,6 +340,18 @@ export class MailService {
     }
 
     await this.cache.invalidateNamespace(`mail:messages:${acc.id}`);
+
+    const stateUpdate: { isRead?: boolean; isStarred?: boolean; folder?: string } = {};
+    if (action === "markRead") stateUpdate.isRead = true;
+    else if (action === "markUnread") stateUpdate.isRead = false;
+    else if (action === "star") stateUpdate.isStarred = true;
+    else if (action === "unstar") stateUpdate.isStarred = false;
+    else if (action === "archive") stateUpdate.folder = "archive";
+    else if (action === "trash") stateUpdate.folder = "trash";
+
+    if (Object.keys(stateUpdate).length > 0) {
+      this.metadata.deferUpdateState(acc.id, userId, orgId, messageId, stateUpdate);
+    }
   }
 
   async getAttachment(

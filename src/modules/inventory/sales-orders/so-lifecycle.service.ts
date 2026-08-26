@@ -12,6 +12,7 @@ import {
   invSalesOrders,
   invStockLevels,
   invStockReservations,
+  invoiceItems,
   invoices,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -164,7 +165,6 @@ export class SoLifecycleService {
         clientId: so.clientId,
         invoiceNumber,
         status: "ISSUED",
-        lineItems,
         subtotal: so.subtotal,
         taxRate: "0",
         taxAmount: so.taxAmount,
@@ -175,6 +175,20 @@ export class SoLifecycleService {
         createdBy: userId,
       })
       .returning();
+
+    if (lineItems.length > 0) {
+      await this.db.insert(invoiceItems).values(
+        lineItems.map((line, index) => ({
+          invoiceId: invoice.id,
+          description: line.description,
+          quantity: line.quantity.toFixed(4),
+          rate: line.rate.toFixed(4),
+          gstRate: "0",
+          amount: line.amount.toFixed(4),
+          lineOrder: index,
+        })),
+      );
+    }
 
     await this.db
       .update(invSalesOrders)
@@ -341,8 +355,11 @@ export class SoLifecycleService {
           lotId: available.lotId,
           qty: line.quantity,
         });
-      } catch {
+      } catch (reserveErr) {
         allReserved = false;
+        this.logger.warn(
+          `autoReserve: reservation failed for SO ${soId} line ${line.id} in org ${orgId}: ${reserveErr instanceof Error ? reserveErr.message : String(reserveErr)}`,
+        );
       }
     }
 

@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, sql } from "drizzle-orm";
-import { kbSpaces, kbSpaceMembers, users } from "../../../db/schema";
+import { kbSpaces, kbSpaceMembers, kbPages, kbArticles, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
@@ -83,8 +83,22 @@ export class KbMembersService {
         spaceRole: input.spaceRole,
       })
       .returning();
+    await this.bumpSpaceAclRevision(orgId, spaceId);
     await this.access.invalidateAccessibleSpaceIds(orgId);
     return member;
+  }
+
+  private async bumpSpaceAclRevision(orgId: string, spaceId: number): Promise<void> {
+    await Promise.all([
+      this.db
+        .update(kbPages)
+        .set({ aclRevision: sql`acl_revision + 1` })
+        .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId))),
+      this.db
+        .update(kbArticles)
+        .set({ aclRevision: sql`acl_revision + 1` })
+        .where(and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId))),
+    ]);
   }
 
   async remove(orgId: string, spaceId: number, memberId: number): Promise<{ success: boolean }> {
@@ -118,6 +132,7 @@ export class KbMembersService {
           eq(kbSpaceMembers.orgId, orgId),
         ),
       );
+    await this.bumpSpaceAclRevision(orgId, spaceId);
     await this.access.invalidateAccessibleSpaceIds(orgId);
     return { success: true };
   }

@@ -12,13 +12,13 @@ import { expenses, organizationMembers, organizations, users } from "../../db/sc
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { AccessService } from "../access/access.service";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 import {
   updateExpenseDetailsSchema,
   updateExpenseStatusSchema,
@@ -105,7 +105,7 @@ export class ExpensesWriteService {
 
     void this.dispatchExpenseSubmitted(orgId, userId, expense.id, body);
 
-    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(orgId));
+    await this.cache.invalidateNamespaceForOrg(orgId, "hr:expenses");
 
     return expense;
   }
@@ -171,7 +171,7 @@ export class ExpensesWriteService {
       targetType: "expense",
     });
 
-    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(orgId));
+    await this.cache.invalidateNamespaceForOrg(orgId, "hr:expenses");
     return { success: true };
   }
 
@@ -201,7 +201,7 @@ export class ExpensesWriteService {
       })
       .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, orgId)));
 
-    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(orgId));
+    await this.cache.invalidateNamespaceForOrg(orgId, "hr:expenses");
     return { success: true };
   }
 
@@ -253,7 +253,7 @@ export class ExpensesWriteService {
 
     void this.dispatchExpenseDecision(u, expenseId, body.status, body.rejectionReason ?? null);
 
-    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
+    await this.cache.invalidateNamespaceForOrg(u.orgId, "hr:expenses");
     return { success: true };
   }
 
@@ -435,7 +435,8 @@ export class ExpensesWriteService {
             ),
           ),
       );
-    } catch {
+    } catch (err: unknown) {
+      logSideEffectFailure("expense submitted notification", { orgId, expenseId })(err);
       return;
     }
   }
@@ -489,7 +490,8 @@ export class ExpensesWriteService {
       } else if (status === "PAID") {
         await this.email.sendExpensePaidEmail(employee.email, employeeName, category, amount);
       }
-    } catch {
+    } catch (err: unknown) {
+      logSideEffectFailure("expense decision notification", { orgId: u.orgId, expenseId })(err);
       return;
     }
   }

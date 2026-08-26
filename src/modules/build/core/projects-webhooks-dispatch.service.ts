@@ -5,6 +5,7 @@ import { projectWebhooks, webhookDeliveries } from "../../../db/schema/build/tas
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { checkWebhookUrl } from "./webhook-url-guard";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
@@ -31,7 +32,7 @@ export class ProjectsWebhooksDispatchService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   dispatch(orgId: string, projectId: number, eventName: string, payload: WebhookPayload): void {
-    void this.run(orgId, projectId, eventName, payload).catch(() => undefined);
+    void this.run(orgId, projectId, eventName, payload).catch(logSideEffectFailure("webhook dispatch", { orgId, projectId, event: eventName }));
   }
 
   private async run(

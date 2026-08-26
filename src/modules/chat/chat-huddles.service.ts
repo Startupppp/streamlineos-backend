@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import {
   calendarEvents,
@@ -26,6 +26,8 @@ export { HUDDLE_MESH_MAX_PARTICIPANTS };
 
 @Injectable()
 export class ChatHuddlesService {
+  private readonly logger = new Logger(ChatHuddlesService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ably: AblyService,
@@ -170,7 +172,16 @@ export class ChatHuddlesService {
           huddleId: huddle.id,
           channelId,
           startedBy: userId,
-        }).catch(() => {});
+        }).catch((error: unknown) => {
+          this.logger.warn("ably: failed to notify user of huddle start", {
+            orgId,
+            channelId,
+            huddleId: huddle.id,
+            targetUserId: member.userId,
+            error: error instanceof Error ? error.message : String(error),
+            cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+          });
+        });
       }
     }
 
@@ -181,7 +192,16 @@ export class ChatHuddlesService {
         void this.webPush.sendToUser(member.userId, {
           category: "CHAT",
           url: `/chat?channel=${channelId}&joinHuddle=1`,
-        }).catch(() => {});
+        }).catch((error: unknown) => {
+          this.logger.warn("web-push: failed to send huddle start notification", {
+            orgId,
+            channelId,
+            huddleId: huddle.id,
+            targetUserId: member.userId,
+            error: error instanceof Error ? error.message : String(error),
+            cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+          });
+        });
       }
     }
 
@@ -393,7 +413,16 @@ export class ChatHuddlesService {
       .set({ leftAt: new Date() })
       .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.userId, targetUserId), isNull(chatHuddleParticipants.leftAt)));
     await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId: targetUserId, kicked: true });
-    void this.ably.publishToUser(orgId, targetUserId, "huddle:kicked", { huddleId, channelId: huddle.channelId }).catch(() => {});
+    void this.ably.publishToUser(orgId, targetUserId, "huddle:kicked", { huddleId, channelId: huddle.channelId }).catch((error: unknown) => {
+      this.logger.warn("ably: failed to notify kicked participant", {
+        orgId,
+        channelId: huddle.channelId,
+        huddleId,
+        targetUserId,
+        error: error instanceof Error ? error.message : String(error),
+        cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+      });
+    });
     return { ok: true };
   }
 

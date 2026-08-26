@@ -16,7 +16,6 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { bustUsersStatsCache } from "../../../common/cache/bust-users-stats";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
@@ -110,10 +109,10 @@ export class InvitationAcceptanceService {
   ): Promise<unknown[]> {
     return Promise.all([
       this.cache.invalidate(CACHE_KEYS.userSession(userId)),
-      this.cache.invalidateNamespace(CACHE_KEYS.orgMembersListNamespace(orgId)),
-      this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(orgId)),
-      this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(orgId)),
-      bustUsersStatsCache(this.cache, orgId),
+      this.cache.invalidateNamespaceForOrg(orgId, "org:members:list"),
+      this.cache.invalidateForOrg(orgId, "rbac:members"),
+      this.cache.invalidateForOrg(orgId, "module-access:candidates"),
+      this.cache.invalidateForOrg(orgId, "users:stats"),
       bustMembershipStatusCache(this.cache, userId, orgId),
     ]);
   }
@@ -369,7 +368,7 @@ export class InvitationAcceptanceService {
       { orgId },
     );
 
-    await bustUsersStatsCache(this.cache, orgId);
+    await this.cache.invalidateForOrg(orgId, "users:stats");
 
     await this.notifyDeclined(
       orgId,

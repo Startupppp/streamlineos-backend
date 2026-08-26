@@ -10,7 +10,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import type { SupportReportFiltersInput } from "./dto/support.schemas";
 
 const TICKET_TRIGGER_PREFIX = "ticket.";
@@ -114,7 +114,7 @@ export class SupportReportsService {
     };
 
     if (!this.isDefaultFilters(filters) || filters.scopeToUserId) return fetch();
-    return this.cache.cached(CACHE_KEYS.supportReportsOverview(orgId), fetch, CACHE_TTL.SHORT);
+    return this.cache.cachedForOrg(orgId, "support:reports:overview", fetch, CACHE_TTL.SHORT);
   }
 
   async getAgentPerformance(orgId: string, filters: ScopedFilters) {

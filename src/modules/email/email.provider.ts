@@ -15,6 +15,7 @@ import {
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
 const ZEPTOMAIL_TIMEOUT_MS = 30_000;
+const RESEND_TIMEOUT_MS = 30_000;
 const ZEPTOMAIL_DEFAULT_URL = "https://api.zeptomail.in/v1.1/email";
 
 export type {
@@ -132,18 +133,22 @@ async function sendViaResend(clients: EmailClients, options: EmailOptions): Prom
   const cc = options.cc ? normalizeRecipients(options.cc) : undefined;
   const bcc = options.bcc ? normalizeRecipients(options.bcc) : undefined;
 
-  const { data, error } = await resend.emails.send({
-    from: getFromAddress(),
-    to: recipients,
-    subject: options.subject,
-    html: options.html,
-    text,
-    ...(options.replyTo ? { replyTo: options.replyTo } : {}),
-    ...(cc?.length ? { cc } : {}),
-    ...(bcc?.length ? { bcc } : {}),
-    ...(attachments?.length ? { attachments } : {}),
-    ...(options.headers ? { headers: options.headers } : {}),
-  });
+  const { data, error } = await withTimeout(
+    resend.emails.send({
+      from: getFromAddress(),
+      to: recipients,
+      subject: options.subject,
+      html: options.html,
+      text,
+      ...(options.replyTo ? { replyTo: options.replyTo } : {}),
+      ...(cc?.length ? { cc } : {}),
+      ...(bcc?.length ? { bcc } : {}),
+      ...(attachments?.length ? { attachments } : {}),
+      ...(options.headers ? { headers: options.headers } : {}),
+    }),
+    RESEND_TIMEOUT_MS,
+    "Resend send",
+  );
 
   if (error) {
     const err = error as { statusCode?: number; name?: string; message?: string };

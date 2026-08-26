@@ -6,6 +6,7 @@ import { IS_PUBLIC } from "../auth/public.decorator";
 import { ModuleDisabledException } from "../http/api-exceptions";
 import type { CurrentUserContext } from "../auth/backend-claims";
 import type { EntitlementsService } from "../../modules/access/entitlements.service";
+import type { AccessService } from "../../modules/access/access.service";
 
 function ctx(user: Partial<CurrentUserContext>): ExecutionContext {
   const req = {
@@ -55,7 +56,19 @@ describe("ModuleGuard", () => {
 
   const guard = new ModuleGuard(
     reflector,
-    entitlements as unknown as EntitlementsService,
+    {
+      moduleAvailability: async (_user: CurrentUserContext, moduleKey: string) => {
+        if (entitlements.isCoreModule(moduleKey)) return { available: true };
+        const map = await entitlements.getModuleMap("org-1");
+        if (map[moduleKey] === true) return { available: true };
+        if (map[moduleKey] === false)
+          return { available: false, reason: "org-disabled" };
+        const locked = await entitlements.getPlanLockedModules("org-1");
+        return locked.includes(moduleKey)
+          ? { available: false, reason: "not-in-plan" }
+          : { available: false, reason: "org-disabled" };
+      },
+    } as unknown as AccessService,
   );
 
   /**

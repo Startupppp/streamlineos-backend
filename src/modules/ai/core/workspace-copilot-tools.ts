@@ -157,7 +157,7 @@ export class WorkspaceCopilotTools {
             return { error: "Date range too large. Please request at most 62 days at a time." };
           }
 
-          const events = await this.calendar.getEvents(orgId, userId, start, end);
+          const { events } = await this.calendar.getEvents(orgId, userId, start, end);
           const capped = events.slice(0, 100);
 
           return {

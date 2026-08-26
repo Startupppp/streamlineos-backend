@@ -23,7 +23,7 @@ import {
   getIndiaBundleForDate,
   IN_STATUTORY_RULE_BUNDLE_VERSION,
 } from "../runs/lib/statutory-registry";
-import { decrypt } from "../../hr/payroll/lib/encryption";
+import { decrypt } from "../hr-payroll/lib/encryption";
 import {
   buildFilingExport,
   type EmployeeStatutorySourceRow,

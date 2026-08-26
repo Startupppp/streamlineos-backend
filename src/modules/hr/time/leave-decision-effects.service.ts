@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { logger } from "../../../common/logger/logger.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -108,7 +109,7 @@ export class LeaveDecisionEffectsService {
   }
 
   private async invalidateLeaveAnalytics(orgId: string): Promise<void> {
-    await this.cache.invalidateNamespace(`hr:leave-analytics:${orgId}`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.leaveAnalyticsNamespace(orgId));
   }
 
   private rebuildPayrollInputsForLeaveRange(

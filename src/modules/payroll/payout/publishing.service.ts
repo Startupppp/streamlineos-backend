@@ -26,7 +26,7 @@ import { EmailService } from "../../email/email.service";
 import { AccessService } from "../../access/access.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { logger } from "../../../common/logger/logger.service";
-import { generatePayslipPdf } from "../../../modules/hr/payroll/lib/payslip-pdf";
+import { generatePayslipPdf } from "../hr-payroll/lib/payslip-pdf";
 import { buildPayslipPdfData } from "./lib/payslip-renderer";
 import { getPayslipEmailTemplate } from "../../email/templates/payroll";
 import {
@@ -182,6 +182,7 @@ export class PublishingService {
         if (this.storage.isConfigured()) {
           const fileName = `payslip-${payee.subjectKey}-${run.month}.pdf`;
           const uploadResult = await this.storage.uploadFile(
+            orgId,
             renderedPdfBuffer,
             `payroll/payslips/${runId}`,
             fileName,
@@ -243,9 +244,9 @@ export class PublishingService {
       if (pubStatus === "PUBLISHED") {
         published++;
         if (upsertedPub && !wasAlreadyPublished && payee.subject.userId) {
-          this.notifications
+          await this.notifications
             .notifyPayslipPublished(orgId, payee.subject.userId, upsertedPub.id, run.month)
-            .catch(e => logger.error("notifyPayslipPublished failed", { error: e }));
+            .catch((e: unknown) => logger.error("notifyPayslipPublished failed", { error: e }));
         }
 
         if (!wasAlreadyPublished && emailPayslips && payee.email && renderedPdfBuffer) {

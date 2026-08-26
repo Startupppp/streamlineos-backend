@@ -1,13 +1,17 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { authorize, type AccessResolver } from "./authorize";
 import type { DataScope } from "./access.types";
+import {
+  moduleAvailabilityResolver,
+  type ModuleAvailabilityResolver,
+} from "../../common/rbac/module-availability";
+import { isCoreModuleKey } from "./entitlements.service";
 
 function makeCtx(partial: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
     userId: "user-1",
     orgId: "org-1",
     role: "ENGINEERING",
-    permissions: [],
     isOrgOwner: false,
     sessionId: "session-1",
     tokenScopes: null,
@@ -15,10 +19,50 @@ function makeCtx(partial: Partial<CurrentUserContext> = {}): CurrentUserContext 
   };
 }
 
-function makeResolver(map: Map<string, DataScope>, enabledModules: string[]): AccessResolver {
+function makeResolver(
+  map: Map<string, DataScope>,
+  enabledModules: string[],
+  options: {
+    deniedModules?: Set<string>;
+    planLockedModules?: readonly string[];
+    onPlanLockedRead?: () => void;
+    useModuleState?: boolean;
+    moduleState?: boolean;
+  } = {},
+): AccessResolver {
+  const availabilityResolver = (
+    getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+  ): ModuleAvailabilityResolver =>
+    moduleAvailabilityResolver(
+      {
+        isCoreModule: isCoreModuleKey,
+        getModuleMap,
+        getPlanLockedModules: async () => {
+          options.onPlanLockedRead?.();
+          return options.planLockedModules ?? [];
+        },
+      },
+      {
+        getUserDeniedModules: async () => options.deniedModules ?? new Set<string>(),
+      },
+    );
+
   return {
-    resolveUserPermissions: () => Promise.resolve(map),
-    isModuleEnabled: (_orgId, moduleKey) => Promise.resolve(enabledModules.includes(moduleKey)),
+    scopeFor: async (ctx, key) => {
+      if (
+        ctx.tokenScopes &&
+        !ctx.tokenScopes.includes(key)
+      ) return "none";
+      if (ctx.isOrgOwner) return "all";
+      return map.get(key) ?? "none";
+    },
+    getModuleState: async (_orgId, moduleKey) =>
+      enabledModules.includes(moduleKey)
+        ? true
+        : options.useModuleState
+          ? options.moduleState
+          : false,
+    buildModuleAvailabilityResolver: availabilityResolver,
   };
 }
 
@@ -33,10 +77,10 @@ describe("authorize", () => {
   it("allows when the resolved map grants the permission and returns its scope", async () => {
     const resolver = makeResolver(new Map([["hr:employees:view", "team"]]), ["hr"]);
     const result = await authorize(resolver, makeCtx(), "hr:employees:view");
-    expect(result).toEqual({ allow: true, scope: "team", permissions: ["hr:employees:view"] });
+    expect(result).toEqual({ allow: true, scope: "team" });
   });
 
-  it("returns the granted keys excluding none-scoped grants for downstream hydration", async () => {
+  it("does not carry a permissions list in the allow result", async () => {
     const resolver = makeResolver(
       new Map<string, DataScope>([
         ["hr:employees:view", "team"],
@@ -47,13 +91,26 @@ describe("authorize", () => {
     );
     const result = await authorize(resolver, makeCtx(), "hr:employees:view");
     expect(result.allow).toBe(true);
-    expect(result.permissions).toEqual(["hr:employees:view", "hr:analytics:read"]);
+    expect(result).not.toHaveProperty("permissions");
   });
 
   it("denies with FORBIDDEN when the permission is not in the resolved map", async () => {
     const resolver = makeResolver(new Map(), ["hr"]);
     const result = await authorize(resolver, makeCtx(), "hr:employees:view");
     expect(result).toEqual({ allow: false, scope: "none", reason: "FORBIDDEN" });
+  });
+
+  it("fails closed on a completely unknown key that appears in no module catalog", async () => {
+    const resolver = makeResolver(new Map(), ["hr"]);
+    const result = await authorize(resolver, makeCtx({ isOrgOwner: true }), "nonexistent:ghost:action");
+    expect(result.allow).toBe(false);
+    expect(result.reason).toBe("NO_MODULE");
+  });
+
+  it("fails closed on a malformed key with no module segment", async () => {
+    const resolver = makeResolver(new Map(), ["hr"]);
+    const result = await authorize(resolver, makeCtx({ isOrgOwner: true }), "bare-key");
+    expect(result.allow).toBe(false);
   });
 
   it("denies with FORBIDDEN when the resolved scope is none", async () => {
@@ -68,24 +125,54 @@ describe("authorize", () => {
     expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
   });
 
+  it("reads the canonical plan-lock input when an org has no module row", async () => {
+    const onPlanLockedRead = jest.fn();
+    const result = await authorize(
+      makeResolver(new Map([ ["hr:employees:view", "all"] ]), [], {
+        planLockedModules: ["hr"],
+        onPlanLockedRead,
+        useModuleState: true,
+      }),
+      makeCtx(),
+      "hr:employees:view",
+    );
+
+    expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
+    expect(onPlanLockedRead).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the canonical user-deny input before the org module state", async () => {
+    const result = await authorize(
+      makeResolver(new Map([["hr:employees:view", "all"]]), ["hr"], {
+        deniedModules: new Set(["hr"]),
+      }),
+      makeCtx(),
+      "hr:employees:view",
+    );
+
+    expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
+  });
+
   it("keeps employee self-service available without the HR module", async () => {
     const resolver = makeResolver(new Map([["self:leaves", "own"]]), ["build"]);
     const result = await authorize(resolver, makeCtx(), "self:leaves");
-    expect(result).toEqual({
-      allow: true,
-      scope: "own",
-      permissions: ["self:leaves"],
-    });
+    expect(result).toEqual({ allow: true, scope: "own" });
   });
 
-  it("BOLA: passes ctx.orgId to resolveUserPermissions (not from request params)", async () => {
+  it("BOLA: passes ctx.orgId to the capability seam (not from request params)", async () => {
     const capturedOrgIds: string[] = [];
     const resolver: AccessResolver = {
-      resolveUserPermissions: async (orgId) => {
-        capturedOrgIds.push(orgId);
-        return new Map([["hr:employees:view", "all" as DataScope]]);
+      scopeFor: async (ctx) => {
+        capturedOrgIds.push(ctx.orgId);
+        return "all";
       },
-      isModuleEnabled: async () => true,
+      getModuleState: async () => true,
+      buildModuleAvailabilityResolver: (getModuleMap) =>
+        moduleAvailabilityResolver({
+          isCoreModule: isCoreModuleKey,
+          getModuleMap,
+          getPlanLockedModules: async () => [],
+        }),
     };
     await authorize(resolver, makeCtx({ orgId: "org-legitimate" }), "hr:employees:view");
     expect(capturedOrgIds).toEqual(["org-legitimate"]);
@@ -149,15 +236,11 @@ describe("authorize", () => {
   it("does not entitlement-gate a namespace no organization can enable", async () => {
     const resolver = makeResolver(new Map([["directory:people:view", "all"]]), []);
     const result = await authorize(resolver, makeCtx(), "directory:people:view");
-    expect(result).toEqual({
-      allow: true,
-      scope: "all",
-      permissions: ["directory:people:view"],
-    });
+    expect(result).toEqual({ allow: true, scope: "all" });
   });
 
   it("denies with FORBIDDEN when tokenScopes does not include the permission key, even for an org owner", async () => {
-    const resolver = makeResolver(new Map(), []);
+    const resolver = makeResolver(new Map(), ["hr"]);
     const result = await authorize(
       resolver,
       makeCtx({ isOrgOwner: true, tokenScopes: ["crm:leads:view"] }),
@@ -169,10 +252,10 @@ describe("authorize", () => {
   it("tokenScopes null bypasses the token scope gate and behaves identically to an unrestricted session", async () => {
     const resolver = makeResolver(new Map([["hr:employees:view", "team"]]), ["hr"]);
     const result = await authorize(resolver, makeCtx({ tokenScopes: null }), "hr:employees:view");
-    expect(result).toEqual({ allow: true, scope: "team", permissions: ["hr:employees:view"] });
+    expect(result).toEqual({ allow: true, scope: "team" });
   });
 
-  it("intersects the returned permissions array with tokenScopes when non-null", async () => {
+  it("still grants access to a key within the tokenScopes budget", async () => {
     const resolver = makeResolver(
       new Map<string, DataScope>([
         ["hr:employees:view", "team"],
@@ -187,10 +270,7 @@ describe("authorize", () => {
       "hr:employees:view",
     );
     expect(result.allow).toBe(true);
-    expect(result.permissions).toEqual(
-      expect.arrayContaining(["hr:employees:view", "hr:analytics:read"]),
-    );
-    expect(result.permissions).not.toContain("hr:payroll:view");
+    expect(result).not.toHaveProperty("permissions");
   });
 });
 

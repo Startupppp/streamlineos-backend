@@ -170,7 +170,7 @@ export class HrExportJobsService {
     }
     return {
       job: this.toView(row),
-      file: await this.storage.getFileStream(row.fileKey),
+      file: await this.storage.getFileStream(orgId, row.fileKey),
     };
   }
 
@@ -222,7 +222,6 @@ export class HrExportJobsService {
       userId: job.requestedBy,
       orgId: job.orgId,
       role: member.role,
-      permissions: [],
       isOrgOwner: member.isOwner,
       sessionId: "hr-export-worker",
       tokenScopes: null,

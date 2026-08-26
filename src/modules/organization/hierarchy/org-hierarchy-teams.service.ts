@@ -12,7 +12,6 @@ import { organizationMembers, orgUnits } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
   CreateOrgTeamInput,
@@ -228,7 +227,7 @@ export class OrgHierarchyTeamsService {
 
     if (!row) throw new Error("Failed to create team");
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "TEAM"));
+    await this.cache.invalidateForOrg(orgId, "org:units:TEAM");
     await this.audit.logCritical({
       action: "org.team.created",
       userId,
@@ -291,7 +290,7 @@ export class OrgHierarchyTeamsService {
 
     if (!row) throw new NotFoundException("Team not found");
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "TEAM"));
+    await this.cache.invalidateForOrg(orgId, "org:units:TEAM");
     await this.audit.logCritical({
       action: "org.team.updated",
       userId,
@@ -318,7 +317,7 @@ export class OrgHierarchyTeamsService {
         ),
       );
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "TEAM"));
+    await this.cache.invalidateForOrg(orgId, "org:units:TEAM");
     await this.audit.logCritical({
       action: "org.team.deleted",
       userId,

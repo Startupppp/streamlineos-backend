@@ -17,6 +17,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { NotificationsService } from "../../notifications/notifications.service";
@@ -236,7 +237,7 @@ export class ProjectsTicketsCreateService {
 
     void this.cache
       .del(`projects:analytics:${u.orgId}:${projectId}`)
-      .catch(() => undefined);
+      .catch(logSideEffectFailure("analytics cache eviction", { orgId: u.orgId, projectId }));
 
     return ticket;
   }

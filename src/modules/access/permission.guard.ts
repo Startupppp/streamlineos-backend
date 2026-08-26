@@ -31,7 +31,9 @@ export class PermissionGuard implements CanActivate {
       throw new ForbiddenException("Permission denied");
     }
 
-    const req = context.switchToHttp().getRequest<Request & { user?: CurrentUserContext }>();
+    const req = context
+      .switchToHttp()
+      .getRequest<Request & { user?: CurrentUserContext; rbacScope?: AuthResult["scope"] }>();
 
     let result: AuthResult;
     try {
@@ -52,11 +54,6 @@ export class PermissionGuard implements CanActivate {
       // an access-denied dead end instead of an offer to enable the module.
       if (result.reason === "NO_MODULE") throw new ModuleDisabledException(moduleOf(permissionKey));
       throw new ForbiddenException("Permission denied");
-    }
-
-    // Services read u.permissions for ad-hoc checks — hydrate from the DB-resolved set since the JWT no longer carries permission claims.
-    if (req.user && result.permissions) {
-      req.user.permissions = result.permissions;
     }
 
     req.rbacScope = result.scope;

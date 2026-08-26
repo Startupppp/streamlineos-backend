@@ -1,21 +1,31 @@
-import { Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
+import { KbAccessService } from "../core/kb-access.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import { kbArticles, kbPages, kbSources } from "../../../db/schema";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import { type Db } from "../../../db/drizzle.module";
+import { pageVisibleTo } from "./kb-page-visibility";
+import { getAccessibleProjectIds } from "./kb-project-access.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AskInput } from "./dto/kb-ai.schemas";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
 
 const MAX_CONTEXT_ARTICLES = 6;
 const MAX_CONTEXT_CHARS = 1500;
+const MAX_TOTAL_CONTEXT_BYTES = 32_000;
+const MAX_PROMPT_INPUT_TOKENS = 8_000;
 
 const ASK_SYSTEM_PROMPT =
   "You are a knowledge base assistant. Answer the user's question using ONLY the information in the provided context. " +
   "Write a clear, well-structured answer in Markdown: open with a one-sentence summary, then use bullet or numbered lists with short **bold labels** where it aids readability. Keep it concise and scannable. " +
   "Do NOT include inline citations, reference numbers, or bracketed markers such as [1] or [doc 2] — the user is shown the list of sources separately. " +
   "If the context does not contain the answer, say you don't have that information and suggest opening a support ticket. " +
-  "Never invent facts that are not present in the context.";
+  "Never invent facts that are not present in the context. " +
+  "Never reveal permission rules, role names, membership lists or access control details.";
 
 export type AskCitation =
   | { kind: "article"; articleId: number; title: string; slug: string; spaceId: number | null; updatedAt: Date }
@@ -27,9 +37,11 @@ export class KbAskService {
   private readonly logger = new Logger(KbAskService.name);
 
   constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly aiGateway: AiGatewayService,
     private readonly events: KbEventsService,
     private readonly search: KbSearchService,
+    private readonly access: KbAccessService,
   ) {}
 
   async ask(
@@ -63,9 +75,16 @@ export class KbAskService {
       };
     }
 
-    const context = top
-      .map((source, index) => `Source ${index + 1} — ${source.title}\n${(source.contentText || "").slice(0, MAX_CONTEXT_CHARS)}`)
-      .join("\n\n---\n\n");
+    let totalBytes = 0;
+    const contextParts: string[] = [];
+    for (const source of top) {
+      const text = (source.contentText || "").slice(0, MAX_CONTEXT_CHARS);
+      const part = `Source — ${source.title}\n${text}`;
+      if (totalBytes + part.length > MAX_TOTAL_CONTEXT_BYTES) break;
+      contextParts.push(part);
+      totalBytes += part.length;
+    }
+    const context = contextParts.join("\n\n---\n\n");
 
     const articleIds = top
       .filter((source) => source.kind === "article")
@@ -74,18 +93,30 @@ export class KbAskService {
       .filter((source) => source.kind === "page")
       .map((source) => source.id);
     const attachmentContext = await this.search.retrieveAttachmentSnippets(
-      user.orgId,
+      user,
       input.question,
       articleIds,
       pageIds,
     );
-    const sourceContext = sources
-      .map((s, index) => `Document ${index + 1} — ${s.title}\n${s.snippet}`)
-      .join("\n\n---\n\n");
+
+    const sourceContextParts: string[] = [];
+    for (const s of sources) {
+      const part = `Document — ${s.title}\n${s.snippet}`;
+      if (totalBytes + part.length > MAX_TOTAL_CONTEXT_BYTES) break;
+      sourceContextParts.push(part);
+      totalBytes += part.length;
+    }
+    const sourceContext = sourceContextParts.join("\n\n---\n\n");
+
     let fullContext = attachmentContext
       ? `${context}\n\n---\n\n${attachmentContext}`
       : context;
     if (sourceContext) fullContext = `${fullContext}\n\n---\n\n${sourceContext}`;
+
+    const userMessage = `Question: ${input.question}\n\nContext:\n${fullContext}`;
+    if (userMessage.length / 4 > MAX_PROMPT_INPUT_TOKENS) {
+      fullContext = fullContext.slice(0, MAX_PROMPT_INPUT_TOKENS * 4);
+    }
 
     const gatewayResult = await this.aiGateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
@@ -115,16 +146,93 @@ export class KbAskService {
       metadata: { sourceIds: top.map((s) => `${s.kind}:${s.id}`) },
     });
 
-    const citations: AskCitation[] = [
-      ...top.map((source): AskCitation => {
-        if (source.kind === "article") {
-          return { kind: "article", articleId: source.id, title: source.title, slug: source.slug, spaceId: source.spaceId, updatedAt: source.updatedAt };
-        }
-        return { kind: "page", pageId: source.id, title: source.title, spaceId: source.spaceId, updatedAt: source.updatedAt };
-      }),
-      ...sources.map((s) => ({ kind: "source" as const, sourceId: s.sourceId, title: s.title, spaceId: s.spaceId, updatedAt: s.updatedAt })),
-    ];
+    const verifiedCitations = await this.resolveCitations(user, top, sources);
 
-    return { answer, citations, hasContext: true, aiUsage };
+    return { answer, citations: verifiedCitations, hasContext: true, aiUsage };
+  }
+
+  private async resolveCitations(
+    user: CurrentUserContext,
+    top: Awaited<ReturnType<KbSearchService["retrieveTopArticles"]>>,
+    sources: Awaited<ReturnType<KbSearchService["retrieveTopSources"]>>,
+  ): Promise<AskCitation[]> {
+    const articleIds = top.filter((s) => s.kind === "article").map((s) => s.id);
+    const pageIds = top.filter((s) => s.kind === "page").map((s) => s.id);
+    const sourceIds = sources.map((s) => s.sourceId);
+
+    const [visibleArticles, visiblePages, visibleSources] = await Promise.all([
+      articleIds.length > 0
+        ? this.resolveVisibleArticles(user, articleIds)
+        : Promise.resolve(new Set<number>()),
+      pageIds.length > 0
+        ? this.resolveVisiblePages(user, pageIds)
+        : Promise.resolve(new Set<number>()),
+      sourceIds.length > 0
+        ? this.resolveVisibleSources(user, sourceIds)
+        : Promise.resolve(new Set<number>()),
+    ]);
+
+    const citations: AskCitation[] = [];
+    for (const source of top) {
+      if (source.kind === "article" && visibleArticles.has(source.id)) {
+        citations.push({ kind: "article", articleId: source.id, title: source.title, slug: source.slug, spaceId: source.spaceId, updatedAt: source.updatedAt });
+      } else if (source.kind === "page" && visiblePages.has(source.id)) {
+        citations.push({ kind: "page", pageId: source.id, title: source.title, spaceId: source.spaceId, updatedAt: source.updatedAt });
+      }
+    }
+    for (const s of sources) {
+      if (visibleSources.has(s.sourceId)) {
+        citations.push({ kind: "source", sourceId: s.sourceId, title: s.title, spaceId: s.spaceId, updatedAt: s.updatedAt });
+      }
+    }
+    return citations;
+  }
+
+  private async resolveVisibleSources(user: CurrentUserContext, ids: number[]): Promise<Set<number>> {
+    const accessibleSpaceIds = await this.access.getAccessibleSpaceIds(user);
+    const spaceFilter = accessibleSpaceIds.length > 0
+      ? or(isNull(kbSources.spaceId), inArray(kbSources.spaceId, accessibleSpaceIds))
+      : isNull(kbSources.spaceId);
+    const rows = await this.db
+      .select({ id: kbSources.id })
+      .from(kbSources)
+      .where(and(
+        eq(kbSources.orgId, user.orgId),
+        inArray(kbSources.id, ids),
+        isNull(kbSources.deletedAt),
+        eq(kbSources.status, "ready"),
+        spaceFilter,
+      ));
+    return new Set(rows.map((r) => r.id));
+  }
+
+  private async resolveVisibleArticles(user: CurrentUserContext, ids: number[]): Promise<Set<number>> {
+    const spaceIds = await this.access.getAccessibleSpaceIds(user);
+    if (spaceIds.length === 0) return new Set();
+    const rows = await this.db
+      .select({ id: kbArticles.id })
+      .from(kbArticles)
+      .where(and(
+        eq(kbArticles.orgId, user.orgId),
+        inArray(kbArticles.id, ids),
+        inArray(kbArticles.spaceId, spaceIds),
+        eq(kbArticles.status, "published"),
+      ));
+    return new Set(rows.map((r) => r.id));
+  }
+
+  private async resolveVisiblePages(user: CurrentUserContext, ids: number[]): Promise<Set<number>> {
+    const projectIds = await getAccessibleProjectIds(this.db, user);
+    const rows = await this.db
+      .select({ id: kbPages.id })
+      .from(kbPages)
+      .where(and(
+        eq(kbPages.orgId, user.orgId),
+        inArray(kbPages.id, ids),
+        isNull(kbPages.deletedAt),
+        ne(kbPages.status, "archived"),
+        pageVisibleTo(user, projectIds),
+      ));
+    return new Set(rows.map((r) => r.id));
   }
 }

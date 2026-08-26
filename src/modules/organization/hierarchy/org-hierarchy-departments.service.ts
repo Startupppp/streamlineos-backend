@@ -12,7 +12,6 @@ import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
   CreateOrgDepartmentInput,
@@ -166,7 +165,7 @@ export class OrgHierarchyDepartmentsService {
 
     if (!row) throw new Error("Failed to create department");
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "DEPARTMENT"));
+    await this.cache.invalidateForOrg(orgId, "org:units:DEPARTMENT");
     await this.audit.logCritical({ action: "org.department.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
     return toOrgDepartment(row);
@@ -202,7 +201,7 @@ export class OrgHierarchyDepartmentsService {
 
     if (!row) throw new NotFoundException("Department not found");
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "DEPARTMENT"));
+    await this.cache.invalidateForOrg(orgId, "org:units:DEPARTMENT");
     await this.audit.logCritical({ action: "org.department.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
     return toOrgDepartment(row);
@@ -217,7 +216,7 @@ export class OrgHierarchyDepartmentsService {
       .set({ deletedAt: new Date() })
       .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT")));
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "DEPARTMENT"));
+    await this.cache.invalidateForOrg(orgId, "org:units:DEPARTMENT");
     await this.audit.logCritical({ action: "org.department.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
   }
 

@@ -7,6 +7,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { ChatChannelsService } from "../../chat/chat-channels.service";
 import type { ChatMessagesService } from "../../chat/chat-messages.service";
 import type { Db } from "../../../db/drizzle.module";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 const makeApprovalRow = (
   overrides: Record<string, unknown> = {},
@@ -39,12 +40,22 @@ const mockDb = {
 } as unknown as Db;
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
-const mockAccess = { resolveUserPermissions: jest.fn() } as unknown as AccessService;
+const mockAccess = { holds: jest.fn() } as unknown as AccessService;
 const mockChatChannels = { getOrCreateEntityChannel: jest.fn() } as unknown as ChatChannelsService;
 const mockChatMessages = { sendSystemMessage: jest.fn() } as unknown as ChatMessagesService;
 
 beforeEach(() => {
   jest.resetAllMocks();
+});
+
+const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext => ({
+  userId: "user-2",
+  orgId: "org-1",
+  role: "EMPLOYEE",
+  isOrgOwner: false,
+  sessionId: "session-1",
+  tokenScopes: null,
+  ...overrides,
 });
 
 describe("ApprovalsService.createApproval", () => {
@@ -80,10 +91,10 @@ describe("ApprovalsService.decideApproval", () => {
     (mockDb as unknown as { query: { projectApprovals: { findFirst: jest.Mock } } }).query.projectApprovals.findFirst.mockResolvedValue(
       makeApprovalRow({ approverId: "approver-1" }),
     );
-    (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map());
+    (mockAccess.holds as jest.Mock).mockResolvedValue(false);
 
     await expect(
-      svc.decideApproval("org-1", "user-2", 1, 1, { decision: "approved" }),
+      svc.decideApproval(makeUser(), 1, 1, { decision: "approved" }),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -97,9 +108,7 @@ describe("ApprovalsService.decideApproval", () => {
     );
     const approval = makeApprovalRow({ approverId: "approver-1", status: "pending" });
     (mockDb as unknown as { query: { projectApprovals: { findFirst: jest.Mock } } }).query.projectApprovals.findFirst.mockResolvedValue(approval);
-    (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(
-      new Map([["build:approvals:manage", "all"]]),
-    );
+    (mockAccess.holds as jest.Mock).mockResolvedValue(true);
     const updateChain = {
       set: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
@@ -108,7 +117,7 @@ describe("ApprovalsService.decideApproval", () => {
     (mockDb as unknown as { update: jest.Mock }).update = jest.fn().mockReturnValue(updateChain);
 
     await expect(
-      svc.decideApproval("org-1", "user-2", 1, 1, { decision: "approved" }),
+      svc.decideApproval(makeUser(), 1, 1, { decision: "approved" }),
     ).resolves.toBeDefined();
   });
 
@@ -125,7 +134,7 @@ describe("ApprovalsService.decideApproval", () => {
     );
 
     await expect(
-      svc.decideApproval("org-1", "user-2", 1, 1, { decision: "rejected" }),
+      svc.decideApproval(makeUser(), 1, 1, { decision: "rejected" }),
     ).rejects.toThrow(ConflictException);
   });
 
@@ -142,7 +151,7 @@ describe("ApprovalsService.decideApproval", () => {
     );
 
     await expect(
-      svc.decideApproval("org-1", "user-2", 1, 1, { decision: "approved" }),
+      svc.decideApproval(makeUser(), 1, 1, { decision: "approved" }),
     ).rejects.toThrow(ConflictException);
   });
 
@@ -157,7 +166,7 @@ describe("ApprovalsService.decideApproval", () => {
     (mockDb as unknown as { query: { projectApprovals: { findFirst: jest.Mock } } }).query.projectApprovals.findFirst.mockResolvedValue(undefined);
 
     await expect(
-      svc.decideApproval("org-2", "user-2", 1, 99, { decision: "approved" }),
+      svc.decideApproval(makeUser({ orgId: "org-2" }), 1, 99, { decision: "approved" }),
     ).rejects.toThrow(NotFoundException);
   });
 });

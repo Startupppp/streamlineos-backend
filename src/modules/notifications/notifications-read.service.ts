@@ -8,10 +8,12 @@ import {
   isNotNull,
   inArray,
   lt,
+  lte,
+  gt,
   ilike,
   or,
 } from "drizzle-orm";
-import { notifications, tickets, projects, users } from "../../db/schema";
+import { notifications, notificationReadWatermarks, tickets, projects, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -105,11 +107,26 @@ export class NotificationsReadService {
     );
   }
 
+  private async fetchLastReadId(orgId: string, userId: string): Promise<number> {
+    const [wm] = await this.db
+      .select({ lastReadId: notificationReadWatermarks.lastReadNotificationId })
+      .from(notificationReadWatermarks)
+      .where(
+        and(
+          eq(notificationReadWatermarks.orgId, orgId),
+          eq(notificationReadWatermarks.userId, userId),
+        ),
+      );
+    return wm?.lastReadId ?? 0;
+  }
+
   private async queryNotifications(
     orgId: string,
     userId: string,
     filters: ListInput & { section: string },
   ) {
+    const lastReadId = await this.fetchLastReadId(orgId, userId);
+
     const conditions = [
       eq(notifications.orgId, orgId),
       eq(notifications.userId, userId),
@@ -120,10 +137,19 @@ export class NotificationsReadService {
       case "UNREAD":
         conditions.push(isNull(notifications.archivedAt));
         conditions.push(eq(notifications.isRead, false));
+        if (lastReadId > 0) conditions.push(gt(notifications.id, lastReadId));
         break;
       case "READ":
         conditions.push(isNull(notifications.archivedAt));
-        conditions.push(eq(notifications.isRead, true));
+        if (lastReadId > 0) {
+          const readByFlagOrWatermark = or(
+            eq(notifications.isRead, true),
+            lte(notifications.id, lastReadId),
+          );
+          if (readByFlagOrWatermark) conditions.push(readByFlagOrWatermark);
+        } else {
+          conditions.push(eq(notifications.isRead, true));
+        }
         break;
       case "ARCHIVED":
         conditions.push(isNotNull(notifications.archivedAt));
@@ -180,7 +206,13 @@ export class NotificationsReadService {
       .orderBy(desc(notifications.id))
       .limit(filters.limit);
 
-    return this.attachTicketContext(orgId, rows);
+    return this.attachTicketContext(
+      orgId,
+      rows.map((row) => ({
+        ...row,
+        isRead: row.isRead || (lastReadId > 0 && row.id <= lastReadId),
+      })),
+    );
   }
 
   private async attachTicketContext(
@@ -261,18 +293,19 @@ export class NotificationsReadService {
   }
 
   private async queryUnreadCount(orgId: string, userId: string) {
+    const lastReadId = await this.fetchLastReadId(orgId, userId);
+    const conditions = [
+      eq(notifications.orgId, orgId),
+      eq(notifications.userId, userId),
+      eq(notifications.isRead, false),
+      isNull(notifications.deletedAt),
+      isNull(notifications.archivedAt),
+    ];
+    if (lastReadId > 0) conditions.push(gt(notifications.id, lastReadId));
     const [result] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(notifications)
-      .where(
-        and(
-          eq(notifications.orgId, orgId),
-          eq(notifications.userId, userId),
-          eq(notifications.isRead, false),
-          isNull(notifications.deletedAt),
-          isNull(notifications.archivedAt),
-        ),
-      );
+      .where(and(...conditions));
     return { count: Number(result?.count ?? 0) };
   }
 }

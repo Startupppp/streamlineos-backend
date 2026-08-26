@@ -33,6 +33,8 @@ describe("Calendar auth (e2e)", () => {
     ["post", "/calendar/events/1/rsvp"],
     ["get", "/calendar/events/1/rsvp"],
     ["get", "/calendar/export"],
+    ["get", "/calendar/sources"],
+    ["put", "/calendar/sources/hr-leaves"],
   ];
 
   it.each(routes)("401 on %s %s without a token", async (method, path) => {

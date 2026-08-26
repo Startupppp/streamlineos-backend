@@ -1,4 +1,5 @@
 export * from "./common";
+export * from "./calendar";
 export * from "./build";
 export * from "./timesheets";
 export * from "./hr";
@@ -8,6 +9,7 @@ export * from "./blog";
 export * from "./accounting";
 export * from "./support";
 export * from "./kb";
+export * from "./mail";
 export * from "./automation";
 export * from "./inventory";
 export * from "./billing";

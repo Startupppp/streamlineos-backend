@@ -2,13 +2,21 @@ import { ConflictException } from "@nestjs/common";
 import { HrPeopleService } from "./hr-people.service";
 
 function selectChain(result: unknown[]) {
-  return {
-    from: jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        limit: jest.fn().mockResolvedValue(result),
-      }),
-    }),
+  const chain: {
+    from: jest.Mock;
+    innerJoin: jest.Mock;
+    where: jest.Mock;
+    limit: jest.Mock;
+  } = {
+    from: jest.fn(),
+    innerJoin: jest.fn(),
+    where: jest.fn(),
+    limit: jest.fn().mockResolvedValue(result),
   };
+  chain.from.mockReturnValue(chain);
+  chain.innerJoin.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
+  return chain;
 }
 
 function insertChain(returning: unknown[]) {
@@ -29,6 +37,29 @@ function insertChainWithCatch(returning: unknown[]) {
   };
 }
 
+function updateChain() {
+  return {
+    set: jest.fn().mockReturnValue({
+      where: jest.fn().mockResolvedValue([]),
+    }),
+  };
+}
+
+const PERSON_VIEW = {
+  id: 5,
+  orgId: "org-1",
+  userId: null,
+  organizationPersonId: "op-existing",
+  firstName: "Ada",
+  lastName: "Lovelace",
+  workEmail: "ada@example.com",
+  phone: null,
+  gender: null,
+  avatarUrl: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
 describe("HrPeopleService.create", () => {
   const input = {
     firstName: "Ada",
@@ -41,18 +72,13 @@ describe("HrPeopleService.create", () => {
     const db = {
       select: jest.fn()
         .mockReturnValueOnce(selectChain([]))
-        .mockReturnValueOnce(selectChain([{ organizationPersonId: "op-existing" }])),
+        .mockReturnValueOnce(selectChain([{ organizationPersonId: "op-existing" }]))
+        .mockReturnValueOnce(selectChain([{ ...PERSON_VIEW, id: 5 }])),
       insert: jest.fn().mockImplementation(() => {
         insertCall += 1;
-        return insertChainWithCatch([{
-          id: 5,
-          orgId: "org-1",
-          firstName: "Ada",
-          lastName: "Lovelace",
-          workEmail: "ada@example.com",
-          organizationPersonId: "op-existing",
-        }]);
+        return insertChainWithCatch([{ id: 5 }]);
       }),
+      update: jest.fn().mockReturnValue(updateChain()),
     };
     const audit = { log: jest.fn().mockResolvedValue(undefined) };
     const service = new HrPeopleService(db as never, audit as never);
@@ -68,20 +94,15 @@ describe("HrPeopleService.create", () => {
     const db = {
       select: jest.fn()
         .mockReturnValueOnce(selectChain([]))
-        .mockReturnValueOnce(selectChain([])),
+        .mockReturnValueOnce(selectChain([]))
+        .mockReturnValueOnce(selectChain([{ ...PERSON_VIEW, id: 6, organizationPersonId: "op-new" }])),
       insert: jest.fn().mockImplementation(() => {
         insertCall += 1;
         if (insertCall === 1)
           return insertChain([{ organizationPersonId: "op-new" }]);
-        return insertChainWithCatch([{
-          id: 6,
-          orgId: "org-1",
-          firstName: "Ada",
-          lastName: "Lovelace",
-          workEmail: "ada@example.com",
-          organizationPersonId: "op-new",
-        }]);
+        return insertChainWithCatch([{ id: 6 }]);
       }),
+      update: jest.fn().mockReturnValue(updateChain()),
     };
     const audit = { log: jest.fn().mockResolvedValue(undefined) };
     const service = new HrPeopleService(db as never, audit as never);
@@ -107,6 +128,7 @@ describe("HrPeopleService.create", () => {
           }),
         }),
       }),
+      update: jest.fn().mockReturnValue(updateChain()),
     };
     const audit = { log: jest.fn() };
     const service = new HrPeopleService(db as never, audit as never);

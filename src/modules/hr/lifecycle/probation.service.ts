@@ -387,6 +387,10 @@ export class ProbationService {
     return { orgId, employmentId, personId, probationEndDate: endDate };
   }
 
+  async isOnProbationDuring(orgId: string, userId: string, leaveStartDate: string): Promise<boolean> {
+    return this.reader.isOnProbationDuring(orgId, userId, leaveStartDate);
+  }
+
   async sweepDue(orgId: string) {
     const due = await this.reader.listDueForSweep(orgId);
 

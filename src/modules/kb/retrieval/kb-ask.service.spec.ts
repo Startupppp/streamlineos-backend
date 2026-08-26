@@ -61,7 +61,6 @@ const user = {
   userId: "user1",
   orgId: "org1",
   role: "member",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,

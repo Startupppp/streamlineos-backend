@@ -49,7 +49,7 @@ export class AuditService {
 
   private async write(entry: AuditEntry): Promise<void> {
     const values = this.buildValues(entry);
-    const orgId = entry.orgId ?? null;
+    const orgId = values.orgId;
 
     if (orgId && !getTenantContext()) {
       await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
@@ -62,10 +62,11 @@ export class AuditService {
   }
 
   private buildValues(entry: AuditEntry) {
+    const orgId = entry.orgId ?? null;
     return {
       action: entry.action,
       userId: entry.userId,
-      orgId: entry.orgId ?? null,
+      orgId,
       targetId: entry.targetId ?? null,
       targetType: entry.targetType ?? null,
       actorUserId: entry.actorUserId ?? null,
@@ -73,6 +74,7 @@ export class AuditService {
       resourceId: entry.resourceId ?? null,
       metadata: this.buildMetadata(entry),
       ipAddress: entry.ipAddress ?? null,
+      isPlatformEvent: orgId === null,
     };
   }
 

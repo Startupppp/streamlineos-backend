@@ -1,4 +1,5 @@
 import {
+  BeforeApplicationShutdown,
   Controller,
   Get,
   Headers,
@@ -24,6 +25,11 @@ import { drainBacklog } from "../common/workflow/workflow-store";
  */
 const DRAIN_STALL_SECONDS = 300;
 
+const SETTLING_DELAY_MS = Math.max(
+  0,
+  parseInt(process.env["SHUTDOWN_SETTLING_DELAY_MS"] ?? "5000", 10),
+);
+
 interface WorkflowHealth {
   status: "ok" | "stalled";
   due: number;
@@ -41,11 +47,18 @@ interface PoolHealth {
 
 @Public()
 @Controller("health")
-export class HealthController {
+export class HealthController implements BeforeApplicationShutdown {
+  private isShuttingDown = false;
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(DB_POOL_CONFIG) private readonly poolConfig: ResolvedPoolConfig,
   ) {}
+
+  async beforeApplicationShutdown(_signal?: string): Promise<void> {
+    this.isShuttingDown = true;
+    await new Promise<void>((resolve) => setTimeout(resolve, SETTLING_DELAY_MS));
+  }
 
   @Get()
   health(): { status: "ok" } {
@@ -54,6 +67,7 @@ export class HealthController {
 
   @Get("ready")
   async ready(): Promise<{ status: "ready" }> {
+    if (this.isShuttingDown) throw new ServiceUnavailableException("Shutting down");
     try {
       await this.db.execute(sql`select 1`);
       return { status: "ready" };

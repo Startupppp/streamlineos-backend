@@ -10,6 +10,7 @@ import { and, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import {
   leaveBalances,
   leaveBlackoutDates,
+  leavePolicies,
   leaveRequests,
   leaveTypes,
   users,
@@ -25,9 +26,11 @@ import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
 import type { CreateLeaveInput } from "./dto/leaves.schemas";
 import { LeaveApproverService } from "./leave-approver.service";
+import { ProbationService } from "../lifecycle/probation.service";
 
 interface LeaveRow {
   userId: string;
@@ -47,10 +50,11 @@ export class LeavesWriteService {
     private readonly cache: CacheService,
     private readonly access: AccessService,
     private readonly approvers: LeaveApproverService,
+    private readonly probation: ProbationService,
   ) {}
 
   private async invalidateLeaveAnalytics(orgId: string): Promise<void> {
-    await this.cache.invalidateNamespace(`hr:leave-analytics:${orgId}`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.leaveAnalyticsNamespace(orgId));
   }
 
   async create(currentUser: CurrentUserContext, body: CreateLeaveInput) {
@@ -72,6 +76,31 @@ export class LeavesWriteService {
     const endStr = formatDateOnly(new Date(body.endDate));
 
     const teamConflicts = await this.detectTeamConflicts(currentUser.orgId, currentUser.userId, startStr, endStr);
+
+    const [activePolicy] = await this.db
+      .select({ probationRestricted: leavePolicies.probationRestricted })
+      .from(leavePolicies)
+      .where(
+        and(
+          eq(leavePolicies.orgId, currentUser.orgId),
+          eq(leavePolicies.leaveTypeId, body.leaveTypeId),
+          eq(leavePolicies.isActive, true),
+        ),
+      )
+      .limit(1);
+
+    if (activePolicy?.probationRestricted) {
+      const onProbation = await this.probation.isOnProbationDuring(
+        currentUser.orgId,
+        currentUser.userId,
+        startStr,
+      );
+      if (onProbation) {
+        throw new BadRequestException(
+          "This leave type is not available during your probation period. Contact HR if you have questions.",
+        );
+      }
+    }
 
     const { leaveRequest, leaveTypeName } = await this.db.transaction(async (tx) => {
       await tx.execute(

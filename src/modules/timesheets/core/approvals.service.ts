@@ -8,8 +8,8 @@ import {
 } from "@nestjs/common";
 import {
   and,
-  count,
   desc,
+  sql,
   gt,
   eq,
   gte,
@@ -142,43 +142,52 @@ export class ApprovalsService {
       conditions.push(lte(timesheetPeriods.periodEnd, query.endDate));
     }
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
-        .select({
-          id: timesheetPeriods.id,
-          orgId: timesheetPeriods.orgId,
-          userId: timesheetPeriods.userId,
-          periodStart: timesheetPeriods.periodStart,
-          periodEnd: timesheetPeriods.periodEnd,
-          status: timesheetPeriods.status,
-          totalHours: timesheetPeriods.totalHours,
-          billableHours: timesheetPeriods.billableHours,
-          nonBillableHours: timesheetPeriods.nonBillableHours,
-          submittedAt: timesheetPeriods.submittedAt,
-          approvedAt: timesheetPeriods.approvedAt,
-          rejectedAt: timesheetPeriods.rejectedAt,
-          lockedAt: timesheetPeriods.lockedAt,
-          currentApproverId: timesheetPeriods.currentApproverId,
-          approvedBy: timesheetPeriods.approvedBy,
-          rejectionReason: timesheetPeriods.rejectionReason,
-          createdAt: timesheetPeriods.createdAt,
-          updatedAt: timesheetPeriods.updatedAt,
-          userEmail: users.email,
-          userName: users.name,
-        })
-        .from(timesheetPeriods)
-        .leftJoin(users, eq(timesheetPeriods.userId, users.id))
-        .where(and(...conditions))
-        .orderBy(desc(timesheetPeriods.submittedAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(timesheetPeriods)
-        .where(and(...conditions)),
-    ]);
+    const rows = await this.db
+      .select({
+        id: timesheetPeriods.id,
+        orgId: timesheetPeriods.orgId,
+        userId: timesheetPeriods.userId,
+        periodStart: timesheetPeriods.periodStart,
+        periodEnd: timesheetPeriods.periodEnd,
+        status: timesheetPeriods.status,
+        totalHours: timesheetPeriods.totalHours,
+        billableHours: timesheetPeriods.billableHours,
+        nonBillableHours: timesheetPeriods.nonBillableHours,
+        submittedAt: timesheetPeriods.submittedAt,
+        approvedAt: timesheetPeriods.approvedAt,
+        rejectedAt: timesheetPeriods.rejectedAt,
+        lockedAt: timesheetPeriods.lockedAt,
+        currentApproverId: timesheetPeriods.currentApproverId,
+        approvedBy: timesheetPeriods.approvedBy,
+        rejectionReason: timesheetPeriods.rejectionReason,
+        createdAt: timesheetPeriods.createdAt,
+        updatedAt: timesheetPeriods.updatedAt,
+        userEmail: users.email,
+        userName: users.name,
+        windowTotal: sql<string>`count(*) OVER ()`,
+      })
+      .from(timesheetPeriods)
+      .leftJoin(users, eq(timesheetPeriods.userId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(timesheetPeriods.submittedAt))
+      .limit(limit)
+      .offset(offset);
 
-    const data = rows.map((r) => ({
+    const firstRow = rows[0];
+    let paginationTotal: number;
+    if (firstRow) {
+      paginationTotal = Number(firstRow.windowTotal);
+    } else if (offset === 0) {
+      paginationTotal = 0;
+    } else {
+      const fallback = await this.db
+        .select({ n: sql<string>`count(*)` })
+        .from(timesheetPeriods)
+        .where(and(...conditions));
+      paginationTotal = Number(fallback[0]?.n ?? 0);
+    }
+
+    const data = rows.map(({ windowTotal: _w, ...r }) => ({
       ...r,
       user: {
         id: r.userId,
@@ -192,7 +201,7 @@ export class ApprovalsService {
       pagination: {
         page: query.page,
         limit,
-        total: totalResult[0]?.total ?? 0,
+        total: paginationTotal,
       },
     };
   }
@@ -486,8 +495,14 @@ export class ApprovalsService {
       try {
         await this.assertCanActOnPeriod(u, p);
         periods.push(p);
-      } catch {
-        // skip periods this actor is not allowed to act on
+      } catch (err) {
+        if (!(err instanceof ForbiddenException)) {
+          logger.warn("bulkReject: assertCanActOnPeriod failed unexpectedly", {
+            orgId: u.orgId,
+            periodId: p.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
     }
 

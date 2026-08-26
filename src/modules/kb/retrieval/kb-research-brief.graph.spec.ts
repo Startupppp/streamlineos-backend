@@ -58,7 +58,6 @@ const userCtx: CurrentUserContext = {
   orgId: "org1",
   userId: "user1",
   role: "member",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "",
   tokenScopes: null,

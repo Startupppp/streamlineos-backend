@@ -266,7 +266,7 @@ export class RoleMemberService {
     });
 
     if (input.principalType === "user") {
-      void this.dispatch.emit({
+      await this.dispatch.emit({
         eventKey: "security.role.changed",
         orgId: actor.orgId,
         actorUserId: actor.userId,
@@ -342,7 +342,7 @@ export class RoleMemberService {
     });
 
     if (input.principalType === "user") {
-      void this.dispatch.emit({
+      await this.dispatch.emit({
         eventKey: "security.role.changed",
         orgId: actor.orgId,
         actorUserId: actor.userId,

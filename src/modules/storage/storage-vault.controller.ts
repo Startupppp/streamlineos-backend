@@ -63,7 +63,7 @@ export class StorageVaultController {
     let signedUrl = doc.fileUrl;
     if (doc.s3Key && this.storage.isConfigured()) {
       try {
-        signedUrl = await this.storage.getFileUrl(doc.s3Key, SIGNED_URL_EXPIRY_SECONDS);
+        signedUrl = await this.storage.getFileUrl(u.orgId, doc.s3Key, SIGNED_URL_EXPIRY_SECONDS);
       } catch {
         signedUrl = doc.fileUrl;
       }

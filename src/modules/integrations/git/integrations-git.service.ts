@@ -20,7 +20,6 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 const SYSTEM_ACTOR: Omit<CurrentUserContext, "orgId"> = {
   userId: "system",
   role: "SYSTEM",
-  permissions: [],
   isOrgOwner: true,
   tokenScopes: null,
   sessionId: "git-webhook",

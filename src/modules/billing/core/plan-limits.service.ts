@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
+import { Inject, Injectable, Logger, Optional, ServiceUnavailableException } from "@nestjs/common";
 import { sql, type Column, type SQL } from "drizzle-orm";
 import { businessParties, contactPartyMap, leadPartyMap } from "../../../db/schema/party";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -61,6 +61,18 @@ function liveCustomerCount(partyIdColumn: Column, orgColumn: Column, orgId: stri
       AND ${orgColumn} = ${businessParties.organizationId}
     WHERE ${businessParties.organizationId} = ${orgId}
       AND ${businessParties.deletedAt} IS NULL`;
+}
+
+/** Seats used = accepted members + non-expired pending invitations (shared by enforcement and display so they agree). */
+function seatCount(orgId: string): SQL<number> {
+  return sql<number>`(
+    (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId}) +
+    (SELECT COUNT(*)::int FROM invitations
+     WHERE org_id = ${orgId}
+       AND status = 'PENDING'
+       AND accepted_at IS NULL
+       AND expires_at > NOW())
+  )::int`;
 }
 
 const LIMIT_KEY_LABELS: Record<LimitKey, string> = {
@@ -197,7 +209,7 @@ export class PlanLimitsService {
     try {
       const rows = await this.db.execute(sql`
         SELECT
-          (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId})                                                         AS members,
+          ${seatCount(orgId)}                                                                                                              AS members,
           (SELECT COUNT(*)::int FROM build.projects WHERE org_id = ${orgId})                                                              AS projects,
           (SELECT COUNT(*)::int FROM kb_pages WHERE org_id = ${orgId} AND deleted_at IS NULL)                                             AS "kbPages",
           (SELECT COUNT(*)::int FROM chat_channels WHERE org_id = ${orgId})                                                               AS "chatChannels",
@@ -213,7 +225,10 @@ export class PlanLimitsService {
           (SELECT COUNT(*)::int FROM job_postings WHERE org_id = ${orgId})                                                                AS "hrJobPostings"
       `);
       const row = rows[0];
-      if (!row) return this.zeroCounts();
+      if (!row) {
+        this.logger.error(`Usage count query returned no rows`, { orgId });
+        throw new ServiceUnavailableException("Plan usage could not be determined. The write is refused until usage is verifiable.");
+      }
       return {
         members:        Number(row["members"] ?? 0),
         projects:       Number(row["projects"] ?? 0),
@@ -230,18 +245,11 @@ export class PlanLimitsService {
         hrCandidates:   Number(row["hrCandidates"] ?? 0),
         hrJobPostings:  Number(row["hrJobPostings"] ?? 0),
       };
-    } catch {
-      return this.zeroCounts();
+    } catch (err: unknown) {
+      if (err instanceof ServiceUnavailableException) throw err;
+      this.logger.error(`Usage count query failed`, { orgId, cause: err instanceof Error ? err.message : String(err) });
+      throw new ServiceUnavailableException("Plan usage could not be determined. The write is refused until usage is verifiable.");
     }
-  }
-
-  private zeroCounts(): Record<LimitKey, number> {
-    return {
-      members: 0, projects: 0, kbPages: 0, chatChannels: 0,
-      crmLeads: 0, crmContacts: 0, crmDeals: 0, supportTickets: 0,
-      automations: 0, signEnvelopes: 0, surveys: 0, acctInvoices: 0,
-      hrCandidates: 0, hrJobPostings: 0,
-    };
   }
 
   /**
@@ -286,7 +294,13 @@ export class PlanLimitsService {
     }
     if (limit === null) return;
 
-    const used = await this.fetchCount(orgId, key, executor);
+    let used: number;
+    try {
+      used = await this.fetchCount(orgId, key, executor);
+    } catch (err: unknown) {
+      this.logger.error(`Limit count query failed`, { orgId, key, cause: err instanceof Error ? err.message : String(err) });
+      throw new ServiceUnavailableException(`The ${LIMIT_KEY_LABELS[key]} count could not be determined. Try again shortly.`);
+    }
     if (used + increment > limit) {
       const label = LIMIT_KEY_LABELS[key];
       throw new PaymentRequiredException({
@@ -330,8 +344,9 @@ export class PlanLimitsService {
       if (!row) return null;
       const seats = Number(row["negotiated_seats"] ?? 0);
       return seats > 0 ? seats : null;
-    } catch {
-      return null;
+    } catch (err: unknown) {
+      this.logger.error(`Negotiated seats query failed`, { orgId, cause: err instanceof Error ? err.message : String(err) });
+      throw new ServiceUnavailableException("Plan usage could not be determined. The write is refused until usage is verifiable.");
     }
   }
 
@@ -343,14 +358,7 @@ export class PlanLimitsService {
     switch (key) {
       case "members": {
         const rows = await (executor ?? this.db).execute(sql`
-          SELECT (
-            (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId}) +
-            (SELECT COUNT(*)::int FROM invitations
-             WHERE org_id = ${orgId}
-               AND status = 'PENDING'
-               AND accepted_at IS NULL
-               AND expires_at > NOW())
-          )::int AS count
+          SELECT ${seatCount(orgId)} AS count
         `);
         return Number(rows[0]?.["count"] ?? 0);
       }

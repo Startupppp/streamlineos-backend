@@ -11,6 +11,7 @@ import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronBillingService } from "./cron-billing.service";
 import { AiJobsWorkerService } from "../ai/jobs/ai-jobs-worker.service";
+import { CronLeaseService } from "./cron-lease.service";
 
 @Public()
 @Controller("cron")
@@ -18,6 +19,7 @@ export class CronBillingController {
   constructor(
     private readonly billing: CronBillingService,
     private readonly aiJobsWorker: AiJobsWorkerService,
+    private readonly cronLease: CronLeaseService,
   ) {}
 
   @Get("trial-expiry")
@@ -78,7 +80,11 @@ export class CronBillingController {
   private async runTrialExpiry(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.billing.processTrialExpiry();
+      const outcome = await this.cronLease.withLease("trial-expiry", 300, () =>
+        this.billing.processTrialExpiry(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "trial-expiry already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Expired ${result.expired} trials, sent ${result.reminded} reminders`,
@@ -93,7 +99,11 @@ export class CronBillingController {
   private async runMonthlyPlanGrants(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.billing.processMonthlyPlanGrants();
+      const outcome = await this.cronLease.withLease("monthly-plan-grants", 300, () =>
+        this.billing.processMonthlyPlanGrants(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "monthly-plan-grants already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Monthly plan grants: ${result.granted} granted, ${result.skipped} skipped`,
@@ -108,7 +118,11 @@ export class CronBillingController {
   private async runAiReservationsSweep(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.billing.sweepAiReservations();
+      const outcome = await this.cronLease.withLease("ai-reservations-sweep", 120, () =>
+        this.billing.sweepAiReservations(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "ai-reservations-sweep already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Released ${result.released} expired AI credit reservations`,
@@ -123,7 +137,11 @@ export class CronBillingController {
   private async runAutoTopUpFlush(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.billing.processAutoTopUps();
+      const outcome = await this.cronLease.withLease("auto-topup-flush", 120, () =>
+        this.billing.processAutoTopUps(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "auto-topup-flush already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Auto top-up flush: ${result.topped} topped, ${result.skipped} skipped, ${result.failed} failed`,
@@ -138,7 +156,11 @@ export class CronBillingController {
   private async runAiJobsFlush(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.aiJobsWorker.flush();
+      const outcome = await this.cronLease.withLease("ai-jobs-flush", 120, () =>
+        this.aiJobsWorker.flush(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "ai-jobs-flush already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `AI jobs flush: ${result.claimed} claimed, ${result.completed} completed, ${result.failed} failed`,

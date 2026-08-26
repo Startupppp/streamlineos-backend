@@ -1,11 +1,19 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq, and, desc, lt, inArray } from "drizzle-orm";
-import { broadcastAudienceTargets, broadcasts, notifications, organizationMembers, roleAssignments, users } from "../../db/schema";
+import { eq, and, desc, lt, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  broadcastAudienceTargets,
+  broadcasts,
+  organizationMembers,
+  roleAssignments,
+  users,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
+import { NotificationDispatchService } from "./notification-dispatch.service";
+import { broadcastReadReceipts } from "../../db/schema";
 import type { CreateBroadcastInput, UpdateBroadcastInput, ListBroadcastsInput } from "./dto/broadcast.schemas";
 
 @Injectable()
@@ -14,6 +22,7 @@ export class BroadcastsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly dispatchService: NotificationDispatchService,
   ) {}
 
   list(orgId: string, filters: ListBroadcastsInput) {
@@ -147,6 +156,17 @@ export class BroadcastsService {
     return updated;
   }
 
+  /**
+   * C21-02. Fan-out-on-READ for IN_APP. Publish writes exactly one broadcast row
+   * (the status update) rather than one notification row per recipient. Unread state
+   * is the absence of a receipt in broadcast_read_receipts — queried lazily per user
+   * at the /inbox endpoint.
+   *
+   * Non-IN_APP channels (EMAIL, PUSH, SMS) go through the dispatch pipeline so
+   * preferences, quiet hours and provider delivery all apply. The pipeline writes to
+   * the outbox inside the current tenant transaction and drains after commit, so the
+   * HTTP request returns immediately regardless of audience size.
+   */
   async publish(orgId: string, userId: string, id: number) {
     const broadcast = await this.findOne(orgId, id);
     if (!["DRAFT", "SCHEDULED"].includes(broadcast.status)) {
@@ -165,44 +185,174 @@ export class BroadcastsService {
 
     const recipientUserIds = await this.resolveRecipients(orgId, broadcast.id, broadcast.audienceType);
 
-    const now = new Date();
-    const sent = await this.db.transaction(async (tx) => {
-      if (recipientUserIds.length > 0 && broadcast.channels.includes("IN_APP")) {
-        const notifValues = recipientUserIds.map((uid) => ({
-          orgId,
-          userId: uid,
-          type: broadcast.type,
-          priority: broadcast.priority,
-          category: broadcast.category,
-          title: broadcast.title,
-          message: broadcast.message,
-          channel: "IN_APP",
-          sourceModule: "BROADCAST",
-          metadata: { broadcastId: id } as Record<string, unknown>,
-        }));
+    const [sent] = await this.db
+      .update(broadcasts)
+      .set({
+        status: "SENT",
+        sentAt: new Date(),
+        recipientCount: recipientUserIds.length,
+        deliveredCount: 0,
+      })
+      .where(and(eq(broadcasts.id, id), eq(broadcasts.orgId, orgId)))
+      .returning();
 
-        const batchSize = 100;
-        for (let i = 0; i < notifValues.length; i += batchSize) {
-          await tx.insert(notifications).values(notifValues.slice(i, i + batchSize));
-        }
-      }
+    if (!sent) throw new BadRequestException("Broadcast could not be sent");
 
-      const [row] = await tx
-        .update(broadcasts)
-        .set({
-          status: "SENT",
-          sentAt: now,
-          recipientCount: recipientUserIds.length,
-          deliveredCount: broadcast.channels.includes("IN_APP") ? recipientUserIds.length : 0,
-        })
-        .where(and(eq(broadcasts.id, id), eq(broadcasts.orgId, orgId)))
-        .returning();
-
-      return row;
-    });
+    const nonInAppChannels = broadcast.channels.filter((c) => c !== "IN_APP");
+    if (nonInAppChannels.length > 0 && recipientUserIds.length > 0) {
+      await this.dispatchService.emit({
+        eventKey: "notification.broadcast.published",
+        orgId,
+        actorUserId: userId,
+        notifySelf: true,
+        targetUserIds: recipientUserIds,
+        title: broadcast.title,
+        message: broadcast.message,
+        entityType: "broadcast",
+        entityId: String(id),
+        metadata: { broadcastId: id },
+      });
+    }
 
     await this.invalidateCache(orgId);
     return sent;
+  }
+
+  /**
+   * C21-02. Records a user's dismissal of a broadcast. The unique index on
+   * (org_id, broadcast_id, user_id) makes this idempotent: repeating the call
+   * produces exactly one receipt row.
+   */
+  async dismiss(orgId: string, userId: string, broadcastId: number) {
+    await this.findOne(orgId, broadcastId);
+    await this.db
+      .insert(broadcastReadReceipts)
+      .values({ orgId, broadcastId, userId })
+      .onConflictDoNothing({
+        target: [broadcastReadReceipts.orgId, broadcastReadReceipts.broadcastId, broadcastReadReceipts.userId],
+      });
+    return { success: true };
+  }
+
+  /**
+   * C21-02. Per-user inbox: SENT broadcasts this user is in the audience for and
+   * has not yet dismissed. Unread state is the absence of a receipt row — no per-user
+   * rows are written at publish time.
+   *
+   * The audience check runs a subquery against broadcast_audience_targets, filtering
+   * by the three possible kinds (USER / ROLE / DEPARTMENT). audienceType='all'
+   * bypasses the subquery and matches every org member.
+   */
+  async listInbox(orgId: string, userId: string, limit: number) {
+    const clampedLimit = Math.min(limit, 100);
+
+    const [userRow, roleRows] = await Promise.all([
+      this.db
+        .select({ deptId: users.orgDepartmentId })
+        .from(users)
+        .where(eq(users.id, userId))
+        .then((rows) => rows[0]),
+      this.db
+        .select({ roleId: roleAssignments.roleId })
+        .from(roleAssignments)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.orgId, roleAssignments.orgId),
+            eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+            eq(organizationMembers.userId, userId),
+          ),
+        )
+        .where(eq(roleAssignments.orgId, orgId)),
+    ]);
+
+    const userDeptId = userRow?.deptId ?? null;
+    const userRoleIdStrs = roleRows.map((r) => String(r.roleId));
+
+    const audienceKindConditions = [
+      and(eq(broadcastAudienceTargets.kind, "USER"), eq(broadcastAudienceTargets.targetId, userId)),
+      userRoleIdStrs.length > 0
+        ? and(
+            eq(broadcastAudienceTargets.kind, "ROLE"),
+            inArray(broadcastAudienceTargets.targetId, userRoleIdStrs),
+          )
+        : undefined,
+      userDeptId !== null
+        ? and(
+            eq(broadcastAudienceTargets.kind, "DEPARTMENT"),
+            eq(broadcastAudienceTargets.targetId, userDeptId),
+          )
+        : undefined,
+    ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+
+    const audienceTargetRows = await this.db
+      .select({ broadcastId: broadcastAudienceTargets.broadcastId })
+      .from(broadcastAudienceTargets)
+      .where(
+        and(
+          eq(broadcastAudienceTargets.orgId, orgId),
+          or(...audienceKindConditions),
+        ),
+      );
+
+    const targetedBroadcastIds = audienceTargetRows.map((r) => r.broadcastId);
+
+    const audienceFilter =
+      targetedBroadcastIds.length > 0
+        ? or(eq(broadcasts.audienceType, "all"), inArray(broadcasts.id, targetedBroadcastIds))
+        : eq(broadcasts.audienceType, "all");
+
+    const rows = await this.db
+      .select({
+        id: broadcasts.id,
+        title: broadcasts.title,
+        message: broadcasts.message,
+        type: broadcasts.type,
+        priority: broadcasts.priority,
+        category: broadcasts.category,
+        channels: broadcasts.channels,
+        sentAt: broadcasts.sentAt,
+        createdAt: broadcasts.createdAt,
+      })
+      .from(broadcasts)
+      .leftJoin(
+        broadcastReadReceipts,
+        and(
+          eq(broadcastReadReceipts.broadcastId, broadcasts.id),
+          eq(broadcastReadReceipts.userId, userId),
+          eq(broadcastReadReceipts.orgId, orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(broadcasts.orgId, orgId),
+          eq(broadcasts.status, "SENT"),
+          isNull(broadcastReadReceipts.id),
+          audienceFilter,
+        ),
+      )
+      .orderBy(desc(broadcasts.sentAt))
+      .limit(clampedLimit);
+
+    return { items: rows };
+  }
+
+  /**
+   * C21-02. How many org members have dismissed (seen) this broadcast. The count is
+   * the number of receipt rows — O(1) with the (org_id, broadcast_id) index.
+   */
+  async viewerCount(orgId: string, broadcastId: number) {
+    await this.findOne(orgId, broadcastId);
+    const [result] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(broadcastReadReceipts)
+      .where(
+        and(
+          eq(broadcastReadReceipts.orgId, orgId),
+          eq(broadcastReadReceipts.broadcastId, broadcastId),
+        ),
+      );
+    return { broadcastId, viewerCount: Number(result?.count ?? 0) };
   }
 
   async cancel(orgId: string, id: number, userId: string) {
@@ -251,13 +401,6 @@ export class BroadcastsService {
     return { success: true };
   }
 
-  /**
-   * SCH-017. Reads the audience from `broadcast_audience_targets` rather than the
-   * `broadcasts.audience` JSONB. The ids there had no foreign keys, so a deleted role
-   * or department left a dangling id that silently resolved to nobody; the junction
-   * carries real referential integrity and an index that supports the reverse lookup
-   * ("which broadcasts target this department?"), which containment queries could not.
-   */
   private async resolveRecipients(
     orgId: string,
     broadcastId: number,
@@ -324,11 +467,6 @@ export class BroadcastsService {
     return dedupe(memberships.map((m) => m.userId));
   }
 
-  /**
-   * Replaces a broadcast's targets wholesale. Delete-then-insert rather than a diff:
-   * the sets are small, and it is the only shape that cannot leave a stale target
-   * behind when an audience is narrowed.
-   */
   private async replaceAudienceTargets(
     tx: Db,
     orgId: string,

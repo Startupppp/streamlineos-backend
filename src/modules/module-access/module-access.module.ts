@@ -5,6 +5,8 @@ import { ModuleAccessService } from "./module-access.service";
 import { ModuleAccessGroupsService } from "./module-access-groups.service";
 import { UserPermissionGrantsController } from "./user-permission-grants.controller";
 import { UserPermissionGrantsService } from "./user-permission-grants.service";
+import { ModuleStandingRosterService } from "./module-standing-roster.service";
+import { ModuleStandingMutationsService } from "./module-standing-mutations.service";
 
 @Module({
   imports: [AccessModule],
@@ -13,6 +15,8 @@ import { UserPermissionGrantsService } from "./user-permission-grants.service";
     ModuleAccessService,
     ModuleAccessGroupsService,
     UserPermissionGrantsService,
+    ModuleStandingRosterService,
+    ModuleStandingMutationsService,
   ],
 })
 export class ModuleAccessModule {}

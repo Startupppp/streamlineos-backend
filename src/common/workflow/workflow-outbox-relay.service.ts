@@ -31,7 +31,34 @@ export interface RelayResult {
 export class WorkflowOutboxRelayService {
   private readonly logger = new Logger(WorkflowOutboxRelayService.name);
 
-  /** Advances only past events actually considered, so nothing is skipped. */
+  /**
+   * How far behind the highest event seen the cursor is allowed to settle.
+   *
+   * `outbox_event_id` comes from an identity sequence, and a sequence hands out
+   * its numbers when a transaction *asks*, not when it commits. So ids become
+   * visible in commit order, not in numeric order: transaction A takes 100 and B
+   * takes 101, B commits first, and a relay pass sees 101 while 100 is still
+   * invisible. A cursor that advanced straight to 101 would then query
+   * `> 101` forever and **event 100 would never start its workflow** — not
+   * delayed, never. For the life of the process.
+   *
+   * Holding the cursor this far back turns that permanent skip into a bounded
+   * re-read. It is safe to re-read because `startRun` keys on
+   * `causationEventId` and returns the existing run rather than starting a
+   * second, which the class already relies on for at-least-once delivery — and
+   * because the cursor lives in memory, so every restart already re-reads from
+   * zero. Re-reading is the designed-for path, not an exception to it.
+   *
+   * This is a mitigation sized to how long a writing transaction can plausibly
+   * stay open, not a proof. The complete fix is the claim `outbox-publisher`
+   * already uses — a persisted delivery state with a lease and
+   * `FOR UPDATE SKIP LOCKED` — which needs its own state column here, since the
+   * publisher and the relay are two independent consumers of one stream and
+   * cannot share one.
+   */
+  private static readonly CURSOR_LAG = 1000;
+
+  /** Trails the highest event seen by `CURSOR_LAG`, so a late commit is not skipped. */
   private cursor = 0;
 
   constructor(
@@ -61,6 +88,7 @@ export class WorkflowOutboxRelayService {
       .limit(limit);
 
     let started = 0;
+    let highest = 0;
 
     for (const event of events) {
       for (const definition of this.registry.triggeredBy(event.eventType)) {
@@ -89,8 +117,11 @@ export class WorkflowOutboxRelayService {
         }
       }
 
-      this.cursor = event.outboxEventId;
+      highest = Math.max(highest, event.outboxEventId);
     }
+
+    if (highest > 0)
+      this.cursor = Math.max(this.cursor, highest - WorkflowOutboxRelayService.CURSOR_LAG);
 
     if (started > 0) this.logger.log(`Relay started ${String(started)} workflow run(s)`);
 

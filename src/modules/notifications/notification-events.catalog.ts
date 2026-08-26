@@ -143,6 +143,15 @@ const PROJECTS = [
     defaultChannels: IA_EMAIL,
     ttlSeconds: 86400,
   }),
+  e("build.sprint.completed", "build", "PROJECTS", "Sprint completed", {
+    defaultType: "SUCCESS",
+    defaultChannels: IA,
+  }),
+  e("build.release.published", "build", "PROJECTS", "Release published", {
+    defaultPriority: "LOW",
+    defaultType: "SUCCESS",
+    defaultChannels: IA,
+  }),
   e("build.blocker.created", "build", "PROJECTS", "Blocker reported", {
     defaultPriority: "HIGH",
     defaultType: "WARNING",
@@ -688,6 +697,30 @@ const SUPPORT = [
   ),
 ];
 
+/**
+ * C21-02. Fan-out-on-read: IN_APP is not in defaultChannels or allowedChannels,
+ * so the dispatch pipeline never writes per-user notification rows for this event.
+ * IN_APP delivery is served by the /broadcasts/inbox endpoint (absence-of-receipt
+ * pattern). Non-IN_APP channels go through the pipeline so preferences, quiet
+ * hours and email all apply.
+ */
+const BROADCAST_EMAIL: NotificationChannel[] = ["EMAIL"];
+const BROADCAST_ALLOWED: NotificationChannel[] = ["EMAIL", "PUSH", "SMS", "WHATSAPP"];
+
+const BROADCASTS = [
+  e("notification.broadcast.published", "notification", "SYSTEM", "Organization announcement", {
+    description: "An organization-wide broadcast was published to your audience group",
+    defaultPriority: "NORMAL",
+    defaultType: "INFO",
+    defaultChannels: BROADCAST_EMAIL,
+    allowedChannels: BROADCAST_ALLOWED,
+    mandatory: false,
+    userConfigurable: true,
+    quietHoursBehavior: "respect",
+    dedupeWindowSeconds: 0,
+  }),
+];
+
 const SYSTEM = [
   e(
     "compliance.policy.updated",
@@ -886,6 +919,10 @@ const ACCOUNTING = [
     "Bill approval requested",
     { defaultPriority: "HIGH", defaultChannels: IA_EMAIL },
   ),
+  e("accounting.bill.approved", "accounting", "ACCOUNTING", "Bill approved", {
+    defaultType: "SUCCESS",
+    defaultChannels: IA_EMAIL,
+  }),
   e(
     "accounting.bill.recurring_generated",
     "accounting",
@@ -1043,6 +1080,7 @@ export const NOTIFICATION_EVENT_CATALOG = [
     ...ACCOUNTING,
     ...OWNERSHIP,
     ...ORGANIZATION,
+    ...BROADCASTS,
   ];
 
 /**

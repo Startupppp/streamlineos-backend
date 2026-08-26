@@ -1,4 +1,6 @@
 import { Test } from "@nestjs/testing";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { TurnstileService } from "../../common/security/turnstile.service";
 import { EmailService } from "../email/email.service";
@@ -41,12 +43,14 @@ function makeDb(row: { id: number; existingCode?: string }) {
 
 async function build(
   db: unknown,
+  config: Partial<AppConfig> = {},
   sendEmail = jest.fn().mockResolvedValue(undefined),
 ) {
   const moduleRef = await Test.createTestingModule({
     providers: [
       WaitlistService,
       { provide: DRIZZLE, useValue: db },
+      { provide: APP_CONFIG, useValue: config },
       { provide: EmailService, useValue: { sendEmail } },
       { provide: TurnstileService, useValue: { verify: jest.fn().mockResolvedValue(undefined) } },
     ],
@@ -73,27 +77,27 @@ describe("WaitlistService", () => {
     );
   });
 
-  it("notifies both founders and confirms to the signup", async () => {
+  it("notifies the configured recipients and confirms to the signup", async () => {
     const { db } = makeDb({ id: 7 });
-    const { service, sendEmail } = await build(db);
+    const { service, sendEmail } = await build(db, {
+      WAITLIST_NOTIFICATION_EMAILS: "a@example.com, b@example.com",
+    });
 
     await service.join(input, {});
 
     expect(sendEmail).toHaveBeenCalledTimes(2);
     expect(sendEmail.mock.calls[0]?.[0]).toMatchObject({
-      to: ["tarunchintakunta@gmail.com", "adityachalla01@gmail.com"],
+      to: ["a@example.com", "b@example.com"],
       replyTo: "rohan@example.com",
     });
     expect(sendEmail.mock.calls[1]?.[0]).toMatchObject({ to: "rohan@example.com" });
   });
 
-  it("takes the recipients from code, not the environment", async () => {
-    process.env.WAITLIST_NOTIFICATION_EMAILS = "hijack@example.com";
+  it("falls back to the founder addresses when nothing is configured", async () => {
     const { db } = makeDb({ id: 1 });
     const { service, sendEmail } = await build(db);
 
     await service.join(input, {});
-    delete process.env.WAITLIST_NOTIFICATION_EMAILS;
 
     expect(sendEmail.mock.calls[0]?.[0]).toMatchObject({
       to: ["tarunchintakunta@gmail.com", "adityachalla01@gmail.com"],
@@ -113,7 +117,7 @@ describe("WaitlistService", () => {
   it("keeps the signup when the notification provider is down", async () => {
     const { db } = makeDb({ id: 9 });
     const sendEmail = jest.fn().mockRejectedValue(new Error("provider down"));
-    const { service } = await build(db, sendEmail);
+    const { service } = await build(db, {}, sendEmail);
 
     await expect(service.join(input, {})).resolves.toMatchObject({ ok: true });
   });
@@ -124,6 +128,7 @@ describe("WaitlistService", () => {
       providers: [
         WaitlistService,
         { provide: DRIZZLE, useValue: db },
+        { provide: APP_CONFIG, useValue: {} },
         { provide: EmailService, useValue: { sendEmail: jest.fn() } },
         {
           provide: TurnstileService,

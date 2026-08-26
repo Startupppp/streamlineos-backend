@@ -6,7 +6,19 @@ describe("assertSafeWebhookUrl — SSRF guard", () => {
   });
 
   it("allows a public HTTP endpoint on a non-private IP", () => {
-    expect(() => assertSafeWebhookUrl("http://203.0.113.5/hook")).not.toThrow();
+    expect(() => assertSafeWebhookUrl("http://8.8.8.8/hook")).not.toThrow();
+  });
+
+  it("blocks TEST-NET-2 (198.51.100.0/24, RFC 5737)", () => {
+    expect(() => assertSafeWebhookUrl("http://198.51.100.5/hook")).toThrow(
+      "SSRF: private/internal URLs are blocked",
+    );
+  });
+
+  it("blocks TEST-NET-3 (203.0.113.0/24, RFC 5737)", () => {
+    expect(() => assertSafeWebhookUrl("http://203.0.113.5/hook")).toThrow(
+      "SSRF: private/internal URLs are blocked",
+    );
   });
 
   it("blocks loopback 127.0.0.1", () => {

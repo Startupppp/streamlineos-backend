@@ -4,6 +4,8 @@ import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { payrollCommandReceipts } from "../../db/schema";
+import { getPostgresErrorCode } from "../../common/db/postgres-error";
+import { logger } from "../../common/logger/logger.service";
 
 export type PayrollCommandName =
   | "run.create"
@@ -140,7 +142,14 @@ export class PayrollCommandReceiptsService {
         })
         .returning({ id: payrollCommandReceipts.id });
       return { kind: "fresh", receiptId: row!.id, correlationId };
-    } catch {
+    } catch (err) {
+      if (getPostgresErrorCode(err) !== "23505") {
+        logger.error("command-receipts.begin: receipt insert failed unexpectedly", {
+          command: params.command,
+          cause: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
       const raced = await this.db.query.payrollCommandReceipts.findFirst({
         where: and(
           eq(payrollCommandReceipts.orgId, params.orgId),

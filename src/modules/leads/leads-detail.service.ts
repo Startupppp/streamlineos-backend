@@ -14,6 +14,7 @@ import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { EmailService } from "../email/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { LeadNotificationAiService } from "./lead-notification-ai.service";
 import type {
   AssignInput,
@@ -278,7 +279,7 @@ export class LeadsDetailService {
       link: `/crm/leads/${updated.id}`,
     });
 
-    void this.sendAssignmentEmail(userId, updated).catch(() => undefined);
+    void this.sendAssignmentEmail(userId, updated).catch(logSideEffectFailure("lead assignment email", { orgId, leadId: updated.id }));
 
     if (notification) {
       void this.enrichAssignmentNotification(
@@ -286,7 +287,7 @@ export class LeadsDetailService {
         notification.id,
         input.assignedToId,
         updated,
-      ).catch(() => undefined);
+      ).catch(logSideEffectFailure("lead assignment notification enrichment", { orgId, notificationId: notification.id }));
     }
 
     return updated;

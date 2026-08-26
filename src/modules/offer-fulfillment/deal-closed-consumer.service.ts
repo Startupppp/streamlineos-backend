@@ -1,21 +1,21 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { offerFulfillmentComponents, invSalesOrders, invSoLines, invProductVariants } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { InboxConsumer } from "../../common/outbox/inbox-consumer";
 import { dealClosedPayloadSchema } from "../../common/outbox/outbox-event-schema";
+import {
+  OutboxConsumerRegistry,
+  type OutboxEventConsumer,
+  type OutboxEventRow,
+} from "../../common/outbox/outbox-consumer.registry";
 import { NumberSequenceService } from "../inventory/stock-engine/number-sequence.service";
 import { addDec, mulDec } from "../inventory/stock-engine/stock-engine.service";
 
 const CONSUMER_NAME = "offer-fulfillment:deal-closed";
 
-type OutboxEventRow = {
-  eventId: string;
-  organizationId: string;
-  aggregateVersion: number;
-  payload: Record<string, unknown>;
-};
+type TxType = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 /**
  * Handles `deal.closed` outbox events and creates a DRAFT inventory sales order for each
@@ -37,13 +37,19 @@ type OutboxEventRow = {
  * (eventId, consumerName) pair.
  */
 @Injectable()
-export class DealClosedConsumerService {
+export class DealClosedConsumerService implements OutboxEventConsumer, OnModuleInit {
+  readonly eventType = "deal.closed";
   private readonly logger = new Logger(DealClosedConsumerService.name);
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly numSeq: NumberSequenceService,
+    private readonly registry: OutboxConsumerRegistry,
   ) {}
+
+  onModuleInit(): void {
+    this.registry.register(this);
+  }
 
   async handle(event: OutboxEventRow): Promise<void> {
     const inbox = new InboxConsumer(this.db);
@@ -51,6 +57,8 @@ export class DealClosedConsumerService {
     const claimed = await inbox.claim(CONSUMER_NAME, {
       eventId: event.eventId,
       organizationId: event.organizationId,
+      aggregateType: event.aggregateType,
+      aggregateId: event.aggregateId,
       aggregateVersion: event.aggregateVersion,
     });
 
@@ -126,8 +134,6 @@ export class DealClosedConsumerService {
       const total = addDec(subtotal, taxAmount);
 
       const today = new Date().toISOString().split("T")[0]!;
-
-      type TxType = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
       await this.db.transaction(async (tx) => {
         const soNumber = await this.numSeq.next(orgId, "SO", tx as TxType);

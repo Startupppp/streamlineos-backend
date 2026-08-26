@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
 } from "@nestjs/common";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import {
   and,
   count,
@@ -73,10 +74,9 @@ async function fetchTransitionsAndStatuses(
         ),
     ]);
     return { transitions, statuses };
-  } catch {
-    const transitions: WorkflowTransitionRow[] = [];
-    const statuses: WorkflowStatusRow[] = [];
-    return { transitions, statuses };
+  } catch (err) {
+    logSideEffectFailure("workflow transition fetch", { orgId, projectId })(err);
+    return { transitions: [], statuses: [] };
   }
 }
 

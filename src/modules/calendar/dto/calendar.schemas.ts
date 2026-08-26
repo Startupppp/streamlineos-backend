@@ -1,4 +1,30 @@
 import { z } from "zod";
+import { isValidRrule } from "./occurrence-exception.schemas";
+
+/**
+ * The web calendar fetches three whole months (previous, current, next), whose
+ * widest real span is exactly 92.000 days — Feb 29 2024 through May 31 2024.
+ * A 92-day limit therefore sits on the boundary with no margin, and one day of
+ * padding or one timezone shift would 400 the calendar for everyone. The limit
+ * exists to stop UNBOUNDED ranges, not to shave the last month, so it carries
+ * headroom. `calendar-span.spec.ts` derives the client's worst case and fails
+ * if this drops back under it.
+ */
+export const CALENDAR_MAX_SPAN_DAYS = 120;
+export const CALENDAR_EVENTS_CAP = 2000;
+
+const ianaTimezone = z.string().refine(
+  (tz) => {
+    if (/^[+-]\d{2}:\d{2}$/.test(tz)) return false;
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: tz });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  "Must be a valid IANA timezone name",
+);
 
 const titleSchema = z
   .string()
@@ -13,10 +39,29 @@ const titleSchema = z
     "Event title cannot have consecutive spaces",
   );
 
-export const listEventsSchema = z.object({
-  start: z.string(),
-  end: z.string(),
-});
+const parseableDate = z
+  .string()
+  .refine((value) => !Number.isNaN(Date.parse(value)), "Invalid date format");
+
+export const listEventsSchema = z
+  .object({
+    start: parseableDate,
+    end: parseableDate,
+  })
+  .refine(
+    (v) => new Date(v.end) > new Date(v.start),
+    { message: "end must be after start", path: ["end"] },
+  )
+  .refine(
+    (v) => {
+      const diffMs = new Date(v.end).getTime() - new Date(v.start).getTime();
+      return diffMs / (1000 * 60 * 60 * 24) <= CALENDAR_MAX_SPAN_DAYS;
+    },
+    {
+      message: `Date range may not exceed ${CALENDAR_MAX_SPAN_DAYS} days`,
+      path: ["end"],
+    },
+  );
 
 export const createEventSchema = z
   .object({
@@ -25,19 +70,20 @@ export const createEventSchema = z
     location: z.string().optional(),
     startDate: z.string(),
     endDate: z.string(),
+    timezone: ianaTimezone,
     allDay: z.boolean().optional(),
     color: z.string().optional(),
     category: z.string().default("general"),
     entityType: z.string().optional(),
     entityId: z.string().optional(),
     attendeeIds: z.array(z.string()).optional(),
-    isRecurring: z.boolean().optional(),
-    recurringRule: z.string().optional(),
     agenda: z.string().optional(),
     linkedDealId: z.number().int().optional(),
     linkedLeadId: z.number().int().optional(),
     syncConnectionId: z.number().int().positive().optional(),
     addConference: z.boolean().optional(),
+    rrule: z.string().refine(isValidRrule, "Must be a valid RFC 5545 RRULE string").optional(),
+    recurrenceEnd: z.string().datetime().optional(),
   })
   .refine(
     (v) => {
@@ -58,18 +104,19 @@ export const updateEventSchema = z.object({
   location: z.string().nullable().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
+  timezone: ianaTimezone.optional(),
   allDay: z.boolean().optional(),
   color: z.string().nullable().optional(),
   category: z.string().optional(),
   entityType: z.string().nullable().optional(),
   entityId: z.string().nullable().optional(),
   attendeeIds: z.array(z.string()).optional(),
-  isRecurring: z.boolean().optional(),
-  recurringRule: z.string().nullable().optional(),
   agenda: z.string().nullable().optional(),
   postMeetingNotes: z.string().nullable().optional(),
   linkedDealId: z.number().int().nullable().optional(),
   linkedLeadId: z.number().int().nullable().optional(),
+  rrule: z.string().refine(isValidRrule, "Must be a valid RFC 5545 RRULE string").nullable().optional(),
+  recurrenceEnd: z.string().datetime().nullable().optional(),
 });
 
 export const rsvpSchema = z.object({
@@ -80,10 +127,6 @@ export const exportSchema = z.object({
   from: z.string(),
   to: z.string(),
 });
-
-const parseableDate = z
-  .string()
-  .refine((value) => !Number.isNaN(Date.parse(value)), "Invalid date format");
 
 export const externalEventsQuerySchema = z.object({
   start: parseableDate,

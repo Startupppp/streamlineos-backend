@@ -14,6 +14,7 @@ import { CrmSequencesRunnerService } from "../crm/automation-studio/crm-sequence
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
+import { CronLeaseService } from "./cron-lease.service";
 
 @Public()
 @Controller("cron")
@@ -24,6 +25,7 @@ export class CronBuildController {
     private readonly crmTasks: CronCrmTasksService,
     private readonly buildRetention: CronBuildRetentionService,
     private readonly buildSnapshots: CronBuildSnapshotsService,
+    private readonly cronLease: CronLeaseService,
   ) {}
 
   @Get("projects-recurring-flush")
@@ -81,40 +83,14 @@ export class CronBuildController {
     return this.runBuildDailySnapshots(authorization);
   }
 
-  private async runBuildRetentionPrune(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const result = await this.buildRetention.pruneWebhookDeliveries();
-      return {
-        success: true,
-        message: `Pruned ${result.webhookDeliveriesPruned} webhook delivery rows`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Build retention prune cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runBuildDailySnapshots(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const result = await this.buildSnapshots.snapshotAllProjects();
-      return {
-        success: true,
-        message: `Snapshotted ${result.projectsProcessed} projects across ${result.orgsVisited} orgs (${result.projectsFailed} failed, ${result.projectsSkipped} skipped)`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Build daily snapshots cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
   private async runProjectsRecurringFlush(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.cronProjects.spawnDueRecurringTickets();
+      const outcome = await this.cronLease.withLease("projects-recurring-flush", 300, () =>
+        this.cronProjects.spawnDueRecurringTickets(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "projects-recurring-flush already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Spawned ${result.spawned} recurring tickets, advanced ${result.advanced} schedules`,
@@ -129,7 +105,11 @@ export class CronBuildController {
   private async runCrmSequencesFlush(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.crmSequencesRunner.flushDueEnrollments();
+      const outcome = await this.cronLease.withLease("crm-sequences-flush", 300, () =>
+        this.crmSequencesRunner.flushDueEnrollments(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "crm-sequences-flush already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `CRM sequences flush: processed ${result.processed}, advanced ${result.advanced}, stopped ${result.stopped}`,
@@ -144,7 +124,11 @@ export class CronBuildController {
   private async runCrmTasksOverdueFlush(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.crmTasks.flushOverdueTasks();
+      const outcome = await this.cronLease.withLease("crm-tasks-overdue-flush", 120, () =>
+        this.crmTasks.flushOverdueTasks(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "crm-tasks-overdue-flush already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Emitted ${result.emitted} task.overdue events`,
@@ -152,6 +136,44 @@ export class CronBuildController {
       };
     } catch (error) {
       logger.error("CRM tasks overdue flush failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runBuildRetentionPrune(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("build-retention-prune", 120, () =>
+        this.buildRetention.pruneWebhookDeliveries(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "build-retention-prune already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Pruned ${result.webhookDeliveriesPruned} webhook delivery rows`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Build retention prune cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runBuildDailySnapshots(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("build-daily-snapshots", 600, () =>
+        this.buildSnapshots.snapshotAllProjects(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "build-daily-snapshots already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Snapshotted ${result.projectsProcessed} projects across ${result.orgsVisited} orgs (${result.projectsFailed} failed, ${result.projectsSkipped} skipped)`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Build daily snapshots cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

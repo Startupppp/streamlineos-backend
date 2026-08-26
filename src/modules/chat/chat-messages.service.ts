@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gt, lt } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import {
   chatAttachments,
   chatChannels,
@@ -14,16 +15,14 @@ import {
   users,
 } from "../../db/schema";
 import type { ChatAttachmentPayload, PersistedMessage } from "./chat-message.types";
-import { ChatMessageFanoutService } from "./chat-message-fanout.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
+import { resolveMentionedUserIds } from "./chat-mentions";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { AblyService } from "../realtime/ably.service";
-import { WebPushService } from "../realtime/web-push.service";
-import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { nextReactions } from "./chat-reactions";
@@ -33,6 +32,9 @@ import type {
   EntityActor,
   EntityReference,
 } from "../entity-reference/entity-reference.types";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
+import { CHAT_MESSAGE_FANOUT_EVENT } from "./chat-fanout-outbox";
+import { MESSAGE_FANOUT_PROVIDER, type MessageFanoutProvider } from "./message-fanout.interface";
 
 
 /**
@@ -60,12 +62,10 @@ export class ChatMessagesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly ably: AblyService,
-    private readonly webPush: WebPushService,
-    private readonly notifications: ChatNotificationsService,
     private readonly replyReminders: ChatReplyRemindersService,
     private readonly orgSettings: ChatOrgSettingsService,
     private readonly entities: EntityReferenceService,
-    private readonly fanout: ChatMessageFanoutService,
+    @Inject(MESSAGE_FANOUT_PROVIDER) private readonly fanout: MessageFanoutProvider,
   ) {}
 
   private async isMember(channelId: number, userId: string): Promise<boolean> {
@@ -96,7 +96,7 @@ export class ChatMessagesService {
 
     const messages = await this.db.query.chatMessages.findMany({
       where: and(...conditions),
-      orderBy: [desc(chatMessages.createdAt)],
+      orderBy: [desc(chatMessages.id)],
       limit: safeLimit + 1,
       with: {
         sender: { columns: { id: true, name: true, image: true } },
@@ -107,8 +107,8 @@ export class ChatMessagesService {
 
     let nextCursor: number | undefined;
     if (messages.length > safeLimit) {
-      const next = messages.pop();
-      nextCursor = next?.id;
+      messages.pop();
+      nextCursor = messages[messages.length - 1]?.id;
     }
 
     return {
@@ -173,14 +173,29 @@ export class ChatMessagesService {
       }
     }
 
-    const { message, insertedAttachments } = await this.db.transaction(async (tx) => {
+    const mentionedUserIds = await resolveMentionedUserIds(this.db, {
+      orgId,
+      channelId,
+      senderId: userId,
+      content: body?.content ?? "",
+      mentionedUserIds: body?.mentionedUserIds,
+    });
+
+    const fanoutEventId = randomUUID();
+    const { message, insertedAttachments, senderName, senderImage, channelType } = await this.db.transaction(async (tx) => {
       const [channel] = await tx
-        .select({ id: chatChannels.id })
+        .select({ id: chatChannels.id, type: chatChannels.type })
         .from(chatChannels)
         .where(and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)))
         .limit(1);
 
       if (!channel) throw new NotFoundException("Channel not found");
+
+      const [senderRow] = await tx
+        .select({ name: users.name, image: users.image })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
 
       const [created] = await tx
         .insert(chatMessages)
@@ -219,7 +234,29 @@ export class ChatMessagesService {
         .set({ archivedAt: null })
         .where(eq(chatChannelMembers.channelId, channelId));
 
-      return { message: created, insertedAttachments: attachmentRows };
+      await OutboxWriter.emit(tx, {
+        eventId: fanoutEventId,
+        organizationId: orgId,
+        aggregateType: "chat.message",
+        aggregateId: String(created.id),
+        aggregateVersion: created.id,
+        eventType: CHAT_MESSAGE_FANOUT_EVENT,
+        occurredAt: created.createdAt,
+        payload: {
+          orgId,
+          channelId,
+          channelType: channel.type ?? null,
+          message: created,
+          content: body?.content ?? null,
+          mentionedUserIds,
+          attachments: attachmentRows,
+          strippedMetadata: strippedReferenceMetadata(created.metadata),
+          senderName: senderRow?.name ?? null,
+          senderImage: senderRow?.image ?? null,
+        },
+      });
+
+      return { message: created, insertedAttachments: attachmentRows, senderName: senderRow?.name ?? null, senderImage: senderRow?.image ?? null, channelType: channel.type ?? null };
     });
 
     const deferred = () =>
@@ -231,20 +268,6 @@ export class ChatMessagesService {
           message.id,
           userId,
         );
-        const channelRow = await this.db.query.chatChannels.findFirst({
-          where: eq(chatChannels.id, channelId),
-          columns: { type: true },
-        });
-        await this.fanout.dispatch({
-          orgId,
-          channelId,
-          channelType: channelRow?.type ?? null,
-          message,
-          content: body?.content ?? null,
-          mentionedUserIds: body?.mentionedUserIds,
-          attachments: insertedAttachments,
-          strippedMetadata: strippedReferenceMetadata(message.metadata),
-        });
       }).catch((error: unknown) => {
         logger.error("chat message side effects failed", {
           orgId,
@@ -253,6 +276,33 @@ export class ChatMessagesService {
           error: error instanceof Error ? error.message : "Unknown error",
         });
       });
+
+    const realtime = () =>
+      this.fanout.dispatchRealtime({
+          orgId,
+          channelId,
+          channelType,
+          message,
+          content: body?.content ?? null,
+          mentionedUserIds,
+          attachments: insertedAttachments,
+          strippedMetadata: strippedReferenceMetadata(message.metadata),
+          senderName,
+          senderImage,
+        }, {
+          producerEventId: fanoutEventId,
+          idempotencyKey: `outbox:${fanoutEventId}:chat-message:${orgId}:${message.id}`,
+        })
+        .catch((error: unknown) => {
+          logger.error("chat realtime publish failed", {
+            orgId,
+            channelId,
+            messageId: message.id,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        });
+
+    if (!registerAfterCommit(realtime)) void realtime();
     if (!registerAfterCommit(deferred)) void deferred();
 
     return message;
@@ -282,7 +332,7 @@ export class ChatMessagesService {
       content: content.trim(),
       isEdited: true,
       updatedAt: updatedAt.toISOString(),
-    }).catch(() => undefined);
+    });
 
     return { ok: true };
   }
@@ -308,7 +358,7 @@ export class ChatMessagesService {
     void this.ably.publishChatEvent(orgId, message.channelId, "message:deleted", {
       id: messageId,
       channelId: message.channelId,
-    }).catch(() => undefined);
+    });
 
     return { ok: true };
   }
@@ -342,7 +392,7 @@ export class ChatMessagesService {
 
     const replies = await this.db.query.chatMessages.findMany({
       where: and(...conditions),
-      orderBy: [desc(chatMessages.createdAt)],
+      orderBy: [desc(chatMessages.id)],
       limit: safeLimit + 1,
       with: {
         sender: { columns: { id: true, name: true, image: true } },
@@ -353,8 +403,8 @@ export class ChatMessagesService {
 
     let nextCursor: number | undefined;
     if (replies.length > safeLimit) {
-      const next = replies.pop();
-      nextCursor = next?.id;
+      replies.pop();
+      nextCursor = replies[replies.length - 1]?.id;
     }
 
     const [resolvedParent] = await this.withResolvedReferences(actor, [parentMessage]);
@@ -415,7 +465,7 @@ export class ChatMessagesService {
     content: string,
     metadata: Record<string, unknown>,
   ): Promise<void> {
-    const [message] = await this.db.transaction(async (tx) => {
+    const { message, senderName } = await this.db.transaction(async (tx) => {
       const [channel] = await tx
         .select({ id: chatChannels.id })
         .from(chatChannels)
@@ -423,6 +473,12 @@ export class ChatMessagesService {
         .limit(1);
 
       if (!channel) throw new NotFoundException("Channel not found");
+
+      const [senderRow] = await tx
+        .select({ name: users.name })
+        .from(users)
+        .where(eq(users.id, senderId))
+        .limit(1);
 
       const [created] = await tx
         .insert(chatMessages)
@@ -441,15 +497,8 @@ export class ChatMessagesService {
         .set({ lastMessageAt: new Date(), updatedAt: new Date() })
         .where(eq(chatChannels.id, channelId));
 
-      return [created];
+      return { message: created, senderName: senderRow?.name ?? null };
     });
-
-    const [senderRow] = await this.db
-      .select({ name: users.name })
-      .from(users)
-      .where(eq(users.id, senderId))
-      .limit(1);
-    const senderName = senderRow?.name ?? null;
 
     void this.ably
       .publishChatMessage(orgId, channelId, {
@@ -465,7 +514,15 @@ export class ChatMessagesService {
         messageType: "system",
         attachments: [],
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        logger.error("ably: publishChatMessage (system message) failed", {
+          orgId,
+          channelId,
+          messageId: message.id,
+          error: error instanceof Error ? error.message : String(error),
+          cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+        });
+      });
   }
 
   async react(channelId: number, messageId: number, userId: string, orgId: string, emoji: string) {
@@ -504,7 +561,7 @@ export class ChatMessagesService {
       messageId,
       channelId,
       reactions: updated,
-    }).catch(() => undefined);
+    });
 
     return { reactions: updated };
   }

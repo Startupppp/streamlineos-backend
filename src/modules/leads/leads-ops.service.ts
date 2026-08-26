@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { AccessService } from "../access/access.service";
 import {
   leadActivities,
@@ -307,7 +308,7 @@ export class LeadsOpsService {
     }
 
     void this.sendDistributionEmails(userId, salesPeople, assignments).catch(
-      () => undefined,
+      logSideEffectFailure("lead distribution emails", { orgId }),
     );
 
     return {

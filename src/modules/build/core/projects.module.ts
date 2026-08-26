@@ -54,9 +54,11 @@ import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 import { PmWorkspacesModule } from "../pm-workspaces/pm-workspaces.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
+import { BuildReleasePublishedConsumerService } from "./build-release-published-consumer.service";
 
 @Module({
-  imports: [BillingModule, NotificationsModule, UsersModule, PmWorkspacesModule],
+  imports: [BillingModule, NotificationsModule, UsersModule, PmWorkspacesModule, OutboxModule],
   controllers: [
     ProjectsRoadmapController,
     ProjectsTemplatesController,
@@ -75,6 +77,7 @@ import { PmWorkspacesModule } from "../pm-workspaces/pm-workspaces.module";
     ProjectsController,
   ],
   providers: [
+    BuildReleasePublishedConsumerService,
     BuildDueSweepService,
     BuildNotificationVisibility,
     ProjectsService,

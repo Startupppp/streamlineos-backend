@@ -7,16 +7,14 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { type DashboardActor, type DashboardForbidden } from "./dashboard.errors";
 import { type CreateAnnouncementInput } from "./dto/dashboard.schemas";
-
-function canManageAnnouncements(actor: DashboardActor): boolean {
-  return actor.isOrgOwner || actor.permissions.includes("settings:manage");
-}
+import { AccessService } from "../access/access.service";
 
 @Injectable()
 export class DashboardAnnouncementsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
   getActiveAnnouncements(orgId: string) {
@@ -58,7 +56,7 @@ export class DashboardAnnouncementsService {
     actor: DashboardActor,
     input: CreateAnnouncementInput,
   ) {
-    if (!canManageAnnouncements(actor)) {
+    if (!(await this.access.holds(actor, "settings:manage"))) {
       return { error: "forbidden", message: "Forbidden" } as DashboardForbidden;
     }
 
@@ -80,7 +78,7 @@ export class DashboardAnnouncementsService {
   }
 
   async deleteAnnouncement(orgId: string, actor: DashboardActor, id: number) {
-    if (!canManageAnnouncements(actor)) {
+    if (!(await this.access.holds(actor, "settings:manage"))) {
       return { error: "forbidden", message: "Forbidden" } as DashboardForbidden;
     }
 

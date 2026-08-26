@@ -17,6 +17,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { ActivitiesService } from "./activities.service";
+import { MyTasksService } from "./my-tasks.service";
 import {
   createActivitySchema,
   myTasksQuerySchema,
@@ -38,7 +39,10 @@ import {
 @Controller("crm/activities")
 @UseGuards(JwtAuthGuard)
 export class ActivitiesController {
-  constructor(private readonly activities: ActivitiesService) {}
+  constructor(
+    private readonly activities: ActivitiesService,
+    private readonly myTasksService: MyTasksService,
+  ) {}
 
   @Get("timeline")
   @UseGuards(PermissionGuard)
@@ -54,7 +58,7 @@ export class ActivitiesController {
   @RequirePermission("crm:activities:view")
   @Validate({ query: myTasksQuerySchema })
   myTasks(@CurrentUser() user: CurrentUserContext, @Query() query: MyTasksQuery) {
-    return this.activities.myTasks(user.orgId, user.userId, query);
+    return this.myTasksService.myTasks(user.orgId, user.userId, query);
   }
 
   @Post()

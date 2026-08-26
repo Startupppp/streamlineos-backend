@@ -8,6 +8,9 @@ import { logger } from "../../common/logger/logger.service";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { AuditService } from "../../common/audit/audit.service";
 import { InvoicesPostingService } from "./invoices-posting.service";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import {
@@ -37,6 +40,7 @@ export class InvoicesWriteService {
     private readonly planLimits: PlanLimitsService,
     private readonly paymentService: InvoicesPaymentService,
     private readonly updateService: InvoicesUpdateService,
+    private readonly cache: CacheService,
   ) {}
 
   async createInvoice(
@@ -77,13 +81,6 @@ export class InvoicesWriteService {
     const placeOfSupplyStateCode = input.placeOfSupply ?? supplierStateCode;
     const split = gstSplit(taxPool, supplierStateCode, placeOfSupplyStateCode);
 
-    const legacyLineItemsMirror = itemsWithAmounts.map((it) => ({
-      description: it.description,
-      quantity: it.quantity,
-      rate: it.rate,
-      amount: it.amount,
-    }));
-
     const invoice = await this.db.transaction(async (tx) => {
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtext(${orgId} || 'invoice'))`,
@@ -104,7 +101,6 @@ export class InvoicesWriteService {
           projectId: input.projectId,
           invoiceNumber,
           status,
-          lineItems: legacyLineItemsMirror,
           subtotal: subtotal.toFixed(2),
           taxRate: "0",
           taxAmount: taxPool.toFixed(2),
@@ -188,6 +184,14 @@ export class InvoicesWriteService {
       return inserted;
     });
 
+    const invalidate = () => Promise.all([
+      this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finTaxReportsNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId)),
+    ]);
+    if (!registerAfterCommit(invalidate)) await invalidate();
+
     this.audit.log({
       action: "accounting.invoice.created",
       userId,
@@ -200,13 +204,21 @@ export class InvoicesWriteService {
     return { invoice, posted: status === "ISSUED" };
   }
 
-  updateInvoice(
+  async updateInvoice(
     orgId: string,
     userId: string,
     invoiceId: number,
     input: UpdateInvoiceInput,
   ): Promise<{ success: true; posted: boolean }> {
-    return this.updateService.updateInvoice(orgId, userId, invoiceId, input);
+    const result = await this.updateService.updateInvoice(orgId, userId, invoiceId, input);
+    const invalidate = () => Promise.all([
+      this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finTaxReportsNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId)),
+    ]);
+    if (!registerAfterCommit(invalidate)) await invalidate();
+    return result;
   }
 
   recordPayment(
@@ -218,12 +230,20 @@ export class InvoicesWriteService {
     return this.paymentService.recordPayment(orgId, userId, invoiceId, input);
   }
 
-  voidInvoice(
+  async voidInvoice(
     orgId: string,
     userId: string,
     invoiceId: number,
   ): Promise<{ success: true }> {
-    return this.lifecycle.voidInvoice(orgId, userId, invoiceId);
+    const result = await this.lifecycle.voidInvoice(orgId, userId, invoiceId);
+    const invalidate = () => Promise.all([
+      this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finTaxReportsNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId)),
+    ]);
+    if (!registerAfterCommit(invalidate)) await invalidate();
+    return result;
   }
 
   markOverdueInvoices(orgId?: string): Promise<{ updated: number }> {
@@ -245,18 +265,10 @@ export class InvoicesWriteService {
       gstRate: normalizeGstRate(item.gstRate),
     }));
 
-    const lineItems = source.lineItems.map((line) => ({
-      description: line.description,
-      quantity: line.quantity,
-      rate: line.rate,
-      amount: line.amount,
-    }));
-
     return {
       clientId: source.clientId ?? undefined,
       projectId: source.projectId ?? undefined,
       items: items.length > 0 ? items : undefined,
-      lineItems: items.length > 0 ? undefined : lineItems,
       taxRate: 0,
       discount: Number(source.discount ?? "0"),
       currency: source.currency,

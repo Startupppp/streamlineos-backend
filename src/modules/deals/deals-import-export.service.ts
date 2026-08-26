@@ -4,6 +4,7 @@ import { deals, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { toCsv } from "../inventory/import-export/csv.util";
 import { DealsCrudService } from "./deals-crud.service";
 import type { BulkImportDealsInput } from "./dto/deals.schemas";
@@ -76,7 +77,8 @@ export class DealsImportExportService {
           notes,
         });
         created++;
-      } catch {
+      } catch (err) {
+        logSideEffectFailure("deals-import: deal create", { orgId })(err);
         failed++;
       }
     }

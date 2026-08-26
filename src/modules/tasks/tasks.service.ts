@@ -16,6 +16,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { TaskNotificationsService } from "./task-notifications.service";
 import { AccessService } from "../access/access.service";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
   ListInput,
@@ -141,7 +142,7 @@ export class TasksService {
           dueDate: created.dueDate,
           entityLabel,
         })
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("task assignee notification", { orgId }));
     }
 
     return created ?? null;
@@ -194,7 +195,7 @@ export class TasksService {
           type: updated.type,
           dueDate: updated.dueDate,
         })
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("task assignee notification", { orgId }));
     }
 
     return updated ?? null;

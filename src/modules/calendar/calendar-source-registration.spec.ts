@@ -13,14 +13,15 @@ function makeSource(key: string, module: string): CalendarEventSource {
 }
 
 function makeRegistry(enabledModules: string[]) {
+  const access = {
+    moduleAvailabilityFor: async (_orgId: string, _userId: string, moduleKey: string) =>
+      enabledModules.includes(moduleKey)
+        ? { available: true }
+        : { available: false, reason: "org-disabled" },
+  };
   return new CalendarSourceRegistry(
-    {
-      isCoreModule: () => false,
-      getModuleMap: async () =>
-        Object.fromEntries(enabledModules.map((key) => [key, true])),
-      getPlanLockedModules: async () => [],
-    } as never,
-    { getUserDeniedModules: async () => new Set<string>() } as never,
+    access as never,
+    { getDisabledKeys: async () => new Set<string>() } as never,
   );
 }
 

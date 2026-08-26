@@ -10,7 +10,7 @@ import {
   foreignKey,
   unique,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { chatMessageTypeEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { deals } from "../crm";
@@ -125,11 +125,9 @@ export const chatMessages = pgTable(
     }).onDelete("set null"),
     index("idx_chat_messages_channel").on(table.channelId, table.createdAt),
     index("idx_chat_messages_sender").on(table.senderId),
-    index("idx_chat_messages_unread").on(
-      table.channelId,
-      table.isDeleted,
-      table.createdAt,
-    ),
+    index("idx_chat_messages_unread")
+      .on(table.orgId, table.channelId, table.isDeleted, table.createdAt)
+      .where(sql`is_deleted = false`),
     index("idx_chat_messages_org").on(table.orgId),
     unique("uniq_chat_messages_org_id").on(table.orgId, table.id),
   ],

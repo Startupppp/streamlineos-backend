@@ -17,9 +17,9 @@
 
 ## Session Caching Contract
 
-- Redis key: `user:session:{userId}` — caches user profile + permissions + plan, TTL 300s
+- Redis key: `user:session:{userId}` — caches user profile, access scope map, and plan, TTL 300s
 - Invalidated on: logout, account deactivation, role change
-- Auth pipeline: `JwtAuthGuard` validates token → `@CurrentUser()` provides `userId`, `orgId`, `role`, `permissions`, `sessionId`
+- Auth pipeline: `JwtAuthGuard` validates token → `@CurrentUser()` provides `userId`, `orgId`, `role`, `sessionId`; capability checks use `AccessService.scopeFor()`/`holds()`
 
 ## Auth Engine Pipeline (login)
 

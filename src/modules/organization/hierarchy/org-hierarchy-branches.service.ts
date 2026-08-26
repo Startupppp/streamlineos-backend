@@ -12,7 +12,6 @@ import { orgUnits, type OrgUnitMetadata } from "../../../db/schema/common/organi
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
   CreateOrgBranchInput,
@@ -198,8 +197,8 @@ export class OrgHierarchyBranchesService {
 
     if (!row) throw new Error("Failed to create branch");
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
-    await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
+    await this.cache.invalidateForOrg(orgId, "org:units:BRANCH");
+    await this.cache.invalidateForOrg(orgId, "branches:list");
     await this.audit.logCritical({ action: "org.branch.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
     return toOrgBranch(row);
@@ -249,8 +248,8 @@ export class OrgHierarchyBranchesService {
 
     if (!row) throw new NotFoundException("Branch not found");
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
-    await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
+    await this.cache.invalidateForOrg(orgId, "org:units:BRANCH");
+    await this.cache.invalidateForOrg(orgId, "branches:list");
     await this.audit.logCritical({ action: "org.branch.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
     return toOrgBranch(row);
@@ -265,8 +264,8 @@ export class OrgHierarchyBranchesService {
       .set({ deletedAt: new Date() })
       .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BRANCH")));
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
-    await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
+    await this.cache.invalidateForOrg(orgId, "org:units:BRANCH");
+    await this.cache.invalidateForOrg(orgId, "branches:list");
     await this.audit.logCritical({ action: "org.branch.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
   }
 

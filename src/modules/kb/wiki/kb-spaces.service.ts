@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
-import { kbSpaces, kbSpaceMembers, kbArticles } from "../../../db/schema";
+import { kbSpaces, kbSpaceMembers, kbArticles, kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -168,12 +168,25 @@ export class KbSpacesService {
       values.name = input.name;
       values.slug = slug;
     }
+    const aclChanged = input.audience !== undefined || input.isPublicHelpCenter !== undefined;
     const [updated] = await this.db
       .update(kbSpaces)
       .set(values)
       .where(and(eq(kbSpaces.id, spaceId), eq(kbSpaces.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Space not found");
+    if (aclChanged) {
+      await Promise.all([
+        this.db
+          .update(kbPages)
+          .set({ aclRevision: sql`acl_revision + 1` })
+          .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId))),
+        this.db
+          .update(kbArticles)
+          .set({ aclRevision: sql`acl_revision + 1` })
+          .where(and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId))),
+      ]);
+    }
     await this.access.invalidateAccessibleSpaceIds(orgId);
     return updated;
   }

@@ -21,7 +21,10 @@ import { PublicPricingService } from "./pricing.service";
 @Module({
   imports: [AuthModule, CrmAutomationStudioModule, BillingModule],
   controllers: [WaitlistAdmissionController, PublicController],
-  providers: [WaitlistAdmissionService, PlatformOperatorGuard, PublicPricingService, 
+  providers: [
+    WaitlistAdmissionService,
+    PlatformOperatorGuard,
+    PublicPricingService,
     RecruitmentService,
     RoadmapService,
     KbService,

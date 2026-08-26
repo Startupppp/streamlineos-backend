@@ -320,8 +320,6 @@ export class KbPagesController {
   }
 
   private async resolveCanManage(u: CurrentUserContext): Promise<boolean> {
-    if (u.isOrgOwner) return true;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    return perms.has("kb:pages:manage");
+    return this.access.holds(u, "kb:pages:manage");
   }
 }

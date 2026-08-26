@@ -7,6 +7,7 @@ import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { and, eq, inArray } from "drizzle-orm";
 import { boundedMap } from "../../common/async/bounded-map";
 import { logger } from "../../common/logger/logger.service";
+import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 
 const SUPPRESSED_GENERAL_PREFERENCES = new Set(["NOTHING", "MENTIONS"]);
 
@@ -28,7 +29,10 @@ function reportFailures(
   channelId: number,
   results: PromiseSettledResult<unknown>[],
 ): void {
-  const failed = results.filter((result) => result.status === "rejected").length;
+  const failures = results
+    .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+    .map((result) => result.reason);
+  const failed = failures.length;
   if (failed === 0) return;
   logger.error("chat notification publish failed for some recipients", {
     event,
@@ -36,6 +40,7 @@ function reportFailures(
     failed,
     total: results.length,
   });
+  throw new AggregateError(failures, `${event} delivery failed for ${failed} recipient(s)`);
 }
 
 @Injectable()
@@ -44,6 +49,7 @@ export class ChatNotificationsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ably: AblyService,
     private readonly orgSettings: ChatOrgSettingsService,
+    private readonly effects: ExternalEffectLedger,
   ) {}
 
   async publishNewMessageNotification(
@@ -51,6 +57,7 @@ export class ChatNotificationsService {
     channelId: number,
     message: { id: number; senderId: string; senderName: string | null },
     channelType: string,
+    idempotencyKey?: string,
   ) {
     const members = await this.db
       .select({
@@ -73,15 +80,28 @@ export class ChatNotificationsService {
       return !SUPPRESSED_GENERAL_PREFERENCES.has(effectivePreference);
     });
 
-    const delivered = await boundedMap(recipients, PUBLISH_CONCURRENCY, ({ userId }) =>
-      this.ably.publishToUser(orgId, userId, "notification:message", {
+    const delivered = await boundedMap(recipients, PUBLISH_CONCURRENCY, ({ userId }) => {
+      const payload = {
         channelId,
         messageId: message.id,
         senderId: message.senderId,
         senderName: message.senderName,
         channelType,
-      }),
-    );
+        ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:${userId}` } : {}),
+      };
+      const send = () => idempotencyKey
+        ? this.ably.publishToUser(orgId, userId, "notification:message", payload, { requireConfigured: true })
+        : this.ably.publishToUser(orgId, userId, "notification:message", payload);
+      return idempotencyKey
+        ? this.effects.execute({
+            organizationId: orgId,
+            producerEventId: idempotencyKey,
+            effectKey: `${idempotencyKey}:${userId}`,
+            effectType: "chat.notification.message",
+            providerIdempotency: "STABLE_KEY_PROPAGATED",
+          }, send).then(() => undefined)
+        : send();
+    });
     reportFailures("notification:message", channelId, delivered);
   }
 
@@ -90,6 +110,7 @@ export class ChatNotificationsService {
     channelId: number,
     message: { id: number; senderId: string; senderName: string },
     mentionedUserIds: string[],
+    idempotencyKey?: string,
   ) {
     if (mentionedUserIds.length === 0) return;
 
@@ -101,6 +122,7 @@ export class ChatNotificationsService {
       .from(chatChannelMembers)
       .where(
         and(
+          eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
           inArray(chatChannelMembers.userId, mentionedUserIds),
         ),
@@ -115,14 +137,27 @@ export class ChatNotificationsService {
       return (pref !== "DEFAULT" ? pref : defaultPreference) !== "NOTHING";
     });
 
-    const delivered = await boundedMap(recipients, PUBLISH_CONCURRENCY, (userId) =>
-      this.ably.publishToUser(orgId, userId, "notification:mention", {
+    const delivered = await boundedMap(recipients, PUBLISH_CONCURRENCY, (userId) => {
+      const payload = {
         channelId,
         messageId: message.id,
         senderId: message.senderId,
         senderName: message.senderName,
-      }),
-    );
+        ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:${userId}` } : {}),
+      };
+      const send = () => idempotencyKey
+        ? this.ably.publishToUser(orgId, userId, "notification:mention", payload, { requireConfigured: true })
+        : this.ably.publishToUser(orgId, userId, "notification:mention", payload);
+      return idempotencyKey
+        ? this.effects.execute({
+            organizationId: orgId,
+            producerEventId: idempotencyKey,
+            effectKey: `${idempotencyKey}:${userId}`,
+            effectType: "chat.notification.mention",
+            providerIdempotency: "STABLE_KEY_PROPAGATED",
+          }, send).then(() => undefined)
+        : send();
+    });
     reportFailures("notification:mention", channelId, delivered);
   }
 }

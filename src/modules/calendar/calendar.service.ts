@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, gte, lte, inArray } from "drizzle-orm";
 import {
   calendarEvents,
+  calendarEventExceptions,
   eventAttendees,
   leaveRequests,
   users,
@@ -12,10 +13,12 @@ import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateEventInput, RsvpInput, UpdateEventInput } from "./dto/calendar.schemas";
+import type { UpsertOccurrenceExceptionInput } from "./dto/occurrence-exception.schemas";
 import { EmailService } from "../email/email.service";
 import { getCalendarInviteEmail } from "../email/templates/calendar";
 import { CalendarEventsAggregateService } from "./calendar-events-aggregate.service";
-import type { CalendarEventItem, OooConflict } from "./calendar.types";
+import { CalendarConflictService } from "./calendar-conflict.service";
+import type { CalendarEventItem, CalendarEventsResult, OooConflict } from "./calendar.types";
 import { dateOnly } from "./calendar.types";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
 
@@ -28,6 +31,7 @@ export class CalendarService {
     private readonly sync: ExternalCalendarSyncService,
     private readonly email: EmailService,
     private readonly eventsAggregate: CalendarEventsAggregateService,
+    private readonly conflict: CalendarConflictService,
   ) {}
 
   getEvents(
@@ -35,7 +39,7 @@ export class CalendarService {
     userId: string,
     start: Date,
     end: Date,
-  ): Promise<CalendarEventItem[]> {
+  ): Promise<CalendarEventsResult> {
     return this.eventsAggregate.getEvents(orgId, userId, start, end);
   }
 
@@ -74,33 +78,43 @@ export class CalendarService {
 
     await assertUsersInOrg(this.db, orgId, attendeeIds);
 
-    const [event, oooConflicts] = await Promise.all([
-      this.db
-        .insert(calendarEvents)
-        .values({
+    const [{ event, eventConflicts }, oooConflicts] = await Promise.all([
+      this.db.transaction(async (tx) => {
+        const conflicts = await this.conflict.checkConflictsInTx(
+          tx,
           orgId,
-          createdBy: userId,
-          title: input.title,
-          description: input.description ?? null,
-          location: input.location ?? null,
+          userId,
           startDate,
           endDate,
-          allDay: input.allDay ?? false,
-          color: input.color ?? "blue",
-          category: input.category,
-          entityType: input.entityType ?? null,
-          entityId: input.entityId ?? null,
-          attendeeIds,
-          isRecurring: input.isRecurring ?? false,
-          recurringRule: input.recurringRule ?? null,
-          agenda: input.agenda ?? null,
-          linkedDealId: input.linkedDealId ?? null,
-          linkedLeadId: input.linkedLeadId ?? null,
-        })
-        .returning()
-        .then((rows) => rows[0]),
+        );
+        const insertedRows = await tx
+          .insert(calendarEvents)
+          .values({
+            orgId,
+            createdBy: userId,
+            title: input.title,
+            description: input.description ?? null,
+            location: input.location ?? null,
+            startDate,
+            endDate,
+            timezone: input.timezone,
+            allDay: input.allDay ?? false,
+            color: input.color ?? "blue",
+            category: input.category,
+            entityType: input.entityType ?? null,
+            entityId: input.entityId ?? null,
+            attendeeIds,
+            agenda: input.agenda ?? null,
+            linkedDealId: input.linkedDealId ?? null,
+            linkedLeadId: input.linkedLeadId ?? null,
+            rrule: input.rrule ?? null,
+            recurrenceEnd: input.recurrenceEnd ? new Date(input.recurrenceEnd) : null,
+          })
+          .returning();
+        return { event: insertedRows[0], eventConflicts: conflicts };
+      }),
       this.getOooConflicts(orgId, attendeeIds, startDate, endDate),
-    ]);
+    ] as const);
 
     let meetingUrl: string | null = null;
     let syncError: string | null = null;
@@ -151,7 +165,7 @@ export class CalendarService {
         ),
       );
     }
-    return { event: syncedEvent, oooConflicts, meetingUrl, syncError };
+    return { event: syncedEvent, oooConflicts, eventConflicts, meetingUrl, syncError };
   }
 
   private async dispatchInviteEmails(params: {
@@ -245,13 +259,15 @@ export class CalendarService {
       await assertUsersInOrg(this.db, orgId, input.attendeeIds);
       updateData.attendeeIds = input.attendeeIds;
     }
-    if (input.isRecurring !== undefined) updateData.isRecurring = input.isRecurring;
-    if (input.recurringRule !== undefined) updateData.recurringRule = input.recurringRule ?? null;
+    if (input.timezone !== undefined) updateData.timezone = input.timezone;
     if (input.agenda !== undefined) updateData.agenda = input.agenda ?? null;
     if (input.postMeetingNotes !== undefined)
       updateData.postMeetingNotes = input.postMeetingNotes ?? null;
     if (input.linkedDealId !== undefined) updateData.linkedDealId = input.linkedDealId ?? null;
     if (input.linkedLeadId !== undefined) updateData.linkedLeadId = input.linkedLeadId ?? null;
+    if (input.rrule !== undefined) updateData.rrule = input.rrule ?? null;
+    if (input.recurrenceEnd !== undefined)
+      updateData.recurrenceEnd = input.recurrenceEnd ? new Date(input.recurrenceEnd) : null;
 
     const [event] = await this.db
       .update(calendarEvents)
@@ -268,12 +284,14 @@ export class CalendarService {
     if (event?.integrationConnectionId && event.externalEventId) {
       try {
         const conn = await this.ownedActiveConnection(orgId, userId, event.integrationConnectionId);
-        await this.sync.pushUpdate(userId, conn, event.externalEventId, {
+        const updateResult = await this.sync.pushUpdate(userId, conn, event.externalEventId, {
           title: event.title,
           description: event.description ?? null,
           startIso: event.startDate.toISOString(),
           endIso: event.endDate.toISOString(),
         });
+        if (!updateResult.success)
+          this.logger.warn(`External sync update skipped for ${conn.toolkit}: ${updateResult.reason}`);
       } catch (error) {
         this.logger.warn(
           `External sync update failed for event ${event.id}: ${error instanceof Error ? error.message : String(error)}`,
@@ -314,7 +332,9 @@ export class CalendarService {
     if (mapping?.integrationConnectionId && mapping.externalEventId) {
       try {
         const conn = await this.ownedActiveConnection(orgId, userId, mapping.integrationConnectionId);
-        await this.sync.pushDelete(userId, conn, mapping.externalEventId);
+        const deleteResult = await this.sync.pushDelete(userId, conn, mapping.externalEventId);
+        if (!deleteResult.success)
+          this.logger.warn(`External sync delete skipped for ${conn.toolkit}: ${deleteResult.reason}`);
       } catch (error) {
         this.logger.warn(
           `External sync delete failed for event ${id}: ${error instanceof Error ? error.message : String(error)}`,
@@ -404,6 +424,65 @@ export class CalendarService {
         user: { columns: { id: true, name: true, email: true, image: true } },
       },
     });
+  }
+
+  private async getRecurringEventForOwner(orgId: string, userId: string, eventId: number) {
+    const rows = await this.db
+      .select({ createdBy: calendarEvents.createdBy, rrule: calendarEvents.rrule })
+      .from(calendarEvents)
+      .where(and(eq(calendarEvents.id, eventId), eq(calendarEvents.orgId, orgId)))
+      .limit(1);
+    const ev = rows[0];
+    if (!ev || ev.createdBy !== userId || !ev.rrule) return null;
+    return ev;
+  }
+
+  async upsertOccurrenceException(
+    orgId: string,
+    userId: string,
+    eventId: number,
+    occurrenceStartIso: string,
+    input: UpsertOccurrenceExceptionInput,
+  ) {
+    if (!(await this.getRecurringEventForOwner(orgId, userId, eventId))) return null;
+    const occurrenceStart = new Date(occurrenceStartIso);
+    const [row] = await this.db
+      .insert(calendarEventExceptions)
+      .values({
+        orgId,
+        eventId,
+        occurrenceStart,
+        isCancelled: false,
+        modifiedTitle: input.modifiedTitle ?? null,
+        modifiedStart: input.modifiedStart ? new Date(input.modifiedStart) : null,
+        modifiedEnd: input.modifiedEnd ? new Date(input.modifiedEnd) : null,
+      })
+      .onConflictDoUpdate({
+        target: [calendarEventExceptions.orgId, calendarEventExceptions.eventId, calendarEventExceptions.occurrenceStart],
+        set: {
+          isCancelled: false,
+          modifiedTitle: input.modifiedTitle ?? null,
+          modifiedStart: input.modifiedStart ? new Date(input.modifiedStart) : null,
+          modifiedEnd: input.modifiedEnd ? new Date(input.modifiedEnd) : null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
+  }
+
+  async cancelOccurrence(orgId: string, userId: string, eventId: number, occurrenceStartIso: string) {
+    if (!(await this.getRecurringEventForOwner(orgId, userId, eventId))) return null;
+    const occurrenceStart = new Date(occurrenceStartIso);
+    const [row] = await this.db
+      .insert(calendarEventExceptions)
+      .values({ orgId, eventId, occurrenceStart, isCancelled: true })
+      .onConflictDoUpdate({
+        target: [calendarEventExceptions.orgId, calendarEventExceptions.eventId, calendarEventExceptions.occurrenceStart],
+        set: { isCancelled: true, updatedAt: new Date() },
+      })
+      .returning();
+    return row;
   }
 
   exportEvents(orgId: string, from: Date, to: Date) {

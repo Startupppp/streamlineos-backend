@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { MfaPolicyService } from "../../access/mfa-policy.service";
 import {
   orgCustomDomains,
@@ -61,8 +61,8 @@ export class OrganizationSettingsService {
 
   private async invalidateSettingsCache(orgId: string): Promise<void> {
     await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.orgSettings(orgId)),
-      this.cache.invalidateNamespace(CACHE_KEYS.orgProfileNamespace(orgId)),
+      this.cache.invalidateForOrg(orgId, "org:settings"),
+      this.cache.invalidateNamespaceForOrg(orgId, "org:profile"),
       this.mfaPolicy.invalidateOrg(orgId),
     ]);
   }
@@ -140,10 +140,10 @@ export class OrganizationSettingsService {
       if (input.ipAllowlist !== undefined) {
         currentSettings.ipAllowlist = input.ipAllowlist;
         if (input.ipAllowlist.length === 0) {
-          await this.cache.invalidate(`org:ip-allowlist:${orgId}`);
+          await this.cache.invalidateForOrg(orgId, "org:ip-allowlist");
         } else {
           await this.cache.set(
-            `org:ip-allowlist:${orgId}`,
+            `${orgId}:org:ip-allowlist`,
             JSON.stringify(input.ipAllowlist),
             3600,
           );
@@ -236,10 +236,10 @@ export class OrganizationSettingsService {
 
     if (input.ipAllowlist !== undefined) {
       if (input.ipAllowlist.length === 0) {
-        await this.cache.invalidate(`org:ip-allowlist:${orgId}`);
+        await this.cache.invalidateForOrg(orgId, "org:ip-allowlist");
       } else {
         await this.cache.set(
-          `org:ip-allowlist:${orgId}`,
+          `${orgId}:org:ip-allowlist`,
           JSON.stringify(input.ipAllowlist),
           3600,
         );
@@ -264,8 +264,9 @@ export class OrganizationSettingsService {
   }
 
   async getSettings(orgId: string) {
-    return this.cache.cached(
-      CACHE_KEYS.orgSettings(orgId),
+    return this.cache.cachedForOrg(
+      orgId,
+      "org:settings",
       () => this.fetchSettings(orgId),
       CACHE_TTL.MEDIUM,
     );

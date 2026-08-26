@@ -8,6 +8,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { ExportInput } from "./dto/quote.schemas";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 
 export type SendNotDraft = { error: "not_draft" };
 
@@ -58,7 +59,7 @@ export class QuotesLifecycleService {
       metadata: { quoteNumber: existing.quoteNumber },
     });
 
-    void this.bus.emit(orgId, "quote.sent", { entityType: "quote", entityId: String(quoteId), data: { quoteNumber: existing.quoteNumber, dealId: existing.dealId, clientId: existing.clientId }, actorId: userId }).catch(() => undefined);
+    void this.bus.emit(orgId, "quote.sent", { entityType: "quote", entityId: String(quoteId), data: { quoteNumber: existing.quoteNumber, dealId: existing.dealId, clientId: existing.clientId }, actorId: userId }).catch(logSideEffectFailure("quote.sent automation bus emit", { orgId, quoteId }));
 
     await this.cache.invalidateNamespace(`quotes:list:${orgId}`);
 
@@ -163,7 +164,6 @@ export class QuotesLifecycleService {
           clientId: null,
           invoiceNumber,
           status: "DRAFT",
-          lineItems: [],
           subtotal: subtotal.toFixed(4),
           taxRate: "0",
           taxAmount: taxAmount.toFixed(4),
@@ -229,7 +229,7 @@ export class QuotesLifecycleService {
       metadata: { quoteNumber: existing.quoteNumber, documentRef },
     });
 
-    void this.bus.emit(orgId, "quote.signed", { entityType: "quote", entityId: String(quoteId), data: { quoteNumber: existing.quoteNumber, dealId: existing.dealId, clientId: existing.clientId, documentRef: documentRef ?? null }, actorId: userId }).catch(() => undefined);
+    void this.bus.emit(orgId, "quote.signed", { entityType: "quote", entityId: String(quoteId), data: { quoteNumber: existing.quoteNumber, dealId: existing.dealId, clientId: existing.clientId, documentRef: documentRef ?? null }, actorId: userId }).catch(logSideEffectFailure("quote.signed automation bus emit", { orgId, quoteId }));
 
     await this.cache.invalidateNamespace(`quotes:list:${orgId}`);
     return updated;

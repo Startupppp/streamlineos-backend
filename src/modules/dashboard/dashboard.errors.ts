@@ -1,9 +1,6 @@
-export interface DashboardActor {
-  userId: string;
-  role: string;
-  permissions: string[];
-  isOrgOwner: boolean;
-}
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+
+export type DashboardActor = CurrentUserContext;
 
 export type DashboardForbidden = { error: "forbidden"; message: string };
 

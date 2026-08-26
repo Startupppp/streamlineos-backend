@@ -129,6 +129,7 @@ export class StorageController {
 
     try {
       const result = await this.storage.uploadCompressed(
+        u.orgId,
         file.buffer,
         folder,
         file.originalname,
@@ -190,7 +191,7 @@ export class StorageController {
     this.audit.log({ action: "file.download", userId: u.userId, orgId, metadata: { fileKey } });
 
     if (attachment) {
-      const stream = await this.openStream(fileKey, "File not found");
+      const stream = await this.openStream(orgId, fileKey, "File not found");
       const filename = this.storage.getFileNameFromKey(fileKey);
       res.setHeader("Content-Type", stream.contentType || this.storage.getMimeType(fileKey));
       res.setHeader(
@@ -201,7 +202,7 @@ export class StorageController {
       return;
     }
 
-    const signedUrl = await this.storage.getFileUrl(fileKey, expiresIn);
+    const signedUrl = await this.storage.getFileUrl(orgId, fileKey, expiresIn);
     res.json({ url: signedUrl });
   }
 
@@ -234,7 +235,7 @@ export class StorageController {
       }
     }
 
-    const stream = await this.openStream(keyParam, "Not found");
+    const stream = await this.openStream(member.orgId ?? u.orgId, keyParam, "Not found");
     res.setHeader("Content-Type", stream.contentType || this.storage.getMimeType(keyParam));
     res.setHeader("Cache-Control", "public, max-age=86400, immutable");
     this.pipe(stream.body, res);
@@ -289,9 +290,13 @@ export class StorageController {
     }
   }
 
-  private async openStream(key: string, notFoundMessage: string): Promise<FileStreamResult> {
+  private async openStream(
+    orgId: string,
+    key: string,
+    notFoundMessage: string,
+  ): Promise<FileStreamResult> {
     try {
-      return await this.storage.getFileStream(key);
+      return await this.storage.getFileStream(orgId, key);
     } catch {
       throw new NotFoundException(notFoundMessage);
     }

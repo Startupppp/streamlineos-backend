@@ -9,6 +9,9 @@ function makeDb(resolveWith: unknown[] = []) {
   const chain: Record<string, unknown> = {};
   chain.select = jest.fn(() => chain);
   chain.from = jest.fn(() => chain);
+  // The company is read through `crm_org_party_map` joined to the party now, so
+  // the chain has to carry the join it was never asked for before.
+  chain.innerJoin = jest.fn(() => chain);
   chain.where = jest.fn().mockResolvedValue(resolveWith);
   chain.orderBy = jest.fn(() => chain);
   chain.limit = jest.fn().mockResolvedValue(resolveWith);
@@ -83,6 +86,7 @@ describe("CrmCustomer360Service – permission filtering", () => {
     const chain: Record<string, unknown> = {};
     chain.select = jest.fn(() => chain);
     chain.from = jest.fn(() => chain);
+    chain.innerJoin = jest.fn(() => chain);
     chain.where = jest.fn().mockResolvedValue([{ id: 1, name: "Test Co" }]);
     chain.orderBy = jest.fn(() => chain);
     chain.limit = jest.fn().mockResolvedValue([{ id: 1, name: "Test Co" }]);

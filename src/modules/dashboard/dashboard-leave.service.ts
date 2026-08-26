@@ -83,8 +83,7 @@ export class DashboardLeaveService {
       return { error: "forbidden", message: "Forbidden" } as DashboardForbidden;
     }
 
-    const isApprover =
-      u.isOrgOwner || u.permissions.includes("hr:leaves:approve");
+    const isApprover = await this.access.holds(u, "hr:leaves:approve");
     const key = `dashboard:pending-approvals:${orgId}:${isApprover ? "approver" : "self"}`;
 
     return this.cache.cached(

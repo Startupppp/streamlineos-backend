@@ -7,6 +7,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "./access.service";
 import { PermissionGuard } from "./permission.guard";
 import { RequirePermission } from "./require-permission.decorator";
+import { moduleAvailabilityResolver } from "../../common/rbac/module-availability";
 
 class GuardTestController {
   withoutPermission(): void {}
@@ -26,7 +27,6 @@ const user: CurrentUserContext = {
   userId: "user-1",
   orgId: "org-1",
   role: "ADMIN",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
@@ -37,10 +37,12 @@ describe("PermissionGuard", () => {
   let guard: PermissionGuard;
   const resolveUserPermissions = jest.fn();
   const isModuleEnabled = jest.fn();
+  const getModuleState = jest.fn();
 
   beforeEach(async () => {
     resolveUserPermissions.mockReset();
     isModuleEnabled.mockReset();
+    getModuleState.mockReset().mockResolvedValue(true);
 
     moduleRef = await Test.createTestingModule({
       providers: [
@@ -51,6 +53,20 @@ describe("PermissionGuard", () => {
           useValue: {
             resolveUserPermissions,
             isModuleEnabled,
+            getModuleState,
+            scopeFor: async (currentUser: CurrentUserContext, key: string) => {
+              if (currentUser.isOrgOwner) return "all";
+              return (await resolveUserPermissions(currentUser.orgId, currentUser.userId)).get(key) ?? "none";
+            },
+            buildModuleAvailabilityResolver: (getModuleMap: (orgId: string) => Promise<Record<string, boolean>>) =>
+              moduleAvailabilityResolver(
+                {
+                  isCoreModule: () => false,
+                  getModuleMap,
+                  getPlanLockedModules: async () => [],
+                },
+                { getUserDeniedModules: async () => new Set<string>() },
+              ),
           },
         },
       ],

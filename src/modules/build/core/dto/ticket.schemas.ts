@@ -129,7 +129,7 @@ export type SearchTicketsQuery = z.infer<typeof searchTicketsQuerySchema>;
 
 export const ticketActivityQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
-  before: z.coerce.number().int().positive().optional(),
+  cursor: z.string().optional(),
 });
 export type TicketActivityQuery = z.infer<typeof ticketActivityQuerySchema>;
 

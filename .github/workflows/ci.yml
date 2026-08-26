@@ -55,6 +55,13 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Import cycles
+        run: pnpm check:cycles
+
+      - name: Dead-code report
+        run: pnpm exec knip --no-progress
+        continue-on-error: true
+
   # Tenant isolation, against a real database as the real application role.
   #
   # Its own job because it needs credentials CI cannot fabricate, and because a
@@ -75,6 +82,12 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      - name: RLS coverage verification
+        run: pnpm db:verify-rls
+        env:
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
 
       - name: Seeded isolation suite
         run: pnpm test:e2e:seeded

@@ -215,6 +215,7 @@ export class FeedbucketPublicController {
         );
 
       screenshotUpload = await this.storage.uploadCompressed(
+        widget.orgId,
         screenshot.buffer,
         `feedbucket/${folder}/screenshots`,
         screenshot.originalname,
@@ -232,6 +233,7 @@ export class FeedbucketPublicController {
       const rawMime = recording.mimetype.split(";")[0]?.trim() ?? "";
       const storeMime = rawMime.startsWith("video/") ? rawMime : "video/webm";
       recordingUpload = await this.storage.uploadCompressed(
+        widget.orgId,
         recording.buffer,
         `feedbucket/${folder}/recordings`,
         recording.originalname || "recording.webm",

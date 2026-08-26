@@ -19,6 +19,8 @@ export const pushPayloadSchema = z.object({
   category: z.enum(notificationCategoryEnum.enumValues).optional(),
   url: z.string().optional(),
   notificationId: z.number().int().positive().optional(),
+  /** Stable client/provider deduplication identity for replayed durable fan-out. */
+  idempotencyKey: z.string().min(1).optional(),
 });
 
 export type PushPayload = z.infer<typeof pushPayloadSchema>;
@@ -44,6 +46,8 @@ export const chatMessagePayloadSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).nullable().optional(),
   messageType: z.string().optional(),
   attachments: z.array(chatAttachmentPayloadSchema).optional(),
+  /** Stable client-side deduplication identity for a replayed durable fan-out. */
+  idempotencyKey: z.string().min(1).optional(),
 });
 
 export type ChatAttachmentPayload = z.infer<typeof chatAttachmentPayloadSchema>;

@@ -9,7 +9,13 @@ import {
   type PlatformPaymentProvider,
 } from "../platform-payment-provider";
 import { AuditService } from "../../../../common/audit/audit.service";
+import { ExternalEffectLedger } from "../../../../common/outbox/external-effect-ledger";
+import { RevenueAnalyticsService } from "../revenue-analytics.service";
 import { PlanLimitsService } from "../plan-limits.service";
+import { APP_CONFIG } from "../../../../config/config.module";
+import { PaymentProviderAdapterRegistry } from "../../payments/payment-provider-adapter.interface";
+import { PaymentProviderResolver } from "../../payments/payment-provider-resolver.service";
+import { FakeProviderAdapter, FAKE_VALID_PAYMENT_SIG } from "../../payments/testing/fake-provider-adapter";
 import { creditsToMilli, milliToCredits } from "../../../ai/core/billing/ai-model-pricing.constants";
 import { planGrantMilli } from "../ai-credit-units";
 
@@ -52,7 +58,7 @@ describe("creditsToMilli / milliToCredits — round-trip invariants", () => {
 const VERIFY_INPUT = {
   razorpay_order_id: "order_idp_001",
   razorpay_payment_id: "pay_idp_abc",
-  razorpay_signature: "sig_valid",
+  razorpay_signature: FAKE_VALID_PAYMENT_SIG,
   plan: "STARTER" as const,
 };
 
@@ -75,6 +81,20 @@ function makeRazorpay(configured = true, signatureValid = true, orgId = "org-1")
   } as unknown as jest.Mocked<PlatformPaymentProvider>;
 }
 
+/** BillingService still resolves a tenant provider for the provider-neutral webhook path. */
+function makeResolver() {
+  return {
+    resolve: jest.fn().mockResolvedValue(undefined),
+    resolveConfigured: jest.fn().mockResolvedValue(undefined),
+  } as unknown as PaymentProviderResolver;
+}
+
+function makeRegistry(withAdapter = true) {
+  const registry = new PaymentProviderAdapterRegistry();
+  if (withAdapter) registry.register(new FakeProviderAdapter());
+  return registry;
+}
+
 function makePlanLimits() {
   return { bust: jest.fn(), resolveTier: jest.fn().mockResolvedValue({ plan: "STARTER" }) };
 }
@@ -87,16 +107,37 @@ function makeMockAiCreditsForBilling() {
   return { grantPlanCredits: jest.fn().mockResolvedValue(undefined) };
 }
 
+/*
+  `execute` runs the effect and records it; the fake must therefore INVOKE the
+  callback, or every assertion about what the effect did (credit grants, in
+  particular) silently passes against work that never happened.
+*/
+function makeEffectLedger() {
+  return {
+    execute: jest.fn(async (_descriptor: unknown, run: () => Promise<unknown>) => run()),
+  } as unknown as ExternalEffectLedger;
+}
+
 describe("BillingService.verifyAndActivate — idempotency", () => {
-  async function buildBilling(db: unknown, orgId = "org-1"): Promise<BillingService> {
+  async function buildBilling(
+    db: unknown,
+    orgId = "org-1",
+    registry = makeRegistry(),
+    razorpay: jest.Mocked<PlatformPaymentProvider> = makeRazorpay(true, true, orgId),
+  ): Promise<BillingService> {
     const module = await Test.createTestingModule({
       providers: [
         BillingService,
         { provide: DRIZZLE, useValue: db },
-        { provide: PLATFORM_PAYMENT_PROVIDER, useValue: makeRazorpay(true, true, orgId) },
+        { provide: PLATFORM_PAYMENT_PROVIDER, useValue: razorpay },
         { provide: AiCreditsService, useValue: makeMockAiCreditsForBilling() },
         { provide: AuditService, useValue: makeAuditService() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },
+        { provide: RevenueAnalyticsService, useValue: { recordEvent: jest.fn().mockResolvedValue(undefined) } },
+        { provide: ExternalEffectLedger, useValue: makeEffectLedger() },
+        { provide: PaymentProviderAdapterRegistry, useValue: registry },
+        { provide: PaymentProviderResolver, useValue: makeResolver() },
+        { provide: APP_CONFIG, useValue: { RAZORPAY_WEBHOOK_SECRET: "test-secret" } },
       ],
     }).compile();
     return module.get(BillingService);
@@ -159,21 +200,13 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
   });
 
   it("invalid signature → throws BadRequestException before any DB write", async () => {
-    const module = await Test.createTestingModule({
-      providers: [
-        BillingService,
-        { provide: DRIZZLE, useValue: { transaction: jest.fn() } },
-        { provide: PLATFORM_PAYMENT_PROVIDER, useValue: makeRazorpay(true, false) },
-        { provide: AiCreditsService, useValue: makeMockAiCreditsForBilling() },
-        { provide: AuditService, useValue: makeAuditService() },
-        { provide: PlanLimitsService, useValue: makePlanLimits() },
-      ],
-    }).compile();
-    const svc = module.get(BillingService);
-
-    await expect(svc.verifyAndActivate("org-1", "user-1", VERIFY_INPUT)).rejects.toThrow(
+    const wrongSigInput = { ...VERIFY_INPUT, razorpay_signature: "wrong-signature" };
+    const db = { transaction: jest.fn() };
+    const svc = await buildBilling(db, "org-1", makeRegistry(), makeRazorpay(true, false));
+    await expect(svc.verifyAndActivate("org-1", "user-1", wrongSigInput)).rejects.toThrow(
       "Payment verification failed",
     );
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 });
 

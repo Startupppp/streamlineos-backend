@@ -8,7 +8,6 @@ import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
-import { ChatMessageFanoutService } from "./chat-message-fanout.service";
 import { CacheService } from "../../common/cache/cache.service";
 
 const mockDb = {
@@ -79,10 +78,6 @@ describe("ChatMessagesService", () => {
         { provide: ChatReplyRemindersService, useValue: mockReplyReminders },
         { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
         { provide: EntityReferenceService, useValue: mockEntities },
-        {
-          provide: ChatMessageFanoutService,
-          useValue: { dispatch: jest.fn().mockResolvedValue(undefined) },
-        },
       ],
     }).compile();
     service = module.get(ChatMessagesService);
@@ -150,6 +145,31 @@ describe("ChatMessagesService", () => {
           ],
         }),
       ).resolves.toBeDefined();
+    });
+  });
+
+  describe("sendSystemMessage", () => {
+    it("uses the sender identity read in the message transaction", async () => {
+      mockDb.limit
+        .mockResolvedValueOnce([{ id: 1 }])
+        .mockResolvedValueOnce([{ name: "Alice" }]);
+      mockDb.returning.mockResolvedValueOnce([{
+        id: 7,
+        channelId: 1,
+        senderId: "user1",
+        content: "system update",
+        createdAt: new Date(),
+        replyToId: null,
+      }]);
+
+      await service.sendSystemMessage(1, "user1", "org1", "system update", {});
+
+      expect(mockAbly.publishChatMessage).toHaveBeenCalledWith(
+        "org1",
+        1,
+        expect.objectContaining({ senderName: "Alice" }),
+      );
+      expect(mockDb.limit).toHaveBeenCalledTimes(2);
     });
   });
 

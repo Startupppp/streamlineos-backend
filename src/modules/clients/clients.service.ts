@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
-import { clients, deals, dealActivities, leadActivities, users } from "../../db/schema";
-import { businessParties, clientPartyMap } from "../../db/schema/party";
+import { deals, dealActivities, leadActivities, users } from "../../db/schema";
+import { businessParties, clientPartyMap, leadPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -141,24 +141,30 @@ export class ClientsService {
 
   async getTimeline(orgId: string, clientId: number): Promise<{ events: TimelineEvent[]; total: number } | null> {
     /*
-     * `clients.lead_id` is the one column here the party cannot answer for: a
-     * legacy-to-legacy pointer with no Party equivalent until `leads` is dropped,
-     * per `party-mirror-fields.ts`. So it is read from the legacy row and nothing
-     * else is -- an id, never a name. That association is why this file stays on
-     * the legacy-reader ratchet.
+     * The lead this client converted from, which 0265 moved onto the party as
+     * `converted_from_party_id`. `lead_activities` is keyed by the integer lead
+     * id, so the map is joined back to recover it -- an id, never a name, and a
+     * LEFT join because most clients were never a lead and the timeline still has
+     * deals to show for them. The legacy row is not read at all any more.
      */
     const [client] = await this.db
       .select({
         id: CLIENT_PARTY_COLUMNS.id,
         name: CLIENT_PARTY_COLUMNS.name,
         convertedAt: CLIENT_PARTY_COLUMNS.convertedAt,
-        leadId: clients.leadId,
+        leadId: leadPartyMap.leadId,
       })
       .from(clientPartyMap)
       .innerJoin(businessParties, CLIENT_PARTY_JOIN)
-      .innerJoin(
-        clients,
-        and(eq(clients.id, clientPartyMap.clientId), eq(clients.orgId, clientPartyMap.organizationId)),
+      // The tenant named as a literal rather than correlated, so a party id
+      // shared across organisations cannot reach the wrong map row and the
+      // planner can push the constant into the index.
+      .leftJoin(
+        leadPartyMap,
+        and(
+          eq(leadPartyMap.partyId, businessParties.convertedFromPartyId),
+          eq(leadPartyMap.organizationId, orgId),
+        ),
       )
       .where(and(...clientPartyScope(orgId), clientIdIs(clientId)));
     if (!client) return null;

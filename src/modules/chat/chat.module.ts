@@ -31,16 +31,37 @@ import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { ChatSummarizeService } from "./chat-summarize.service";
 import { RealtimeModule } from "../realtime/realtime.module";
 import { EntityReferenceModule } from "../entity-reference/entity-reference.module";
+import { OutboxModule } from "../../common/outbox/outbox.module";
+import { ChatFanoutOutboxConsumer } from "./chat-fanout-outbox.consumer";
+import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
+import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanout.provider";
 
 @Module({
-  imports: [BillingModule, RealtimeModule, EntityReferenceModule],
-  controllers: [ChatActionsController,
-    ChatEntityActionsController, ChatChannelsController, ChatMessagesController, ChatPresenceController, ChatPinsController, ChatHuddlesController, ChatSearchController, ChatSavedController, ChatLinkPreviewController, ChatInviteLinksController, ChatOrgSettingsController, ChatSummarizeController, ChatRealtimeController],
+  imports: [BillingModule, RealtimeModule, EntityReferenceModule, OutboxModule],
+  controllers: [
+    ChatActionsController,
+    ChatEntityActionsController,
+    ChatChannelsController,
+    ChatMessagesController,
+    ChatPresenceController,
+    ChatPinsController,
+    ChatHuddlesController,
+    ChatSearchController,
+    ChatSavedController,
+    ChatLinkPreviewController,
+    ChatInviteLinksController,
+    ChatOrgSettingsController,
+    ChatSummarizeController,
+    ChatRealtimeController,
+  ],
   providers: [
+    ChatMessageFanoutService,
+    OutboxBackedMessageFanoutProvider,
+    { provide: MESSAGE_FANOUT_PROVIDER, useExisting: OutboxBackedMessageFanoutProvider },
+    ChatFanoutOutboxConsumer,
     ChatChannelsService,
     ChatChannelMembersService,
     ChatMessagesService,
-    ChatMessageFanoutService,
     ChatPresenceService,
     ChatTypingService,
     ChatPinsService,

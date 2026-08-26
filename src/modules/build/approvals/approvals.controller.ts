@@ -91,7 +91,7 @@ export class ApprovalsController {
     @Body(new ZodValidationPipe(decideApprovalSchema)) body: DecideApprovalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.decideApproval(u.orgId, u.userId, projectId, approvalId, body);
+    return this.svc.decideApproval(u, projectId, approvalId, body);
   }
 
   @Patch(":approvalId")

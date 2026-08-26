@@ -157,3 +157,21 @@ export function coreModuleIds(): string[] {
     (definition) => !definition.planGated && definition.ladder !== "platform-admin",
   ).map((definition) => definition.id);
 }
+
+/**
+ * The one availability definition for a module that is always on.
+ *
+ * Namespaces without a registry entry are platform surfaces (for example
+ * settings and ownership) and therefore have no org-module toggle. Registered
+ * modules are core only when they are not subscription-gated and are not
+ * platform-admin-only. The platform-admin ladder controls delegation, not
+ * availability, so billing is still always available to its platform users.
+ */
+export function isCoreModuleKey(rawKey: string): boolean {
+  const key = moduleIdFromStored(rawKey);
+  const definition = moduleDefinition(key);
+  return (
+    definition === undefined ||
+    !definition.planGated
+  );
+}

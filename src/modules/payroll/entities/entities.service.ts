@@ -9,6 +9,8 @@ import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollEntities, payrollPeriods } from "../../../db/schema";
+import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { logger } from "../../../common/logger/logger.service";
 import { getCountryPack } from "../../hr/global/country-packs";
 import {
   assertEntityCountryIsolation,
@@ -73,7 +75,13 @@ export class PayrollEntitiesService {
         })
         .returning();
       return row;
-    } catch {
+    } catch (err) {
+      if (getPostgresErrorCode(err) !== "23505") {
+        logger.error("entities.create: insert failed unexpectedly", {
+          cause: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
       throw new ConflictException("A payroll entity with this legal name already exists");
     }
   }

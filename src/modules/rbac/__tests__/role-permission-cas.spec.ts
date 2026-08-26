@@ -14,7 +14,6 @@ const ownerActor: CurrentUserContext = {
   userId: "u1",
   orgId: "org-1",
   role: "OWNER",
-  permissions: [],
   isOrgOwner: true,
   sessionId: "s1",
   tokenScopes: null,

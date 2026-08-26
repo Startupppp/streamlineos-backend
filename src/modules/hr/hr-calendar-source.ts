@@ -1,4 +1,4 @@
-import { Inject, Injectable, type OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, exists, gte, lte, or } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -22,7 +22,6 @@ import type {
   CalendarEventSource,
   CalendarSourceContext,
 } from "../calendar/calendar-event-source";
-import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 
 const WEEKDAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
@@ -46,7 +45,7 @@ function enumerateDates(start: string, end: string): string[] {
 }
 
 @Injectable()
-export class HrCalendarSource implements CalendarEventSource, OnModuleInit {
+export class HrCalendarSource implements CalendarEventSource {
   readonly key = "hr";
   readonly label = "HR";
   readonly module = "hr";
@@ -54,11 +53,193 @@ export class HrCalendarSource implements CalendarEventSource, OnModuleInit {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly attendancePolicy: AttendancePolicyService,
-    private readonly registry: CalendarSourceRegistry,
   ) {}
 
-  onModuleInit(): void {
-    this.registry.register(this);
+  /**
+   * The registry owns source selection. Granular HR adapters use this method
+   * so disabling leaves or interviews does not invoke the aggregate loader.
+   * Attendance retains the aggregate calculation because absence/WFH status
+   * depends on the same attendance policy projection.
+   */
+  async loadSource(
+    ctx: CalendarSourceContext,
+    source: "leave" | "interview" | "attendance",
+  ): Promise<CalendarEventProjection[]> {
+    if (source === "leave") return this.loadLeaves(ctx);
+    if (source === "interview") return this.loadInterviews(ctx);
+    return this.loadAttendanceOnly(ctx);
+  }
+
+  /** Attendance projection is intentionally independent of the leave/interview loaders. */
+  private async loadAttendanceOnly(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
+    const startStr = dateOnly(ctx.start);
+    const endStr = dateOnly(ctx.end);
+    const policyDate = dateOnly(ctx.end.getTime() < Date.now() ? ctx.end : new Date());
+    const [attendanceData, wfhData, organizationData, attendanceRules] = await Promise.all([
+      this.db
+        .select({
+          id: attendance.id,
+          date: attendance.date,
+          checkIn: attendance.checkIn,
+          checkOut: attendance.checkOut,
+          status: attendance.status,
+          workHours: attendance.workHours,
+          breakHours: attendance.breakHours,
+          createdAt: attendance.createdAt,
+        })
+        .from(attendance)
+        .where(and(
+          eq(attendance.orgId, ctx.orgId),
+          eq(attendance.userId, ctx.userId),
+          gte(attendance.date, startStr),
+          lte(attendance.date, endStr),
+        ))
+        .orderBy(desc(attendance.createdAt)),
+      this.db
+        .select({ id: wfhRequests.id, date: wfhRequests.date })
+        .from(wfhRequests)
+        .where(and(
+          eq(wfhRequests.orgId, ctx.orgId),
+          eq(wfhRequests.userId, ctx.userId),
+          eq(wfhRequests.status, "APPROVED"),
+          gte(wfhRequests.date, startStr),
+          lte(wfhRequests.date, endStr),
+        )),
+      this.db
+        .select({ timezone: organizations.timezone })
+        .from(organizations)
+        .where(eq(organizations.id, ctx.orgId))
+        .limit(1),
+      this.attendancePolicy.getAttendanceRules(ctx.orgId, ctx.userId, policyDate),
+    ]);
+
+    const timezone = organizationData[0]?.timezone ?? "Asia/Kolkata";
+    const today = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
+    const wfhDates = new Set(wfhData.map((row) => row.date));
+    type AttendanceLog = (typeof attendanceData)[number];
+    const byDate = new Map<string, AttendanceLog[]>();
+    for (const log of attendanceData) byDate.set(log.date, [...(byDate.get(log.date) ?? []), log]);
+
+    return [...byDate.entries()].map(([date, logs]) => {
+      const latest = logs.reduce((current, log) => (log.createdAt > current.createdAt ? log : current));
+      const statuses = new Set(logs.map((log) => log.status?.toUpperCase()).filter((value): value is string => Boolean(value)));
+      const open = logs.some((log) => !log.checkOut);
+      const workedMinutes = Math.round(logs.reduce(
+        (total, log) => total + Math.max(0, Number(log.workHours ?? 0) - Number(log.breakHours ?? 0)),
+        0,
+      ) * 60);
+      const past = date < today;
+      let status: "ABSENT" | "HALF_DAY" | "LATE" | "MISSING_CHECKOUT" | "PRESENT" = "PRESENT";
+      if (statuses.has("ABSENT")) status = "ABSENT";
+      else if (statuses.has("HALF_DAY")) status = "HALF_DAY";
+      else if (statuses.has("LATE")) status = "LATE";
+      else if (open && past) status = "MISSING_CHECKOUT";
+      else if (!open && past) {
+        if (workedMinutes <= attendanceRules.absentThresholdMinutes) status = "ABSENT";
+        else if (workedMinutes < attendanceRules.halfDayThresholdMinutes) status = "HALF_DAY";
+      }
+      const statusLabel = status === "HALF_DAY" ? "Half day" : status === "ABSENT" ? "Absent" : status === "LATE" ? "Late" : status === "MISSING_CHECKOUT" ? "Missing checkout" : "Present";
+      const netHours = workedMinutes / 60;
+      const wfh = wfhDates.has(date) || statuses.has("WFH");
+      const onBreak = statuses.has("ON_BREAK");
+      const description = [
+        wfh ? "Work from home" : null,
+        onBreak ? "Currently on break" : null,
+        netHours > 0 ? `${netHours.toFixed(1)} hours recorded` : null,
+      ].filter((value): value is string => Boolean(value)).join(" - ");
+      return {
+        id: `attendance-${latest.id}`,
+        title: `${wfh ? "WFH" : "Attendance"} - ${statusLabel}${netHours > 0 ? ` - ${netHours.toFixed(1)}h` : ""}`,
+        start: dateAtNoon(date),
+        end: dateAtNoon(date),
+        allDay: true,
+        color: status === "ABSENT" ? "red" : status === "HALF_DAY" || status === "LATE" || status === "MISSING_CHECKOUT" || onBreak ? "yellow" : wfh ? "blue" : "green",
+        category: "attendance",
+        meta: { source: "attendance", description: description || null },
+      };
+    });
+  }
+
+  private async loadLeaves(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
+    const rows = await this.db
+      .select({
+        id: leaveRequests.id,
+        userId: leaveRequests.userId,
+        startDate: leaveRequests.startDate,
+        endDate: leaveRequests.endDate,
+        reason: leaveRequests.reason,
+        userName: users.name,
+        isHalfDay: leaveRequests.isHalfDay,
+        halfDayPeriod: leaveRequests.halfDayPeriod,
+      })
+      .from(leaveRequests)
+      .innerJoin(users, eq(leaveRequests.userId, users.id))
+      .where(and(
+        eq(leaveRequests.orgId, ctx.orgId),
+        eq(leaveRequests.status, "APPROVED"),
+        lte(leaveRequests.startDate, dateOnly(ctx.end)),
+        gte(leaveRequests.endDate, dateOnly(ctx.start)),
+      ));
+
+    return rows.map((leave) => ({
+      id: `leave-${leave.id}`,
+      title: `${leave.userName ?? "Employee"} - ${leave.isHalfDay ? `Half-day leave${leave.halfDayPeriod ? ` (${leave.halfDayPeriod})` : ""}` : "OOO"}`,
+      start: dateAtNoon(leave.startDate),
+      end: dateAtNoon(leave.endDate),
+      allDay: true,
+      color: "green",
+      category: "leave",
+      meta: {
+        source: "leave",
+        description: leave.userId === ctx.userId ? (leave.reason ?? null) : null,
+        creatorName: leave.userName ?? null,
+      },
+    }));
+  }
+
+  private async loadInterviews(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
+    const rows = await this.db
+      .select({
+        id: interviews.id,
+        scheduledAt: interviews.scheduledAt,
+        duration: interviews.duration,
+        type: interviews.type,
+        interviewerId: interviews.interviewerId,
+        location: interviews.location,
+        meetingLink: interviews.meetingLink,
+      })
+      .from(interviews)
+      .where(and(
+        eq(interviews.orgId, ctx.orgId),
+        gte(interviews.scheduledAt, ctx.start),
+        lte(interviews.scheduledAt, ctx.end),
+        or(
+          eq(interviews.interviewerId, ctx.userId),
+          exists(this.db.select({ id: interviewPanelMembers.id })
+            .from(interviewPanelMembers)
+            .where(and(
+              eq(interviewPanelMembers.orgId, ctx.orgId),
+              eq(interviewPanelMembers.interviewId, interviews.id),
+              eq(interviewPanelMembers.userId, ctx.userId),
+            )),
+          ),
+        ),
+      ));
+
+    return rows.map((interview) => {
+      const end = new Date(interview.scheduledAt);
+      end.setMinutes(end.getMinutes() + (interview.duration ?? 60));
+      return {
+        id: `interview-${interview.id}`,
+        title: `Interview (${interview.type ?? "Video"})`,
+        start: interview.scheduledAt,
+        end,
+        allDay: false,
+        color: "orange",
+        category: "interview",
+        meta: { source: "interview", location: interview.location ?? interview.meetingLink ?? null },
+      };
+    });
   }
 
   async load(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {

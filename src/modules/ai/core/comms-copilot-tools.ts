@@ -10,6 +10,7 @@ import { CalendarService } from "../../calendar/calendar.service";
 import { ChatChannelsService } from "../../chat/chat-channels.service";
 import { ChatMessagesService } from "../../chat/chat-messages.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AI_EVENT_TIMEZONE } from "./ai-event-timezone";
 
 export interface CommsCopilotContext {
   actor: CurrentUserContext;
@@ -79,6 +80,7 @@ export class CommsCopilotTools {
             title,
             startDate,
             endDate,
+            timezone: AI_EVENT_TIMEZONE,
             attendeeIds: resolved,
             location,
             description,

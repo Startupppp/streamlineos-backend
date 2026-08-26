@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
-import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { APP_GUARD, APP_INTERCEPTOR, DiscoveryModule } from "@nestjs/core";
+import { RouteClassifierGuard } from "./common/auth/route-classifier.guard";
 import {
   TenantContextInterceptor,
   TenantContextService,
@@ -87,9 +88,7 @@ import { ComplianceModule } from "./modules/compliance/compliance.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
 import { IngressModule } from "./modules/ingress/ingress.module";
 import { AutonomyModule } from "./modules/autonomy/autonomy.module";
-import { CrmImportModule } from "./modules/crm-import/crm-import.module";
-import { DataQualityModule } from "./modules/data-quality/data-quality.module";
-import { IssuesModule } from "./modules/issues/issues.module";
+import { CrmImportModule } from "./modules/crm/import/crm-import.module";
 import { PortalModule } from "./modules/portal/portal.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
@@ -99,10 +98,13 @@ import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
 import { BuildModule } from "./modules/build/build.module";
 import { ZodValidationInterceptor } from "./common/validation/zod-validation.interceptor";
+import { DataQualityModule } from "./modules/data-quality/data-quality.module";
+import { IssuesModule } from "./modules/issues/issues.module";
 
 @Module({
   imports: [
     ActivationModule,
+    DiscoveryModule,
     RegionModule,
     WorkflowModule,
     ConfigModule,
@@ -154,11 +156,11 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     PartyModule,
     RendererModule,
     ComplianceModule,
+    DataQualityModule,
     ActivitiesModule,
     IngressModule,
     AutonomyModule,
     CrmImportModule,
-    DataQualityModule,
     IssuesModule,
     PortalModule,
     ModuleAccessModule,
@@ -192,6 +194,7 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     MeService,
     Reflector,
     TenantContextService,
+    { provide: APP_GUARD, useClass: RouteClassifierGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: MfaGuard },
     { provide: APP_GUARD, useClass: ModuleGuard },

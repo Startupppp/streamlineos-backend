@@ -3,8 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { paymentProviders, paymentTestTransactions } from "../../../db/schema";
-import { PaymentProviderAdapterRegistry } from "./payment-provider-adapter.interface";
-import { PaymentProviderSetupService } from "./payment-provider-setup.service";
+import { PaymentProviderResolver } from "./payment-provider-resolver.service";
 import { PaymentAuditService } from "./payment-audit.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
 import type { CreateTestTransactionInput, VerifyTestTransactionInput } from "./dto/test-transaction.schemas";
@@ -14,8 +13,7 @@ import type { RequestActorContext } from "../../../common/audit/actor-context";
 export class PaymentTestTransactionService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly registry: PaymentProviderAdapterRegistry,
-    private readonly providers: PaymentProviderSetupService,
+    private readonly providers: PaymentProviderResolver,
     private readonly audit: PaymentAuditService,
     private readonly paymentAnalytics: PaymentAnalyticsService,
   ) {}
@@ -32,11 +30,8 @@ export class PaymentTestTransactionService {
   // provider's current environment — per "test mode is a first-class state" (11_...md).
   async createTestTransaction(orgId: string, providerKey: string, input: CreateTestTransactionInput, actor: RequestActorContext) {
     const provider = await this.findProvider(orgId, providerKey);
-    const adapter = this.registry.get(providerKey);
-    if (!adapter) throw new BadRequestException(`No backend integration available for provider: ${providerKey}`);
-
-    const creds = await this.providers.getDecryptedSecret(orgId, provider.id, "test");
-    if (!creds?.keyId || !creds.secret) {
+    const providerFacade = await this.providers.resolve(orgId, providerKey, "test");
+    if (!providerFacade?.isReady()) {
       throw new BadRequestException("Add test credentials before running a test payment");
     }
 
@@ -54,9 +49,7 @@ export class PaymentTestTransactionService {
       .returning();
 
     try {
-      const order = await adapter.createOrder({
-        keyId: creds.keyId,
-        keySecret: creds.secret,
+      const order = await providerFacade.createOrder({
         amount: input.amount,
         currency: input.currency,
         receipt: `test_${transaction.id}`,
@@ -81,7 +74,7 @@ export class PaymentTestTransactionService {
       });
       this.paymentAnalytics.track(orgId, actor.userId, "payment_test_payment_started", { metadata: { providerKey } });
 
-      return { ...updated, keyId: creds.keyId };
+      return { ...updated, keyId: providerFacade.publicKeyId() };
     } catch (err) {
       await this.db
         .update(paymentTestTransactions)
@@ -93,9 +86,6 @@ export class PaymentTestTransactionService {
 
   async verifyTestTransaction(orgId: string, providerKey: string, id: number, input: VerifyTestTransactionInput, actor: RequestActorContext) {
     const provider = await this.findProvider(orgId, providerKey);
-    const adapter = this.registry.get(providerKey);
-    if (!adapter) throw new BadRequestException(`No backend integration available for provider: ${providerKey}`);
-
     const transaction = await this.db.query.paymentTestTransactions.findFirst({
       where: and(eq(paymentTestTransactions.id, id), eq(paymentTestTransactions.orgId, orgId)),
     });
@@ -103,14 +93,13 @@ export class PaymentTestTransactionService {
       throw new NotFoundException("Test transaction not found");
     }
 
-    const creds = await this.providers.getDecryptedSecret(orgId, provider.id, "test");
-    if (!creds?.secret) throw new BadRequestException("Test credentials are no longer configured");
+    const providerFacade = await this.providers.resolve(orgId, providerKey, "test");
+    if (!providerFacade?.isReady()) throw new BadRequestException("Test credentials are no longer configured");
 
-    const signatureValid = adapter.verifyPaymentSignature({
+    const signatureValid = providerFacade.verifyPaymentSignature({
       orderId: transaction.providerOrderId,
       paymentId: input.providerPaymentId,
       signature: input.signature,
-      keySecret: creds.secret,
     });
 
     const [updated] = await this.db

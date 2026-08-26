@@ -8,7 +8,6 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   userId: "user-1",
   orgId: "org-1",
   role: "member",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,
@@ -48,6 +47,12 @@ const makeEmbeddings = () => ({
   isConfigured: jest.fn().mockReturnValue(false),
   embedQuery: jest.fn(),
   toVectorLiteral: jest.fn(),
+});
+
+const makeConfiguredEmbeddings = () => ({
+  isConfigured: jest.fn().mockReturnValue(true),
+  embedQuery: jest.fn().mockResolvedValue([0.1, 0.2]),
+  toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2]"),
 });
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
@@ -123,5 +128,24 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
       serialize(clause).includes(expected),
     ).length;
     expect(occurrences).toBeGreaterThanOrEqual(2);
+  });
+
+  it("filters page attachment context through the shared page visibility predicate", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const access = makeAccess();
+    const service = new KbSearchService(
+      db as never,
+      access as never,
+      makeConfiguredEmbeddings() as never,
+      makeEvents() as never,
+    );
+
+    const user = makeUser();
+    await service.retrieveAttachmentSnippets(user, "onboarding checklist", [], [3]);
+
+    expect(access.getAccessibleProjectIds).toHaveBeenCalledWith(user);
+    expect(pagePredicates(whereClauses)).toContain(
+      serialize(pageVisibleTo(user, ACCESSIBLE_PROJECT_IDS)),
+    );
   });
 });

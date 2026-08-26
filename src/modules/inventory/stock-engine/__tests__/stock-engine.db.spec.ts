@@ -171,4 +171,46 @@ describeDb("stock engine — real database", () => {
       await sql`DROP TABLE inv_test_snapshot`;
     }, 180_000);
   });
+
+  describe("concurrent stock adjustments via the same stock level", () => {
+    it("two adjustments on the same level serialize — no lost update, arithmetic is consistent", async () => {
+      await sql`CREATE TABLE IF NOT EXISTS inv_test_adj_level (id int PRIMARY KEY, on_hand numeric(18,4) NOT NULL)`;
+      await sql`INSERT INTO inv_test_adj_level (id, on_hand) VALUES (1, 20) ON CONFLICT (id) DO UPDATE SET on_hand = 20`;
+
+      const applyAdjustment = async (delta: number) =>
+        sql.begin(async (tx) => {
+          const [row] = await tx`SELECT on_hand FROM inv_test_adj_level WHERE id = 1 FOR UPDATE`;
+          const newOnHand = Number(row!.on_hand) + delta;
+          await tx`UPDATE inv_test_adj_level SET on_hand = ${newOnHand} WHERE id = 1`;
+          return newOnHand;
+        });
+
+      await Promise.all([applyAdjustment(-10), applyAdjustment(-10)]);
+
+      const [final] = await sql`SELECT on_hand FROM inv_test_adj_level WHERE id = 1`;
+      expect(Number(final!.on_hand)).toBe(0);
+
+      await sql`DROP TABLE inv_test_adj_level`;
+    }, 60_000);
+
+    it("without FOR UPDATE, two adjustments produce a lost update — phantom stock remains", async () => {
+      await sql`CREATE TABLE IF NOT EXISTS inv_test_adj_nolock (id int PRIMARY KEY, on_hand numeric(18,4) NOT NULL)`;
+      await sql`INSERT INTO inv_test_adj_nolock (id, on_hand) VALUES (1, 20) ON CONFLICT (id) DO UPDATE SET on_hand = 20`;
+
+      const applyUnsafe = async (delta: number) => {
+        const [row] = await sql`SELECT on_hand FROM inv_test_adj_nolock WHERE id = 1`;
+        const newOnHand = Number(row!.on_hand) + delta;
+        await new Promise<void>((r) => setTimeout(r, 25));
+        await sql`UPDATE inv_test_adj_nolock SET on_hand = ${newOnHand} WHERE id = 1`;
+        return newOnHand;
+      };
+
+      await Promise.all([applyUnsafe(-10), applyUnsafe(-10)]);
+
+      const [final] = await sql`SELECT on_hand FROM inv_test_adj_nolock WHERE id = 1`;
+      expect(Number(final!.on_hand)).toBe(10);
+
+      await sql`DROP TABLE inv_test_adj_nolock`;
+    }, 60_000);
+  });
 });

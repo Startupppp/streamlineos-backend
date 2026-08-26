@@ -140,7 +140,9 @@ describe("WorkflowOutboxRelayService", () => {
     );
 
     await relay.relay();
-    expect(relay.position).toBe(7);
+    // Trails the highest id by CURSOR_LAG rather than landing on it, so an event
+    // that commits after a higher-numbered neighbour is still read.
+    expect(relay.position).toBe(0);
 
     // Second pass sees nothing new and starts nothing.
     expect(await relay.relay()).toEqual({ scanned: 0, started: 0 });
@@ -155,7 +157,7 @@ describe("WorkflowOutboxRelayService", () => {
     );
 
     await relay.relay();
-    expect(relay.position).toBe(4);
+    expect(relay.position).toBe(0);
   });
 
   it("keeps going when one event fails to start, so one tenant cannot stall the rest", async () => {
@@ -186,7 +188,7 @@ describe("WorkflowOutboxRelayService", () => {
 
     expect(started).toEqual(["org-good"]);
     expect(result.scanned).toBe(2);
-    expect(relay.position).toBe(2);
+    expect(relay.position).toBe(0);
   });
 
   it("can be rewound, for a replay after a bad deploy", async () => {
@@ -197,9 +199,44 @@ describe("WorkflowOutboxRelayService", () => {
     );
 
     await relay.relay();
-    expect(relay.position).toBe(9);
+    expect(relay.position).toBe(0);
 
     relay.resetPosition(0);
     expect(relay.position).toBe(0);
+  });
+
+  /**
+   * The bug the cursor lag exists for.
+   *
+   * `outbox_event_id` is an identity sequence, and a sequence hands out numbers
+   * when a transaction asks rather than when it commits — so ids become visible
+   * in commit order. Here the writer holding 5,000 is still open when the relay
+   * sees 6,000, and commits afterwards.
+   *
+   * With a cursor that landed on the highest id seen, the next pass would query
+   * `> 6000` and 5,000 would never be read again: its workflow never starts, not
+   * late — never. The quote sits in its hold window forever and every screen goes
+   * on reporting work in progress.
+   */
+  it("still reads an event that committed after a higher-numbered one", async () => {
+    const registry = new WorkflowRegistry();
+    registry.register({ name: "onboard", triggers: ["party.created"], handler: async () => null });
+    const runner = runnerSpy();
+
+    const relay = new WorkflowOutboxRelayService(
+      dbReturning([
+        // First pass: only the later-numbered event is visible.
+        [event({ outboxEventId: 6000, eventId: "evt-6000" })],
+        // Second pass: the lower-numbered writer has now committed.
+        [event({ outboxEventId: 5000, eventId: "evt-5000" })],
+      ]),
+      registry,
+      runner.service,
+    );
+
+    await relay.relay();
+    await relay.relay();
+
+    expect(runner.started.map((s) => s.causationEventId)).toEqual(["evt-6000", "evt-5000"]);
   });
 });

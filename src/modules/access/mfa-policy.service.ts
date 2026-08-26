@@ -31,7 +31,7 @@ export class MfaPolicyService {
   }
 
   async invalidateOrg(orgId: string): Promise<void> {
-    await this.cache.invalidate(CACHE_KEYS.mfaOrgPolicy(orgId));
+    await this.cache.invalidateForOrg(orgId, "mfa:org-policy");
   }
 
   async invalidateUser(userId: string): Promise<void> {
@@ -40,8 +40,9 @@ export class MfaPolicyService {
 
   private async isEnforcedByOrg(orgId: string): Promise<boolean> {
     if (!orgId) return false;
-    return this.cache.cached(
-      CACHE_KEYS.mfaOrgPolicy(orgId),
+    return this.cache.cachedForOrg(
+      orgId,
+      "mfa:org-policy",
       async () => {
         const org = await this.db.query.organizations.findFirst({
           where: eq(organizations.id, orgId),

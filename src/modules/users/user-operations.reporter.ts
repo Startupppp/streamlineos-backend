@@ -1,7 +1,6 @@
 import { and, count, desc, eq, gt, gte, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { invitations, organizationMembers, users } from "../../db/schema";
 import { membershipStatusToUserStatus } from "../organization/core/org-membership.service";
 
@@ -76,8 +75,9 @@ export class UserOperationsReporter {
   }
 
   async getStats(orgId: string) {
-    return this.cache.cached(
-      CACHE_KEYS.usersStats(orgId),
+    return this.cache.cachedForOrg(
+      orgId,
+      "users:stats",
       async () => {
         const [
           totalResult,

@@ -9,7 +9,7 @@ import { pushPayloadSchema } from "./dto/realtime.schemas";
  * UI is not where the leak happens.
  */
 describe("push payload", () => {
-  const ALLOWED_KEYS = ["category", "url", "notificationId"];
+  const ALLOWED_KEYS = ["category", "url", "notificationId", "idempotencyKey"];
 
   it("exposes only the allowed keys", () => {
     expect(Object.keys(pushPayloadSchema.shape).sort()).toEqual([...ALLOWED_KEYS].sort());

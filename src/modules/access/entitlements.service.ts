@@ -16,7 +16,12 @@ import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import { ADMINISTRABLE_MODULES, MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
-import { coreModuleIds, moduleIdFromStored } from "../../common/rbac/module-registry";
+import {
+  coreModuleIds,
+  isCoreModuleKey,
+  moduleIdFromStored,
+} from "../../common/rbac/module-registry";
+import { moduleAvailabilityResolver, type ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
 import { assignModuleOwnerRole } from "../ownership/module-owner-role.helper";
@@ -24,6 +29,10 @@ import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 
 export { MODULE_CATALOG };
+
+// Keep this export stable for existing callers while the registry owns the
+// implementation. Availability and delegation are deliberately separate facts.
+export { isCoreModuleKey } from "../../common/rbac/module-registry";
 
 const OWNERSHIP_MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 
@@ -59,8 +68,6 @@ export class EntitlementsService implements OnModuleInit {
   private missingTableLogged = false;
   private moduleTableUnavailable = false;
   private readonly moduleMapCache = new Map<string, ModuleMapEntry>();
-  private coreModuleKeys: ReadonlySet<string> = new Set(coreModuleIds());
-
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
@@ -84,7 +91,6 @@ export class EntitlementsService implements OnModuleInit {
           "entitlements: modules_catalog disagrees with the module registry about which modules are core",
           { missingFromCatalog, extraInCatalog },
         );
-      this.coreModuleKeys = declared;
     } catch {
       logger.warn("entitlements: modules_catalog unavailable at init, using compile-time core fallback");
     }
@@ -115,9 +121,9 @@ export class EntitlementsService implements OnModuleInit {
     const local = this.moduleMapCache.get(orgId);
     if (local && local.expiresAt > Date.now()) return local.map;
 
-    const key = `entitlements:modules:${orgId}`;
-    const map = await this.cache.cached(
-      key,
+    const map = await this.cache.cachedForOrg(
+      orgId,
+      "entitlements:modules",
       () =>
         runInTenantTransaction(
           this.db,
@@ -130,8 +136,6 @@ export class EntitlementsService implements OnModuleInit {
               [],
             );
             const result: Record<string, boolean> = {};
-            // Stored keys are normalised on the way in, so a row written in
-            // another case still answers the same question.
             for (const row of rows)
               result[moduleIdFromStored(row.moduleKey)] = row.enabled;
             return result;
@@ -149,7 +153,7 @@ export class EntitlementsService implements OnModuleInit {
 
   async isModuleEnabled(orgId: string, rawModuleKey: string): Promise<boolean> {
     const moduleKey = moduleIdFromStored(rawModuleKey);
-    if (this.coreModuleKeys.has(moduleKey)) return true;
+    if (isCoreModuleKey(moduleKey)) return true;
     const map = await this.getModuleMap(orgId);
     const enabled = map[moduleKey];
     if (enabled === undefined) {
@@ -161,13 +165,44 @@ export class EntitlementsService implements OnModuleInit {
     return enabled;
   }
 
+  /** Absent stays `undefined` so availability can tell "no row" from "disabled" and reach the plan check. */
+  async getModuleState(
+    orgId: string,
+    rawModuleKey: string,
+  ): Promise<boolean | undefined> {
+    const moduleKey = moduleIdFromStored(rawModuleKey);
+    if (isCoreModuleKey(moduleKey)) return true;
+    const map = await this.getModuleMap(orgId);
+    const enabled = map[moduleKey];
+    if (enabled === undefined)
+      return this.moduleTableUnavailable &&
+        this.config.RBAC_MIGRATION_MODE === "degrade"
+        ? true
+        : undefined;
+    return enabled;
+  }
+
   isCoreModule(moduleKey: string): boolean {
-    return this.coreModuleKeys.has(moduleIdFromStored(moduleKey));
+    return isCoreModuleKey(moduleKey);
   }
 
   async getPlanLockedModules(orgId: string): Promise<readonly string[]> {
     const { tier } = await this.planLimits.resolveTier(orgId);
     return PLAN_LOCKED_MODULES[tier];
+  }
+
+  buildModuleAvailabilityResolver(
+    getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+    getUserDeniedModules?: (orgId: string, userId: string) => Promise<Set<string>>,
+  ): ModuleAvailabilityResolver {
+    return moduleAvailabilityResolver(
+      {
+        isCoreModule: (moduleKey) => this.isCoreModule(moduleKey),
+        getModuleMap,
+        getPlanLockedModules: (orgId) => this.getPlanLockedModules(orgId),
+      },
+      getUserDeniedModules ? { getUserDeniedModules } : undefined,
+    );
   }
 
   async setModuleEnabled(
@@ -176,7 +211,7 @@ export class EntitlementsService implements OnModuleInit {
     enabled: boolean,
     enabledBy: string,
   ): Promise<void> {
-    if (this.coreModuleKeys.has(moduleKey)) {
+    if (this.isCoreModule(moduleKey)) {
       throw new BadRequestException(
         `Module "${moduleKey}" is always-on and cannot be toggled`,
       );
@@ -247,8 +282,8 @@ export class EntitlementsService implements OnModuleInit {
     }, { orgId });
 
     this.moduleMapCache.delete(orgId);
-    await this.cache.invalidate(`entitlements:module:${orgId}:${moduleKey}`);
-    await this.cache.invalidate(`entitlements:modules:${orgId}`);
+    await this.cache.invalidateForOrg(orgId, `entitlements:module:${moduleKey}`);
+    await this.cache.invalidateForOrg(orgId, "entitlements:modules");
     await this.cache.invalidate(CACHE_KEYS.userSession(enabledBy));
   }
 
@@ -264,7 +299,7 @@ export class EntitlementsService implements OnModuleInit {
     const map = await this.getModuleMap(orgId);
     const effective: Record<string, boolean> = {};
     for (const moduleKey of ADMINISTRABLE_MODULES) {
-      effective[moduleKey] = this.coreModuleKeys.has(moduleKey)
+      effective[moduleKey] = this.isCoreModule(moduleKey)
         ? true
         : (map[moduleKey] ??
           (this.moduleTableUnavailable &&
@@ -276,7 +311,7 @@ export class EntitlementsService implements OnModuleInit {
   async listModules(orgId: string): Promise<ModuleStatus[]> {
     const effective = await this.getEffectiveModuleMap(orgId);
     return ADMINISTRABLE_MODULES.map((moduleKey): ModuleStatus =>
-      this.coreModuleKeys.has(moduleKey)
+      this.isCoreModule(moduleKey)
         ? { moduleKey, enabled: true, core: true }
         : { moduleKey, enabled: effective[moduleKey] ?? false },
     );

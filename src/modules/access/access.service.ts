@@ -37,6 +37,11 @@ import {
   MANAGEABLE_MODULE_SET,
   moduleOf,
 } from "./access-policy";
+import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
+import {
+  moduleAvailability,
+  type ModuleAvailabilityResult,
+} from "../../common/rbac/module-availability";
 import {
   AccessPermissionResolver,
   membershipCacheKey,
@@ -47,6 +52,7 @@ import {
   type PermissionMember,
 } from "./access-permission-members.resolver";
 import { AccessSnapshotResolver } from "./access-snapshot.resolver";
+import type { ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
 
 export {
   broadest,
@@ -147,6 +153,8 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         this.getUserDeniedModules(organizationId, memberUserId),
       (organizationId, memberUserId) =>
         this.canManageOrganizationMembership(organizationId, memberUserId),
+      (getModuleMap, getDeniedModules) =>
+        this.buildModuleAvailabilityResolver(getModuleMap, getDeniedModules),
     );
   }
   onModuleInit(): void {
@@ -169,8 +177,8 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         // Permission, RBAC, and module-access list keys already include this
         // access version. A bump makes every previous generation unreachable,
         // so scanning Redis to delete it is both redundant and expensive.
-        this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(orgId)),
-        this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(orgId)),
+        this.cache.invalidateForOrg(orgId, "rbac:members"),
+        this.cache.invalidateForOrg(orgId, "module-access:candidates"),
       ]);
     });
   }
@@ -291,8 +299,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         if (local && local.expiresAt > Date.now()) {
           map = new Map(Object.entries(local.perms));
         } else {
-          const resolved = await this.cache.cached<Record<string, DataScope>>(
-            CACHE_KEYS.accessPerms(orgId, userId, version),
+          const resolved = await this.cache.cachedForOrg<Record<string, DataScope>>(
+            orgId,
+            `access:perms:${userId}:v${version}`,
             () => this.computeUserPermissions(orgId, userId, version),
             CACHE_TTL.LONG,
           );
@@ -539,6 +548,56 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
     return this.entitlements.isModuleEnabled(orgId, moduleKey);
   }
+
+  isCoreModule(moduleKey: string): boolean {
+    return this.entitlements.isCoreModule(moduleKey);
+  }
+
+  /** Build availability from the canonical entitlement facts plus user denies. */
+  buildModuleAvailabilityResolver(
+    getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+    getDeniedModules?: (
+      orgId: string,
+      userId: string,
+    ) => Promise<Set<string>>,
+  ): ModuleAvailabilityResolver {
+    return this.entitlements.buildModuleAvailabilityResolver(
+      getModuleMap,
+      getDeniedModules ?? ((orgId, userId) => this.getUserDeniedModules(orgId, userId)),
+    );
+  }
+
+  async getModuleState(
+    orgId: string,
+    moduleKey: string,
+  ): Promise<boolean | undefined> {
+    return this.entitlements.getModuleState(orgId, moduleKey);
+  }
+
+  /** Canonical person-aware module answer for dashboards and other read models. */
+  async moduleAvailability(
+    user: CurrentUserContext,
+    moduleKey: string,
+  ): Promise<ModuleAvailabilityResult> {
+    return this.moduleAvailabilityFor(user.orgId, user.userId, moduleKey);
+  }
+
+  /** Canonical person-aware module answer when only tenant identity is available. */
+  async moduleAvailabilityFor(
+    orgId: string,
+    userId: string,
+    moduleKey: string,
+  ): Promise<ModuleAvailabilityResult> {
+    return moduleAvailability(
+      this.buildModuleAvailabilityResolver((orgId) => this.entitlements.getModuleMap(orgId)),
+      orgId,
+      userId,
+      moduleKey,
+    );
+  }
+  async getPlanLockedModules(orgId: string): Promise<readonly string[]> {
+    return this.entitlements.getPlanLockedModules(orgId);
+  }
   async getAccessSnapshot(
     orgId: string,
     userId: string,
@@ -583,5 +642,22 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         ),
       { orgId },
     );
+  }
+
+  async scopeFor(user: CurrentUserContext, key: string): Promise<DataScope> {
+    if (
+      user.tokenScopes !== null &&
+      (!isPersonalTokenPermissionDelegable(key) ||
+        !user.tokenScopes.includes(key))
+    ) {
+      return "none";
+    }
+    if (user.isOrgOwner) return "all";
+    const resolved = await this.resolveUserPermissions(user.orgId, user.userId);
+    return resolved.get(key) ?? "none";
+  }
+
+  async holds(user: CurrentUserContext, key: string): Promise<boolean> {
+    return (await this.scopeFor(user, key)) !== "none";
   }
 }

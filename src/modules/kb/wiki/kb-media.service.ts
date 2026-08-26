@@ -108,6 +108,7 @@ export class KbMediaService {
     const kbPublicUrl = this.config.R2_KB_PUBLIC_URL;
     const useKbBucket = Boolean(kbBucket && kbPublicUrl);
     const result = await this.storage.uploadFile(
+      u.orgId,
       uploadBuffer,
       folder,
       uploadName,

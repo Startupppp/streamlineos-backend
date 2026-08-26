@@ -14,6 +14,7 @@ import { SupportMentionsService } from "./support-mentions.service";
 import { AutomationService } from "../../automation/automation.service";
 import { SupportTicketActivityService } from "./support-ticket-activity.service";
 import type { ReplyMessageInput } from "./dto/support.schemas";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 @Injectable()
 export class SupportTicketMessagesService {
@@ -132,7 +133,7 @@ export class SupportTicketMessagesService {
       null,
     );
 
-    void this.realtime.publishMessageCreated(orgId, ticketId, message.id).catch(() => undefined);
+    void this.realtime.publishMessageCreated(orgId, ticketId, message.id).catch(logSideEffectFailure("support realtime message-created publish", { orgId, ticketId }));
 
     if (input.isInternal && userId) {
       void this.db.query.users
@@ -148,7 +149,7 @@ export class SupportTicketMessagesService {
             authorName: author?.name ?? author?.email ?? "A teammate",
           }),
         )
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("support message notification", { orgId, ticketId }));
     }
 
     void this.automations
@@ -162,7 +163,7 @@ export class SupportTicketMessagesService {
         isInternal: input.isInternal,
         messageBody: input.body,
       })
-      .catch(() => undefined);
+      .catch(logSideEffectFailure("support message email", { orgId, ticketId }));
 
     const isFirstAgentReply =
       !input.isInternal && !ticket.firstRespondedAt && userId !== null && userId !== ticket.createdBy;
@@ -185,7 +186,7 @@ export class SupportTicketMessagesService {
           userId,
           input.body,
         )
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("support automations on message", { orgId, ticketId }));
     }
 
     return message;

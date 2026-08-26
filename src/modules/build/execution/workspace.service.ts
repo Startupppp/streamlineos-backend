@@ -89,21 +89,46 @@ export class IntakeService {
 
     const conditions = [eq(intakeItems.projectId, projectId), eq(intakeItems.orgId, orgId)];
     if (query.status) conditions.push(eq(intakeItems.status, query.status));
+    const where = and(...conditions);
 
-    const [totalResult] = await this.db
-      .select({ count: count() })
+    const rows = await this.db
+      .select({
+        total: sql<string>`count(*) OVER ()`,
+        id: intakeItems.id,
+        projectId: intakeItems.projectId,
+        orgId: intakeItems.orgId,
+        title: intakeItems.title,
+        description: intakeItems.description,
+        source: intakeItems.source,
+        status: intakeItems.status,
+        submitterEmail: intakeItems.submitterEmail,
+        submitterName: intakeItems.submitterName,
+        priority: intakeItems.priority,
+        requestType: intakeItems.requestType,
+        linkedWorkItemId: intakeItems.linkedWorkItemId,
+        declineReason: intakeItems.declineReason,
+        createdAt: intakeItems.createdAt,
+        updatedAt: intakeItems.updatedAt,
+      })
       .from(intakeItems)
-      .where(and(...conditions));
-
-    const items = await this.db
-      .select()
-      .from(intakeItems)
-      .where(and(...conditions))
+      .where(where)
       .orderBy(desc(intakeItems.createdAt))
       .limit(limit)
       .offset(offset);
 
-    return { items, total: Number(totalResult?.count ?? 0) };
+    const first = rows[0];
+    let total: number;
+    if (first) {
+      total = Number(first.total);
+    } else if (offset === 0) {
+      total = 0;
+    } else {
+      const [cnt] = await this.db.select({ total: count() }).from(intakeItems).where(where);
+      total = Number(cnt?.total ?? 0);
+    }
+
+    const items = rows.map(({ total: _t, ...item }) => item);
+    return { items, total };
   }
 
   async createIntake(orgId: string, projectId: number, input: CreateIntakeInput) {

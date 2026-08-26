@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { Readable } from "stream";
-import { and, count, eq, isNull, sql } from "drizzle-orm";
+import { and, count, eq, isNull, ne, sql } from "drizzle-orm";
 import {
   kbArticles,
   kbArticleAttachments,
@@ -22,14 +22,9 @@ import {
 
 export function isPageIndexable(page: {
   status: string;
-  visibility: string;
   deletedAt: Date | null;
 }): boolean {
-  return (
-    page.status !== "archived" &&
-    (page.visibility === "org" || page.visibility === "public") &&
-    page.deletedAt === null
-  );
+  return page.status !== "archived" && page.deletedAt === null;
 }
 
 @Injectable()
@@ -81,6 +76,7 @@ export class KbIndexingService {
     pageVisibility: string | null;
     pageProjectId: number | null;
     pageCreatedById: string | null;
+    aclRevision: number | null;
   } | null> {
     const [existing] = await this.db
       .select({
@@ -88,6 +84,7 @@ export class KbIndexingService {
         pageVisibility: kbArticleChunks.pageVisibility,
         pageProjectId: kbArticleChunks.pageProjectId,
         pageCreatedById: kbArticleChunks.pageCreatedById,
+        aclRevision: kbArticleChunks.aclRevision,
       })
       .from(kbArticleChunks)
       .where(
@@ -141,6 +138,8 @@ export class KbIndexingService {
       columns: {
         status: true,
         contentText: true,
+        contentRevision: true,
+        aclRevision: true,
       },
     });
 
@@ -164,6 +163,17 @@ export class KbIndexingService {
 
     const chunks = this.chunkText(article.contentText);
     const contentHash = this.sha256(article.contentText);
+    const contentRevision = article.contentRevision;
+    const aclRevision = article.aclRevision;
+
+    if (chunks.length === 0) {
+      await this.removeArticleChunks(orgId, articleId);
+      return;
+    }
+
+    const embeddings = await Promise.all(
+      chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
+    );
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -175,12 +185,6 @@ export class KbIndexingService {
             eq(kbArticleChunks.source, "article_body"),
           ),
         );
-
-      if (chunks.length === 0) return;
-
-      const embeddings = await Promise.all(
-        chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
-      );
 
       const valuesToInsert = chunks.map((chunk, index) => ({
         orgId,
@@ -194,13 +198,15 @@ export class KbIndexingService {
         tokens: Math.ceil(chunk.length / 4),
         embedding: embeddings[index],
         embeddingModel: EMBEDDING_MODEL,
+        contentRevision,
+        aclRevision,
       }));
 
       await tx.insert(kbArticleChunks).values(valuesToInsert);
     });
   }
 
-  async indexPage(orgId: string, pageId: number): Promise<void> {
+  async indexPage(orgId: string, pageId: number): Promise<number> {
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
       columns: {
@@ -210,6 +216,8 @@ export class KbIndexingService {
         contentText: true,
         projectId: true,
         createdById: true,
+        aclRevision: true,
+        contentRevision: true,
       },
     });
 
@@ -220,19 +228,22 @@ export class KbIndexingService {
       !this.embeddings.isConfigured()
     ) {
       await this.removePageChunks(orgId, pageId);
-      return;
+      return 0;
     }
 
     const stored = await this.getPageChunkState(orgId, pageId);
     const contentHash = this.sha256(page.contentText);
+    const aclRevision = page.aclRevision;
+    const contentRevision = page.contentRevision;
 
     if (stored !== null && stored.contentHash === contentHash) {
       const aclChanged =
         stored.pageVisibility !== page.visibility ||
         stored.pageProjectId !== page.projectId ||
-        stored.pageCreatedById !== page.createdById;
+        stored.pageCreatedById !== page.createdById ||
+        stored.aclRevision !== aclRevision;
 
-      if (!aclChanged) return;
+      if (!aclChanged) return 0;
 
       await this.db
         .update(kbArticleChunks)
@@ -240,6 +251,7 @@ export class KbIndexingService {
           pageVisibility: page.visibility,
           pageProjectId: page.projectId,
           pageCreatedById: page.createdById,
+          aclRevision,
         })
         .where(
           and(
@@ -248,10 +260,19 @@ export class KbIndexingService {
             eq(kbArticleChunks.source, "page_body"),
           ),
         );
-      return;
+      return 0;
     }
 
     const chunks = this.chunkText(page.contentText);
+
+    if (chunks.length === 0) {
+      await this.removePageChunks(orgId, pageId);
+      return 0;
+    }
+
+    const embeddings = await Promise.all(
+      chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
+    );
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -263,12 +284,6 @@ export class KbIndexingService {
             eq(kbArticleChunks.source, "page_body"),
           ),
         );
-
-      if (chunks.length === 0) return;
-
-      const embeddings = await Promise.all(
-        chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
-      );
 
       const valuesToInsert = chunks.map((chunk, index) => ({
         orgId,
@@ -285,10 +300,14 @@ export class KbIndexingService {
         pageVisibility: page.visibility,
         pageProjectId: page.projectId,
         pageCreatedById: page.createdById,
+        aclRevision,
+        contentRevision,
       }));
 
       await tx.insert(kbArticleChunks).values(valuesToInsert);
     });
+
+    return chunks.length;
   }
 
   async removeArticleChunks(orgId: string, articleId: number): Promise<void> {
@@ -321,6 +340,15 @@ export class KbIndexingService {
     if (!this.embeddings.isConfigured()) return 0;
     const chunks = this.chunkText(text);
 
+    if (chunks.length === 0) {
+      await this.removeSourceChunks(orgId, sourceId);
+      return 0;
+    }
+
+    const embeddings = await Promise.all(
+      chunks.map((c) => this.embeddings.embedQuery(c)),
+    );
+
     await this.db.transaction(async (tx) => {
       await tx
         .delete(kbArticleChunks)
@@ -331,12 +359,6 @@ export class KbIndexingService {
             eq(kbArticleChunks.source, "source"),
           ),
         );
-
-      if (chunks.length === 0) return;
-
-      const embeddings = await Promise.all(
-        chunks.map((c) => this.embeddings.embedQuery(c)),
-      );
 
       const valuesToInsert = chunks.map((chunk, index) => ({
         orgId,
@@ -412,7 +434,7 @@ export class KbIndexingService {
 
     let text: string;
     try {
-      const { body } = await this.storage.getFileStream(attachment.fileKey);
+      const { body } = await this.storage.getFileStream(orgId, attachment.fileKey);
       const buffer = await this.streamToBuffer(body);
       text = await extractAttachmentText(buffer, attachment.mimeType);
     } catch (err) {
@@ -425,6 +447,15 @@ export class KbIndexingService {
 
     const chunks = this.chunkText(text);
 
+    if (chunks.length === 0) {
+      await this.removeAttachmentChunks(orgId, attachmentId);
+      return { chunks: 0, warning: `${attachment.fileName}: no extractable text` };
+    }
+
+    const embeddings = await Promise.all(
+      chunks.map((c) => this.embeddings.embedQuery(c)),
+    );
+
     await this.db.transaction(async (tx) => {
       await tx
         .delete(kbArticleChunks)
@@ -435,12 +466,6 @@ export class KbIndexingService {
             eq(kbArticleChunks.source, "attachment"),
           ),
         );
-
-      if (chunks.length === 0) return;
-
-      const embeddings = await Promise.all(
-        chunks.map((c) => this.embeddings.embedQuery(c)),
-      );
 
       const valuesToInsert = chunks.map((chunk, index) => ({
         orgId,
@@ -458,13 +483,7 @@ export class KbIndexingService {
       await tx.insert(kbArticleChunks).values(valuesToInsert);
     });
 
-    return {
-      chunks: chunks.length,
-      warning:
-        chunks.length === 0
-          ? `${attachment.fileName}: no extractable text`
-          : null,
-    };
+    return { chunks: chunks.length, warning: null };
   }
 
   async removeAttachmentChunks(
@@ -583,10 +602,9 @@ export class KbIndexingService {
   }
 
   async reindexAllPages(orgId?: string): Promise<{ reindexed: number }> {
-    const indexable = sql`${kbPages.visibility} IN ('org', 'public') AND ${kbPages.status} <> 'archived'`;
     const where = orgId
-      ? and(eq(kbPages.orgId, orgId), indexable, isNull(kbPages.deletedAt))
-      : and(indexable, isNull(kbPages.deletedAt));
+      ? and(eq(kbPages.orgId, orgId), ne(kbPages.status, "archived"), isNull(kbPages.deletedAt))
+      : and(ne(kbPages.status, "archived"), isNull(kbPages.deletedAt));
 
     const pages = await this.db
       .select({ id: kbPages.id, orgId: kbPages.orgId })

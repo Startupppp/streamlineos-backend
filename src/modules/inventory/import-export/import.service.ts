@@ -237,21 +237,44 @@ export class ImportService {
     const offset = (page - 1) * limit;
     const hash = `${limit}:${offset}`;
     return this.cache.cachedVersioned(CACHE_KEYS.invImportJobsNamespace(orgId), hash, async () => {
-      const [items, countResult] = await Promise.all([
-        this.db
-          .select()
-          .from(invImportJobs)
-          .where(eq(invImportJobs.orgId, orgId))
-          .orderBy(desc(invImportJobs.createdAt))
-          .limit(limit)
-          .offset(offset),
-        this.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(invImportJobs)
-          .where(eq(invImportJobs.orgId, orgId)),
-      ]);
+      const rows = await this.db
+        .select({
+          id: invImportJobs.id,
+          orgId: invImportJobs.orgId,
+          jobType: invImportJobs.jobType,
+          status: invImportJobs.status,
+          fileName: invImportJobs.fileName,
+          totalRows: invImportJobs.totalRows,
+          processedRows: invImportJobs.processedRows,
+          errorRows: invImportJobs.errorRows,
+          errors: invImportJobs.errors,
+          resultUrl: invImportJobs.resultUrl,
+          createdBy: invImportJobs.createdBy,
+          createdAt: invImportJobs.createdAt,
+          updatedAt: invImportJobs.updatedAt,
+          windowTotal: sql<string>`count(*) OVER ()`,
+        })
+        .from(invImportJobs)
+        .where(eq(invImportJobs.orgId, orgId))
+        .orderBy(desc(invImportJobs.createdAt))
+        .limit(limit)
+        .offset(offset);
 
-      const total = countResult[0]?.count ?? 0;
+      const first = rows[0];
+      let total: number;
+      if (first) {
+        total = Number(first.windowTotal);
+      } else if (offset === 0) {
+        total = 0;
+      } else {
+        const fallback = await this.db
+          .select({ n: sql<string>`count(*)` })
+          .from(invImportJobs)
+          .where(eq(invImportJobs.orgId, orgId));
+        total = Number(fallback[0]?.n ?? 0);
+      }
+
+      const items = rows.map(({ windowTotal: _, ...rest }) => rest);
       return { items, total, page, totalPages: Math.ceil(total / limit) };
     }, CACHE_TTL.SHORT);
   }

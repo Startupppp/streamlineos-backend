@@ -1,11 +1,12 @@
 import { Injectable, Inject } from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { logger } from "../../../common/logger/logger.service";
 import { eq, and } from "drizzle-orm";
 import { invWebhooks, invWebhookEvents, invWebhookEventSubscriptions } from "../../../db/schema";
 import { createHmac } from "crypto";
 import type { WebhookEventType } from "./dto/webhooks.schemas";
-import { assertSafeWebhookUrl } from "./webhooks.service";
+import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
 
 @Injectable()
 export class InventoryWebhookEmitter {
@@ -13,9 +14,6 @@ export class InventoryWebhookEmitter {
 
   async emit(orgId: string, eventType: WebhookEventType, payload: Record<string, unknown>): Promise<void> {
     try {
-      // Indexed dispatch. This previously loaded every active webhook for the
-      // org and filtered a jsonb array in application memory, which cannot use
-      // an index and grows linearly with webhook count.
       const matching = await this.db
         .select({ id: invWebhooks.id, url: invWebhooks.url, secret: invWebhooks.secret })
         .from(invWebhookEventSubscriptions)
@@ -51,14 +49,35 @@ export class InventoryWebhookEmitter {
 
           if (!event) continue;
 
-          // Re-validate immediately before the outbound fetch to close the
-          // DNS-rebinding / TOCTOU window between registration and delivery.
           const isProd = process.env.NODE_ENV === "production";
           let safeToFetch = true;
-          try {
-            await assertSafeWebhookUrl(webhook.url, isProd);
-          } catch {
+          const ssrfResult = await checkWebhookUrl(webhook.url);
+          if (!ssrfResult.allowed) {
+            logger.warn("webhook-emitter: SSRF guard blocked delivery", {
+              orgId,
+              webhookId: webhook.id,
+              eventType,
+              eventId: event.id,
+              cause: ssrfResult.reason,
+            });
             safeToFetch = false;
+          } else if (isProd) {
+            let httpsOk = false;
+            try {
+              httpsOk = new URL(webhook.url).protocol === "https:";
+            } catch {
+              httpsOk = false;
+            }
+            if (!httpsOk) {
+              logger.warn("webhook-emitter: SSRF guard blocked delivery", {
+                orgId,
+                webhookId: webhook.id,
+                eventType,
+                eventId: event.id,
+                cause: "https-required-in-production",
+              });
+              safeToFetch = false;
+            }
           }
 
           const payloadStr = JSON.stringify({
@@ -85,16 +104,21 @@ export class InventoryWebhookEmitter {
                 redirect: "manual",
               });
               clearTimeout(timeout);
-              // Treat any redirect (3xx) as a failed delivery — we do not chase
-              // redirects because the redirect target may point at an internal address.
               if (res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400)) {
                 status = "FAILED";
               } else {
                 status = res.ok ? "DELIVERED" : "FAILED";
               }
-            } catch {
+            } catch (fetchErr) {
               clearTimeout(timeout);
               status = "FAILED";
+              logger.warn("webhook-emitter: delivery fetch failed", {
+                orgId,
+                webhookId: webhook.id,
+                eventType,
+                eventId: event.id,
+                cause: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
+              });
             }
           }
 
@@ -111,12 +135,21 @@ export class InventoryWebhookEmitter {
             .update(invWebhooks)
             .set({ lastDeliveryAt: new Date(), lastDeliveryStatus: status })
             .where(eq(invWebhooks.id, webhook.id));
-        } catch (err) {
-          void err;
+        } catch (webhookErr) {
+          logger.error("webhook-emitter: unhandled per-webhook error", {
+            orgId,
+            webhookId: webhook.id,
+            eventType,
+            cause: webhookErr instanceof Error ? webhookErr.message : String(webhookErr),
+          });
         }
       }
-    } catch (err) {
-      void err;
+    } catch (dispatchErr) {
+      logger.error("webhook-emitter: dispatch loop failed", {
+        orgId,
+        eventType,
+        cause: dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr),
+      });
     }
   }
 }

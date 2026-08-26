@@ -36,20 +36,6 @@ describe("the legacy identity tables gain no new readers", () => {
    * from the schema. Delete lines as each migrate batch lands; never add one.
    */
   const KNOWN_READERS = [
-  "src/modules/clients/clients.service.ts",
-  "src/modules/contacts/contact-roles.service.ts",
-  "src/modules/contacts/contacts.service.ts",
-  "src/modules/crm/core/crm-customer360-sections.service.ts",
-  "src/modules/crm/core/crm-customer360.service.ts",
-  "src/modules/crm/core/crm-organizations.service.ts",
-  // The account hierarchy: `crm_organizations.parent_id` is a company-to-company
-  // link Party deliberately did not absorb into `employer_party_id`, because a
-  // subsidiary's parent is not its employer. It is the last thing keeping this
-  // file on the list.
-  "src/modules/crm/core/crm-organizations-insights.service.ts",
-  "src/modules/cron/cron-weekly-recap.service.ts",
-  "src/modules/inventory/returns/customer-returns.service.ts",
-  "src/modules/leads/leads.controller.e2e-spec.ts",
   // The seam itself, plus what writes through it and what checks it. Not call
   // sites to migrate -- they are what everything else migrates ONTO, and they
   // import the legacy tables for the same reason `party-legacy-seam.ts` always
@@ -67,10 +53,6 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/party/party-legacy-writer.spec.ts",
   "src/modules/party/party-legacy-writer.ts",
   "src/modules/party/party-mirror-fields.ts",
-  // Global search reads every name, address and number it shows from Party;
-  // what is left here is `contacts.lead_id` and `contacts.deal_id`, the
-  // associations that scope a contact and that Party has no column for yet.
-  "src/modules/search/search.service.ts",
 
   // ---------------------------------------------------------------------
   // Revealed by widening the detection, not added by anyone.
@@ -81,19 +63,19 @@ describe("the legacy identity tables gain no new readers", () => {
   // `crm_organizations` turned out to be the fifth identity table: the list
   // grows because what is *watched* grew, never because a rule was relaxed.
   //
-  // Six are live, in modules that have never heard of this phase, which is
+  // Several are live, in modules that have never heard of this phase, which is
   // exactly why nobody counted them. Each reads a customer's name off the
   // mirror while the party id sits on the same row -- `deals.party_id` is
   // already written, so most of these are a projection change, not a migration.
   // They are the real remaining cost of ticket 08's DROP.
-  "src/modules/clients/client-accounts.service.ts",
-  "src/modules/crm/metadata/crm-data-quality.service.ts",
   "src/modules/csat/csat.service.ts",
   "src/modules/inventory/sales-orders/so-core.service.ts",
   "src/modules/invoices/invoices.service.ts",
   "src/modules/support/core/support-tickets.service.ts",
   // Two tests: a mocked db shaped like the old query, and a seam test that
-  // names the tables it backfills. Both go when the tables do.
+  // names the tables it backfills. The latter counts rows in each legacy table
+  // to prove none lacks a Party, which is the one claim that cannot be made
+  // from the Party side. Both go when the tables do.
   "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
   "src/modules/party/party-legacy-backfill.db.spec.ts",
   ];
@@ -212,6 +194,43 @@ describe("the legacy identity tables gain no new readers", () => {
     // These no longer read a legacy table — delete them from KNOWN_READERS. The
     // list is a debt register, and a debt register nobody pays down is a lie.
     expect(departed).toEqual([]);
+  });
+
+  /**
+   * The lint rule's exemptions and this list are the same list.
+   *
+   * `eslint.config.mjs` says in a comment that its `ignores` are generated from
+   * `KNOWN_READERS` "so the two cannot drift into disagreeing about what is
+   * allowed". They drifted the day after it was written: the list was generated
+   * from a working tree where another session had deleted `src/modules/finance`,
+   * so thirteen real readers were absent from the exemptions and `pnpm lint`
+   * would have failed on files this register already accounts for.
+   *
+   * A comment claiming an invariant is not the invariant. This is.
+   *
+   * The failure it prevents is worse in the other direction: a file exempted
+   * here but absent from the register is one nobody is stopped from copying, and
+   * exemption lists only ever get longer by accident.
+   */
+  it("agrees with the lint rule about which files may still read them", () => {
+    const config = readFileSync("eslint.config.mjs", "utf8");
+
+    // Anchored on the rule, not on the shape: three config objects carry an
+    // `ignores` array indented exactly like this one, and taking the first is
+    // how the regeneration script that produced this list clobbered the block
+    // that exempts spec files from the APP_CONFIG rule instead.
+    const rule = config.indexOf('"no-restricted-imports"');
+    if (rule < 0) throw new Error("eslint.config.mjs no longer restricts the legacy imports");
+    const start = config.lastIndexOf("\n    ignores: [\n", rule);
+    const end = config.indexOf("\n    ],", start);
+    if (start < 0 || end < 0)
+      throw new Error("the no-restricted-imports block has no ignores array to compare against");
+
+    const exempt = [...config.slice(start, end).matchAll(/"(src\/[^"]+)"/g)]
+      .map((match) => match[1]!)
+      .filter((path) => !path.endsWith("/**"));
+
+    expect([...exempt].sort()).toEqual([...KNOWN_READERS].sort());
   });
 
   it("reports how much of the migration is left", () => {

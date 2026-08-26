@@ -1,7 +1,21 @@
-import { Injectable, BadGatewayException, OnModuleInit } from "@nestjs/common";
+import { Injectable, BadGatewayException, OnModuleInit, Optional, Inject } from "@nestjs/common";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter } from "../payment-provider-adapter.interface";
+import { outboundRequest } from "../../../../common/http/outbound-request";
+import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter, type PaymentProviderRuntime, type PaymentWebhookNormalization } from "../payment-provider-adapter.interface";
+import { webhookEnvelopeSchema } from "../dto/webhook.schemas";
+import { APP_CONFIG } from "../../../../config/config.module";
+
+interface RazorpayCredentials {
+  readonly RAZORPAY_KEY_ID?: string;
+  readonly RAZORPAY_KEY_SECRET?: string;
+}
+
+interface TenantRazorpayCredentials {
+  readonly keyId: string | null;
+  readonly secret: string | null;
+  readonly webhookSecret: string | null;
+}
 
 const razorpayOrderResponseSchema = z.object({
   id: z.string(),
@@ -24,19 +38,42 @@ function constantTimeEquals(expected: string, provided: string): boolean {
   }
 }
 
-// Mirrors src/modules/billing/razorpay.service.ts's HMAC/order logic, parameterized by
-// per-org encrypted credentials instead of platform-wide env vars — that service and its
-// /billing/razorpay + /webhooks/razorpay endpoints are untouched (StreamlineOS billing tenants
-// for their own SaaS plan, a separate concern). This adapter is for tenants charging their own
-// customers via their own connected Razorpay account.
 @Injectable()
 export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
   readonly providerKey = "razorpay";
 
-  constructor(private readonly registry: PaymentProviderAdapterRegistry) {}
+  constructor(
+    private readonly registry: PaymentProviderAdapterRegistry,
+    @Optional() @Inject(APP_CONFIG) private readonly platformCredentials?: RazorpayCredentials,
+  ) {}
 
   onModuleInit(): void {
     this.registry.register(this);
+  }
+
+  // Concrete-adapter compatibility helpers; the provider-neutral interface exposes only configure().
+  isReady(): boolean {
+    return this.configure({ keyId: this.platformCredentials?.RAZORPAY_KEY_ID ?? null, secret: this.platformCredentials?.RAZORPAY_KEY_SECRET ?? null, webhookSecret: null }).isReady();
+  }
+
+  publicKeyId(): string | null {
+    return this.configure({ keyId: this.platformCredentials?.RAZORPAY_KEY_ID ?? null, secret: null, webhookSecret: null }).publicKeyId();
+  }
+
+  createOrder(params: { keyId: string; keySecret: string; amount: string; currency: string; receipt: string; notes?: Record<string, string> }) {
+    return this.configure({ keyId: params.keyId, secret: params.keySecret, webhookSecret: null }).createOrder({ amount: params.amount, currency: params.currency, receipt: params.receipt, notes: params.notes });
+  }
+
+  verifyPaymentSignature(params: { orderId: string; paymentId: string; signature: string; keySecret: string }): boolean {
+    return this.configure({ keyId: null, secret: params.keySecret, webhookSecret: null }).verifyPaymentSignature({ orderId: params.orderId, paymentId: params.paymentId, signature: params.signature });
+  }
+
+  verifyWebhookSignature(params: { rawBody: string; signature: string; webhookSecret: string }): boolean {
+    return this.configure({ keyId: null, secret: null, webhookSecret: params.webhookSecret }).verifyWebhookSignature({ rawBody: params.rawBody, signature: params.signature });
+  }
+
+  normalizeWebhook(rawBody: string): PaymentWebhookNormalization {
+    return this.configure(null).normalizeWebhook(rawBody);
   }
 
   validateCredentialFormat(environment: "test" | "live", keyId: string): PaymentCredentialWarning | null {
@@ -64,16 +101,26 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
     return null;
   }
 
-  async createOrder(params: {
-    keyId: string;
-    keySecret: string;
+  configure(credentials: unknown): PaymentProviderRuntime {
+    const configured = this.toTenantCredentials(credentials);
+    const keyId = configured.keyId;
+    const keySecret = configured.secret;
+    const webhookSecret = configured.webhookSecret;
+
+    return {
+      isReady: () => Boolean(keyId && keySecret),
+      publicKeyId: () => keyId,
+      createOrder: async (params: {
     amount: string;
     currency: string;
     receipt: string;
     notes?: Record<string, string>;
-  }): Promise<{ providerOrderId: string; raw: unknown }> {
-    const auth = Buffer.from(`${params.keyId}:${params.keySecret}`).toString("base64");
-    const response = await fetch("https://api.razorpay.com/v1/orders", {
+      }): Promise<{ providerOrderId: string; raw: unknown }> => {
+    if (!keyId || !keySecret) throw new Error("Payment provider credentials are not configured");
+    const auth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+    const response = await outboundRequest("https://api.razorpay.com/v1/orders", {
+      provider: "razorpay-tenant",
+      timeoutMs: 10_000,
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -97,21 +144,58 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
     const data: unknown = await response.json();
     const order = razorpayOrderResponseSchema.parse(data);
     return { providerOrderId: order.id, raw: order };
-  }
+      },
 
-  verifyPaymentSignature(params: { orderId: string; paymentId: string; signature: string; keySecret: string }): boolean {
-    const expected = createHmac("sha256", params.keySecret)
+      verifyPaymentSignature: (params) => {
+    if (!keySecret) return false;
+    const expected = createHmac("sha256", keySecret)
       .update(`${params.orderId}|${params.paymentId}`)
       .digest("hex");
     return constantTimeEquals(expected, params.signature);
-  }
+      },
 
-  verifyWebhookSignature(params: { rawBody: string; signature: string; webhookSecret: string }): boolean {
+      verifyWebhookSignature: (params) => {
+    if (!webhookSecret) return false;
     try {
-      const expected = createHmac("sha256", params.webhookSecret).update(params.rawBody).digest("hex");
+      const expected = createHmac("sha256", webhookSecret).update(params.rawBody).digest("hex");
       return constantTimeEquals(expected, params.signature);
     } catch {
       return false;
     }
+      },
+
+      normalizeWebhook: (rawBody): PaymentWebhookNormalization => {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(rawBody);
+    } catch {
+      return { ok: false, error: "invalid_json" };
+    }
+
+    const parsed = webhookEnvelopeSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "invalid_payload" };
+
+    const providerEventId =
+      typeof (raw as { id?: unknown }).id === "string" ? (raw as { id: string }).id : undefined;
+    return {
+      ok: true,
+      eventType: parsed.data.event,
+      payload: parsed.data.payload,
+      ...(providerEventId ? { providerEventId } : {}),
+    };
+      },
+    };
+  }
+
+  private toTenantCredentials(credentials: unknown): TenantRazorpayCredentials {
+    if (!credentials || typeof credentials !== "object") {
+      return { keyId: null, secret: null, webhookSecret: null };
+    }
+    const value = credentials as Record<string, unknown>;
+    return {
+      keyId: typeof value.keyId === "string" ? value.keyId : null,
+      secret: typeof value.secret === "string" ? value.secret : null,
+      webhookSecret: typeof value.webhookSecret === "string" ? value.webhookSecret : null,
+    };
   }
 }

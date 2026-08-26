@@ -13,7 +13,6 @@ const USER: CurrentUserContext = {
   userId: "employee-1",
   orgId: "org-1",
   role: "MEMBER",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
@@ -92,6 +91,7 @@ describe("LeavesWriteService server-derived approver", () => {
           name: "Manager",
         }),
       } as never,
+      { isOnProbationDuring: jest.fn().mockResolvedValue(false) } as never,
     );
     const afterCommit: AfterCommitHook[] = [];
     const context = {

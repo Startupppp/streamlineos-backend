@@ -12,7 +12,6 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   userId: "approver-1",
   orgId: ORG_ID,
   role: "EMPLOYEE",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,

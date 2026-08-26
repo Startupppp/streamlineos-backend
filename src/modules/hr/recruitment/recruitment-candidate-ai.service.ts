@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { and, eq } from "drizzle-orm";
-import { candidateApplications, candidates, interviews } from "../../../db/schema";
+import { candidateApplications, candidateResumes, candidates, interviews } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
@@ -47,6 +47,7 @@ export class RecruitmentCandidateAiService {
   ): Promise<AiScoreResult> {
     const candidate = await this.db.query.candidates.findFirst({
       where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
+      with: { resume: true },
     });
     if (!candidate) throw new NotFoundException("Candidate not found.");
 
@@ -74,8 +75,8 @@ export class RecruitmentCandidateAiService {
       profile.push(`Years of Experience: ${candidate.experienceYears}`);
     if (candidate.skills?.length)
       profile.push(`Skills: ${candidate.skills.join(", ")}`);
-    if (candidate.resumeText)
-      profile.push(`\nResume Text:\n${candidate.resumeText.slice(0, 3000)}`);
+    if (candidate.resume?.resumeText)
+      profile.push(`\nResume Text:\n${candidate.resume.resumeText.slice(0, 3000)}`);
 
     const gatewayResult = await this.gateway.invokeStructured({
       actor: { orgId, userId },
@@ -139,6 +140,7 @@ Score the candidate on technicalSkills, experience, communication, cultureFit an
   ): Promise<CompositeScoreResult> {
     const candidate = await this.db.query.candidates.findFirst({
       where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
+      with: { resume: true },
     });
     if (!candidate) throw new NotFoundException("Candidate not found.");
 
@@ -283,9 +285,12 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
     const parsed = await this.parseResumeText(text, orgId, userId);
 
     await this.db
-      .update(candidates)
-      .set({ resumeText: text.slice(0, 100000), updatedAt: new Date() })
-      .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
+      .insert(candidateResumes)
+      .values({ candidateId, resumeText: text.slice(0, 100000) })
+      .onConflictDoUpdate({
+        target: candidateResumes.candidateId,
+        set: { resumeText: text.slice(0, 100000), updatedAt: new Date() },
+      });
 
     return {
       parsed,

@@ -213,6 +213,9 @@ export const PARTY_FIELD_MIRROR: Record<keyof PartyRow, PartyFieldMirror> = {
       absorb: (l) => ({ description: l.description }),
     },
   },
+  parentPartyId: noLegacyColumn(
+    "`crm_organizations.parent_id` is an integer company id and this is a party id; translating between them needs `crm_org_party_map`, and a cell here is a pure function of one row with no database. `party-legacy-associations.ts` does it inside the writer instead, the same way `party-legacy-employer.ts` does for `employer_party_id`.",
+  ),
   whatsappPhone: {
     LEAD: {
       derive: (p) => ({ whatsappNumber: p.whatsappPhone }),
@@ -279,6 +282,20 @@ export const PARTY_FIELD_MIRROR: Record<keyof PartyRow, PartyFieldMirror> = {
     CLIENT: {
       derive: (p) => ({ convertedAt: p.convertedAt }),
       absorb: (l) => ({ convertedAt: l.convertedAt }),
+    },
+  },
+  convertedFromPartyId: noLegacyColumn(
+    "`clients.lead_id` and `contacts.lead_id` are integer lead ids and this is a party id; translating between them needs `lead_party_map`, which a `MirrorCell` deliberately cannot reach. `party-legacy-associations.ts` does it inside the writer, and it maintains BOTH legacy columns from this one Party column -- they are one relation, per 0265.",
+  ),
+  primaryDealId: {
+    // The one association that needs no translation: `contacts.deal_id` and
+    // `primary_deal_id` are the same integer `deals` id in the same id space, so
+    // this stays a pure cell rather than joining `party-legacy-associations.ts`
+    // out of symmetry. Party carries a composite tenant foreign key the legacy
+    // column never had; the mirror still copies whatever survived it.
+    CONTACT: {
+      derive: (p) => ({ dealId: p.primaryDealId }),
+      absorb: (l) => ({ primaryDealId: l.dealId }),
     },
   },
   lostReason: {
@@ -501,7 +518,7 @@ export const LEGACY_OWNED_COLUMNS: Record<MappedLegacyKind, Readonly<Record<stri
   CLIENT: {
     id: "The legacy identity itself.",
     leadId:
-      "Which lead this client converted from -- a legacy-to-legacy link with no Party equivalent until `leads` is dropped.",
+      "Which lead this client converted from, which Party now owns as `converted_from_party_id`. Listed here because the two speak different id spaces -- an integer `leads` id against a party id -- so the column is maintained by `party-legacy-associations.ts` through `lead_party_map` rather than by a pure cell above. Legacy-owned in shape only; nothing outside the writer sets it.",
     createdAt: "Stamped by the table.",
     updatedAt: "Stamped by the table.",
   },
@@ -509,9 +526,8 @@ export const LEGACY_OWNED_COLUMNS: Record<MappedLegacyKind, Readonly<Record<stri
     id: "The legacy identity itself.",
     organizationId:
       "The employer, which Party now owns as `employer_party_id`. Listed here because the two speak different id spaces -- an integer `crm_organizations` id against a party id -- so the column is maintained by `party-legacy-employer.ts` through `crm_org_party_map` rather than by a pure cell above. Legacy-owned in shape only; nothing outside the writer sets it.",
-    leadId: "Which lead this contact came from -- a legacy-to-legacy link.",
-    dealId:
-      "A deal association carried on the contact row; `party_roles` and the deal tables own that in the merged model.",
+    leadId:
+      "Which lead this contact was raised against -- the same relation `clients.lead_id` names, and the same Party column, `converted_from_party_id`. Maintained by `party-legacy-associations.ts` for the reason recorded on `clients.leadId`. Legacy-owned in shape only; nothing outside the writer sets it.",
     mergedIntoId: "The legacy merge pointer; see `leads.mergedIntoId`.",
     createdAt: "Stamped by the table.",
     updatedAt: "Stamped by the table.",
@@ -519,7 +535,7 @@ export const LEGACY_OWNED_COLUMNS: Record<MappedLegacyKind, Readonly<Record<stri
   ORGANISATION: {
     id: "The legacy identity itself; `crm_org_party_map` is how it reaches a Party.",
     parentId:
-      "The account hierarchy -- which company owns which. A party-to-party link like `employer_party_id`, and deliberately not folded into it: a subsidiary's parent is not its employer, and one column serving both would make the name a lie. Ticket 25 converged the identity and left the hierarchy where it is.",
+      "The account hierarchy -- which company owns which. Party owns it as `parent_party_id` from 0265: a party-to-party link like `employer_party_id`, and deliberately not folded into it, because a subsidiary's parent is not its employer and one column serving both would make the name a lie. Ticket 25 converged the identity and left the hierarchy; the contract step could not drop the table while the hierarchy reads still joined it. Maintained by `party-legacy-associations.ts` through `crm_org_party_map`; legacy-owned in shape only.",
     mergedIntoId: "The legacy merge pointer; see `leads.mergedIntoId`.",
     createdAt: "Stamped by the table.",
     updatedAt: "Stamped by the table.",

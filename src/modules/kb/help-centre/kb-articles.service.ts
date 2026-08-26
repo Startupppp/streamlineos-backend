@@ -1,13 +1,14 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleFeedback, kbArticleTags, kbArticleVersions, kbTags } from "../../../db/schema";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbEventsService } from "../core/kb-events.service";
-import { KbIndexingService } from "../retrieval/kb-indexing.service";
 import { kbSlugify } from "../core/kb.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
@@ -59,7 +60,6 @@ export class KbArticlesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: KbAccessService,
     private readonly events: KbEventsService,
-    private readonly indexing: KbIndexingService,
   ) {}
 
   async list(user: CurrentUserContext, query: ListArticlesInput, scope?: DataScope): Promise<ArticleListResult> {
@@ -86,14 +86,9 @@ export class KbArticlesService {
     }
 
     const where = and(...conditions);
+    const offset = (query.page - 1) * query.pageSize;
 
-    const [totalRow] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(kbArticles)
-      .where(where);
-    const total = totalRow?.count ?? 0;
-
-    const items = await this.db
+    const rows = await this.db
       .select({
         id: kbArticles.id,
         spaceId: kbArticles.spaceId,
@@ -114,12 +109,29 @@ export class KbArticlesService {
         notHelpfulCount: kbArticles.notHelpfulCount,
         lastVerifiedAt: kbArticles.lastVerifiedAt,
         updatedAt: kbArticles.updatedAt,
+        totalCount: sql<string>`count(*) OVER ()`,
       })
       .from(kbArticles)
       .where(where)
       .orderBy(desc(kbArticles.updatedAt))
       .limit(query.pageSize)
-      .offset((query.page - 1) * query.pageSize);
+      .offset(offset);
+
+    const first = rows[0];
+    let total: number;
+    if (first) {
+      total = Number(first.totalCount);
+    } else if (offset === 0) {
+      total = 0;
+    } else {
+      const [countRow] = await this.db.select({ count: sql<number>`count(*)::int` }).from(kbArticles).where(where);
+      total = countRow?.count ?? 0;
+    }
+
+    const items: ArticleListItem[] = rows.map((row) => {
+      const { totalCount: _, ...item } = row;
+      return item;
+    });
 
     return {
       items,
@@ -234,13 +246,18 @@ export class KbArticlesService {
 
     const titleChanged = input.title !== undefined && input.title !== current.title;
     const contentChanged = input.content !== undefined && input.content !== current.content;
+    const aclChanged = input.visibility !== undefined && input.visibility !== current.visibility;
 
     const updated = await this.db.transaction(async (tx) => {
       let result: ArticleRow;
       if (Object.keys(values).length > 0) {
         const [row] = await tx
           .update(kbArticles)
-          .set(values)
+          .set({
+            ...values,
+            ...(contentChanged ? { contentRevision: sql`content_revision + 1` } : {}),
+            ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
+          })
           .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
           .returning();
         result = row;
@@ -250,6 +267,24 @@ export class KbArticlesService {
 
       if (titleChanged || contentChanged) {
         await this.snapshot(tx, orgId, result, user.userId, input.changeSummary);
+      }
+
+      if (result.status === "published" && (contentChanged || aclChanged)) {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "kb_article",
+          aggregateId: String(articleId),
+          aggregateVersion: Date.now(),
+          eventType: "kb.content.index",
+          payload: {
+            contentType: "article",
+            contentId: articleId,
+            contentRevision: result.contentRevision,
+            aclRevision: result.aclRevision,
+          },
+          occurredAt: new Date(),
+        });
       }
 
       if (input.tags !== undefined) {
@@ -267,34 +302,31 @@ export class KbArticlesService {
       return { ...result, tags: tagRows.map((t) => t.name) };
     });
 
-    if (updated.status === "published" && contentChanged) {
-      try {
-        await this.indexing.indexArticle(orgId, articleId);
-      } catch (err) {
-        this.logger.error(`Failed to index article ${articleId}: ${err}`);
-      }
-    }
-
     return updated;
   }
 
   async archive(user: CurrentUserContext, articleId: number): Promise<ArticleRow> {
     await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
-    const [updated] = await this.db
-      .update(kbArticles)
-      .set({ status: "archived", archivedAt: new Date() })
-      .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
-      .returning();
-    if (!updated) throw new NotFoundException("Article not found");
-
-    try {
-      await this.indexing.removeArticleChunks(orgId, articleId);
-    } catch (err) {
-      this.logger.error(`Failed to remove indexed chunks for article ${articleId}: ${err}`);
-    }
-
-    return updated;
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(kbArticles)
+        .set({ status: "archived", archivedAt: new Date() })
+        .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
+        .returning();
+      if (!updated) throw new NotFoundException("Article not found");
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "kb_article",
+        aggregateId: String(articleId),
+        aggregateVersion: Date.now(),
+        eventType: "kb.content.index",
+        payload: { contentType: "article", contentId: articleId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
+        occurredAt: new Date(),
+      });
+      return updated;
+    });
   }
 
   async publish(user: CurrentUserContext, articleId: number): Promise<ArticleRow> {
@@ -314,14 +346,18 @@ export class KbArticlesService {
         .returning();
 
       await this.snapshot(tx, orgId, result, user.userId);
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "kb_article",
+        aggregateId: String(articleId),
+        aggregateVersion: Date.now(),
+        eventType: "kb.content.index",
+        payload: { contentType: "article", contentId: articleId, contentRevision: result.contentRevision, aclRevision: result.aclRevision },
+        occurredAt: new Date(),
+      });
       return result;
     });
-
-    try {
-      await this.indexing.indexArticle(orgId, articleId);
-    } catch (err) {
-      this.logger.error(`Failed to index article ${articleId}: ${err}`);
-    }
 
     return updated;
   }
@@ -329,19 +365,25 @@ export class KbArticlesService {
   async unpublish(user: CurrentUserContext, articleId: number): Promise<ArticleRow> {
     await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
-    const [updated] = await this.db
-      .update(kbArticles)
-      .set({ status: "draft" })
-      .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
-      .returning();
-    if (!updated) throw new NotFoundException("Article not found");
-
-    try {
-      await this.indexing.removeArticleChunks(orgId, articleId);
-    } catch (err) {
-      this.logger.error(`Failed to remove indexed chunks for article ${articleId}: ${err}`);
-    }
-
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(kbArticles)
+        .set({ status: "draft" })
+        .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
+        .returning();
+      if (!row) throw new NotFoundException("Article not found");
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "kb_article",
+        aggregateId: String(articleId),
+        aggregateVersion: Date.now(),
+        eventType: "kb.content.index",
+        payload: { contentType: "article", contentId: articleId, contentRevision: row.contentRevision, aclRevision: row.aclRevision },
+        occurredAt: new Date(),
+      });
+      return row;
+    });
     return updated;
   }
 
@@ -426,14 +468,20 @@ export class KbArticlesService {
       if (!result) throw new NotFoundException("Article not found");
 
       await this.snapshot(tx, orgId, result, user.userId, `Restored v${versionNumber}`);
+      if (result.status === "published") {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "kb_article",
+          aggregateId: String(articleId),
+          aggregateVersion: Date.now(),
+          eventType: "kb.content.index",
+          payload: { contentType: "article", contentId: articleId, contentRevision: result.contentRevision, aclRevision: result.aclRevision },
+          occurredAt: new Date(),
+        });
+      }
       return result;
     });
-
-    if (updated.status === "published") {
-      this.indexing.indexArticle(orgId, articleId).catch((err: unknown) => {
-        this.logger.error(`Failed to re-index article ${articleId} after version restore: ${err}`);
-      });
-    }
 
     return updated;
   }

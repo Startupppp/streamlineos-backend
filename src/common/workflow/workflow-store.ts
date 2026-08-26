@@ -162,10 +162,23 @@ export async function drainBacklog(db: Db): Promise<DrainBacklog> {
 export async function claimDueRuns(db: Db, limit: number): Promise<RunRecord[]> {
   const lease = leaseExpiry(new Date());
 
+  /**
+   * The lease is bound through its column, never interpolated bare.
+   *
+   * A bare `Date` in a `sql` template hands postgres-js a value it cannot
+   * serialise: the driver throws ERR_INVALID_ARG_TYPE at runtime while the
+   * template typechecks perfectly. Every call to this function threw, so the
+   * durable runtime claimed nothing, ran nothing and reported nothing — the
+   * exact failure `drainBacklog` above was written to make visible, and the
+   * reason an accepted inbound delivery was never filed.
+   *
+   * `sql.param` with the column applies that column's type mapper, which is how
+   * `keysetAfter`/`keysetBefore` avoid the identical trap.
+   */
   const claimed = await db.execute(sql`
     UPDATE workflow_runs SET
       status = 'RUNNING',
-      lease_expires_at = ${lease},
+      lease_expires_at = ${sql.param(lease, workflowRuns.leaseExpiresAt)},
       updated_at = now()
     WHERE workflow_run_id IN (
       SELECT workflow_run_id FROM workflow_runs

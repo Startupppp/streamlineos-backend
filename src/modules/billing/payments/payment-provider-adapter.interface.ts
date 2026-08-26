@@ -5,6 +5,33 @@ export interface PaymentCredentialWarning {
   message: string;
 }
 
+export type PaymentWebhookNormalization =
+  | {
+      ok: true;
+      eventType: string;
+      payload: Record<string, unknown>;
+      providerEventId?: string;
+    }
+  | {
+      ok: false;
+      error: "invalid_json" | "invalid_payload";
+    };
+
+/** The configured provider runtime. Credential values are intentionally absent. */
+export interface PaymentProviderRuntime {
+  isReady(): boolean;
+  publicKeyId(): string | null;
+  createOrder(params: {
+    amount: string;
+    currency: string;
+    receipt: string;
+    notes?: Record<string, string>;
+  }): Promise<{ providerOrderId: string; raw: unknown }>;
+  verifyPaymentSignature(params: { orderId: string; paymentId: string; signature: string }): boolean;
+  verifyWebhookSignature(params: { rawBody: string; signature: string }): boolean;
+  normalizeWebhook(rawBody: string): PaymentWebhookNormalization;
+}
+
 /**
  * Provider-specific behavior lives behind this interface so PaymentProviderSetupService,
  * webhook handling, and test transactions stay provider-agnostic. RazorpayAdapter is the first
@@ -16,27 +43,17 @@ export interface PaymentProviderAdapter {
   /** Cheap, synchronous sanity check (e.g. key-prefix format) — not a live API call. */
   validateCredentialFormat?(environment: "test" | "live", keyId: string): PaymentCredentialWarning | null;
 
-  createOrder(params: {
-    keyId: string;
-    keySecret: string;
-    amount: string;
-    currency: string;
-    receipt: string;
-    notes?: Record<string, string>;
-  }): Promise<{ providerOrderId: string; raw: unknown }>;
+  /**
+   * Binds decrypted provider configuration inside the concrete adapter. The value is opaque
+   * here: generic billing code cannot name, inspect, or forward provider secret fields.
+   */
+  configure(credentials: unknown): PaymentProviderRuntime;
 
-  verifyPaymentSignature(params: {
-    orderId: string;
-    paymentId: string;
-    signature: string;
-    keySecret: string;
-  }): boolean;
-
-  verifyWebhookSignature(params: {
-    rawBody: string;
-    signature: string;
-    webhookSecret: string;
-  }): boolean;
+  /**
+   * Converts a provider's raw webhook into the small provider-neutral shape used by billing.
+   * Parsing and provider-specific envelope knowledge stay in the adapter; callers never need
+   * to know whether an event was nested under `payload`, `data`, or another provider envelope.
+   */
 }
 
 @Injectable()

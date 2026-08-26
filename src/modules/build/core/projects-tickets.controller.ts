@@ -144,8 +144,18 @@ export class ProjectsTicketsController {
   ) {
     return this.subresources.getActivity(u.orgId, projectId, ticketId, {
       limit: query.limit,
-      before: query.before,
+      cursor: query.cursor,
     });
+  }
+
+  @Get(":projectId/tickets/key/:ticketNumber")
+  @RequirePermission("build:tickets:view")
+  getTicketByKey(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketNumber", ParseIntPipe) ticketNumber: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tickets.getTicketByKey(u, projectId, ticketNumber);
   }
 
   @Get(":projectId/tickets/:ticketId")

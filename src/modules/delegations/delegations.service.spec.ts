@@ -28,7 +28,6 @@ const actor = {
   userId: "delegator-1",
   orgId: "org-1",
   role: "OWNER",
-  permissions: [],
   isOrgOwner: true,
   sessionId: "session-1",
   tokenScopes: null,

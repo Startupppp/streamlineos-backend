@@ -11,7 +11,7 @@ import {
   userModuleAccess,
 } from "../../db/schema";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { ROLE_DEFAULT_PERMISSIONS } from "../rbac/permissions";
 import { isPlanGatedModule, moduleOf } from "./access-policy";
 import type { SafeAccessTableRead } from "./access-permission.resolver";
@@ -59,14 +59,9 @@ export class AccessPermissionMembersResolver {
     const result: PermissionMember[] = [];
     let afterMembershipId = 0;
     for (;;) {
-      const page = await this.cache.cached<PermissionMemberPage>(
-        CACHE_KEYS.accessMembersWithPermPage(
-          orgId,
-          permissionKey,
-          version,
-          afterMembershipId,
-          MEMBERS_WITH_PERMISSION_PAGE_SIZE,
-        ),
+      const page = await this.cache.cachedForOrg<PermissionMemberPage>(
+        orgId,
+        `access:members-with-perm:${permissionKey}:v${version}:a${afterMembershipId}:l${MEMBERS_WITH_PERMISSION_PAGE_SIZE}`,
         () =>
           this.computeMembersWithPermissionPage(
             orgId,

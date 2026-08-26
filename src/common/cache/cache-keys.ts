@@ -41,7 +41,8 @@ export const CACHE_KEYS = {
     `tickets:list:${orgId}:${projectId}:${hash}`,
 
   salesDashboard: (orgId: string) => `sales:dashboard:${orgId}`,
-  salesKpis: (orgId: string) => `sales:kpis:${orgId}:::`,
+  salesKpisNamespace: (orgId: string) => `sales:kpis:${orgId}`,
+  salesKpisSubKey: (from: string, to: string, repId: string) => `${from}:${to}:${repId}`,
   ceDashboard: (orgId: string) => `ce:dashboard:${orgId}`,
   supportDashboard: (orgId: string) => `support:dashboard:${orgId}`,
 
@@ -161,6 +162,7 @@ export const CACHE_KEYS = {
     kind ? `org:units:${orgId}:${kind}` : `org:units:${orgId}`,
   orgHierarchyNamespace: (orgId: string) => `org:hierarchy:${orgId}`,
   hrHeadcountNamespace: (orgId: string) => `hr:headcount:${orgId}`,
+  leaveAnalyticsNamespace: (orgId: string) => `hr:leave-analytics:${orgId}`,
 
   /** Employee expense claims (`modules/expenses`), versioned per organisation. */
   expensesListNamespace: (orgId: string) => `expenses:list:${orgId}`,
@@ -187,6 +189,28 @@ export const CACHE_KEYS = {
   timesheetSettingsNamespace: (orgId: string) => `timesheets:settings:${orgId}`,
   timesheetRates: (orgId: string) => `timesheets:rates:${orgId}`,
   timesheetRatesNamespace: (orgId: string) => `timesheets:rates:${orgId}`,
+
+  finReportsNamespace: (orgId: string) => `fin:reports:${orgId}`,
+  finInsightsAnomalies: (orgId: string, from: string, to: string) =>
+    `fin:insights:anomalies:${orgId}:${from}:${to}`,
+  finInsightsDigest: (orgId: string) => `fin:insights:digest:${orgId}`,
+  finCategorizeSuggest: (orgId: string, merchant: string) =>
+    `fin:cat-suggest:${orgId}:${merchant}`,
+
+  finAssetsListNamespace: (orgId: string) => `fin:assets:list:${orgId}`,
+  finAssetCategoriesNamespace: (orgId: string) =>
+    `fin:asset-categories:${orgId}`,
+  finTaxCodesNamespace: (orgId: string) => `fin:tax-codes:${orgId}`,
+  finTaxPaymentsNamespace: (orgId: string) => `fin:tax-payments:${orgId}`,
+  finTaxDashboardNamespace: (orgId: string) => `fin:tax-dashboard:${orgId}`,
+  finTaxReportsNamespace: (orgId: string) => `fin:tax-reports:${orgId}`,
+  finExpensePoliciesNamespace: (orgId: string) =>
+    `fin:expense-policies:${orgId}`,
+  finBankAccountsNamespace: (orgId: string) =>
+    `fin:banking:accounts:${orgId}`,
+  finForecastNamespace: (orgId: string) => `fin:forecast:${orgId}`,
+  finBvaNamespace: (orgId: string, budgetId: number) =>
+    `fin:bva:${orgId}:${budgetId}`,
 
   orgSettings: (orgId: string) => `org:settings:${orgId}`,
   orgProfileNamespace: (orgId: string) => `org:profile:${orgId}`,

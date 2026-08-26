@@ -301,11 +301,15 @@ export class PublicController {
   }
 
   @Get("kb")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:kb")
   listKb(@Query(new ZodValidationPipe(kbListQuerySchema)) query: KbListInput) {
     return runInTenantTransaction(this.db, () => this.kb.list(query), { orgId: query.org });
   }
 
   @Get("kb/:slug")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:kb-article")
   getArticle(
     @Param("slug") slug: string,
     @Query(new ZodValidationPipe(orgQuerySchema)) query: OrgQueryInput,

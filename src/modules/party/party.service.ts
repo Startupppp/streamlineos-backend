@@ -1,5 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, exists, ilike, isNull, or, sql } from "drizzle-orm";
+import { keysetBefore } from "../../common/pagination/keyset";
 import { businessParties, partyContacts, partyRoles } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -152,7 +153,7 @@ export class PartyService {
       // starts at the cursor instead of reading and discarding earlier rows.
       const keyset = and(
         conditions,
-        sql`(${businessParties.createdAt}, ${businessParties.partyId}) < (${new Date(position.sortValue)}, ${position.id})`,
+        keysetBefore(businessParties.createdAt, businessParties.partyId, position),
       );
 
       const rows = await this.db

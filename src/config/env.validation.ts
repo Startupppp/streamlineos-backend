@@ -56,6 +56,10 @@ const baseSchema = z
     CRON_SECRET: deploymentSecret,
     INTERNAL_API_SECRET: deploymentSecret,
     CONTACT_NOTIFICATION_EMAIL: optionalEmail,
+    WAITLIST_NOTIFICATION_EMAILS: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
+    ),
     EMAIL_PROVIDER: z.preprocess(
       emptyToUndefined,
       z.enum(["zeptomail", "resend"]).optional(),
@@ -159,6 +163,9 @@ const baseSchema = z
       emptyToUndefined,
       z.string().trim().optional(),
     ),
+    TURN_URLS: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    TURN_USERNAME: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    TURN_CREDENTIAL: z.preprocess(emptyToUndefined, z.string().trim().optional()),
     CHAT_REPLY_REMINDER_MINUTES: z.preprocess(
       emptyToUndefined,
       z.coerce.number().int().positive().optional(),
@@ -177,6 +184,10 @@ const baseSchema = z
       z.enum(["true", "false"]).optional(),
     ),
     HR_EXPORT_WORKER_ENABLED: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
+    OUTBOX_DISPATCH_ENABLED: z.preprocess(
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
     ),

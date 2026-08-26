@@ -11,7 +11,6 @@ import { expenses, finExpensePolicies } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { fromDecimalString, money, toDecimalString } from "../accounting/kernel/money";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -277,7 +276,7 @@ export class ExpenseLifecycleService {
       void this.notifyApprovers(u, expenseId, expense.amount, expense.category);
     }
 
-    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
+    await this.cache.invalidateNamespaceForOrg(u.orgId, "hr:expenses");
 
     return {
       success: true,
@@ -333,7 +332,7 @@ export class ExpenseLifecycleService {
       metadata: { journalId },
     });
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "accounting.expense.approved",
       orgId: u.orgId,
       actorUserId: u.userId,
@@ -343,7 +342,7 @@ export class ExpenseLifecycleService {
       variables: { amount: expense.amount, category: expense.category },
     });
 
-    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
+    await this.cache.invalidateNamespaceForOrg(u.orgId, "hr:expenses");
 
     return { success: true, journalId };
   }
@@ -384,7 +383,7 @@ export class ExpenseLifecycleService {
       metadata: { rejectionReason },
     });
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "accounting.expense.rejected",
       orgId: u.orgId,
       actorUserId: u.userId,
@@ -394,7 +393,7 @@ export class ExpenseLifecycleService {
       variables: { amount: expense.amount, category: expense.category, reason: rejectionReason },
     });
 
-    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
+    await this.cache.invalidateNamespaceForOrg(u.orgId, "hr:expenses");
 
     return { success: true };
   }

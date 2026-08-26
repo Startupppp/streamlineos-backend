@@ -24,6 +24,7 @@ import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detecto
 import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
 import { CrmFollowupSweepService } from "../crm/core/crm-followup-sweep.service";
 import { NotificationTimeSweepsService } from "../notifications/time-sweeps/notification-time-sweeps.service";
+import { CronLeaseService } from "./cron-lease.service";
 
 @Public()
 @Controller("cron")
@@ -44,6 +45,7 @@ export class CronPlatformController {
     private readonly buildDueSweep: BuildDueSweepService,
     private readonly crmFollowupSweep: CrmFollowupSweepService,
     private readonly timeSweeps: NotificationTimeSweepsService,
+    private readonly cronLease: CronLeaseService,
   ) {}
 
   @Get("notification-time-sweeps")
@@ -57,33 +59,6 @@ export class CronPlatformController {
     return this.runNotificationTimeSweeps(authorization);
   }
 
-  /**
-   * Advances the durable workflow runtime.
-   *
-   * Nothing else drives it: a run that suspends for three days, and a run whose
-   * step failed and is waiting out its backoff, both become due only when this
-   * is called. Without a scheduler pointed here they simply never resume.
-   *
-   * Should run at least every minute. The interval is the floor on how late a
-   * sleeping workflow wakes.
-   */
-  private async runWorkflowTick(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const { relay, drain } = await this.workflow.tick();
-      return {
-        ok: true,
-        relayed: relay.started,
-        scanned: relay.scanned,
-        claimed: drain.claimed,
-        outcomes: drain.outcomes,
-      };
-    } catch (error) {
-      logger.error("cron workflow tick failed", { error });
-      throw new InternalServerErrorException("workflow tick failed");
-    }
-  }
-
   @Get("workflow-tick")
   async workflowTickGet(@Headers("authorization") authorization?: string) {
     return this.runWorkflowTick(authorization);
@@ -93,33 +68,6 @@ export class CronPlatformController {
   @HttpCode(200)
   async workflowTickPost(@Headers("authorization") authorization?: string) {
     return this.runWorkflowTick(authorization);
-  }
-
-  /**
-   * REG-003. Every event behind this endpoint is time-derived — no user action can fire
-   * it — so without a scheduler pointed here they simply never happen. Must run at least
-   * hourly: the SLA-breach window is one hour wide.
-   */
-  private async runNotificationTimeSweeps(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const [crm, general] = await Promise.all([
-        this.crmFollowupSweep.sweep(),
-        this.timeSweeps.sweep(),
-      ]);
-      return {
-        success: true,
-        message:
-          `Follow-ups ${crm.due} due / ${crm.overdue} overdue; ` +
-          `${general.slaBreached} SLA, ${general.invoicesDueSoon} invoice, ` +
-          `${general.envelopesExpiring} envelope, ${general.eventsStartingSoon} calendar`,
-        ...crm,
-        ...general,
-      };
-    } catch (error) {
-      logger.error("Notification time sweeps cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
   }
 
   @Get("build-due-sweep")
@@ -133,21 +81,6 @@ export class CronPlatformController {
     return this.runBuildDueSweep(authorization);
   }
 
-  private async runBuildDueSweep(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const result = await this.buildDueSweep.sweep();
-      return {
-        success: true,
-        message: `Build due sweep: ${result.dueSoon} due-soon, ${result.overdue} overdue`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Build due sweep cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
   @Get("notification-digest-flush")
   getNotificationDigestFlush(@Headers("authorization") authorization?: string) {
     return this.runNotificationDigestFlush(authorization);
@@ -157,21 +90,6 @@ export class CronPlatformController {
   @HttpCode(200)
   postNotificationDigestFlush(@Headers("authorization") authorization?: string) {
     return this.runNotificationDigestFlush(authorization);
-  }
-
-  private async runNotificationDigestFlush(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const result = await this.digest.flushDue();
-      return {
-        success: true,
-        message: `Flushed ${result.windows} digest window(s): ${result.itemsFlushed} item(s), ${result.notificationsCreated} notification(s)`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Notification digest flush cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
   }
 
   @Get("notification-outbox-flush")
@@ -185,21 +103,6 @@ export class CronPlatformController {
     return this.runNotificationOutboxFlush(authorization);
   }
 
-  private async runNotificationOutboxFlush(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const result = await this.outboxRelay.flush();
-      return {
-        success: true,
-        message: `Claimed ${result.claimed}: ${result.processed} processed, ${result.retried} retrying, ${result.dead} dead`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Notification outbox flush cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
   @Get("notifications-retention-sweep")
   getNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runNotificationsRetentionSweep(authorization);
@@ -209,23 +112,6 @@ export class CronPlatformController {
   @HttpCode(200)
   postNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runNotificationsRetentionSweep(authorization);
-  }
-
-  private async runNotificationsRetentionSweep(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const result = await this.notificationRetention.sweep();
-      return {
-        success: true,
-        message:
-          `Purged ${result.emailBodiesPurged} email bodies and ${result.deliveryBodiesPurged} delivery bodies; ` +
-          `deleted ${result.emailRecordsDeleted} email rows and ${result.deliveryRecordsDeleted} delivery rows`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Notification retention sweep cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
   }
 
   @Get("chat-reply-reminders")
@@ -324,10 +210,137 @@ export class CronPlatformController {
     return this.runTimesheetsExceptionDetection(authorization);
   }
 
+  private async runWorkflowTick(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("workflow-tick", 55, async () => {
+        const { relay, drain } = await this.workflow.tick();
+        return { relay, drain };
+      });
+      if (!outcome.ran) return { ok: true, skipped: true, message: "workflow-tick already running" };
+      const { relay, drain } = outcome.result;
+      return {
+        ok: true,
+        relayed: relay.started,
+        scanned: relay.scanned,
+        claimed: drain.claimed,
+        outcomes: drain.outcomes,
+      };
+    } catch (error) {
+      logger.error("cron workflow tick failed", { error });
+      throw new InternalServerErrorException("workflow tick failed");
+    }
+  }
+
+  private async runNotificationTimeSweeps(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("notification-time-sweeps", 300, () =>
+        Promise.all([this.crmFollowupSweep.sweep(), this.timeSweeps.sweep()]),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "notification-time-sweeps already running" };
+      const [crm, general] = outcome.result;
+      return {
+        success: true,
+        message:
+          `Follow-ups ${crm.due} due / ${crm.overdue} overdue; ` +
+          `${general.slaBreached} SLA, ${general.invoicesDueSoon} invoice, ` +
+          `${general.envelopesExpiring} envelope, ${general.eventsStartingSoon} calendar`,
+        ...crm,
+        ...general,
+      };
+    } catch (error) {
+      logger.error("Notification time sweeps cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runBuildDueSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("build-due-sweep", 300, () =>
+        this.buildDueSweep.sweep(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "build-due-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Build due sweep: ${result.dueSoon} due-soon, ${result.overdue} overdue`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Build due sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runNotificationDigestFlush(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("notification-digest-flush", 120, () =>
+        this.digest.flushDue(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "notification-digest-flush already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Flushed ${result.windows} digest window(s): ${result.itemsFlushed} item(s), ${result.notificationsCreated} notification(s)`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Notification digest flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runNotificationOutboxFlush(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("notification-outbox-flush", 120, () =>
+        this.outboxRelay.flush(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "notification-outbox-flush already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Claimed ${result.claimed}: ${result.processed} processed, ${result.retried} retrying, ${result.dead} dead`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Notification outbox flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runNotificationsRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("notifications-retention-sweep", 300, () =>
+        this.notificationRetention.sweep(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "notifications-retention-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `Purged ${result.emailBodiesPurged} email bodies and ${result.deliveryBodiesPurged} delivery bodies; ` +
+          `deleted ${result.emailRecordsDeleted} email rows and ${result.deliveryRecordsDeleted} delivery rows`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Notification retention sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
   private async runChatReplyReminders(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.chatReplyReminders.processDueReminders();
+      const outcome = await this.cronLease.withLease("chat-reply-reminders", 120, () =>
+        this.chatReplyReminders.processDueReminders(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "chat-reply-reminders already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Sent ${result.sent} chat reply reminders, cancelled ${result.cancelled}`,
@@ -342,7 +355,11 @@ export class CronPlatformController {
   private async runEmailOutboxFlush(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.emailOutbox.flushOutbox();
+      const outcome = await this.cronLease.withLease("email-outbox-flush", 120, () =>
+        this.emailOutbox.flushOutbox(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "email-outbox-flush already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Processed ${result.processed} outbox emails: ${result.sent} sent, ${result.dead} dead`,
@@ -357,7 +374,11 @@ export class CronPlatformController {
   private async runNotificationDeliveryFlush(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.notificationDelivery.flush();
+      const outcome = await this.cronLease.withLease("notification-delivery-flush", 120, () =>
+        this.notificationDelivery.flush(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "notification-delivery-flush already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Processed ${result.processed} deliveries: ${result.sent} sent, ${result.failed} retrying, ${result.dead} dead`,
@@ -372,7 +393,11 @@ export class CronPlatformController {
   private async runInvitationExpiry(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.cronOrganization.expireStaleInvitations();
+      const outcome = await this.cronLease.withLease("invitation-expiry", 120, () =>
+        this.cronOrganization.expireStaleInvitations(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "invitation-expiry already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Expired ${result.expired} stale invitations`,
@@ -387,7 +412,11 @@ export class CronPlatformController {
   private async runOwnershipTransferExpiry(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.ownershipTransfers.expireStaleTransfers();
+      const outcome = await this.cronLease.withLease("ownership-transfer-expiry", 120, () =>
+        this.ownershipTransfers.expireStaleTransfers(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "ownership-transfer-expiry already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Expired ${result.expired} stale ownership transfers`,
@@ -402,7 +431,11 @@ export class CronPlatformController {
   private async runOrgPurgeWorker(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.orgPurgeWorker.run();
+      const outcome = await this.cronLease.withLease("org-purge-worker", 600, () =>
+        this.orgPurgeWorker.run(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "org-purge-worker already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Org purge worker: processed ${result.processed}, skipped ${result.skipped}`,
@@ -417,7 +450,11 @@ export class CronPlatformController {
   private async runIdempotencyFenceSweep(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.idempotency.pruneExpiredFences();
+      const outcome = await this.cronLease.withLease("idempotency-fence-sweep", 120, () =>
+        this.idempotency.pruneExpiredFences(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "idempotency-fence-sweep already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Pruned ${result.commandFencesPruned} command fences, ${result.invKeysPruned} inv idempotency keys, ${result.payrollReceiptsPruned} payroll receipts`,
@@ -432,7 +469,11 @@ export class CronPlatformController {
   private async runTimesheetsExceptionDetection(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.timesheetExceptionsDetector.detectAllOrgs();
+      const outcome = await this.cronLease.withLease("timesheets-exception-detection", 600, () =>
+        this.timesheetExceptionsDetector.detectAllOrgs(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "timesheets-exception-detection already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Timesheet exception detection: scanned ${result.orgsScanned} orgs, created ${result.created} exceptions`,

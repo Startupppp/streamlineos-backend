@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import type { AiNodeType } from "./ai-workflow-nodes/ai-node-types";
 import { createHmac } from "node:crypto";
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, eq, inArray, like, sql } from "drizzle-orm";
 import {
   automationRules,
   automationRuns,
@@ -308,45 +308,57 @@ export class AutomationService {
       });
       if (rules.length === 0) return;
 
+      type RunInsert = typeof automationRuns.$inferInsert;
+      const runRecords: RunInsert[] = [];
+      const matchedRuleIds: number[] = [];
+
       for (const rule of rules) {
         try {
           const { matched, actionResults } = await this.runRule(orgId, rule, payload);
-
-          if (!matched) {
-            await this.db.insert(automationRuns).values({
-              orgId,
-              ruleId: rule.id,
-              triggerEvent,
-              status: "skipped",
-              payload,
-            });
-            continue;
-          }
-
           const failures = actionResults.filter((result) => !result.ok);
-          await this.db
-            .update(automationRules)
-            .set({ runCount: sql`${automationRules.runCount} + 1`, lastRunAt: new Date() })
-            .where(eq(automationRules.id, rule.id));
 
-          await this.db.insert(automationRuns).values({
-            orgId,
-            ruleId: rule.id,
-            triggerEvent,
-            status: failures.length === 0 ? "success" : "failed",
-            payload,
-            result: { actionResults },
-            error:
-              failures.length > 0
-                ? failures.map((failure) => `${failure.type}: ${failure.error}`).join("; ")
-                : null,
-          });
+          if (matched) matchedRuleIds.push(rule.id);
+
+          runRecords.push(
+            matched
+              ? {
+                  orgId,
+                  ruleId: rule.id,
+                  triggerEvent,
+                  status: failures.length === 0 ? "success" : "failed",
+                  payload,
+                  result: { actionResults },
+                  error:
+                    failures.length > 0
+                      ? failures.map((failure) => `${failure.type}: ${failure.error}`).join("; ")
+                      : null,
+                }
+              : {
+                  orgId,
+                  ruleId: rule.id,
+                  triggerEvent,
+                  status: "skipped",
+                  payload,
+                },
+          );
         } catch (error) {
-          logger.error("automation rule execution failed", { orgId, ruleId: rule.id, triggerEvent, error });
+          logger.error("automation rule execution failed", { orgId, ruleId: rule.id, triggerEvent, cause: error });
         }
       }
+
+      if (runRecords.length > 0) {
+        await this.db.insert(automationRuns).values(runRecords);
+      }
+
+      if (matchedRuleIds.length > 0) {
+        const now = new Date();
+        await this.db
+          .update(automationRules)
+          .set({ runCount: sql`${automationRules.runCount} + 1`, lastRunAt: now })
+          .where(and(eq(automationRules.orgId, orgId), inArray(automationRules.id, matchedRuleIds)));
+      }
     } catch (error) {
-      logger.error("runAutomationsForEvent failed", { orgId, triggerEvent, error });
+      logger.error("runAutomationsForEvent failed", { orgId, triggerEvent, cause: error });
     }
   }
 

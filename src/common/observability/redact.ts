@@ -77,6 +77,7 @@ function describeError(error: Error): Record<string, unknown> {
     message: truncateForLog(error.message),
     stack: typeof error.stack === "string" ? truncateForLog(error.stack) : undefined,
     ...(typeof code === "string" || typeof code === "number" ? { code } : {}),
+    ...(error.cause !== undefined ? { cause: error.cause } : {}),
   };
 }
 

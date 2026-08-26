@@ -4,6 +4,8 @@ import { randomUUID } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollJobs } from "../../../db/schema";
+import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { logger } from "../../../common/logger/logger.service";
 
 export type PayrollJobType =
   | "PREVIEW"
@@ -62,7 +64,13 @@ export class PayrollJobsService {
         })
         .returning();
       return row!;
-    } catch {
+    } catch (err) {
+      if (getPostgresErrorCode(err) !== "23505") {
+        logger.error("payroll-jobs.enqueue: insert failed unexpectedly", {
+          cause: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
       throw new ConflictException("Job already enqueued for this idempotency key");
     }
   }

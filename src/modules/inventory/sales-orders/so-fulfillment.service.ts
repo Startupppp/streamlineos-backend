@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Inject, Injectable, Logger, BadRequestException, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, BadRequestException, Logger, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   invSalesOrders, invSoLines, invStockReservations, invPickLists, invPickListLines,
@@ -76,8 +76,11 @@ export class SoFulfillmentService {
               serialId: allocation.serialId,
               qty: allocation.qty.toFixed(4),
             });
-          } catch {
+          } catch (reserveErr) {
             allReserved = false;
+            this.logger.warn(
+              `reserveSo: manual reservation failed for SO ${soId} line ${line.id} in org ${orgId}: ${reserveErr instanceof Error ? reserveErr.message : String(reserveErr)}`,
+            );
           }
         } else {
           const available = await this.soCore.findAvailableLotForLine(
@@ -98,8 +101,11 @@ export class SoFulfillmentService {
               lotId: available.lotId,
               qty: line.quantity,
             });
-          } catch {
+          } catch (reserveErr) {
             allReserved = false;
+            this.logger.warn(
+              `reserveSo: auto reservation failed for SO ${soId} line ${line.id} in org ${orgId}: ${reserveErr instanceof Error ? reserveErr.message : String(reserveErr)}`,
+            );
           }
         }
       }

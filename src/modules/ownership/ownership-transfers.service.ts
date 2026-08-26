@@ -17,7 +17,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { stableHash } from "../../common/cache/cache-hash";
 import { forEachOrg, registerAfterCommit } from "../../common/tenant";
 import { logger } from "../../common/logger/logger.service";
@@ -114,7 +113,7 @@ export class OwnershipTransfersService {
         },
       });
 
-      await this.cache.invalidateNamespace(`ownership:transfers:${orgId}`);
+      await this.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers");
 
       const notifyOrg = () =>
         this.notifyRequested(
@@ -239,10 +238,8 @@ export class OwnershipTransfersService {
       });
 
       await Promise.all([
-        this.cache.invalidate(
-          CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey),
-        ),
-        this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
+        this.cache.invalidateForOrg(orgId, `module-access:ownership:${moduleKey}`),
+        this.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers"),
       ]);
 
       const notifyModule = () =>
@@ -300,8 +297,9 @@ export class OwnershipTransfersService {
       scope: filters.scope ?? null,
       status: filters.status ?? null,
     });
-    return this.cache.cachedVersioned(
-      `ownership:transfers:${orgId}`,
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "ownership:transfers",
       `list:${hash}`,
       () => this.fetchTransfers(orgId, filters),
       60,
@@ -356,8 +354,9 @@ export class OwnershipTransfersService {
   }
 
   async listIncomingTransfers(orgId: string, userId: string) {
-    return this.cache.cachedVersioned(
-      `ownership:transfers:${orgId}`,
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "ownership:transfers",
       `incoming:${userId}`,
       () => this.fetchIncomingTransfers(orgId, userId),
       60,
@@ -460,9 +459,9 @@ export class OwnershipTransfersService {
         }
 
         await Promise.all([
-          this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
+          this.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers"),
           ...expiredModuleKeys.map((k) =>
-            this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, k)),
+            this.cache.invalidateForOrg(orgId, `module-access:ownership:${k}`),
           ),
         ]);
       },

@@ -1538,435 +1538,645 @@
     {
       "idx": 219,
       "version": "7",
+      "when": 1786701794560,
+      "tag": "0464_calendar_source_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
       "when": 1787471892600,
       "tag": "0205_organizations_region",
       "breakpoints": true
     },
     {
-      "idx": 220,
+      "idx": 221,
       "version": "7",
       "when": 1787473928922,
       "tag": "0206_party_custom_fields_and_rls",
       "breakpoints": true
     },
     {
-      "idx": 221,
+      "idx": 222,
       "version": "7",
       "when": 1787474325964,
       "tag": "0207_backfill_crm_party_permissions",
       "breakpoints": true
     },
     {
-      "idx": 222,
+      "idx": 223,
       "version": "7",
       "when": 1787477893400,
       "tag": "0208_workflow_runtime",
       "breakpoints": true
     },
     {
-      "idx": 223,
+      "idx": 224,
       "version": "7",
       "when": 1787482151985,
       "tag": "0209_party_roles_and_merges",
       "breakpoints": true
     },
     {
-      "idx": 224,
+      "idx": 225,
       "version": "7",
       "when": 1787482522735,
       "tag": "0210_backfill_party_role_permissions",
       "breakpoints": true
     },
     {
-      "idx": 225,
+      "idx": 226,
       "version": "7",
       "when": 1787482924853,
       "tag": "0211_subjects",
       "breakpoints": true
     },
     {
-      "idx": 226,
+      "idx": 227,
       "version": "7",
       "when": 1787483238639,
       "tag": "0212_backfill_subject_permissions",
       "breakpoints": true
     },
     {
-      "idx": 227,
+      "idx": 228,
       "version": "7",
       "when": 1787483537086,
       "tag": "0213_party_roles_merges_rls",
       "breakpoints": true
     },
     {
-      "idx": 228,
+      "idx": 229,
       "version": "7",
       "when": 1787484048289,
       "tag": "0214_deal_transitions_money_links",
       "breakpoints": true
     },
     {
-      "idx": 229,
+      "idx": 230,
       "version": "7",
       "when": 1787484335630,
       "tag": "0215_activities",
       "breakpoints": true
     },
     {
-      "idx": 230,
+      "idx": 231,
       "version": "7",
       "when": 1787484622971,
       "tag": "0216_backfill_activity_permissions",
       "breakpoints": true
     },
     {
-      "idx": 231,
+      "idx": 232,
       "version": "7",
       "when": 1787484924848,
       "tag": "0217_inbound_events",
       "breakpoints": true
     },
     {
-      "idx": 232,
+      "idx": 233,
       "version": "7",
       "when": 1787485226725,
       "tag": "0218_backfill_ingress_permission",
       "breakpoints": true
     },
     {
-      "idx": 233,
+      "idx": 234,
       "version": "7",
       "when": 1787485561637,
       "tag": "0219_autonomous_decisions",
       "breakpoints": true
     },
     {
-      "idx": 234,
+      "idx": 235,
       "version": "7",
       "when": 1787485838191,
       "tag": "0220_autonomy_switches",
       "breakpoints": true
     },
     {
-      "idx": 235,
+      "idx": 236,
       "version": "7",
       "when": 1787551117723,
       "tag": "0221_repair_party_permission_backfill",
       "breakpoints": true
     },
     {
-      "idx": 236,
+      "idx": 237,
       "version": "7",
       "when": 1787553153441,
       "tag": "0222_backfill_deal_activities_into_timeline",
       "breakpoints": true
     },
     {
-      "idx": 237,
+      "idx": 238,
       "version": "7",
       "when": 1787639553441,
       "tag": "0223_autonomy_actor_refs_survive_user_purge",
       "breakpoints": true
     },
     {
-      "idx": 238,
+      "idx": 239,
       "version": "7",
       "when": 1787643153441,
       "tag": "0224_autonomy_corrections",
       "breakpoints": true
     },
     {
-      "idx": 239,
+      "idx": 240,
       "version": "7",
       "when": 1787646753441,
       "tag": "0225_backfill_autonomy_review_permissions",
       "breakpoints": true
     },
     {
-      "idx": 240,
+      "idx": 241,
       "version": "7",
       "when": 1787650353441,
       "tag": "0226_repair_crm_module_role_grants",
       "breakpoints": true
     },
     {
-      "idx": 241,
+      "idx": 242,
       "version": "7",
       "when": 1787653953441,
       "tag": "0227_autonomy_shadow_scoring",
       "breakpoints": true
     },
     {
-      "idx": 242,
+      "idx": 243,
       "version": "7",
       "when": 1787657553441,
       "tag": "0228_autonomy_holds",
       "breakpoints": true
     },
     {
-      "idx": 243,
+      "idx": 244,
       "version": "7",
       "when": 1787661153441,
       "tag": "0229_crm_imports",
       "breakpoints": true
     },
     {
-      "idx": 244,
+      "idx": 245,
       "version": "7",
       "when": 1787664753441,
       "tag": "0230_backfill_import_permission",
       "breakpoints": true
     },
     {
-      "idx": 245,
+      "idx": 246,
       "version": "7",
       "when": 1787668353441,
       "tag": "0231_crm_mailbox_sync",
       "breakpoints": true
     },
     {
-      "idx": 246,
+      "idx": 247,
       "version": "7",
       "when": 1787671953441,
       "tag": "0464_gl_kernel",
       "breakpoints": true
     },
     {
-      "idx": 247,
+      "idx": 248,
       "version": "7",
       "when": 1787675553441,
       "tag": "0465_accounting_documents",
       "breakpoints": true
     },
     {
-      "idx": 248,
+      "idx": 249,
       "version": "7",
       "when": 1787679153441,
       "tag": "0466_drop_legacy_accounting",
       "breakpoints": true
     },
     {
-      "idx": 249,
+      "idx": 250,
       "version": "7",
       "when": 1787682753441,
       "tag": "0467_restore_expense_tables",
       "breakpoints": true
     },
     {
-      "idx": 250,
+      "idx": 251,
       "version": "7",
       "when": 1787686353441,
       "tag": "0232_repair_crm_activity_grants",
       "breakpoints": true
     },
     {
-      "idx": 251,
+      "idx": 252,
       "version": "7",
       "when": 1787689953441,
       "tag": "0233_deals_value_not_null",
       "breakpoints": true
     },
     {
-      "idx": 252,
+      "idx": 253,
       "version": "7",
       "when": 1787693553441,
       "tag": "0468_journal_source_expense_claim",
       "breakpoints": true
     },
     {
-      "idx": 253,
+      "idx": 254,
       "version": "7",
       "when": 1787697153441,
       "tag": "0240_party_expand_legacy_fields",
       "breakpoints": true
     },
     {
-      "idx": 254,
+      "idx": 255,
       "version": "7",
       "when": 1787700753441,
       "tag": "0241_party_legacy_backfill",
       "breakpoints": true
     },
     {
-      "idx": 255,
+      "idx": 256,
       "version": "7",
       "when": 1787704353441,
       "tag": "0244_party_mirror_divergence_permission",
       "breakpoints": true
     },
     {
-      "idx": 256,
+      "idx": 257,
       "version": "7",
       "when": 1787707953441,
       "tag": "0250_data_quality_queue",
       "breakpoints": true
     },
     {
-      "idx": 257,
+      "idx": 258,
       "version": "7",
       "when": 1787711553441,
       "tag": "0251_backfill_data_quality_permissions",
       "breakpoints": true
     },
     {
-      "idx": 258,
+      "idx": 259,
       "version": "7",
       "when": 1787715153441,
       "tag": "0290_issue_records",
       "breakpoints": true
     },
     {
-      "idx": 259,
+      "idx": 260,
       "version": "7",
       "when": 1787718753441,
       "tag": "0260_party_identifiers",
       "breakpoints": true
     },
     {
-      "idx": 260,
+      "idx": 261,
       "version": "7",
       "when": 1787722353441,
       "tag": "0280_importer_at_scale",
       "breakpoints": true
     },
     {
-      "idx": 261,
+      "idx": 262,
       "version": "7",
       "when": 1787725953441,
       "tag": "0275_party_company_search",
       "breakpoints": true
     },
     {
-      "idx": 262,
+      "idx": 263,
       "version": "7",
       "when": 1787729553441,
       "tag": "0469_document_attachments",
       "breakpoints": true
     },
     {
-      "idx": 263,
+      "idx": 264,
       "version": "7",
       "when": 1787733153441,
       "tag": "0470_ar_document_pdf_cache",
       "breakpoints": true
     },
     {
-      "idx": 264,
+      "idx": 265,
       "version": "7",
       "when": 1787736753441,
       "tag": "0471_platform_waitlist",
       "breakpoints": true
     },
     {
-      "idx": 265,
+      "idx": 266,
       "version": "7",
       "when": 1787740353441,
       "tag": "0252_data_quality_health_snapshots",
       "breakpoints": true
     },
     {
-      "idx": 266,
+      "idx": 267,
       "version": "7",
       "when": 1787743953441,
       "tag": "0472_activities_deal_fk",
       "breakpoints": true
     },
     {
-      "idx": 267,
+      "idx": 268,
       "version": "7",
       "when": 1787747553441,
       "tag": "0270_activities_thread_window",
       "breakpoints": true
     },
     {
-      "idx": 268,
+      "idx": 269,
       "version": "7",
       "when": 1787751153441,
       "tag": "0473_accounting_attachments_permissions",
       "breakpoints": true
     },
     {
-      "idx": 269,
+      "idx": 270,
       "version": "7",
       "when": 1787754753441,
       "tag": "0234_business_parties_name_order",
       "breakpoints": true
     },
     {
-      "idx": 270,
+      "idx": 271,
       "version": "7",
       "when": 1787758353441,
       "tag": "0261_crm_connectors",
       "breakpoints": true
     },
     {
-      "idx": 271,
+      "idx": 272,
       "version": "7",
       "when": 1787761953441,
       "tag": "0253_data_quality_health_snapshots_rls",
       "breakpoints": true
     },
     {
-      "idx": 272,
+      "idx": 273,
       "version": "7",
       "when": 1787765553441,
       "tag": "0262_party_company_columns",
       "breakpoints": true
     },
     {
-      "idx": 273,
+      "idx": 274,
+      "version": "7",
+      "when": 1787765553441,
+      "tag": "0474_external_effect_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 275,
       "version": "7",
       "when": 1787769153441,
       "tag": "0263_crm_org_party_map",
       "breakpoints": true
     },
     {
-      "idx": 274,
+      "idx": 276,
+      "version": "7",
+      "when": 1787769153441,
+      "tag": "0473_coupon_redemption_enforcement",
+      "breakpoints": true
+    },
+    {
+      "idx": 277,
       "version": "7",
       "when": 1787772753441,
       "tag": "0264_crm_org_party_backfill",
       "breakpoints": true
     },
     {
-      "idx": 275,
+      "idx": 278,
+      "version": "7",
+      "when": 1787772753441,
+      "tag": "0475_crm_search_id_probes",
+      "breakpoints": true
+    },
+    {
+      "idx": 279,
       "version": "7",
       "when": 1787772754441,
       "tag": "0265_record_layout_adjustments",
       "breakpoints": true
     },
     {
-      "idx": 276,
+      "idx": 280,
       "version": "7",
       "when": 1787772755441,
       "tag": "0266_backfill_record_layout_permission",
       "breakpoints": true
     },
     {
-      "idx": 277,
+      "idx": 281,
       "version": "7",
       "when": 1787772756441,
       "tag": "0267_subprocessor_register",
       "breakpoints": true
     },
     {
-      "idx": 278,
+      "idx": 282,
       "version": "7",
       "when": 1787772757441,
       "tag": "0268_subject_requests",
       "breakpoints": true
     },
     {
-      "idx": 279,
+      "idx": 283,
       "version": "7",
       "when": 1787772758441,
       "tag": "0269_payment_provider_columns",
       "breakpoints": true
     },
     {
-      "idx": 280,
+      "idx": 284,
       "version": "7",
       "when": 1787772759441,
       "tag": "0271_waitlist_admission",
+      "breakpoints": true
+    },
+    {
+      "idx": 285,
+      "version": "7",
+      "when": 1787776353441,
+      "tag": "0476_notification_read_watermark",
+      "breakpoints": true
+    },
+    {
+      "idx": 286,
+      "version": "7",
+      "when": 1787779953441,
+      "tag": "0477_invoice_items_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 287,
+      "version": "7",
+      "when": 1787787153441,
+      "tag": "0479_audit_log_platform_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 288,
+      "version": "7",
+      "when": 1787790753441,
+      "tag": "0480_candidate_resume_sidecar",
+      "breakpoints": true
+    },
+    {
+      "idx": 289,
+      "version": "7",
+      "when": 1787794353441,
+      "tag": "0481_candidate_resume_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 290,
+      "version": "7",
+      "when": 1787797953441,
+      "tag": "0483_calendar_event_timezone",
+      "breakpoints": true
+    },
+    {
+      "idx": 291,
+      "version": "7",
+      "when": 1787801553441,
+      "tag": "0484_calendar_event_drop_recurrence",
+      "breakpoints": true
+    },
+    {
+      "idx": 292,
+      "version": "7",
+      "when": 1787805153441,
+      "tag": "0485_broadcast_read_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 293,
+      "version": "7",
+      "when": 1787808753441,
+      "tag": "0486_hr_people_org_person_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 294,
+      "version": "7",
+      "when": 1787812353441,
+      "tag": "0487_hr_people_org_person_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 295,
+      "version": "7",
+      "when": 1787815953441,
+      "tag": "0490_provider_webhook_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 296,
+      "version": "7",
+      "when": 1787819553441,
+      "tag": "0491_migrate_dunning_to_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 297,
+      "version": "7",
+      "when": 1787823153441,
+      "tag": "0492_invoice_immutability_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 298,
+      "version": "7",
+      "when": 1787826753441,
+      "tag": "0497_ticket_key_lookup_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 299,
+      "version": "7",
+      "when": 1787830353441,
+      "tag": "0498_kb_ingestion_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 300,
+      "version": "7",
+      "when": 1787830354441,
+      "tag": "0499_search_lead_party_probe",
+      "breakpoints": true
+    },
+    {
+      "idx": 301,
+      "version": "7",
+      "when": 1787830355441,
+      "tag": "0500_attendees_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 302,
+      "version": "7",
+      "when": 1787830356441,
+      "tag": "0501_calendar_overlap_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 303,
+      "version": "7",
+      "when": 1787830357441,
+      "tag": "0502_platform_subscription_cursor_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 304,
+      "version": "7",
+      "when": 1787830358441,
+      "tag": "0504_mail_metadata_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 305,
+      "version": "7",
+      "when": 1787830359441,
+      "tag": "0510_kb_chunk_revision_uniqueness",
+      "breakpoints": true
+    },
+    {
+      "idx": 306,
+      "version": "7",
+      "when": 1787830360441,
+      "tag": "0513_leave_accrual_sweep_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 307,
+      "version": "7",
+      "when": 1787830361441,
+      "tag": "0507_calendar_recurrence_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 308,
+      "version": "7",
+      "when": 1787830362441,
+      "tag": "0508_calendar_event_exceptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 309,
+      "version": "7",
+      "when": 1787830363441,
+      "tag": "0281_crm_import_target_entity",
+      "breakpoints": true
+    },
+    {
+      "idx": 310,
+      "version": "7",
+      "when": 1787830364441,
+      "tag": "0282_crm_import_rows_drop_party_columns",
       "breakpoints": true
     }
   ]

@@ -84,6 +84,12 @@ const PARTY: PartyRow = {
   tags: ["vip", "beta"],
   partyKind: "ORGANISATION",
   employerPartyId: null,
+  // The three links 0265 gave Party. `primaryDealId` is a real value because it
+  // is the one of the three the mirror derives -- `contacts.deal_id` needs no
+  // translation -- so the round trip below actually proves something about it.
+  convertedFromPartyId: "party-lead-9",
+  parentPartyId: "party-parent-9",
+  primaryDealId: 4242,
   domain: "acme.example",
   industry: "Manufacturing",
   companySize: "51-200",
@@ -140,6 +146,9 @@ const SPARSE_PARTY: PartyRow = {
   tags: [],
   partyKind: null,
   employerPartyId: null,
+  convertedFromPartyId: null,
+  parentPartyId: null,
+  primaryDealId: null,
   domain: null,
   industry: null,
   companySize: null,

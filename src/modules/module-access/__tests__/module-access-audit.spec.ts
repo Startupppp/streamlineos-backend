@@ -16,7 +16,6 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
     userId: "u-actor",
     orgId: "org-1",
     role: "MEMBER",
-    permissions: [],
     isOrgOwner: true,
     sessionId: "s-1",
     tokenScopes: null,

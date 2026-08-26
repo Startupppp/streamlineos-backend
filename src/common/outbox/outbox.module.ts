@@ -1,10 +1,10 @@
 import { Module } from "@nestjs/common";
 import { OutboxPublisherService } from "./outbox-publisher.service";
-import { OutboxFlushController } from "./outbox-flush.controller";
+import { OutboxConsumerRegistry } from "./outbox-consumer.registry";
+import { ExternalEffectLedger } from "./external-effect-ledger";
 
 @Module({
-  controllers: [OutboxFlushController],
-  providers: [OutboxPublisherService],
-  exports: [OutboxPublisherService],
+  providers: [OutboxPublisherService, OutboxConsumerRegistry, ExternalEffectLedger],
+  exports: [OutboxPublisherService, OutboxConsumerRegistry, ExternalEffectLedger],
 })
 export class OutboxModule {}

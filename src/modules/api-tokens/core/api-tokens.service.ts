@@ -92,7 +92,7 @@ export class ApiTokensService {
         createdAt: apiKeys.createdAt,
       });
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "security.api_key.created",
       orgId,
       actorUserId: userId,

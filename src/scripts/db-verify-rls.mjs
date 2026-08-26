@@ -31,6 +31,23 @@ const check = (label, ok, detail = "") => {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}${detail ? `  — ${detail}` : ""}`);
 };
 
+// Tables that intentionally carry an org_id column without per-tenant RLS.
+// Each entry must be justified: if the table is a legitimate platform-global
+// table (e.g. it IS the org row itself) its name goes here with a brief rationale
+// embedded in the source comment. Absence from this list is treated as a gap,
+// not as "global by default" — ALTER DEFAULT PRIVILEGES grants SELECT to the app
+// role on every new table, so a missing policy is a silent cross-tenant read hole.
+//
+// Format: "schema.tablename"
+// An empty set means every tenant-column table must be RLS-protected.
+const PLATFORM_GLOBAL_TABLES = new Set([
+  // "public.organizations" — the tenant row itself; RLS would use org_id = app.current_org_id()
+  //   but the org row has no foreign org_id column referencing itself.  Access is
+  //   controlled by application-layer membership checks, not row-level policy.
+  //   Owner: identity/auth module.
+]);
+
+
 const teardown = `
   DROP TABLE IF EXISTS public.${PROBE_TABLE};
   DROP TABLE IF EXISTS public.${PROBE_TABLE_NULLABLE};
@@ -204,6 +221,85 @@ try {
     `
 coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped tables have RLS enabled`,
   );
+
+  // 1. Tables with an org_id column that have no RLS enabled at all.
+  //    Every such table is a potential cross-tenant read hole because ALTER DEFAULT
+  //    PRIVILEGES grants SELECT to the app role on every new table.
+  const unprotected = await sql`
+    SELECT DISTINCT n.nspname || '.' || c.relname AS tbl
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+    WHERE n.nspname IN ('public','build','build_events')
+      AND c.relkind = 'r'
+      AND a.attname IN ('org_id','organization_id')
+      AND format_type(a.atttypid, NULL) = 'text'
+      AND NOT c.relrowsecurity
+    ORDER BY tbl`;
+
+  for (const { tbl } of unprotected) {
+    if (!PLATFORM_GLOBAL_TABLES.has(tbl))
+      check(`RLS enabled on ${tbl}`, false, "tenant table has no RLS — add a policy or register in PLATFORM_GLOBAL_TABLES");
+    else
+      console.log(`SKIP  ${tbl} — registered as platform-global`);
+  }
+
+  // 2. Tables that have RLS enabled and an org_id column but lack any policy that
+  //    references the org column.  An empty policy set leaves the table readable by
+  //    no one (deny-by-default), which is safe but almost certainly wrong for a
+  //    business table; a policy with the wrong predicate (e.g. no org_id condition)
+  //    is a tenant-isolation failure.
+  const missingTenantPredicate = await sql`
+    SELECT DISTINCT n.nspname || '.' || c.relname AS tbl
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname IN ('public','build','build_events')
+      AND c.relkind = 'r'
+      AND c.relrowsecurity
+      AND EXISTS (
+        SELECT 1 FROM pg_attribute a
+        WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+          AND a.attname IN ('org_id','organization_id')
+          AND format_type(a.atttypid, NULL) = 'text'
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM pg_policies p
+        WHERE p.schemaname = n.nspname
+          AND p.tablename = c.relname
+          AND (
+            COALESCE(p.qual, '') ILIKE '%org_id%'
+            OR COALESCE(p.qual, '') ILIKE '%organization_id%'
+            OR COALESCE(p.with_check, '') ILIKE '%org_id%'
+            OR COALESCE(p.with_check, '') ILIKE '%organization_id%'
+          )
+      )
+    ORDER BY tbl`;
+
+  for (const { tbl } of missingTenantPredicate)
+    check(`Tenant predicate in RLS policy on ${tbl}`, false, "RLS is enabled but no policy references org_id — the table is implicitly deny-all or mis-predicated");
+
+  // 3. Tables with an org_id column and RLS enabled but without FORCE ROW LEVEL
+  //    SECURITY.  Without FORCE the table owner bypasses all policies, so the
+  //    migration role (which is the table owner) can cross-tenant read even when
+  //    the app role cannot.
+  const notForced = await sql`
+    SELECT DISTINCT n.nspname || '.' || c.relname AS tbl
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+    WHERE n.nspname IN ('public','build','build_events')
+      AND c.relkind = 'r'
+      AND c.relrowsecurity
+      AND NOT c.relforcerowsecurity
+      AND a.attname IN ('org_id','organization_id')
+      AND format_type(a.atttypid, NULL) = 'text'
+    ORDER BY tbl`;
+
+  for (const { tbl } of notForced) {
+    if (!PLATFORM_GLOBAL_TABLES.has(tbl))
+      check(`FORCE ROW LEVEL SECURITY on ${tbl}`, false, "RLS is enabled but not forced — table owner bypasses policies");
+  }
+
   await sql.end();
 }
 

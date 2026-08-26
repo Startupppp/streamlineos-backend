@@ -22,7 +22,7 @@ export class ChatSavedService {
 
     const rows = await this.db.query.chatSavedMessages.findMany({
       where: and(...conditions),
-      orderBy: [desc(chatSavedMessages.savedAt)],
+      orderBy: [desc(chatSavedMessages.id)],
       limit: safeLimit + 1,
       with: {
         message: {

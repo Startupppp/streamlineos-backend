@@ -1,30 +1,19 @@
-import { CanActivate, ExecutionContext, Injectable, Optional } from "@nestjs/common";
+import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { REQUIRE_MODULE } from "./require-module.decorator";
 import { ModuleDisabledException } from "../http/api-exceptions";
 import { IS_PUBLIC } from "../auth/public.decorator";
 import type { CurrentUserContext } from "../auth/backend-claims";
-import { EntitlementsService } from "../../modules/access/entitlements.service";
 import { AccessService } from "../../modules/access/access.service";
 import { moduleIdFromStored } from "./module-registry";
-import {
-  moduleAvailability,
-  moduleAvailabilityResolver,
-  type ModuleAvailabilityResolver,
-} from "./module-availability";
 
 @Injectable()
 export class ModuleGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly entitlements: EntitlementsService,
-    @Optional() private readonly accessSvc?: AccessService,
+    private readonly accessSvc: AccessService,
   ) {}
-
-  private buildResolver(): ModuleAvailabilityResolver {
-    return moduleAvailabilityResolver(this.entitlements, this.accessSvc);
-  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const required = this.reflector.getAllAndOverride<
@@ -54,12 +43,7 @@ export class ModuleGuard implements CanActivate {
       moduleIdFromStored,
     );
     for (const moduleKey of moduleKeys) {
-      const avail = await moduleAvailability(
-        this.buildResolver(),
-        user.orgId,
-        user.userId,
-        moduleKey,
-      );
+      const avail = await this.accessSvc.moduleAvailability(user, moduleKey);
       if (!avail.available) throw new ModuleDisabledException(moduleKey);
     }
     return true;

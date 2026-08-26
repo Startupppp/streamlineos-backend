@@ -59,7 +59,6 @@ const TICKET_LIST_COLUMNS = {
   id: true,
   orgId: true,
   title: true,
-  description: true,
   type: true,
   status: true,
   priority: true,
@@ -380,6 +379,75 @@ export class ProjectsTicketsReadService {
       .from(tickets)
       .where(where);
     return { ids: [], total: Number(countResult[0]?.total ?? 0) };
+  }
+
+  async getTicketByKey(u: CurrentUserContext, projectId: number, ticketNumber: number) {
+    const ticket = await this.db.query.tickets.findFirst({
+      where: and(
+        eq(tickets.orgId, u.orgId),
+        eq(tickets.projectId, projectId),
+        eq(tickets.ticketNumber, ticketNumber),
+        isNull(tickets.deletedAt),
+      ),
+      with: {
+        project: {
+          columns: { id: true, name: true, key: true, orgId: true },
+        },
+        sprint: {
+          columns: { id: true, name: true },
+        },
+        assignee: { columns: USER_COLS },
+        reporter: { columns: USER_COLS },
+        assignees: {
+          with: { user: { columns: USER_COLS } },
+        },
+        comments: {
+          where: isNull(ticketComments.deletedAt),
+          with: { user: { columns: USER_COLS } },
+          orderBy: [desc(ticketComments.createdAt)],
+          limit: 50,
+        },
+        attachments: {
+          with: {
+            uploader: { columns: USER_COLS },
+          },
+        },
+        labels: {
+          with: {
+            label: {
+              columns: { id: true, name: true, color: true },
+            },
+          },
+        },
+      },
+    });
+    if (!ticket) throw new ProjectsTicketNotFoundException();
+
+    const scope = await resolveTicketsScope(this.access, u);
+    if (scope !== "all") {
+      const isAssignee =
+        ticket.assigneeId === u.userId ||
+        ticket.assignees.some((a) => a.userId === u.userId);
+      const isReporter = ticket.reporterId === u.userId;
+      if (!isAssignee && !isReporter) {
+        this.audit.log({
+          action: "ticket.access_denied",
+          userId: u.userId,
+          orgId: u.orgId,
+          targetId: String(ticket.id),
+          targetType: "ticket",
+          metadata: {
+            ticketId: ticket.id,
+            projectId: ticket.projectId,
+            reason: "RESTRICTED_SCOPE",
+          },
+          result: "FAILURE",
+        });
+        throw new ProjectsForbiddenTicketException();
+      }
+    }
+
+    return ticket;
   }
 
   async getTicket(u: CurrentUserContext, ticketId: number) {

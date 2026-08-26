@@ -6,6 +6,7 @@ import { HrAutomationsModule } from "../automations/hr-automations.module";
 import { HrPoliciesModule } from "../policies/hr-policies.module";
 import { HrWorkflowsModule } from "../workflows/hr-workflows.module";
 import { HrPayrollInputsModule } from "../payroll-inputs/hr-payroll-inputs.module";
+import { HrLifecycleModule } from "../lifecycle/hr-lifecycle.module";
 import { LeaveCalendarController, LeavesController } from "./leaves.controller";
 import { AttendanceController } from "./attendance.controller";
 import { AttendanceRegularizationController } from "./attendance-regularization.controller";
@@ -56,6 +57,7 @@ import { RateLimitModule } from "../../../common/ratelimit/rate-limit.module";
     HrWorkflowsModule,
     HrPayrollInputsModule,
     RateLimitModule,
+    HrLifecycleModule,
   ],
   controllers: [
     EmployeeAttendanceController,

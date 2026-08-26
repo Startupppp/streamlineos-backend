@@ -18,10 +18,16 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { documents, onboardingSteps } from "../../db/schema";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { StorageService } from "./storage.service";
 import { onboardingDocTypeSchema } from "./dto/storage.schemas";
 
-const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+const ALLOWED_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
 const MAX_SIZE = 5 * 1024 * 1024;
 
 @Controller("onboarding")
@@ -34,7 +40,9 @@ export class OnboardingDocumentsController {
 
   @Post("documents")
   @HttpCode(201)
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }),
+  )
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body("type") typeField: unknown,
@@ -48,20 +56,26 @@ export class OnboardingDocumentsController {
     if (!file) throw new BadRequestException("No file provided");
 
     const typeResult = onboardingDocTypeSchema.safeParse(typeField);
-    if (!typeResult.success) throw new BadRequestException("Invalid document type");
+    if (!typeResult.success)
+      throw new BadRequestException("Invalid document type");
     const type = typeResult.data;
 
     if (!ALLOWED_TYPES.includes(file.mimetype)) {
-      throw new BadRequestException("File type not allowed. Use PDF, JPEG, PNG, or WebP.");
+      throw new BadRequestException(
+        "File type not allowed. Use PDF, JPEG, PNG, or WebP.",
+      );
     }
-    if (file.size > MAX_SIZE) throw new BadRequestException("File size must be under 5MB");
+    if (file.size > MAX_SIZE)
+      throw new BadRequestException("File size must be under 5MB");
 
-    const result = await this.storage.uploadCompressed(
-      file.buffer,
-      "onboarding",
-      file.originalname,
-      file.mimetype,
-    );
+    const { key, url, compressedBuffer, compressedMimeType, size } =
+      await this.storage.compressAndPreGenerateKey(
+        file.buffer,
+        "onboarding",
+        file.originalname,
+        file.mimetype,
+      );
+
     const stepName = `Upload ${type}`;
 
     await this.db.transaction(async (tx) => {
@@ -70,13 +84,16 @@ export class OnboardingDocumentsController {
         userId: u.userId,
         name: file.originalname,
         type,
-        fileUrl: result.url,
-        fileSize: result.size,
-        mimeType: result.mimeType,
+        fileUrl: url,
+        fileSize: size,
+        mimeType: compressedMimeType,
         uploadedBy: u.userId,
       });
       const existing = await tx.query.onboardingSteps.findFirst({
-        where: and(eq(onboardingSteps.userId, u.userId), eq(onboardingSteps.stepName, stepName)),
+        where: and(
+          eq(onboardingSteps.userId, u.userId),
+          eq(onboardingSteps.stepName, stepName),
+        ),
       });
       if (existing) {
         await tx
@@ -94,6 +111,14 @@ export class OnboardingDocumentsController {
       }
     });
 
-    return { url: result.url };
+    const uploadDeferred = registerAfterCommit(async () => {
+      await this.storage.uploadToKey(u.orgId, compressedBuffer, key, compressedMimeType);
+    });
+
+    if (!uploadDeferred) {
+      await this.storage.uploadToKey(u.orgId, compressedBuffer, key, compressedMimeType);
+    }
+
+    return { url };
   }
 }

@@ -47,6 +47,8 @@ export const kbPages = pgTable(
     deletedById: text("deleted_by_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+    aclRevision: integer("acl_revision").notNull().default(1),
+    contentRevision: integer("content_revision").notNull().default(1),
     visibility: text("visibility").notNull().default("org").$type<"private" | "org" | "public">(),
     publicToken: text("public_token"),
     status: text("status").notNull().default("draft").$type<"draft" | "in_review" | "published" | "archived">(),

@@ -47,6 +47,8 @@ const TIERS: Record<string, Tier> = {
    * mistyping their own details and useless for enumeration.
    */
   "public:waitlist-claim": { limit: 10, windowSecs: 3600 },
+  "public:kb": { limit: 60, windowSecs: 60 },
+  "public:kb-article": { limit: 60, windowSecs: 60 },
   "public:roadmap": { limit: 60, windowSecs: 60 },
   "public:roadmap-vote": { limit: 10, windowSecs: 3600 },
   "public:roadmap-feedback": { limit: 5, windowSecs: 3600 },

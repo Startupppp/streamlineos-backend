@@ -1,11 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, isNotNull, lte } from "drizzle-orm";
+import { and, eq, inArray, isNull, isNotNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { crmSequenceEnrollments, crmSequenceSteps, crmSequences, tasks } from "../../../db/schema";
 import { businessParties, leadPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_LEAD } from "../crm-party-reads";
 import { logger } from "../../../common/logger/logger.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { CrmOutboundEmailService } from "../consent/crm-outbound-email.service";
 
 interface FlushResult {
@@ -21,23 +22,15 @@ export class CrmSequencesRunnerService {
     private readonly email: CrmOutboundEmailService,
   ) {}
 
-  private async evaluateStopOn(
+  private evaluateStopOn(
     stopOn: Record<string, unknown>,
     enrollment: { orgId: string; entityType: string; entityId: string },
-  ): Promise<{ stop: boolean; reason: string }> {
+    convertedLeadKeys: Set<string>,
+  ): { stop: boolean; reason: string } {
     if (stopOn["converted"] === true) {
       if (enrollment.entityType === "lead") {
-        const [row] = await this.db
-          .select({ convertedAt: businessParties.convertedAt })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, PARTY_OF_LEAD)
-          .where(and(
-            eq(leadPartyMap.organizationId, enrollment.orgId),
-            eq(leadPartyMap.leadId, parseInt(enrollment.entityId, 10)),
-            isNotNull(businessParties.convertedAt),
-          ))
-          .limit(1);
-        if (row) return { stop: true, reason: "stopOn_converted" };
+        const key = `${enrollment.orgId}:${parseInt(enrollment.entityId, 10)}`;
+        if (convertedLeadKeys.has(key)) return { stop: true, reason: "stopOn_converted" };
       } else {
         return { stop: false, reason: "stopOn_converted_unsupported_entity" };
       }
@@ -83,6 +76,45 @@ export class CrmSequencesRunnerService {
       .where(isNull(crmSequences.deletedAt));
     const seqStopOnMap = new Map(seqRows.map((s) => [s.id, s.stopOn]));
 
+    const uniqueSequenceIds = [...new Set(enrollments.map((e) => e.sequenceId))];
+    const allStepRows = await this.db
+      .select()
+      .from(crmSequenceSteps)
+      .where(inArray(crmSequenceSteps.sequenceId, uniqueSequenceIds))
+      .orderBy(crmSequenceSteps.sortOrder);
+
+    const stepsMap = new Map<
+      (typeof crmSequenceSteps.$inferSelect)["sequenceId"],
+      (typeof crmSequenceSteps.$inferSelect)[]
+    >();
+    for (const step of allStepRows) {
+      const arr = stepsMap.get(step.sequenceId) ?? [];
+      arr.push(step);
+      stepsMap.set(step.sequenceId, arr);
+    }
+
+    const convertedLeadKeys = new Set<string>();
+    const leadCheckIds: number[] = [];
+    for (const enrollment of enrollments) {
+      const rawStopOn = seqStopOnMap.get(enrollment.sequenceId);
+      if (!rawStopOn || typeof rawStopOn !== "object") continue;
+      if ((rawStopOn as Record<string, unknown>)["converted"] !== true) continue;
+      if (enrollment.entityType !== "lead") continue;
+      const leadId = parseInt(enrollment.entityId, 10);
+      if (Number.isFinite(leadId)) leadCheckIds.push(leadId);
+    }
+
+    if (leadCheckIds.length > 0) {
+      const rows = await this.db
+        .select({ organizationId: leadPartyMap.organizationId, leadId: leadPartyMap.leadId })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
+        .where(and(inArray(leadPartyMap.leadId, leadCheckIds), isNotNull(businessParties.convertedAt)));
+      for (const row of rows) {
+        convertedLeadKeys.add(`${row.organizationId}:${row.leadId}`);
+      }
+    }
+
     let advanced = 0;
     let stopped = 0;
 
@@ -90,9 +122,14 @@ export class CrmSequencesRunnerService {
       try {
         const rawStopOn = seqStopOnMap.get(enrollment.sequenceId);
         if (rawStopOn && typeof rawStopOn === "object") {
-          const { stop, reason } = await this.evaluateStopOn(rawStopOn as Record<string, unknown>, enrollment);
+          const { stop, reason } = this.evaluateStopOn(
+            rawStopOn as Record<string, unknown>,
+            enrollment,
+            convertedLeadKeys,
+          );
           if (stop) {
-            await this.db.update(crmSequenceEnrollments)
+            await this.db
+              .update(crmSequenceEnrollments)
               .set({ status: "stopped", stopReason: reason, updatedAt: new Date() })
               .where(eq(crmSequenceEnrollments.id, enrollment.id));
             stopped++;
@@ -100,12 +137,7 @@ export class CrmSequencesRunnerService {
           }
         }
 
-        const steps = await this.db
-          .select()
-          .from(crmSequenceSteps)
-          .where(eq(crmSequenceSteps.sequenceId, enrollment.sequenceId))
-          .orderBy(crmSequenceSteps.sortOrder);
-
+        const steps = stepsMap.get(enrollment.sequenceId) ?? [];
         const step = steps[enrollment.currentStep];
 
         if (!step) {
@@ -140,13 +172,17 @@ export class CrmSequencesRunnerService {
       } catch (err) {
         logger.error("crm-sequences-runner: enrollment step failed", {
           enrollmentId: enrollment.id,
-          error: err,
+          cause: err,
         });
         await this.db
           .update(crmSequenceEnrollments)
-          .set({ status: "failed", stopReason: err instanceof Error ? err.message : "step_error", updatedAt: new Date() })
+          .set({
+            status: "failed",
+            stopReason: err instanceof Error ? err.message : "step_error",
+            updatedAt: new Date(),
+          })
           .where(eq(crmSequenceEnrollments.id, enrollment.id))
-          .catch(() => {});
+          .catch(logSideEffectFailure("crm-sequences: enrollment-failed status persist", { enrollmentId: enrollment.id }));
         stopped++;
       }
     }

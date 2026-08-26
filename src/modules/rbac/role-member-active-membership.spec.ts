@@ -58,7 +58,6 @@ describe("RoleMemberService active membership enforcement", () => {
             userId: "admin",
             orgId: "org-a",
             role: "ORG_ADMIN",
-            permissions: [],
             isOrgOwner: true,
             tokenScopes: null,
             sessionId: "session",

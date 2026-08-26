@@ -8,6 +8,7 @@ import {
   NotFoundException,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Put,
   Query,
@@ -23,6 +24,9 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CalendarService } from "./calendar.service";
 import { ExternalCalendarEventsService } from "./external-calendar-events.service";
+import { CalendarSourceRegistry } from "./calendar-source.registry";
+import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
+import type { CalendarSourceContext } from "./calendar-event-source";
 import {
   createEventSchema,
   exportSchema,
@@ -37,6 +41,14 @@ import {
   type RsvpInput,
   type UpdateEventInput,
 } from "./dto/calendar.schemas";
+import {
+  setSourcePreferenceSchema,
+  type SetSourcePreferenceInput,
+} from "./dto/source-preference.schemas";
+import {
+  upsertOccurrenceExceptionSchema,
+  type UpsertOccurrenceExceptionInput,
+} from "./dto/occurrence-exception.schemas";
 
 function pad(value: number): string {
   return value < 10 ? `0${value}` : String(value);
@@ -63,6 +75,8 @@ export class CalendarController {
   constructor(
     private readonly calendar: CalendarService,
     private readonly externalEvents: ExternalCalendarEventsService,
+    private readonly registry: CalendarSourceRegistry,
+    private readonly sourcePreferences: CalendarSourcePreferencesService,
   ) {}
 
   @Get("events")
@@ -138,6 +152,43 @@ export class CalendarController {
     return attendee;
   }
 
+  @Patch("events/:eventId/occurrences/:occurrenceStart")
+  @HttpCode(200)
+  async upsertOccurrenceException(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @Param("occurrenceStart") occurrenceStart: string,
+    @Body(new ZodValidationPipe(upsertOccurrenceExceptionSchema))
+    body: UpsertOccurrenceExceptionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const row = await this.calendar.upsertOccurrenceException(
+      u.orgId,
+      u.userId,
+      eventId,
+      occurrenceStart,
+      body,
+    );
+    if (!row) throw new NotFoundException("Event not found, not a recurring event, or not authorized");
+    return row;
+  }
+
+  @Delete("events/:eventId/occurrences/:occurrenceStart")
+  @HttpCode(200)
+  async cancelOccurrence(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @Param("occurrenceStart") occurrenceStart: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const row = await this.calendar.cancelOccurrence(
+      u.orgId,
+      u.userId,
+      eventId,
+      occurrenceStart,
+    );
+    if (!row) throw new NotFoundException("Event not found, not a recurring event, or not authorized");
+    return row;
+  }
+
   @Get("events/:eventId/rsvp")
   @UseGuards(PermissionGuard)
   @RequirePermission("calendar:read")
@@ -197,5 +248,29 @@ export class CalendarController {
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Cache-Control", "no-store");
     res.send(csvContent);
+  }
+
+  @Get("sources")
+  getSources(@CurrentUser() u: CurrentUserContext) {
+    const now = new Date();
+    const ctx: CalendarSourceContext = {
+      orgId: u.orgId,
+      userId: u.userId,
+      start: now,
+      end: now,
+      scope: "all",
+    };
+    return this.registry.getToggleList(ctx);
+  }
+
+  @Put("sources/:sourceKey")
+  @HttpCode(200)
+  async setSourcePreference(
+    @Param("sourceKey") sourceKey: string,
+    @Body(new ZodValidationPipe(setSourcePreferenceSchema)) body: SetSourcePreferenceInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.sourcePreferences.setPreference(u.orgId, u.userId, sourceKey, body.enabled);
+    return { sourceKey, enabled: body.enabled };
   }
 }

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import * as webpush from "web-push";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -7,6 +8,7 @@ import { chatChannelMembers, pushSubscriptions } from "../../db/schema";
 import type { PushPayload } from "./dto/realtime.schemas";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
+import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 
 const EXPIRED_STATUS = new Set([404, 410]);
 
@@ -18,6 +20,7 @@ export class WebPushService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly effects: ExternalEffectLedger,
   ) {
     this.publicKey = this.config.VAPID_PUBLIC_KEY?.trim();
     this.privateKey = this.config.VAPID_PRIVATE_KEY?.trim();
@@ -29,8 +32,15 @@ export class WebPushService {
     return Boolean(this.publicKey && this.privateKey);
   }
 
-  async sendToUser(userId: string, payload: PushPayload): Promise<void> {
-    if (!this.configured) return;
+  async sendToUser(
+    userId: string,
+    payload: PushPayload,
+    effect?: { orgId: string; producerEventId: string; effectKey: string },
+  ): Promise<void> {
+    if (!this.configured) {
+      if (effect) throw new Error("Web Push is not configured");
+      return;
+    }
 
     const subs = await this.db
       .select({
@@ -45,24 +55,42 @@ export class WebPushService {
 
     const expiredEndpoints: string[] = [];
 
-    await Promise.allSettled(
-      subs.map(async (sub) => {
-        try {
-          await webpush.sendNotification(
-            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            JSON.stringify(payload),
-          );
-        } catch (error) {
-          if (error instanceof webpush.WebPushError && EXPIRED_STATUS.has(error.statusCode))
-            expiredEndpoints.push(sub.endpoint);
-        }
+    const results = await Promise.allSettled(
+      subs.map((sub) => {
+        const send = () => webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          JSON.stringify(payload),
+        ).then(() => undefined);
+        if (!effect) return send();
+        const endpointHash = createHash("sha256").update(sub.endpoint).digest("hex").slice(0, 24);
+        return this.effects.execute({
+          organizationId: effect.orgId,
+          producerEventId: effect.producerEventId,
+          effectKey: `${effect.effectKey}:subscription:${endpointHash}`,
+          effectType: "chat.push.subscription",
+          providerIdempotency: "STABLE_KEY_PROPAGATED",
+        }, send).then(() => undefined);
       }),
     );
+
+    const failures = results.flatMap((result, index) => {
+      if (result.status === "fulfilled") return [];
+      const error = result.reason;
+      if (error instanceof webpush.WebPushError && EXPIRED_STATUS.has(error.statusCode)) {
+        const endpoint = subs[index]?.endpoint;
+        if (endpoint) expiredEndpoints.push(endpoint);
+        return [];
+      }
+      return [error];
+    });
 
     if (expiredEndpoints.length > 0)
       await this.db
         .delete(pushSubscriptions)
         .where(inArray(pushSubscriptions.endpoint, expiredEndpoints));
+
+    if (failures.length > 0)
+      throw new AggregateError(failures, `push delivery failed for ${failures.length} subscription(s)`);
   }
 
   async sendToChannelMembers(
@@ -70,8 +98,12 @@ export class WebPushService {
     channelId: number,
     senderUserId: string,
     payload: PushPayload,
+    idempotencyKey?: string,
   ): Promise<void> {
-    if (!this.configured) return;
+    if (!this.configured) {
+      if (idempotencyKey) throw new Error("Web Push is not configured");
+      return;
+    }
 
     const members = await this.db
       .select({ userId: chatChannelMembers.userId })
@@ -86,7 +118,18 @@ export class WebPushService {
 
     if (members.length === 0) return;
 
-    await Promise.allSettled(members.map((m) => this.sendToUser(m.userId, payload)));
+    const results = await Promise.allSettled(
+      members.map((m) => this.sendToUser(
+        m.userId,
+        idempotencyKey ? { ...payload, idempotencyKey: `${idempotencyKey}:${m.userId}` } : payload,
+        idempotencyKey ? { orgId, producerEventId: idempotencyKey, effectKey: `${idempotencyKey}:${m.userId}` } : undefined,
+      )),
+    );
+    const failures = results
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => result.reason);
+    if (failures.length > 0)
+      throw new AggregateError(failures, `push fan-out failed for ${failures.length} member(s)`);
   }
 
   private vapidSubject(): string {

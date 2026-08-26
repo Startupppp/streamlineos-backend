@@ -13,6 +13,7 @@ import { ticketAssignees, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ProjectsEmailService } from "./projects-email.service";
@@ -294,7 +295,7 @@ export class ProjectsTicketsUpdateService {
     if (input.status === "IN_REVIEW" || input.status === "CHANGES_REQUESTED") {
       void this.projectsEmail
         .notifyStatusReview(ticketId, actingUserId, input.status)
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("review status email", { ticketId }));
     }
 
     const ticketProjectId = before.projectId;
@@ -349,7 +350,7 @@ export class ProjectsTicketsUpdateService {
 
     void this.cache
       .del(`projects:analytics:${orgId}:${ticketProjectId}`)
-      .catch(() => undefined);
+      .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId: ticketProjectId }));
 
     return { updated: true, updatedAt: now.toISOString() };
   }

@@ -6,6 +6,17 @@ export interface LinkedTicket {
   status: string;
 }
 
+export interface SourceFailure {
+  key: string;
+  label: string;
+}
+
+export interface CalendarEventsResult {
+  events: CalendarEventItem[];
+  failures: ReadonlyArray<SourceFailure>;
+  truncated: boolean;
+}
+
 export interface CalendarEventItem {
   id: string;
   title: string;

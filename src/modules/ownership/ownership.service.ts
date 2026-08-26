@@ -16,7 +16,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { assertModuleOwnerRoleAssigned, revokeModuleOwnerRole } from "./module-owner-role.helper";
@@ -35,8 +35,9 @@ export class OwnershipService {
   private readonly logger = new Logger(OwnershipService.name);
 
   async listModuleOwnerships(orgId: string) {
-    return this.cache.cached(
-      CACHE_KEYS.moduleOwnershipsList(orgId),
+    return this.cache.cachedForOrg(
+      orgId,
+      "ownership:modules",
       () => this.fetchModuleOwnerships(orgId),
       CACHE_TTL.MEDIUM,
     );
@@ -67,8 +68,9 @@ export class OwnershipService {
   }
 
   async getModuleOwnership(orgId: string, moduleKey: string) {
-    return this.cache.cached(
-      CACHE_KEYS.moduleOwnershipDetail(orgId, moduleKey),
+    return this.cache.cachedForOrg(
+      orgId,
+      `ownership:module:${moduleKey}`,
       () => this.fetchModuleOwnership(orgId, moduleKey),
       CACHE_TTL.MEDIUM,
     );
@@ -170,10 +172,10 @@ export class OwnershipService {
     });
 
     await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.moduleOwnershipsList(orgId)),
-      this.cache.invalidate(CACHE_KEYS.moduleOwnershipDetail(orgId, moduleKey)),
-      this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey)),
-      this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
+      this.cache.invalidateForOrg(orgId, "ownership:modules"),
+      this.cache.invalidateForOrg(orgId, `ownership:module:${moduleKey}`),
+      this.cache.invalidateForOrg(orgId, `module-access:ownership:${moduleKey}`),
+      this.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers"),
     ]);
 
     this.audit.log({

@@ -11,7 +11,6 @@ describe("AttendanceSummaryController scope boundary", () => {
       userId: "actor-1",
       orgId: "org-1",
       role: "EMPLOYEE",
-      permissions: ["hr:attendance:view"],
       isOrgOwner: false,
       sessionId: "session-1",
       tokenScopes: null,

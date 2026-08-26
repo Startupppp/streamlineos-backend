@@ -8,6 +8,7 @@ import {
   Optional,
 } from "@nestjs/common";
 import { and, desc, eq, isNotNull, isNull, notInArray, sql, type SQL } from "drizzle-orm";
+import { keysetBefore } from "../../common/pagination/keyset";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import {
@@ -86,7 +87,7 @@ export class AutonomyReviewService {
           conditions,
           // Row-value comparison matching idx_autonomous_decisions_feed's order,
           // so the scan starts at the cursor rather than reading and discarding.
-          sql`(${autonomousDecisions.decidedAt}, ${autonomousDecisions.autonomousDecisionId}) < (${new Date(position.sortValue)}, ${position.id})`,
+          keysetBefore(autonomousDecisions.decidedAt, autonomousDecisions.autonomousDecisionId, position),
         )
       : conditions;
 

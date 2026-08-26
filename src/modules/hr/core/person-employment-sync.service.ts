@@ -1,10 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, gt, isNull, lte, sql } from "drizzle-orm";
+import { organizationPeople } from "../../../db/schema/directory/organization-people";
 import {
   hrEmployments,
   hrPeople,
   organizationMembers,
-  organizationPeople,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -161,13 +161,24 @@ export class PersonEmploymentSyncService {
     if (existingPersonByUser) {
       personId = existingPersonByUser.id;
     } else {
-      const existingByEmail = await db.query.hrPeople.findFirst({
-        where: and(
-          eq(hrPeople.orgId, orgId),
-          eq(hrPeople.workEmail, email),
-          isNull(hrPeople.deletedAt),
-        ),
-      });
+      const [existingByEmail] = await db
+        .select({ id: hrPeople.id, organizationPersonId: hrPeople.organizationPersonId })
+        .from(hrPeople)
+        .innerJoin(
+          organizationPeople,
+          and(
+            eq(organizationPeople.organizationId, hrPeople.orgId),
+            eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+          ),
+        )
+        .where(
+          and(
+            eq(hrPeople.orgId, orgId),
+            sql`lower(trim(${organizationPeople.workEmail})) = ${email}`,
+            isNull(hrPeople.deletedAt),
+          ),
+        )
+        .limit(1);
 
       if (existingByEmail) {
         const linkId = existingByEmail.organizationPersonId === null
@@ -177,9 +188,6 @@ export class PersonEmploymentSyncService {
           .update(hrPeople)
           .set({
             userId: input.userId,
-            firstName: input.firstName,
-            lastName: input.lastName,
-            phone: input.phone ?? existingByEmail.phone,
             ...(linkId !== null && { organizationPersonId: linkId }),
           })
           .where(and(eq(hrPeople.id, existingByEmail.id), eq(hrPeople.orgId, orgId)));
@@ -197,7 +205,6 @@ export class PersonEmploymentSyncService {
             firstName: input.firstName,
             lastName: input.lastName,
             workEmail: email,
-            phone: input.phone ?? null,
           })
           .returning({ id: hrPeople.id });
         if (!created) throw new Error("Failed to create person record");

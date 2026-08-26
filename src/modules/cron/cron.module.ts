@@ -22,6 +22,7 @@ import { OrganizationModule } from "../organization/core/organization.module";
 import { CronBillingController } from "./cron-billing.controller";
 import { CronHrController } from "./cron-hr.controller";
 import { CronPlatformController } from "./cron-platform.controller";
+import { CronOutboxController } from "./cron-outbox.controller";
 import { CronSupportController } from "./cron-support.controller";
 import { CronBuildController } from "./cron-build.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
@@ -44,10 +45,13 @@ import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
+import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
+import { CronLeaseService } from "./cron-lease.service";
 import { ProjectsModule } from "../build/core/projects.module";
 import { CrmModule } from "../crm/core/crm.module";
+import { OutboxModule } from "../../common/outbox/outbox.module";
 
 @Module({
   imports: [
@@ -73,11 +77,13 @@ import { CrmModule } from "../crm/core/crm.module";
     OrganizationModule,
     ProjectsModule,
     CrmModule,
+    OutboxModule,
   ],
   controllers: [
     CronBillingController,
     CronHrController,
     CronPlatformController,
+    CronOutboxController,
     CronSupportController,
     CronBuildController,
   ],
@@ -102,8 +108,10 @@ import { CrmModule } from "../crm/core/crm.module";
     CronIdempotencyService,
     CronBuildRetentionService,
     CronBuildSnapshotsService,
+    CronKbChunkRetentionService,
     CronOrganizationService,
     CronOrgPurgeWorkerService,
+    CronLeaseService,
   ],
 })
 export class CronModule {}

@@ -10,13 +10,14 @@ jest.mock("../../../calendar/calendar.service", () => ({ CalendarService: jest.f
 jest.mock("../../../integrations/core/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
 jest.mock("../../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));
 jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
-  runInTenantTransaction: (db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(db),
-  runInNewTenantTransaction: (db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(db),
+  runInTenantTransaction: jest.fn().mockImplementation((db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(db)),
+  runInNewTenantTransaction: jest.fn().mockImplementation((db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(db)),
 }));
 
 import { HttpStatus } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import { streamText } from "ai";
+import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { ChatAssistantService } from "./chat-assistant.service";
 import { type AiCreditLedger } from "../gateway/credit-ledger.interface";
 import type { AiUsageService } from "./ai-usage.service";
@@ -170,5 +171,40 @@ describe("ChatAssistantService — credit charging", () => {
 
     await new Promise((r) => setTimeout(r, 10));
     expect(ledger.release).toHaveBeenCalledWith(42, "stream_setup_error", "org_1");
+  });
+});
+
+describe("ChatAssistantService — streaming transaction isolation", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("resolves before onFinish fires, then onFinish opens its own tenant transaction", async () => {
+    const callOrder: string[] = [];
+    let capturedOnFinish:
+      | ((opts: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void>)
+      | undefined;
+
+    (streamText as jest.Mock).mockImplementation(
+      (opts: { onFinish?: (o: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void> }) => {
+        capturedOnFinish = opts.onFinish;
+        callOrder.push("stream-setup");
+        return {};
+      },
+    );
+
+    const ledger = makeLedger();
+    const { svc } = buildService(ledger);
+    await svc.processChat([{ role: "user", content: "hi" }], ACTOR);
+    callOrder.push("handler-resolved");
+
+    expect(capturedOnFinish).toBeDefined();
+    await capturedOnFinish?.({ text: "assistant reply", usage: { inputTokens: 10, outputTokens: 5 } });
+    callOrder.push("onFinish-complete");
+
+    expect(callOrder).toEqual(["stream-setup", "handler-resolved", "onFinish-complete"]);
+    expect(runInNewTenantTransaction as jest.Mock).toHaveBeenCalledWith(
+      expect.anything(),
+      ACTOR.orgId,
+      expect.any(Function),
+    );
   });
 });

@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Logger, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -33,6 +33,8 @@ import type { EntityActionResult } from "../entity-reference/entity-reference.ty
 @Controller("chat/actions")
 @UseGuards(JwtAuthGuard)
 export class ChatActionsController {
+  private readonly logger = new Logger(ChatActionsController.name);
+
   constructor(
     private readonly entities: EntityReferenceService,
     private readonly members: ChatChannelMembersService,
@@ -69,7 +71,14 @@ export class ChatActionsController {
         .sendSystemMessage(body.channelId, u.userId, u.orgId, result.message, {
           entities: [{ type: "ticket", id: String(ticketId) }],
         })
-        .catch(() => undefined);
+        .catch((error: unknown) => {
+          this.logger.warn("chat: system message announcement failed", {
+            orgId: u.orgId,
+            channelId: body.channelId,
+            error: error instanceof Error ? error.message : String(error),
+            cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+          });
+        });
 
     return { ticketId, ticketNumber };
   }

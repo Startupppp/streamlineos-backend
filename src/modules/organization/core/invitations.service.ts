@@ -21,7 +21,6 @@ import {
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { bustUsersStatsCache } from "../../../common/cache/bust-users-stats";
 import { EmailService } from "../../email/email.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import {
@@ -216,7 +215,7 @@ export class InvitationsService {
         metadata: { email, role },
       });
 
-      await bustUsersStatsCache(this.cache, orgId);
+      await this.cache.invalidateForOrg(orgId, "users:stats");
       return {
         success: true,
         invitationId: pendingInvitation.id,
@@ -291,7 +290,7 @@ export class InvitationsService {
       metadata: { email, role },
     });
 
-    await bustUsersStatsCache(this.cache, orgId);
+    await this.cache.invalidateForOrg(orgId, "users:stats");
     return {
       success: true,
       invitationId,
@@ -440,7 +439,7 @@ export class InvitationsService {
       metadata: { email: invitation.email },
     });
 
-    await bustUsersStatsCache(this.cache, orgId);
+    await this.cache.invalidateForOrg(orgId, "users:stats");
     return { success: true };
   }
 
@@ -558,7 +557,7 @@ export class InvitationsService {
         ),
       );
 
-    await bustUsersStatsCache(this.cache, orgId);
+    await this.cache.invalidateForOrg(orgId, "users:stats");
     return { success: true };
   }
 
@@ -596,7 +595,7 @@ export class InvitationsService {
       ? await revoke(existingTx)
       : await runInTenantTransaction(this.db, revoke, { orgId });
     if (!existingTx && updated.length > 0)
-      await bustUsersStatsCache(this.cache, orgId);
+      await this.cache.invalidateForOrg(orgId, "users:stats");
 
     return updated.length;
   }

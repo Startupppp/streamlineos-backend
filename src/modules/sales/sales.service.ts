@@ -10,6 +10,8 @@ import {
   notifications,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { AccessService } from "../access/access.service";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
@@ -58,6 +60,7 @@ export class SalesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
   listCommissionRules(orgId: string) {
@@ -233,11 +236,11 @@ export class SalesService {
 
   async createQuota(
     orgId: string,
-    actor: { isOrgOwner: boolean; permissions: string[] },
+    actor: CurrentUserContext,
     setById: string,
     input: QuotaCreateInput,
   ) {
-    if (!actor.isOrgOwner && !actor.permissions.includes("crm:targets:manage")) {
+    if (!(await this.access.holds(actor, "crm:targets:manage"))) {
       return { error: "forbidden", message: "Only managers can set quotas" } as SalesForbidden;
     }
 

@@ -77,3 +77,73 @@ describe("buildCursorPage", () => {
     expect(page.pagination.nextCursor).toBeNull();
   });
 });
+
+describe("concurrent-insert proof: cursor is stable under concurrent writes, offset is not", () => {
+  function asRows(ids: number[]) {
+    return ids.map((id) => ({ id }));
+  }
+
+  function toPosition(row: { id: number }) {
+    return { sortValue: String(row.id), id: String(row.id) };
+  }
+
+  function offsetSlice(all: number[], limit: number, offset: number): number[] {
+    return all.slice(offset, offset + limit);
+  }
+
+  const limit = 3;
+  const original = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+  const afterInsert = [12, 11, ...original];
+
+  it("offset repeats rows when concurrent inserts arrive above the reader's position", () => {
+    const page1 = offsetSlice(original, limit, 0);
+
+    const page2 = offsetSlice(afterInsert, limit, limit);
+
+    const seen = new Set(page1);
+    const duplicates = page2.filter((id) => seen.has(id));
+    expect(duplicates.length).toBeGreaterThan(0);
+  });
+
+  it("cursor sees every original row exactly once despite concurrent inserts above", () => {
+    const page1 = buildCursorPage(
+      asRows(original.slice(0, limit + 1)),
+      limit,
+      toPosition,
+    );
+    expect(page1.data.map((r) => r.id)).toEqual([10, 9, 8]);
+    expect(page1.pagination.hasMore).toBe(true);
+
+    const decoded = decodeCursor(page1.pagination.nextCursor);
+    expect(decoded?.sortValue).toBe("8");
+    const afterId = Number(decoded?.sortValue);
+
+    const page2Rows = afterInsert.filter((id) => id < afterId).slice(0, limit + 1);
+    const page2 = buildCursorPage(asRows(page2Rows), limit, toPosition);
+    expect(page2.data.map((r) => r.id)).toEqual([7, 6, 5]);
+
+    const allIds = [...page1.data, ...page2.data].map((r) => r.id);
+    expect(new Set(allIds).size).toBe(allIds.length);
+    expect(allIds).toEqual([10, 9, 8, 7, 6, 5]);
+  });
+
+  it("a cursor that was valid but is now stale still returns rows without gaps or panics", () => {
+    const page1 = buildCursorPage(asRows(original.slice(0, limit + 1)), limit, toPosition);
+    const decoded = decodeCursor(page1.pagination.nextCursor);
+    const afterId = Number(decoded?.sortValue);
+
+    const muchLaterList = [50, 40, 30, 20, ...original];
+    const page2Rows = muchLaterList.filter((id) => id < afterId).slice(0, limit + 1);
+    const page2 = buildCursorPage(asRows(page2Rows), limit, toPosition);
+
+    expect(page2.data.every((r) => r.id < afterId)).toBe(true);
+  });
+
+  it("a malformed cursor falls back to the first page without throwing", () => {
+    const position = decodeCursor("this-is-not-a-valid-cursor");
+    expect(position).toBeNull();
+
+    const page = buildCursorPage(asRows(original.slice(0, limit + 1)), limit, toPosition);
+    expect(page.data[0]?.id).toBe(10);
+  });
+});

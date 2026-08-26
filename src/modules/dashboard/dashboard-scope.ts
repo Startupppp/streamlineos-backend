@@ -7,17 +7,13 @@ export const DASHBOARD_EMPLOYEES_PERMISSION = "hr:employees:manage";
 export const DASHBOARD_LEAVES_PERMISSION = "hr:leaves:approve";
 
 export async function resolveEmployeesDashboardScope(access: AccessService, u: CurrentUserContext): Promise<DataScope> {
-  if (u.isOrgOwner) return "all";
   if (!isScopable(DASHBOARD_EMPLOYEES_PERMISSION)) return "all";
-  const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
-  return resolved.get(DASHBOARD_EMPLOYEES_PERMISSION) ?? "none";
+  return access.scopeFor(u, DASHBOARD_EMPLOYEES_PERMISSION);
 }
 
 export async function resolveLeavesDashboardScope(access: AccessService, u: CurrentUserContext): Promise<DataScope> {
-  if (u.isOrgOwner) return "all";
   if (!isScopable(DASHBOARD_LEAVES_PERMISSION)) return "all";
-  const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
-  return resolved.get(DASHBOARD_LEAVES_PERMISSION) ?? "none";
+  return access.scopeFor(u, DASHBOARD_LEAVES_PERMISSION);
 }
 
 export interface PersonalDashboardModules {
@@ -30,17 +26,15 @@ export async function resolvePersonalDashboardModules(
   access: AccessService,
   u: CurrentUserContext,
 ): Promise<PersonalDashboardModules> {
-  if (u.isOrgOwner) return { build: true, timesheets: true, hr: true };
-  const [denied, build, timesheets, hr] = await Promise.all([
-    access.getUserDeniedModules(u.orgId, u.userId),
-    access.isModuleEnabled(u.orgId, "build"),
-    access.isModuleEnabled(u.orgId, "timesheets"),
-    access.isModuleEnabled(u.orgId, "hr"),
+  const [build, timesheets, hr] = await Promise.all([
+    access.moduleAvailability(u, "build"),
+    access.moduleAvailability(u, "timesheets"),
+    access.moduleAvailability(u, "hr"),
   ]);
   return {
-    build: build && !denied.has("build"),
-    timesheets: timesheets && !denied.has("timesheets"),
-    hr: hr && !denied.has("hr"),
+    build: build.available,
+    timesheets: timesheets.available,
+    hr: hr.available,
   };
 }
 
@@ -54,14 +48,10 @@ export async function resolveDashboardStatsFlags(
   access: AccessService,
   u: CurrentUserContext,
 ): Promise<DashboardStatsFlags> {
-  if (u.isOrgOwner) {
-    return { employees: true, attendance: true, projects: true };
-  }
-  const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
-  const granted = (key: string) => (resolved.get(key) ?? "none") !== "none";
+  const granted = (key: string) => access.scopeFor(u, key).then((scope) => scope !== "none");
   return {
-    employees: granted("hr:employees:view"),
-    attendance: granted("hr:attendance:view"),
-    projects: granted("build:tickets:view"),
+    employees: await granted("hr:employees:view"),
+    attendance: await granted("hr:attendance:view"),
+    projects: await granted("build:tickets:view"),
   };
 }
