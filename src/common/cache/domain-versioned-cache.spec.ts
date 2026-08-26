@@ -5,6 +5,9 @@ import { TaxDashboardService } from "../../modules/finance/tax/tax-dashboard.ser
 import { ExpensePoliciesService } from "../../modules/finance/expenses/expense-policies.service";
 import { BankAccountsService } from "../../modules/finance/banking/bank-accounts.service";
 import { ForecastService } from "../../modules/finance/planning/forecast.service";
+import { OverviewService } from "../../modules/finance/reports/overview.service";
+import { StatementReportsService } from "../../modules/finance/reports/statement-reports.service";
+import { AnalyticsReportsService } from "../../modules/finance/reports/analytics-reports.service";
 
 describe("finance and expense versioned cache contracts", () => {
   const cachedVersioned = jest.fn().mockResolvedValue({ cached: true });
@@ -104,5 +107,81 @@ describe("finance and expense versioned cache contracts", () => {
       120,
     );
     expect(CACHE_KEYS.finBvaNamespace("org-1", 9)).toBe("fin:bva:org-1:9");
+  });
+
+  it("tenant-namespaces fin overview reads", async () => {
+    const service = new OverviewService({} as never, cache as never);
+    await service.getOverview("org-1", {});
+
+    expect(cachedVersioned).toHaveBeenCalledWith(
+      CACHE_KEYS.finReportsNamespace("org-1"),
+      "default",
+      expect.any(Function),
+      expect.any(Number),
+    );
+  });
+
+  it("tenant-namespaces fin overview with date range reads", async () => {
+    const service = new OverviewService({} as never, cache as never);
+    await service.getOverview("org-1", { from: "2026-01-01", to: "2026-01-31" });
+
+    expect(cachedVersioned).toHaveBeenCalledWith(
+      CACHE_KEYS.finReportsNamespace("org-1"),
+      "2026-01-01:2026-01-31",
+      expect.any(Function),
+      expect.any(Number),
+    );
+  });
+
+  it("tenant-namespaces vendor statement reads", async () => {
+    const service = new StatementReportsService({} as never, cache as never);
+    await service.vendorStatement("org-1", 42, "2026-01-01", "2026-01-31");
+
+    expect(cachedVersioned).toHaveBeenCalledWith(
+      CACHE_KEYS.finReportsNamespace("org-1"),
+      "vendor-stmt:42:2026-01-01:2026-01-31",
+      expect.any(Function),
+      expect.any(Number),
+    );
+  });
+
+  it("tenant-namespaces customer statement reads", async () => {
+    const service = new StatementReportsService({} as never, cache as never);
+    await service.customerStatement("org-1", 7, "2026-01-01", "2026-01-31");
+
+    expect(cachedVersioned).toHaveBeenCalledWith(
+      CACHE_KEYS.finReportsNamespace("org-1"),
+      "customer-stmt:7:2026-01-01:2026-01-31",
+      expect.any(Function),
+      expect.any(Number),
+    );
+  });
+
+  it("tenant-namespaces analytics project-profitability reads", async () => {
+    const service = new AnalyticsReportsService({} as never, cache as never);
+    await service.projectProfitability("org-1", "2026-01-01", "2026-01-31");
+
+    expect(cachedVersioned).toHaveBeenCalledWith(
+      CACHE_KEYS.finReportsNamespace("org-1"),
+      "proj-profit:2026-01-01:2026-01-31",
+      expect.any(Function),
+      expect.any(Number),
+    );
+  });
+
+  it("analytics budget-vs-actual reads use finBvaNamespace not finReportsNamespace", async () => {
+    const service = new AnalyticsReportsService({} as never, cache as never);
+    await service.budgetVsActual("org-1", 5, "2026-01-01", "2026-01-31");
+
+    expect(cachedVersioned).toHaveBeenCalledWith(
+      CACHE_KEYS.finBvaNamespace("org-1", 5),
+      "2026-01-01:2026-01-31",
+      expect.any(Function),
+      expect.any(Number),
+    );
+  });
+
+  it("finReportsNamespace key includes orgId", () => {
+    expect(CACHE_KEYS.finReportsNamespace("org-abc")).toBe("fin:reports:org-abc");
   });
 });

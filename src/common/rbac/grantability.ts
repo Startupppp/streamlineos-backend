@@ -42,6 +42,37 @@ export interface GrantabilityActor {
   allowedModules?: ReadonlySet<string> | null;
 }
 
+/**
+ * The single rank comparison shared by the read path (describeGrantable) and
+ * the write path (assertPermissionsGrantable). If either side reimplements this
+ * logic, the UI can advertise grants the writer refuses — which is why this
+ * function exists and both sides must import it here rather than copy the check.
+ *
+ * Returns true when the actor at `actorBestRank` may grant to a role whose
+ * authority is `targetRank` in `targetModuleKey`. Does not check permission
+ * content or scope — those are separate checks.
+ *
+ * The peer-MODULE_ADMIN exception: an admin at rank 20 may configure a
+ * MODULE_ADMIN role in the same module (rank equality normally blocks this)
+ * because module self-administration requires being able to set peers.
+ */
+export function canGrantToRank(
+  actorBestRank: number,
+  actorAllowedModules: ReadonlySet<string> | null | undefined,
+  targetRank: number,
+  targetModuleKey: string | null,
+): boolean {
+  const isPeerModuleAdmin =
+    actorBestRank === ROLE_RANK.MODULE_ADMIN &&
+    targetRank === ROLE_RANK.MODULE_ADMIN &&
+    actorAllowedModules !== null &&
+    actorAllowedModules !== undefined &&
+    targetModuleKey !== null &&
+    actorAllowedModules.has(targetModuleKey);
+
+  return isPeerModuleAdmin || targetRank > actorBestRank;
+}
+
 export interface RoleGrantTarget {
   rank: number;
   moduleKey: string | null;
@@ -131,15 +162,7 @@ export function assertPermissionsGrantable(
   }
 
   if (target !== undefined && actor.bestRank !== undefined) {
-    const isPeerModuleAdmin =
-      actor.bestRank === ROLE_RANK.MODULE_ADMIN &&
-      target.rank === ROLE_RANK.MODULE_ADMIN &&
-      actor.allowedModules !== null &&
-      actor.allowedModules !== undefined &&
-      target.moduleKey !== null &&
-      actor.allowedModules.has(target.moduleKey);
-
-    if (!isPeerModuleAdmin && target.rank <= actor.bestRank) {
+    if (!canGrantToRank(actor.bestRank, actor.allowedModules, target.rank, target.moduleKey)) {
       throw new ForbiddenException(
         `You cannot create or modify a role at authority rank ${target.rank}; your highest rank is ${actor.bestRank}`,
       );

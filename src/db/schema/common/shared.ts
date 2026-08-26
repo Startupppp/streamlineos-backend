@@ -180,6 +180,7 @@ export const auditLogs = pgTable("audit_logs", {
   resourceId: text("resource_id"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   ipAddress: text("ip_address"),
+  isPlatformEvent: boolean("is_platform_event").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_audit_logs_user_id").on(table.userId),

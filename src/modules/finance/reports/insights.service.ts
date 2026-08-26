@@ -9,6 +9,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { InsightsQuery, AnomalyFinding } from "./dto/insights.schemas";
 import { InsightsFindersService, monthStart, monthEnd, todayIso } from "./insights-finders.service";
 
@@ -23,8 +24,11 @@ export class InsightsService {
   ) {}
 
   async getAnomalies(orgId: string, query: InsightsQuery): Promise<AnomalyFinding[]> {
-    const cacheKey = `fin:insights:anomalies:${orgId}:${query.from ?? ""}:${query.to ?? ""}`;
-    return this.cache.cached(cacheKey, () => this.computeAnomalies(orgId, query), ANOMALY_TTL);
+    return this.cache.cached(
+      CACHE_KEYS.finInsightsAnomalies(orgId, query.from ?? "", query.to ?? ""),
+      () => this.computeAnomalies(orgId, query),
+      ANOMALY_TTL,
+    );
   }
 
   private async computeAnomalies(orgId: string, query: InsightsQuery): Promise<AnomalyFinding[]> {
@@ -45,7 +49,7 @@ export class InsightsService {
 
   async getDigest(orgId: string): Promise<{ headline: string; positives: string[]; watchouts: string[] }> {
     return this.cache.cached(
-      `fin:insights:digest:${orgId}`,
+      CACHE_KEYS.finInsightsDigest(orgId),
       () => this.computeDigest(orgId),
       ANOMALY_TTL,
     );

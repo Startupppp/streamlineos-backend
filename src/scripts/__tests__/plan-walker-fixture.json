@@ -1,0 +1,56 @@
+[
+  {
+    "QUERY PLAN": [
+      {
+        "Plan": {
+          "Node Type": "Limit",
+          "Startup Cost": 0.57,
+          "Total Cost": 14.25,
+          "Plan Rows": 50,
+          "Plan Width": 112,
+          "Actual Startup Time": 0.042,
+          "Actual Total Time": 0.312,
+          "Actual Rows": 50,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 38,
+          "Shared Read Blocks": 12,
+          "Plans": [
+            {
+              "Node Type": "Sort",
+              "Parent Relationship": "Outer",
+              "Sort Key": ["t.rank", "t.created_at DESC", "t.id"],
+              "Startup Cost": 0.57,
+              "Total Cost": 13.88,
+              "Shared Hit Blocks": 38,
+              "Shared Read Blocks": 12,
+              "Plans": [
+                {
+                  "Node Type": "Index Scan",
+                  "Parent Relationship": "Outer",
+                  "Relation Name": "tickets",
+                  "Index Name": "idx_tickets_org_project_rank",
+                  "Shared Hit Blocks": 22,
+                  "Shared Read Blocks": 8,
+                  "Plans": [
+                    {
+                      "Node Type": "Index Only Scan",
+                      "Parent Relationship": "InitPlan",
+                      "Relation Name": "ticket_assignees",
+                      "Index Name": "idx_ticket_assignees_org_user_ticket",
+                      "Heap Fetches": 0,
+                      "Shared Hit Blocks": 16,
+                      "Shared Read Blocks": 4,
+                      "Plans": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "Planning Time": 1.24,
+        "Execution Time": 0.41
+      }
+    ]
+  }
+]

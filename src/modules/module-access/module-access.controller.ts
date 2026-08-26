@@ -20,6 +20,7 @@ import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { ModuleAccessService } from "./module-access.service";
 import { ModuleAccessGroupsService } from "./module-access-groups.service";
+import { ModuleStandingRosterService } from "./module-standing-roster.service";
 import {
   addFlatMemberSchema,
   addModuleGroupMemberSchema,
@@ -59,7 +60,24 @@ export class ModuleAccessController {
   constructor(
     private readonly svc: ModuleAccessService,
     private readonly groups: ModuleAccessGroupsService,
+    private readonly standing: ModuleStandingRosterService,
   ) {}
+
+  @Get(":moduleKey/standing")
+  listStanding(
+    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.standing.listStanding(u, params.moduleKey);
+  }
+
+  @Get(":moduleKey/standing/grantable")
+  describeGrantable(
+    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.standing.describeGrantable(u, params.moduleKey);
+  }
 
   @Get(":moduleKey/catalog")
   catalog(

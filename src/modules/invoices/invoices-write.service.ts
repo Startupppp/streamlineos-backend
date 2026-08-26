@@ -80,13 +80,6 @@ export class InvoicesWriteService {
       placeOfSupplyStateCode,
     );
 
-    const legacyLineItemsMirror = itemsWithAmounts.map((it) => ({
-      description: it.description,
-      quantity: it.quantity,
-      rate: it.rate,
-      amount: it.amount,
-    }));
-
     if (status === "ISSUED") {
       await this.posting.seedChartOfAccountsForOrg(orgId);
     }
@@ -111,7 +104,6 @@ export class InvoicesWriteService {
           projectId: input.projectId,
           invoiceNumber,
           status,
-          lineItems: legacyLineItemsMirror,
           subtotal: subtotal.toFixed(2),
           taxRate: "0",
           taxAmount: taxPool.toFixed(2),
@@ -251,18 +243,10 @@ export class InvoicesWriteService {
       gstRate: normalizeGstRate(item.gstRate),
     }));
 
-    const lineItems = source.lineItems.map((line) => ({
-      description: line.description,
-      quantity: line.quantity,
-      rate: line.rate,
-      amount: line.amount,
-    }));
-
     return {
       clientId: source.clientId ?? undefined,
       projectId: source.projectId ?? undefined,
       items: items.length > 0 ? items : undefined,
-      lineItems: items.length > 0 ? undefined : lineItems,
       taxRate: 0,
       discount: Number(source.discount ?? "0"),
       currency: source.currency,

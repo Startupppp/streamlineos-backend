@@ -42,8 +42,9 @@ export class AnalyticsReportsService {
   ) {}
 
   async projectProfitability(orgId: string, from: string, to: string) {
-    return this.cache.cached(
-      CACHE_KEYS.finProjectProfitability(orgId, from, to),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finReportsNamespace(orgId),
+      `proj-profit:${from}:${to}`,
       () => this.computeProjectProfitability(orgId, from, to),
       CACHE_TTL.MEDIUM,
     );
@@ -150,8 +151,9 @@ export class AnalyticsReportsService {
   }
 
   async departmentProfitability(orgId: string, from: string, to: string) {
-    return this.cache.cached(
-      CACHE_KEYS.finDeptProfitability(orgId, from, to),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finReportsNamespace(orgId),
+      `dept-profit:${from}:${to}`,
       () => this.computeDeptProfitability(orgId, from, to),
       CACHE_TTL.MEDIUM,
     );
@@ -236,8 +238,9 @@ export class AnalyticsReportsService {
   }
 
   async budgetVsActual(orgId: string, budgetId: number, from: string, to: string) {
-    return this.cache.cached(
-      CACHE_KEYS.finBudgetVsActual(orgId, budgetId, from, to),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finBvaNamespace(orgId, budgetId),
+      `${from}:${to}`,
       () => this.computeBudgetVsActual(orgId, budgetId, from, to),
       CACHE_TTL.MEDIUM,
     );
@@ -325,8 +328,9 @@ export class AnalyticsReportsService {
   }
 
   async workingCapital(orgId: string, asOf: string) {
-    return this.cache.cached(
-      CACHE_KEYS.finWorkingCapital(orgId, asOf),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finReportsNamespace(orgId),
+      `working-capital:${asOf}`,
       () => this.computeWorkingCapital(orgId, asOf),
       CACHE_TTL.MEDIUM,
     );
@@ -388,8 +392,9 @@ export class AnalyticsReportsService {
   }
 
   async burnRate(orgId: string) {
-    return this.cache.cached(
-      CACHE_KEYS.finBurnRate(orgId),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finReportsNamespace(orgId),
+      "burn-rate",
       () => this.computeBurnRate(orgId),
       CACHE_TTL.MEDIUM,
     );
@@ -441,8 +446,9 @@ export class AnalyticsReportsService {
   }
 
   async cashRunway(orgId: string, months: number) {
-    return this.cache.cached(
-      CACHE_KEYS.finCashRunway(orgId, months),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finReportsNamespace(orgId),
+      `cash-runway:${months}`,
       () => this.computeCashRunway(orgId, months),
       CACHE_TTL.MEDIUM,
     );

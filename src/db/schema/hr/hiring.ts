@@ -122,7 +122,6 @@ export const candidates = pgTable("candidates", {
   referredBy: text("referred_by").references(() => users.id),
   externalId: text("external_id"),
   duplicateOfId: integer("duplicate_of_id").references((): AnyPgColumn => candidates.id, { onDelete: "set null" }),
-  resumeText: text("resume_text"),
   aiScore: integer("ai_score"),
   aiScoreBreakdown: jsonb("ai_score_breakdown").$type<Record<string, number>>(),
   aiScoreGeneratedAt: timestamp("ai_score_generated_at"),
@@ -143,6 +142,16 @@ export const candidates = pgTable("candidates", {
   index("idx_candidates_email").on(table.email),
   index("idx_candidates_org_status").on(table.orgId, table.status),
   index("idx_candidates_org_created").on(table.orgId, table.createdAt),
+]);
+
+export const candidateResumes = pgTable("candidate_resumes", {
+  id: serial("id").primaryKey(),
+  candidateId: integer("candidate_id").references(() => candidates.id, { onDelete: "cascade" }).notNull(),
+  resumeText: text("resume_text").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  uniqueIndex("uniq_candidate_resumes_candidate_id").on(table.candidateId),
 ]);
 
 export const candidateApplications = pgTable("candidate_applications", {
@@ -532,9 +541,14 @@ export const candidateSourcesRelations = relations(candidateSources, ({ one }) =
   createdByUser: one(users, { fields: [candidateSources.createdBy], references: [users.id] }),
 }));
 
-export const candidatesRelations = relations(candidates, ({ many }) => ({
+export const candidatesRelations = relations(candidates, ({ one, many }) => ({
+  resume: one(candidateResumes, { fields: [candidates.id], references: [candidateResumes.candidateId] }),
   applications: many(candidateApplications),
   interviews: many(interviews),
+}));
+
+export const candidateResumesRelations = relations(candidateResumes, ({ one }) => ({
+  candidate: one(candidates, { fields: [candidateResumes.candidateId], references: [candidates.id] }),
 }));
 
 export const candidateApplicationsRelations = relations(candidateApplications, ({ one }) => ({

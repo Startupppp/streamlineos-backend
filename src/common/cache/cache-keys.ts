@@ -193,44 +193,7 @@ export const CACHE_KEYS = {
   timesheetRates: (orgId: string) => `timesheets:rates:${orgId}`,
   timesheetRatesNamespace: (orgId: string) => `timesheets:rates:${orgId}`,
 
-  finOverview: (orgId: string) => `fin:overview:${orgId}`,
-  finOverviewWithDates: (orgId: string, from: string, to: string) =>
-    `fin:overview:${orgId}:${from}:${to}`,
-  finVendorStatement: (
-    orgId: string,
-    vendorId: number,
-    from: string,
-    to: string,
-  ) => `fin:vendor-stmt:${orgId}:${vendorId}:${from}:${to}`,
-  finCustomerStatement: (
-    orgId: string,
-    clientId: number,
-    from: string,
-    to: string,
-  ) => `fin:customer-stmt:${orgId}:${clientId}:${from}:${to}`,
-  finSalesByCustomer: (orgId: string, from: string, to: string) =>
-    `fin:sales-by-customer:${orgId}:${from}:${to}`,
-  finSalesByItem: (orgId: string, from: string, to: string) =>
-    `fin:sales-by-item:${orgId}:${from}:${to}`,
-  finExpenseByCategory: (orgId: string, from: string, to: string) =>
-    `fin:expense-by-cat:${orgId}:${from}:${to}`,
-  finTaxSummary: (orgId: string, from: string, to: string) =>
-    `fin:tax-summary:${orgId}:${from}:${to}`,
-  finProjectProfitability: (orgId: string, from: string, to: string) =>
-    `fin:proj-profit:${orgId}:${from}:${to}`,
-  finDeptProfitability: (orgId: string, from: string, to: string) =>
-    `fin:dept-profit:${orgId}:${from}:${to}`,
-  finBudgetVsActual: (
-    orgId: string,
-    budgetId: number,
-    from: string,
-    to: string,
-  ) => `fin:bva:${orgId}:${budgetId}:${from}:${to}`,
-  finWorkingCapital: (orgId: string, asOf: string) =>
-    `fin:working-capital:${orgId}:${asOf}`,
-  finBurnRate: (orgId: string) => `fin:burn-rate:${orgId}`,
-  finCashRunway: (orgId: string, months: number) =>
-    `fin:cash-runway:${orgId}:${months}`,
+  finReportsNamespace: (orgId: string) => `fin:reports:${orgId}`,
   finInsightsAnomalies: (orgId: string, from: string, to: string) =>
     `fin:insights:anomalies:${orgId}:${from}:${to}`,
   finInsightsDigest: (orgId: string) => `fin:insights:digest:${orgId}`,

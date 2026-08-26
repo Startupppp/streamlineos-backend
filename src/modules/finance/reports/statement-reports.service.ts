@@ -33,8 +33,9 @@ export class StatementReportsService {
   ) {}
 
   async vendorStatement(orgId: string, vendorId: number, from: string, to: string) {
-    return this.cache.cached(
-      CACHE_KEYS.finVendorStatement(orgId, vendorId, from, to),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finReportsNamespace(orgId),
+      `vendor-stmt:${vendorId}:${from}:${to}`,
       () => this.computeVendorStatement(orgId, vendorId, from, to),
       120,
     );
@@ -159,8 +160,9 @@ export class StatementReportsService {
   }
 
   async customerStatement(orgId: string, clientId: number, from: string, to: string) {
-    return this.cache.cached(
-      CACHE_KEYS.finCustomerStatement(orgId, clientId, from, to),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finReportsNamespace(orgId),
+      `customer-stmt:${clientId}:${from}:${to}`,
       () => this.computeCustomerStatement(orgId, clientId, from, to),
       120,
     );
@@ -261,8 +263,9 @@ export class StatementReportsService {
   }
 
   async salesByCustomer(orgId: string, from: string, to: string) {
-    return this.cache.cached(
-      CACHE_KEYS.finSalesByCustomer(orgId, from, to),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finReportsNamespace(orgId),
+      `sales-by-customer:${from}:${to}`,
       () => this.computeSalesByCustomer(orgId, from, to),
       120,
     );
@@ -305,8 +308,9 @@ export class StatementReportsService {
   }
 
   async salesByItem(orgId: string, from: string, to: string) {
-    return this.cache.cached(
-      CACHE_KEYS.finSalesByItem(orgId, from, to),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finReportsNamespace(orgId),
+      `sales-by-item:${from}:${to}`,
       () => this.computeSalesByItem(orgId, from, to),
       120,
     );
@@ -342,8 +346,9 @@ export class StatementReportsService {
   }
 
   async expenseByCategory(orgId: string, from: string, to: string) {
-    return this.cache.cached(
-      CACHE_KEYS.finExpenseByCategory(orgId, from, to),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finReportsNamespace(orgId),
+      `expense-by-cat:${from}:${to}`,
       () => this.computeExpenseByCategory(orgId, from, to),
       120,
     );
@@ -379,8 +384,9 @@ export class StatementReportsService {
   }
 
   async taxSummary(orgId: string, from: string, to: string) {
-    return this.cache.cached(
-      CACHE_KEYS.finTaxSummary(orgId, from, to),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finReportsNamespace(orgId),
+      `tax-summary:${from}:${to}`,
       () => this.computeTaxSummary(orgId, from, to),
       120,
     );

@@ -59,13 +59,11 @@ export class OverviewService {
   async getOverview(orgId: string, query: OverviewQuery) {
     const range = query.from && query.to ? { from: query.from, to: query.to } : currentMonthRange();
     const { from, to } = range;
-    const cacheKey =
-      query.from && query.to
-        ? CACHE_KEYS.finOverviewWithDates(orgId, from, to)
-        : CACHE_KEYS.finOverview(orgId);
+    const localKey = query.from && query.to ? `${from}:${to}` : "default";
 
-    return this.cache.cached(
-      cacheKey,
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finReportsNamespace(orgId),
+      localKey,
       () => this.computeOverview(orgId, from, to),
       60,
     );

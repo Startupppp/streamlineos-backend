@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { invoices } from "../../db/schema";
+import { invoiceItems, invoices } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
@@ -127,26 +127,48 @@ export class InvoicesUpdateService {
     if (input.notes !== undefined) updateData.notes = input.notes;
 
     if (input.lineItems) {
+      const newLineItems = input.lineItems;
       const subtotal = Number(
-        input.lineItems.reduce((sum, item) => sum + item.amount, 0).toFixed(2),
+        newLineItems.reduce((sum, item) => sum + item.amount, 0).toFixed(2),
       );
       const taxRate = input.taxRate ?? Number(existing.taxRate ?? 0);
       const discount = input.discount ?? Number(existing.discount ?? 0);
       const taxAmount = Number((subtotal * (taxRate / 100)).toFixed(2));
       const total = Number((subtotal + taxAmount - discount).toFixed(2));
 
-      updateData.lineItems = input.lineItems;
       updateData.subtotal = subtotal.toString();
       updateData.taxRate = taxRate.toString();
       updateData.taxAmount = taxAmount.toString();
       updateData.discount = discount.toString();
       updateData.total = total.toString();
-    }
 
-    await this.db
-      .update(invoices)
-      .set(updateData)
-      .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)));
+      await this.db.transaction(async (tx) => {
+        await tx.delete(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
+        if (newLineItems.length > 0) {
+          await tx.insert(invoiceItems).values(
+            newLineItems.map((li, idx) => ({
+              invoiceId,
+              description: li.description,
+              hsnSacCode: null,
+              quantity: li.quantity.toFixed(4),
+              rate: li.rate.toFixed(4),
+              gstRate: "0.00",
+              amount: li.amount.toFixed(4),
+              lineOrder: idx,
+            })),
+          );
+        }
+        await tx
+          .update(invoices)
+          .set(updateData)
+          .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)));
+      });
+    } else {
+      await this.db
+        .update(invoices)
+        .set(updateData)
+        .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)));
+    }
 
     this.audit.log({
       action: "accounting.invoice.updated",

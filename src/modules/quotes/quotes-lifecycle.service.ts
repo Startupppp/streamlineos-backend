@@ -163,7 +163,6 @@ export class QuotesLifecycleService {
           clientId: null,
           invoiceNumber,
           status: "DRAFT",
-          lineItems: [],
           subtotal: subtotal.toFixed(4),
           taxRate: "0",
           taxAmount: taxAmount.toFixed(4),
