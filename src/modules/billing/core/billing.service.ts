@@ -188,6 +188,11 @@ export class BillingService {
           subscriptionId,
           razorpayPaymentId: input.razorpay_payment_id,
           razorpayOrderId: input.razorpay_order_id,
+          // Ticket 02's expand half: written alongside, so a second provider has
+          // somewhere to store and every existing reader keeps working.
+          provider: this.razorpay.providerKey,
+          providerPaymentRef: input.razorpay_payment_id,
+          providerOrderRef: input.razorpay_order_id,
           amount: (amount / 100).toFixed(2),
           currency: "INR",
           status: "captured",
@@ -349,6 +354,9 @@ export class BillingService {
     const fields = {
       razorpayPaymentId: payment.id,
       razorpayOrderId: payment.order_id ?? null,
+      provider: this.razorpay.providerKey,
+      providerPaymentRef: payment.id,
+      providerOrderRef: payment.order_id ?? null,
       orgId,
       customerEmail: payment.email ?? null,
       amount: payment.amount,

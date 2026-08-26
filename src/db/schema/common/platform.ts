@@ -95,6 +95,11 @@ export const platformPayments = pgTable(
     razorpayPaymentId: text("razorpay_payment_id").notNull(),
     razorpayOrderId: text("razorpay_order_id"),
     razorpaySignature: text("razorpay_signature"),
+    /** Ticket 02's expand half; see subscriptions in common/shared.ts. */
+    provider: text("provider"),
+    providerPaymentRef: text("provider_payment_ref"),
+    providerOrderRef: text("provider_order_ref"),
+    providerSignature: text("provider_signature"),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "set null" }),
     customerEmail: text("customer_email"),
     amount: integer("amount").notNull(),
