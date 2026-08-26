@@ -17,7 +17,7 @@ import { isLegacyResolved, resolveLegacyParty } from "../../party/party-legacy-s
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import type {
   MergeOrgsInput,
   OrgDuplicatesQueryInput,
@@ -132,9 +132,8 @@ export class CrmOrganizationsService {
   list(orgId: string, filters: OrganizationListInput) {
     const searchTerm = (filters.search ?? filters.q ?? "").trim();
     const key = `${filters.page}:${filters.pageSize}:${searchTerm}`;
-    return this.cache.cachedVersionedForOrg(
-      orgId,
-      "crm:organizations:list",
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.crmOrganizationsListNamespace(orgId),
       key,
       () => this.queryList(orgId, filters, searchTerm),
       CACHE_TTL.SHORT,
@@ -414,8 +413,8 @@ export class CrmOrganizationsService {
 
   private async invalidateOrgCaches(orgId: string): Promise<void> {
     await Promise.all([
-      this.cache.invalidateNamespaceForOrg(orgId, "crm:organizations:list"),
-      this.cache.invalidateNamespaceForOrg(orgId, "crm:organizations:detail"),
+      this.cache.invalidateNamespace(CACHE_KEYS.crmOrganizationsListNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.crmOrganizationDetailNamespace(orgId)),
     ]);
   }
 

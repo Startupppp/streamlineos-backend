@@ -15,7 +15,7 @@ import { expenses, expenseCategories, users, ledgerAccounts } from "../../db/sch
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import type {
   CreateCategoryInput,
@@ -49,9 +49,8 @@ export class ExpensesService {
 
   list(orgId: string, userId: string, isAdmin: boolean, filters: ListInput) {
     const key = `${userId}:${isAdmin ? "admin" : "self"}:${filters.userId ?? ""}:${filters.status ?? ""}:${filters.page ?? ""}:${filters.limit ?? ""}:${filters.startDate ?? ""}:${filters.endDate ?? ""}`;
-    return this.cache.cachedVersionedForOrg(
-      orgId,
-      "hr:expenses",
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.expensesListNamespace(orgId),
       key,
       () => this.getExpenses(orgId, userId, isAdmin, filters),
       CACHE_TTL.SHORT,

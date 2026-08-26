@@ -429,8 +429,8 @@ export class GrnService {
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
     await Promise.all([
-      this.cache.invalidateNamespaceForOrg(orgId, "inv:po:list"),
-      this.cache.invalidateNamespaceForOrg(orgId, "inv:grn:list"),
+      this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.invGrnNamespace(orgId)),
     ]);
 
     return this.db.query.invGrns.findFirst({
@@ -444,9 +444,8 @@ export class GrnService {
     const offset = (page - 1) * limit;
     const hash = `${poId ?? ""}:${vendorId ?? ""}:${dateFrom ?? ""}:${dateTo ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cachedVersionedForOrg(
-      orgId,
-      "inv:grn:list",
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.invGrnNamespace(orgId),
       hash,
       async () => {
         const conditions = [eq(invGrns.orgId, orgId)];
@@ -606,8 +605,8 @@ export class GrnService {
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, grn.poId));
     await Promise.all([
-      this.cache.invalidateNamespaceForOrg(orgId, "inv:po:list"),
-      this.cache.invalidateNamespaceForOrg(orgId, "inv:grn:list"),
+      this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.invGrnNamespace(orgId)),
     ]);
 
     return { reversed: true, grnId, transactionCount: txns.length };

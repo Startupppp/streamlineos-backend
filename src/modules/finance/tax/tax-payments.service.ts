@@ -30,7 +30,7 @@ export class TaxPaymentsService {
 
   async list(orgId: string, query: ListTaxPaymentsQuery) {
     const cacheKey = `${query.page}:${query.pageSize}:${query.taxType ?? ""}:${query.from ?? ""}:${query.to ?? ""}`;
-    return this.cache.cachedVersionedForOrg(orgId, 'fin:tax-payments', cacheKey, async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.finTaxPaymentsNamespace(orgId), cacheKey, async () => {
       const { limit, offset } = paginateOffset(query);
       const conditions = [eq(accTaxPayments.orgId, orgId)];
       if (query.taxType) conditions.push(eq(accTaxPayments.taxType, query.taxType));
@@ -88,7 +88,7 @@ export class TaxPaymentsService {
       throw err;
     }
 
-    await this.cache.invalidateNamespaceForOrg(orgId, 'fin:tax-payments');
+    await this.cache.invalidateNamespace(CACHE_KEYS.finTaxPaymentsNamespace(orgId));
     await this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId));
 
     this.audit.log({
@@ -138,7 +138,7 @@ export class TaxPaymentsService {
 
     await this.db.delete(accTaxPayments).where(and(eq(accTaxPayments.id, paymentId), eq(accTaxPayments.orgId, orgId)));
 
-    await this.cache.invalidateNamespaceForOrg(orgId, 'fin:tax-payments');
+    await this.cache.invalidateNamespace(CACHE_KEYS.finTaxPaymentsNamespace(orgId));
     await this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId));
 
     this.audit.log({

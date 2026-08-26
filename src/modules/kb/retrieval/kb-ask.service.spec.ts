@@ -97,6 +97,7 @@ describe("KbAskService", () => {
     expect(result.hasContext).toBe(false);
     expect(result.citations).toHaveLength(0);
     expect(mockGateway.invokeTextWithUsage).not.toHaveBeenCalled();
+    expect(result.answer).toContain("couldn't find anything");
     expect(mockEvents.record).toHaveBeenCalled();
   });
 

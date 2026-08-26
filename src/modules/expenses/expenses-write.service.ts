@@ -12,6 +12,7 @@ import { expenses, organizationMembers, organizations, users } from "../../db/sc
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { EmailService } from "../email/email.service";
@@ -105,7 +106,7 @@ export class ExpensesWriteService {
 
     void this.dispatchExpenseSubmitted(orgId, userId, expense.id, body);
 
-    await this.cache.invalidateNamespaceForOrg(orgId, "hr:expenses");
+    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(orgId));
 
     return expense;
   }
@@ -171,7 +172,7 @@ export class ExpensesWriteService {
       targetType: "expense",
     });
 
-    await this.cache.invalidateNamespaceForOrg(orgId, "hr:expenses");
+    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(orgId));
     return { success: true };
   }
 
@@ -201,7 +202,7 @@ export class ExpensesWriteService {
       })
       .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, orgId)));
 
-    await this.cache.invalidateNamespaceForOrg(orgId, "hr:expenses");
+    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(orgId));
     return { success: true };
   }
 
@@ -253,7 +254,7 @@ export class ExpensesWriteService {
 
     void this.dispatchExpenseDecision(u, expenseId, body.status, body.rejectionReason ?? null);
 
-    await this.cache.invalidateNamespaceForOrg(u.orgId, "hr:expenses");
+    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
     return { success: true };
   }
 

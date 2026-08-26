@@ -12,7 +12,7 @@ import { crmOrgIdsOfParties, partyIdsOfCrmOrgs } from "../../party/party-legacy-
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 
 const HIERARCHY_MAX_DEPTH = 100;
 
@@ -200,9 +200,8 @@ export class CrmOrganizationsInsightsService {
   }
 
   getAccountRollup(orgId: string, accountId: number): Promise<OrgRollup> {
-    return this.cache.cachedVersionedForOrg(
-      orgId,
-      "crm:organizations:detail",
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.crmOrganizationDetailNamespace(orgId),
       `rollup:${accountId}`,
       () => this.queryAccountRollup(orgId, accountId),
       CACHE_TTL.SHORT,
@@ -284,9 +283,8 @@ export class CrmOrganizationsInsightsService {
   }
 
   getAccountTimeline(orgId: string, accountId: number, limit = 20): Promise<OrgTimelineEvent[]> {
-    return this.cache.cachedVersionedForOrg(
-      orgId,
-      "crm:organizations:detail",
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.crmOrganizationDetailNamespace(orgId),
       `timeline:${accountId}:${limit}`,
       () => this.queryAccountTimeline(orgId, accountId, limit),
       CACHE_TTL.SHORT,
