@@ -96,7 +96,7 @@ export class ChatMessagesService {
 
     const messages = await this.db.query.chatMessages.findMany({
       where: and(...conditions),
-      orderBy: [desc(chatMessages.createdAt)],
+      orderBy: [desc(chatMessages.id)],
       limit: safeLimit + 1,
       with: {
         sender: { columns: { id: true, name: true, image: true } },
@@ -107,8 +107,8 @@ export class ChatMessagesService {
 
     let nextCursor: number | undefined;
     if (messages.length > safeLimit) {
-      const next = messages.pop();
-      nextCursor = next?.id;
+      messages.pop();
+      nextCursor = messages[messages.length - 1]?.id;
     }
 
     return {
@@ -392,7 +392,7 @@ export class ChatMessagesService {
 
     const replies = await this.db.query.chatMessages.findMany({
       where: and(...conditions),
-      orderBy: [desc(chatMessages.createdAt)],
+      orderBy: [desc(chatMessages.id)],
       limit: safeLimit + 1,
       with: {
         sender: { columns: { id: true, name: true, image: true } },
@@ -403,8 +403,8 @@ export class ChatMessagesService {
 
     let nextCursor: number | undefined;
     if (replies.length > safeLimit) {
-      const next = replies.pop();
-      nextCursor = next?.id;
+      replies.pop();
+      nextCursor = replies[replies.length - 1]?.id;
     }
 
     const [resolvedParent] = await this.withResolvedReferences(actor, [parentMessage]);
