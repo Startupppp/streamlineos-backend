@@ -31,6 +31,17 @@ function balanceSelect() {
   return chain;
 }
 
+function policySelect(rows: unknown[]) {
+  const chain = {
+    from: jest.fn(),
+    where: jest.fn(),
+    limit: jest.fn().mockResolvedValue(rows),
+  };
+  chain.from.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
+  return chain;
+}
+
 describe("LeavesWriteService server-derived approver", () => {
   it("rejects a client-supplied approver field", () => {
     expect(
@@ -69,6 +80,7 @@ describe("LeavesWriteService server-derived approver", () => {
       query: {
         users: { findFirst: jest.fn().mockResolvedValue(undefined) },
       },
+      select: jest.fn().mockReturnValue(policySelect([{ probationRestricted: false }])),
       transaction: jest.fn(
         async (callback: (transaction: typeof tx) => Promise<unknown>) =>
           callback(tx),
@@ -91,7 +103,7 @@ describe("LeavesWriteService server-derived approver", () => {
           name: "Manager",
         }),
       } as never,
-      { isOnProbationDuring: jest.fn().mockResolvedValue(false) } as never,
+      { probationCoverageOn: jest.fn().mockResolvedValue("past-probation") } as never,
     );
     const afterCommit: AfterCommitHook[] = [];
     const context = {

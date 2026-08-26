@@ -30,6 +30,7 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
 import type { CreateLeaveInput } from "./dto/leaves.schemas";
 import { LeaveApproverService } from "./leave-approver.service";
+import { decideProbationLeave } from "./probation-leave-restriction";
 import { ProbationService } from "../lifecycle/probation.service";
 
 interface LeaveRow {
@@ -90,16 +91,13 @@ export class LeavesWriteService {
       .limit(1);
 
     if (activePolicy?.probationRestricted) {
-      const onProbation = await this.probation.isOnProbationDuring(
+      const coverage = await this.probation.probationCoverageOn(
         currentUser.orgId,
         currentUser.userId,
         startStr,
       );
-      if (onProbation) {
-        throw new BadRequestException(
-          "This leave type is not available during your probation period. Contact HR if you have questions.",
-        );
-      }
+      const decision = decideProbationLeave({ probationRestricted: true, coverage });
+      if (!decision.allowed) throw new BadRequestException(decision.reason);
     }
 
     const { leaveRequest, leaveTypeName } = await this.db.transaction(async (tx) => {

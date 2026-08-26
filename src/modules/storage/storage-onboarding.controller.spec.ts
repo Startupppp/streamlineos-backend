@@ -96,7 +96,7 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
   it("commits the database row before the upload is attempted when no ambient tenant context exists", async () => {
     mockRegisterAfterCommit.mockReturnValue(false);
 
-    await controller.upload(makeFile(), "NATIONAL_ID", makeUser());
+    await controller.upload(makeFile(), "ID_PROOF", makeUser());
 
     expect(callOrder).toEqual(["db-committed", "upload"]);
   });
@@ -108,7 +108,7 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
       return true;
     });
 
-    const result = await controller.upload(makeFile(), "NATIONAL_ID", makeUser());
+    const result = await controller.upload(makeFile(), "ID_PROOF", makeUser());
 
     expect(callOrder).toEqual(["db-committed"]);
     expect(capturedHook).not.toBeNull();
@@ -123,7 +123,7 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
   it("returns the pre-generated URL immediately without waiting for the upload", async () => {
     mockRegisterAfterCommit.mockReturnValue(true);
 
-    const result = await controller.upload(makeFile(), "PASSPORT", makeUser());
+    const result = await controller.upload(makeFile(), "ID_PROOF", makeUser());
 
     expect(result).toEqual({ url: "https://cdn.example.com/onboarding/uuid-id-doc.pdf" });
     expect(mockStorage.uploadToKey).not.toHaveBeenCalled();
@@ -132,13 +132,13 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
   it("rejects when storage is not configured", async () => {
     mockStorage.isConfigured.mockReturnValue(false);
 
-    await expect(controller.upload(makeFile(), "NATIONAL_ID", makeUser())).rejects.toBeInstanceOf(
+    await expect(controller.upload(makeFile(), "ID_PROOF", makeUser())).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
   });
 
   it("rejects when no file is provided", async () => {
-    await expect(controller.upload(undefined, "NATIONAL_ID", makeUser())).rejects.toBeInstanceOf(
+    await expect(controller.upload(undefined, "ID_PROOF", makeUser())).rejects.toBeInstanceOf(
       BadRequestException,
     );
   });
@@ -146,8 +146,15 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
   it("rejects a disallowed mime type", async () => {
     const file = makeFile({ mimetype: "text/plain", buffer: Buffer.from("hello") });
 
-    await expect(controller.upload(file, "NATIONAL_ID", makeUser())).rejects.toBeInstanceOf(
+    await expect(controller.upload(file, "ID_PROOF", makeUser())).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+
+  it("rejects a document type outside the schema enum", async () => {
+    await expect(controller.upload(makeFile(), "NATIONAL_ID", makeUser())).rejects.toThrow(
+      "Invalid document type",
+    );
+    expect(mockDb.transaction).not.toHaveBeenCalled();
   });
 });

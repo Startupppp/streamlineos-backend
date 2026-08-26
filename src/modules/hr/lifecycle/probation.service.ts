@@ -22,6 +22,7 @@ import type {
   ListProbationReviewsInput,
   StartReviewInput,
 } from "./dto/probation.schemas";
+import type { ProbationCoverage } from "./probation-coverage";
 import { ProbationReviewReaderService } from "./probation-review-reader.service";
 
 function configuredMaxExtensions(rules: unknown): number {
@@ -387,8 +388,12 @@ export class ProbationService {
     return { orgId, employmentId, personId, probationEndDate: endDate };
   }
 
-  async isOnProbationDuring(orgId: string, userId: string, leaveStartDate: string): Promise<boolean> {
-    return this.reader.isOnProbationDuring(orgId, userId, leaveStartDate);
+  async probationCoverageOn(
+    orgId: string,
+    userId: string,
+    onDate: string,
+  ): Promise<ProbationCoverage> {
+    return this.reader.probationCoverageOn(orgId, userId, onDate);
   }
 
   async sweepDue(orgId: string) {
