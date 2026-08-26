@@ -1,13 +1,13 @@
 ﻿import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes } from "crypto";
-import { eq, sql, gte, desc, ilike, or, and, isNull, type SQL } from "drizzle-orm";
+import { eq, sql, gte, desc, ilike, or, and, isNull, lt, inArray, type SQL } from "drizzle-orm";
 import {
   platformVisits,
   platformMessages,
   platformPayments,
-  platformSubscriptions,
   organizations,
   organizationMembers,
+  subscriptions,
   users,
 } from "../../db/schema";
 import { businessParties, leadPartyMap } from "../../db/schema/party";
@@ -241,29 +241,104 @@ export class PlatformService {
     };
   }
 
-  async listCustomers() {
-    return this.db
+  async listCustomers(cursor?: { afterCreatedAt: Date; afterId: string }) {
+    const PAGE_SIZE = 100;
+
+    const cursorCond = cursor
+      ? or(
+          lt(organizations.createdAt, cursor.afterCreatedAt),
+          and(
+            eq(organizations.createdAt, cursor.afterCreatedAt),
+            lt(organizations.id, cursor.afterId),
+          ),
+        )
+      : undefined;
+
+    const orgRows = await this.db
       .select({
         id: organizations.id,
         slug: organizations.slug,
         name: organizations.name,
         createdAt: organizations.createdAt,
-        userCount: sql<number>`coalesce((
-          select count(*)::int from ${organizationMembers}
-          where ${organizationMembers.orgId} = ${organizations.id}
-        ), 0)`,
-        plan: platformSubscriptions.plan,
-        status: sql<string>`coalesce(${platformSubscriptions.status}, 'free')`,
-        lifetimeInr: sql<number>`coalesce((
-          select sum(${platformPayments.amount})::int / 100
-          from ${platformPayments}
-          where ${platformPayments.orgId} = ${organizations.id}
-            and ${platformPayments.status} = 'captured'
-        ), 0)`,
       })
       .from(organizations)
-      .leftJoin(platformSubscriptions, eq(platformSubscriptions.orgId, organizations.id))
-      .orderBy(desc(organizations.createdAt));
+      .where(cursorCond)
+      .orderBy(desc(organizations.createdAt), desc(organizations.id))
+      .limit(PAGE_SIZE + 1);
+
+    const hasNextPage = orgRows.length > PAGE_SIZE;
+    const page = orgRows.slice(0, PAGE_SIZE);
+
+    if (page.length === 0) return { items: [], nextCursor: null };
+
+    const orgIds = page.map((r) => r.id);
+
+    const [memberCounts, paymentTotals, subRows] = await Promise.all([
+      this.db
+        .select({
+          orgId: organizationMembers.orgId,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(organizationMembers)
+        .where(inArray(organizationMembers.orgId, orgIds))
+        .groupBy(organizationMembers.orgId),
+      this.db
+        .select({
+          orgId: platformPayments.orgId,
+          total: sql<number>`coalesce(sum(${platformPayments.amount})::int / 100, 0)`,
+        })
+        .from(platformPayments)
+        .where(
+          and(
+            inArray(platformPayments.orgId, orgIds),
+            eq(platformPayments.status, "captured"),
+          ),
+        )
+        .groupBy(platformPayments.orgId),
+      this.db
+        .select({
+          orgId: subscriptions.orgId,
+          plan: subscriptions.plan,
+          status: subscriptions.status,
+          subId: subscriptions.id,
+        })
+        .from(subscriptions)
+        .where(inArray(subscriptions.orgId, orgIds))
+        .orderBy(desc(subscriptions.id)),
+    ]);
+
+    const memberMap = new Map(memberCounts.map((r) => [r.orgId, r.count]));
+    const paymentMap = new Map(paymentTotals.map((r) => [r.orgId, r.total]));
+
+    const subscriptionMap = new Map<string, { plan: string; status: string }>();
+    for (const row of subRows) {
+      if (!subscriptionMap.has(row.orgId)) {
+        subscriptionMap.set(row.orgId, { plan: row.plan, status: row.status });
+      }
+    }
+
+    const lastItem = page[page.length - 1];
+    const nextCursor =
+      hasNextPage && lastItem
+        ? { afterCreatedAt: lastItem.createdAt, afterId: lastItem.id }
+        : null;
+
+    return {
+      items: page.map((org) => {
+        const sub = subscriptionMap.get(org.id);
+        return {
+          id: org.id,
+          slug: org.slug,
+          name: org.name,
+          createdAt: org.createdAt,
+          userCount: memberMap.get(org.id) ?? 0,
+          plan: sub?.plan ?? null,
+          status: sub?.status ?? "free",
+          lifetimeInr: paymentMap.get(org.id) ?? 0,
+        };
+      }),
+      nextCursor,
+    };
   }
 
   async getCustomerBySlug(slug: string) {
@@ -291,9 +366,24 @@ export class PlatformService {
         orderBy: desc(platformPayments.createdAt),
         limit: 50,
       }),
-      this.db.query.platformSubscriptions.findFirst({
-        where: eq(platformSubscriptions.orgId, org.id),
-      }),
+      this.db
+        .select({
+          id: subscriptions.id,
+          plan: subscriptions.plan,
+          status: subscriptions.status,
+          razorpaySubscriptionId: subscriptions.razorpaySubscriptionId,
+          currentPeriodStart: subscriptions.currentPeriodStart,
+          currentPeriodEnd: subscriptions.currentPeriodEnd,
+          trialEndsAt: subscriptions.trialEndsAt,
+          cancelledAt: subscriptions.cancelledAt,
+          createdAt: subscriptions.createdAt,
+          updatedAt: subscriptions.updatedAt,
+        })
+        .from(subscriptions)
+        .where(eq(subscriptions.orgId, org.id))
+        .orderBy(desc(subscriptions.id))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
     ]);
 
     return { org, members, payments, subscription: subscription ?? null };

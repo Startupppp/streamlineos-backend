@@ -1968,6 +1968,41 @@
       "when": 1787830353441,
       "tag": "0498_kb_ingestion_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 282,
+      "version": "7",
+      "when": 1787830354441,
+      "tag": "0499_search_lead_party_probe",
+      "breakpoints": true
+    },
+    {
+      "idx": 283,
+      "version": "7",
+      "when": 1787830355441,
+      "tag": "0500_attendees_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 284,
+      "version": "7",
+      "when": 1787830356441,
+      "tag": "0501_calendar_overlap_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 285,
+      "version": "7",
+      "when": 1787830357441,
+      "tag": "0502_platform_subscription_cursor_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 286,
+      "version": "7",
+      "when": 1787830358441,
+      "tag": "0504_mail_metadata_cache",
+      "breakpoints": true
     }
   ]
 }

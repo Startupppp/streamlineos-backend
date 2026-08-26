@@ -143,13 +143,20 @@ export class SearchService {
     }
   }
 
-  private async leadCompanyCondition(q: string, pattern: string): Promise<SQL<unknown>> {
+  private async leadCondition(q: string, pattern: string): Promise<SQL<unknown>> {
+    const fallback =
+      or(
+        ilike(businessParties.name, pattern),
+        ilike(businessParties.email, pattern),
+        ilike(businessParties.phone, pattern),
+        ilike(businessParties.companyName, pattern),
+      ) ?? sql`false`;
     const rows = await this.probeIds(
-      sql`SELECT app.search_party_ids_by_company(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`,
-      "search_party_ids_by_company",
+      sql`SELECT app.search_lead_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`,
+      "search_lead_party_ids",
     );
-    if (rows === null) return ilike(businessParties.companyName, pattern);
-    if (rows.length > PARTY_SEARCH_CAP) return ilike(businessParties.companyName, pattern);
+    if (rows === null) return fallback;
+    if (rows.length > PARTY_SEARCH_CAP) return fallback;
     if (rows.length === 0) return sql`false`;
     return inArray(businessParties.partyId, rows.map((r) => String(r["id"])));
   }
@@ -269,8 +276,8 @@ export class SearchService {
             )
           : sql`false`;
 
-    const [leadCompanyCond, dealCond, contactCond, clientCond, ticketTitleCond] = await Promise.all([
-      access.leads ? this.leadCompanyCondition(q, pattern) : Promise.resolve(sql`false`),
+    const [leadCond, dealCond, contactCond, clientCond, ticketTitleCond] = await Promise.all([
+      access.leads ? this.leadCondition(q, pattern) : Promise.resolve(sql`false`),
       access.deals ? this.dealCondition(q, pattern) : Promise.resolve(sql`false`),
       access.contacts ? this.contactPartyCondition(q, pattern) : Promise.resolve(sql`false`),
       access.clients ? this.clientPartyCondition(q, pattern) : Promise.resolve(sql`false`),
@@ -306,12 +313,7 @@ export class SearchService {
             applyScope(access.leads, orgId, userId, {
               ownerColumn: businessParties.ownerUserId,
             }),
-            or(
-              ilike(businessParties.name, pattern),
-              ilike(businessParties.email, pattern),
-              ilike(businessParties.phone, pattern),
-              leadCompanyCond,
-            ),
+            leadCond,
           ),
         )
         .orderBy(desc(businessParties.updatedAt), desc(leadPartyMap.leadId))

@@ -9,6 +9,7 @@ export * from "./blog";
 export * from "./accounting";
 export * from "./support";
 export * from "./kb";
+export * from "./mail";
 export * from "./automation";
 export * from "./inventory";
 export * from "./billing";

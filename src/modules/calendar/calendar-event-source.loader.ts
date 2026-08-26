@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, gt, inArray, lt } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { calendarEvents, eventAttendees, projects, tickets } from "../../db/schema";
 import type { LinkedTicket } from "./calendar.types";
@@ -77,11 +77,12 @@ export class CalendarEventSourceLoader {
     return this.database.query.calendarEvents.findMany({
       where: and(
         eq(calendarEvents.orgId, orgId),
-        gte(calendarEvents.startDate, start),
-        lte(calendarEvents.startDate, end),
+        lt(calendarEvents.startDate, end),
+        gt(calendarEvents.endDate, start),
       ),
       with: { creator: { columns: { name: true } } },
       orderBy: (t, { asc }) => [asc(t.startDate)],
+      limit: 2000,
     });
   }
 }

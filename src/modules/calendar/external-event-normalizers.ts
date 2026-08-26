@@ -9,6 +9,17 @@ export const TOOL_SLUGS = {
   outlookCreate: "OUTLOOK_CALENDAR_CREATE_EVENT",
 } as const;
 
+export interface ProviderCapabilities {
+  create: boolean;
+  update: boolean;
+  delete: boolean;
+}
+
+export const PROVIDER_CAPABILITIES: Record<"googlecalendar" | "outlook", ProviderCapabilities> = {
+  googlecalendar: { create: true, update: true, delete: true },
+  outlook: { create: true, update: false, delete: false },
+} as const;
+
 export interface ExternalCalendarEventItem {
   id: string;
   connectionId: number;

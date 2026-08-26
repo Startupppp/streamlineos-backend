@@ -11,6 +11,7 @@ import { createE2eApp } from "test/helpers/e2e-app";
 import { ModuleAccessService } from "../module-access.service";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
 import { ModuleStandingMutationsService } from "../module-standing-mutations.service";
+import { ModuleStandingRosterService } from "../module-standing-roster.service";
 import { ACCESS_MANAGED_MODULES } from "src/modules/rbac/permissions/module-access";
 
 const ROLE_ID = 7;
@@ -45,6 +46,27 @@ const stubOwnership = {
   pendingTransfer: null,
 };
 
+const stubStandingEntries = [
+  {
+    membershipId: 1,
+    userId: "u-owner-hr",
+    displayName: "Alice HR",
+    email: "alice@example.com",
+    avatarUrl: null,
+    rank: 15,
+    scope: "all",
+    source: "module-ownership",
+  },
+];
+
+const stubGrantableDescriptor = {
+  grantableRanks: [20, 30, 40],
+  scopeCeiling: "all",
+  canGrantModuleOwnership: true,
+  isOrgOwner: true,
+  isOrgAdmin: false,
+};
+
 const mockModuleAccessService = {
   listCatalog: jest.fn(),
   listRoles: jest.fn(),
@@ -71,6 +93,11 @@ const mockModuleStandingMutationsService = {
   directTransferOwnership: jest.fn(),
 };
 
+const mockModuleStandingRosterService = {
+  listStanding: jest.fn(),
+  describeGrantable: jest.fn(),
+};
+
 describe("ModuleAccessController auth / RBAC (e2e)", () => {
   let app: INestApplication;
 
@@ -80,6 +107,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
         { provide: ModuleAccessService, useValue: mockModuleAccessService },
         { provide: ModuleAccessGroupsService, useValue: mockModuleAccessGroupsService },
         { provide: ModuleStandingMutationsService, useValue: mockModuleStandingMutationsService },
+        { provide: ModuleStandingRosterService, useValue: mockModuleStandingRosterService },
       ],
     });
   });
@@ -105,6 +133,8 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     mockModuleStandingMutationsService.grantAdminStanding.mockResolvedValue({ success: true });
     mockModuleStandingMutationsService.revokeStanding.mockResolvedValue({ success: true });
     mockModuleStandingMutationsService.directTransferOwnership.mockResolvedValue({ success: true });
+    mockModuleStandingRosterService.listStanding.mockResolvedValue({ administrable: true, entries: stubStandingEntries });
+    mockModuleStandingRosterService.describeGrantable.mockResolvedValue(stubGrantableDescriptor);
   });
 
   type Method = "get" | "post" | "put" | "patch" | "delete";
@@ -139,6 +169,8 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     ["post", "/module-access/hr/standing/transfer-owner"],
     ["post", "/module-access/hr/standing/42"],
     ["delete", "/module-access/hr/standing/42"],
+    ["get", "/module-access/hr/standing"],
+    ["get", "/module-access/hr/standing/grantable"],
   ];
 
   it.each(authedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -582,6 +614,122 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
         expect.objectContaining({ orgId: ORG_A }),
         "hr",
         MEMBERSHIP_ID,
+      );
+    });
+  });
+
+  describe("Standing roster reads — allow/deny matrix", () => {
+    it("GET /module-access/hr/standing → 200 with roster when org owner", async () => {
+      const token = await signToken({ sub: "owner_ma_1", isOrgOwner: true });
+      const res = await request(app.getHttpServer())
+        .get("/module-access/hr/standing")
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ administrable: true, entries: expect.arrayContaining([expect.objectContaining({ source: "module-ownership" })]) });
+    });
+
+    it("GET /module-access/hr/standing → 200 for org admin", async () => {
+      const token = await signToken({ sub: "admin_1", role: "ORG_ADMIN" });
+      const res = await request(app.getHttpServer())
+        .get("/module-access/hr/standing")
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+    });
+
+    it("GET /module-access/hr/standing → 200 for module admin (hr:access:view)", async () => {
+      const token = await signToken({
+        sub: "modadmin_1",
+        permissions: ["hr:access:view"],
+        enabledModules: ["hr"],
+      });
+      const res = await request(app.getHttpServer())
+        .get("/module-access/hr/standing")
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+    });
+
+    it("GET /module-access/hr/standing → 403 when service denies a member with no standing", async () => {
+      mockModuleStandingRosterService.listStanding.mockRejectedValueOnce(
+        new ForbiddenException("You do not have access to view this module's roster"),
+      );
+      const token = await signToken({ sub: "member_1" });
+      const res = await request(app.getHttpServer())
+        .get("/module-access/hr/standing")
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN" });
+    });
+
+    it("GET /module-access/hr/standing returns administrable:false for a non-administrable module", async () => {
+      mockModuleStandingRosterService.listStanding.mockResolvedValueOnce({
+        administrable: false,
+        reason: "The workflows module does not support role-based standing",
+      });
+      const token = await signToken({ sub: "owner_ma_1", isOrgOwner: true });
+      const res = await request(app.getHttpServer())
+        .get("/module-access/workflows/standing")
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ administrable: false });
+    });
+
+    it("service receives actor.orgId from JWT, not from URL, on GET standing", async () => {
+      const ORG_A = "org-standing-test";
+      mockModuleStandingRosterService.listStanding.mockImplementationOnce(
+        (actor: { orgId: string }) => {
+          expect(actor.orgId).toBe(ORG_A);
+          return Promise.resolve({ administrable: true, entries: stubStandingEntries });
+        },
+      );
+      const token = await signToken({ sub: "owner_ma_1", orgId: ORG_A, isOrgOwner: true });
+      await request(app.getHttpServer())
+        .get("/module-access/hr/standing")
+        .set("Authorization", `Bearer ${token}`);
+      expect(mockModuleStandingRosterService.listStanding).toHaveBeenCalledWith(
+        expect.objectContaining({ orgId: ORG_A }),
+        "hr",
+      );
+    });
+
+    it("GET /module-access/hr/standing/grantable → 200 with descriptor for org owner", async () => {
+      const token = await signToken({ sub: "owner_ma_1", isOrgOwner: true });
+      const res = await request(app.getHttpServer())
+        .get("/module-access/hr/standing/grantable")
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        grantableRanks: expect.any(Array),
+        scopeCeiling: expect.any(String),
+        canGrantModuleOwnership: expect.any(Boolean),
+      });
+    });
+
+    it("GET /module-access/hr/standing/grantable → 403 when service denies", async () => {
+      mockModuleStandingRosterService.describeGrantable.mockRejectedValueOnce(
+        new ForbiddenException("You do not have access to view this module's roster"),
+      );
+      const token = await signToken({ sub: "member_1" });
+      const res = await request(app.getHttpServer())
+        .get("/module-access/hr/standing/grantable")
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(403);
+    });
+
+    it("cross-tenant: service receives orgId from token on GET standing/grantable", async () => {
+      const ORG_B = "org-grantable-test";
+      mockModuleStandingRosterService.describeGrantable.mockImplementationOnce(
+        (actor: { orgId: string }) => {
+          expect(actor.orgId).toBe(ORG_B);
+          return Promise.resolve(stubGrantableDescriptor);
+        },
+      );
+      const token = await signToken({ sub: "owner_ma_1", orgId: ORG_B, isOrgOwner: true });
+      await request(app.getHttpServer())
+        .get("/module-access/hr/standing/grantable")
+        .set("Authorization", `Bearer ${token}`);
+      expect(mockModuleStandingRosterService.describeGrantable).toHaveBeenCalledWith(
+        expect.objectContaining({ orgId: ORG_B }),
+        "hr",
       );
     });
   });

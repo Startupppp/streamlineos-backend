@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, lt, lte, or } from "drizzle-orm";
 import {
   aiCreditTransactions,
+  dunningAttempts,
   organizationMembers,
   organizations,
   subscriptions,
@@ -25,7 +26,6 @@ const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 interface DunningMeta {
   pastDueAt?: string;
   lastFailedPaymentId?: string;
-  dunningAttempts?: number[];
   suspendedForNonPayment?: boolean;
   suspendedAt?: string;
 }
@@ -216,7 +216,6 @@ export class CronBillingService {
         const daysSincePastDue = Math.floor(
           (now.getTime() - pastDueAt.getTime()) / 86_400_000,
         );
-        const attempts = meta.dunningAttempts ?? [];
 
         if (daysSincePastDue >= SUSPENSION_DAY) {
           await this.db
@@ -260,44 +259,55 @@ export class CronBillingService {
 
         let sentThisRun = false;
         for (const day of DUNNING_SCHEDULE_DAYS) {
-          if (daysSincePastDue >= day && !attempts.includes(day)) {
-            const updatedAttempts = [...attempts, day];
+          if (daysSincePastDue < day) continue;
 
-            await this.db
-              .update(subscriptions)
-              .set({
-                updatedAt: now,
-                metadata: {
-                  ...sub.metadata,
-                  dunningAttempts: updatedAttempts,
-                },
+          const milestone = `D+${day}`;
+          const inserted = await this.db
+            .insert(dunningAttempts)
+            .values({
+              orgId: sub.orgId,
+              subscriptionId: sub.id,
+              periodStart: pastDueAt,
+              milestone,
+            })
+            .onConflictDoNothing()
+            .returning({ id: dunningAttempts.id });
+
+          if (inserted.length === 0) continue;
+
+          const owner = await this.findOrgOwner(sub.orgId);
+          if (owner) {
+            const daysRemaining = SUSPENSION_DAY - daysSincePastDue;
+            await this.dispatch
+              .emit({
+                orgId: sub.orgId,
+                eventKey: "billing.payment.failed",
+                targetUserIds: [owner.userId],
+                title: `Payment overdue — action required (day ${day})`,
+                message: `Your subscription payment remains outstanding. Please update your payment method within ${daysRemaining} day(s) to avoid suspension.`,
+                link: `${appUrl()}/billing`,
+                priority: "HIGH",
               })
-              .where(
-                and(eq(subscriptions.id, sub.id), eq(subscriptions.status, "PAST_DUE")),
+              .catch((err: unknown) =>
+                logger.warn("[billing-cron] dunning notification failed", { orgId: sub.orgId, day, err }),
               );
-
-            const owner = await this.findOrgOwner(sub.orgId);
-            if (owner) {
-              const daysRemaining = SUSPENSION_DAY - daysSincePastDue;
-              await this.dispatch
-                .emit({
-                  orgId: sub.orgId,
-                  eventKey: "billing.payment.failed",
-                  targetUserIds: [owner.userId],
-                  title: `Payment overdue — action required (day ${day})`,
-                  message: `Your subscription payment remains outstanding. Please update your payment method within ${daysRemaining} day(s) to avoid suspension.`,
-                  link: `${appUrl()}/billing`,
-                  priority: "HIGH",
-                })
-                .catch((err: unknown) =>
-                  logger.warn("[billing-cron] dunning notification failed", { orgId: sub.orgId, day, err }),
-                );
-            }
-
-            notified++;
-            sentThisRun = true;
-            break;
           }
+
+          await this.db
+            .update(dunningAttempts)
+            .set({ status: "SENT", attemptedAt: now, updatedAt: now })
+            .where(
+              and(
+                eq(dunningAttempts.orgId, sub.orgId),
+                eq(dunningAttempts.subscriptionId, sub.id),
+                eq(dunningAttempts.periodStart, pastDueAt),
+                eq(dunningAttempts.milestone, milestone),
+              ),
+            );
+
+          notified++;
+          sentThisRun = true;
+          break;
         }
 
         if (!sentThisRun) {

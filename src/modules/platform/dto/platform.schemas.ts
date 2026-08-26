@@ -26,3 +26,12 @@ export const contactFormSchema = z.object({
 });
 export type ContactFormInput = z.infer<typeof contactFormSchema>;
 
+export const listCustomersQuerySchema = z.object({
+  afterCreatedAt: z.string().datetime().optional(),
+  afterId: z.string().min(1).max(256).optional(),
+}).refine(
+  (v) => (v.afterCreatedAt === undefined) === (v.afterId === undefined),
+  { message: "afterCreatedAt and afterId must both be present or both absent" },
+);
+export type ListCustomersQuery = z.infer<typeof listCustomersQuerySchema>;
+

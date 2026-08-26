@@ -1,7 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { ComposioGateway } from "../integrations/core/composio.gateway";
-import { TOOL_SLUGS, unwrapComposioData } from "./external-event-normalizers";
+import { PROVIDER_CAPABILITIES, TOOL_SLUGS, unwrapComposioData } from "./external-event-normalizers";
+
+export type MutationResult = { success: true } | { success: false; reason: string };
 
 export interface PushEventInput {
   title: string;
@@ -112,35 +114,39 @@ export class ExternalCalendarSyncService {
       PushEventInput,
       "title" | "description" | "startIso" | "endIso"
     >,
-  ): Promise<void> {
-    if (conn.toolkit === "googlecalendar") {
-      await this.gateway.executeTool(
-        TOOL_SLUGS.googleUpdate,
-        userId,
-        {
-          event_id: externalEventId,
-          summary: input.title,
-          description: input.description ?? undefined,
-          start_datetime: input.startIso,
-          end_datetime: input.endIso,
-        },
-        conn.composioConnectedAccountId,
-      );
+  ): Promise<MutationResult> {
+    if (!PROVIDER_CAPABILITIES[conn.toolkit].update) {
+      return { success: false, reason: `${conn.toolkit} does not support event updates via this integration` };
     }
+    await this.gateway.executeTool(
+      TOOL_SLUGS.googleUpdate,
+      userId,
+      {
+        event_id: externalEventId,
+        summary: input.title,
+        description: input.description ?? undefined,
+        start_datetime: input.startIso,
+        end_datetime: input.endIso,
+      },
+      conn.composioConnectedAccountId,
+    );
+    return { success: true };
   }
 
   async pushDelete(
     userId: string,
     conn: PushConnection,
     externalEventId: string,
-  ): Promise<void> {
-    if (conn.toolkit === "googlecalendar") {
-      await this.gateway.executeTool(
-        TOOL_SLUGS.googleDelete,
-        userId,
-        { event_id: externalEventId },
-        conn.composioConnectedAccountId,
-      );
+  ): Promise<MutationResult> {
+    if (!PROVIDER_CAPABILITIES[conn.toolkit].delete) {
+      return { success: false, reason: `${conn.toolkit} does not support event deletion via this integration` };
     }
+    await this.gateway.executeTool(
+      TOOL_SLUGS.googleDelete,
+      userId,
+      { event_id: externalEventId },
+      conn.composioConnectedAccountId,
+    );
+    return { success: true };
   }
 }

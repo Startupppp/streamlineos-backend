@@ -14,6 +14,7 @@ export const CALENDAR_EVENTS_CAP = 2000;
 
 const ianaTimezone = z.string().refine(
   (tz) => {
+    if (/^[+-]\d{2}:\d{2}$/.test(tz)) return false;
     try {
       Intl.DateTimeFormat(undefined, { timeZone: tz });
       return true;

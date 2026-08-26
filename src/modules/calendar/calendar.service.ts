@@ -15,6 +15,7 @@ import type { CreateEventInput, RsvpInput, UpdateEventInput } from "./dto/calend
 import { EmailService } from "../email/email.service";
 import { getCalendarInviteEmail } from "../email/templates/calendar";
 import { CalendarEventsAggregateService } from "./calendar-events-aggregate.service";
+import { CalendarConflictService } from "./calendar-conflict.service";
 import type { CalendarEventItem, CalendarEventsResult, OooConflict } from "./calendar.types";
 import { dateOnly } from "./calendar.types";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
@@ -28,6 +29,7 @@ export class CalendarService {
     private readonly sync: ExternalCalendarSyncService,
     private readonly email: EmailService,
     private readonly eventsAggregate: CalendarEventsAggregateService,
+    private readonly conflict: CalendarConflictService,
   ) {}
 
   getEvents(
@@ -74,32 +76,41 @@ export class CalendarService {
 
     await assertUsersInOrg(this.db, orgId, attendeeIds);
 
-    const [event, oooConflicts] = await Promise.all([
-      this.db
-        .insert(calendarEvents)
-        .values({
+    const [{ event, eventConflicts }, oooConflicts] = await Promise.all([
+      this.db.transaction(async (tx) => {
+        const conflicts = await this.conflict.checkConflictsInTx(
+          tx,
           orgId,
-          createdBy: userId,
-          title: input.title,
-          description: input.description ?? null,
-          location: input.location ?? null,
+          userId,
           startDate,
           endDate,
-          timezone: input.timezone,
-          allDay: input.allDay ?? false,
-          color: input.color ?? "blue",
-          category: input.category,
-          entityType: input.entityType ?? null,
-          entityId: input.entityId ?? null,
-          attendeeIds,
-          agenda: input.agenda ?? null,
-          linkedDealId: input.linkedDealId ?? null,
-          linkedLeadId: input.linkedLeadId ?? null,
-        })
-        .returning()
-        .then((rows) => rows[0]),
+        );
+        const insertedRows = await tx
+          .insert(calendarEvents)
+          .values({
+            orgId,
+            createdBy: userId,
+            title: input.title,
+            description: input.description ?? null,
+            location: input.location ?? null,
+            startDate,
+            endDate,
+            timezone: input.timezone,
+            allDay: input.allDay ?? false,
+            color: input.color ?? "blue",
+            category: input.category,
+            entityType: input.entityType ?? null,
+            entityId: input.entityId ?? null,
+            attendeeIds,
+            agenda: input.agenda ?? null,
+            linkedDealId: input.linkedDealId ?? null,
+            linkedLeadId: input.linkedLeadId ?? null,
+          })
+          .returning();
+        return { event: insertedRows[0], eventConflicts: conflicts };
+      }),
       this.getOooConflicts(orgId, attendeeIds, startDate, endDate),
-    ]);
+    ] as const);
 
     let meetingUrl: string | null = null;
     let syncError: string | null = null;
@@ -150,7 +161,7 @@ export class CalendarService {
         ),
       );
     }
-    return { event: syncedEvent, oooConflicts, meetingUrl, syncError };
+    return { event: syncedEvent, oooConflicts, eventConflicts, meetingUrl, syncError };
   }
 
   private async dispatchInviteEmails(params: {
@@ -266,12 +277,14 @@ export class CalendarService {
     if (event?.integrationConnectionId && event.externalEventId) {
       try {
         const conn = await this.ownedActiveConnection(orgId, userId, event.integrationConnectionId);
-        await this.sync.pushUpdate(userId, conn, event.externalEventId, {
+        const updateResult = await this.sync.pushUpdate(userId, conn, event.externalEventId, {
           title: event.title,
           description: event.description ?? null,
           startIso: event.startDate.toISOString(),
           endIso: event.endDate.toISOString(),
         });
+        if (!updateResult.success)
+          this.logger.warn(`External sync update skipped for ${conn.toolkit}: ${updateResult.reason}`);
       } catch (error) {
         this.logger.warn(
           `External sync update failed for event ${event.id}: ${error instanceof Error ? error.message : String(error)}`,
@@ -312,7 +325,9 @@ export class CalendarService {
     if (mapping?.integrationConnectionId && mapping.externalEventId) {
       try {
         const conn = await this.ownedActiveConnection(orgId, userId, mapping.integrationConnectionId);
-        await this.sync.pushDelete(userId, conn, mapping.externalEventId);
+        const deleteResult = await this.sync.pushDelete(userId, conn, mapping.externalEventId);
+        if (!deleteResult.success)
+          this.logger.warn(`External sync delete skipped for ${conn.toolkit}: ${deleteResult.reason}`);
       } catch (error) {
         this.logger.warn(
           `External sync delete failed for event ${id}: ${error instanceof Error ? error.message : String(error)}`,

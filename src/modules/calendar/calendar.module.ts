@@ -8,6 +8,7 @@ import { CalendarSourceRegistry } from "./calendar-source.registry";
 import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
 import { IntegrationsModule } from "../integrations/core/integrations.module";
 import { CalendarNativeEventSource } from "./calendar-native-event-source";
+import { CalendarConflictService } from "./calendar-conflict.service";
 
 @Module({
   imports: [IntegrationsModule],
@@ -15,12 +16,13 @@ import { CalendarNativeEventSource } from "./calendar-native-event-source";
   providers: [
     CalendarEventsAggregateService,
     CalendarService,
+    CalendarConflictService,
     ExternalCalendarEventsService,
     ExternalCalendarSyncService,
     CalendarSourceRegistry,
     CalendarSourcePreferencesService,
     CalendarNativeEventSource,
   ],
-  exports: [CalendarService, CalendarSourceRegistry],
+  exports: [CalendarService, CalendarConflictService, CalendarSourceRegistry],
 })
 export class CalendarModule {}
