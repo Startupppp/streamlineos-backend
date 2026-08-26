@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { idCursorSchema } from "../../../common/pagination/cursor.schema";
+
 const channelBaseSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -95,7 +97,7 @@ export const statusSchema = z.object({
 });
 
 export const listMessagesQuerySchema = z.object({
-  cursor: z.coerce.number().int().positive().optional(),
+  cursor: idCursorSchema,
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 

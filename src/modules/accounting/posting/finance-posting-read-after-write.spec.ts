@@ -122,11 +122,7 @@ function makePostingDb(ledger: Ledger, options: PostingDbOptions = {}): Db {
     };
   });
 
-  let periodCall = 0;
-  const select = jest.fn().mockImplementation(() => {
-    periodCall++;
-    return outerSelect();
-  });
+  const select = jest.fn().mockImplementation(() => outerSelect());
 
   const transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
     if (options.failTransaction) throw new Error("rolled back");
@@ -174,8 +170,6 @@ function makePostingDb(ledger: Ledger, options: PostingDbOptions = {}): Db {
     returning: jest.fn().mockResolvedValue([{ id: 42, entryNumber: "JE-202401-00001" }]),
   });
 
-  void periodCall;
-
   return {
     select,
     insert,
@@ -186,6 +180,9 @@ function makePostingDb(ledger: Ledger, options: PostingDbOptions = {}): Db {
 
 class InMemoryRedis {
   private readonly store = new Map<string, unknown>();
+
+  /** `deafToInvalidation` drops the generation bump, so the namespace never moves. */
+  constructor(private readonly deafToInvalidation = false) {}
 
   get<T>(key: string): Promise<T | null> {
     const value = this.store.get(key);
@@ -199,9 +196,10 @@ class InMemoryRedis {
   }
 
   incr(key: string): Promise<number> {
-    const next = Number(this.store.get(key) ?? 0) + 1;
-    this.store.set(key, next);
-    return Promise.resolve(next);
+    const current = Number(this.store.get(key) ?? 0);
+    if (this.deafToInvalidation) return Promise.resolve(current);
+    this.store.set(key, current + 1);
+    return Promise.resolve(current + 1);
   }
 
   del(key: string): Promise<number> {
@@ -220,9 +218,12 @@ interface Harness {
   readonly statements: AccountingStatementsService;
 }
 
-async function buildHarness(options: PostingDbOptions = {}): Promise<Harness> {
+async function buildHarness(
+  options: PostingDbOptions = {},
+  deafToInvalidation = false,
+): Promise<Harness> {
   const ledger = emptyLedger();
-  const cache = new CacheService(new InMemoryRedis() as never);
+  const cache = new CacheService(new InMemoryRedis(deafToInvalidation) as never);
 
   const module = await Test.createTestingModule({
     providers: [
@@ -267,6 +268,17 @@ describe("accounting statements — read after write", () => {
     expect(after.assets.map((row) => row.code)).toEqual([BANK.code]);
     expect(after.retainedEarnings).toBe("100.00");
     expect(after.balanced).toBe(true);
+  });
+
+  it("stays stale when the namespace bump is lost — what the invalidation buys", async () => {
+    const { posting, statements } = await buildHarness({}, true);
+
+    const before = await statements.balanceSheet(ORG_ID, { asOf: AS_OF });
+    await posting.postJournal(USER, postedInput());
+    const after = await statements.balanceSheet(ORG_ID, { asOf: AS_OF });
+
+    expect(before.totalAssets).toBe("0.00");
+    expect(after.totalAssets).toBe("0.00");
   });
 
   it("posting a journal entry makes the trial balance include it", async () => {

@@ -84,7 +84,7 @@ export class MailService {
       }
     }
 
-    const parsedCursor = cursor ? decodeCursor(cursor) : {};
+    const parsedCursor = cursor ? decodeCursor(cursor, userId) : {};
     const skipCache = Boolean(query);
 
     const settled = await Promise.allSettled(
@@ -130,16 +130,22 @@ export class MailService {
 
     const nextCursorMap: OpaqueCursor = {};
     for (const fetch of accountFetches) {
+      // Exhausted stays exhausted. Writing `undefined` here would be dropped by
+      // JSON on the way out and read back as "no position yet".
+      if (fetch.currentCursorValue === null) {
+        nextCursorMap[fetch.accId] = null;
+        continue;
+      }
       const consumed = fetch.messages.filter((m) => mergedIds.has(`${m.accountId}:${m.id}`)).length;
       if (fetch.provider === "outlook") {
         if (!fetch.outlookHasMore && consumed === fetch.messages.length) {
-          nextCursorMap[fetch.accId] = undefined;
+          nextCursorMap[fetch.accId] = null;
         } else {
           const prevSkip = typeof fetch.currentCursorValue === "number" ? fetch.currentCursorValue : 0;
           nextCursorMap[fetch.accId] = prevSkip + consumed;
         }
       } else if (consumed === fetch.messages.length) {
-        nextCursorMap[fetch.accId] = fetch.nextPageToken;
+        nextCursorMap[fetch.accId] = fetch.nextPageToken ?? null;
       } else {
         const prevToken = isPartialGmailCursor(fetch.currentCursorValue)
           ? fetch.currentCursorValue.token
@@ -154,7 +160,7 @@ export class MailService {
     }
 
     const hasMore = Object.values(nextCursorMap).some((v) => v !== undefined && v !== null);
-    const nextCursor = hasMore ? encodeCursor(nextCursorMap) : null;
+    const nextCursor = hasMore ? encodeCursor(nextCursorMap, userId) : null;
 
     return { messages: merged, nextCursor, accountErrors };
   }
@@ -171,6 +177,9 @@ export class MailService {
   ): Promise<{ messages: ReturnType<typeof mergeMessagesByDate>; nextPageToken: string | undefined; outlookHasMore: boolean }> {
     const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     const cursorValue = parsedCursor[acc.id];
+    // An exhausted account has nothing left to contribute — asking the provider
+    // again is a round trip whose only possible answer is rows already returned.
+    if (cursorValue === null) return { messages: [], nextPageToken: undefined, outlookHasMore: false };
     const cacheKey = `${folder}:${JSON.stringify(cursorValue ?? "")}:${query ?? ""}`;
 
     const fetcher = async () => {

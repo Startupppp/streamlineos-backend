@@ -731,4 +731,34 @@ export const BUDGETS = [
       { kind: "forbid-seq-scan", relation: "chat_saved_messages" },
     ],
   },
+  {
+    id: "accounting-receivables-list",
+    // PROVISIONAL — ceiling not yet measured; run as streamline_app with tenant GUC on a seeded branch and record actual blocks.
+    ceiling: 50_000,
+    minRows: 10,
+    rowCountSql: `SELECT count(*)::int FROM clients WHERE org_id = $1`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT c.id, c.name, c.state, c.gstin,
+             count(DISTINCT i.id) AS invoice_count,
+             (COALESCE(SUM(i.total), 0) - COALESCE((
+               SELECT SUM(p.amount)
+               FROM payments p
+               WHERE p.org_id = $1
+                 AND p.invoice_id IN (
+                   SELECT i2.id FROM invoices i2
+                   WHERE i2.org_id = $1 AND i2.client_id = c.id
+                 )
+             ), 0)) AS outstanding,
+             count(*) OVER () AS total
+      FROM clients c
+      LEFT JOIN invoices i ON i.client_id = c.id AND i.org_id = $1
+      WHERE c.org_id = $1
+      GROUP BY c.id, c.name, c.state, c.gstin
+      ORDER BY outstanding DESC, c.name ASC
+      LIMIT 50 OFFSET 0`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "clients" },
+    ],
+  },
 ];

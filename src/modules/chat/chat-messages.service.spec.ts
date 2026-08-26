@@ -9,6 +9,7 @@ import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { CacheService } from "../../common/cache/cache.service";
+import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
 
 const mockDb = {
   query: {
@@ -61,6 +62,11 @@ const mockOrgSettings = {
   getSettings: jest.fn().mockResolvedValue({ maxAttachmentSizeMb: 25 }),
 };
 
+const mockFanout = {
+  dispatchRealtime: jest.fn().mockResolvedValue(undefined),
+  dispatchDeferred: jest.fn().mockResolvedValue(undefined),
+};
+
 describe("ChatMessagesService", () => {
   let service: ChatMessagesService;
 
@@ -78,6 +84,7 @@ describe("ChatMessagesService", () => {
         { provide: ChatReplyRemindersService, useValue: mockReplyReminders },
         { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
         { provide: EntityReferenceService, useValue: mockEntities },
+        { provide: MESSAGE_FANOUT_PROVIDER, useValue: mockFanout },
       ],
     }).compile();
     service = module.get(ChatMessagesService);

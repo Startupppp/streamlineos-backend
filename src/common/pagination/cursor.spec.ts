@@ -1,4 +1,4 @@
-import { buildCursorPage, decodeCursor, encodeCursor } from "./cursor";
+import { buildCursorPage, buildIdCursorPage, decodeCursor, encodeCursor } from "./cursor";
 
 describe("cursor encoding", () => {
   it("round-trips a position", () => {
@@ -145,5 +145,43 @@ describe("concurrent-insert proof: cursor is stable under concurrent writes, off
 
     const page = buildCursorPage(asRows(original.slice(0, limit + 1)), limit, toPosition);
     expect(page.data[0]?.id).toBe(10);
+  });
+});
+
+describe("buildIdCursorPage", () => {
+  const rows = (ids: number[]) => ids.map((id) => ({ id }));
+
+  it("derives the next cursor from the last row it keeps, not the sentinel", () => {
+    const page = buildIdCursorPage(rows([10, 9, 8, 7]), 3, (r) => r.id);
+
+    expect(page.data.map((r) => r.id)).toEqual([10, 9, 8]);
+    expect(page.hasMore).toBe(true);
+    expect(page.nextCursor).toBe(8);
+  });
+
+  it("leaves no gap: the sentinel is the first row of the next page", () => {
+    const all = [10, 9, 8, 7, 6, 5];
+    const first = buildIdCursorPage(rows(all.slice(0, 4)), 3, (r) => r.id);
+    const remaining = all.filter((id) => id < (first.nextCursor ?? Infinity));
+    const second = buildIdCursorPage(rows(remaining.slice(0, 4)), 3, (r) => r.id);
+
+    const seen = [...first.data, ...second.data].map((r) => r.id);
+    expect(seen).toEqual(all);
+    expect(new Set(seen).size).toBe(seen.length);
+  });
+
+  it("reports no next page when exactly one page remains", () => {
+    const page = buildIdCursorPage(rows([3, 2, 1]), 3, (r) => r.id);
+
+    expect(page.hasMore).toBe(false);
+    expect(page.nextCursor).toBeUndefined();
+  });
+
+  it("handles an empty page", () => {
+    const page = buildIdCursorPage([], 3, (r: { id: number }) => r.id);
+
+    expect(page.data).toEqual([]);
+    expect(page.hasMore).toBe(false);
+    expect(page.nextCursor).toBeUndefined();
   });
 });

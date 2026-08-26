@@ -22,6 +22,7 @@ import { resolveMentionedUserIds } from "./chat-mentions";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
+import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { AblyService } from "../realtime/ably.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
@@ -105,15 +106,11 @@ export class ChatMessagesService {
       },
     });
 
-    let nextCursor: number | undefined;
-    if (messages.length > safeLimit) {
-      messages.pop();
-      nextCursor = messages[messages.length - 1]?.id;
-    }
+    const page = buildIdCursorPage(messages, safeLimit, (m) => m.id);
 
     return {
-      messages: await this.withResolvedReferences(actor, messages.reverse()),
-      nextCursor,
+      messages: await this.withResolvedReferences(actor, page.data.reverse()),
+      nextCursor: page.nextCursor,
     };
   }
 
@@ -401,17 +398,13 @@ export class ChatMessagesService {
       },
     });
 
-    let nextCursor: number | undefined;
-    if (replies.length > safeLimit) {
-      replies.pop();
-      nextCursor = replies[replies.length - 1]?.id;
-    }
+    const page = buildIdCursorPage(replies, safeLimit, (r) => r.id);
 
     const [resolvedParent] = await this.withResolvedReferences(actor, [parentMessage]);
     return {
       parentMessage: resolvedParent ?? parentMessage,
-      replies: await this.withResolvedReferences(actor, replies.reverse()),
-      nextCursor,
+      replies: await this.withResolvedReferences(actor, page.data.reverse()),
+      nextCursor: page.nextCursor,
     };
   }
 

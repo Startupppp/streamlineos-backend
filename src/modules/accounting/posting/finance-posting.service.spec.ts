@@ -19,6 +19,23 @@ const USER: CurrentUserContext = {
   tokenScopes: null,
 };
 
+/**
+ * A select double that answers whether the caller ends on `.limit()` or awaits
+ * `.where()` directly. `finApprovalPolicies` and the reversal's line read do the
+ * latter, so a `where: mockReturnThis()` chain hands them the builder itself.
+ */
+function selectChain(rows: unknown[], limitRows: unknown[] = rows) {
+  const builder: Record<string, unknown> = {};
+  const chain = () => builder;
+  Object.assign(builder, {
+    from: chain,
+    where: chain,
+    limit: () => Promise.resolve(limitRows),
+    then: (resolve: (value: unknown[]) => unknown) => resolve(rows),
+  });
+  return builder;
+}
+
 function makeBalancedInput(overrides: Partial<PostJournalInput> = {}): PostJournalInput {
   return {
     entryDate: "2024-01-15",
@@ -287,11 +304,7 @@ describe("FinancePostingService", () => {
       }));
 
       mockDb.transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-        const txSelect = jest.fn().mockReturnValue({
-          from: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
-          limit: jest.fn().mockResolvedValue([]),
-        });
+        const txSelect = jest.fn().mockImplementation(() => selectChain([]));
         const txInsert = jest.fn()
           .mockReturnValueOnce({
             values: jest.fn().mockReturnThis(),
@@ -338,22 +351,10 @@ describe("FinancePostingService", () => {
       }));
 
       mockDb.transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-        const txSelect = jest.fn().mockReturnValue({
-          from: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
-          limit: jest.fn().mockResolvedValue([]),
-        });
-        const txSelectApproval = jest.fn()
-          .mockReturnValueOnce({
-            from: jest.fn().mockReturnThis(),
-            where: jest.fn().mockReturnThis(),
-            limit: jest.fn().mockResolvedValue([]),
-          })
-          .mockReturnValue({
-            from: jest.fn().mockReturnThis(),
-            where: jest.fn().mockReturnThis(),
-            limit: jest.fn().mockResolvedValue([{ id: 1, approverUserId: null, minAmount: null }]),
-          });
+        const txSelect = jest.fn().mockImplementation(() => selectChain([]));
+        const txSelectApproval = jest
+          .fn()
+          .mockImplementation(() => selectChain([{ id: 1, approverUserId: null, minAmount: null }]));
 
         const txInsert = jest.fn()
           .mockReturnValueOnce({
@@ -404,16 +405,26 @@ describe("FinancePostingService", () => {
           sourceEvent: "create",
           currency: "INR",
         };
-        let txSelectCallCount = 0;
-        const txSelect = jest.fn().mockImplementation(() => ({
-          from: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
-          limit: jest.fn().mockImplementation(() => {
-            txSelectCallCount++;
-            if (txSelectCallCount === 1) return Promise.resolve([postedEntry]);
-            return Promise.resolve([]);
-          }),
-        }));
+        const reversalLine = {
+          accountId: 1,
+          debit: "100.00",
+          credit: "0",
+          description: null,
+          lineOrder: 0,
+          currency: null,
+          exchangeRate: null,
+          clientId: null,
+          vendorId: null,
+          projectId: null,
+          departmentId: null,
+          employeeId: null,
+          taxCodeId: null,
+          dimensionValues: null,
+        };
+        const txSelect = jest
+          .fn()
+          .mockImplementationOnce(() => selectChain([], [postedEntry]))
+          .mockImplementation(() => selectChain([reversalLine], []));
         const txInsert = jest.fn()
           .mockReturnValueOnce({
             values: jest.fn().mockReturnThis(),
