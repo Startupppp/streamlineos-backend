@@ -1,4 +1,5 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { resolvePush } from "./mailbox-push-route";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
@@ -8,6 +9,7 @@ import type { NormalizerConnectionMeta } from "../../mail/providers/mail-normali
 import { GmailMailProvider } from "../../mail/providers/gmail-mail.provider";
 import { OutlookMailProvider } from "../../mail/providers/outlook-mail.provider";
 import { InboundIngressService } from "../inbound-ingress.service";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import {
   EXCLUDED_FOLDERS,
   isPrivateMessage,
@@ -123,6 +125,60 @@ export class CrmMailboxService {
     private readonly gmail: GmailMailProvider,
     private readonly outlook: OutlookMailProvider,
   ) {}
+
+  /**
+   * A provider push, which is a doorbell rather than a delivery.
+   *
+   * Runs outside any tenant context, because a push arrives with no session and
+   * no organisation — the mailbox row is what supplies the tenant. So the lookup
+   * is deliberately unscoped by `organization_id`, and `resolvePush` is what
+   * makes that safe: the row's own secret has to verify the body before its
+   * tenant is used for anything.
+   *
+   * Push is the fast path, never the truth. It only pulls the mailbox's next
+   * sweep forward; the periodic sweep still runs and still closes whatever gap
+   * push left, which is why a missed or forged-and-rejected notification costs
+   * latency rather than data.
+   */
+  async push(rawBody: string, signature: string | undefined): Promise<void> {
+    const parsed = ((): { resource?: unknown; provider?: unknown } => {
+      try {
+        return JSON.parse(rawBody) as { resource?: unknown; provider?: unknown };
+      } catch {
+        return {};
+      }
+    })();
+
+    const address = typeof parsed.resource === "string" ? parsed.resource.trim() : "";
+    const provider = parsed.provider;
+    if (!address || (provider !== "gmail" && provider !== "outlook")) return;
+
+    const [row] = await this.db
+      .select({
+        crmMailboxSyncId: crmMailboxSync.crmMailboxSyncId,
+        organizationId: crmMailboxSync.organizationId,
+        provider: crmMailboxSync.provider,
+        mailboxAddress: crmMailboxSync.mailboxAddress,
+        pushSecret: crmMailboxSync.pushSecret,
+        enabled: crmMailboxSync.enabled,
+      })
+      .from(crmMailboxSync)
+      .where(
+        and(
+          eq(crmMailboxSync.provider, provider),
+          eq(crmMailboxSync.mailboxAddress, address),
+          eq(crmMailboxSync.enabled, true),
+        ),
+      )
+      .limit(1);
+
+    const verdict = resolvePush(rawBody, signature, row ?? null);
+    if (!verdict.ok) return;
+
+    await runInNewTenantTransaction(this.db, verdict.organizationId, async () => {
+      await this.sync(verdict.organizationId, verdict.crmMailboxSyncId);
+    });
+  }
 
   /** Every mailbox this organisation has pointed at the CRM. */
   async list(organizationId: string) {

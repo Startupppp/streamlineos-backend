@@ -1,4 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, RawBodyRequest, Req, UseGuards } from "@nestjs/common";
+import type { Request } from "express";
+import { Public } from "../../../common/auth/public.decorator";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -26,6 +28,30 @@ type EnableMailboxInput = z.infer<typeof enableMailboxSchema>;
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class CrmMailboxController {
   constructor(private readonly mailboxes: CrmMailboxService) {}
+
+  /**
+   * The provider's push notification.
+   *
+   * `@Public()` because a provider has no session — which is exactly why the
+   * body is never trusted for anything except naming which mailbox to look up.
+   * The row's own secret verifies the signature and the row supplies the tenant.
+   *
+   * **Always 204, whatever happened.** A bad signature, an unknown mailbox and a
+   * successful sweep are indistinguishable from outside, because telling them
+   * apart would answer "does this deployment sync that address?" for anybody who
+   * asks — and a mailbox address is a person. The sweep behind it is the truth
+   * regardless; push only pulls it forward.
+   */
+  @Post("push")
+  @Public()
+  @HttpCode(204)
+  async push(
+    @Req() req: RawBodyRequest<Request>,
+    @Headers("x-mailbox-signature") signature: string | undefined,
+  ): Promise<void> {
+    const raw = req.rawBody?.toString("utf8") ?? "";
+    await this.mailboxes.push(raw, signature);
+  }
 
   @Get()
   @RequirePermission("crm:ingress:submit")
