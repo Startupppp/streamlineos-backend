@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -229,27 +229,38 @@ export class PayrollExportService {
       `${query.page}:${query.pageSize}`,
       async () => {
         const offset = (query.page - 1) * query.pageSize;
-        const [items, [{ total }]] = await Promise.all([
-          this.db
-            .select({
-              export: timesheetExports,
-              creatorName: users.name,
-            })
+        const rows = await this.db
+          .select({
+            export: timesheetExports,
+            creatorName: users.name,
+            windowTotal: sql<string>`count(*) OVER ()`,
+          })
+          .from(timesheetExports)
+          .leftJoin(users, eq(timesheetExports.createdBy, users.id))
+          .where(eq(timesheetExports.orgId, orgId))
+          .orderBy(desc(timesheetExports.createdAt))
+          .limit(query.pageSize)
+          .offset(offset);
+
+        const first = rows[0];
+        let total: number;
+        if (first) {
+          total = Number(first.windowTotal);
+        } else if (offset === 0) {
+          total = 0;
+        } else {
+          const fallback = await this.db
+            .select({ n: sql<string>`count(*)` })
             .from(timesheetExports)
-            .leftJoin(users, eq(timesheetExports.createdBy, users.id))
-            .where(eq(timesheetExports.orgId, orgId))
-            .orderBy(desc(timesheetExports.createdAt))
-            .limit(query.pageSize)
-            .offset(offset),
-          this.db
-            .select({ total: count() })
-            .from(timesheetExports)
-            .where(eq(timesheetExports.orgId, orgId)),
-        ]);
+            .where(eq(timesheetExports.orgId, orgId));
+          total = Number(fallback[0]?.n ?? 0);
+        }
 
         return {
-          items: items.map((r) => toExportDto(r.export, r.creatorName ?? null)),
-          total: total ?? 0,
+          items: rows.map(({ windowTotal: _, export: exp, creatorName }) =>
+            toExportDto(exp, creatorName ?? null),
+          ),
+          total,
           page: query.page,
           pageSize: query.pageSize,
         };

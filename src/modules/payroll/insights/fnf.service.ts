@@ -3,8 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { fnfSettlements, users } from "../../../db/schema";
-import { FnfService, type UpdateFnfResult } from "../../hr/payroll/fnf.service";
-import type { PatchFnfInput } from "../../hr/payroll/dto/payroll.schemas";
+import { FnfService, type UpdateFnfResult } from "../hr-payroll/fnf.service";
+import type { PatchFnfInput } from "../hr-payroll/dto/payroll.schemas";
 
 type StatementComponent = {
   label: string;

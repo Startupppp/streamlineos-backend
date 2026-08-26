@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheetAuditEvents, users } from "../../../db/schema";
@@ -102,35 +102,44 @@ export class TimesheetsAuditService {
     if (query.action)
       conditions.push(eq(timesheetAuditEvents.action, query.action));
 
-    const [totalResult, rows] = await Promise.all([
-      this.db
-        .select({ total: count() })
+    const rows = await this.db
+      .select({
+        id: timesheetAuditEvents.id,
+        actorUserId: timesheetAuditEvents.actorUserId,
+        actorName: users.name,
+        entityType: timesheetAuditEvents.entityType,
+        entityId: timesheetAuditEvents.entityId,
+        action: timesheetAuditEvents.action,
+        before: timesheetAuditEvents.before,
+        after: timesheetAuditEvents.after,
+        reason: timesheetAuditEvents.reason,
+        createdAt: timesheetAuditEvents.createdAt,
+        windowTotal: sql<string>`count(*) OVER ()`,
+      })
+      .from(timesheetAuditEvents)
+      .leftJoin(users, eq(timesheetAuditEvents.actorUserId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(timesheetAuditEvents.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const first = rows[0];
+    let total: number;
+    if (first) {
+      total = Number(first.windowTotal);
+    } else if (offset === 0) {
+      total = 0;
+    } else {
+      const fallback = await this.db
+        .select({ n: sql<string>`count(*)` })
         .from(timesheetAuditEvents)
-        .where(and(...conditions)),
-      this.db
-        .select({
-          id: timesheetAuditEvents.id,
-          actorUserId: timesheetAuditEvents.actorUserId,
-          actorName: users.name,
-          entityType: timesheetAuditEvents.entityType,
-          entityId: timesheetAuditEvents.entityId,
-          action: timesheetAuditEvents.action,
-          before: timesheetAuditEvents.before,
-          after: timesheetAuditEvents.after,
-          reason: timesheetAuditEvents.reason,
-          createdAt: timesheetAuditEvents.createdAt,
-        })
-        .from(timesheetAuditEvents)
-        .leftJoin(users, eq(timesheetAuditEvents.actorUserId, users.id))
-        .where(and(...conditions))
-        .orderBy(desc(timesheetAuditEvents.createdAt))
-        .limit(limit)
-        .offset(offset),
-    ]);
+        .where(and(...conditions));
+      total = Number(fallback[0]?.n ?? 0);
+    }
 
     return {
-      data: rows,
-      total: totalResult[0]?.total ?? 0,
+      data: rows.map(({ windowTotal: _, ...r }) => r),
+      total,
     };
   }
 

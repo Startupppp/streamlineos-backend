@@ -22,7 +22,7 @@ import {
   patchTaxWindowBodySchema,
   type CreateTaxWindowBody,
   type PatchTaxWindowBody,
-} from "../../hr/payroll/dto/payroll.schemas";
+} from "../hr-payroll/dto/payroll.schemas";
 import { TaxWindowsService } from "./tax-windows.service";
 
 @RequireModule("payroll")

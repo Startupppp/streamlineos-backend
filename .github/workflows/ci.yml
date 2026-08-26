@@ -55,6 +55,13 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Import cycles
+        run: pnpm check:cycles
+
+      - name: Dead-code report
+        run: pnpm exec knip --no-progress
+        continue-on-error: true
+
   # Tenant isolation, against a real database as the real application role.
   #
   # Its own job because it needs credentials CI cannot fabricate, and because a

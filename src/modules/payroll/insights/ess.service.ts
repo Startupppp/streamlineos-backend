@@ -24,9 +24,9 @@ import {
 } from "../../../db/schema";
 import { hrBenefitEnrollments, hrBenefitPlans } from "../../../db/schema/hr/benefits";
 import { hrEquityGrants } from "../../../db/schema/hr/enterprise-comp";
-import { LoansService } from "../../hr/payroll/loans.service";
-import { ReimbursementsService } from "../../hr/payroll/reimbursements.service";
-import { TaxService } from "../../hr/payroll/tax.service";
+import { LoansService } from "../hr-payroll/loans.service";
+import { ReimbursementsService } from "../hr-payroll/reimbursements.service";
+import { TaxService } from "../hr-payroll/tax.service";
 import { type BankDetails, decryptBankDetails, encryptBankDetails } from "../../hr/onboarding/core/crypto.helpers";
 import { detectScheme, validateSchemeCode } from "../../payroll/payout/lib/bank-validation";
 import type { EssBank } from "./dto/insights.schemas";

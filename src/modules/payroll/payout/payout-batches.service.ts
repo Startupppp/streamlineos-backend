@@ -23,7 +23,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { decryptBankDetails } from "../../../modules/hr/payroll/lib/encryption";
+import { decryptBankDetails } from "../hr-payroll/lib/encryption";
 import type { PayoutBatchFormat } from "./dto/payout.schemas";
 import { PayrollPostingService } from "../payroll-posting.service";
 import { assertPayrollPayeeEligible } from "../lib/payroll-payee-eligibility";

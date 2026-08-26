@@ -12,7 +12,7 @@ import {
   hrEmployments,
   hrEmployeeSensitiveFields,
 } from "../../../db/schema/hr/core-people";
-import { decryptBankDetails, type BankDetails } from "../../hr/payroll/lib/encryption";
+import { decryptBankDetails, type BankDetails } from "../hr-payroll/lib/encryption";
 import {
   payrollSubjectFromRunEmployee,
   payrollSubjectKeyFromRunEmployee,

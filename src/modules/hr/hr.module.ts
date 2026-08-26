@@ -3,7 +3,7 @@ import { HrConfigModule } from "./config/hr-config.module";
 import { HrTimeModule } from "./time/hr-time.module";
 import { HrDirectoryModule } from "./directory/hr-directory.module";
 import { HrPerformanceModule } from "./performance/hr-performance.module";
-import { HrPayrollModule } from "./payroll/hr-payroll.module";
+import { HrPayrollModule } from "../payroll/hr-payroll/hr-payroll.module";
 import { HrLifecycleModule } from "./lifecycle/hr-lifecycle.module";
 import { HrCoreModule } from "./core/hr-core.module";
 import { HrAutomationsModule } from "./automations/hr-automations.module";
