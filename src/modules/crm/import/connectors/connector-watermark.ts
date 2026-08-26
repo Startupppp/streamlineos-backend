@@ -1,4 +1,4 @@
-import { advanceWatermark } from "../../ingress/adapters/mailbox-sync";
+import { advanceWatermark } from "../../../ingress/adapters/mailbox-sync";
 
 /**
  * How far a connector may claim to have read, after a walk.

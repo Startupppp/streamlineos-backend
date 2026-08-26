@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { COLUMN_MAPPING_DATASET } from "../../../../evals/datasets/column-mapping.dataset";
+import { COLUMN_MAPPING_DATASET } from "../../../../../evals/datasets/column-mapping.dataset";
 import { mapColumns } from "../column-mapping";
 import { planImport } from "../import-plan";
 import { CONNECTORS, connectorFor, streamFor } from "./connector-catalog";

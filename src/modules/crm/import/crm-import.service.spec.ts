@@ -1,15 +1,15 @@
 import { ConflictException, Logger } from "@nestjs/common";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { Db } from "../../db/drizzle.types";
-import type { WorkflowRunnerService } from "../../common/workflow";
+import type { Db } from "../../../db/drizzle.types";
+import type { WorkflowRunnerService } from "../../../common/workflow";
 import {
   businessParties,
   crmImportRows,
   crmImports,
   dataQualityFindings,
   partyIdentifiers,
-} from "../../db/schema";
+} from "../../../db/schema";
 import { CrmImportService, REVERT_WINDOW_DAYS } from "./crm-import.service";
 
 const ORG = "org-1";

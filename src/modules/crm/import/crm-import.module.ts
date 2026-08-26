@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
-import { WorkflowModule } from "../../common/workflow/workflow.module";
-import { IntegrationsModule } from "../integrations/core/integrations.module";
+import { WorkflowModule } from "../../../common/workflow/workflow.module";
+import { IntegrationsModule } from "../../integrations/core/integrations.module";
 import { CrmImportController } from "./crm-import.controller";
 import { CrmImportService } from "./crm-import.service";
 import { CrmExportService } from "./crm-export.service";

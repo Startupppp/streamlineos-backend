@@ -125,6 +125,11 @@ const TENANT_TABLES = [
   "party_identifiers",
   "party_merges",
   "party_roles",
+  // Not a CRM table by name, so `CRM_TABLE_PATTERN` below never finds it — it is
+  // listed here by hand precisely because the guard cannot. Ticket 20's
+  // arrangements are per tenant, and an arrangement readable organisation-wide
+  // would tell any tenant which fields another one has stopped using.
+  "record_layout_adjustments",
   "subject_party_links",
   "subject_types",
   "subjects",

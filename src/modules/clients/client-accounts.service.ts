@@ -378,6 +378,27 @@ export class ClientAccountsService {
     }
   }
 
+  /**
+   * Opens a client account for every lead that has converted and has none.
+   *
+   * Reads Party, not `leads`. This was raw SQL against the legacy table, which
+   * neither the reader ratchet nor the lint rule could see -- both match Drizzle
+   * symbol imports, and a string never imports anything. So it survived every
+   * migrate batch, and ticket 08's drop would have taken it out at runtime with
+   * nothing having warned.
+   *
+   * The read is not merely relocated. `leads` is a mirror, and a merge leaves the
+   * losing row alive holding the survivor's values while marking only the Party
+   * deleted -- so `FROM leads WHERE deleted_at IS NULL` counted one converted
+   * customer twice and opened two accounts for them. Joining through
+   * `lead_party_map` and filtering on the Party's own `deleted_at` counts the
+   * customer.
+   *
+   * The map is keyed by legacy id and its `party_id` side is deliberately not
+   * unique -- after a merge several ids answer to one Party. That is correct
+   * here rather than a hazard: `client_accounts.lead_id` is the legacy id, the
+   * anti-join is on that id, so each surviving id still gets exactly one account.
+   */
   private async backfillConvertedLeadsToClientAccounts(orgId: string, fallbackSalesRepId: string): Promise<void> {
     await this.db.execute(sql`
       INSERT INTO client_accounts (
@@ -386,25 +407,28 @@ export class ClientAccountsService {
         estimated_investment, status, converted_at, created_at, updated_at
       )
       SELECT
-        l.org_id,
-        l.id,
-        COALESCE(l.assigned_to_id, ${fallbackSalesRepId}),
-        l.name,
-        l.email,
-        l.phone,
-        l.whatsapp_number,
-        COALESCE(l.potential_value, l.investment_interest)::numeric(15,2),
+        m.organization_id,
+        m.lead_id,
+        COALESCE(p.owner_user_id, ${fallbackSalesRepId}),
+        p.name,
+        p.email,
+        p.phone,
+        p.whatsapp_phone,
+        COALESCE(p.expected_value, p.stated_budget)::numeric(15,2),
         'ACCOUNT_OPENING'::text,
-        COALESCE(l.converted_at, NOW()),
+        COALESCE(p.converted_at, NOW()),
         NOW(),
         NOW()
-      FROM leads l
-      WHERE l.org_id = ${orgId}
-        AND l.status = 'CONVERTED'
-        AND l.deleted_at IS NULL
+      FROM lead_party_map m
+      JOIN business_parties p
+        ON p.party_id = m.party_id
+       AND p.organization_id = m.organization_id
+      WHERE m.organization_id = ${orgId}
+        AND p.lifecycle_stage = 'CONVERTED'
+        AND p.deleted_at IS NULL
         AND NOT EXISTS (
           SELECT 1 FROM client_accounts ca
-          WHERE ca.org_id = l.org_id AND ca.lead_id = l.id
+          WHERE ca.org_id = m.organization_id AND ca.lead_id = m.lead_id
         )
     `);
   }

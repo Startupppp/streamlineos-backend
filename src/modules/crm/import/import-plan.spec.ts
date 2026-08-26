@@ -4,7 +4,7 @@ import {
   assessDuplicate,
   REVIEW_THRESHOLD,
   type PartyFingerprint,
-} from "../party/party-duplicates";
+} from "../../party/party-duplicates";
 
 const HEADERS = ["Company Name", "Email", "Phone", "GSTIN", "Territory"];
 const columns = mapColumns(HEADERS);

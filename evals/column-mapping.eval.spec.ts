@@ -4,7 +4,7 @@ import {
   type ColumnCase,
   type ColumnSource,
 } from "./datasets/column-mapping.dataset";
-import { isIdentityField, mapColumn } from "../src/modules/crm-import/column-mapping";
+import { isIdentityField, mapColumn } from "../src/modules/crm/import/column-mapping";
 
 /**
  * The gate on column mapping.

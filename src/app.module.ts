@@ -86,7 +86,7 @@ import { PartyModule } from "./modules/party/party.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
 import { IngressModule } from "./modules/ingress/ingress.module";
 import { AutonomyModule } from "./modules/autonomy/autonomy.module";
-import { CrmImportModule } from "./modules/crm-import/crm-import.module";
+import { CrmImportModule } from "./modules/crm/import/crm-import.module";
 import { PortalModule } from "./modules/portal/portal.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
@@ -98,6 +98,7 @@ import { BuildModule } from "./modules/build/build.module";
 import { ZodValidationInterceptor } from "./common/validation/zod-validation.interceptor";
 import { DataQualityModule } from "./modules/data-quality/data-quality.module";
 import { IssuesModule } from "./modules/issues/issues.module";
+import { RecordLayoutsModule } from "./modules/record-layouts/record-layouts.module";
 
 @Module({
   imports: [
@@ -158,6 +159,7 @@ import { IssuesModule } from "./modules/issues/issues.module";
     AutonomyModule,
     CrmImportModule,
     IssuesModule,
+    RecordLayoutsModule,
     PortalModule,
     ModuleAccessModule,
     IdempotencyModule,

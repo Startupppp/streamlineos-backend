@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, sql, desc } from "drizzle-orm";
-import { contacts, crmContactRoles, surveyParticipants } from "../../db/schema";
+import { crmContactRoles, surveyParticipants } from "../../db/schema";
 import { businessParties, contactPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -9,6 +9,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { CONTACT_ROLE_DEFAULTS, type ContactRoleCreateInput, type DuplicatesQueryInput, type MergeContactsInput } from "./dto/contact-roles.schemas";
 import { updateMirroredContacts } from "../party/party-legacy-contacts";
+import { employerLegacyIds } from "../party/party-legacy-employer";
 import {
   CONTACT_PARTY_COLUMNS,
   CONTACT_PARTY_JOIN,
@@ -184,8 +185,10 @@ export class ContactRolesService {
   }
 
   async mergeContacts(orgId: string, input: MergeContactsInput, actorId: string) {
-    const [primary] = await this.mergeCandidate(orgId, input.primaryId);
-    const [duplicate] = await this.mergeCandidate(orgId, input.duplicateId);
+    const [primary, duplicate] = await Promise.all([
+      this.mergeCandidate(orgId, input.primaryId),
+      this.mergeCandidate(orgId, input.duplicateId),
+    ]);
 
     if (!primary) throw new NotFoundException("Primary contact not found in this org");
     if (!duplicate) throw new NotFoundException("Duplicate contact not found in this org");
@@ -244,15 +247,23 @@ export class ContactRolesService {
   }
 
   /**
-   * The scalars the merge decides on, read from the party.
+   * The scalars the merge decides on, all read from the party.
    *
-   * `organization_id` is the exception and comes from the legacy row: it points
-   * at `crm_organizations`, and a party's employer cannot point at one until
-   * that table converges -- `party-mirror-fields.ts` records it as legacy-owned.
-   * An id, never a name, which is why this file stays on the reader ratchet.
+   * The patch this feeds is in `contacts`' vocabulary, because that is what
+   * `updateMirroredContacts` takes and the writer translates it once -- so the
+   * employer comes back as the integer `crm_organizations` id rather than as
+   * `employer_party_id`. It is translated here rather than read off the legacy
+   * row, through the same `crm_org_party_map` lookup the mirror uses to write
+   * that column, so the two cannot give different answers.
+   *
+   * A party whose employer has no `crm_organizations` row behind it translates to
+   * null, which is exactly what `contacts.organization_id` holds for it today --
+   * the legacy column cannot name a company the legacy table has never heard of,
+   * and `PartyDivergenceService.findEmployerDisagreements` is what reports that
+   * gap. So this reads the same value the legacy join did, without the join.
    */
-  private mergeCandidate(orgId: string, contactId: number) {
-    return this.db
+  private async mergeCandidate(orgId: string, contactId: number) {
+    const [row] = await this.db
       .select({
         id: CONTACT_PARTY_COLUMNS.id,
         orgId: CONTACT_PARTY_COLUMNS.orgId,
@@ -265,20 +276,22 @@ export class ContactRolesService {
         avatarUrl: CONTACT_PARTY_COLUMNS.avatarUrl,
         linkedinUrl: CONTACT_PARTY_COLUMNS.linkedinUrl,
         twitterUrl: CONTACT_PARTY_COLUMNS.twitterUrl,
-        organizationId: contacts.organizationId,
+        employerPartyId: businessParties.employerPartyId,
       })
       .from(contactPartyMap)
       .innerJoin(businessParties, CONTACT_PARTY_JOIN)
-      // Tenant on both sides; `contacts` has a `(org_id, id)` unique constraint,
-      // so this cannot multiply the row the map produced.
-      .innerJoin(
-        contacts,
-        and(
-          eq(contacts.id, contactPartyMap.contactId),
-          eq(contacts.orgId, contactPartyMap.organizationId),
-        ),
-      )
       .where(and(...contactPartyScope(orgId), contactIdIs(contactId)));
+    if (!row) return undefined;
+
+    const legacy = row.employerPartyId
+      ? await employerLegacyIds(this.db, orgId, [row.employerPartyId])
+      : null;
+    return {
+      ...row,
+      organizationId: row.employerPartyId
+        ? (legacy?.get(row.employerPartyId) ?? null)
+        : null,
+    };
   }
 
   private async assertContactAccess(orgId: string, contactId: number) {

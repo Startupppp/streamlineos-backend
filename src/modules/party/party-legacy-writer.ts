@@ -21,6 +21,7 @@ import {
 import type { MappedLegacyKind } from "./party-legacy-seam";
 import { claimIdentifiers, claimsOfPatch, identifierClaimsOfColumns } from "./party-identifiers";
 import { employerLegacyIds } from "./party-legacy-employer";
+import { convertedFromColumnOf, parentColumnOf } from "./party-legacy-associations";
 
 /**
  * The shared half of the Party-first write, and the Party surface itself.
@@ -342,7 +343,14 @@ async function refreshMirrorsOfParty(
   if (clientIds.length > 0)
     await db
       .update(clients)
-      .set(CLIENT_MIRROR.derive(party))
+      .set({
+        ...CLIENT_MIRROR.derive(party),
+        // Outside the pure derivation because it crosses id spaces; see
+        // `party-legacy-associations.ts`. Without it, re-pointing a client at a
+        // different lead on the Party surface would leave `clients.lead_id` on
+        // the old one indefinitely.
+        ...(await convertedFromColumnOf(db, organizationId, party.convertedFromPartyId)),
+      })
       .where(and(eq(clients.orgId, organizationId), inArray(clients.id, clientIds)));
 
   const contactIds = contactRows.map((row) => row.id);
@@ -351,11 +359,13 @@ async function refreshMirrorsOfParty(
       .update(contacts)
       .set({
         ...CONTACT_MIRROR.derive(party),
-        // Outside the pure derivation because it crosses id spaces; see
-        // `party-legacy-employer.ts`. Without it, moving somebody to a new
-        // employer on the Party surface would leave `contacts.organization_id`
-        // pointing at the old one indefinitely.
+        // Outside the pure derivation because they cross id spaces; see
+        // `party-legacy-employer.ts` and `party-legacy-associations.ts`. Without
+        // them, moving somebody to a new employer or a new source lead on the
+        // Party surface would leave the legacy columns pointing at the old ones
+        // indefinitely.
         ...(await employerColumnOf(db, organizationId, party)),
+        ...(await convertedFromColumnOf(db, organizationId, party.convertedFromPartyId)),
       })
       .where(and(eq(contacts.orgId, organizationId), inArray(contacts.id, contactIds)));
 
@@ -363,7 +373,12 @@ async function refreshMirrorsOfParty(
   if (crmOrgIds.length > 0)
     await db
       .update(crmOrganizations)
-      .set(ORGANISATION_MIRROR.derive(party))
+      .set({
+        ...ORGANISATION_MIRROR.derive(party),
+        // The account hierarchy, which crosses id spaces the same way; see
+        // `party-legacy-associations.ts`.
+        ...(await parentColumnOf(db, organizationId, party.parentPartyId)),
+      })
       .where(
         and(eq(crmOrganizations.orgId, organizationId), inArray(crmOrganizations.id, crmOrgIds)),
       );

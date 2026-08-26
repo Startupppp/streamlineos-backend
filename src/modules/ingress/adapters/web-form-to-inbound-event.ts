@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { capText } from "../../autonomy/decision-record";
-import { mapColumn, normaliseHeader, type ImportField } from "../../crm-import/column-mapping";
+import { mapColumn, normaliseHeader, type ImportField } from "../../crm/import/column-mapping";
 import {
   addressDomain,
   normaliseAddress,

@@ -38,14 +38,6 @@ describe("the legacy identity tables gain no new readers", () => {
   const KNOWN_READERS = [
   "src/modules/accounting/core/accounting-payables-query.service.ts",
   "src/modules/accounting/core/accounting-receivables.service.ts",
-  "src/modules/clients/clients.service.ts",
-  "src/modules/contacts/contact-roles.service.ts",
-  "src/modules/contacts/contacts.service.ts",
-  "src/modules/crm/core/crm-customer360-sections.service.ts",
-  "src/modules/crm/core/crm-customer360.service.ts",
-  "src/modules/crm/core/crm-organizations-insights.service.ts",
-  "src/modules/crm/core/crm-organizations.service.ts",
-  "src/modules/cron/cron-weekly-recap.service.ts",
   "src/modules/finance/ap/bills-due-check.service.ts",
   "src/modules/finance/ap/payment-runs.service.ts",
   "src/modules/finance/ap/recurring-bills.service.ts",
@@ -57,9 +49,11 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/finance/reports/insights-finders.service.ts",
   "src/modules/finance/reports/statement-reports.service.ts",
   "src/modules/finance/tax/tax-reports.service.ts",
-  "src/modules/inventory/returns/customer-returns.service.ts",
-  "src/modules/leads/leads.controller.e2e-spec.ts",
   "src/modules/party/party-divergence.service.ts",
+  // Raw SQL, and the only reader the import scan never could have seen: it
+  // counts rows in each legacy table to prove none lacks a Party, which is
+  // the one claim that cannot be made from the Party side.
+  "src/modules/party/party-legacy-backfill.db.spec.ts",
   "src/modules/party/party-legacy-clients.ts",
   "src/modules/party/party-legacy-contacts.ts",
   "src/modules/party/party-legacy-employer.ts",
@@ -71,7 +65,6 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/party/party-legacy-writer.spec.ts",
   "src/modules/party/party-legacy-writer.ts",
   "src/modules/party/party-mirror-fields.ts",
-  "src/modules/search/search.service.ts",
   ];
 
   /** Import of the Drizzle table symbol, which is how a read actually begins. */
@@ -80,6 +73,33 @@ describe("the legacy identity tables gain no new readers", () => {
     "gs",
   );
   const LEGACY_TABLES = new Set(["leads", "clients", "contacts", "crmOrganizations"]);
+
+  /** Table names as SQL says them, for the reads no import can reveal. */
+  const LEGACY_SQL = /\b(?:from|join|into|update)\s+"?(leads|clients|contacts|crm_organizations)"?\b/i;
+
+  /**
+   * A read written as raw SQL rather than as Drizzle.
+   *
+   * The import scan above is blind to `db.execute(sql\`... FROM leads ...\`)`,
+   * because a template string imports nothing. Two such reads survived every
+   * migrate batch in this phase for exactly that reason — one opening client
+   * accounts from converted leads, one finding duplicate companies — and ticket
+   * 08's drop would have taken both out at runtime with the register reading
+   * zero and nothing having warned. A guard that says "when this reaches zero the
+   * tables can be dropped" has to be able to see every read, or the sentence is
+   * false.
+   *
+   * Comments are stripped first, and that is not tidiness. Every file in this
+   * seam explains itself by quoting the SQL it replaced — `party-legacy-leads.ts`,
+   * both party readers and `plan-limits.service.ts` all contain the words
+   * `FROM leads` in prose. Counting those would put six files on the register
+   * that read nothing, and a register with false entries is one people learn to
+   * ignore.
+   */
+  const namesALegacyTableInSql = (source: string): boolean =>
+    LEGACY_SQL.test(
+      source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 "),
+    );
 
   function readersInTree(): string[] {
     /*
@@ -103,7 +123,7 @@ describe("the legacy identity tables gain no new readers", () => {
       for (const match of source.matchAll(LEGACY_IMPORT))
         for (const raw of match[1]!.split(","))
           if (LEGACY_TABLES.has(raw.split(" as ")[0]!.trim())) return true;
-      return false;
+      return namesALegacyTableInSql(source);
     });
   }
 

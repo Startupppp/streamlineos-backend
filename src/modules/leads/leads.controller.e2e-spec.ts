@@ -10,7 +10,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
   accessVersions,
-  leads,
   organizationMembers,
   organizations,
   permissions,
@@ -19,6 +18,8 @@ import {
   roles,
   users,
 } from "../../db/schema";
+import { businessParties } from "../../db/schema/party";
+import { createMirroredLeads } from "../party/party-legacy-leads";
 import { eq } from "drizzle-orm";
 
 describe("Leads PermissionGuard wiring (e2e, no DB required)", () => {
@@ -80,7 +81,14 @@ describeWithDb(
     const leadIds = { own: 0, sales: 0, other: 0 };
 
     async function cleanup(): Promise<void> {
-      await db.delete(leads).where(eq(leads.orgId, ORG_ID));
+      /*
+       * The parties, not the leads. `GET /leads` reads `lead_party_map` joined to
+       * `business_parties`, so a fixture that only removed the legacy rows would
+       * leave the parties this suite asserts on behind; deleting the party takes
+       * its map row with it through the composite foreign key, and the
+       * `organizations` delete below cascades the legacy rows.
+       */
+      await db.delete(businessParties).where(eq(businessParties.organizationId, ORG_ID));
       await db.delete(rolePermissionGrants).where(eq(rolePermissionGrants.orgId, ORG_ID));
       await db.delete(accessVersions).where(eq(accessVersions.orgId, ORG_ID));
       await db.delete(roles).where(eq(roles.orgId, ORG_ID));
@@ -175,14 +183,20 @@ describeWithDb(
         .values({ orgId: ORG_ID, permissionsVersion: 1 })
         .onConflictDoNothing();
 
-      const inserted = await db
-        .insert(leads)
-        .values([
-          { orgId: ORG_ID, name: "Own Lead", assignedToId: U.own },
-          { orgId: ORG_ID, name: "Sales Lead", assignedToId: U.sales },
-          { orgId: ORG_ID, name: "Other Lead", assignedToId: U.owner },
-        ])
-        .returning({ id: leads.id, assignedToId: leads.assignedToId });
+      /*
+       * Seeded through the Party-first writer rather than by inserting `leads`
+       * directly. The controller reads `lead_party_map` joined to
+       * `business_parties`, so a bare legacy insert produces rows the endpoint
+       * cannot see and every assertion below would fail on an empty list -- which
+       * is a fixture bug reported as an RBAC failure. `createMirroredLeads` writes
+       * the party, the map row and the mirror in one transaction, which is what
+       * every production path does.
+       */
+      const inserted = await createMirroredLeads(db, ORG_ID, [
+        { orgId: ORG_ID, name: "Own Lead", assignedToId: U.own },
+        { orgId: ORG_ID, name: "Sales Lead", assignedToId: U.sales },
+        { orgId: ORG_ID, name: "Other Lead", assignedToId: U.owner },
+      ], { linkedBy: "test:rbac-leads-e2e" });
 
       for (const row of inserted) {
         if (row.assignedToId === U.own) leadIds.own = row.id;

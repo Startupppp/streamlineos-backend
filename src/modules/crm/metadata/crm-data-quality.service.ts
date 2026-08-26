@@ -162,16 +162,38 @@ export class CrmDataQualityService {
     return { count: emailOffenders.length + phoneOffenders.length, offenders };
   }
 
+  /**
+   * Companies whose names collide once normalised.
+   *
+   * Reads Party, not `crm_organizations`. This was raw SQL against the legacy
+   * table, invisible to both the reader ratchet and the lint rule -- each matches
+   * a Drizzle symbol import, and a template string imports nothing. Ticket 08's
+   * drop would have broken the data-quality scoreboard at runtime with nothing
+   * having warned.
+   *
+   * `party_kind = 'ORGANISATION'` is the filter that replaces the table name.
+   * Ticket 25 made a company a Party like any other, so without it this would
+   * report every person whose name matches another person's as a duplicate
+   * *company* -- and the queue's whole purpose is that a row in it is worth
+   * acting on.
+   *
+   * The ids reported are still the integer ones, through `crm_org_party_map`,
+   * because that is what the merge screen this feeds takes.
+   */
   private async duplicateCompanies(orgId: string): Promise<DataQualityAggregate> {
     const dups = await this.db.execute(
       sql`
-        SELECT lower(trim(name)) AS norm_name,
-               string_agg(id::text, ',') AS ids,
-               string_agg(name, ' | ') AS names
-        FROM crm_organizations
-        WHERE org_id = ${orgId}
-          AND deleted_at IS NULL
-        GROUP BY lower(trim(name))
+        SELECT lower(trim(p.name)) AS norm_name,
+               string_agg(m.crm_organization_id::text, ',') AS ids,
+               string_agg(p.name, ' | ') AS names
+        FROM business_parties p
+        JOIN crm_org_party_map m
+          ON m.party_id = p.party_id
+         AND m.organization_id = p.organization_id
+        WHERE p.organization_id = ${orgId}
+          AND p.party_kind = 'ORGANISATION'
+          AND p.deleted_at IS NULL
+        GROUP BY lower(trim(p.name))
         HAVING count(*) > 1
         LIMIT ${OFFENDER_LIMIT}
       `,

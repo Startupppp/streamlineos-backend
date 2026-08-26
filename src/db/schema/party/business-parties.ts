@@ -14,6 +14,7 @@ import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { organizations } from "../common/auth";
 import { crmCampaigns } from "../crm/campaigns";
+import { deals } from "../crm/deals";
 import { crmHealthEnum, orgSizeEnum, partyKindEnum, partyTypeEnum } from "../common/enums";
 
 /**
@@ -150,6 +151,25 @@ export const businessParties = pgTable(
      * together would lose the distinction in the direction that matters.
      */
     description: text("description"),
+    /**
+     * The company that owns this company: the account hierarchy, as parties.
+     *
+     * `crm_organizations.parent_id`, converged by 0265/0266. Deliberately NOT
+     * folded into `employerPartyId` — a subsidiary's parent is not its employer,
+     * and one column serving both would make that name a lie. Ticket 25 left the
+     * hierarchy where it was and said so; ticket 08 could not drop
+     * `crm_organizations` while it stayed there, because the hierarchy reads were
+     * the last thing joining the table.
+     *
+     * Same composite `(organization_id, parent_party_id)` foreign key and the
+     * same `ON DELETE CASCADE` as `employerPartyId`, for the same reasons; see
+     * that column and 0265.
+     *
+     * Only one hop is constrained. A cycle three companies long is still the
+     * application's problem, which is what
+     * `CrmOrganizationsInsightsService.wouldCreateCycle` is for.
+     */
+    parentPartyId: text("parent_party_id"),
 
     // --- Lifecycle, from `leads` ---
 
@@ -165,6 +185,36 @@ export const businessParties = pgTable(
      */
     qualificationScore: integer("qualification_score").default(0).notNull(),
     convertedAt: timestamp("converted_at"),
+    /**
+     * The lead record this one came out of, as that lead's party.
+     *
+     * `clients.lead_id` and `contacts.lead_id`, which are one relation under two
+     * spellings: "which lead became this client" and "which lead this contact was
+     * raised against" both name the lead row this record was created from, and
+     * 0241 gave that row a party. Two columns would be the merged model carrying
+     * two names for one field, which is the mistake 0240 refused three times.
+     *
+     * Composite `(organization_id, converted_from_party_id)` foreign key with
+     * `ON DELETE CASCADE`, and a CHECK that nothing is converted from itself —
+     * reachable after a merge, where one surviving party legitimately answers to
+     * both a client id and the lead id it converted from.
+     */
+    convertedFromPartyId: text("converted_from_party_id"),
+    /**
+     * The deal this person is attached to.
+     *
+     * `contacts.deal_id`, and still an integer `deals` id rather than a party
+     * link, because a deal is not a party. `deals.party_id` points the other way
+     * — "the party this deal is WITH", the customer — and is nullable and
+     * unbackfilled, so reading the relation off it would silently drop every deal
+     * that predates phase 1.
+     *
+     * The legacy column has no foreign key at all, so it can and does name a deal
+     * that was deleted or belongs to another tenant. This one has the composite
+     * tenant key `contacts.deal_id` never had, which is why 0266 filters the
+     * backfill through an EXISTS instead of copying the column across.
+     */
+    primaryDealId: integer("primary_deal_id"),
     lostReason: text("lost_reason"),
     slaDueAt: timestamp("sla_due_at"),
     nextFollowUpAt: timestamp("next_follow_up_at"),
@@ -278,6 +328,22 @@ export const businessParties = pgTable(
     index("idx_business_parties_employer")
       .on(table.organizationId, table.employerPartyId)
       .where(sql`employer_party_id is not null`),
+    /*
+     * The three links 0265 added, all partial for the reason the employer index
+     * is: almost no party carries any of them. A company was not converted from a
+     * lead, a lead has no parent company, and a person is attached to a deal only
+     * if somebody said so. Each also serves its own foreign key's delete-time
+     * lookup when a tenant goes.
+     */
+    index("idx_business_parties_converted_from")
+      .on(table.organizationId, table.convertedFromPartyId)
+      .where(sql`converted_from_party_id is not null`),
+    index("idx_business_parties_parent")
+      .on(table.organizationId, table.parentPartyId)
+      .where(sql`parent_party_id is not null`),
+    index("idx_business_parties_primary_deal")
+      .on(table.organizationId, table.primaryDealId)
+      .where(sql`primary_deal_id is not null`),
     // The Companies list: every organisation in the tenant, newest first.
     index("idx_business_parties_org_kind")
       .on(table.organizationId, table.partyKind)
@@ -305,5 +371,30 @@ export const businessParties = pgTable(
     // see; deeper ones are the application's problem, as they are for
     // `crm_organizations.parent_id`.
     check("chk_business_parties_employer_not_self", sql`employer_party_id is null or employer_party_id <> party_id`),
+    // The three links from 0265, all carrying the tenant with the reference so a
+    // cross-organisation association is unrepresentable rather than unlikely.
+    foreignKey({
+      columns: [table.organizationId, table.convertedFromPartyId],
+      foreignColumns: [table.organizationId, table.partyId],
+      name: "fk_business_parties_converted_from",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.parentPartyId],
+      foreignColumns: [table.organizationId, table.partyId],
+      name: "fk_business_parties_parent",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.primaryDealId],
+      foreignColumns: [deals.orgId, deals.id],
+      name: "fk_business_parties_primary_deal",
+    }).onDelete("cascade"),
+    check(
+      "chk_business_parties_converted_from_not_self",
+      sql`converted_from_party_id is null or converted_from_party_id <> party_id`,
+    ),
+    check(
+      "chk_business_parties_parent_not_self",
+      sql`parent_party_id is null or parent_party_id <> party_id`,
+    ),
   ],
 );

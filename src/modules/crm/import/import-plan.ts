@@ -1,4 +1,4 @@
-import { partyTypeEnum } from "../../db/schema";
+import { partyTypeEnum } from "../../../db/schema";
 import {
   assessDuplicate,
   AUTO_MERGE_THRESHOLD,
@@ -8,7 +8,7 @@ import {
   normaliseTaxNumber,
   REVIEW_THRESHOLD,
   type PartyFingerprint,
-} from "../party/party-duplicates";
+} from "../../party/party-duplicates";
 import { customKeyFor, normaliseHeader, type ImportField, type MappedColumn } from "./column-mapping";
 
 /**
@@ -21,8 +21,8 @@ import { customKeyFor, normaliseHeader, type ImportField, type MappedColumn } fr
  */
 
 /** One definition, owned by the schema layer that stores it. */
-export type { RowAction } from "../../db/schema/crm/imports";
-import type { RowAction } from "../../db/schema/crm/imports";
+export type { RowAction } from "../../../db/schema/crm/imports";
+import type { RowAction } from "../../../db/schema/crm/imports";
 
 /** What the scorer saw, where what it saw is the row's decision. */
 export interface RowMatch {

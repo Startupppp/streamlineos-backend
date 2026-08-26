@@ -1,8 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import {
-  clients,
-  contacts,
   deals,
   invoices,
   payments,
@@ -11,10 +9,11 @@ import {
   supportTickets,
   csatSurveys,
 } from "../../../db/schema";
-import { businessParties, contactPartyMap, leadPartyMap } from "../../../db/schema/party";
+import { businessParties, clientPartyMap, contactPartyMap, leadPartyMap } from "../../../db/schema/party";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { PARTY_OF_CONTACT, PARTY_OF_LEAD, leadSource, leadStatus } from "../crm-party-reads";
+import { PARTY_OF_CLIENT, PARTY_OF_CONTACT, PARTY_OF_LEAD, leadSource, leadStatus } from "../crm-party-reads";
+import { partyIdsOfCrmOrgs } from "../../party/party-legacy-employer";
 
 export const SECTION_LIMIT = 10;
 
@@ -42,94 +41,111 @@ export class CrmCustomer360SectionsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   /**
-   * The legacy row is still the only place "works at this company" is recorded --
-   * `contacts.organization_id` points at `crm_organizations`, and a party's
-   * employer cannot point at one until that table converges too. So it stays as
-   * the association, and every field on the card comes from the party.
+   * Every field on a contact card, and both of its associations, from the party.
+   *
+   * "Works at this company" is `employer_party_id` (0262) and "came from this
+   * lead" is `converted_from_party_id` (0265), so the legacy row is not joined at
+   * all -- the map leads and supplies the numeric id the card links to.
    */
-  private contactSection(orgId: string, where: SQL | undefined) {
+  private contactSection(where: SQL | undefined) {
     return this.db
       .select({
-        id: contacts.id,
+        id: contactPartyMap.contactId,
         name: businessParties.name,
         email: businessParties.email,
         title: businessParties.jobTitle,
         createdAt: businessParties.createdAt,
       })
-      .from(contacts)
-      .innerJoin(
-        contactPartyMap,
-        and(
-          eq(contactPartyMap.contactId, contacts.id),
-          eq(contactPartyMap.organizationId, orgId),
-        ),
-      )
+      .from(contactPartyMap)
       .innerJoin(businessParties, PARTY_OF_CONTACT)
       .where(where);
   }
 
-  private contactSectionCount(orgId: string, where: SQL | undefined) {
+  private contactSectionCount(where: SQL | undefined) {
     return this.db
       .select({ count: sql<number>`count(*)::int` })
-      .from(contacts)
-      .innerJoin(
-        contactPartyMap,
-        and(
-          eq(contactPartyMap.contactId, contacts.id),
-          eq(contactPartyMap.organizationId, orgId),
-        ),
-      )
+      .from(contactPartyMap)
       .innerJoin(businessParties, PARTY_OF_CONTACT)
       .where(where);
   }
 
   async fetchContacts(orgId: string, companyId: number): Promise<Customer360Section<unknown>> {
+    // The company id is turned into the party it means once, rather than joining
+    // `crm_org_party_map` in: the predicate then sits on `employer_party_id`,
+    // which is indexed, and a company with no party returns nothing -- which is
+    // what filtering on an unknown company has always done.
+    const employerPartyId = (await partyIdsOfCrmOrgs(this.db, orgId, [companyId])).get(companyId);
+    if (!employerPartyId) return { items: [], total: 0 };
+
     const where = and(
-      eq(contacts.orgId, orgId),
-      eq(contacts.organizationId, companyId),
+      eq(contactPartyMap.organizationId, orgId),
+      eq(businessParties.employerPartyId, employerPartyId),
       isNull(businessParties.deletedAt),
     );
     const [items, countRow] = await Promise.all([
-      this.contactSection(orgId, where)
+      this.contactSection(where)
         .orderBy(desc(businessParties.createdAt))
         .limit(SECTION_LIMIT),
-      this.contactSectionCount(orgId, where).then((rows) => rows[0]),
+      this.contactSectionCount(where).then((rows) => rows[0]),
     ]);
     return { items, total: Number(countRow?.count ?? 0) };
   }
 
   /**
-   * Which lead a client converted from.
+   * Which lead a client converted from, as both of the things a caller needs.
    *
    * The two client sections below used to filter `leads` on `client_id`, a
    * column `leads` has never had — the section 500ed rather than returning
-   * anything. `clients.lead_id` is the link that exists, and it is legacy-owned:
-   * a legacy-to-legacy pointer with no Party equivalent until `leads` is
-   * dropped, per `party-mirror-fields.ts`.
+   * anything. `clients.lead_id` is the link that exists, and 0265 moved it onto
+   * the party as `converted_from_party_id`.
+   *
+   * Both forms come back because the two callers ask different questions of it.
+   * The contacts section wants the party, so it can compare links to links. The
+   * leads section wants the integer id, because filtering on the party would
+   * return one row per legacy lead id the party answers to — several, after a
+   * merge — where it has always returned at most one.
    */
-  private async leadIdOfClient(orgId: string, clientId: number): Promise<number | null> {
+  private async sourceLeadOfClient(
+    orgId: string,
+    clientId: number,
+  ): Promise<{ partyId: string; leadId: number | null } | null> {
     const [row] = await this.db
-      .select({ leadId: clients.leadId })
-      .from(clients)
-      .where(and(eq(clients.orgId, orgId), eq(clients.id, clientId)))
+      .select({ partyId: businessParties.convertedFromPartyId })
+      .from(clientPartyMap)
+      .innerJoin(businessParties, PARTY_OF_CLIENT)
+      .where(and(eq(clientPartyMap.organizationId, orgId), eq(clientPartyMap.clientId, clientId)))
       .limit(1);
-    return row?.leadId ?? null;
+    if (!row?.partyId) return null;
+
+    const [mapped] = await this.db
+      .select({ leadId: leadPartyMap.leadId })
+      .from(leadPartyMap)
+      .where(
+        and(eq(leadPartyMap.organizationId, orgId), eq(leadPartyMap.partyId, row.partyId)),
+      )
+      // Lowest id wins where a party answers to several, which happens after a
+      // merge re-points the loser's map row. Same rule the mirror writes the
+      // legacy column with, so the two cannot give different answers.
+      .orderBy(asc(leadPartyMap.leadId))
+      .limit(1);
+
+    return { partyId: row.partyId, leadId: mapped?.leadId ?? null };
   }
 
   async fetchContactsForClient(orgId: string, clientId: number): Promise<Customer360Section<unknown>> {
-    const leadId = await this.leadIdOfClient(orgId, clientId);
-    if (leadId === null) return { items: [], total: 0 };
+    const source = await this.sourceLeadOfClient(orgId, clientId);
+    if (!source) return { items: [], total: 0 };
 
     const where = and(
-      eq(contacts.orgId, orgId),
-      eq(contacts.leadId, leadId),
+      eq(contactPartyMap.organizationId, orgId),
+      eq(businessParties.convertedFromPartyId, source.partyId),
       isNull(businessParties.deletedAt),
     );
     const [items, countRow] = await Promise.all([
-      this.contactSection(orgId, where)
+      this.contactSection(where)
         .orderBy(desc(businessParties.createdAt))
         .limit(SECTION_LIMIT),
-      this.contactSectionCount(orgId, where).then((rows) => rows[0]),
+      this.contactSectionCount(where).then((rows) => rows[0]),
     ]);
 
     return { items, total: Number(countRow?.count ?? 0) };
@@ -172,7 +188,7 @@ export class CrmCustomer360SectionsService {
   }
 
   async fetchLeadsForClient(orgId: string, clientId: number): Promise<Customer360Section<unknown>> {
-    const leadId = await this.leadIdOfClient(orgId, clientId);
+    const leadId = (await this.sourceLeadOfClient(orgId, clientId))?.leadId ?? null;
     if (leadId === null) return { items: [], total: 0 };
 
     const where = and(

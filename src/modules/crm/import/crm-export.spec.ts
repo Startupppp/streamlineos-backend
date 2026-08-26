@@ -1,6 +1,6 @@
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { Db } from "../../db/drizzle.types";
+import type { Db } from "../../../db/drizzle.types";
 import { CrmExportService, csvRow } from "./crm-export.service";
 
 const ORG = "org-1";

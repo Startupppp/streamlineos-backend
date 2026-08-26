@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, exists, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { contacts, deals, projects, tickets } from "../../db/schema";
+import { deals, projects, tickets } from "../../db/schema";
 import {
   businessParties,
   clientPartyMap,
@@ -42,12 +42,15 @@ function isUndefinedFunction(err: unknown): boolean {
 
 export type SearchResultType = "lead" | "deal" | "contact" | "client" | "ticket";
 
+/**
+ * The party of the lead a contact came from, for the "own" scope only.
+ *
+ * A second reference to `business_parties` in the same query, so it needs a name
+ * of its own. `converted_from_party_id` points straight at it — 0265 gave Party
+ * the association `contacts.lead_id` was holding — so the map that used to sit
+ * between them is gone from this predicate.
+ */
 const leadOwnerParty = alias(businessParties, "search_lead_owner_party");
-
-const LEAD_OWNER_PARTY_JOIN = and(
-  eq(leadOwnerParty.partyId, leadPartyMap.partyId),
-  eq(leadOwnerParty.organizationId, leadPartyMap.organizationId),
-);
 
 const PARTY_SEARCH_CAP = 500;
 const DEAL_SEARCH_CAP = 500;
@@ -218,6 +221,17 @@ export class SearchService {
     const numericTicket = /^\d+$/.test(q) ? Number(q) : null;
     const needsTicketProbe = access.build !== null && keyMatch === null && numericTicket === null;
 
+    /*
+     * A narrowed viewer sees a contact through what it is attached to: the lead
+     * it came from, or the deal it is on. Both associations are Party's now --
+     * `converted_from_party_id` and `primary_deal_id`, from 0265 -- so the two
+     * EXISTS below correlate to `business_parties` rather than to a `contacts`
+     * row, and this file stops joining the legacy table for two integers.
+     *
+     * The predicate is unchanged in what it admits: the same lead, the same deal,
+     * the same owner columns, the same `or`. `contacts.lead_id` and its party link
+     * are one relation under two spellings, kept equal by the mirror.
+     */
     const contactAccess = access.contacts;
     const contactScope =
       contactAccess === "all"
@@ -227,12 +241,11 @@ export class SearchService {
               exists(
                 this.db
                   .select({ value: sql`1` })
-                  .from(leadPartyMap)
-                  .innerJoin(leadOwnerParty, LEAD_OWNER_PARTY_JOIN)
+                  .from(leadOwnerParty)
                   .where(
                     and(
-                      eq(leadPartyMap.organizationId, orgId),
-                      eq(leadPartyMap.leadId, contacts.leadId),
+                      eq(leadOwnerParty.organizationId, orgId),
+                      eq(leadOwnerParty.partyId, businessParties.convertedFromPartyId),
                       applyScope(contactAccess, orgId, userId, {
                         ownerColumn: leadOwnerParty.ownerUserId,
                       }),
@@ -246,7 +259,7 @@ export class SearchService {
                   .where(
                     and(
                       eq(deals.orgId, orgId), isNull(deals.deletedAt),
-                      eq(deals.id, contacts.dealId),
+                      eq(deals.id, businessParties.primaryDealId),
                       applyScope(contactAccess, orgId, userId, {
                         ownerColumn: deals.assignedToId,
                       }),
@@ -331,10 +344,6 @@ export class SearchService {
         })
         .from(contactPartyMap)
         .innerJoin(businessParties, PARTY_OF_CONTACT)
-        .innerJoin(
-          contacts,
-          and(eq(contacts.id, contactPartyMap.contactId), eq(contacts.orgId, contactPartyMap.organizationId)),
-        )
         .where(
           and(
             eq(contactPartyMap.organizationId, orgId),

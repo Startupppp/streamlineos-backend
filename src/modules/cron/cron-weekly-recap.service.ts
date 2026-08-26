@@ -3,13 +3,14 @@ import { and, count, eq, gte, isNull, sql } from "drizzle-orm";
 import { subDays, format } from "date-fns";
 import {
   leadActivities,
-  leads,
   leaveRequests,
   organizationMembers,
   organizations,
   tickets,
   users,
 } from "../../db/schema";
+import { businessParties, leadPartyMap } from "../../db/schema/party";
+import { PARTY_OF_LEAD, leadStatus } from "../crm/crm-party-reads";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
@@ -81,23 +82,60 @@ export class CronWeeklyRecapService {
           .innerJoin(users, eq(users.id, organizationMembers.userId))
           .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
 
+        /*
+         * Every lead figure below is counted over `lead_party_map` joined to the
+         * party, never over `business_parties` alone: a tenant's parties include
+         * the ones minted from `clients`, `contacts` and `crm_organizations`, and
+         * counting those as leads would inflate the recap the week the CRM was
+         * first used. The map is what says "this party is a lead".
+         *
+         * No `deleted_at` predicate on any of them, which is not an oversight:
+         * `leads` has the column and this report has never filtered on it, so a
+         * deleted lead has always been counted and adding the filter here would
+         * change the numbers an owner has been reading. `0241` carried
+         * `leads.created_at` and `.updated_at` onto the party, so the windows are
+         * the same rows.
+         */
         const [newLeadCount] = await tx
           .select({ count: count() })
-          .from(leads)
-          .where(and(eq(leads.orgId, orgId), gte(leads.createdAt, weekStart)));
+          .from(leadPartyMap)
+          .innerJoin(businessParties, PARTY_OF_LEAD)
+          .where(
+            and(
+              eq(leadPartyMap.organizationId, orgId),
+              gte(businessParties.createdAt, weekStart),
+            ),
+          );
 
         const [convertedCount] = await tx
           .select({ count: count() })
-          .from(leads)
+          .from(leadPartyMap)
+          .innerJoin(businessParties, PARTY_OF_LEAD)
           .where(
-            and(eq(leads.orgId, orgId), eq(leads.status, "CONVERTED"), gte(leads.updatedAt, weekStart)),
+            and(
+              eq(leadPartyMap.organizationId, orgId),
+              // The coalesced expression, not the raw column: `lifecycle_stage`
+              // is nullable on the party where `leads.status` was NOT NULL, and
+              // comparing the raw column would silently exclude a lead that never
+              // left NEW. Same reason every other reader uses `leadStatus`.
+              eq(leadStatus, "CONVERTED"),
+              gte(businessParties.updatedAt, weekStart),
+            ),
           );
 
         const [activityCount] = await tx
           .select({ count: count() })
           .from(leadActivities)
-          .innerJoin(leads, eq(leads.id, leadActivities.leadId))
-          .where(and(eq(leads.orgId, orgId), gte(leadActivities.createdAt, weekStart)));
+          // The map alone, with no party joined: this counts activities and only
+          // needs the tenant predicate the legacy join to `leads.org_id` supplied.
+          .innerJoin(
+            leadPartyMap,
+            and(
+              eq(leadPartyMap.leadId, leadActivities.leadId),
+              eq(leadPartyMap.organizationId, orgId),
+            ),
+          )
+          .where(gte(leadActivities.createdAt, weekStart));
 
         const [openTicketCount] = await tx
           .select({ count: count() })
@@ -119,21 +157,36 @@ export class CronWeeklyRecapService {
           .where(and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "PENDING")));
 
         const pipelineRaw = await tx
-          .select({ status: leads.status, count: count() })
-          .from(leads)
-          .where(eq(leads.orgId, orgId))
-          .groupBy(leads.status);
+          .select({ status: leadStatus, count: count() })
+          .from(leadPartyMap)
+          .innerJoin(businessParties, PARTY_OF_LEAD)
+          .where(eq(leadPartyMap.organizationId, orgId))
+          .groupBy(leadStatus);
 
         const leaderboardRaw = await tx
           .select({
             name: users.name,
-            converted: sql<number>`COUNT(CASE WHEN ${leads.status} = 'CONVERTED' THEN 1 END)::int`,
+            converted: sql<number>`COUNT(CASE WHEN ${leadStatus} = 'CONVERTED' THEN 1 END)::int`,
           })
-          .from(leads)
-          .innerJoin(users, eq(users.id, leads.assignedToId))
-          .where(and(eq(leads.orgId, orgId), sql`${leads.assignedToId} IS NOT NULL`))
-          .groupBy(leads.assignedToId, users.name)
-          .orderBy(sql`COUNT(CASE WHEN ${leads.status} = 'CONVERTED' THEN 1 END) DESC`)
+          .from(leadPartyMap)
+          .innerJoin(businessParties, PARTY_OF_LEAD)
+          // `owner_user_id` is `leads.assigned_to_id` under the merged model's
+          // name, so "top performers" still means the same people.
+          .innerJoin(users, eq(users.id, businessParties.ownerUserId))
+          .where(
+            and(
+              eq(leadPartyMap.organizationId, orgId),
+              sql`${businessParties.ownerUserId} IS NOT NULL`,
+            ),
+          )
+          .groupBy(businessParties.ownerUserId, users.name)
+          // `created_at` is not in play here and the count ties freely across a
+          // small team, so the owner id decides which five appear rather than the
+          // heap order the map join changes.
+          .orderBy(
+            sql`COUNT(CASE WHEN ${leadStatus} = 'CONVERTED' THEN 1 END) DESC`,
+            sql`${businessParties.ownerUserId} ASC`,
+          )
           .limit(5);
 
         const recapData: RecapData = {

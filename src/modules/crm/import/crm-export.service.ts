@@ -1,8 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq, getTableColumns, gt, isNull } from "drizzle-orm";
-import { DRIZZLE } from "../../db/drizzle.constants";
-import type { Db } from "../../db/drizzle.types";
-import { activities, businessParties, partyContacts, subjects } from "../../db/schema";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import type { Db } from "../../../db/drizzle.types";
+import { activities, businessParties, partyContacts, subjects } from "../../../db/schema";
 
 /**
  * Getting everything back out again.
