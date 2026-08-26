@@ -1,10 +1,11 @@
 import { Module } from "@nestjs/common";
 import { ActivitiesController } from "./activities.controller";
 import { ActivitiesService } from "./activities.service";
+import { MyTasksService } from "./my-tasks.service";
 
 @Module({
   controllers: [ActivitiesController],
-  providers: [ActivitiesService],
+  providers: [ActivitiesService, MyTasksService],
   // Ticket 10's ingress and ticket 12's extraction both write activities.
   exports: [ActivitiesService],
 })

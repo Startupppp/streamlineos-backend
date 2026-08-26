@@ -5,7 +5,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull } from "drizzle-orm";
+import { keysetBefore } from "../../common/pagination/keyset";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import {
@@ -192,7 +193,7 @@ export class SubjectService {
       resolvedTypeId ? eq(subjects.subjectTypeId, resolvedTypeId) : undefined,
       search ? ilike(subjects.title, `%${search}%`) : undefined,
       position
-        ? sql`(${subjects.createdAt}, ${subjects.subjectId}) < (${new Date(position.sortValue)}, ${position.id})`
+        ? keysetBefore(subjects.createdAt, subjects.subjectId, position)
         : undefined,
     );
 

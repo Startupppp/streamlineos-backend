@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, count, desc, eq, gte, inArray, isNull, lt, sql, type SQL } from "drizzle-orm";
+import { keysetAfter, keysetBefore } from "../../common/pagination/keyset";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { businessParties, dataQualityFindings, dataQualityResolutions } from "../../db/schema";
@@ -53,8 +54,8 @@ export class DataQualityQueueService {
       ? and(
           conditions,
           ascending
-            ? sql`(${dataQualityFindings.firstDetectedAt}, ${dataQualityFindings.findingId}) > (${new Date(position.sortValue)}, ${position.id})`
-            : sql`(${dataQualityFindings.firstDetectedAt}, ${dataQualityFindings.findingId}) < (${new Date(position.sortValue)}, ${position.id})`,
+            ? keysetAfter(dataQualityFindings.firstDetectedAt, dataQualityFindings.findingId, position)
+            : keysetBefore(dataQualityFindings.firstDetectedAt, dataQualityFindings.findingId, position),
         )
       : conditions;
 
@@ -453,7 +454,7 @@ export class DataQualityQueueService {
     const keyset = position
       ? and(
           conditions,
-          sql`(${dataQualityResolutions.decidedAt}, ${dataQualityResolutions.resolutionId}) < (${new Date(position.sortValue)}, ${position.id})`,
+          keysetBefore(dataQualityResolutions.decidedAt, dataQualityResolutions.resolutionId, position),
         )
       : conditions;
 

@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, isNotNull, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { keysetAfter, keysetBefore } from "../../common/pagination/keyset";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { businessParties, deals, issueRecords } from "../../db/schema";
@@ -103,8 +104,8 @@ export class IssuesService {
       ? and(
           conditions,
           ascending
-            ? sql`(${issueRecords.openedAt}, ${issueRecords.issueRecordId}) > (${new Date(position.sortValue)}, ${position.id})`
-            : sql`(${issueRecords.openedAt}, ${issueRecords.issueRecordId}) < (${new Date(position.sortValue)}, ${position.id})`,
+            ? keysetAfter(issueRecords.openedAt, issueRecords.issueRecordId, position)
+            : keysetBefore(issueRecords.openedAt, issueRecords.issueRecordId, position),
         )
       : conditions;
 
