@@ -1,5 +1,3 @@
-import { EU_COUNTRIES } from "../../modules/billing/core/tax/tax-rates";
-
 /**
  * Which region a new organisation is placed in, from where it says it is.
  *
@@ -12,6 +10,23 @@ import { EU_COUNTRIES } from "../../modules/billing/core/tax/tax-rates";
  * into a support ticket, and the default is a region we actually operate. The
  * customer is told which one before they commit.
  */
+
+/**
+ * Countries whose data we place in the EU region.
+ *
+ * Deliberately its own list rather than the tax module's EU set, even though the
+ * two coincide today. They answer different questions and will diverge: data
+ * residency follows the EEA and adequacy decisions, tax treatment follows VAT
+ * membership, and Norway is in one and not the other. Sharing a list would make
+ * a VAT change silently move where somebody's data lives.
+ *
+ * Also: `common/` must not import from `modules/`. A residency rule that depends
+ * on the billing module is a residency rule that cannot be reasoned about
+ * without reading billing.
+ */
+const EU_RESIDENCY: ReadonlySet<string> = new Set([
+  "IE", "DE", "FR", "NL", "ES", "IT", "BE", "AT", "PT", "SE", "DK", "FI", "PL", "NO", "IS", "LI",
+]);
 
 /** Regions this deployment may place into, in the order preference falls back. */
 export const PLACEMENT_REGIONS = ["eu", "us", "india"] as const;
@@ -53,7 +68,7 @@ const DESCRIPTIONS: Readonly<Record<PlacementRegion, string>> = {
 export function regionForCountry(country: string | null | undefined): Placement {
   const code = (country ?? "").trim().toUpperCase();
 
-  if (EU_COUNTRIES.has(code))
+  if (EU_RESIDENCY.has(code))
     return { region: "eu", isMapped: true, description: DESCRIPTIONS.eu };
 
   if (NORTH_AMERICA.has(code))
