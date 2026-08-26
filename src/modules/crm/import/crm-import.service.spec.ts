@@ -11,6 +11,7 @@ import {
   partyIdentifiers,
 } from "../../../db/schema";
 import { CrmImportService, REVERT_WINDOW_DAYS } from "./crm-import.service";
+import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
 
 const ORG = "org-1";
 const IMPORT = "import-1";
@@ -271,8 +272,18 @@ function plannedRow(over: Partial<Record<string, unknown>> = {}): Record<string,
 }
 
 const workflows = { start: jest.fn(() => Promise.resolve("run-1")) };
+/*
+  Permissive by default: these cases are about import mechanics, not quotas, and
+  a limit that refuses would mask what they assert. The refusal path has its own
+  coverage in `party-creation-invariant.spec.ts`.
+*/
+const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
 const service = (fake: FakeDb) =>
-  new CrmImportService(fake.db, workflows as unknown as WorkflowRunnerService);
+  new CrmImportService(
+    fake.db,
+    workflows as unknown as WorkflowRunnerService,
+    planLimits as unknown as PlanLimitsService,
+  );
 
 beforeAll(() => {
   // The per-row failure is logged on purpose; the test output is not the place.

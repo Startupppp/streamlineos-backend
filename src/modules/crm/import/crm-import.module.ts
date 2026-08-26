@@ -8,6 +8,7 @@ import { CrmImportWorkflow } from "./crm-import.workflow";
 import { ImportPump } from "./import-pump";
 import { CrmConnectorService } from "./crm-connector.service";
 import { CrmConnectorWorkflow } from "./crm-connector.workflow";
+import { BillingModule } from "../../billing/core/billing.module";
 
 /**
  * Bringing a competitor's export in, and taking everything back out.
@@ -20,7 +21,7 @@ import { CrmConnectorWorkflow } from "./crm-connector.workflow";
   // `IntegrationsModule` for `ComposioGateway` only. Nothing here touches
   // `IntegrationsService`, and nothing writes `user_integration_connections`:
   // the connectors read that table as a mirror and go out through the gateway.
-  imports: [WorkflowModule, IntegrationsModule],
+  imports: [WorkflowModule, IntegrationsModule, BillingModule],
   controllers: [CrmImportController],
   providers: [
     CrmImportService,

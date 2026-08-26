@@ -34,6 +34,7 @@ import { blockingKeysFor, lookupKeysFor, planImport, type RowMatch } from "./imp
 import { writerFor, type WriteContext } from "./writers";
 import { uncertaintyFinding } from "./import-uncertainty";
 import { COMMIT_WORKFLOW, REVERT_WORKFLOW } from "./import-workflow-names";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 
 /**
  * How many rows one preview accepts.
@@ -145,6 +146,7 @@ export class CrmImportService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly workflows: WorkflowRunnerService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   /**
@@ -392,6 +394,35 @@ export class CrmImportService {
     if (!imported) throw new NotFoundException("Import not found");
     if (imported.status !== "previewing" && imported.status !== "committing")
       throw new ConflictException(`That import is already ${imported.status}.`);
+
+    /*
+      What the plan allows, asked once for the whole batch and before any row
+      lands.
+
+      An import is the easiest way to walk past a seat or record cap: it creates
+      in bulk, from a file, with nobody watching. Asking per row would refuse
+      halfway through and leave the tenant with a partial import, so the question
+      is asked here -- against the rows still uncommitted, which is what a resumed
+      commit would go on to create rather than what the file originally held.
+
+      This guard existed before the importer moved to `crm/import/`; the move
+      left it behind, and `party-creation-invariant.spec.ts` is what noticed.
+    */
+    const [creating] = await this.db
+      .select({ rows: sql<number>`count(*)::int` })
+      .from(crmImportRows)
+      .where(
+        and(
+          eq(crmImportRows.organizationId, organizationId),
+          eq(crmImportRows.crmImportId, crmImportId),
+          eq(crmImportRows.action, "create"),
+          isNull(crmImportRows.committedAt),
+        ),
+      );
+
+    if (creating && creating.rows > 0) {
+      await this.planLimits.assertWithinLimit(organizationId, "crmContacts", creating.rows);
+    }
 
     return this.startPhase(organizationId, crmImportId, {
       workflowName: COMMIT_WORKFLOW,

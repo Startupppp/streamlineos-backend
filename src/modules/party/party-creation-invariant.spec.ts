@@ -51,6 +51,15 @@ const EXEMPT: ReadonlyMap<string, string> = new Map([
     // import that the caller had already cleared.
     "the shared seam; every caller asserts its own limit before reaching it",
   ],
+  [
+    "crm/import/writers/party.writer.ts",
+    // One of four entity writers behind `writerFor`. The importer asks once for
+    // the whole batch, in `claimForCommit`, against the rows still uncommitted --
+    // before the commit workflow starts and therefore before any row lands.
+    // Asking again per row would charge each record twice, and worse, would
+    // refuse halfway and leave the tenant a half-imported file.
+    "the importer asserts once per batch in claimForCommit, before any row lands",
+  ],
 ]);
 
 function walk(dir: string, found: string[] = []): string[] {
