@@ -19,6 +19,7 @@ import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { AccessService } from "../access/access.service";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 import {
   updateExpenseDetailsSchema,
   updateExpenseStatusSchema,
@@ -435,7 +436,8 @@ export class ExpensesWriteService {
             ),
           ),
       );
-    } catch {
+    } catch (err: unknown) {
+      logSideEffectFailure("expense submitted notification", { orgId, expenseId })(err);
       return;
     }
   }
@@ -489,7 +491,8 @@ export class ExpensesWriteService {
       } else if (status === "PAID") {
         await this.email.sendExpensePaidEmail(employee.email, employeeName, category, amount);
       }
-    } catch {
+    } catch (err: unknown) {
+      logSideEffectFailure("expense decision notification", { orgId: u.orgId, expenseId })(err);
       return;
     }
   }

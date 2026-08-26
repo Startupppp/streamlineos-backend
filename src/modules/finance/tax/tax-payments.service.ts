@@ -12,6 +12,7 @@ import { FinancePostingService } from "../../accounting/posting/finance-posting.
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import type { CreateTaxPaymentInput, ListTaxPaymentsQuery } from "./dto/tax-payments.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -108,7 +109,7 @@ export class TaxPaymentsService {
       entityType: "tax_payment",
       entityId: String(payment?.id),
       variables: { taxType: input.taxType, amount: input.amount, reference: input.reference },
-    }).catch(() => undefined);
+    }).catch(logSideEffectFailure("tax payment notification dispatch", { orgId }));
 
     return payment;
   }

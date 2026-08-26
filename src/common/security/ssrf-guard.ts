@@ -13,7 +13,7 @@ export type WebhookUrlCheck =
 
 function isBlockedIpv4(address: string): boolean {
   const parts = address.split(".").map(Number);
-  const [a, b] = parts;
+  const [a, b, c] = parts;
   if (a === undefined || b === undefined) return true;
   if (a === 0) return true;
   if (a === 10) return true;
@@ -23,6 +23,8 @@ function isBlockedIpv4(address: string): boolean {
   if (a === 192 && b === 168) return true;
   if (a === 100 && b >= 64 && b <= 127) return true;
   if (a === 192 && b === 0) return true;
+  if (a === 198 && b === 51 && c === 100) return true;
+  if (a === 203 && b === 0 && c === 113) return true;
   if (a >= 224) return true;
   return false;
 }
@@ -52,7 +54,7 @@ function mappedIpv4(value: string): string | null {
 function isBlockedIpv6(address: string): boolean {
   const value = address.toLowerCase().split("%")[0] ?? "";
   if (value === "::" || value === "::1") return true;
-  if (value.startsWith("fe80")) return true;
+  if (/^fe[89ab][0-9a-f]/i.test(value)) return true;
   if (value.startsWith("fc") || value.startsWith("fd")) return true;
   if (value.startsWith("ff")) return true;
   const mapped = mappedIpv4(value);

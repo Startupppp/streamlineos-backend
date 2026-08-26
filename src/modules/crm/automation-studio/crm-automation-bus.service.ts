@@ -2,6 +2,7 @@ import { Inject, Injectable, forwardRef } from "@nestjs/common";
 import { and, eq, gte, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { crmAutomationRules, crmAutomationRuns } from "../../../db/schema";
 import { crmAutomationEvents } from "../../../db/schema/crm/metadata";
 import { logger } from "../../../common/logger/logger.service";
@@ -85,7 +86,7 @@ export class CrmAutomationBusService {
           .update(crmAutomationRules)
           .set({ lastError: msg })
           .where(and(eq(crmAutomationRules.id, rule.id), eq(crmAutomationRules.orgId, orgId)))
-          .catch(() => {});
+          .catch(logSideEffectFailure("crm-automation-bus: last-error persist", { orgId, ruleId: rule.id }));
       });
     }
   }

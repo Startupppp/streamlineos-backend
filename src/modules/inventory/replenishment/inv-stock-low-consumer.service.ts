@@ -37,6 +37,8 @@ export class InvStockLowConsumerService
     const claimed = await inbox.claim(CONSUMER_NAME, {
       eventId: event.eventId,
       organizationId: event.organizationId,
+      aggregateType: event.aggregateType,
+      aggregateId: event.aggregateId,
       aggregateVersion: event.aggregateVersion,
     });
     if (!claimed) {

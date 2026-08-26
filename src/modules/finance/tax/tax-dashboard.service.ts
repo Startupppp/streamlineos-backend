@@ -9,6 +9,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import type { TaxDashboardQuery } from "./dto/tax-reports.schemas";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 const INVOICE_POSTED = ["ISSUED", "PAID", "FAILED"] as const;
 const BILL_POSTED = ["POSTED", "PARTIALLY_PAID", "PAID"] as const;
@@ -236,7 +237,8 @@ export class TaxDashboardService {
       const debit = Number(row?.totalDebit ?? 0);
       const credit = Number(row?.totalCredit ?? 0);
       return purpose === "TAX_PAYABLE" ? credit - debit : debit - credit;
-    } catch {
+    } catch (err: unknown) {
+      logSideEffectFailure("tax account balance lookup", { orgId, purpose })(err);
       return 0;
     }
   }

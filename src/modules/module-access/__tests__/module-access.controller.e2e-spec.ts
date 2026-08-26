@@ -10,6 +10,7 @@ import { signToken } from "test/helpers/sign-token";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ModuleAccessService } from "../module-access.service";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
+import { ModuleStandingMutationsService } from "../module-standing-mutations.service";
 import { ACCESS_MANAGED_MODULES } from "src/modules/rbac/permissions/module-access";
 
 const ROLE_ID = 7;
@@ -64,6 +65,12 @@ const mockModuleAccessGroupsService = {
   cancelOwnershipTransfer: jest.fn(),
 };
 
+const mockModuleStandingMutationsService = {
+  grantAdminStanding: jest.fn(),
+  revokeStanding: jest.fn(),
+  directTransferOwnership: jest.fn(),
+};
+
 describe("ModuleAccessController auth / RBAC (e2e)", () => {
   let app: INestApplication;
 
@@ -72,6 +79,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       overrides: [
         { provide: ModuleAccessService, useValue: mockModuleAccessService },
         { provide: ModuleAccessGroupsService, useValue: mockModuleAccessGroupsService },
+        { provide: ModuleStandingMutationsService, useValue: mockModuleStandingMutationsService },
       ],
     });
   });
@@ -94,6 +102,9 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     mockModuleAccessGroupsService.getOwnership.mockResolvedValue(stubOwnership);
     mockModuleAccessGroupsService.initiateOwnershipTransfer.mockResolvedValue({ success: true });
     mockModuleAccessGroupsService.cancelOwnershipTransfer.mockResolvedValue({ success: true });
+    mockModuleStandingMutationsService.grantAdminStanding.mockResolvedValue({ success: true });
+    mockModuleStandingMutationsService.revokeStanding.mockResolvedValue({ success: true });
+    mockModuleStandingMutationsService.directTransferOwnership.mockResolvedValue({ success: true });
   });
 
   type Method = "get" | "post" | "put" | "patch" | "delete";
@@ -125,6 +136,9 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     ["get", "/module-access/hr/ownership"],
     ["post", "/module-access/hr/ownership/transfer"],
     ["delete", "/module-access/hr/ownership/transfer"],
+    ["post", "/module-access/hr/standing/transfer-owner"],
+    ["post", "/module-access/hr/standing/42"],
+    ["delete", "/module-access/hr/standing/42"],
   ];
 
   it.each(authedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -472,6 +486,103 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
+    });
+  });
+
+  describe("Standing mutations — grant, revoke, direct transfer", () => {
+    const MEMBERSHIP_ID = 42;
+
+    it("POST /module-access/hr/standing/:membershipId → 200 on grant", async () => {
+      const token = await signToken({ sub: "owner_ma_1" });
+      const res = await request(app.getHttpServer())
+        .post(`/module-access/hr/standing/${MEMBERSHIP_ID}`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ success: true });
+    });
+
+    it("POST /module-access/hr/standing/:membershipId → 403 when service refuses", async () => {
+      mockModuleStandingMutationsService.grantAdminStanding.mockRejectedValueOnce(
+        new ForbiddenException("Your rank does not permit granting module-admin standing"),
+      );
+      const token = await signToken({ sub: "member_ma_1" });
+      const res = await request(app.getHttpServer())
+        .post(`/module-access/hr/standing/${MEMBERSHIP_ID}`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN" });
+    });
+
+    it("DELETE /module-access/hr/standing/:membershipId → 200 on revoke", async () => {
+      const token = await signToken({ sub: "owner_ma_1" });
+      const res = await request(app.getHttpServer())
+        .delete(`/module-access/hr/standing/${MEMBERSHIP_ID}`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ success: true });
+    });
+
+    it("DELETE /module-access/hr/standing/:membershipId → 403 when revoking module owner", async () => {
+      mockModuleStandingMutationsService.revokeStanding.mockRejectedValueOnce(
+        new ForbiddenException("Cannot revoke the module owner's standing. Transfer ownership first."),
+      );
+      const token = await signToken({ sub: "owner_ma_1" });
+      const res = await request(app.getHttpServer())
+        .delete(`/module-access/hr/standing/${MEMBERSHIP_ID}`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(403);
+    });
+
+    it("POST /module-access/hr/standing/transfer-owner → 200 on direct transfer", async () => {
+      const token = await signToken({ sub: "owner_ma_1" });
+      const res = await request(app.getHttpServer())
+        .post("/module-access/hr/standing/transfer-owner")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ toMembershipId: MEMBERSHIP_ID });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ success: true });
+    });
+
+    it("POST /module-access/hr/standing/transfer-owner → 400 when toMembershipId is missing", async () => {
+      const token = await signToken({ sub: "owner_ma_1" });
+      const res = await request(app.getHttpServer())
+        .post("/module-access/hr/standing/transfer-owner")
+        .set("Authorization", `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
+    });
+
+    it("POST /module-access/hr/standing/transfer-owner → 403 when actor is not org owner", async () => {
+      mockModuleStandingMutationsService.directTransferOwnership.mockRejectedValueOnce(
+        new ForbiddenException("Only an organization owner may perform a direct module ownership transfer"),
+      );
+      const token = await signToken({ sub: "member_ma_1" });
+      const res = await request(app.getHttpServer())
+        .post("/module-access/hr/standing/transfer-owner")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ toMembershipId: MEMBERSHIP_ID });
+      expect(res.status).toBe(403);
+    });
+
+    it("service receives actor.orgId from JWT, not from request body, on transfer-owner", async () => {
+      const ORG_A = "org-transfer-test";
+      mockModuleStandingMutationsService.directTransferOwnership.mockImplementationOnce(
+        (actor: { orgId: string }) => {
+          expect(actor.orgId).toBe(ORG_A);
+          return Promise.resolve({ success: true });
+        },
+      );
+      const token = await signToken({ sub: "owner_ma_1", orgId: ORG_A });
+      await request(app.getHttpServer())
+        .post("/module-access/hr/standing/transfer-owner")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ toMembershipId: MEMBERSHIP_ID });
+      expect(mockModuleStandingMutationsService.directTransferOwnership).toHaveBeenCalledWith(
+        expect.objectContaining({ orgId: ORG_A }),
+        "hr",
+        MEMBERSHIP_ID,
+      );
     });
   });
 

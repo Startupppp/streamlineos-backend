@@ -20,6 +20,7 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import type { ListApprovalsQuery, ApprovalDecisionInput } from "./dto/finance-controls.schemas";
 
 type FinApprovalRecordType =
@@ -201,7 +202,7 @@ export class ApprovalsService {
         entityId: String(requestId),
         variables: { decision },
       })
-      .catch(() => undefined);
+      .catch(logSideEffectFailure("approval decision notification", { orgId, requestId }));
   }
 
   private async batchEnrichRecords(

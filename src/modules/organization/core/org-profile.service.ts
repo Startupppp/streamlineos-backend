@@ -218,8 +218,9 @@ export class OrgProfileService {
   }
 
   async getProfile(userId: string, orgId: string) {
-    return this.cache.cachedVersioned(
-      CACHE_KEYS.orgProfileNamespace(orgId),
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "org:profile",
       userId,
       () => this.fetchProfile(userId, orgId),
       120,

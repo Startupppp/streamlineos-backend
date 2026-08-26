@@ -12,6 +12,7 @@ import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import type { CreateProjectInput, FromDealInput } from "./dto/projects.schemas";
 import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 
 function generateProjectKey(name: string): string {
@@ -118,7 +119,7 @@ export class ProjectsProvisionService {
     if (additionalMembers.length > 0) {
       void this.projectsEmail
         .notifyProjectMembers(creatorUserId, additionalMembers, input.name, projectKey, project.id)
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("project member notification email", { orgId }));
     }
 
     this.audit.log({

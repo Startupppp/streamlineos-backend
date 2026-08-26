@@ -349,36 +349,31 @@ export class LeadsReportsService {
       conditions.push(lte(LEAD_PARTY_COLUMNS.followUpDate, new Date()));
     }
 
-    const [results, totalRow] = await Promise.all([
-      this.db
-        .select({
-          id: LEAD_PARTY_COLUMNS.id,
-          name: LEAD_PARTY_COLUMNS.name,
-          email: LEAD_PARTY_COLUMNS.email,
-          phone: LEAD_PARTY_COLUMNS.phone,
-          company: LEAD_PARTY_COLUMNS.company,
-          status: LEAD_PARTY_COLUMNS.status,
-          priority: LEAD_PARTY_COLUMNS.priority,
-          followUpDate: LEAD_PARTY_COLUMNS.followUpDate,
-          followUpNotes: LEAD_PARTY_COLUMNS.followUpNotes,
-          assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
-          assigneeName: users.name,
-        })
-        .from(leadPartyMap)
-        .innerJoin(businessParties, LEAD_PARTY_JOIN)
-        .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
-        .where(and(...conditions))
-        .orderBy(asc(LEAD_PARTY_COLUMNS.followUpDate), asc(LEAD_PARTY_COLUMNS.id))
-        .limit(maxResults),
-      this.db
-        .select({ cnt: count() })
-        .from(leadPartyMap)
-        .innerJoin(businessParties, LEAD_PARTY_JOIN)
-        .where(and(...conditions))
-        .then((r) => r[0]?.cnt ?? 0),
-    ]);
+    const results = await this.db
+      .select({
+        id: LEAD_PARTY_COLUMNS.id,
+        name: LEAD_PARTY_COLUMNS.name,
+        email: LEAD_PARTY_COLUMNS.email,
+        phone: LEAD_PARTY_COLUMNS.phone,
+        company: LEAD_PARTY_COLUMNS.company,
+        status: LEAD_PARTY_COLUMNS.status,
+        priority: LEAD_PARTY_COLUMNS.priority,
+        followUpDate: LEAD_PARTY_COLUMNS.followUpDate,
+        followUpNotes: LEAD_PARTY_COLUMNS.followUpNotes,
+        assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
+        assigneeName: users.name,
+        _total: sql<string>`count(*) OVER ()`,
+      })
+      .from(leadPartyMap)
+      .innerJoin(businessParties, LEAD_PARTY_JOIN)
+      .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
+      .where(and(...conditions))
+      .orderBy(asc(LEAD_PARTY_COLUMNS.followUpDate), asc(LEAD_PARTY_COLUMNS.id))
+      .limit(maxResults);
 
-    return { items: results, total: totalRow };
+    const total = results.length > 0 ? Number(results[0]._total) : 0;
+
+    return { items: results.map(({ _total, ...r }) => r), total };
   }
 
   async getUnverifiedLeads(orgId: string) {

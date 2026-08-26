@@ -38,17 +38,16 @@ export class BudgetsService {
     if (fiscalYear) conds.push(eq(finBudgets.fiscalYear, fiscalYear));
     const where = and(...conds);
     const { offset, limit } = paginateOffset({ page, pageSize });
-    const items = await this.db
-      .select()
-      .from(finBudgets)
-      .where(where)
-      .orderBy(desc(finBudgets.createdAt))
-      .offset(offset)
-      .limit(limit);
-    const totalRows = await this.db
-      .select({ c: count() })
-      .from(finBudgets)
-      .where(where);
+    const [items, totalRows] = await Promise.all([
+      this.db
+        .select()
+        .from(finBudgets)
+        .where(where)
+        .orderBy(desc(finBudgets.createdAt))
+        .offset(offset)
+        .limit(limit),
+      this.db.select({ c: count() }).from(finBudgets).where(where),
+    ]);
     return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
   }
 

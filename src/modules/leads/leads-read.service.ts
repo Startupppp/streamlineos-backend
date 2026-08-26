@@ -110,46 +110,45 @@ export class LeadsReadService {
     const offset = (page - 1) * limit;
     const whereClause = and(...where);
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
-        .select({
-          lead: LEAD_PARTY_COLUMNS,
-          assigneeId: users.id,
-          assigneeName: users.name,
-          assigneeImage: users.image,
-          campaignId: crmCampaigns.id,
-          campaignName: crmCampaigns.name,
-        })
-        .from(leadPartyMap)
-        .innerJoin(businessParties, LEAD_PARTY_JOIN)
-        .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
-        // The campaign join carries the tenant, where the relation it replaces
-        // joined on the id alone: `acquisition_campaign_id` is a single-column
-        // foreign key with the same cross-tenant gap `leads.campaign_id` had.
-        .leftJoin(
-          crmCampaigns,
-          and(
-            eq(crmCampaigns.id, LEAD_PARTY_COLUMNS.campaignId),
-            eq(crmCampaigns.orgId, orgId),
-          ),
-        )
-        .where(whereClause)
-        // Page boundaries need a unique tiebreaker: none of the sortable columns
-        // is unique, and an offset page over a non-unique order can show a row
-        // twice or not at all.
-        .orderBy(orderFn, desc(LEAD_PARTY_COLUMNS.id))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ count: count() })
-        .from(leadPartyMap)
-        .innerJoin(businessParties, LEAD_PARTY_JOIN)
-        .where(whereClause),
-    ]);
+    const rows = await this.db
+      .select({
+        lead: LEAD_PARTY_COLUMNS,
+        assigneeId: users.id,
+        assigneeName: users.name,
+        assigneeImage: users.image,
+        campaignId: crmCampaigns.id,
+        campaignName: crmCampaigns.name,
+        _total: sql<string>`count(*) OVER ()`,
+      })
+      .from(leadPartyMap)
+      .innerJoin(businessParties, LEAD_PARTY_JOIN)
+      .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
+      .leftJoin(
+        crmCampaigns,
+        and(
+          eq(crmCampaigns.id, LEAD_PARTY_COLUMNS.campaignId),
+          eq(crmCampaigns.orgId, orgId),
+        ),
+      )
+      .where(whereClause)
+      .orderBy(orderFn, desc(LEAD_PARTY_COLUMNS.id))
+      .limit(limit)
+      .offset(offset);
 
-    const totalCount = totalResult[0]?.count ?? 0;
+    const first = rows[0];
+    const totalCount = first
+      ? Number(first._total)
+      : offset === 0
+      ? 0
+      : await this.db
+          .select({ c: count() })
+          .from(leadPartyMap)
+          .innerJoin(businessParties, LEAD_PARTY_JOIN)
+          .where(whereClause)
+          .then((r) => Number(r[0]?.c ?? 0));
+
     return {
-      leads: rows.map((row) => ({
+      leads: rows.map(({ _total, ...row }) => ({
         ...row.lead,
         assignedTo: row.assigneeId
           ? { id: row.assigneeId, name: row.assigneeName, image: row.assigneeImage }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, BadRequestException, Logger, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   invSalesOrders, invSoLines, invStockReservations, invPickLists, invPickListLines,
@@ -21,6 +21,8 @@ import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dt
 
 @Injectable()
 export class SoFulfillmentService {
+  private readonly logger = new Logger(SoFulfillmentService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
@@ -73,8 +75,11 @@ export class SoFulfillmentService {
               serialId: allocation.serialId,
               qty: allocation.qty.toFixed(4),
             });
-          } catch {
+          } catch (reserveErr) {
             allReserved = false;
+            this.logger.warn(
+              `reserveSo: manual reservation failed for SO ${soId} line ${line.id} in org ${orgId}: ${reserveErr instanceof Error ? reserveErr.message : String(reserveErr)}`,
+            );
           }
         } else {
           const available = await this.soCore.findAvailableLotForLine(
@@ -95,8 +100,11 @@ export class SoFulfillmentService {
               lotId: available.lotId,
               qty: line.quantity,
             });
-          } catch {
+          } catch (reserveErr) {
             allReserved = false;
+            this.logger.warn(
+              `reserveSo: auto reservation failed for SO ${soId} line ${line.id} in org ${orgId}: ${reserveErr instanceof Error ? reserveErr.message : String(reserveErr)}`,
+            );
           }
         }
       }

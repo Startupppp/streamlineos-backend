@@ -8,7 +8,6 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
   CreateOrgLocationInput,
@@ -154,7 +153,7 @@ export class OrgHierarchyLocationsService {
 
     if (!row) throw new Error("Failed to create location");
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "LOCATION"));
+    await this.cache.invalidateForOrg(orgId, "org:units:LOCATION");
     await this.audit.logCritical({
       userId,
       orgId,
@@ -210,7 +209,7 @@ export class OrgHierarchyLocationsService {
 
     if (!row) throw new NotFoundException("Location not found");
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "LOCATION"));
+    await this.cache.invalidateForOrg(orgId, "org:units:LOCATION");
     await this.audit.logCritical({
       action: "org.location.updated",
       userId,
@@ -237,7 +236,7 @@ export class OrgHierarchyLocationsService {
         ),
       );
 
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "LOCATION"));
+    await this.cache.invalidateForOrg(orgId, "org:units:LOCATION");
     await this.audit.logCritical({
       action: "org.location.deleted",
       userId,

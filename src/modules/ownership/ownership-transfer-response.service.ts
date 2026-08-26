@@ -59,12 +59,10 @@ export class OwnershipTransferResponseService {
     return Promise.all([
       ...(moduleKey
         ? [
-            this.cache.invalidate(
-              CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey),
-            ),
+            this.cache.invalidateForOrg(orgId, `module-access:ownership:${moduleKey}`),
           ]
         : []),
-      this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
+      this.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers"),
     ]);
   }
 
@@ -144,10 +142,8 @@ export class OwnershipTransferResponseService {
     await Promise.all([
       ...(moduleKeyForAccept
         ? [
-            this.cache.invalidate(CACHE_KEYS.moduleOwnershipsList(orgId)),
-            this.cache.invalidate(
-              CACHE_KEYS.moduleOwnershipDetail(orgId, moduleKeyForAccept),
-            ),
+            this.cache.invalidateForOrg(orgId, "ownership:modules"),
+            this.cache.invalidateForOrg(orgId, `ownership:module:${moduleKeyForAccept}`),
           ]
         : []),
       this.invalidateTransferCaches(orgId, moduleKeyForAccept),

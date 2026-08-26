@@ -10,7 +10,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { OrgHierarchyCacheService } from "../../common/cache/org-hierarchy-cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import type {
   CreateBranchInput,
@@ -31,8 +31,9 @@ export class BranchesService {
   ) {}
 
   list(orgId: string) {
-    return this.cache.cached(
-      CACHE_KEYS.branchesList(orgId),
+    return this.cache.cachedForOrg(
+      orgId,
+      "branches:list",
       async () => {
         const rows = await this.db.query.orgUnits.findMany({
           where: and(
@@ -195,8 +196,8 @@ export class BranchesService {
     });
 
     await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.branchesList(orgId)),
-      this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH")),
+      this.cache.invalidateForOrg(orgId, "branches:list"),
+      this.cache.invalidateForOrg(orgId, "org:units:BRANCH"),
       this.hierarchyCache.invalidateAfterMutation(orgId),
     ]);
     return branch;
@@ -297,8 +298,8 @@ export class BranchesService {
 
     if (!updated) return null;
     await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.branchesList(orgId)),
-      this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH")),
+      this.cache.invalidateForOrg(orgId, "branches:list"),
+      this.cache.invalidateForOrg(orgId, "org:units:BRANCH"),
       this.hierarchyCache.invalidateAfterMutation(orgId),
     ]);
     return updated;
@@ -353,8 +354,8 @@ export class BranchesService {
     });
 
     await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.branchesList(orgId)),
-      this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH")),
+      this.cache.invalidateForOrg(orgId, "branches:list"),
+      this.cache.invalidateForOrg(orgId, "org:units:BRANCH"),
       this.hierarchyCache.invalidateAfterMutation(orgId),
     ]);
     return { success: true };

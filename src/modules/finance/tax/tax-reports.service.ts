@@ -10,6 +10,7 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import type { TaxDateRangeQuery } from "./dto/tax-reports.schemas";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 const INVOICE_POSTED = ["ISSUED", "PAID", "FAILED"] as const;
 const BILL_POSTED = ["POSTED", "PARTIALLY_PAID", "PAID"] as const;
@@ -341,7 +342,8 @@ export class TaxReportsService {
       const debit = Number(row?.totalDebit ?? 0);
       const credit = Number(row?.totalCredit ?? 0);
       taxPayableBalance = credit - debit;
-    } catch {
+    } catch (err: unknown) {
+      logSideEffectFailure("tax payable balance lookup", { orgId })(err);
       taxPayableBalance = 0;
     }
 

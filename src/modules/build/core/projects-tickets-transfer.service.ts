@@ -10,6 +10,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { ProjectsEmailService } from "./projects-email.service";
@@ -230,6 +231,6 @@ export class ProjectsTicketsTransferService {
 
     void this.projectsEmail
       .notifyTicketAssignees(actingUserId, ticketId, Array.from(notifyIds))
-      .catch(() => undefined);
+      .catch(logSideEffectFailure("ticket assignee email", { ticketId }));
   }
 }

@@ -16,6 +16,7 @@ import {
   hrEmployments,
   hrPeople,
 } from "../../../db/schema/hr/core-people";
+import { organizationPeople } from "../../../db/schema/directory/organization-people";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import type {
@@ -31,16 +32,22 @@ import {
 
 const MAX_PAGE_LIMIT = 100;
 
+const PERSON_JOIN_COND = and(
+  eq(organizationPeople.organizationId, hrPeople.orgId),
+  eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+);
+
 const PERSON_VIEW_COLUMNS = {
   id: hrPeople.id,
   orgId: hrPeople.orgId,
   userId: hrPeople.userId,
-  firstName: hrPeople.firstName,
-  lastName: hrPeople.lastName,
-  workEmail: hrPeople.workEmail,
-  phone: hrPeople.phone,
-  gender: hrPeople.gender,
-  avatarUrl: hrPeople.avatarUrl,
+  organizationPersonId: hrPeople.organizationPersonId,
+  firstName: organizationPeople.firstName,
+  lastName: organizationPeople.lastName,
+  workEmail: organizationPeople.workEmail,
+  phone: organizationPeople.phone,
+  gender: organizationPeople.gender,
+  avatarUrl: organizationPeople.avatarUrl,
   createdAt: hrPeople.createdAt,
   updatedAt: hrPeople.updatedAt,
 };
@@ -69,10 +76,9 @@ const EMPLOYMENT_VIEW_COLUMNS = {
   updatedAt: hrEmployments.updatedAt,
 };
 
-type PersonListRecord = Pick<
-  typeof hrPeople.$inferSelect,
-  keyof typeof PERSON_VIEW_COLUMNS
->;
+type PersonListRecord =
+  Pick<typeof hrPeople.$inferSelect, "id" | "orgId" | "userId" | "organizationPersonId" | "createdAt" | "updatedAt">
+  & Pick<typeof organizationPeople.$inferSelect, "firstName" | "lastName" | "workEmail" | "phone" | "gender" | "avatarUrl">;
 
 type EmploymentListRecord = Pick<
   typeof hrEmployments.$inferSelect,
@@ -127,6 +133,7 @@ export class HrEmployeeRecordListsService {
     const result = await this.db
       .select(PERSON_VIEW_COLUMNS)
       .from(hrPeople)
+      .innerJoin(organizationPeople, PERSON_JOIN_COND)
       .where(and(...conditions))
       .orderBy(asc(hrPeople.id))
       .limit(pageLimit + 1);
@@ -167,11 +174,16 @@ export class HrEmployeeRecordListsService {
       this.db
         .select(PERSON_VIEW_COLUMNS)
         .from(hrPeople)
+        .innerJoin(organizationPeople, PERSON_JOIN_COND)
         .where(where)
-        .orderBy(asc(hrPeople.firstName), asc(hrPeople.id))
+        .orderBy(asc(organizationPeople.firstName), asc(hrPeople.id))
         .limit(pageLimit)
         .offset((query.page - 1) * pageLimit),
-      this.db.select({ total: count() }).from(hrPeople).where(where),
+      this.db
+        .select({ total: count() })
+        .from(hrPeople)
+        .innerJoin(organizationPeople, PERSON_JOIN_COND)
+        .where(where),
     ]);
     const total = totalRows[0]?.total ?? 0;
 
@@ -287,9 +299,9 @@ export class HrEmployeeRecordListsService {
     ];
     if (search) {
       const searchCondition = or(
-        ilike(hrPeople.firstName, `%${search}%`),
-        ilike(hrPeople.lastName, `%${search}%`),
-        ilike(hrPeople.workEmail, `%${search}%`),
+        ilike(organizationPeople.firstName, `%${search}%`),
+        ilike(organizationPeople.lastName, `%${search}%`),
+        ilike(organizationPeople.workEmail, `%${search}%`),
       );
       if (searchCondition) conditions.push(searchCondition);
     }

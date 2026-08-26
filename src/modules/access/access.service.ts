@@ -177,8 +177,8 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         // Permission, RBAC, and module-access list keys already include this
         // access version. A bump makes every previous generation unreachable,
         // so scanning Redis to delete it is both redundant and expensive.
-        this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(orgId)),
-        this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(orgId)),
+        this.cache.invalidateForOrg(orgId, "rbac:members"),
+        this.cache.invalidateForOrg(orgId, "module-access:candidates"),
       ]);
     });
   }
@@ -299,8 +299,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         if (local && local.expiresAt > Date.now()) {
           map = new Map(Object.entries(local.perms));
         } else {
-          const resolved = await this.cache.cached<Record<string, DataScope>>(
-            CACHE_KEYS.accessPerms(orgId, userId, version),
+          const resolved = await this.cache.cachedForOrg<Record<string, DataScope>>(
+            orgId,
+            `access:perms:${userId}:v${version}`,
             () => this.computeUserPermissions(orgId, userId, version),
             CACHE_TTL.LONG,
           );

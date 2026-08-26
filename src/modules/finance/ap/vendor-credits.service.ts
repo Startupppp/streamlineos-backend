@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -52,7 +52,7 @@ export class VendorCreditsService {
     const where = and(...conds);
     const { offset, limit } = paginateOffset({ page, pageSize });
 
-    const items = await this.db
+    const rows = await this.db
       .select({
         id: vendorCredits.id,
         vendorCreditNumber: vendorCredits.vendorCreditNumber,
@@ -67,6 +67,7 @@ export class VendorCreditsService {
         appliedAmount: vendorCredits.appliedAmount,
         currency: vendorCredits.currency,
         createdAt: vendorCredits.createdAt,
+        _rowCount: sql<number>`count(*) OVER ()`,
       })
       .from(vendorCredits)
       .leftJoin(clients, eq(clients.id, vendorCredits.vendorId))
@@ -75,8 +76,9 @@ export class VendorCreditsService {
       .offset(offset)
       .limit(limit);
 
-    const totalRows = await this.db.select({ c: count() }).from(vendorCredits).where(where);
-    return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
+    const pageTotal = Number(rows[0]?._rowCount ?? 0);
+    const items = rows.map(({ _rowCount: _rc, ...item }) => item);
+    return buildListResponse(items, pageTotal, { page, pageSize });
   }
 
   async getVendorCredit(orgId: string, vendorCreditId: number) {

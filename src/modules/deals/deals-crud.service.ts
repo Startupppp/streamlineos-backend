@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { and, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
@@ -121,7 +122,7 @@ export class DealsCrudService {
         targetType: "deal",
         metadata: { name: deal.name, stage: deal.stage, value: deal.value },
       });
-      void this.bus.emit(orgId, "deal.created", { entityType: "deal", entityId: String(deal.id), data: { name: deal.name, stage: deal.stage, value: deal.value }, actorId: userId }).catch(() => undefined);
+      void this.bus.emit(orgId, "deal.created", { entityType: "deal", entityId: String(deal.id), data: { name: deal.name, stage: deal.stage, value: deal.value }, actorId: userId }).catch(logSideEffectFailure("deal.created bus emit", { orgId, dealId: deal.id }));
     }
 
     return deal;

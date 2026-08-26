@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { deals, dealActivities, dealApprovals, dealStageTransitions, chatChannels, chatChannelMembers, users } from "../../db/schema";
@@ -395,17 +396,17 @@ export class DealsService {
         this.webhooksDispatch.dispatch(orgId, "deal.lost", { id: updated.id, name: updated.name, value: updated.value, lostReason: updated.lostReason });
       }
 
-      void this.bus.emit(orgId, "deal.stage_changed", { entityType: "deal", entityId: String(updated.id), data: { stage: updated.stage, previousStage: previousStage ?? undefined }, actorId: userId }).catch(() => undefined);
+      void this.bus.emit(orgId, "deal.stage_changed", { entityType: "deal", entityId: String(updated.id), data: { stage: updated.stage, previousStage: previousStage ?? undefined }, actorId: userId }).catch(logSideEffectFailure("deal.stage_changed bus emit", { orgId, dealId: updated.id }));
       if (newStageInfo?.stageType === "won") {
-        void this.bus.emit(orgId, "deal.won", { entityType: "deal", entityId: String(updated.id), data: { value: updated.value }, actorId: userId }).catch(() => undefined);
+        void this.bus.emit(orgId, "deal.won", { entityType: "deal", entityId: String(updated.id), data: { value: updated.value }, actorId: userId }).catch(logSideEffectFailure("deal.won bus emit", { orgId, dealId: updated.id }));
       } else if (newStageInfo?.stageType === "lost") {
-        void this.bus.emit(orgId, "deal.lost", { entityType: "deal", entityId: String(updated.id), data: { lostReason: updated.lostReason ?? undefined }, actorId: userId }).catch(() => undefined);
+        void this.bus.emit(orgId, "deal.lost", { entityType: "deal", entityId: String(updated.id), data: { lostReason: updated.lostReason ?? undefined }, actorId: userId }).catch(logSideEffectFailure("deal.lost bus emit", { orgId, dealId: updated.id }));
       }
     }
 
     if (stageChanged && previousStage && input.stage) {
       const newStage = input.stage;
-      void this.sendStageChangeNotification(userId, updated, previousStage, newStage).catch(() => undefined);
+      void this.sendStageChangeNotification(userId, updated, previousStage, newStage).catch(logSideEffectFailure("deal stage-change email notification", { orgId, dealId: updated.id }));
       void this.automation
         .runAutomationsForEvent(orgId, "deal.stage_changed", {
           id: updated.id,
@@ -415,7 +416,7 @@ export class DealsService {
           previousStage,
           assignedToId: updated.assignedToId,
         })
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("deal.stage_changed automations", { orgId, dealId: updated.id }));
     }
 
     return { ok: true, deal: updated, stageChanged, previousStage };

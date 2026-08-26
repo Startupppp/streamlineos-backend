@@ -15,6 +15,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import type { CreateCreditNoteInput, ListCreditNotesQuery, ApplyCreditNoteInput } from "./dto/finance-ar.schemas";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 const round4 = (n: number): number => Math.round(n * 10000) / 10000;
 
@@ -145,7 +146,7 @@ export class CreditNotesService {
           entityId: String(id),
           title: "Credit note approval required",
           message: `Credit note ${cn.creditNoteNumber} requires approval (total: ${total.toFixed(2)})`,
-        }).catch(() => undefined);
+        }).catch(logSideEffectFailure("credit note approval notification dispatch", { orgId, creditNoteId: id }));
       }
       return { needsApproval: true, creditNoteId: id };
     }

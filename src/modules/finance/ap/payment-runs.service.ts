@@ -23,6 +23,7 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
 import { RateResolverService } from "../controls/rate-resolver.service";
 import { FxService } from "../controls/fx.service";
@@ -398,7 +399,8 @@ export class PaymentRunsService {
         if (fxCapture !== null) {
           void this.postRunItemFxGainLoss(orgId, baseCurrency, fxCapture, today);
         }
-      } catch {
+      } catch (err: unknown) {
+        logSideEffectFailure("payment run item execution", { orgId, runId, itemId: item.id })(err);
         await this.db
           .update(finPaymentRunItems)
           .set({ status: "SKIPPED" })

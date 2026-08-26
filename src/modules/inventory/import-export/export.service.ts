@@ -144,34 +144,43 @@ export class ExportService {
     const offset = (page - 1) * limit;
     const hash = `${limit}:${offset}`;
     return this.cache.cachedVersioned(CACHE_KEYS.invExportJobsNamespace(orgId), hash, async () => {
-      const [items, countResult] = await Promise.all([
-        this.db
-          .select({
-            id: invExportJobs.id,
-            orgId: invExportJobs.orgId,
-            jobType: invExportJobs.jobType,
-            status: invExportJobs.status,
-            fileName: invExportJobs.fileName,
-            totalRows: invExportJobs.totalRows,
-            processedRows: invExportJobs.processedRows,
-            errorRows: invExportJobs.errorRows,
-            errors: invExportJobs.errors,
-            createdBy: invExportJobs.createdBy,
-            createdAt: invExportJobs.createdAt,
-            updatedAt: invExportJobs.updatedAt,
-          })
-          .from(invExportJobs)
-          .where(eq(invExportJobs.orgId, orgId))
-          .orderBy(desc(invExportJobs.createdAt))
-          .limit(limit)
-          .offset(offset),
-        this.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(invExportJobs)
-          .where(eq(invExportJobs.orgId, orgId)),
-      ]);
+      const rows = await this.db
+        .select({
+          id: invExportJobs.id,
+          orgId: invExportJobs.orgId,
+          jobType: invExportJobs.jobType,
+          status: invExportJobs.status,
+          fileName: invExportJobs.fileName,
+          totalRows: invExportJobs.totalRows,
+          processedRows: invExportJobs.processedRows,
+          errorRows: invExportJobs.errorRows,
+          errors: invExportJobs.errors,
+          createdBy: invExportJobs.createdBy,
+          createdAt: invExportJobs.createdAt,
+          updatedAt: invExportJobs.updatedAt,
+          windowTotal: sql<string>`count(*) OVER ()`,
+        })
+        .from(invExportJobs)
+        .where(eq(invExportJobs.orgId, orgId))
+        .orderBy(desc(invExportJobs.createdAt))
+        .limit(limit)
+        .offset(offset);
 
-      const total = countResult[0]?.count ?? 0;
+      const first = rows[0];
+      let total: number;
+      if (first) {
+        total = Number(first.windowTotal);
+      } else if (offset === 0) {
+        total = 0;
+      } else {
+        const fallback = await this.db
+          .select({ n: sql<string>`count(*)` })
+          .from(invExportJobs)
+          .where(eq(invExportJobs.orgId, orgId));
+        total = Number(fallback[0]?.n ?? 0);
+      }
+
+      const items = rows.map(({ windowTotal: _, ...rest }) => rest);
       return { items, total, page, totalPages: Math.ceil(total / limit) };
     }, CACHE_TTL.SHORT);
   }

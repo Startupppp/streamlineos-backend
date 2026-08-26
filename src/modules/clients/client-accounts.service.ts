@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { eq, and, desc, sql, count, or, inArray, isNull } from "drizzle-orm";
 import type { DataScope } from "../access/access.types";
 import { applyClientAccountsScope } from "./client-accounts-scope";
@@ -304,7 +305,7 @@ export class ClientAccountsService {
           formattedAmount,
           hrMemberRows.map((m) => m.userId),
         )
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("investment notification emails", { orgId, accountId }));
     }
 
     return updated;

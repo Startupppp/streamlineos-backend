@@ -121,9 +121,9 @@ export class EntitlementsService implements OnModuleInit {
     const local = this.moduleMapCache.get(orgId);
     if (local && local.expiresAt > Date.now()) return local.map;
 
-    const key = `entitlements:modules:${orgId}`;
-    const map = await this.cache.cached(
-      key,
+    const map = await this.cache.cachedForOrg(
+      orgId,
+      "entitlements:modules",
       () =>
         runInTenantTransaction(
           this.db,
@@ -136,8 +136,6 @@ export class EntitlementsService implements OnModuleInit {
               [],
             );
             const result: Record<string, boolean> = {};
-            // Stored keys are normalised on the way in, so a row written in
-            // another case still answers the same question.
             for (const row of rows)
               result[moduleIdFromStored(row.moduleKey)] = row.enabled;
             return result;
@@ -284,8 +282,8 @@ export class EntitlementsService implements OnModuleInit {
     }, { orgId });
 
     this.moduleMapCache.delete(orgId);
-    await this.cache.invalidate(`entitlements:module:${orgId}:${moduleKey}`);
-    await this.cache.invalidate(`entitlements:modules:${orgId}`);
+    await this.cache.invalidateForOrg(orgId, `entitlements:module:${moduleKey}`);
+    await this.cache.invalidateForOrg(orgId, "entitlements:modules");
     await this.cache.invalidate(CACHE_KEYS.userSession(enabledBy));
   }
 

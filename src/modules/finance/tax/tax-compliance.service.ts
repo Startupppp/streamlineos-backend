@@ -5,6 +5,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { invoices, purchaseBills } from "../../../db/schema/crm/invoicing";
 import { organizations } from "../../../db/schema/common/auth";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 const INVOICE_POSTED = ["ISSUED", "PAID", "FAILED"] as const;
 const BILL_POSTED = ["POSTED", "PARTIALLY_PAID", "PAID"] as const;
@@ -81,7 +82,7 @@ export class TaxComplianceService {
           daysUntilGstr3b: String(gstr3bDays),
           period: `${from} to ${to}`,
         },
-      }).catch(() => undefined);
+      }).catch(logSideEffectFailure("tax compliance notification dispatch", { orgId: oid }));
     }
 
     return results;

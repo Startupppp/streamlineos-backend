@@ -5,6 +5,7 @@ import { businessParties, leadPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { AccessService } from "../access/access.service";
 import { CrmValidationService } from "../crm/metadata/crm-validation.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -137,7 +138,8 @@ export class LeadsImportService {
                 },
               );
               updated++;
-            } catch {
+            } catch (err) {
+              logSideEffectFailure("leads-import: duplicate update", { row: rowNum })(err);
               errors.push({
                 row: rowNum,
                 message: "Failed to update duplicate",

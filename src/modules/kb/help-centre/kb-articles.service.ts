@@ -86,14 +86,9 @@ export class KbArticlesService {
     }
 
     const where = and(...conditions);
+    const offset = (query.page - 1) * query.pageSize;
 
-    const [totalRow] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(kbArticles)
-      .where(where);
-    const total = totalRow?.count ?? 0;
-
-    const items = await this.db
+    const rows = await this.db
       .select({
         id: kbArticles.id,
         spaceId: kbArticles.spaceId,
@@ -114,12 +109,29 @@ export class KbArticlesService {
         notHelpfulCount: kbArticles.notHelpfulCount,
         lastVerifiedAt: kbArticles.lastVerifiedAt,
         updatedAt: kbArticles.updatedAt,
+        totalCount: sql<string>`count(*) OVER ()`,
       })
       .from(kbArticles)
       .where(where)
       .orderBy(desc(kbArticles.updatedAt))
       .limit(query.pageSize)
-      .offset((query.page - 1) * query.pageSize);
+      .offset(offset);
+
+    const first = rows[0];
+    let total: number;
+    if (first) {
+      total = Number(first.totalCount);
+    } else if (offset === 0) {
+      total = 0;
+    } else {
+      const [countRow] = await this.db.select({ count: sql<number>`count(*)::int` }).from(kbArticles).where(where);
+      total = countRow?.count ?? 0;
+    }
+
+    const items: ArticleListItem[] = rows.map((row) => {
+      const { totalCount: _, ...item } = row;
+      return item;
+    });
 
     return {
       items,
@@ -271,7 +283,7 @@ export class KbArticlesService {
       try {
         await this.indexing.indexArticle(orgId, articleId);
       } catch (err) {
-        this.logger.error(`Failed to index article ${articleId}: ${err}`);
+        this.logger.error(`Failed to index article ${articleId}: ${err}`, { orgId });
       }
     }
 
@@ -291,7 +303,7 @@ export class KbArticlesService {
     try {
       await this.indexing.removeArticleChunks(orgId, articleId);
     } catch (err) {
-      this.logger.error(`Failed to remove indexed chunks for article ${articleId}: ${err}`);
+      this.logger.error(`Failed to remove indexed chunks for article ${articleId}: ${err}`, { orgId });
     }
 
     return updated;
@@ -320,7 +332,7 @@ export class KbArticlesService {
     try {
       await this.indexing.indexArticle(orgId, articleId);
     } catch (err) {
-      this.logger.error(`Failed to index article ${articleId}: ${err}`);
+      this.logger.error(`Failed to index article ${articleId}: ${err}`, { orgId });
     }
 
     return updated;
@@ -339,7 +351,7 @@ export class KbArticlesService {
     try {
       await this.indexing.removeArticleChunks(orgId, articleId);
     } catch (err) {
-      this.logger.error(`Failed to remove indexed chunks for article ${articleId}: ${err}`);
+      this.logger.error(`Failed to remove indexed chunks for article ${articleId}: ${err}`, { orgId });
     }
 
     return updated;
@@ -431,7 +443,7 @@ export class KbArticlesService {
 
     if (updated.status === "published") {
       this.indexing.indexArticle(orgId, articleId).catch((err: unknown) => {
-        this.logger.error(`Failed to re-index article ${articleId} after version restore: ${err}`);
+        this.logger.error(`Failed to re-index article ${articleId} after version restore: ${err}`, { orgId });
       });
     }
 

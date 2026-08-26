@@ -111,13 +111,9 @@ export class ProjectsQueryService {
 
     const whereClause = and(...conditions);
 
-    const [{ total }] = await this.db
-      .select({ total: count() })
-      .from(projects)
-      .where(whereClause);
-
     const projectRows = await this.db
       .select({
+        total: sql<string>`count(*) OVER ()`,
         id: projects.id,
         name: projects.name,
         description: projects.description,
@@ -138,14 +134,19 @@ export class ProjectsQueryService {
       .limit(limit)
       .offset(offset);
 
+    const first = projectRows[0];
+    let total: number;
+    if (first) {
+      total = Number(first.total);
+    } else if (offset === 0) {
+      total = 0;
+    } else {
+      const [cnt] = await this.db.select({ total: count() }).from(projects).where(whereClause);
+      total = Number(cnt?.total ?? 0);
+    }
+
     if (projectRows.length === 0) {
-      return {
-        data: [],
-        total: Number(total),
-        page,
-        limit,
-        totalPages: Math.ceil(Number(total) / limit),
-      };
+      return { data: [], total, page, limit, totalPages: Math.ceil(total / limit) };
     }
 
     const projectIds = projectRows.map((p) => p.id);
@@ -269,10 +270,10 @@ export class ProjectsQueryService {
 
     return {
       data,
-      total: Number(total),
+      total,
       page,
       limit,
-      totalPages: Math.ceil(Number(total) / limit),
+      totalPages: Math.ceil(total / limit),
     };
   }
 

@@ -19,6 +19,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
 import { CacheService } from "../../../common/cache/cache.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -205,7 +206,7 @@ export class ProjectsTicketsQueryService {
 
     void this.cache
       .del(`projects:analytics:${u.orgId}:${projectId}`)
-      .catch(() => undefined);
+      .catch(logSideEffectFailure("analytics cache eviction", { orgId: u.orgId, projectId }));
 
     return { updated: updated.length, ticketIds: updated.map((t) => t.id) };
   }

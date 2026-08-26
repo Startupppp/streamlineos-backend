@@ -8,6 +8,7 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { InvoicesWriteService } from "../../invoices/invoices-write.service";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import { logger } from "../../../common/logger/logger.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import type { CreateRecurringTemplateInput, UpdateRecurringTemplateInput, ListRecurringTemplatesQuery } from "./dto/finance-ar.schemas";
 import { createInvoiceSchema } from "../../invoices/dto/invoice-write.schemas";
 
@@ -154,7 +155,7 @@ export class RecurringInvoicesService {
       entityId: String(invoice.id),
       title: "Recurring invoice generated",
       message: `Invoice ${invoice.invoiceNumber} generated from template ${tpl.name}`,
-    }).catch(() => undefined);
+    }).catch(logSideEffectFailure("recurring invoice notification dispatch", { orgId, invoiceId: invoice.id }));
 
     return { invoiceId: invoice.id };
   }

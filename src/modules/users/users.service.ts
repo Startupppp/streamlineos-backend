@@ -17,8 +17,6 @@ import {
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { bustUsersStatsCache } from "../../common/cache/bust-users-stats";
 import { InvitationsService } from "../organization/core/invitations.service";
 import {
   OrgMembershipService,
@@ -57,8 +55,8 @@ export class UsersService {
 
   private async invalidateMembershipCaches(orgId: string): Promise<void> {
     await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(orgId)),
-      bustUsersStatsCache(this.cache, orgId),
+      this.cache.invalidateForOrg(orgId, "module-access:candidates"),
+      this.cache.invalidateForOrg(orgId, "users:stats"),
     ]);
   }
 

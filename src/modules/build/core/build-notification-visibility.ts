@@ -1,4 +1,5 @@
-import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
+import { HttpException, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { MembershipStateService } from "../../../common/auth/membership-state.service";
 import { NotificationVisibilityRegistry } from "../../notifications/notification-visibility.registry";
 import { ProjectsTicketsService } from "./projects-tickets.service";
@@ -52,11 +53,9 @@ export class BuildNotificationVisibility implements OnModuleInit {
         ticketId,
       );
       return true;
-    } catch {
-      // getTicket throws ProjectsTicketNotFoundException for a missing or
-      // cross-tenant ticket and ProjectsForbiddenTicketException when DataScope
-      // excludes it. Both mean "do not deliver"; the registry logs and denies for
-      // anything genuinely unexpected.
+    } catch (err) {
+      if (!(err instanceof HttpException))
+        logSideEffectFailure("ticket visibility check", { orgId, userId, entityId })(err);
       return false;
     }
   }

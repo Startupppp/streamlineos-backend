@@ -6,6 +6,7 @@ import { crmSequenceEnrollments, crmSequenceSteps, crmSequences, tasks } from ".
 import { businessParties, leadPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_LEAD } from "../crm-party-reads";
 import { logger } from "../../../common/logger/logger.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { CrmOutboundEmailService } from "../consent/crm-outbound-email.service";
 
 interface FlushResult {
@@ -181,7 +182,7 @@ export class CrmSequencesRunnerService {
             updatedAt: new Date(),
           })
           .where(eq(crmSequenceEnrollments.id, enrollment.id))
-          .catch(() => {});
+          .catch(logSideEffectFailure("crm-sequences: enrollment-failed status persist", { enrollmentId: enrollment.id }));
         stopped++;
       }
     }

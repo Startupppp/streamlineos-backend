@@ -72,19 +72,17 @@ export class ExpensesService {
     if (filters.startDate) conditions.push(gte(expenses.expenseDate, filters.startDate));
     if (filters.endDate) conditions.push(lte(expenses.expenseDate, filters.endDate));
 
-    const [countResult] = await this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(expenses)
-      .where(and(...conditions));
+    const [[countResult], data] = await Promise.all([
+      this.db.select({ count: sql<number>`count(*)` }).from(expenses).where(and(...conditions)),
+      this.db.query.expenses.findMany({
+        where: and(...conditions),
+        orderBy: [desc(expenses.expenseDate)],
+        limit,
+        offset,
+      }),
+    ]);
 
     const total = Number(countResult?.count || 0);
-
-    const data = await this.db.query.expenses.findMany({
-      where: and(...conditions),
-      orderBy: [desc(expenses.expenseDate)],
-      limit,
-      offset,
-    });
 
     return {
       data,

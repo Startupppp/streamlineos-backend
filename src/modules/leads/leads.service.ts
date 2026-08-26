@@ -10,6 +10,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { logger } from "../../common/logger/logger.service";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
@@ -181,7 +182,7 @@ export class LeadsService {
     try {
       const scoreResult = await recalculateLeadScore(this.db, orgId, newLead.id);
       if (scoreResult?.changed) {
-        void this.bus.emit(orgId, "lead.score_changed", { entityType: "lead", entityId: String(newLead.id), data: { score: scoreResult.score, dimensionBreakdown: scoreResult.dimensionBreakdown }, actorId: userId }).catch(() => undefined);
+        void this.bus.emit(orgId, "lead.score_changed", { entityType: "lead", entityId: String(newLead.id), data: { score: scoreResult.score, dimensionBreakdown: scoreResult.dimensionBreakdown }, actorId: userId }).catch(logSideEffectFailure("lead score-change bus emit", { orgId, leadId: newLead.id }));
       }
     } catch (error) {
       logger.error("Auto-trigger: lead scoring failed", { leadId: newLead.id, error });
@@ -211,7 +212,7 @@ export class LeadsService {
       sourceKey: input.source ?? "direct",
       touchType: "first_touch",
       occurredAt: newLead.createdAt ?? new Date(),
-    }).catch(() => undefined);
+    }).catch(logSideEffectFailure("lead attribution first-touch", { orgId, leadId: newLead.id }));
 
     if (newLead.assignedToId) {
       void this.sendLeadAssignedNotification(userId, {
@@ -219,7 +220,7 @@ export class LeadsService {
         name: newLead.name,
         source: newLead.source,
         priority: newLead.priority,
-      }).catch(() => undefined);
+      }).catch(logSideEffectFailure("lead assigned notification email", { orgId, leadId: newLead.id }));
     }
 
     void this.automation
@@ -230,9 +231,9 @@ export class LeadsService {
         source: newLead.source,
         assignedToId: newLead.assignedToId,
       })
-      .catch(() => undefined);
+      .catch(logSideEffectFailure("lead.created automations", { orgId, leadId: newLead.id }));
 
-    void this.bus.emit(orgId, "lead.created", { entityType: "lead", entityId: String(newLead.id), data: { name: newLead.name, source: newLead.source, assignedToId: newLead.assignedToId }, actorId: userId }).catch(() => undefined);
+    void this.bus.emit(orgId, "lead.created", { entityType: "lead", entityId: String(newLead.id), data: { name: newLead.name, source: newLead.source, assignedToId: newLead.assignedToId }, actorId: userId }).catch(logSideEffectFailure("lead.created bus emit", { orgId, leadId: newLead.id }));
 
     this.webhooksDispatch.dispatch(orgId, "lead.created", {
       id: newLead.id,
@@ -284,7 +285,7 @@ export class LeadsService {
     try {
       const scoreResult = await recalculateLeadScore(this.db, orgId, updated.id);
       if (scoreResult?.changed) {
-        void this.bus.emit(orgId, "lead.score_changed", { entityType: "lead", entityId: String(updated.id), data: { score: scoreResult.score, dimensionBreakdown: scoreResult.dimensionBreakdown }, actorId: userId }).catch(() => undefined);
+        void this.bus.emit(orgId, "lead.score_changed", { entityType: "lead", entityId: String(updated.id), data: { score: scoreResult.score, dimensionBreakdown: scoreResult.dimensionBreakdown }, actorId: userId }).catch(logSideEffectFailure("lead score-change bus emit", { orgId, leadId: updated.id }));
       }
     } catch (error) {
       logger.error("Auto-trigger: lead scoring on update failed", { leadId: updated.id, error });
@@ -300,7 +301,7 @@ export class LeadsService {
         sourceKey: updated.source ?? "direct",
         touchType: "interaction",
         occurredAt: new Date(),
-      }).catch(() => undefined);
+      }).catch(logSideEffectFailure("lead attribution touch", { orgId, leadId: updated.id }));
     }
 
     if (changedFields.includes("status")) {
@@ -311,8 +312,8 @@ export class LeadsService {
           status: updated.status,
           previousStatus: existing.status,
         })
-        .catch(() => undefined);
-      void this.bus.emit(orgId, "lead.stage_changed", { entityType: "lead", entityId: String(updated.id), data: { status: updated.status, previousStatus: existing.status }, actorId: userId }).catch(() => undefined);
+        .catch(logSideEffectFailure("lead.status_changed automations", { orgId, leadId: updated.id }));
+      void this.bus.emit(orgId, "lead.stage_changed", { entityType: "lead", entityId: String(updated.id), data: { status: updated.status, previousStatus: existing.status }, actorId: userId }).catch(logSideEffectFailure("lead.stage_changed bus emit", { orgId, leadId: updated.id }));
     }
 
     if (changedFields.includes("assignedToId") && updated.assignedToId) {
@@ -323,16 +324,16 @@ export class LeadsService {
           assignedToId: updated.assignedToId,
           previousAssignedToId: existing.assignedToId,
         })
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("lead.assigned automations", { orgId, leadId: updated.id }));
 
-      void this.bus.emit(orgId, "lead.assigned", { entityType: "lead", entityId: String(updated.id), data: { assignedToId: updated.assignedToId }, actorId: userId }).catch(() => undefined);
+      void this.bus.emit(orgId, "lead.assigned", { entityType: "lead", entityId: String(updated.id), data: { assignedToId: updated.assignedToId }, actorId: userId }).catch(logSideEffectFailure("lead.assigned bus emit", { orgId, leadId: updated.id }));
 
       void this.sendLeadAssignedNotification(userId, {
         assignedToId: updated.assignedToId,
         name: updated.name,
         source: updated.source,
         priority: updated.priority,
-      }).catch(() => undefined);
+      }).catch(logSideEffectFailure("lead assigned notification email", { orgId, leadId: updated.id }));
     }
 
     this.webhooksDispatch.dispatch(orgId, "lead.updated", {
@@ -345,7 +346,7 @@ export class LeadsService {
       changedFields,
     });
 
-    void this.bus.emit(orgId, "lead.updated", { entityType: "lead", entityId: String(updated.id), data: { changedFields }, actorId: userId }).catch(() => undefined);
+    void this.bus.emit(orgId, "lead.updated", { entityType: "lead", entityId: String(updated.id), data: { changedFields }, actorId: userId }).catch(logSideEffectFailure("lead.updated bus emit", { orgId, leadId: updated.id }));
 
     return updated;
   }

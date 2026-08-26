@@ -109,3 +109,15 @@ export type MemberCandidatesQuery = z.infer<typeof memberCandidatesQuerySchema>;
 export type AddFlatMemberInput = z.infer<typeof addFlatMemberSchema>;
 export type UpdateMemberGroupsInput = z.infer<typeof updateMemberGroupsSchema>;
 export type AuditLogQuery = z.infer<typeof auditLogQuerySchema>;
+
+export const standingMemberParamSchema = z.object({
+  moduleKey: z.string().min(1).max(32).regex(moduleKeyRegex),
+  membershipId: z.coerce.number().int().positive(),
+});
+
+export const directTransferOwnerSchema = z.object({
+  toMembershipId: z.number().int().positive(),
+});
+
+export type StandingMemberParam = z.infer<typeof standingMemberParamSchema>;
+export type DirectTransferOwnerInput = z.infer<typeof directTransferOwnerSchema>;

@@ -5,6 +5,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { purchaseBills, clients } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 const DUE_DEDUPE_KEY = (orgId: string, billId: number) => `fin:bills-due-notified:${orgId}:${billId}`;
 const DUE_DEDUPE_TTL = 60 * 60 * 24;
@@ -57,7 +58,8 @@ export class BillsDueCheckService {
       try {
         const stored = await this.cache.cached<string>(dedupeKey, async () => "PENDING", DUE_DEDUPE_TTL);
         alreadyNotified = stored === "SENT";
-      } catch {
+      } catch (err: unknown) {
+        logSideEffectFailure("bills-due dedup cache read", { orgId: bill.orgId, billId: bill.id })(err);
         alreadyNotified = false;
       }
 

@@ -1,4 +1,5 @@
 import { Logger, NotFoundException } from "@nestjs/common";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import {
   and,
   asc,
@@ -191,7 +192,7 @@ export async function rankTicket(
   if (statusChanging) {
     void cache
       .del(`projects:analytics:${orgId}:${projectId}`)
-      .catch(() => undefined);
+      .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId }));
   }
 
   const scale = decimalScale(newRank);

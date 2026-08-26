@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Inject, NotFoundException } from "@nestjs/common";
+import { logger } from "../../../common/logger/logger.service";
 import { eq, and, sql, lt, isNotNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -115,7 +116,13 @@ export class SettingsService {
         ),
       )
       .then(rows => rows[0]?.count ?? 0)
-      .catch(() => 0);
+      .catch((err: unknown) => {
+        logger.warn("inventory.getHealth: expired-reservations count failed", {
+          orgId,
+          cause: err instanceof Error ? err.message : String(err),
+        });
+        return 0;
+      });
 
     const [
       stockCountRows,

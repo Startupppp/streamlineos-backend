@@ -7,6 +7,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import type { CreateReminderPolicyInput, UpdateReminderPolicyInput, ListReminderPoliciesQuery, ListReminderLogQuery } from "./dto/finance-ar.schemas";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 @Injectable()
 export class RemindersService {
@@ -139,7 +140,7 @@ export class RemindersService {
               entityId: String(inv.id),
               title: "Invoice payment reminder",
               message: `Reminder: Invoice ${inv.invoiceNumber} ${offsetDays >= 0 ? `is due in ${offsetDays} days` : `was due ${Math.abs(offsetDays)} days ago`}`,
-            }).catch(() => undefined);
+            }).catch(logSideEffectFailure("invoice reminder notification dispatch", { orgId: inv.orgId, invoiceId: inv.id }));
           }
           sent++;
         }
