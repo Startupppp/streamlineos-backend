@@ -3,7 +3,9 @@ import { FinancePostingService } from "./finance-posting.service";
 import { AccountingStatementsService } from "../core/accounting-statements.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
+import type { Redis } from "@upstash/redis";
 import { CacheService, REDIS } from "../../../common/cache/cache.service";
+import { InMemoryRedis } from "../../../common/cache/in-memory-redis.test-double";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
@@ -178,40 +180,6 @@ function makePostingDb(ledger: Ledger, options: PostingDbOptions = {}): Db {
   } as unknown as Db;
 }
 
-class InMemoryRedis {
-  private readonly store = new Map<string, unknown>();
-
-  /** `deafToInvalidation` drops the generation bump, so the namespace never moves. */
-  constructor(private readonly deafToInvalidation = false) {}
-
-  get<T>(key: string): Promise<T | null> {
-    const value = this.store.get(key);
-    return Promise.resolve(value === undefined ? null : (value as T));
-  }
-
-  set(key: string, value: unknown, options?: { ex?: number; nx?: boolean }): Promise<string | null> {
-    if (options?.nx && this.store.has(key)) return Promise.resolve(null);
-    this.store.set(key, value);
-    return Promise.resolve("OK");
-  }
-
-  incr(key: string): Promise<number> {
-    const current = Number(this.store.get(key) ?? 0);
-    if (this.deafToInvalidation) return Promise.resolve(current);
-    this.store.set(key, current + 1);
-    return Promise.resolve(current + 1);
-  }
-
-  del(key: string): Promise<number> {
-    return Promise.resolve(this.store.delete(key) ? 1 : 0);
-  }
-
-  eval(_script: string, keys: string[]): Promise<number> {
-    for (const key of keys) this.store.delete(key);
-    return Promise.resolve(1);
-  }
-}
-
 interface Harness {
   readonly ledger: Ledger;
   readonly posting: FinancePostingService;
@@ -223,7 +191,7 @@ async function buildHarness(
   deafToInvalidation = false,
 ): Promise<Harness> {
   const ledger = emptyLedger();
-  const cache = new CacheService(new InMemoryRedis(deafToInvalidation) as never);
+  const cache = new CacheService(new InMemoryRedis(deafToInvalidation) as unknown as Redis);
 
   const module = await Test.createTestingModule({
     providers: [

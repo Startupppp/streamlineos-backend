@@ -177,8 +177,6 @@ export class MailService {
   ): Promise<{ messages: ReturnType<typeof mergeMessagesByDate>; nextPageToken: string | undefined; outlookHasMore: boolean }> {
     const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     const cursorValue = parsedCursor[acc.id];
-    // An exhausted account has nothing left to contribute — asking the provider
-    // again is a round trip whose only possible answer is rows already returned.
     if (cursorValue === null) return { messages: [], nextPageToken: undefined, outlookHasMore: false };
     const cacheKey = `${folder}:${JSON.stringify(cursorValue ?? "")}:${query ?? ""}`;
 

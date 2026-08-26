@@ -170,6 +170,8 @@ interface SchemaCaseConfig {
   schema: ParseableSchema;
   sizeKey: SizeKey;
   defaultSize: number;
+  /** Only where the endpoint keeps a ceiling tighter than the platform cap. */
+  ceiling?: number;
 }
 
 const schemaCases: SchemaCaseConfig[] = [
@@ -192,17 +194,22 @@ const schemaCases: SchemaCaseConfig[] = [
   { name: "listPurchaseBillsQuerySchema", schema: listPurchaseBillsQuerySchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 20 },
   { name: "listInvoicesSchema", schema: listInvoicesSchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
   { name: "listQuotesSchema", schema: listQuotesSchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 25 },
-  { name: "campaignListSchema", schema: campaignListSchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "campaignListSchema", schema: campaignListSchema as ParseableSchema, sizeKey: "limit", defaultSize: 20, ceiling: 50 },
   { name: "organizationListSchema", schema: organizationListSchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 20 },
   { name: "orgDuplicatesQuerySchema", schema: orgDuplicatesQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
 ];
 
-describe("migrated schemas — clamp at 100 and preserve own defaults", () => {
-  for (const { name, schema, sizeKey, defaultSize } of schemaCases) {
+describe("migrated schemas — clamp at their ceiling and preserve their own defaults", () => {
+  for (const { name, schema, sizeKey, defaultSize, ceiling } of schemaCases) {
+    const cap = ceiling ?? PAGE_SIZE_CAP;
     describe(name, () => {
-      it("clamps page size above 100 to exactly 100", () => {
+      it(`clamps an over-large page size to exactly ${cap}`, () => {
         const result = schema.parse({ [sizeKey]: 999 });
-        expect(result[sizeKey]).toBe(100);
+        expect(result[sizeKey]).toBe(cap);
+      });
+
+      it("clamps rather than rejecting, so an over-large page never 400s", () => {
+        expect(() => schema.parse({ [sizeKey]: 999 })).not.toThrow();
       });
 
       it(`defaults page size to ${defaultSize} when absent`, () => {

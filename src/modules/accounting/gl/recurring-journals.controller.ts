@@ -9,19 +9,12 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RecurringJournalsService } from "./recurring-journals.service";
 import {
   createRecurringJournalSchema,
+  listRecurringJournalsQuerySchema,
   updateRecurringJournalSchema,
   type CreateRecurringJournalInput,
+  type ListRecurringJournalsQuery,
   type UpdateRecurringJournalInput,
 } from "./dto/recurring-journals.schemas";
-import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
-
-const listQuerySchema = z.object({
-  page: pageNumberField,
-  pageSize: pageSizeField(50),
-});
-
-type ListQuery = z.infer<typeof listQuerySchema>;
 
 @RequireModule("accounting")
 @Controller("accounting/recurring-journals")
@@ -33,7 +26,7 @@ export class RecurringJournalsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:read")
   listTemplates(
-    @Query(new ZodValidationPipe(listQuerySchema)) query: ListQuery,
+    @Query(new ZodValidationPipe(listRecurringJournalsQuerySchema)) query: ListRecurringJournalsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.recurring.listTemplates(u.orgId, query.page, query.pageSize);

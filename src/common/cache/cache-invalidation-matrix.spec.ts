@@ -18,60 +18,24 @@ import { CacheService } from "./cache.service";
 import { CACHE_INVALIDATION_MATRIX } from "./cache-invalidation-matrix";
 import type { CacheNamespaceEntry } from "./cache-invalidation-matrix";
 
-// ---------------------------------------------------------------------------
-// In-memory Redis double
-// Mirrors the shape from finance-posting-read-after-write.spec.ts (prior art).
-// deafToInvalidation=true makes incr a no-op: the namespace version never
-// advances, so the same versioned key is used after invalidateNamespace and
-// the cache keeps serving the original stale entry.
-// ---------------------------------------------------------------------------
+import { InMemoryRedis } from "./in-memory-redis.test-double";
 
-class InMemoryRedis {
-  private readonly store = new Map<string, unknown>();
-
-  constructor(private readonly deafToInvalidation = false) {}
-
-  get<T>(key: string): Promise<T | null> {
-    const value = this.store.get(key);
-    return Promise.resolve(value === undefined ? null : (value as T));
-  }
-
-  set(
-    key: string,
-    value: unknown,
-    options?: { ex?: number; nx?: boolean },
-  ): Promise<string | null> {
-    if (options?.nx === true && this.store.has(key)) return Promise.resolve(null);
-    this.store.set(key, value);
-    return Promise.resolve("OK");
-  }
-
-  incr(key: string): Promise<number> {
-    const current = Number(this.store.get(key) ?? 0);
-    if (this.deafToInvalidation) return Promise.resolve(current);
-    this.store.set(key, current + 1);
-    return Promise.resolve(current + 1);
-  }
-
-  del(key: string): Promise<number> {
-    return Promise.resolve(this.store.delete(key) ? 1 : 0);
-  }
-
-  eval(_script: string, keys: string[], _args?: string[]): Promise<number> {
-    for (const key of keys) this.store.delete(key);
-    return Promise.resolve(1);
-  }
-}
+/**
+ * Every table below is derived from `CACHE_INVALIDATION_MATRIX` itself, so a new
+ * `kind: "write"` entry is exercised the moment it is added rather than when
+ * someone remembers to copy it here.
+ */
+const writeEntries: readonly CacheNamespaceEntry[] = CACHE_INVALIDATION_MATRIX.filter(
+  (e) => e.invalidation.kind === "write",
+);
 
 function makeFreshCache(deafToInvalidation = false): CacheService {
   return new CacheService(new InMemoryRedis(deafToInvalidation) as unknown as Redis);
 }
 
-// ---------------------------------------------------------------------------
 // Namespace template helpers.
 // Matrix namespace strings use <placeholder> syntax. We substitute concrete
 // test values to obtain the actual Redis namespace for each test case.
-// ---------------------------------------------------------------------------
 
 const TEST_USER_ID = "user-1";
 const TEST_ALT_USER_ID = "user-2";
@@ -104,9 +68,7 @@ function alternateTenantNs(template: string): string {
   return fillTemplate(template, "org-a", TEST_ALT_USER_ID);
 }
 
-// ---------------------------------------------------------------------------
 // Matrix structure tests
-// ---------------------------------------------------------------------------
 
 describe("CACHE_INVALIDATION_MATRIX — structure", () => {
   it("has exactly 46 entries", () => {
@@ -147,7 +109,6 @@ describe("CACHE_INVALIDATION_MATRIX — structure", () => {
   );
 });
 
-// ---------------------------------------------------------------------------
 // Negative control — proves the read-after-write suite bites.
 //
 // With deafToInvalidation=true, incr returns the current value without writing,
@@ -156,7 +117,6 @@ describe("CACHE_INVALIDATION_MATRIX — structure", () => {
 // If this test PASSES it confirms the positive tests are not vacuously true:
 // a cache that never stored anything would make the control FAIL (it would
 // never see a stale value because there would be nothing to stay stale).
-// ---------------------------------------------------------------------------
 
 describe("namespace read-after-write — negative control", () => {
   it(
@@ -164,9 +124,8 @@ describe("namespace read-after-write — negative control", () => {
       " (deaf incr simulates broken invalidation)",
     async () => {
       const cache = makeFreshCache(true);
-      const firstWriteEntry = CACHE_INVALIDATION_MATRIX.find(
-        (e) => e.invalidation.kind === "write",
-      )!;
+      const firstWriteEntry = writeEntries[0];
+      if (!firstWriteEntry) throw new Error("the matrix declares no event-invalidated namespace");
       const ns = primaryNs(firstWriteEntry.namespace);
 
       let fetchCount = 0;
@@ -189,16 +148,8 @@ describe("namespace read-after-write — negative control", () => {
   );
 });
 
-// ---------------------------------------------------------------------------
 // Read-after-write — table-driven, one case per kind:"write" entry.
 //
-// The table is derived directly from CACHE_INVALIDATION_MATRIX, so a new
-// kind:"write" entry is automatically exercised without hand-copying it here.
-// ---------------------------------------------------------------------------
-
-const writeEntries: readonly CacheNamespaceEntry[] = CACHE_INVALIDATION_MATRIX.filter(
-  (e) => e.invalidation.kind === "write",
-);
 
 describe("namespace read-after-write — event-invalidated (36 namespaces)", () => {
   it.each(writeEntries)("$namespace", async (entry) => {

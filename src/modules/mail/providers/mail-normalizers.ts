@@ -368,9 +368,13 @@ export function isPartialGmailCursor(v: unknown): v is PartialGmailCursor {
  * secret. The reader's id is inside the signed body, which is what makes
  * substitution detectable rather than merely inconvenient.
  *
- * Verification failure returns `{}`, not a throw: an unreadable cursor is a
- * client problem and the useful answer is the first page, the same rule
- * `common/pagination/cursor.ts` states for every other cursor here.
+ * A cursor that is unreadable — wrong shape, bad signature, another reader's,
+ * unparseable body — returns `{}`, the first page, which is the rule
+ * `common/pagination/cursor.ts` states for every other cursor here. A missing
+ * `ENCRYPTION_KEY` is deliberately *not* in that set: it is a server
+ * misconfiguration, not a client problem, and degrading to page one would hide
+ * it. `validateEnv()` requires the key at `main.ts:45`, so a booted server
+ * cannot reach the throw; a test or script that calls these directly must set it.
  */
 const CURSOR_VERSION = "m1";
 
