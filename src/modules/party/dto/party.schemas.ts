@@ -2,18 +2,30 @@ import { z } from "zod";
 
 const partyTypeValues = ["CUSTOMER", "VENDOR", "PARTNER", "BOTH"] as const;
 
+/**
+ * A second axis, not a fifth `party_type`. See `partyKindEnum`: what a party is
+ * TO US is `party_type` and `party_roles`; whether it is a person or a company
+ * is neither of those and does not change when a prospect becomes a customer.
+ */
+const partyKindValues = ["PERSON", "ORGANISATION"] as const;
+
 export const listPartiesQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
   role: z.string().trim().min(1).optional(),
   partyType: z.enum(partyTypeValues).optional(),
+  // What the Companies surface filters on: `/crm/organizations` is this list with
+  // `partyKind=ORGANISATION`, which is what makes it one list rather than two.
+  partyKind: z.enum(partyKindValues).optional(),
   search: z.string().optional(),
 });
 
 export const createPartySchema = z.object({
   name: z.string().min(1).max(255),
   partyType: z.enum(partyTypeValues).optional(),
+  partyKind: z.enum(partyKindValues).optional(),
+  employerPartyId: z.string().uuid().optional(),
   legalName: z.string().max(255).optional(),
   displayName: z.string().max(255).optional(),
   taxNumber: z.string().max(100).optional(),
@@ -26,6 +38,8 @@ export const createPartySchema = z.object({
 export const updatePartySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   partyType: z.enum(partyTypeValues).optional(),
+  partyKind: z.enum(partyKindValues).nullish(),
+  employerPartyId: z.string().uuid().nullish(),
   legalName: z.string().max(255).nullish(),
   displayName: z.string().max(255).nullish(),
   taxNumber: z.string().max(100).nullish(),
@@ -64,7 +78,7 @@ export const updateContactSchema = z.object({
  */
 export const mirrorDivergenceQuerySchema = z
   .object({
-    kind: z.enum(["LEAD", "CLIENT", "CONTACT"]).optional(),
+    kind: z.enum(["LEAD", "CLIENT", "CONTACT", "ORGANISATION"]).optional(),
     limit: z.coerce.number().int().min(1).max(500).default(200),
     after: z.coerce.number().int().min(0).default(0),
   })

@@ -1879,24 +1879,52 @@
       "breakpoints": true
     },
     {
-      "idx": 269,
+      "idx": 268,
       "version": "7",
       "when": 1787787153441,
       "tag": "0479_audit_log_platform_events",
       "breakpoints": true
     },
     {
-      "idx": 270,
+      "idx": 269,
       "version": "7",
       "when": 1787790753441,
       "tag": "0480_candidate_resume_sidecar",
       "breakpoints": true
     },
     {
-      "idx": 271,
+      "idx": 270,
       "version": "7",
       "when": 1787794353441,
       "tag": "0481_candidate_resume_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 271,
+      "version": "7",
+      "when": 1787797953441,
+      "tag": "0234_business_parties_name_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 272,
+      "version": "7",
+      "when": 1787801553441,
+      "tag": "0262_party_company_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 273,
+      "version": "7",
+      "when": 1787805153441,
+      "tag": "0263_crm_org_party_map",
+      "breakpoints": true
+    },
+    {
+      "idx": 274,
+      "version": "7",
+      "when": 1787808753441,
+      "tag": "0264_crm_org_party_backfill",
       "breakpoints": true
     }
   ]

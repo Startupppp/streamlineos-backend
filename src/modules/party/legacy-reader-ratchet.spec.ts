@@ -4,8 +4,8 @@ import { execSync } from "node:child_process";
 /**
  * A ratchet over the identity migration, held while it is in progress.
  *
- * Phase 2 moves every reader of `leads`, `clients` and `contacts` onto Party and
- * then drops those tables. That runs as five independent batches over five
+ * Phase 2 moves every reader of `leads`, `clients`, `contacts` and
+ * `crm_organizations` onto Party and then drops those tables. That runs as five independent batches over five
  * modules, so for most of the phase the old tables still exist and still work —
  * which is exactly the window in which somebody adds a fifty-first call site in
  * good faith and nothing complains.
@@ -22,13 +22,18 @@ import { execSync } from "node:child_process";
  *   - a file ON the list that no longer imports one also fails, so the list
  *     cannot rot into a stale allowlist that quietly permits anything.
  *
- * When it reaches zero, `contacts`, `clients` and `leads` have no readers left
- * and ticket 08 can drop them.
+ * When it reaches zero, `contacts`, `clients`, `leads` and `crm_organizations`
+ * have no readers left and ticket 08 can drop them.
+ *
+ * The list grew ONCE, in ticket 25, when `crm_organizations` turned out to be the
+ * fifth identity table and joined the ratchet with the readers it already had.
+ * That is a widening of what is watched, not a relaxation of it, and it may not
+ * happen again: from here the list only shrinks.
  */
 describe("the legacy identity tables gain no new readers", () => {
   /**
-   * Every file importing `leads`, `clients` or `contacts` from the schema, as of
-   * the start of Phase 2. Delete lines as each migrate batch lands; never add one.
+   * Every file importing `leads`, `clients`, `contacts` or `crm_organizations`
+   * from the schema. Delete lines as each migrate batch lands; never add one.
    */
   const KNOWN_READERS = [
   "src/modules/accounting/core/accounting-payables-query.service.ts",
@@ -38,7 +43,7 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/contacts/contacts.service.ts",
   "src/modules/crm/core/crm-customer360-sections.service.ts",
   "src/modules/crm/core/crm-customer360.service.ts",
-  "src/modules/crm/core/crm-org-merge.service.ts",
+  "src/modules/crm/core/crm-organizations-insights.service.ts",
   "src/modules/crm/core/crm-organizations.service.ts",
   "src/modules/cron/cron-weekly-recap.service.ts",
   "src/modules/finance/ap/bills-due-check.service.ts",
@@ -57,7 +62,9 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/party/party-divergence.service.ts",
   "src/modules/party/party-legacy-clients.ts",
   "src/modules/party/party-legacy-contacts.ts",
+  "src/modules/party/party-legacy-employer.ts",
   "src/modules/party/party-legacy-leads.ts",
+  "src/modules/party/party-legacy-orgs.ts",
   "src/modules/party/party-legacy-mirror.spec.ts",
   "src/modules/party/party-legacy-seam.ts",
   "src/modules/party/party-legacy-writer.db.spec.ts",
@@ -67,14 +74,12 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/search/search.service.ts",
   ];
 
-
-
   /** Import of the Drizzle table symbol, which is how a read actually begins. */
   const LEGACY_IMPORT = new RegExp(
     String.raw`import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*['"]([^'"]*(?:db/schema|schema/crm)[^'"]*)['"]`,
     "gs",
   );
-  const LEGACY_TABLES = new Set(["leads", "clients", "contacts"]);
+  const LEGACY_TABLES = new Set(["leads", "clients", "contacts", "crmOrganizations"]);
 
   function readersInTree(): string[] {
     /*
@@ -119,6 +124,43 @@ describe("the legacy identity tables gain no new readers", () => {
     // These no longer read a legacy table — delete them from KNOWN_READERS. The
     // list is a debt register, and a debt register nobody pays down is a lie.
     expect(departed).toEqual([]);
+  });
+
+  /**
+   * The lint rule's exemptions and this list are the same list.
+   *
+   * `eslint.config.mjs` says in a comment that its `ignores` are generated from
+   * `KNOWN_READERS` "so the two cannot drift into disagreeing about what is
+   * allowed". They drifted the day after it was written: the list was generated
+   * from a working tree where another session had deleted `src/modules/finance`,
+   * so thirteen real readers were absent from the exemptions and `pnpm lint`
+   * would have failed on files this register already accounts for.
+   *
+   * A comment claiming an invariant is not the invariant. This is.
+   *
+   * The failure it prevents is worse in the other direction: a file exempted
+   * here but absent from the register is one nobody is stopped from copying, and
+   * exemption lists only ever get longer by accident.
+   */
+  it("agrees with the lint rule about which files may still read them", () => {
+    const config = readFileSync("eslint.config.mjs", "utf8");
+
+    // Anchored on the rule, not on the shape: three config objects carry an
+    // `ignores` array indented exactly like this one, and taking the first is
+    // how the regeneration script that produced this list clobbered the block
+    // that exempts spec files from the APP_CONFIG rule instead.
+    const rule = config.indexOf('"no-restricted-imports"');
+    if (rule < 0) throw new Error("eslint.config.mjs no longer restricts the legacy imports");
+    const start = config.lastIndexOf("\n    ignores: [\n", rule);
+    const end = config.indexOf("\n    ],", start);
+    if (start < 0 || end < 0)
+      throw new Error("the no-restricted-imports block has no ignores array to compare against");
+
+    const exempt = [...config.slice(start, end).matchAll(/"(src\/[^"]+)"/g)]
+      .map((match) => match[1]!)
+      .filter((path) => !path.endsWith("/**"));
+
+    expect([...exempt].sort()).toEqual([...KNOWN_READERS].sort());
   });
 
   it("reports how much of the migration is left", () => {

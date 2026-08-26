@@ -1,4 +1,4 @@
-import { orgDuplicateCheckSchema } from "./org-merge.schemas";
+import { orgDuplicateCheckSchema } from "./organizations.schemas";
 
 describe("orgDuplicateCheckSchema", () => {
   it("accepts a name-only check", () => {

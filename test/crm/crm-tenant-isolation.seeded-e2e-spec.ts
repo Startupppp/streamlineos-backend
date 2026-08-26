@@ -36,13 +36,33 @@ import { seedOrg } from "test/helpers/seed-builder";
 const OWNER_URL = process.env.DATABASE_URL;
 const describeIfAppRole = OWNER_URL ? describe : describe.skip;
 
-/** Every CRM table that carries tenant data and has a policy. */
+/**
+ * Every CRM table that carries tenant data and has a policy.
+ *
+ * This claimed to be exhaustive while naming 11 of the 23 tables migrations
+ * 0206-0231 enable RLS on — so `deals`, every import table, the ingress events
+ * and both subject link tables went unproven for the whole of Phase 1, on a
+ * list whose comment said otherwise. `matches the tables RLS is actually
+ * enabled on` below now fails if it drifts again rather than quietly shrinking.
+ */
 const TENANT_TABLES = [
   "business_parties",
   "party_contacts",
   "party_roles",
+  "party_duplicate_candidates",
+  "party_merges",
   "subjects",
+  "subject_types",
+  "subject_party_links",
+  "deals",
+  "deal_stage_transitions",
+  "deal_activities",
   "activities",
+  "activity_participants",
+  "inbound_events",
+  "crm_imports",
+  "crm_import_rows",
+  "crm_mailbox_sync",
   "autonomous_decisions",
   "autonomy_switches",
   "autonomy_corrections",
@@ -50,6 +70,15 @@ const TENANT_TABLES = [
   "autonomy_holds",
   "autonomy_settings",
 ] as const;
+
+/**
+ * What a CRM table is called, for the drift guard below.
+ *
+ * Name-matched rather than hand-listed a second time: a second hand list would
+ * drift in exactly the way the first one did.
+ */
+const CRM_TABLE_PATTERN =
+  "^(business_parties|party_|subject|deal|activit|inbound_events|crm_|autonom)";
 
 /**
  * A short-lived password for `streamline_app`, set through the owner connection.
@@ -114,6 +143,27 @@ describeIfAppRole("[seeded-e2e] CRM tenant isolation, as the application role", 
       SELECT current_user AS who,
              (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass`;
     expect(row?.bypass).toBe(false);
+  });
+
+  it("matches the tables RLS is actually enabled on", async () => {
+    /**
+     * The list above is the input to every case below, so a table missing from
+     * it is not a failing test — it is an absent one, which reads as green.
+     */
+    const enabled = await appSql.unsafe(
+      `SELECT c.relname AS table
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relrowsecurity
+          AND c.relname ~ $1
+        ORDER BY c.relname`,
+      [CRM_TABLE_PATTERN],
+    );
+    const unproven = enabled
+      .map((row: { table: string }) => row.table)
+      .filter((table: string) => !TENANT_TABLES.includes(table as (typeof TENANT_TABLES)[number]));
+    expect(unproven).toEqual([]);
   });
 
   describe("with no tenant context at all", () => {

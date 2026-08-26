@@ -4,6 +4,8 @@ import { businessParties, partyContacts, partyRoles } from "../../db/schema/part
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { softDeletePartyWithMirror, updatePartyWithMirror } from "./party-legacy-writer";
 import { claimIdentifiers, identifierClaimsOfColumns } from "./party-identifiers";
@@ -46,7 +48,32 @@ export class PartyService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly cache: CacheService,
   ) {}
+
+  /**
+   * Companies are shown on two routes, so a write here invalidates both.
+   *
+   * Since ticket 25 `/crm/organizations` IS this list filtered by
+   * `party_kind = 'ORGANISATION'`, and that list is cached under the CRM
+   * namespaces. Editing a company through the Party surface without bumping them
+   * would leave the Companies screen showing the old name -- which is precisely
+   * the "two surfaces disagree" symptom the convergence exists to remove, put
+   * back by a cache instead of by a table.
+   *
+   * Takes both the before and after rows: demoting a party out of ORGANISATION
+   * has to clear the list it is leaving, not the one it is joining.
+   */
+  private async invalidateCompanySurfaces(
+    organizationId: string,
+    ...parties: readonly (PartyRow | undefined)[]
+  ): Promise<void> {
+    if (!parties.some((party) => party?.partyKind === "ORGANISATION")) return;
+    await Promise.all([
+      this.cache.invalidateNamespace(CACHE_KEYS.crmOrganizationsListNamespace(organizationId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.crmOrganizationDetailNamespace(organizationId)),
+    ]);
+  }
 
   private async loadParty(organizationId: string, partyId: string): Promise<PartyRow> {
     const [row] = await this.db
@@ -81,7 +108,7 @@ export class PartyService {
   }
 
   async listParties(organizationId: string, query: ListPartiesQuery): Promise<PartyListPage> {
-    const { page, limit, partyType, search, cursor, role } = query;
+    const { page, limit, partyType, partyKind, search, cursor, role } = query;
     const offset = (page - 1) * limit;
     const position = decodeCursor(cursor);
 
@@ -97,6 +124,7 @@ export class PartyService {
       eq(businessParties.organizationId, organizationId),
       isNull(businessParties.deletedAt),
       partyType ? eq(businessParties.partyType, partyType) : undefined,
+      partyKind ? eq(businessParties.partyKind, partyKind) : undefined,
       // A semi-join rather than a join: a party holding a role twice must not
       // appear twice in the list.
       role
@@ -193,6 +221,8 @@ export class PartyService {
         phone: input.phone ?? null,
         website: input.website ?? null,
         notes: input.notes ?? null,
+        partyKind: input.partyKind ?? null,
+        employerPartyId: input.employerPartyId ?? null,
       })
       .returning()
       .catch((err: unknown) => {
@@ -216,6 +246,7 @@ export class PartyService {
      * that customer would not match, and they would become a second record.
      */
     await claimIdentifiers(this.db, organizationId, row.partyId, identifierClaimsOfColumns(row));
+    await this.invalidateCompanySurfaces(organizationId, row);
 
     this.audit.log({
       action: "party.party.created",
@@ -234,7 +265,7 @@ export class PartyService {
     partyId: string,
     input: UpdatePartyInput,
   ) {
-    await this.loadParty(organizationId, partyId);
+    const before = await this.loadParty(organizationId, partyId);
 
     const patch: PartyPatch = {};
     if (input.name !== undefined) patch.name = input.name;
@@ -247,6 +278,11 @@ export class PartyService {
     if (input.website !== undefined) patch.website = input.website ?? null;
     if (input.notes !== undefined) patch.notes = input.notes ?? null;
     if (input.status !== undefined) patch.status = input.status;
+    if (input.partyKind !== undefined) patch.partyKind = input.partyKind ?? null;
+    // Reaches `contacts.organization_id` through the writer, which translates it
+    // back into a `crm_organizations` id: see `party-legacy-employer.ts`.
+    if (input.employerPartyId !== undefined)
+      patch.employerPartyId = input.employerPartyId ?? null;
 
     // Through the writer, not straight at the table: the party is the canonical
     // record and every `leads`/`clients`/`contacts` row mapped to it is a mirror
@@ -264,6 +300,7 @@ export class PartyService {
         throw err;
       },
     );
+    await this.invalidateCompanySurfaces(organizationId, before, updated);
     this.audit.log({
       action: "party.party.updated",
       userId,
@@ -276,8 +313,9 @@ export class PartyService {
   }
 
   async softDeleteParty(organizationId: string, userId: string, partyId: string) {
-    await this.loadParty(organizationId, partyId);
+    const party = await this.loadParty(organizationId, partyId);
     await softDeletePartyWithMirror(this.db, organizationId, partyId);
+    await this.invalidateCompanySurfaces(organizationId, party);
     this.audit.log({
       action: "party.party.deleted",
       userId,

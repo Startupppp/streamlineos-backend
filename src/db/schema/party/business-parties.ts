@@ -7,13 +7,14 @@ import {
   timestamp,
   index,
   unique,
+  check,
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { organizations } from "../common/auth";
 import { crmCampaigns } from "../crm/campaigns";
-import { crmHealthEnum, partyTypeEnum } from "../common/enums";
+import { crmHealthEnum, orgSizeEnum, partyKindEnum, partyTypeEnum } from "../common/enums";
 
 /**
  * Who the organisation deals with.
@@ -39,6 +40,18 @@ export const businessParties = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     partyType: partyTypeEnum("party_type").notNull().default("CUSTOMER"),
+    /**
+     * Person or company — and nullable, where every other classification here is
+     * not.
+     *
+     * Null means nobody has said, which is the truth for every party 0241
+     * backfilled: `leads`, `clients` and `contacts` record no such distinction
+     * anywhere, and a NOT NULL default of PERSON would assert something false
+     * about every client that is a limited company. 0264 sets ORGANISATION on
+     * exactly the parties minted from `crm_organizations`, which is the one set
+     * the data actually knows about.
+     */
+    partyKind: partyKindEnum("party_kind"),
     name: text("name").notNull(),
     legalName: text("legal_name"),
     displayName: text("display_name"),
@@ -66,12 +79,35 @@ export const businessParties = pgTable(
     /**
      * The employer as free text, which is all three legacy tables ever had.
      *
-     * `contacts.organization_id` is a real link to `crm_organizations` and has no
-     * home here: a party's employer should be another party, and nothing yet
-     * gives `crm_organizations` parties to point at. The structured link stays on
-     * the legacy row until that converges.
+     * Superseded by `employerPartyId` for anyone whose employer is a record, and
+     * kept for everyone whose is not: a lead who typed "Acme" into a web form has
+     * no company row behind them, and inventing one to hold the string would fill
+     * the Companies list with unverified names. The two are not redundant — this
+     * is what someone said, that is what we have on file.
      */
     companyName: text("company_name"),
+    /**
+     * The employer, as another party.
+     *
+     * The structured half of the same question, and the reason ticket 25 exists:
+     * `companyName` cannot answer "who else works here", which is the entire
+     * point of an employer relation. `contacts.organization_id` pointed at
+     * `crm_organizations` because Party had nothing to point at; 0264 converged
+     * that table into this one and re-pointed the link here.
+     *
+     * Composite `(organization_id, employer_party_id)` foreign key, declared out
+     * in the table extras — a single-column FK is the cross-tenant hole the
+     * issues table deliberately avoided, and there is no reason to reopen it for
+     * a self-reference.
+     *
+     * `ON DELETE CASCADE`, where the instinct is SET NULL: a composite SET NULL
+     * nulls *both* columns, and `organization_id` is NOT NULL, so the delete
+     * would simply fail. CASCADE is safe here as a fact rather than a hope —
+     * nothing in this repository hard-deletes a party, the app soft-deletes
+     * through `deletedAt`, so the only DELETE that ever reaches this table is the
+     * tenant cascade, where the employees are going with it anyway.
+     */
+    employerPartyId: text("employer_party_id"),
     /** `leads.whatsapp_number`, kept apart from `phone` because it is a channel. */
     whatsappPhone: text("whatsapp_phone"),
     avatarUrl: text("avatar_url"),
@@ -86,6 +122,34 @@ export const businessParties = pgTable(
     socialProfiles: jsonb("social_profiles").$type<Record<string, string>>(),
     city: text("city"),
     state: text("state"),
+
+    // --- Company-shaped fields, from `crm_organizations` ---
+
+    /**
+     * The company's own internet domain, which is not its `website`.
+     *
+     * Both exist on `crm_organizations` and are set independently: the website is
+     * `https://www.acme.com/en/`, the domain is `acme.com`, and only the second
+     * one is a matching key — it is what the duplicate report and the create-time
+     * warning have always compared. Kept as a column rather than a
+     * `party_identifiers` row because the identifier vocabulary is closed by a
+     * CHECK in 0260 and pinned to `IDENTIFIER_KINDS` in the ingress seam; a
+     * domain is not something an inbound message arrives from, so widening that
+     * vocabulary would buy nothing and cost the ingress contract.
+     */
+    domain: text("domain"),
+    /** The sector, as `crm_organizations` recorded it: free text, tenant-open. */
+    industry: text("industry"),
+    /** `crm_organizations.size`, on the existing `org_size` enum rather than a second one. */
+    companySize: orgSizeEnum("company_size"),
+    /**
+     * What the company is, as opposed to `notes`, which is what we think of them.
+     *
+     * `crm_organizations` carries both and they are not the same field — one goes
+     * on a customer-facing profile and the other does not — so folding them
+     * together would lose the distinction in the direction that matters.
+     */
+    description: text("description"),
 
     // --- Lifecycle, from `leads` ---
 
@@ -206,6 +270,22 @@ export const businessParties = pgTable(
     index("idx_business_parties_campaign")
       .on(table.acquisitionCampaignId)
       .where(sql`acquisition_campaign_id is not null`),
+    /*
+     * "Who else works here", and the cascade's own lookup when a tenant goes.
+     * Partial because almost no party has an employer -- a company does not, and
+     * neither does a lead who only ever typed a company name.
+     */
+    index("idx_business_parties_employer")
+      .on(table.organizationId, table.employerPartyId)
+      .where(sql`employer_party_id is not null`),
+    // The Companies list: every organisation in the tenant, newest first.
+    index("idx_business_parties_org_kind")
+      .on(table.organizationId, table.partyKind)
+      .where(sql`deleted_at is null`),
+    // Duplicate detection by domain, which is the strongest signal a company has.
+    index("idx_business_parties_org_domain")
+      .on(table.organizationId, table.domain)
+      .where(sql`domain is not null`),
     // Declared out here, and named, so the constraint Drizzle expects is the one
     // migration 0240 creates. An inline `.references()` would be auto-named and
     // a reconciliation would try to add a second, identical foreign key.
@@ -214,5 +294,16 @@ export const businessParties = pgTable(
       foreignColumns: [crmCampaigns.id],
       name: "fk_business_parties_acquisition_campaign",
     }).onDelete("set null"),
+    // The tenant travels with the reference, so an employer in another
+    // organisation is not merely unlikely but unrepresentable. See the column.
+    foreignKey({
+      columns: [table.organizationId, table.employerPartyId],
+      foreignColumns: [table.organizationId, table.partyId],
+      name: "fk_business_parties_employer",
+    }).onDelete("cascade"),
+    // Nobody employs themselves. A one-hop cycle is the only one a constraint can
+    // see; deeper ones are the application's problem, as they are for
+    // `crm_organizations.parent_id`.
+    check("chk_business_parties_employer_not_self", sql`employer_party_id is null or employer_party_id <> party_id`),
   ],
 );

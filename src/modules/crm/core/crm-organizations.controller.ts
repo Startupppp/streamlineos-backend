@@ -21,23 +21,21 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { CrmOrganizationsService } from "./crm-organizations.service";
-import { CrmOrgMergeService } from "./crm-org-merge.service";
+import { CrmOrganizationsInsightsService } from "./crm-organizations-insights.service";
 import {
   organizationCreateSchema,
   organizationListSchema,
   organizationUpdateSchema,
-  type OrganizationCreateInput,
-  type OrganizationListInput,
-  type OrganizationUpdateInput,
-} from "./dto/organizations.schemas";
-import {
   mergeOrgsSchema,
   orgDuplicatesQuerySchema,
   orgDuplicateCheckSchema,
+  type OrganizationCreateInput,
+  type OrganizationListInput,
+  type OrganizationUpdateInput,
   type MergeOrgsInput,
   type OrgDuplicatesQueryInput,
   type OrgDuplicateCheckInput,
-} from "./dto/org-merge.schemas";
+} from "./dto/organizations.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 
 @RequireModule("crm")
@@ -46,7 +44,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 export class CrmOrganizationsController {
   constructor(
     private readonly orgs: CrmOrganizationsService,
-    private readonly orgMerge: CrmOrgMergeService,
+    private readonly insights: CrmOrganizationsInsightsService,
   ) {}
 
   @Get()
@@ -75,7 +73,7 @@ export class CrmOrganizationsController {
     @Query(new ZodValidationPipe(orgDuplicatesQuerySchema)) query: OrgDuplicatesQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.orgMerge.getDuplicateOrgs(u.orgId, query);
+    return this.orgs.getDuplicateOrgs(u.orgId, query);
   }
 
   /**
@@ -99,7 +97,7 @@ export class CrmOrganizationsController {
     @Body(new ZodValidationPipe(mergeOrgsSchema)) body: MergeOrgsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.orgMerge.mergeOrganizations(u.orgId, body, u.userId);
+    return this.orgs.mergeOrganizations(u.orgId, body, u.userId);
   }
 
   @Get(":organizationId")
@@ -124,7 +122,7 @@ export class CrmOrganizationsController {
     if (!exists) throw new NotFoundException("Organization not found");
 
     if (body.parentId !== undefined && body.parentId !== null) {
-      const cycle = await this.orgs.wouldCreateCycle(u.orgId, organizationId, body.parentId);
+      const cycle = await this.insights.wouldCreateCycle(u.orgId, organizationId, body.parentId);
       if (cycle) {
         throw new BadRequestException(
           "Setting this parent would create a circular dependency. Choose a different parent.",
@@ -152,7 +150,7 @@ export class CrmOrganizationsController {
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const tree = await this.orgs.getAccountHierarchy(u.orgId, organizationId);
+    const tree = await this.insights.getAccountHierarchy(u.orgId, organizationId);
     if (!tree) throw new NotFoundException("Organization not found");
     return tree;
   }
@@ -163,7 +161,7 @@ export class CrmOrganizationsController {
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const data = await this.orgs.getRelatedLeads(u.orgId, organizationId);
+    const data = await this.insights.getRelatedLeads(u.orgId, organizationId);
     if (!data) throw new NotFoundException("Organization not found");
     return data;
   }
@@ -174,7 +172,7 @@ export class CrmOrganizationsController {
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.orgs.getAccountRollup(u.orgId, organizationId);
+    return this.insights.getAccountRollup(u.orgId, organizationId);
   }
 
   @Get(":organizationId/timeline")
@@ -183,6 +181,6 @@ export class CrmOrganizationsController {
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.orgs.getAccountTimeline(u.orgId, organizationId);
+    return this.insights.getAccountTimeline(u.orgId, organizationId);
   }
 }

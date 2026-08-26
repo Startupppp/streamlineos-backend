@@ -74,10 +74,12 @@ describe("telephonyCallToInboundEvent", () => {
      * The claim behind the null, asserted against the gate that enforces it.
      *
      * `AutonomyService` builds its prompt from `[subject, body]` and spends a
-     * provider call as soon as that reaches twenty characters. A "helpful"
-     * subject — "Inbound call from +14155551212, 4m 12s" — would clear it, and
-     * the autonomy layer can advance a deal from what it reads. An invented
-     * transcript is an invented reason to act.
+     * provider call as soon as that says anything at all. A "helpful" subject —
+     * "Inbound call from +14155551212, 4m 12s" — would say plenty, and the
+     * autonomy layer can advance a deal from what it reads. An invented
+     * transcript is an invented reason to act. (The gate used to be twenty
+     * characters; ticket 23 replaced it with a judgement about meaning, and this
+     * subject would have cleared either one.)
      */
     it("leaves the extraction tier with nothing to work with", () => {
       const { event } = ok(telephonyCallToInboundEvent(call({ transcript: null }), context));

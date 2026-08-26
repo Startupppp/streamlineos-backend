@@ -10,7 +10,7 @@ import {
 import { organizations } from "../common/auth";
 import { businessParties } from "./business-parties";
 import { leads } from "../crm/leads";
-import { clients, contacts } from "../crm/contacts";
+import { clients, contacts, crmOrganizations } from "../crm/contacts";
 
 /**
  * Which Party a legacy identifier means.
@@ -126,6 +126,56 @@ export const contactPartyMap = pgTable(
       columns: [t.organizationId, t.partyId],
       foreignColumns: [businessParties.organizationId, businessParties.partyId],
       name: "fk_contact_party_map_party",
+    }).onDelete("cascade"),
+  ],
+);
+
+/**
+ * The fourth map, and the one that arrived late.
+ *
+ * The phase treated `contacts`, `clients`, `leads` and `business_parties` as the
+ * identity split; it was five tables. `crm_organizations` is a company record
+ * with a name, a domain, an industry, a health score, a parent pointer and its
+ * own merge service — Party, built again, with its own duplicate handling. Ticket
+ * 25 converged it, and this is how a `crm_organizations` id bookmarked in a URL,
+ * stored on a `feedbucket_submissions` row or held by `roadmap_items` still finds
+ * the party it became.
+ *
+ * `crm_org_party_map`, not `organization_party_map`: `organizations` is the
+ * tenant table, and a map called `organization_party_map` would read as tenants
+ * mapping to parties. The `crm_org` prefix is already the codebase's shorthand
+ * for this table.
+ */
+export const crmOrgPartyMap = pgTable(
+  "crm_org_party_map",
+  {
+    organizationId: text("organization_id").notNull(),
+    crmOrganizationId: integer("crm_organization_id").notNull(),
+    partyId: text("party_id").notNull(),
+    /** `migration:0264` for the backfill, a user id when someone re-pointed it. */
+    linkedBy: text("linked_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.organizationId, t.crmOrganizationId],
+      name: "pk_crm_org_party_map",
+    }),
+    index("idx_crm_org_party_map_party").on(t.organizationId, t.partyId),
+    foreignKey({
+      columns: [t.organizationId],
+      foreignColumns: [organizations.id],
+      name: "fk_crm_org_party_map_org",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.organizationId, t.crmOrganizationId],
+      foreignColumns: [crmOrganizations.orgId, crmOrganizations.id],
+      name: "fk_crm_org_party_map_crm_org",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.organizationId, t.partyId],
+      foreignColumns: [businessParties.organizationId, businessParties.partyId],
+      name: "fk_crm_org_party_map_party",
     }).onDelete("cascade"),
   ],
 );

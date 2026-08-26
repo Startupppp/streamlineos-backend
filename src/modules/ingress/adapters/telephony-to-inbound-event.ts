@@ -78,7 +78,7 @@ export interface TelephonyIngressContext {
  *
  * `subject` — the same objection, one step removed. `AutonomyService` builds its
  * prompt from `[subject, body].filter(Boolean).join("\n\n")` and spends a
- * provider call as soon as that is twenty characters long, so any descriptive
+ * provider call as soon as that says anything at all, so any descriptive
  * subject is a synthesised prompt wearing a different field's name.
  *
  * `providerThreadId` / `subject` for threading — `threadIdentity` falls back to

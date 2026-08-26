@@ -24,17 +24,21 @@ import { CrmSalesDashboardService } from "./crm-sales-dashboard.service";
 import { CrmSupportDashboardService } from "./crm-support-dashboard.service";
 import { CrmAutomationsService } from "./crm-automations.service";
 import { CrmProductsService } from "./crm-products.service";
-import { CrmOrgMergeService } from "./crm-org-merge.service";
+import { CrmOrganizationsInsightsService } from "./crm-organizations-insights.service";
 import { CrmConsentModule } from "../consent/crm-consent.module";
 import { CrmCustomer360Service } from "./crm-customer360.service";
 import { CrmCustomer360SectionsService } from "./crm-customer360-sections.service";
 import { TerritoryMatchService } from "./territory-match.service";
 import { SlaResolverService } from "./sla-resolver.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
+import { PartyModule } from "../../party/party.module";
 import { CrmFollowupSweepService } from "./crm-followup-sweep.service";
 
 @Module({
-  imports: [forwardRef(() => CrmAutomationStudioModule), BillingModule, CrmConsentModule, NotificationsModule],
+  // PartyModule for `PartyMergeService`: merging two company records is the
+  // same act as merging two parties, and ticket 25 retired the second
+  // implementation rather than keeping one per surface.
+  imports: [forwardRef(() => CrmAutomationStudioModule), BillingModule, CrmConsentModule, NotificationsModule, PartyModule],
   controllers: [
     CrmCampaignsController,
     CrmOrganizationsController,
@@ -62,7 +66,7 @@ import { CrmFollowupSweepService } from "./crm-followup-sweep.service";
     CrmSupportDashboardService,
     CrmAutomationsService,
     CrmProductsService,
-    CrmOrgMergeService,
+    CrmOrganizationsInsightsService,
     CrmCustomer360Service,
     CrmCustomer360SectionsService,
     TerritoryMatchService,
