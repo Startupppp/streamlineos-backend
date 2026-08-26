@@ -30,6 +30,8 @@
     "e2e:smoke": "node src/scripts/e2e-smoke.mjs",
     "alert:dead-outbox": "node --env-file-if-exists=.env src/scripts/alert-dead-outbox.mjs",
     "alert:dead-outbox:self-test": "node src/scripts/alert-dead-outbox.mjs --self-test",
+    "alert:dead-delivery": "node --env-file-if-exists=.env src/scripts/alert-dead-delivery.mjs",
+    "alert:dead-delivery:self-test": "node src/scripts/alert-dead-delivery.mjs --self-test",
     "alert:sig-failures": "node --env-file-if-exists=.env src/scripts/alert-sig-failures.mjs",
     "alert:sig-failures:self-test": "node src/scripts/alert-sig-failures.mjs --self-test",
     "alert:tenant-ctx-errors": "node src/scripts/alert-tenant-ctx-errors.mjs",
