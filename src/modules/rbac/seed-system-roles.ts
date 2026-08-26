@@ -50,9 +50,20 @@ const MODULE_MEMBER_KEY_SCOPE_OVERRIDE: Record<string, "own" | "team" | "all"> =
   "sign:envelope:view": "own",
 };
 
-/** Keys a module's admins need that live outside their own namespace. */
+/**
+ * Keys a module's admins need that live outside their own namespace.
+ *
+ * `settings:record-layouts:manage` is a `settings:` key, so `ORG_ADMIN` receives
+ * it through `buildOrgAdminPermissionKeys` already — but every record type it
+ * can arrange is a CRM or Party one, and a CRM administrator who cannot arrange
+ * a CRM list would have to borrow organisation administration to move a column.
+ * Named here rather than only in the backfill, so a newly seeded organisation
+ * and a backfilled one resolve to the same capability; migration 0226 exists
+ * because that invariant was broken once already.
+ */
 const MODULE_ADMIN_EXTRA_KEYS: Readonly<Record<string, readonly string[]>> = {
   hr: ["settings:view", "settings:organization:manage"],
+  crm: ["settings:record-layouts:manage"],
 };
 
 const MODULE_MEMBER_EXTRA_KEYS: Readonly<Record<string, readonly string[]>> = {

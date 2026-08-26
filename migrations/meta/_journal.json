@@ -1947,6 +1947,20 @@
       "when": 1787819553441,
       "tag": "0266_party_association_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 278,
+      "version": "7",
+      "when": 1787823153441,
+      "tag": "0267_record_layout_adjustments",
+      "breakpoints": true
+    },
+    {
+      "idx": 279,
+      "version": "7",
+      "when": 1787826753441,
+      "tag": "0268_backfill_record_layouts_permission",
+      "breakpoints": true
     }
   ]
 }

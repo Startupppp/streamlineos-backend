@@ -97,6 +97,7 @@ import { BuildModule } from "./modules/build/build.module";
 import { ZodValidationInterceptor } from "./common/validation/zod-validation.interceptor";
 import { DataQualityModule } from "./modules/data-quality/data-quality.module";
 import { IssuesModule } from "./modules/issues/issues.module";
+import { RecordLayoutsModule } from "./modules/record-layouts/record-layouts.module";
 
 @Module({
   imports: [
@@ -156,6 +157,7 @@ import { IssuesModule } from "./modules/issues/issues.module";
     AutonomyModule,
     CrmImportModule,
     IssuesModule,
+    RecordLayoutsModule,
     PortalModule,
     ModuleAccessModule,
     IdempotencyModule,
