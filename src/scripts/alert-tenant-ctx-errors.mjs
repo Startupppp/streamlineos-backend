@@ -9,8 +9,18 @@
  *
  * SOURCE: structured log lines written to stderr by the application. Two paths:
  *   a. Unhandled request errors → AllExceptionsFilter → logger.error("Unhandled exception", ...)
- *   b. After-commit hook failures → TenantContextInterceptor → reportError + logger.error
+ *      which carries `meta.sqlstate`, and → reportError → LogErrorReporter.
+ *   b. After-commit hook failures → TenantContextInterceptor → reportError → LogErrorReporter,
+ *      which emits `message="ERROR_REPORT"` with `sqlstate` and `errorClass="tenant-context"`.
  * Both paths emit a JSON line with level="error" and "42501" somewhere in the payload.
+ *
+ * WHY THE SQLSTATE HAS TO BE LIFTED OUT: postgres-js builds its error message from
+ * the server's message text alone ("permission denied for table X") and puts the
+ * SQLSTATE on `.code`, which Drizzle then buries one or two `.cause` links down.
+ * Until `sqlstateOf` lifted it into the log record, no emitted line contained the
+ * string "42501" and this predicate could never match a real incident — only the
+ * hand-written fixture it was tested against. The self-test below therefore uses
+ * the shape the application actually emits.
  *
  * THRESHOLD: 0 — any 42501 is a code bug. One occurrence in production is already
  * a regression that needs a fix in the next deploy.
@@ -65,18 +75,30 @@ function scanLines(lines, cutoffMs) {
 if (args.includes("--self-test")) {
   const now = new Date().toISOString();
   const stale = new Date(Date.now() - (hours + 1) * 3_600_000).toISOString();
+  // Every fixture is the shape the application actually writes. The two positive
+  // lines are the two real paths (a) and (b); note that neither carries "42501"
+  // in its human message — only in the lifted `sqlstate` field, which is the
+  // whole point of the predicate.
   const fixtureLines = [
-    JSON.stringify({ timestamp: now, level: "error", message: "Unhandled exception", correlationId: "corr-1", orgId: "org_fixture", route: "/notifications", meta: { message: "42501 insufficient_privilege: permission denied for table outbox_events" } }),
-    JSON.stringify({ timestamp: now, level: "warn", message: "[git-webhook] signature verification failed", correlationId: "corr-2" }),
-    JSON.stringify({ timestamp: now, level: "error", message: "Something else", correlationId: "corr-3", meta: { message: "some other error" } }),
-    JSON.stringify({ timestamp: stale, level: "error", message: "Unhandled exception", correlationId: "corr-4", meta: { message: "42501 outside window" } }),
+    // (a) AllExceptionsFilter → logger.error, SQLSTATE under meta.
+    JSON.stringify({ timestamp: now, level: "error", message: "Unhandled exception", correlationId: "corr-1", orgId: "org_fixture", route: "/notifications", meta: { message: "permission denied for table outbox_events", sqlstate: "42501", table: "outbox_events" } }),
+    // (b) TenantContextInterceptor → reportError → LogErrorReporter.
+    JSON.stringify({ timestamp: now, level: "error", message: "ERROR_REPORT", correlationId: "corr-2", orgId: "org_fixture", route: "/notifications", sqlstate: "42501", errorClass: "tenant-context", error: { name: "Error", message: "Failed query: insert into notifications", cause: { name: "PostgresError", message: "permission denied for table notifications" } }, extra: { phase: "after-commit" } }),
+    // Right prose, no SQLSTATE — a permission error that is not a missing GUC.
+    JSON.stringify({ timestamp: now, level: "error", message: "Unhandled exception", correlationId: "corr-3", meta: { message: "permission denied", sqlstate: "42P01" } }),
+    // Wrong level.
+    JSON.stringify({ timestamp: now, level: "warn", message: "[git-webhook] signature verification failed", correlationId: "corr-4" }),
+    // Unrelated error.
+    JSON.stringify({ timestamp: now, level: "error", message: "Something else", correlationId: "corr-5", meta: { message: "some other error" } }),
+    // Right shape, outside the lookback window.
+    JSON.stringify({ timestamp: stale, level: "error", message: "ERROR_REPORT", correlationId: "corr-6", sqlstate: "42501", errorClass: "tenant-context" }),
   ];
   const cutoffMs = Date.now() - hours * 3_600_000;
   const { count, matches } = scanLines(fixtureLines, cutoffMs);
   const fired = count > threshold;
-  const pass = count === 1 && fired === true;
+  const pass = count === 2 && fired === true;
   process.stdout.write(
-    JSON.stringify({ selfTest: true, pass, count, expectedCount: 1, fired, matches }) + "\n",
+    JSON.stringify({ selfTest: true, pass, count, expectedCount: 2, fired, matches }) + "\n",
   );
   process.exit(pass ? 0 : 1);
 }

@@ -15,6 +15,11 @@ export {
   type ObservabilityEnrichment,
 } from "./observability-context";
 export { ObservabilityEnrichmentInterceptor } from "./observability-enrichment.interceptor";
+export {
+  isTenantContextError,
+  sqlstateOf,
+  SQLSTATE_INSUFFICIENT_PRIVILEGE,
+} from "./error-classification";
 export { redact, truncateForLog } from "./redact";
 export { structuredNestLogger } from "./nest-logger.adapter";
 export { LogSpanExporter } from "./log-span-exporter";

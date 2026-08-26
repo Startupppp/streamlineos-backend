@@ -36,6 +36,8 @@
     "alert:sig-failures:self-test": "node src/scripts/alert-sig-failures.mjs --self-test",
     "alert:tenant-ctx-errors": "node src/scripts/alert-tenant-ctx-errors.mjs",
     "alert:tenant-ctx-errors:self-test": "node src/scripts/alert-tenant-ctx-errors.mjs --self-test",
+    "alert:p95": "node src/scripts/alert-p95.mjs",
+    "alert:p95:self-test": "node src/scripts/alert-p95.mjs --self-test",
     "verify:chat-mentions": "node --env-file=.env src/scripts/verify-chat-mention-delivery.mjs",
     "verify:permissions": "node src/common/auth/verify-permission-catalog.mjs",
     "seed:build-load": "node --env-file=.env src/scripts/seed-build-load.mjs",
