@@ -10,9 +10,19 @@ type Req = { headers: Record<string, string | undefined>; method: string; path: 
 
 type StampedReq = Req & { correlationId?: string; requestId?: string };
 
+/** The response double, which the span-ending tests drive directly. */
+type ResDouble = {
+  statusCode: number;
+  setHeader: (name: string, value: string) => void;
+  on: (event: string, listener: () => void) => void;
+  emit: (event: string) => void;
+};
+
 function run(headers: Record<string, string | undefined> = {}): {
   seen: ReturnType<typeof getObservabilityContext>;
   responseHeader: string | undefined;
+  headersSet: Record<string, string>;
+  res: ResDouble;
   req: StampedReq;
 } {
   const req = { headers, method: "GET", path: "/crm/parties" } as Req;

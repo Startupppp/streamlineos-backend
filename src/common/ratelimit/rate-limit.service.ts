@@ -39,6 +39,14 @@ const TIERS: Record<string, Tier> = {
   "compliance:subprocessors": { limit: 60, windowSecs: 60 },
   "compliance:subscribe": { limit: 5, windowSecs: 3600 },
   "public:waitlist": { limit: 5, windowSecs: 3600 },
+  /**
+   * Claiming an invitation, which is unauthenticated and creates an
+   * organisation. Tighter than joining the waitlist because the failure mode is
+   * worse: the endpoint is a token oracle, and a wrong guess is cheap for an
+   * attacker and free for us to refuse. Ten an hour is generous for somebody
+   * mistyping their own details and useless for enumeration.
+   */
+  "public:waitlist-claim": { limit: 10, windowSecs: 3600 },
   "public:roadmap": { limit: 60, windowSecs: 60 },
   "public:roadmap-vote": { limit: 10, windowSecs: 3600 },
   "public:roadmap-feedback": { limit: 5, windowSecs: 3600 },

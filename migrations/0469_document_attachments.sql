@@ -16,7 +16,7 @@
 SET lock_timeout = '5s';
 
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "acct_document_attachments" (
+CREATE TABLE IF NOT EXISTS "gl_document_attachments" (
   "id" text PRIMARY KEY NOT NULL,
   "org_id" text NOT NULL REFERENCES "organizations"("id") ON DELETE cascade,
   "book_id" text NOT NULL REFERENCES "gl_books"("id") ON DELETE cascade,
@@ -30,20 +30,20 @@ CREATE TABLE IF NOT EXISTS "acct_document_attachments" (
   "uploaded_by" text REFERENCES "users"("id") ON DELETE set null,
   "created_at" timestamp DEFAULT now() NOT NULL,
   "deleted_at" timestamp,
-  CONSTRAINT "uniq_acct_document_attachments_org_id" UNIQUE("org_id","id"),
-  CONSTRAINT "uniq_acct_document_attachments_book_id" UNIQUE("book_id","id"),
-  CONSTRAINT "ck_acct_document_attachments_type" CHECK (
+  CONSTRAINT "uniq_gl_document_attachments_org_id" UNIQUE("org_id","id"),
+  CONSTRAINT "uniq_gl_document_attachments_book_id" UNIQUE("book_id","id"),
+  CONSTRAINT "ck_gl_document_attachments_type" CHECK (
     "document_type" IN (
       'sales_invoice','credit_note','purchase_bill','debit_note','receipt','payment','journal'
     )
   ),
-  CONSTRAINT "ck_acct_document_attachments_size" CHECK ("size_bytes" > 0)
+  CONSTRAINT "ck_gl_document_attachments_size" CHECK ("size_bytes" > 0)
 );
 --> statement-breakpoint
 -- The list access path: everything still attached to one document.
-CREATE INDEX IF NOT EXISTS "idx_acct_document_attachments_document"
-  ON "acct_document_attachments" ("book_id","document_type","document_id")
+CREATE INDEX IF NOT EXISTS "idx_gl_document_attachments_document"
+  ON "gl_document_attachments" ("book_id","document_type","document_id")
   WHERE "deleted_at" IS NULL;
 --> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "idx_acct_document_attachments_org_book"
-  ON "acct_document_attachments" ("org_id","book_id");
+CREATE INDEX IF NOT EXISTS "idx_gl_document_attachments_org_book"
+  ON "gl_document_attachments" ("org_id","book_id");

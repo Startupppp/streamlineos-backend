@@ -48,7 +48,7 @@ function makeMockDb(orgIds: string[]): { db: Db; capture: ChainCapture; execute:
 }
 
 describe("forEachOrg", () => {
-  it("only enumerates organizations that are ACTIVE and not soft-deleted", async () => {
+  it("only enumerates organizations that are ACTIVE, placed, and not soft-deleted", async () => {
     const { db, capture } = makeMockDb([]);
 
     await forEachOrg(db, "test-sweep", jest.fn());
@@ -57,6 +57,7 @@ describe("forEachOrg", () => {
     collectColumnNames(capture.where, columns);
     expect(columns).toContain("status");
     expect(columns).toContain("deleted_at");
+    expect(columns).toContain("region");
   });
 
   it("runs the callback once per organization with that organization's id", async () => {

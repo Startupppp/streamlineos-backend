@@ -367,6 +367,19 @@ export const invAiInsightStatusEnum = pgEnum("inv_ai_insight_status", ["NEW", "A
 
 export const partyTypeEnum = pgEnum("party_type", ["CUSTOMER", "VENDOR", "PARTNER", "BOTH"]);
 
+/**
+ * Whether a party is a person or a company.
+ *
+ * A second axis, not a fifth `party_type`. `party_type` says what a party is
+ * *to us* — and `party_roles` says it better, which is why `clients.is_vendor`
+ * became a row there rather than a column. Being a company is not a
+ * relationship: it is not multi-valued, it does not change when a prospect
+ * becomes a customer, and a company is obviously both an organisation and a
+ * customer. Putting ORGANISATION into `party_type` would force a choice between
+ * those two and repeat the mistake the phase has now refused twice.
+ */
+export const partyKindEnum = pgEnum("party_kind", ["PERSON", "ORGANISATION"]);
+
 export const portalAudienceEnum = pgEnum("portal_audience", ["CLIENT_PORTAL"]);
 export const portalMembershipStatusEnum = pgEnum("portal_membership_status", ["PENDING", "ACTIVE", "SUSPENDED", "REVOKED"]);
 export const portalInvitationStatusEnum = pgEnum("portal_invitation_status", ["PENDING", "ACCEPTED", "REVOKED", "EXPIRED"]);

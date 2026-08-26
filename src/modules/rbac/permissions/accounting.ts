@@ -263,6 +263,22 @@ export const ACCOUNTING_PERMISSIONS: Permission[] = [
     description: "Reconcile bank accounts",
   },
   {
+    // One pair covers every document family. `document_type` is a path segment,
+    // so a static @RequirePermission cannot vary per family, and splitting the
+    // key per family would gate the same file differently depending on which
+    // route reached it.
+    name: "accounting:attachments:read",
+    resource: "accounting:attachments",
+    action: "read",
+    description: "List and download files attached to accounting documents",
+  },
+  {
+    name: "accounting:attachments:manage",
+    resource: "accounting:attachments",
+    action: "manage",
+    description: "Attach files to accounting documents, and remove them",
+  },
+  {
     name: "accounting:taxes:read",
     resource: "accounting:taxes",
     action: "read",

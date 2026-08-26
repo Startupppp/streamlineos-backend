@@ -299,6 +299,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "accounting:accounts:update",
       "accounting:journal:read",
       "accounting:journal:manage",
+      "accounting:attachments:read",
+      "accounting:attachments:manage",
       "accounting:reports:read",
       "reports:view",
       "reports:export",

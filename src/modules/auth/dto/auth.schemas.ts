@@ -7,6 +7,15 @@ export const registerSchema = z.object({
   companyName: z.string().min(1, "Company name is required").max(200),
   phone: z.string().max(32).optional(),
   plan: z.string().max(50).optional(),
+  /**
+   * ISO 3166-1 alpha-2, and what decides which region the tenant is placed in.
+   *
+   * Optional, because omitting it must keep the previous behaviour exactly:
+   * `regionForNewOrg()` with no argument returns the primary, as it did before
+   * ticket 09. Without this field the placement work was inert -- the resolver
+   * could place by country and nothing ever told it one.
+   */
+  country: z.string().length(2).toUpperCase().optional(),
 });
 
 export const verifyEmailSchema = z.object({

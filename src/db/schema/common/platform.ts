@@ -55,6 +55,25 @@ export const platformWaitlist = pgTable(
     notes: text("notes"),
     status: text("status").default("PENDING").notNull(),
     invitedAt: timestamp("invited_at"),
+    /**
+     * The admission token, hashed.
+     *
+     * Ticket 13. A backup should not contain live credentials for creating
+     * organisations, so only the digest is stored and the raw value exists in
+     * the email that carried it. Same treatment as `invitations.token_hash`.
+     */
+    tokenHash: text("token_hash"),
+    tokenExpiresAt: timestamp("token_expires_at"),
+    admittedByUserId: text("admitted_by_user_id"),
+    /**
+     * Distinct from `invited_at`, which is what the notification used.
+     *
+     * Conflating "we told them" with "we let them in" makes the funnel
+     * unmeasurable the first time a send fails.
+     */
+    admittedAt: timestamp("admitted_at"),
+    claimedAt: timestamp("claimed_at"),
+    claimedOrgId: text("claimed_org_id"),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
     referrerUrl: text("referrer_url"),
@@ -66,6 +85,8 @@ export const platformWaitlist = pgTable(
     uniqueIndex("uniq_platform_waitlist_email").on(table.email),
     index("idx_platform_waitlist_status").on(table.status),
     index("idx_platform_waitlist_created").on(table.createdAt),
+    uniqueIndex("uniq_platform_waitlist_token").on(table.tokenHash),
+    index("idx_platform_waitlist_admitted").on(table.admittedAt),
   ],
 );
 

@@ -50,13 +50,22 @@ const MIME_MAP: Record<string, string> = {
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
-const PRIVATE_HR_FOLDERS = new Set([
+/**
+ * Folder roots whose objects must never be handed out as a public URL.
+ *
+ * `publicUrlFor` returns the bare key for these, so the only way to the bytes
+ * is a permission-gated endpoint that streams them. `accounting` is here for
+ * the same reason the HR folders are: a posted tax invoice and the vendor
+ * bills attached to it carry the customer's GSTIN, legal name and address.
+ */
+const PRIVATE_FOLDERS = new Set([
   "documents",
   "hr-documents",
   "onboarding",
   "onboarding-docs",
   "resignations",
   "hr-exports",
+  "accounting",
 ]);
 
 @Injectable()
@@ -145,7 +154,7 @@ export class StorageService {
 
   private publicUrlFor(folder: string, key: string, override?: string): string {
     const folderRoot = folder.split("/", 1)[0] ?? folder;
-    if (PRIVATE_HR_FOLDERS.has(folderRoot)) return key;
+    if (PRIVATE_FOLDERS.has(folderRoot)) return key;
     const publicBase = override ?? this.config.NEXT_PUBLIC_R2_PUBLIC_URL;
     return publicBase ? `${publicBase}/${key}` : key;
   }

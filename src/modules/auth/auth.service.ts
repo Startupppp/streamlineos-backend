@@ -24,7 +24,8 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { runWithTenantContext, withTenant } from "../../common/tenant";
+import { runWithTenantContext, withNewOrgInRegion } from "../../common/tenant";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
@@ -75,7 +76,22 @@ export class AuthService {
     const userId = randomUUID();
     const orgId = randomUUID();
 
-    await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
+    /**
+     * Placement declared, not looked up.
+     *
+     * `withTenant` resolves an organisation's region by reading its row -- which
+     * is right for every tenant transaction except the one that *writes* that
+     * row. There is nothing to read yet, so `regionForOrg` raises "has no
+     * region" and registration has been broken since Phase 1's seam landed.
+     * Nothing noticed: the frontend has no signup page, so this route exists and
+     * nothing calls it.
+     *
+     * The region was never unknown -- `regionForNewOrg` decides it here, from
+     * the country. `withNewOrgInRegion` is the way to say so.
+     */
+    const region = regionForNewOrg(input.country);
+
+    await withNewOrgInRegion(this.db, { orgId, region, audience: "INTERNAL" }, async (tx) => {
       const seqRows = await tx.execute(
         sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
       );
@@ -87,7 +103,9 @@ export class AuthService {
 
       await tx.insert(organizations).values({
         id: orgId,
-        region: regionForNewOrg(),
+        // Ticket 09's placement, finally given something to place by. Absent a
+        // country this is `regionForNewOrg()` exactly as before.
+        region,
         ownerMembershipId,
         name: input.companyName,
         slug: slugify(input.companyName),
@@ -125,7 +143,8 @@ export class AuthService {
       });
     });
 
-    await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) =>
+    // The organisation exists and is placed by now, so ordinary lookup works.
+    await runInNewTenantTransaction(this.db, orgId, async (tx) =>
       runWithTenantContext({ orgId, audience: "INTERNAL", tx }, async () => {
         await seedSystemRolesForOrg(this.db, orgId);
         await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);

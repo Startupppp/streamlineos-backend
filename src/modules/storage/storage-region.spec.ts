@@ -8,6 +8,7 @@ import {
   type RegionBinding,
 } from "../../common/region/region-registry";
 import { StorageService } from "./storage.service";
+import type { AppConfig } from "../../config/env.validation";
 
 const topology = resolveRegionTopology({
   PRIMARY_REGION: "eu",
@@ -36,7 +37,7 @@ function install(placement: Record<string, string | null>): void {
 }
 
 function service(): StorageService {
-  return new StorageService({} as MediaCompressionService);
+  return new StorageService({} as MediaCompressionService, {} as AppConfig);
 }
 
 describe("StorageService region placement", () => {
