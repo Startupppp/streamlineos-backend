@@ -58,6 +58,9 @@ jobs:
       - name: Import cycles
         run: pnpm check:cycles
 
+      - name: Permission key catalog check
+        run: pnpm check:permission-keys
+
       - name: Dead-code report
         run: pnpm exec knip --no-progress
         continue-on-error: true

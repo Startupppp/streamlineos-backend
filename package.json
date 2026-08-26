@@ -68,7 +68,9 @@
     "test:e2e:seeded": "node --max-old-space-size=12288 ./node_modules/jest/bin/jest.js --config ./jest-e2e-seeded.json --forceExit --runInBand",
     "test:e2e:support": "node --max-old-space-size=6144 ./node_modules/jest/bin/jest.js --config ./jest-e2e.json --runInBand --testPathPattern=support",
     "db:check-request-txn": "node src/scripts/check-request-transaction-cost.mjs",
-    "check:cycles": "npx --yes madge@8 --circular --extensions ts src"
+    "check:cycles": "npx --yes madge@8 --circular --extensions ts src",
+    "check:permission-keys": "node src/scripts/check-permission-keys.mjs",
+    "check:permission-keys:self-test": "node src/scripts/check-permission-keys.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",
