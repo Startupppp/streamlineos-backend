@@ -24,7 +24,7 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import type { GeneratePeriodsInput } from "./dto/periods.schemas";
 
 const PERIODS_CACHE_TTL = 60;
-const PERIODS_LOCAL_KEY = "accounting:periods";
+const periodsKey = (orgId: string) => `accounting:periods:${orgId}`;
 
 function monthName(month: number): string {
   return new Date(2000, month - 1, 1).toLocaleString("en-US", { month: "long" });
@@ -48,7 +48,7 @@ export class PeriodsService {
   ) {}
 
   async listPeriods(orgId: string) {
-    return this.cache.cachedForOrg(orgId, PERIODS_LOCAL_KEY, () => this.fetchPeriods(orgId), PERIODS_CACHE_TTL);
+    return this.cache.cached(periodsKey(orgId), () => this.fetchPeriods(orgId), PERIODS_CACHE_TTL);
   }
 
   private async fetchPeriods(orgId: string) {
@@ -87,7 +87,7 @@ export class PeriodsService {
       .returning({ id: accountingPeriods.id });
     const created = inserted.length;
 
-    await this.cache.invalidateForOrg(orgId, PERIODS_LOCAL_KEY);
+    await this.cache.invalidate(periodsKey(orgId));
     this.audit.log({ action: "accounting.periods.generated", userId, orgId, resourceType: "accounting_period", resourceId: String(input.year), result: "SUCCESS" });
     return { created, total: toInsert.length };
   }
@@ -218,7 +218,7 @@ export class PeriodsService {
       return rows;
     });
 
-    await this.cache.invalidateForOrg(orgId, PERIODS_LOCAL_KEY);
+    await this.cache.invalidate(periodsKey(orgId));
     this.audit.log({ action: "accounting.period.closed", userId, orgId, resourceType: "accounting_period", resourceId: String(periodId) });
 
     await this.dispatch.emit({
@@ -252,7 +252,7 @@ export class PeriodsService {
       .where(and(eq(accountingPeriods.id, periodId), eq(accountingPeriods.orgId, orgId)))
       .returning();
 
-    await this.cache.invalidateForOrg(orgId, PERIODS_LOCAL_KEY);
+    await this.cache.invalidate(periodsKey(orgId));
     this.audit.log({ action: "accounting.period.locked", userId, orgId, resourceType: "accounting_period", resourceId: String(periodId) });
     return updated;
   }
@@ -286,7 +286,7 @@ export class PeriodsService {
       });
     });
 
-    await this.cache.invalidateForOrg(orgId, PERIODS_LOCAL_KEY);
+    await this.cache.invalidate(periodsKey(orgId));
     this.audit.log({ action: "accounting.period.reopened", userId, orgId, resourceType: "accounting_period", resourceId: String(periodId) });
 
     await this.dispatch.emit({
