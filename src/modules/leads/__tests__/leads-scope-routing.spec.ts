@@ -17,26 +17,28 @@ function withJoins<T extends object>(step: T): T {
   });
 }
 
+/*
+  One query per status now, not two.
+
+  The board used to read rows and then count them separately, and this mock
+  alternated between the two shapes on every `.where()`. It carries the total on
+  the rows themselves via `count(*) OVER ()`, so there is a single chain --
+  `.where().orderBy().limit()` -- resolving to rows that each carry `_total`.
+  The alternation left every other call without `.orderBy`, which is what broke.
+*/
 function buildDb() {
-  const leadsRow = Object.assign(Promise.resolve([]), {
+  const page = {
     orderBy: jest.fn().mockReturnValue({
       limit: jest.fn().mockResolvedValue([]),
     }),
-  });
+  };
 
-  const countRow = Promise.resolve([{ total: 0 }]);
-
-  let callN = 0;
   return {
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue(
         withJoins({
-          where: jest.fn().mockImplementation(() => {
-            return callN++ % 2 === 0 ? leadsRow : countRow;
-          }),
-          orderBy: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([]),
-          }),
+          where: jest.fn().mockReturnValue(page),
+          ...page,
         }),
       ),
     }),
