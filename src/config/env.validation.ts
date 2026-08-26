@@ -183,6 +183,15 @@ const baseSchema = z
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
     ),
+    /**
+     * Turns an undeclared route from a boot-report line into a hard failure.
+     * Read directly by `RouteClassifierGuard`; declared here so the schema is
+     * the whole contract rather than most of it.
+     */
+    REQUIRE_ROUTE_CLASSIFICATION: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
     HR_EXPORT_WORKER_ENABLED: z.preprocess(
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
