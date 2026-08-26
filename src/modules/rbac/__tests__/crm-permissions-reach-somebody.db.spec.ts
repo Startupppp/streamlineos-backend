@@ -1,0 +1,117 @@
+import dotenv from "dotenv";
+import postgres from "postgres";
+
+/**
+ * The invariant that this programme has broken twice, checked where the truth is.
+ *
+ * A permission key added to the catalogue is granted to a *new* organisation
+ * automatically, because `seedSystemRolesForOrg` hands out the module's whole
+ * namespace at role-creation time. An organisation that already exists gets it
+ * only from a backfill migration — and `seedSystemRolesForOrg` cannot help it
+ * later, since it grants solely on creation (`if (inserted.length > 0)`).
+ *
+ * So the failure is silent by construction. `ON CONFLICT DO NOTHING` over an
+ * empty result set is a clean migration: nothing errors, nothing warns, and the
+ * feature is simply unreachable for every existing tenant.
+ *
+ * It has happened twice here. Seven CRM backfills targeted `CRM_ADMIN`, a
+ * `ROLE_TEMPLATES` slug the seeder never mints, leaving eighteen permissions
+ * granted to nobody. The repair migration then missed two of them and asserted
+ * its own completeness in a comment, so the unified activity timeline returned
+ * 403 for every user in every existing organisation while the suite stayed green.
+ *
+ * `backfill-slugs-exist.spec.ts` catches both of those *statically*, by reading
+ * migration SQL. What it cannot see is the outcome — whether a key actually
+ * reaches a role in a real database. That is what this file is for, and it is
+ * why it needs a database rather than a fixture.
+ *
+ * Opt-in, like the other database specs here, so the default hermetic run is
+ * unaffected:
+ *
+ *   CRM_DB_TESTS=1 npx jest --runInBand --testPathPattern="crm-permissions-reach"
+ */
+
+const ENABLED = process.env.CRM_DB_TESTS === "1";
+const describeDb = ENABLED ? describe : describe.skip;
+
+describeDb("every CRM permission reaches somebody", () => {
+  let sql: ReturnType<typeof postgres>;
+
+  beforeAll(() => {
+    // Jest does not boot the app, so nothing has loaded `.env` for us.
+    if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
+    const url = process.env.DATABASE_URL;
+    if (!url) throw new Error("DATABASE_URL is required for this spec");
+    sql = postgres(url, { max: 1, prepare: false });
+  });
+
+  afterAll(async () => {
+    await sql?.end({ timeout: 5 });
+  });
+
+  it("grants every catalogued CRM and party key to at least one role", async () => {
+    const orphans = await sql<{ name: string }[]>`
+      SELECT p."name"
+      FROM "permissions" p
+      WHERE (p."name" LIKE 'crm:%' OR p."name" LIKE 'party:%')
+        AND NOT EXISTS (
+          SELECT 1 FROM "role_permission_grants" g WHERE g."permission_key" = p."name"
+        )
+      ORDER BY 1
+    `;
+
+    // A key here is in the catalogue, gated on an endpoint, and held by nobody.
+    // The fix is a backfill migration targeting `${MODULE}_MODULE_OWNER|ADMIN|MEMBER`,
+    // never a `ROLE_TEMPLATES` slug.
+    expect(orphans.map((row) => row.name)).toEqual([]);
+  });
+
+  it("gives members read keys only", async () => {
+    const writeKeys = await sql<{ permission_key: string }[]>`
+      SELECT DISTINCT g."permission_key"
+      FROM "role_permission_grants" g
+      JOIN "roles" r ON r."id" = g."role_id"
+      WHERE r."slug" = 'CRM_MODULE_MEMBER'
+        AND (g."permission_key" LIKE 'crm:%' OR g."permission_key" LIKE 'party:%')
+        AND g."permission_key" NOT LIKE '%:view'
+        AND g."permission_key" NOT LIKE '%:read'
+      ORDER BY 1
+    `;
+
+    // `buildModuleMemberPermissionKeys` filters the namespace to keys ending
+    // `:view` or `:read`. A member holding anything else came from a backfill
+    // that did not match what a fresh seed produces.
+    expect(writeKeys.map((row) => row.permission_key)).toEqual([]);
+  });
+
+  it("does not let a backfilled organisation differ from a newly seeded one", async () => {
+    const drift = await sql<{ permission_key: string }[]>`
+      SELECT DISTINCT a."permission_key"
+      FROM "role_permission_grants" a
+      JOIN "roles" ra ON ra."id" = a."role_id"
+      WHERE ra."slug" = 'CRM_MODULE_ADMIN'
+        AND (a."permission_key" LIKE 'crm:%' OR a."permission_key" LIKE 'party:%')
+        AND (a."permission_key" LIKE '%:view' OR a."permission_key" LIKE '%:read')
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "role_permission_grants" m
+          JOIN "roles" rm ON rm."id" = m."role_id"
+          WHERE rm."slug" = 'CRM_MODULE_MEMBER'
+            AND m."permission_key" = a."permission_key"
+            AND m."org_id" = a."org_id"
+        )
+      ORDER BY 1
+    `;
+
+    /**
+     * A read key an admin holds and a member does not, in the same organisation.
+     *
+     * A fresh seed gives members every `:view` key in the namespace, so a gap
+     * here means one tenant's members can see something another tenant's cannot,
+     * decided by when they signed up rather than by anything they chose. That is
+     * the divergence migration 0226 says it exists to prevent — and then caused,
+     * by omitting `crm:activities:view` from its member list.
+     */
+    expect(drift.map((row) => row.permission_key)).toEqual([]);
+  });
+});
