@@ -2080,6 +2080,27 @@
       "when": 1787830369441,
       "tag": "0524_billing_invoice_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 298,
+      "version": "7",
+      "when": 1787830370441,
+      "tag": "0540_hr_employments_custom_field_jsonb_column",
+      "breakpoints": true
+    },
+    {
+      "idx": 299,
+      "version": "7",
+      "when": 1787830371441,
+      "tag": "0541_hr_employments_custom_field_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 300,
+      "version": "7",
+      "when": 1787830372441,
+      "tag": "0542_hr_employments_custom_field_gin_index",
+      "breakpoints": true
     }
   ]
 }
