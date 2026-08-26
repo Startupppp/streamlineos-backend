@@ -13,6 +13,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { logger } from "../../../common/logger/logger.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
@@ -234,14 +235,14 @@ export class SupportTicketsService {
 
     void this.automations
       .runAutomationsForEvent(orgId, "ticket.created", this.buildAutomationPayload(ticket))
-      .catch(() => undefined);
+      .catch(logSideEffectFailure("support automations on ticket.created", { orgId, ticketId: ticket.id }));
 
-    void this.ai.runFullAnalysis(orgId, ticket.id).catch(() => undefined);
+    void this.ai.runFullAnalysis(orgId, ticket.id).catch(logSideEffectFailure("support AI analysis", { orgId, ticketId: ticket.id }));
 
     if (finalAssigneeId) {
       void this.notifications
         .sendAssignmentEmail(finalAssigneeId, userId, input.title, finalPriority, ticket.id, "User")
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("support assignment email", { orgId, ticketId: ticket.id }));
     }
 
     return {
@@ -337,7 +338,7 @@ export class SupportTicketsService {
 
     await this.invalidateTicketCaches(orgId);
 
-    void this.realtime.publishTicketUpdated(orgId, ticketId, ticketUpdatedAt).catch(() => undefined);
+    void this.realtime.publishTicketUpdated(orgId, ticketId, ticketUpdatedAt).catch(logSideEffectFailure("support realtime ticket-updated publish", { orgId, ticketId }));
 
     const updatedTicketForPayload = {
       id: ticketId,
@@ -351,22 +352,22 @@ export class SupportTicketsService {
     if (input.status && input.status !== ticket.status) {
       void this.automations
         .runAutomationsForEvent(orgId, "ticket.status_changed", this.buildAutomationPayload(updatedTicketForPayload))
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("support automations on ticket.updated", { orgId, ticketId }));
     }
     if (input.priority && input.priority !== ticket.priority) {
       void this.automations
         .runAutomationsForEvent(orgId, "ticket.priority_changed", this.buildAutomationPayload(updatedTicketForPayload))
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("support status-change notification", { orgId, ticketId }));
     }
 
     if (input.status === "RESOLVED" && ticket.status !== "RESOLVED") {
-      void this.csat.createRequestForTicket(orgId, ticketId).catch(() => undefined);
+      void this.csat.createRequestForTicket(orgId, ticketId).catch(logSideEffectFailure("support CSAT request", { orgId, ticketId }));
     }
 
     if (input.status) {
       void this.notifications
         .sendStatusEmail(ticket.createdBy, userId, ticket.title, ticketId, input.status)
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("support assignment notification", { orgId, ticketId }));
     }
 
     if (input.assigneeId && input.assigneeId !== ticket.assigneeId) {
@@ -379,7 +380,7 @@ export class SupportTicketsService {
           ticketId,
           "Support",
         )
-        .catch(() => undefined);
+        .catch(logSideEffectFailure("support SLA recalculation", { orgId, ticketId }));
     }
 
     return { success: true, updatedAt: updateData.updatedAt };

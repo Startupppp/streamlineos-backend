@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleChunks, kbArticleRestrictions, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -10,6 +10,7 @@ import { pageVisibleTo, visibleTo } from "./kb-page-visibility";
 import { EmbeddingsService } from "../../ai/core/providers/embeddings.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 const SNIPPET_LENGTH = 160;
 const RRF_CONSTANT = 60;
@@ -20,6 +21,8 @@ export type RetrievedSource =
 
 @Injectable()
 export class KbSearchService {
+  private readonly logger = new Logger(KbSearchService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: KbAccessService,
@@ -67,12 +70,7 @@ export class KbSearchService {
     if (input.spaceId) conditions.push(eq(kbArticles.spaceId, input.spaceId));
     const where = and(...conditions);
 
-    const [totalRow] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(kbArticles)
-      .where(where);
-    const total = totalRow?.count ?? 0;
-
+    const offset = (input.page - 1) * input.pageSize;
     const rows = await this.db
       .select({
         id: kbArticles.id,
@@ -84,14 +82,26 @@ export class KbSearchService {
         status: kbArticles.status,
         updatedAt: kbArticles.updatedAt,
         contentText: kbArticles.contentText,
+        totalCount: sql<string>`count(*) OVER ()`,
       })
       .from(kbArticles)
       .where(where)
       .orderBy(desc(this.keywordRank(tsquery)), desc(kbArticles.updatedAt))
       .limit(input.pageSize)
-      .offset((input.page - 1) * input.pageSize);
+      .offset(offset);
 
-    const items = rows.map(({ contentText, ...card }) => ({
+    const first = rows[0];
+    let total: number;
+    if (first) {
+      total = Number(first.totalCount);
+    } else if (offset === 0) {
+      total = 0;
+    } else {
+      const [countRow] = await this.db.select({ count: sql<number>`count(*)::int` }).from(kbArticles).where(where);
+      total = countRow?.count ?? 0;
+    }
+
+    const items = rows.map(({ totalCount: _, contentText, ...card }) => ({
       ...card,
       snippet: this.buildSnippet(contentText, input.q),
     }));
@@ -131,8 +141,9 @@ export class KbSearchService {
     if (this.embeddings.isConfigured()) {
       try {
         vectorLiteral = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(q));
-      } catch {
+      } catch (err: unknown) {
         vectorLiteral = null;
+        logSideEffectFailure("kb semantic search embedding", { orgId: user.orgId })(err);
       }
     }
 
@@ -292,7 +303,11 @@ export class KbSearchService {
         if (result.length >= pool) break;
       }
       return result;
-    } catch {
+    } catch (err) {
+      this.logger.warn("KB article vector candidate retrieval failed", {
+        orgId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return [];
     }
   }
@@ -352,7 +367,11 @@ export class KbSearchService {
         if (result.length >= pool) break;
       }
       return result;
-    } catch {
+    } catch (err) {
+      this.logger.warn("KB page vector candidate retrieval failed", {
+        orgId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return [];
     }
   }
@@ -419,11 +438,8 @@ export class KbSearchService {
       const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const scope: SQL[] = [];
-      if (articleIds.length > 0) {
-        // Article ids are produced by the article retrieval path, which applies
-        // its own restriction predicate. Keep that path unchanged here.
+      if (articleIds.length > 0)
         scope.push(inArray(kbArticleChunks.articleId, articleIds));
-      }
       if (pageIds.length > 0) {
         const projectIds = await this.access.getAccessibleProjectIds(user);
         const pageScope = and(
@@ -448,7 +464,11 @@ export class KbSearchService {
       return rows
         .map((row, index) => `[file ${index + 1}]\n${row.content.slice(0, 1200)}`)
         .join("\n\n");
-    } catch {
+    } catch (err) {
+      this.logger.warn("KB attachment snippet retrieval failed", {
+        orgId: user.orgId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return "";
     }
   }
@@ -501,7 +521,11 @@ export class KbSearchService {
         if (result.length >= limit) break;
       }
       return result;
-    } catch {
+    } catch (err) {
+      this.logger.warn("KB top-source retrieval failed", {
+        orgId: user.orgId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return [];
     }
   }
