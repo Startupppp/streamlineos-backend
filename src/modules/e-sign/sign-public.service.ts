@@ -245,7 +245,7 @@ export class SignPublicService {
       }
       const doc = await this.db.query.signDocuments.findFirst({ where: and(eq(signDocuments.id, documentId), eq(signDocuments.envelopeId, envelope.id)) });
       if (!doc) throw new NotFoundException("Document not found");
-      const url = await this.storage.getFileUrl(doc.currentFileKey, SIGNED_URL_EXPIRY_SECONDS);
+      const url = await this.storage.getFileUrl(envelope.orgId, doc.currentFileKey, SIGNED_URL_EXPIRY_SECONDS);
       return { url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS };
     });
   }
@@ -410,7 +410,7 @@ export class SignPublicService {
       if (input.imageDataUrl) {
         const base64 = input.imageDataUrl.replace(/^data:image\/\w+;base64,/, "");
         const buffer = Buffer.from(base64, "base64");
-        const uploaded = await this.storage.uploadFile(buffer, `signos/${envelope.orgId}/${envelope.id}/signatures`, `${input.assetType}.png`, "image/png");
+        const uploaded = await this.storage.uploadFile(envelope.orgId, buffer, `signos/${envelope.orgId}/${envelope.id}/signatures`, `${input.assetType}.png`, "image/png");
         imageFileKey = uploaded.key;
       }
 

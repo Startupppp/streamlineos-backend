@@ -1,7 +1,14 @@
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.types";
-import { CrmExportService, csvRow } from "./crm-export.service";
+import {
+  CrmExportService,
+  EXPORT_ENTITIES,
+  EXPORT_COLUMNS,
+  KEY_COLUMN,
+  NUMERIC_KEY_ENTITIES,
+  csvRow,
+} from "./crm-export.service";
 
 const ORG = "org-1";
 
@@ -139,7 +146,14 @@ describe("exporting", () => {
       unknown[]
     >;
 
-    expect(Object.keys(archive)).toEqual(["parties", "contacts", "subjects", "activities"]);
+    expect(Object.keys(archive)).toEqual([
+      "parties",
+      "contacts",
+      "subjects",
+      "activities",
+      "deals",
+      "pipelines",
+    ]);
     expect(archive.parties).toHaveLength(2);
   });
 
@@ -200,5 +214,45 @@ describe("exporting", () => {
     expect(wheres).toHaveLength(2);
     expect(dialect.sqlToQuery(wheres[0] as SQL).params).toContain("");
     expect(dialect.sqlToQuery(wheres[1] as SQL).params).toContain("p-0999");
+  });
+});
+
+/**
+ * What "every entity" has to mean for an export to be an exit.
+ *
+ * An export that omits the pipeline a tenant designed, or the deals sitting in
+ * it, is a sample rather than their data. The list is asserted rather than
+ * described because it is the one thing a reader of this file cannot infer:
+ * adding a table to the CRM without adding it here silently narrows what a
+ * departing customer can take.
+ */
+describe("EXPORT_ENTITIES", () => {
+  it("covers every CRM entity a tenant creates, not just the identity ones", () => {
+    expect([...EXPORT_ENTITIES].sort()).toEqual([
+      "activities",
+      "contacts",
+      "deals",
+      "parties",
+      "pipelines",
+      "subjects",
+    ]);
+  });
+
+  it("declares a walk key and a column set for every entity it names", () => {
+    for (const entity of EXPORT_ENTITIES) {
+      expect(KEY_COLUMN[entity]).toBeTruthy();
+      expect(EXPORT_COLUMNS[entity]?.length ?? 0).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * `deals.id` is a serial, and the cursor was written for text keys. An
+   * integer key silently ends the walk after one page if the cursor still
+   * expects a string — a tenant with 1,001 deals would export 1,000 of them and
+   * nothing would say so.
+   */
+  it("knows which entities are walked by a numeric key", () => {
+    expect(NUMERIC_KEY_ENTITIES).toContain("deals");
+    expect(NUMERIC_KEY_ENTITIES).not.toContain("parties");
   });
 });

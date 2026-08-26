@@ -85,6 +85,7 @@ export class HrExportFileService {
       await file.close();
       const fileStat = await stat(tempPath);
       const uploaded = await this.storage.uploadFileStream(
+        input.orgId,
         createReadStream(tempPath),
         fileStat.size,
         `hr-exports/${input.orgId}`,
@@ -104,8 +105,8 @@ export class HrExportFileService {
     }
   }
 
-  delete(fileKey: string): Promise<void> {
-    return this.storage.deleteFile(fileKey);
+  delete(orgId: string, fileKey: string): Promise<void> {
+    return this.storage.deleteFile(orgId, fileKey);
   }
 
   private async fetchBatch(

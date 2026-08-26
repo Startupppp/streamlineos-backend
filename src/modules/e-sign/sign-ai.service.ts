@@ -45,7 +45,7 @@ export class SignAiService {
     const textParts: string[] = [];
 
     for (const doc of docs.slice(0, MAX_DOCS)) {
-      const stream = await this.storage.getFileStream(doc.currentFileKey);
+      const stream = await this.storage.getFileStream(doc.orgId, doc.currentFileKey);
       const chunks: Buffer[] = [];
 
       for await (const chunk of stream.body) {

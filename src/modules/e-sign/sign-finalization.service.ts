@@ -97,7 +97,7 @@ export class SignFinalizationService {
 
     const buffers: Buffer[] = [];
     for (const doc of documents) {
-      const stream = await this.storage.getFileStream(doc.currentFileKey);
+      const stream = await this.storage.getFileStream(orgId, doc.currentFileKey);
       const chunks: Buffer[] = [];
       for await (const chunk of stream.body) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       buffers.push(Buffer.concat(chunks));
@@ -133,7 +133,7 @@ export class SignFinalizationService {
         if (asset.method === "typed" && asset.typedText) {
           stampFields.push({ ...base, textValue: asset.typedText, fontStyle: "signature" });
         } else if (asset.imageFileKey) {
-          const stream = await this.storage.getFileStream(asset.imageFileKey);
+          const stream = await this.storage.getFileStream(orgId, asset.imageFileKey);
           const chunks: Buffer[] = [];
           for await (const chunk of stream.body) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
           stampFields.push({ ...base, imageBytes: Buffer.concat(chunks), imageFormat: "png" });
@@ -161,7 +161,7 @@ export class SignFinalizationService {
       if (policy?.enabled && policy.showOnFinalPdf && policy.appliesStates.includes("completed")) {
         let imageBytes: Buffer | undefined;
         if (policy.imageFileKey) {
-          const stream = await this.storage.getFileStream(policy.imageFileKey);
+          const stream = await this.storage.getFileStream(orgId, policy.imageFileKey);
           const chunks: Buffer[] = [];
           for await (const chunk of stream.body) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
           imageBytes = Buffer.concat(chunks);
@@ -180,7 +180,7 @@ export class SignFinalizationService {
     }
 
     const finalPdfHash = this.pdf.computeSha256(finalPdf);
-    const finalUpload = await this.storage.uploadFile(finalPdf, `signos/${orgId}/${envelopeId}`, "final-signed.pdf", "application/pdf");
+    const finalUpload = await this.storage.uploadFile(orgId, finalPdf, `signos/${orgId}/${envelopeId}`, "final-signed.pdf", "application/pdf");
 
     await this.audit.record({
       orgId,
@@ -222,7 +222,7 @@ export class SignFinalizationService {
     };
 
     const certificatePdf = await this.pdf.generateCertificatePdf(certificateJson);
-    const certUpload = await this.storage.uploadFile(certificatePdf, `signos/${orgId}/${envelopeId}`, "certificate.pdf", "application/pdf");
+    const certUpload = await this.storage.uploadFile(orgId, certificatePdf, `signos/${orgId}/${envelopeId}`, "certificate.pdf", "application/pdf");
 
     const [certificate] = await this.db
       .insert(signCertificates)
@@ -277,7 +277,7 @@ export class SignFinalizationService {
     const envelope = await this.db.query.signEnvelopes.findFirst({ where: and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)) });
     if (!envelope?.finalPdfFileKey) throw new NotFoundException("Final PDF is not available yet");
 
-    const url = await this.storage.getFileUrl(envelope.finalPdfFileKey, SIGNED_URL_EXPIRY_SECONDS);
+    const url = await this.storage.getFileUrl(orgId, envelope.finalPdfFileKey, SIGNED_URL_EXPIRY_SECONDS);
     await this.audit.record({
       orgId,
       envelopeId,
@@ -292,7 +292,7 @@ export class SignFinalizationService {
 
   async getCertificateUrl(orgId: string, envelopeId: number) {
     const cert = await this.getCertificate(orgId, envelopeId);
-    const url = await this.storage.getFileUrl(cert.certificateFileKey, SIGNED_URL_EXPIRY_SECONDS);
+    const url = await this.storage.getFileUrl(orgId, cert.certificateFileKey, SIGNED_URL_EXPIRY_SECONDS);
     return { url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS, certificate: cert };
   }
 
@@ -338,7 +338,7 @@ export class SignFinalizationService {
       })),
     };
     const certificatePdf = await this.pdf.generateCertificatePdf(certificateJson);
-    const certUpload = await this.storage.uploadFile(certificatePdf, `signos/${orgId}/${envelopeId}`, "certificate.pdf", "application/pdf");
+    const certUpload = await this.storage.uploadFile(orgId, certificatePdf, `signos/${orgId}/${envelopeId}`, "certificate.pdf", "application/pdf");
     const storedJson: Record<string, unknown> = { ...certificateJson, regeneratedFrom: previous.certificateNumber };
 
     const [certificate] = await this.db

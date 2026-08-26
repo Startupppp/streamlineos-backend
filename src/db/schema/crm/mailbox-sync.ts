@@ -35,6 +35,15 @@ export const crmMailboxSync = pgTable(
     lastRunAt: timestamp("last_run_at"),
     lastError: text("last_error"),
     consecutiveFailures: integer("consecutive_failures").default(0).notNull(),
+    /**
+     * What the provider signs its push notifications with.
+     *
+     * Per mailbox, not per deployment: one global secret makes any integrator's
+     * leak a key to every tenant's ingress. Null until a push subscription is
+     * registered, and a null can never match a constant-time comparison, so an
+     * unregistered mailbox fails closed with no special case.
+     */
+    pushSecret: text("push_secret"),
 
     /**
      * A person can stop a mailbox feeding the CRM without disconnecting it from

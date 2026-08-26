@@ -70,7 +70,7 @@ export class StorageKbController {
         mimeType: row.mimeType,
         createdAt: row.createdAt,
         downloadUrl: storageReady
-          ? await this.storage.getFileUrl(row.fileKey, DOWNLOAD_EXPIRY_SECONDS)
+          ? await this.storage.getFileUrl(org, row.fileKey, DOWNLOAD_EXPIRY_SECONDS)
           : null,
       })),
     );

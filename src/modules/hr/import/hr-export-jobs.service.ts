@@ -170,7 +170,7 @@ export class HrExportJobsService {
     }
     return {
       job: this.toView(row),
-      file: await this.storage.getFileStream(row.fileKey),
+      file: await this.storage.getFileStream(orgId, row.fileKey),
     };
   }
 

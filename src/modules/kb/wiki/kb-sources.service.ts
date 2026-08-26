@@ -117,6 +117,7 @@ export class KbSourcesService {
     const kbPublicUrl = this.config.R2_KB_PUBLIC_URL;
     const useKbBucket = Boolean(kbBucket && kbPublicUrl);
     const result = await this.storage.uploadFile(
+      user.orgId,
       buffer,
       `kb-sources/${user.orgId}`,
       originalname,

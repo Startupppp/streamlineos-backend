@@ -182,6 +182,7 @@ export class PublishingService {
         if (this.storage.isConfigured()) {
           const fileName = `payslip-${payee.subjectKey}-${run.month}.pdf`;
           const uploadResult = await this.storage.uploadFile(
+            orgId,
             renderedPdfBuffer,
             `payroll/payslips/${runId}`,
             fileName,

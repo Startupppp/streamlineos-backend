@@ -183,6 +183,7 @@ describe("KbMediaService", () => {
       expect(mockChain.resize).toHaveBeenCalledWith({ width: 1920, withoutEnlargement: true });
       expect(mockChain.webp).toHaveBeenCalledWith({ quality: 82 });
       expect(mockStorage.uploadFile).toHaveBeenCalledWith(
+        "org-42",
         COMPRESSED,
         expect.stringContaining("kb-media/"),
         "photo.webp",
@@ -206,6 +207,7 @@ describe("KbMediaService", () => {
       await service.upload(makeFile("image/png", PNG_BUF, "banner.png"), makeUser());
       expect(mockSharp).toHaveBeenCalledWith(PNG_BUF);
       expect(mockStorage.uploadFile).toHaveBeenCalledWith(
+        "org-42",
         COMPRESSED,
         expect.any(String),
         "banner.webp",
@@ -226,6 +228,7 @@ describe("KbMediaService", () => {
       mockStorage.uploadFile.mockResolvedValue({ ...MOCK_RESULT, mimeType: "image/gif" });
       await service.upload(makeFile("image/gif", GIF_BUF, "anim.gif"), makeUser());
       expect(mockStorage.uploadFile).toHaveBeenCalledWith(
+        "org-42",
         GIF_BUF,
         expect.any(String),
         "anim.gif",
@@ -242,6 +245,7 @@ describe("KbMediaService", () => {
       await service.upload(makeFile("video/mp4", MP4_BUF, "clip.mp4"), makeUser());
       expect(mockSharp).not.toHaveBeenCalled();
       expect(mockStorage.uploadFile).toHaveBeenCalledWith(
+        "org-42",
         MP4_BUF,
         expect.any(String),
         "clip.mp4",
@@ -256,6 +260,7 @@ describe("KbMediaService", () => {
     it("uploads to kb-media/<orgId>", async () => {
       await service.upload(makeFile("image/jpeg", JPEG_BUF, "pic.jpg"), makeUser("tenant-xyz"));
       expect(mockStorage.uploadFile).toHaveBeenCalledWith(
+        "tenant-xyz",
         expect.any(Buffer),
         "kb-media/tenant-xyz",
         expect.any(String),
@@ -268,6 +273,7 @@ describe("KbMediaService", () => {
     it("different org gets a different folder", async () => {
       await service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser("org-other"));
       expect(mockStorage.uploadFile).toHaveBeenCalledWith(
+        "org-other",
         expect.any(Buffer),
         "kb-media/org-other",
         expect.any(String),
@@ -296,6 +302,7 @@ describe("KbMediaService", () => {
       await service.upload(makeFile("image/webp", WEBP_BUF, "img.webp"), makeUser());
       expect(mockSharp).toHaveBeenCalledWith(WEBP_BUF);
       expect(mockStorage.uploadFile).toHaveBeenCalledWith(
+        "org-42",
         COMPRESSED,
         expect.any(String),
         "img.webp",

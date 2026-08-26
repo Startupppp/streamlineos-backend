@@ -72,6 +72,7 @@ export class SignDocumentsService {
 
     const sha256Hash = this.pdf.computeSha256(file.buffer);
     const uploaded = await this.storage.uploadFile(
+      actor.orgId,
       file.buffer,
       `signos/${actor.orgId}/${envelopeId}`,
       file.originalName,
@@ -130,7 +131,7 @@ export class SignDocumentsService {
 
   async getPreviewUrl(orgId: string, documentId: number) {
     const doc = await this.get(orgId, documentId);
-    const url = await this.storage.getFileUrl(doc.currentFileKey, SIGNED_URL_EXPIRY_SECONDS);
+    const url = await this.storage.getFileUrl(orgId, doc.currentFileKey, SIGNED_URL_EXPIRY_SECONDS);
     return { document: doc, url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS };
   }
 
@@ -138,7 +139,7 @@ export class SignDocumentsService {
     const doc = await this.get(orgId, documentId);
     await this.loadEditableEnvelope(orgId, doc.envelopeId);
     await this.db.delete(signDocuments).where(eq(signDocuments.id, documentId));
-    await this.storage.deleteFile(doc.currentFileKey).catch(() => undefined);
+    await this.storage.deleteFile(orgId, doc.currentFileKey).catch(() => undefined);
   }
 
   /** Fetches the current (pre-signing) PDF bytes for an envelope's documents, in order. */
@@ -146,7 +147,7 @@ export class SignDocumentsService {
     const docs = await this.list(orgId, envelopeId);
     const out: { documentId: number; buffer: Buffer }[] = [];
     for (const doc of docs) {
-      const stream = await this.storage.getFileStream(doc.currentFileKey);
+      const stream = await this.storage.getFileStream(orgId, doc.currentFileKey);
       const chunks: Buffer[] = [];
       for await (const chunk of stream.body) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
