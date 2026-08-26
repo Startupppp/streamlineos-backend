@@ -5,6 +5,8 @@ import { KbAskService } from "./kb-ask.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
+import { KbAccessService } from "../core/kb-access.service";
+import { DRIZZLE } from "../../../db/drizzle.constants";
 
 const makeGatewayOk = (text: string) => ({
   ok: true as const,
@@ -67,6 +69,25 @@ const user = {
 };
 const input = { question: "How do I reset my password?" };
 
+const mockAccess = {
+  getAccessibleSpaceIds: jest.fn().mockResolvedValue([1]),
+  getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
+  getPrincipalIds: jest.fn().mockResolvedValue({ userId: "user1", roleSlugs: [] }),
+  isAdmin: jest.fn().mockResolvedValue(false),
+};
+
+const mockDb = {
+  execute: jest.fn().mockResolvedValue([{ one: 1 }]),
+  select: jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      innerJoin: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue([{ id: articleResult.id }]),
+      }),
+      where: jest.fn().mockResolvedValue([{ id: articleResult.id }]),
+    }),
+  }),
+};
+
 describe("KbAskService", () => {
   let service: KbAskService;
 
@@ -76,6 +97,7 @@ describe("KbAskService", () => {
     mockSearch.retrieveTopSources.mockResolvedValue([]);
     mockSearch.retrieveAttachmentSnippets.mockResolvedValue(null);
     mockEvents.record.mockResolvedValue(undefined);
+    mockDb.execute.mockResolvedValue([{ one: 1 }]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -83,6 +105,8 @@ describe("KbAskService", () => {
         { provide: AiGatewayService, useValue: mockGateway },
         { provide: KbEventsService, useValue: mockEvents },
         { provide: KbSearchService, useValue: mockSearch },
+        { provide: KbAccessService, useValue: mockAccess },
+        { provide: DRIZZLE, useValue: mockDb },
       ],
     }).compile();
     service = module.get(KbAskService);
@@ -147,6 +171,41 @@ describe("KbAskService", () => {
     expect(mockEvents.record).toHaveBeenCalledWith(
       "org1",
       "ai_answer",
+      expect.objectContaining({ actorId: "user1" }),
+    );
+  });
+
+  it("never reaches the paid gateway when retrieval yields nothing", async () => {
+    mockSearch.retrieveTopArticles.mockResolvedValueOnce([]);
+    mockSearch.retrieveTopSources.mockResolvedValueOnce([]);
+
+    const result = await service.ask(user, input);
+
+    expect(mockGateway.invokeTextWithUsage).not.toHaveBeenCalled();
+    expect(result.hasContext).toBe(false);
+    expect(result.citations).toHaveLength(0);
+    expect(result.answer).toContain("couldn't find anything");
+    expect(mockEvents.record).toHaveBeenCalledWith(
+      "org1",
+      "ai_answer_no_context",
+      expect.objectContaining({ actorId: "user1" }),
+    );
+  });
+
+  it("does not call retrieval or gateway when org has no indexed chunks", async () => {
+    mockDb.execute.mockResolvedValueOnce([]);
+
+    const result = await service.ask(user, input);
+
+    expect(mockSearch.retrieveTopArticles).not.toHaveBeenCalled();
+    expect(mockSearch.retrieveTopSources).not.toHaveBeenCalled();
+    expect(mockGateway.invokeTextWithUsage).not.toHaveBeenCalled();
+    expect(result.hasContext).toBe(false);
+    expect(result.citations).toHaveLength(0);
+    expect(result.answer).toContain("couldn't find anything");
+    expect(mockEvents.record).toHaveBeenCalledWith(
+      "org1",
+      "ai_answer_no_context",
       expect.objectContaining({ actorId: "user1" }),
     );
   });

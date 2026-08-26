@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
-import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
@@ -53,6 +53,22 @@ export class KbAskService {
     hasContext: boolean;
     aiUsage?: AiUsageMeta;
   }> {
+    const hasContent = await this.orgHasIndexedContent(user.orgId);
+    if (!hasContent) {
+      this.events.record(user.orgId, "ai_answer_no_context", {
+        actorId: user.userId,
+        query: input.question,
+      }).catch((err: unknown) => {
+        this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
+      });
+      return {
+        answer:
+          "I couldn't find anything about that in the knowledge base. You may want to open a support ticket.",
+        citations: [],
+        hasContext: false,
+      };
+    }
+
     const top = await this.search.retrieveTopArticles(
       user,
       input.question,
@@ -149,6 +165,13 @@ export class KbAskService {
     const verifiedCitations = await this.resolveCitations(user, top, sources);
 
     return { answer, citations: verifiedCitations, hasContext: true, aiUsage };
+  }
+
+  private async orgHasIndexedContent(orgId: string): Promise<boolean> {
+    const rows = await this.db.execute(
+      sql`SELECT 1 AS one FROM kb_article_chunks WHERE org_id = ${orgId} LIMIT 1`,
+    );
+    return rows.length > 0;
   }
 
   private async resolveCitations(

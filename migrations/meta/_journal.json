@@ -2045,6 +2045,41 @@
       "when": 1787830364441,
       "tag": "0282_crm_import_rows_drop_party_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 293,
+      "version": "7",
+      "when": 1787830365441,
+      "tag": "0520_commercial_billing_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 294,
+      "version": "7",
+      "when": 1787830366441,
+      "tag": "0521_billing_seat_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 295,
+      "version": "7",
+      "when": 1787830367441,
+      "tag": "0522_billing_proration_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 296,
+      "version": "7",
+      "when": 1787830368441,
+      "tag": "0523_billing_usage_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 297,
+      "version": "7",
+      "when": 1787830369441,
+      "tag": "0524_billing_invoice_snapshots",
+      "breakpoints": true
     }
   ]
 }

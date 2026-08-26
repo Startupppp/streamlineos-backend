@@ -4,6 +4,7 @@ import {
   projectPrioritySchema,
   refineDueOnOrAfterStart,
 } from "./project-core.schemas";
+import { baseListQuerySchema } from "../../../../common/pagination/list-query.schema";
 
 const csvToStringArray = z
   .string()
@@ -29,97 +30,97 @@ const csvToIntArray = z
       : undefined,
   );
 
-export const ticketsListQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  search: z.string().optional(),
-  status: csvToStringArray,
-  priority: z
-    .string()
-    .optional()
-    .transform((v) =>
-      v
-        ? v
-            .split(",")
-            .map((s) => s.trim())
-            .filter((s): s is "LOW" | "MEDIUM" | "HIGH" | "URGENT" =>
-              ["LOW", "MEDIUM", "HIGH", "URGENT"].includes(s),
-            )
-        : undefined,
-    ),
-  type: z
-    .string()
-    .optional()
-    .transform((v) =>
-      v
-        ? v
-            .split(",")
-            .map((s) => s.trim())
-            .filter((s): s is "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK" =>
-              ["TASK", "BUG", "STORY", "EPIC", "SUBTASK"].includes(s),
-            )
-        : undefined,
-    ),
-  assigneeId: csvToStringArray,
-  labelIds: csvToIntArray,
-  sprintId: z.coerce.number().int().positive().optional(),
-  cycleId: csvToIntArray,
-  epicId: z.coerce.number().int().positive().optional(),
-  dueDateFrom: z.string().optional(),
-  dueDateTo: z.string().optional(),
-  orderBy: z
-    .enum(["created", "updated", "priority", "dueDate", "rank"])
-    .default("rank"),
-  orderDir: z.enum(["asc", "desc"]).optional(),
-});
+export const ticketsListQuerySchema = baseListQuerySchema
+  .omit({ cursor: true, sortDir: true })
+  .extend({
+    search: z.string().optional(),
+    status: csvToStringArray,
+    priority: z
+      .string()
+      .optional()
+      .transform((v) =>
+        v
+          ? v
+              .split(",")
+              .map((s) => s.trim())
+              .filter((s): s is "LOW" | "MEDIUM" | "HIGH" | "URGENT" =>
+                ["LOW", "MEDIUM", "HIGH", "URGENT"].includes(s),
+              )
+          : undefined,
+      ),
+    type: z
+      .string()
+      .optional()
+      .transform((v) =>
+        v
+          ? v
+              .split(",")
+              .map((s) => s.trim())
+              .filter((s): s is "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK" =>
+                ["TASK", "BUG", "STORY", "EPIC", "SUBTASK"].includes(s),
+              )
+          : undefined,
+      ),
+    assigneeId: csvToStringArray,
+    labelIds: csvToIntArray,
+    sprintId: z.coerce.number().int().positive().optional(),
+    cycleId: csvToIntArray,
+    epicId: z.coerce.number().int().positive().optional(),
+    dueDateFrom: z.string().optional(),
+    dueDateTo: z.string().optional(),
+    orderBy: z
+      .enum(["created", "updated", "priority", "dueDate", "rank"])
+      .default("rank"),
+    orderDir: z.enum(["asc", "desc"]).optional(),
+  });
 
-export const allWorkQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  search: z.string().optional(),
-  status: csvToStringArray,
-  priority: z
-    .string()
-    .optional()
-    .transform((v) =>
-      v
-        ? v
-            .split(",")
-            .map((s) => s.trim())
-            .filter((s): s is "LOW" | "MEDIUM" | "HIGH" | "URGENT" =>
-              ["LOW", "MEDIUM", "HIGH", "URGENT"].includes(s),
-            )
-        : undefined,
-    ),
-  type: z
-    .string()
-    .optional()
-    .transform((v) =>
-      v
-        ? v
-            .split(",")
-            .map((s) => s.trim())
-            .filter((s): s is "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK" =>
-              ["TASK", "BUG", "STORY", "EPIC", "SUBTASK"].includes(s),
-            )
-        : undefined,
-    ),
-  assigneeId: csvToStringArray,
-  labelIds: csvToIntArray,
-  sprintId: z.coerce.number().int().positive().optional(),
-  cycleId: csvToIntArray,
-  epicId: z.coerce.number().int().positive().optional(),
-  dueDateFrom: z.string().optional(),
-  dueDateTo: z.string().optional(),
-  orderBy: z
-    .enum(["created", "updated", "priority", "dueDate", "rank"])
-    .default("rank"),
-  orderDir: z.enum(["asc", "desc"]).optional(),
-  projectIds: csvToIntArray,
-  excludeStatus: csvToStringArray,
-  scope: z.enum(["all", "mine", "created", "subscribed"]).default("all"),
-  pmWorkspaceId: z.string().optional(),
-});
+export const allWorkQuerySchema = baseListQuerySchema
+  .omit({ cursor: true, sortDir: true })
+  .extend({
+    search: z.string().optional(),
+    status: csvToStringArray,
+    priority: z
+      .string()
+      .optional()
+      .transform((v) =>
+        v
+          ? v
+              .split(",")
+              .map((s) => s.trim())
+              .filter((s): s is "LOW" | "MEDIUM" | "HIGH" | "URGENT" =>
+                ["LOW", "MEDIUM", "HIGH", "URGENT"].includes(s),
+              )
+          : undefined,
+      ),
+    type: z
+      .string()
+      .optional()
+      .transform((v) =>
+        v
+          ? v
+              .split(",")
+              .map((s) => s.trim())
+              .filter((s): s is "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK" =>
+                ["TASK", "BUG", "STORY", "EPIC", "SUBTASK"].includes(s),
+              )
+          : undefined,
+      ),
+    assigneeId: csvToStringArray,
+    labelIds: csvToIntArray,
+    sprintId: z.coerce.number().int().positive().optional(),
+    cycleId: csvToIntArray,
+    epicId: z.coerce.number().int().positive().optional(),
+    dueDateFrom: z.string().optional(),
+    dueDateTo: z.string().optional(),
+    orderBy: z
+      .enum(["created", "updated", "priority", "dueDate", "rank"])
+      .default("rank"),
+    orderDir: z.enum(["asc", "desc"]).optional(),
+    projectIds: csvToIntArray,
+    excludeStatus: csvToStringArray,
+    scope: z.enum(["all", "mine", "created", "subscribed"]).default("all"),
+    pmWorkspaceId: z.string().optional(),
+  });
 
 export const searchTicketsQuerySchema = z.object({
   q: z.string().default(""),
@@ -127,10 +128,7 @@ export const searchTicketsQuerySchema = z.object({
 });
 export type SearchTicketsQuery = z.infer<typeof searchTicketsQuerySchema>;
 
-export const ticketActivityQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  cursor: z.string().optional(),
-});
+export const ticketActivityQuerySchema = baseListQuerySchema.omit({ page: true, sortDir: true });
 export type TicketActivityQuery = z.infer<typeof ticketActivityQuerySchema>;
 
 export const recurrenceRuleSchema = z.object({
