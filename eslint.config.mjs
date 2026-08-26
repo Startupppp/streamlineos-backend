@@ -143,6 +143,7 @@ export default tseslint.config(
       "src/modules/finance/reports/statement-reports.service.ts",
       "src/modules/finance/tax/tax-reports.service.ts",
       "src/modules/party/party-divergence.service.ts",
+      "src/modules/party/party-legacy-backfill.db.spec.ts",
       "src/modules/party/party-legacy-clients.ts",
       "src/modules/party/party-legacy-contacts.ts",
       "src/modules/party/party-legacy-employer.ts",
