@@ -38,6 +38,32 @@ export const razorpayOrderErrorSchema = z.object({
   error: z.object({ description: z.string().optional() }).optional(),
 });
 
+/**
+ * A Stripe PaymentIntent, narrowed to what the platform actually reads.
+ *
+ * Stripe returns some sixty fields. Parsing all of them would make every
+ * unrelated addition to their API a schema change here, and parsing none of
+ * them would let a shape change reach the database. These three are what
+ * `PlatformOrder` promises.
+ *
+ * `amount` is minor units on both providers, which is the one place the two
+ * genuinely agree and the reason `PlatformOrder` needed no conversion layer.
+ */
+export const stripePaymentIntentSchema = z.object({
+  id: z.string(),
+  amount: z.number(),
+  /** Stripe answers lowercase; the platform stores ISO 4217 uppercase. */
+  currency: z.string(),
+  client_secret: z.string().nullable().optional(),
+});
+export type StripePaymentIntent = z.infer<typeof stripePaymentIntentSchema>;
+
+export const stripeErrorSchema = z.object({
+  error: z
+    .object({ message: z.string().optional(), code: z.string().optional() })
+    .optional(),
+});
+
 export const updateBillingProfileSchema = z.object({
   gstin: z.string().max(15).nullable().optional(),
   pan: z.string().max(10).nullable().optional(),

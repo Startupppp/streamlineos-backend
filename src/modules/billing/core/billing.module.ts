@@ -14,6 +14,8 @@ import { ReferralService } from "./referral.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { EnterpriseQuotesService } from "./enterprise-quotes.service";
 import { PlanLimitsService } from "./plan-limits.service";
+import { StripeService } from "./stripe.service";
+import { PlatformPaymentRegistry } from "./platform-payment-registry";
 import { NotificationsModule } from "../../notifications/notifications.module";
 
 @Module({
@@ -24,7 +26,14 @@ import { NotificationsModule } from "../../notifications/notifications.module";
     RazorpayService,
     // The one implementation today. Ticket 02 adds a second and routes by the
     // tenant's billing country; no call site changes when it does.
-    { provide: PLATFORM_PAYMENT_PROVIDER, useExisting: RazorpayService }, MarketplaceService, AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService],
-  exports: [AiCreditsService, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService],
+    StripeService,
+    /**
+     * Razorpay stays the default injection, and the registry is how a caller
+     * asks for anything else. Ticket 02 adds a provider beside Razorpay rather
+     * than replacing it: India is the largest existing market.
+     */
+    { provide: PLATFORM_PAYMENT_PROVIDER, useExisting: RazorpayService },
+    PlatformPaymentRegistry, MarketplaceService, AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService],
+  exports: [PlatformPaymentRegistry, AiCreditsService, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService],
 })
 export class BillingModule {}

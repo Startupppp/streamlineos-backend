@@ -56,10 +56,6 @@ const baseSchema = z
     CRON_SECRET: deploymentSecret,
     INTERNAL_API_SECRET: deploymentSecret,
     CONTACT_NOTIFICATION_EMAIL: optionalEmail,
-    WAITLIST_NOTIFICATION_EMAILS: z.preprocess(
-      emptyToUndefined,
-      z.string().trim().optional(),
-    ),
     EMAIL_PROVIDER: z.preprocess(
       emptyToUndefined,
       z.enum(["zeptomail", "resend"]).optional(),
@@ -130,6 +126,16 @@ const baseSchema = z
       emptyToUndefined,
       z.string().optional(),
     ),
+    /**
+     * Stripe, which serves everywhere Razorpay does not.
+     *
+     * Optional like Razorpay's: a deployment that only sells in India needs no
+     * Stripe account, and requiring one would make the whole application refuse
+     * to boot for want of a provider it never calls.
+     */
+    STRIPE_SECRET_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    STRIPE_PUBLISHABLE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    STRIPE_WEBHOOK_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
     VAPID_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
     VAPID_PRIVATE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
     R2_REGION: z.preprocess(emptyToUndefined, z.string().optional()),
@@ -162,6 +168,11 @@ const baseSchema = z
       z.coerce.number().int().positive().optional(),
     ),
     NOTIFICATIONS_INPROCESS_WORKER: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
+    /** In-process payroll job claim/reclaim loop. Defaults on; set false for local/dev. */
+    PAYROLL_INPROCESS_WORKER: z.preprocess(
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
     ),
