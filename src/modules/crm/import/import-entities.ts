@@ -206,6 +206,10 @@ const VOCABULARY: Readonly<Record<ImportEntity, EntityVocabulary>> = {
         "date", "activity date", "occurred at", "occurred", "date and time",
         "start date", "start time", "call date", "meeting date", "completed date",
         "logged at", "timestamp", "sent at", "activity time",
+        // Found by driving a real activities file through the live endpoint:
+        // "Happened At" is the header an exporter writes and none of the above
+        // matched it, so the column silently arrived unmapped.
+        "happened at", "happened on", "happened",
       ],
       dueAt: ["due date", "due at", "due", "deadline", "task due date", "due date only"],
       partyName: [

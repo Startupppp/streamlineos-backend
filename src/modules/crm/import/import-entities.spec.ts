@@ -204,3 +204,17 @@ describe("mapColumns refuses to fill one field from two columns, per entity", ()
     expect(columns[1]?.mapping).toMatchObject({ kind: "ambiguous" });
   });
 });
+
+describe("activity dates a real export actually writes", () => {
+  it.each(["Happened At", "Happened On", "Occurred At", "Activity Date", "Logged At"])(
+    "reads %s as when it happened",
+    (header) => {
+      expect(mapColumn(header, "activity")).toMatchObject({ kind: "mapped", field: "occurredAt" });
+    },
+  );
+
+  /** The neighbouring field, so the addition above did not swallow it. */
+  it("still keeps a due date separate from an occurrence", () => {
+    expect(mapColumn("Due Date", "activity")).toMatchObject({ kind: "mapped", field: "dueAt" });
+  });
+});
