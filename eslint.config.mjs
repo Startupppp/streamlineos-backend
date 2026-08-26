@@ -8,7 +8,20 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["src/**/*.ts", "test/**/*.ts"],
+    /**
+     * `evals/` is linted on the same terms as `src/`, and was not before.
+     *
+     * It is first-class code — `tsconfig.json` includes it, jest's `roots`
+     * cover it, and CI runs its acceptance gates on every pull request — but it
+     * sat outside this glob, so it fell through to the recommended defaults
+     * where `no-unused-vars` is an ERROR with no `argsIgnorePattern`. That is
+     * the whole story behind the eight long-standing errors there: seven were
+     * `_input` parameters on `runEval` callbacks, written in the convention this
+     * block establishes, against a config that had never been told about it.
+     * They were invisible because the `lint` script did not glob the directory
+     * either, so nothing ever reported them.
+     */
+    files: ["src/**/*.ts", "test/**/*.ts", "evals/**/*.ts"],
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/no-unused-expressions": "warn",
@@ -95,5 +108,65 @@ export default tseslint.config(
       "src/modules/portal/auth/portal-token.service.ts",
     ],
     rules: { "no-restricted-syntax": "off" },
+  },
+  /**
+   * The authoring-time half of ticket 08.
+   *
+   * `legacy-reader-ratchet.spec.ts` already fails the build if a new file reads
+   * `leads`, `clients` or `contacts` — but it fails in CI, after the code is
+   * written and often after it is reviewed. This says the same thing in the
+   * editor, which is where somebody can still cheaply choose the Party seam
+   * instead.
+   *
+   * Both, not either: a lint rule can be disabled inline or the file excluded,
+   * and the test is what notices when it is. Neither alone is a guard.
+   *
+   * The exemption list below is generated from the ratchet's own `KNOWN_READERS`,
+   * so the two cannot drift into disagreeing about what is allowed. When ticket
+   * 08 drops the tables, both lists go to zero and both of these disappear.
+   */
+  {
+    files: ["src/**/*.ts"],
+    ignores: [
+      "src/db/schema/**",
+      "src/modules/clients/clients.service.ts",
+      "src/modules/contacts/contact-roles.service.ts",
+      "src/modules/contacts/contacts.service.ts",
+      "src/modules/crm/core/crm-customer360-sections.service.ts",
+      "src/modules/crm/core/crm-customer360.service.ts",
+      "src/modules/crm/core/crm-organizations.service.ts",
+      "src/modules/crm/core/crm-organizations-insights.service.ts",
+      "src/modules/cron/cron-weekly-recap.service.ts",
+      "src/modules/inventory/returns/customer-returns.service.ts",
+      "src/modules/leads/leads.controller.e2e-spec.ts",
+      "src/modules/party/party-divergence.service.ts",
+      "src/modules/party/party-legacy-clients.ts",
+      "src/modules/party/party-legacy-contacts.ts",
+      "src/modules/party/party-legacy-employer.ts",
+      "src/modules/party/party-legacy-leads.ts",
+      "src/modules/party/party-legacy-mirror.spec.ts",
+      "src/modules/party/party-legacy-orgs.ts",
+      "src/modules/party/party-legacy-seam.ts",
+      "src/modules/party/party-legacy-writer.db.spec.ts",
+      "src/modules/party/party-legacy-writer.spec.ts",
+      "src/modules/party/party-legacy-writer.ts",
+      "src/modules/party/party-mirror-fields.ts",
+      "src/modules/search/search.service.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/db/schema", "**/db/schema/crm/**"],
+              importNames: ["leads", "clients", "contacts"],
+              message:
+                "The legacy identity tables are being retired. Resolve through the Party seam instead — see src/modules/party/party-legacy-seam.ts.",
+            },
+          ],
+        },
+      ],
+    },
   },
 );
