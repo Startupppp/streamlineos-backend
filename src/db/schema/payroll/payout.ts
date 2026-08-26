@@ -6,7 +6,7 @@ import {
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { workers } from "../directory/workers";
-import { payrollRuns, payrollRunEmployees } from "./payroll-runs";
+import { payrollRuns, payrollRunEmployees } from "./runs";
 
 export const payslipTemplates = pgTable("payslip_templates", {
   id: serial("id").primaryKey(),

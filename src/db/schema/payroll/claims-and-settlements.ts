@@ -23,8 +23,8 @@ import {
 import { organizations, users } from "../common/auth";
 import { journalEntries, ledgerAccounts } from "../accounting/accounting";
 import { projects } from "../build";
-import { resignations } from "./offboarding";
-import { assets } from "./assets";
+import { resignations } from "../hr/offboarding";
+import { assets } from "../hr/assets";
 
 export const expenseCategories = pgTable(
   "expense_categories",

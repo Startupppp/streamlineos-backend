@@ -4,7 +4,7 @@ import { attendance, leaveRequests } from "../../../../db/schema";
 import {
   hrPayrollInputPeriods,
   hrPayrollInputSnapshots,
-} from "../../../../db/schema/hr/payroll-inputs";
+} from "../../../../db/schema/payroll/input-capture";
 import { daysInMonth } from "./money";
 
 export interface PulledInputs {

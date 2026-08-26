@@ -7,8 +7,8 @@ import {
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { workers } from "../directory/workers";
-import { payrollPolicyVersions } from "./payroll-policies";
-import { hrPayrollInputPeriods } from "./payroll-inputs";
+import { payrollPolicyVersions } from "./policies";
+import { hrPayrollInputPeriods } from "./input-capture";
 
 export const payrollRuns = pgTable("payroll_runs", {
   id: serial("id").primaryKey(),

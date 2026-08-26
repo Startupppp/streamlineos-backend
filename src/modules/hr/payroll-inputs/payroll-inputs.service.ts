@@ -13,7 +13,7 @@ import {
   hrPayrollInputPeriods,
   hrPayrollInputSnapshots,
   hrPayrollAdjustments,
-} from "../../../db/schema/hr/payroll-inputs";
+} from "../../../db/schema/payroll/input-capture";
 import { hrLeaveLedger } from "../../../db/schema/hr/leave-ledger";
 import { hrLoanRepayments } from "../../../db/schema/hr/benefits";
 import { users } from "../../../db/schema/common/auth";

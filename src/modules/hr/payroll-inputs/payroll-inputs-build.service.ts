@@ -5,7 +5,7 @@ import type { Db } from "../../../db/drizzle.module";
 import {
   hrPayrollInputSnapshots,
   hrPayrollInputPeriods,
-} from "../../../db/schema/hr/payroll-inputs";
+} from "../../../db/schema/payroll/input-capture";
 import {
   reimbursements,
   salaryLoans,
@@ -15,7 +15,7 @@ import {
   hrPeople,
 } from "../../../db/schema/hr/core-people";
 
-import { employeeSalaryProfiles } from "../../../db/schema/hr/payroll-workforce";
+import { employeeSalaryProfiles } from "../../../db/schema/payroll/workforce";
 import { overtimeRequests } from "../../../db/schema/hr/overtime";
 import { organizationMembers, users } from "../../../db/schema/common/auth";
 import { AttendanceSummaryService } from "../time/attendance-summary.service";

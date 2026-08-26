@@ -4,8 +4,8 @@ import { organizations, users } from "../common/auth";
 import { workers } from "../directory/workers";
 import { payslipPublishChannelEnum } from "../common/enums";
 import { payslipPublicationStatusEnum } from "./enums";
-import { payrollRuns, payrollRunEmployees } from "../hr/payroll-runs";
-import { payslipTemplates } from "../hr/payroll-payout";
+import { payrollRuns, payrollRunEmployees } from "./runs";
+import { payslipTemplates } from "./payout";
 
 export const payslipPublications = pgTable("payslip_publications", {
   id: serial("id").primaryKey(),
