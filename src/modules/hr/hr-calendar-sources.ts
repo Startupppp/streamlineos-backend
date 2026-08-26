@@ -10,6 +10,22 @@ import type {
 } from "../calendar/calendar-event-source";
 import { HrCalendarSource } from "./hr-calendar-source";
 
+/**
+ * `@Injectable()` on an abstract base is what makes an inherited constructor
+ * injectable at all.
+ *
+ * The three subclasses below are decorated and declare no constructor of their
+ * own, so TypeScript emits `design:paramtypes` for none of them — the metadata
+ * belongs to the class that declares the parameters, and that is this one.
+ * Without the decorator here nothing in the chain carries it, Nest resolves
+ * zero arguments, and `registry` and `legacy` arrive `undefined`.
+ *
+ * It fails at `onModuleInit`, which is init time rather than request time, so
+ * the whole application refuses to start rather than one calendar source going
+ * quiet. `HrHolidayCalendarSource` further down was unaffected only because it
+ * declares its own constructor.
+ */
+@Injectable()
 abstract class HrProjectionSource implements CalendarEventSource, OnModuleInit {
   abstract readonly key: string;
   abstract readonly label: string;
