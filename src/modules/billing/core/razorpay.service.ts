@@ -7,15 +7,15 @@ import {
   razorpayOrderSchema,
   type RazorpayOrder,
 } from "./dto/billing.schemas";
-
-interface CreateOrderParams {
-  amount: number;
-  receipt: string;
-  notes: Record<string, string>;
-}
+import type {
+  CreatePlatformOrderParams,
+  PlatformPaymentProvider,
+} from "./platform-payment-provider";
 
 @Injectable()
-export class RazorpayService {
+export class RazorpayService implements PlatformPaymentProvider {
+  readonly providerKey = "razorpay";
+
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
   private get keyId(): string | undefined {
@@ -34,11 +34,12 @@ export class RazorpayService {
     return Boolean(this.keyId && this.keySecret);
   }
 
-  getKeyId(): string | null {
+  /** The key the browser needs to open checkout. */
+  getPublishableKey(): string | null {
     return this.keyId ?? null;
   }
 
-  async createOrder(params: CreateOrderParams): Promise<RazorpayOrder> {
+  async createOrder(params: CreatePlatformOrderParams): Promise<RazorpayOrder> {
     const auth = Buffer.from(`${this.keyId}:${this.keySecret}`).toString("base64");
     const response = await fetch("https://api.razorpay.com/v1/orders", {
       method: "POST",
@@ -48,7 +49,7 @@ export class RazorpayService {
       },
       body: JSON.stringify({
         amount: params.amount,
-        currency: "INR",
+        currency: params.currency ?? "INR",
         receipt: params.receipt,
         notes: params.notes,
       }),

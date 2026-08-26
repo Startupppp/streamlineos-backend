@@ -2,7 +2,7 @@ import { BadRequestException, ServiceUnavailableException } from "@nestjs/common
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { BillingService } from "./billing.service";
-import { RazorpayService } from "./razorpay.service";
+import { PLATFORM_PAYMENT_PROVIDER } from "./platform-payment-provider";
 import { AiCreditsService } from "./ai-credits.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "./plan-limits.service";
@@ -69,7 +69,7 @@ describe("BillingService.verifyAndActivate — DB backstop (23505)", () => {
       providers: [
         BillingService,
         { provide: DRIZZLE, useValue: db },
-        { provide: RazorpayService, useValue: makeRazorpay() },
+        { provide: PLATFORM_PAYMENT_PROVIDER, useValue: makeRazorpay() },
         { provide: AiCreditsService, useValue: makeAiCredits() },
         { provide: AuditService, useValue: makeAudit() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },
@@ -112,7 +112,7 @@ describe("BillingService.verifyAndActivate — DB backstop (23505)", () => {
       providers: [
         BillingService,
         { provide: DRIZZLE, useValue: makeSuccessDb() },
-        { provide: RazorpayService, useValue: makeRazorpay(true, false) },
+        { provide: PLATFORM_PAYMENT_PROVIDER, useValue: makeRazorpay(true, false) },
         { provide: AiCreditsService, useValue: makeAiCredits() },
         { provide: AuditService, useValue: makeAudit() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },
@@ -130,7 +130,7 @@ describe("BillingService.verifyAndActivate — DB backstop (23505)", () => {
       providers: [
         BillingService,
         { provide: DRIZZLE, useValue: makeSuccessDb() },
-        { provide: RazorpayService, useValue: makeRazorpay(false) },
+        { provide: PLATFORM_PAYMENT_PROVIDER, useValue: makeRazorpay(false) },
         { provide: AiCreditsService, useValue: makeAiCredits() },
         { provide: AuditService, useValue: makeAudit() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },

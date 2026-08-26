@@ -22,7 +22,10 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { logger } from "../../../common/logger/logger.service";
-import { RazorpayService } from "./razorpay.service";
+import {
+  PLATFORM_PAYMENT_PROVIDER,
+  type PlatformPaymentProvider,
+} from "./platform-payment-provider";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import {
@@ -54,7 +57,8 @@ interface WebhookResult {
 export class BillingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly razorpay: RazorpayService,
+    @Inject(PLATFORM_PAYMENT_PROVIDER)
+    private readonly razorpay: PlatformPaymentProvider,
     private readonly audit: AuditService,
     private readonly aiCredits: AiCreditsService,
     private readonly planLimits: PlanLimitsService,
@@ -73,7 +77,7 @@ export class BillingService {
 
     return {
       subscription: subscription ?? null,
-      razorpayKeyId: this.razorpay.getKeyId(),
+      razorpayKeyId: this.razorpay.getPublishableKey(),
       isConfigured: this.razorpay.isConfigured(),
     };
   }
@@ -114,7 +118,7 @@ export class BillingService {
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
-      keyId: this.razorpay.getKeyId(),
+      keyId: this.razorpay.getPublishableKey(),
       plan,
       billingCycle,
       discountAmount: couponDiscountAmount,
@@ -444,7 +448,7 @@ export class BillingService {
         orderId: order.id,
         amount: order.amount,
         currency: order.currency,
-        keyId: this.razorpay.getKeyId(),
+        keyId: this.razorpay.getPublishableKey(),
         pack,
       };
     }

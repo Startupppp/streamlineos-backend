@@ -4,7 +4,7 @@ import { BillingService } from "../billing.service";
 import { AiCreditsService } from "../ai-credits.service";
 import { AiCreditsReservationService } from "../ai-credits-reservation.service";
 import { AiCreditsPacksService } from "../ai-credits-packs.service";
-import { RazorpayService } from "../razorpay.service";
+import { PLATFORM_PAYMENT_PROVIDER } from "../platform-payment-provider";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { PlanLimitsService } from "../plan-limits.service";
 import { creditsToMilli, milliToCredits } from "../../../ai/core/billing/ai-model-pricing.constants";
@@ -79,7 +79,7 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
       providers: [
         BillingService,
         { provide: DRIZZLE, useValue: db },
-        { provide: RazorpayService, useValue: makeRazorpay() },
+        { provide: PLATFORM_PAYMENT_PROVIDER, useValue: makeRazorpay() },
         { provide: AiCreditsService, useValue: makeMockAiCreditsForBilling() },
         { provide: AuditService, useValue: makeAuditService() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },
@@ -149,7 +149,7 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
       providers: [
         BillingService,
         { provide: DRIZZLE, useValue: { transaction: jest.fn() } },
-        { provide: RazorpayService, useValue: makeRazorpay(true, false) },
+        { provide: PLATFORM_PAYMENT_PROVIDER, useValue: makeRazorpay(true, false) },
         { provide: AiCreditsService, useValue: makeMockAiCreditsForBilling() },
         { provide: AuditService, useValue: makeAuditService() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },
