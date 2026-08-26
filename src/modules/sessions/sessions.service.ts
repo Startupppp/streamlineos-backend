@@ -10,6 +10,8 @@ import type { Redis } from "@upstash/redis";
 import { isApiClientUserAgent, withClientInfo } from "../../common/http/parse-user-agent";
 
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
+const REVOKED_SESSION_INDEX_KEY = "revoked:sessions:index";
+const REVOCATION_PRUNE_BATCH = 200;
 
 @Injectable()
 export class SessionsService {
@@ -202,22 +204,39 @@ export class SessionsService {
     await this.tombstone(ids);
   }
 
-  /**
-   * Publishes the Redis tombstones `JwtAuthGuard` actually checks. Setting
-   * `userSessions.isRevoked` alone does NOT log anyone out — the guard reads
-   * only `revoked:session:<id>` (jwt-auth.guard.ts:122-131) and never consults
-   * the column. Any code path that revokes a session must call this.
-   */
+  // Tombstones carry no TTL on purpose: volatile-lru only evicts keys that have one, and an evicted tombstone silently un-revokes a session.
   async publishRevocations(sessionIds: string[]): Promise<void> {
     await this.tombstone(sessionIds);
   }
 
   private async tombstone(sessionIds: string[]): Promise<void> {
     if (!this.redis || sessionIds.length === 0) return;
+    const redis = this.redis;
+    const expiresAt = Date.now() + SESSION_TTL_SECONDS * 1000;
     await Promise.allSettled(
-      sessionIds.map((id) =>
-        this.redis!.set(`revoked:session:${id}`, true, { ex: SESSION_TTL_SECONDS }),
-      ),
+      sessionIds.flatMap((id) => [
+        redis.set(`revoked:session:${id}`, true),
+        redis.zadd(REVOKED_SESSION_INDEX_KEY, { score: expiresAt, member: id }),
+      ]),
     );
+  }
+
+  async pruneExpiredRevocations(): Promise<{ removed: number }> {
+    if (!this.redis) return { removed: 0 };
+    const redis = this.redis;
+    const now = Date.now();
+
+    const expired = await redis.zrange<string[]>(REVOKED_SESSION_INDEX_KEY, 0, now, {
+      byScore: true,
+    });
+    if (expired.length === 0) return { removed: 0 };
+
+    for (let i = 0; i < expired.length; i += REVOCATION_PRUNE_BATCH) {
+      const batch = expired.slice(i, i + REVOCATION_PRUNE_BATCH);
+      await redis.del(...batch.map((id) => `revoked:session:${id}`));
+    }
+    await redis.zremrangebyscore(REVOKED_SESSION_INDEX_KEY, 0, now);
+
+    return { removed: expired.length };
   }
 }
