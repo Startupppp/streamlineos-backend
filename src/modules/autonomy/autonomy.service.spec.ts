@@ -9,6 +9,7 @@ import {
   deals,
 } from "../../db/schema";
 import { AutonomyService } from "./autonomy.service";
+import { AutonomyActionsService } from "./autonomy-actions.service";
 import type { Extraction } from "./extraction.schemas";
 
 /**
@@ -126,6 +127,10 @@ function makeDb(
   } as unknown as Db;
 }
 
+/** The half that writes, on the same stand-in database as the half that decides. */
+const makeActions = (db: Db, updateDeal: jest.Mock) =>
+  new AutonomyActionsService(db, { updateDeal } as unknown as DealsService);
+
 function makeService(
   db: Db,
   result: unknown,
@@ -135,7 +140,7 @@ function makeService(
     invokeStructuredWithUsage: jest.fn().mockResolvedValue(result),
   } as unknown as AiGatewayService;
 
-  return new AutonomyService(db, gateway, { updateDeal } as unknown as DealsService);
+  return new AutonomyService(db, gateway, makeActions(db, updateDeal));
 }
 
 const ok = (data: Extraction) => ({ ok: true, data, aiUsage: { model: "fast-1" } });
@@ -147,7 +152,7 @@ const ok = (data: Extraction) => ({ ok: true, data, aiUsage: { model: "fast-1" }
 function makeServiceCapturingPrompt(db: Db, result: unknown, updateDeal = jest.fn()) {
   const invoke = jest.fn().mockResolvedValue(result);
   const gateway = { invokeStructuredWithUsage: invoke } as unknown as AiGatewayService;
-  const service = new AutonomyService(db, gateway, { updateDeal } as unknown as DealsService);
+  const service = new AutonomyService(db, gateway, makeActions(db, updateDeal));
 
   const conversationSent = (): string => {
     const call = invoke.mock.calls[0]?.[0] as { prompt: { user: string } } | undefined;

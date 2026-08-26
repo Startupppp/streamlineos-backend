@@ -3,6 +3,7 @@ import { AiGatewayModule } from "../ai/core/gateway/ai-gateway.module";
 import { DealsModule } from "../deals/deals.module";
 import { AccessModule } from "../access/access.module";
 import { AutonomyService } from "./autonomy.service";
+import { AutonomyActionsService } from "./autonomy-actions.service";
 import { AutonomyReviewService } from "./autonomy-review.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
@@ -45,6 +46,7 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
   controllers: [AutonomyReviewController],
   providers: [
     AutonomyService,
+    AutonomyActionsService,
     AutonomyReviewService,
     AutonomyScoringService,
     AutonomyHoldService,
