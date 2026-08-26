@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { aliasedTable, and, asc, count, desc, eq, ilike, isNull, lt, or, sql } from "drizzle-orm";
-import { contacts, crmOrganizations, tickets } from "../../../db/schema";
+import { tickets } from "../../../db/schema";
 import { businessParties, contactPartyMap, crmOrgPartyMap } from "../../../db/schema/party";
 import { CONTACT_MIRROR, ORGANISATION_MIRROR } from "../../party/party-legacy-mirror";
 import {
@@ -10,6 +10,8 @@ import {
   updateMirroredOrganizations,
 } from "../../party/party-legacy-orgs";
 import { PARTY_OF_CRM_ORG } from "../crm-party-reads";
+import { crmOrgIdsOfParties } from "../../party/party-legacy-employer";
+import { leadIdsOfParties, parentColumnOf } from "../../party/party-legacy-associations";
 import { PartyMergeService } from "../../party/party-merge.service";
 import { isLegacyResolved, resolveLegacyParty } from "../../party/party-legacy-seam";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -306,24 +308,21 @@ export class CrmOrganizationsService {
   /**
    * One company and the people who work there.
    *
-   * The employees come off `employer_party_id` now rather than
+   * The employees come off `employer_party_id` rather than
    * `contacts.organization_id` — the whole point of ticket 25 is that a party's
    * employer is another party, which is what makes "who else works here" a
-   * question with an answer. The response keeps the `contacts` shape it has
-   * always had, derived from each employee's party through the same mirror the
-   * writer uses, so the caller reads the party's values and not the mirror's copy
-   * of them.
+   * question with an answer. The response keeps the `contacts` and
+   * `crm_organizations` shapes it has always had, but both are now *derived*
+   * rather than read: the mirrored columns come from the same
+   * `party-legacy-mirror` derivation the writer uses, and the handful of
+   * legacy-owned ids are resolved through the maps. So a caller reads the party's
+   * values, and neither legacy table is touched.
    */
   async getWithContacts(orgId: string, id: number) {
     const partyId = await this.partyOf(orgId, id);
     if (!partyId) return null;
 
-    const [[company], [party], employees] = await Promise.all([
-      this.db
-        .select()
-        .from(crmOrganizations)
-        .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId)))
-        .limit(1),
+    const [[party], employees] = await Promise.all([
       this.db
         .select()
         .from(businessParties)
@@ -332,20 +331,13 @@ export class CrmOrganizationsService {
         )
         .limit(1),
       this.db
-        .select({ legacy: contacts, party: employee })
+        .select({ contactId: contactPartyMap.contactId, party: employee })
         .from(employee)
         .innerJoin(
           contactPartyMap,
           and(
             eq(contactPartyMap.partyId, employee.partyId),
             eq(contactPartyMap.organizationId, employee.organizationId),
-          ),
-        )
-        .innerJoin(
-          contacts,
-          and(
-            eq(contacts.id, contactPartyMap.contactId),
-            eq(contacts.orgId, contactPartyMap.organizationId),
           ),
         )
         .where(
@@ -360,14 +352,58 @@ export class CrmOrganizationsService {
         .orderBy(asc(employee.name), asc(contactPartyMap.contactId))
         .limit(ORG_EMPLOYEE_LIMIT),
     ]);
-    if (!company || !party) return null;
+    if (!party) return null;
 
-    // The legacy-owned columns off the row, everything else derived from the
-    // party, so the response is the party's values and not the mirror's copy.
+    /*
+     * The legacy-owned ids, resolved once for the page. `organization_id` is the
+     * same for every employee by construction — they are the people whose employer
+     * IS this party — so it is one lookup rather than one per row, and it goes
+     * through the same lowest-id-wins rule the mirror writes the column with.
+     */
+    const [companyLegacyIds, employerLegacyId, leadIds] = await Promise.all([
+      parentColumnOf(this.db, orgId, party.parentPartyId),
+      crmOrgIdsOfParties(this.db, orgId, [partyId]),
+      leadIdsOfParties(
+        this.db,
+        orgId,
+        employees
+          .map((row) => row.party.convertedFromPartyId)
+          .filter((id): id is string => id !== null),
+      ),
+    ]);
+
     return {
-      ...company,
+      // The `crm_organizations` shape: its own id, the hierarchy pointer, the
+      // stamps 0264 carried onto the party, and everything else derived.
+      id,
+      orgId,
+      parentId: companyLegacyIds.parentId,
+      /*
+       * Always null, and kept rather than dropped so the response shape does not
+       * change. `crm_organizations.merged_into_id` is not written any more —
+       * `party_merges` is the record, and a second pointer nothing can revert is
+       * worse than none — and every row that carries a historical value was
+       * soft-deleted by the merge that set it, which `partyOf` above refuses.
+       */
+      mergedIntoId: null,
+      createdAt: party.createdAt,
+      updatedAt: party.updatedAt,
       ...ORGANISATION_MIRROR.derive(party),
-      contacts: employees.map((row) => ({ ...row.legacy, ...CONTACT_MIRROR.derive(row.party) })),
+      contacts: employees.map((row) => ({
+        id: row.contactId,
+        orgId,
+        organizationId: employerLegacyId.get(partyId) ?? null,
+        leadId: row.party.convertedFromPartyId
+          ? (leadIds.get(row.party.convertedFromPartyId) ?? null)
+          : null,
+        // Null for the reason `contacts.service.ts` records: the only writer of
+        // this column sets `deleted_at` in the same statement, and the query above
+        // excludes deleted employees.
+        mergedIntoId: null,
+        createdAt: row.party.createdAt,
+        updatedAt: row.party.updatedAt,
+        ...CONTACT_MIRROR.derive(row.party),
+      })),
     };
   }
 
@@ -462,32 +498,66 @@ export class CrmOrganizationsService {
   /**
    * The subsidiaries of the company that lost, handed to the one that won.
    *
-   * The account hierarchy lives in `crm_organizations.parent_id`, which Party
-   * deliberately did not absorb -- a subsidiary's parent is not its employer, and
-   * one column serving both would make `employer_party_id` a lie. So the merge
-   * has to move it explicitly, or every child of the loser would be left pointing
-   * at a soft-deleted row and would silently drop out of `getAccountHierarchy`,
-   * which filters deleted parents out.
+   * The account hierarchy is `business_parties.parent_party_id` since 0265 --
+   * a second link of the same shape as `employer_party_id` rather than a second
+   * meaning for it, because a subsidiary's parent is not its employer. The merge
+   * still has to move it explicitly, because a merge soft-deletes the loser and
+   * every child left pointing at it would silently drop out of
+   * `getAccountHierarchy`, which filters deleted parents out.
    *
    * Through the writer like every other legacy write, never a direct UPDATE.
    *
-   * **The one part of an org merge a revert does not undo.** `party_merges`
-   * snapshots what Party owns, and `parent_id` is not that -- there is nowhere in
-   * the snapshot for it to go until the hierarchy itself converges onto Party.
-   * Reverting a merge restores both companies and leaves the subsidiaries on the
-   * survivor; re-parenting them is a manual step. Stated here rather than
-   * discovered later, and it is the argument for converging the hierarchy next.
+   * **Still the one part of an org merge a revert may not undo.** 0265 put the
+   * hierarchy on Party, so `parent_party_id` is now inside what a snapshot
+   * *could* capture -- but this re-parenting happens after `merge` has already
+   * taken its snapshot, so the children moved here are not in it. Reverting a
+   * merge restores both companies and leaves the subsidiaries on the survivor;
+   * re-parenting them is still a manual step. Stated here rather than discovered
+   * later; closing it means moving this inside the merge, which is its own ticket.
    */
   private async reparentSubsidiaries(
     orgId: string,
     mergedId: number,
     survivorId: number,
   ): Promise<void> {
+    const mergedPartyId = await this.partyOf(orgId, mergedId);
+    // The loser is soft-deleted by the time this runs, and `partyOf` refuses a
+    // deleted party — so the party is resolved through the map directly here.
+    const [mergedMap] = mergedPartyId
+      ? [{ partyId: mergedPartyId }]
+      : await this.db
+          .select({ partyId: crmOrgPartyMap.partyId })
+          .from(crmOrgPartyMap)
+          .where(
+            and(
+              eq(crmOrgPartyMap.organizationId, orgId),
+              eq(crmOrgPartyMap.crmOrganizationId, mergedId),
+            ),
+          )
+          .limit(1);
+    if (!mergedMap) return;
+
+    /*
+     * The children are parties whose `parent_party_id` is the loser, and every
+     * company id each of them answers to has to move: after an earlier merge one
+     * party legitimately carries several, and re-parenting only one of them would
+     * leave the rest pointing at a record the merge removed.
+     */
     const children = await this.db
-      .select({ id: crmOrganizations.id })
-      .from(crmOrganizations)
+      .select({ id: crmOrgPartyMap.crmOrganizationId })
+      .from(businessParties)
+      .innerJoin(
+        crmOrgPartyMap,
+        and(
+          eq(crmOrgPartyMap.partyId, businessParties.partyId),
+          eq(crmOrgPartyMap.organizationId, businessParties.organizationId),
+        ),
+      )
       .where(
-        and(eq(crmOrganizations.orgId, orgId), eq(crmOrganizations.parentId, mergedId)),
+        and(
+          eq(businessParties.organizationId, orgId),
+          eq(businessParties.parentPartyId, mergedMap.partyId),
+        ),
       );
     if (children.length === 0) return;
     await updateMirroredOrganizations(

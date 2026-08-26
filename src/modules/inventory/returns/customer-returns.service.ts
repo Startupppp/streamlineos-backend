@@ -2,8 +2,9 @@ import { Inject, Injectable, BadRequestException, NotFoundException } from "@nes
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   invCustomerReturns, invCustomerReturnLines, invSerialNumbers,
-  invLocations, invSalesOrders, invShipments, clients,
+  invLocations, invSalesOrders, invShipments,
 } from "../../../db/schema";
+import { clientPartyMap } from "../../../db/schema/party";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -85,10 +86,24 @@ export class CustomerReturnsService {
     }
 
     if (data.clientId !== undefined && data.clientId !== null) {
-      const client = await this.db.query.clients.findFirst({
-        where: and(eq(clients.id, data.clientId), eq(clients.orgId, orgId)),
-        columns: { id: true },
-      });
+      /*
+       * Asked of `client_party_map` rather than `clients`, which answers the same
+       * question through the Party seam. The map's primary key is
+       * `(organization_id, client_id)` and its composite foreign key cascades from
+       * `clients`, so a row exists here exactly when the client exists in this
+       * tenant -- which is all this check ever wanted. `invCustomerReturns.client_id`
+       * still points at `clients`, so the id kept here is still the legacy one.
+       */
+      const [client] = await this.db
+        .select({ id: clientPartyMap.clientId })
+        .from(clientPartyMap)
+        .where(
+          and(
+            eq(clientPartyMap.clientId, data.clientId),
+            eq(clientPartyMap.organizationId, orgId),
+          ),
+        )
+        .limit(1);
       if (!client) throw new BadRequestException("Client not found in this organization");
     }
 

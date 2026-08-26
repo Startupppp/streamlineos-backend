@@ -3,6 +3,11 @@ import { clientPartyMap, partyRoles } from "../../db/schema/party";
 import { clients } from "../../db/schema/crm/contacts";
 import { CLIENT_MIRROR } from "./party-legacy-mirror";
 import {
+  absorbLeadColumn,
+  convertedFromColumnOf,
+  withoutSelfLinks,
+} from "./party-legacy-associations";
+import {
   applyPartyPatch,
   grantRole,
   groupByPayload,
@@ -21,6 +26,12 @@ import {
  * carries no `deleted_at`, so a soft-deleted party's client mirror cannot record
  * the deletion at all. `PartyDivergenceService` reports that gap rather than
  * closing it by inventing a meaning for `clients.status`.
+ *
+ * One column does not go through the field map. `clients.lead_id` is an integer
+ * `leads` id and its Party counterpart `converted_from_party_id` is a party id,
+ * so translating needs `lead_party_map` and therefore a query -- which a
+ * `MirrorCell` deliberately cannot do. Both directions run through
+ * `party-legacy-associations.ts` at the three points below, and nowhere else.
  */
 
 async function partyIdsForClients(
@@ -54,7 +65,15 @@ async function adoptClient(
 
   const party = await insertBareParty(db, organizationId, row.name);
   const { partyPatch } = CLIENT_MIRROR.split(row, party);
-  await applyPartyPatch(db, organizationId, party.partyId, partyPatch);
+  await applyPartyPatch(
+    db,
+    organizationId,
+    party.partyId,
+    withoutSelfLinks(
+      { ...partyPatch, ...(await absorbLeadColumn(db, organizationId, row.leadId)) },
+      party.partyId,
+    ),
+  );
   await db
     .insert(clientPartyMap)
     .values({ organizationId, clientId, partyId: party.partyId, linkedBy: "mirror:adopt" })
@@ -72,12 +91,21 @@ export async function createMirroredClient(
   return db.transaction(async (tx) => {
     const bare = await insertBareParty(tx, organizationId, values.name);
     const { partyPatch, legacyOwnedPatch } = CLIENT_MIRROR.split(values, bare);
-    const party = await applyPartyPatch(tx, organizationId, bare.partyId, {
-      // A client is a customer by the time it exists; 0241 stamped the same
-      // stage on every backfilled client for the same reason.
-      lifecycleStage: "CUSTOMER",
-      ...partyPatch,
-    });
+    const party = await applyPartyPatch(
+      tx,
+      organizationId,
+      bare.partyId,
+      withoutSelfLinks(
+        {
+          // A client is a customer by the time it exists; 0241 stamped the same
+          // stage on every backfilled client for the same reason.
+          lifecycleStage: "CUSTOMER",
+          ...partyPatch,
+          ...(await absorbLeadColumn(tx, organizationId, values.leadId)),
+        },
+        bare.partyId,
+      ),
+    );
 
     const [row] = await tx
       .insert(clients)
@@ -85,6 +113,7 @@ export async function createMirroredClient(
         orgId: organizationId,
         name: party.name,
         ...CLIENT_MIRROR.derive(party),
+        ...(await convertedFromColumnOf(tx, organizationId, party.convertedFromPartyId)),
         ...legacyOwnedPatch,
       })
       .returning();
@@ -134,11 +163,23 @@ export async function updateMirroredClients(
       if (adopted) partyByClient.set(clientId, adopted);
     }
 
+    /*
+     * Resolved once, outside the per-party derivation: which lead the caller
+     * named is a property of the patch, not of whoever is being patched, and a
+     * bulk re-point of fifty clients should read the map once. The self-check is
+     * not a property of the patch, so it stays inside.
+     */
+    const leadPatch = await absorbLeadColumn(tx, organizationId, patch.leadId);
+
     const moved = await movePartiesFor(
       tx,
       organizationId,
       [...new Set(partyByClient.values())],
-      (party) => CLIENT_MIRROR.split(patch, party).partyPatch,
+      (party) =>
+        withoutSelfLinks(
+          { ...CLIENT_MIRROR.split(patch, party).partyPatch, ...leadPatch },
+          party.partyId,
+        ),
     );
 
     const derived: { id: number; payload: Partial<ClientInsert> }[] = [];
@@ -150,7 +191,11 @@ export async function updateMirroredClients(
       const { legacyOwnedPatch } = CLIENT_MIRROR.split(patch, party);
       derived.push({
         id: clientId,
-        payload: { ...CLIENT_MIRROR.derive(party), ...legacyOwnedPatch },
+        payload: {
+          ...CLIENT_MIRROR.derive(party),
+          ...(await convertedFromColumnOf(tx, organizationId, party.convertedFromPartyId)),
+          ...legacyOwnedPatch,
+        },
       });
     }
 

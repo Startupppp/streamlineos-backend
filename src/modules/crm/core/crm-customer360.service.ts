@@ -1,8 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { contacts, crmOrganizations, deals } from "../../../db/schema";
-import { businessParties, clientPartyMap, contactPartyMap, leadPartyMap } from "../../../db/schema/party";
-import { PARTY_OF_CLIENT, PARTY_OF_CONTACT, PARTY_OF_LEAD, leadStatus } from "../crm-party-reads";
+import { deals } from "../../../db/schema";
+import { businessParties, clientPartyMap, contactPartyMap, crmOrgPartyMap, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_CLIENT, PARTY_OF_CONTACT, PARTY_OF_CRM_ORG, PARTY_OF_LEAD, leadStatus } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
@@ -24,10 +24,19 @@ export class CrmCustomer360Service {
     const permissions = await this.access.resolveUserPermissions(orgId, userId);
     const permSet = new Set(Object.keys(permissions));
 
+    // The company is a party now (ticket 25); the map is joined only to keep the
+    // integer id every bookmark and `tickets.customer_id` still holds.
     const [orgRow] = await this.db
-      .select({ id: crmOrganizations.id, name: crmOrganizations.name })
-      .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.id, companyId), eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt)));
+      .select({ id: crmOrgPartyMap.crmOrganizationId, name: businessParties.name })
+      .from(crmOrgPartyMap)
+      .innerJoin(businessParties, PARTY_OF_CRM_ORG)
+      .where(
+        and(
+          eq(crmOrgPartyMap.crmOrganizationId, companyId),
+          eq(crmOrgPartyMap.organizationId, orgId),
+          isNull(businessParties.deletedAt),
+        ),
+      );
 
     if (!orgRow) return {};
 
@@ -123,35 +132,41 @@ export class CrmCustomer360Service {
     const limit = 20;
     const cursorDate = cursor ? new Date(cursor) : new Date();
 
+    // No `deleted_at` predicate, as before: a deleted company's timeline has
+    // always rendered, and adding the filter here would newly blank it.
     const [orgRow] = await this.db
-      .select({ name: crmOrganizations.name })
-      .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.id, companyId), eq(crmOrganizations.orgId, orgId)));
+      .select({ name: businessParties.name, partyId: businessParties.partyId })
+      .from(crmOrgPartyMap)
+      .innerJoin(businessParties, PARTY_OF_CRM_ORG)
+      .where(
+        and(
+          eq(crmOrgPartyMap.crmOrganizationId, companyId),
+          eq(crmOrgPartyMap.organizationId, orgId),
+        ),
+      );
 
     if (!orgRow) return { items: [], nextCursor: null };
 
     const safeName = orgRow.name.replaceAll("%", "\\%").replaceAll("_", "\\_");
 
     const [contactRows, dealRows, leadRows] = await Promise.all([
-      // `contacts.organization_id` has no Party column to move to, so the legacy
-      // row still says who works at this company; the name and the date on the
-      // event come from the party it maps to.
+      // Who works at this company is `employer_party_id` now (0262), so the legacy
+      // row is not read at all; the map supplies the contact id the event links to.
       this.db
         .select({
-          id: contacts.id,
+          id: contactPartyMap.contactId,
           name: businessParties.name,
           createdAt: businessParties.createdAt,
         })
-        .from(contacts)
-        .innerJoin(
-          contactPartyMap,
+        .from(contactPartyMap)
+        .innerJoin(businessParties, PARTY_OF_CONTACT)
+        .where(
           and(
-            eq(contactPartyMap.contactId, contacts.id),
             eq(contactPartyMap.organizationId, orgId),
+            eq(businessParties.employerPartyId, orgRow.partyId),
+            sql`${businessParties.createdAt} < ${cursorDate.toISOString()}`,
           ),
         )
-        .innerJoin(businessParties, PARTY_OF_CONTACT)
-        .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, companyId), sql`${businessParties.createdAt} < ${cursorDate.toISOString()}`))
         .orderBy(desc(businessParties.createdAt))
         .limit(limit),
       this.db

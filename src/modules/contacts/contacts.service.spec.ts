@@ -22,8 +22,19 @@ jest.mock("../party/party-legacy-contacts", () => ({
 
 const mirrorCreate = createMirroredContacts as unknown as jest.Mock;
 
-/** A Drizzle chain that carries the joins the contact reads now issue. */
-function makeSelectChain(rows: unknown[]) {
+/**
+ * A Drizzle chain that carries the joins the contact reads now issue.
+ *
+ * `lookups` feeds the map reads a contact page makes after its own query.
+ * `lead_party_map` and `crm_org_party_map` are keyed by their legacy id rather
+ * than by `party_id`, so the two association ids cannot be joined in without
+ * risking a duplicated row and are resolved per page instead — which is two more
+ * awaited statements the chain has to be able to answer. The chain is thenable
+ * for exactly that: the projection reads end in `.limit()`, the map reads end in
+ * `.where()`.
+ */
+function makeSelectChain(rows: unknown[], lookups: unknown[][] = []) {
+  const queue = [...lookups];
   const chain: Record<string, jest.Mock> = {
     from: jest.fn(),
     innerJoin: jest.fn(),
@@ -36,6 +47,8 @@ function makeSelectChain(rows: unknown[]) {
   for (const key of ["from", "innerJoin", "leftJoin", "where", "orderBy", "offset"])
     chain[key]!.mockReturnValue(chain);
   chain.limit!.mockResolvedValue(rows);
+  (chain as unknown as PromiseLike<unknown>).then = ((resolve: (value: unknown) => unknown) =>
+    Promise.resolve(queue.shift() ?? []).then(resolve)) as never;
   return { chain, db: { select: jest.fn().mockReturnValue(chain) } };
 }
 
@@ -48,19 +61,27 @@ describe("ContactsService bulk import", () => {
    * and which no longer depends on Drizzle's relational API being asked nicely.
    */
   it("projects only public identity fields from contact relations", async () => {
-    const chain = makeSelectChain([
-      {
-        id: 42,
-        orgId: "org-1",
-        name: "Ada",
-        organizationId: 7,
-        leadId: 3,
-        dealId: 9,
-        leadName: "Ada (lead)",
-        dealName: "Renewal",
-        crmOrganizationName: "ACME",
-      },
-    ]);
+    const chain = makeSelectChain(
+      [
+        {
+          id: 42,
+          orgId: "org-1",
+          name: "Ada",
+          // The associations are the party's own links now; the integer ids the
+          // response carries come back off the maps below.
+          leadPartyId: "party-lead",
+          employerPartyId: "party-acme",
+          dealId: 9,
+          leadName: "Ada (lead)",
+          dealName: "Renewal",
+          crmOrganizationName: "ACME",
+        },
+      ],
+      [
+        [{ partyId: "party-lead", leadId: 3 }],
+        [{ partyId: "party-acme", crmOrganizationId: 7 }],
+      ],
+    );
     const service = new ContactsService(chain.db as never, {} as never, {} as never);
 
     const contact = await service.getContact("org-1", 42);
@@ -74,6 +95,12 @@ describe("ContactsService bulk import", () => {
     expect(contact).not.toHaveProperty("leadName");
     expect(contact).not.toHaveProperty("dealName");
     expect(contact).not.toHaveProperty("crmOrganizationName");
+    // And the party ids they were resolved from stay inside the seam: a caller
+    // still receives the legacy integers every URL and DTO is written against.
+    expect(contact).not.toHaveProperty("leadPartyId");
+    expect(contact).not.toHaveProperty("employerPartyId");
+    expect(contact!.lead).toEqual({ id: 3, name: "Ada (lead)" });
+    expect(contact!.crmOrganization).toEqual({ id: 7, name: "ACME" });
   });
 
   it("streams export rows in bounded keyset pages with one CSV header", async () => {

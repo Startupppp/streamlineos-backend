@@ -131,14 +131,6 @@ export default tseslint.config(
       "src/db/schema/**",
       "src/modules/accounting/core/accounting-payables-query.service.ts",
       "src/modules/accounting/core/accounting-receivables.service.ts",
-      "src/modules/clients/clients.service.ts",
-      "src/modules/contacts/contact-roles.service.ts",
-      "src/modules/contacts/contacts.service.ts",
-      "src/modules/crm/core/crm-customer360-sections.service.ts",
-      "src/modules/crm/core/crm-customer360.service.ts",
-      "src/modules/crm/core/crm-organizations-insights.service.ts",
-      "src/modules/crm/core/crm-organizations.service.ts",
-      "src/modules/cron/cron-weekly-recap.service.ts",
       "src/modules/finance/ap/bills-due-check.service.ts",
       "src/modules/finance/ap/payment-runs.service.ts",
       "src/modules/finance/ap/recurring-bills.service.ts",
@@ -150,8 +142,6 @@ export default tseslint.config(
       "src/modules/finance/reports/insights-finders.service.ts",
       "src/modules/finance/reports/statement-reports.service.ts",
       "src/modules/finance/tax/tax-reports.service.ts",
-      "src/modules/inventory/returns/customer-returns.service.ts",
-      "src/modules/leads/leads.controller.e2e-spec.ts",
       "src/modules/party/party-divergence.service.ts",
       "src/modules/party/party-legacy-clients.ts",
       "src/modules/party/party-legacy-contacts.ts",
@@ -164,7 +154,6 @@ export default tseslint.config(
       "src/modules/party/party-legacy-writer.spec.ts",
       "src/modules/party/party-legacy-writer.ts",
       "src/modules/party/party-mirror-fields.ts",
-      "src/modules/search/search.service.ts",
     ],
     rules: {
       "no-restricted-imports": [
@@ -173,7 +162,7 @@ export default tseslint.config(
           patterns: [
             {
               group: ["**/db/schema", "**/db/schema/crm/**"],
-              importNames: ["leads", "clients", "contacts"],
+              importNames: ["leads", "clients", "contacts", "crmOrganizations"],
               message:
                 "The legacy identity tables are being retired. Resolve through the Party seam instead — see src/modules/party/party-legacy-seam.ts.",
             },

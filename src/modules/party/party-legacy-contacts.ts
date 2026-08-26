@@ -15,16 +15,27 @@ import {
   type MirrorWriteOptions,
 } from "./party-legacy-writer";
 import { absorbEmployerColumn } from "./party-legacy-employer";
+import {
+  absorbLeadColumn,
+  convertedFromColumnOf,
+  withoutSelfLinks,
+} from "./party-legacy-associations";
 
 /**
  * The `contacts` entry points, Party-first.
  *
- * One column here does not go through the field map. `contacts.organization_id`
- * is an integer `crm_organizations` id and its Party counterpart
- * `employer_party_id` is a party id, so translating needs `crm_org_party_map` and
- * therefore a query — which a `MirrorCell` deliberately cannot do. Both
- * directions run through `party-legacy-employer.ts` at the three points below,
- * and nowhere else.
+ * Two columns here do not go through the field map, and for one reason.
+ * `contacts.organization_id` is an integer `crm_organizations` id whose Party
+ * counterpart `employer_party_id` is a party id; `contacts.lead_id` is an integer
+ * `leads` id whose counterpart `converted_from_party_id` is a party id. Both
+ * translations need a `*_party_map` table and therefore a query — which a
+ * `MirrorCell` deliberately cannot do. They run through `party-legacy-employer.ts`
+ * and `party-legacy-associations.ts` at the three points below, and nowhere else.
+ *
+ * `contacts.deal_id` is NOT one of them, despite looking like one: it and
+ * `primary_deal_id` are the same integer `deals` id, so it is an ordinary cell in
+ * `party-mirror-fields.ts` and arrives here through `split` and `derive` like
+ * every other column.
  */
 
 async function partyIdsForContacts(
@@ -58,10 +69,19 @@ async function adoptContact(
 
   const party = await insertBareParty(db, organizationId, row.name);
   const { partyPatch } = CONTACT_MIRROR.split(row, party);
-  await applyPartyPatch(db, organizationId, party.partyId, {
-    ...partyPatch,
-    ...(await absorbEmployerColumn(db, organizationId, row.organizationId)),
-  });
+  await applyPartyPatch(
+    db,
+    organizationId,
+    party.partyId,
+    withoutSelfLinks(
+      {
+        ...partyPatch,
+        ...(await absorbEmployerColumn(db, organizationId, row.organizationId)),
+        ...(await absorbLeadColumn(db, organizationId, row.leadId)),
+      },
+      party.partyId,
+    ),
+  );
   await db
     .insert(contactPartyMap)
     .values({ organizationId, contactId, partyId: party.partyId, linkedBy: "mirror:adopt" })
@@ -79,10 +99,19 @@ export async function createMirroredContact(
   return db.transaction(async (tx) => {
     const bare = await insertBareParty(tx, organizationId, values.name);
     const { partyPatch, legacyOwnedPatch } = CONTACT_MIRROR.split(values, bare);
-    const party = await applyPartyPatch(tx, organizationId, bare.partyId, {
-      ...partyPatch,
-      ...(await absorbEmployerColumn(tx, organizationId, values.organizationId)),
-    });
+    const party = await applyPartyPatch(
+      tx,
+      organizationId,
+      bare.partyId,
+      withoutSelfLinks(
+        {
+          ...partyPatch,
+          ...(await absorbEmployerColumn(tx, organizationId, values.organizationId)),
+          ...(await absorbLeadColumn(tx, organizationId, values.leadId)),
+        },
+        bare.partyId,
+      ),
+    );
 
     const [row] = await tx
       .insert(contacts)
@@ -91,6 +120,7 @@ export async function createMirroredContact(
         name: party.name,
         ...CONTACT_MIRROR.derive(party),
         ...(await employerColumnOf(tx, organizationId, party)),
+        ...(await convertedFromColumnOf(tx, organizationId, party.convertedFromPartyId)),
         ...legacyOwnedPatch,
       })
       .returning();
@@ -158,12 +188,17 @@ export async function updateMirroredContacts(
      * bulk re-point of fifty contacts should read the map once.
      */
     const employerPatch = await absorbEmployerColumn(tx, organizationId, patch.organizationId);
+    const leadPatch = await absorbLeadColumn(tx, organizationId, patch.leadId);
 
     const moved = await movePartiesFor(
       tx,
       organizationId,
       [...new Set(partyByContact.values())],
-      (party) => ({ ...CONTACT_MIRROR.split(patch, party).partyPatch, ...employerPatch }),
+      (party) =>
+        withoutSelfLinks(
+          { ...CONTACT_MIRROR.split(patch, party).partyPatch, ...employerPatch, ...leadPatch },
+          party.partyId,
+        ),
     );
 
     const derived: { id: number; payload: Partial<ContactInsert> }[] = [];
@@ -178,6 +213,7 @@ export async function updateMirroredContacts(
         payload: {
           ...CONTACT_MIRROR.derive(party),
           ...(await employerColumnOf(tx, organizationId, party)),
+          ...(await convertedFromColumnOf(tx, organizationId, party.convertedFromPartyId)),
           ...legacyOwnedPatch,
         },
       });

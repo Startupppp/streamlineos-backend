@@ -1900,38 +1900,52 @@
       "breakpoints": true
     },
     {
-      "idx": 272,
+      "idx": 271,
       "version": "7",
       "when": 1787797953441,
       "tag": "0483_calendar_event_timezone",
       "breakpoints": true
     },
     {
-      "idx": 273,
+      "idx": 272,
       "version": "7",
       "when": 1787801553441,
       "tag": "0484_calendar_event_drop_recurrence",
       "breakpoints": true
     },
     {
-      "idx": 274,
+      "idx": 273,
       "version": "7",
       "when": 1787805153441,
       "tag": "0485_broadcast_read_receipts",
       "breakpoints": true
     },
     {
-      "idx": 275,
+      "idx": 274,
       "version": "7",
       "when": 1787808753441,
       "tag": "0486_hr_people_org_person_link",
       "breakpoints": true
     },
     {
-      "idx": 276,
+      "idx": 275,
       "version": "7",
       "when": 1787812353441,
       "tag": "0487_hr_people_org_person_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 276,
+      "version": "7",
+      "when": 1787815953441,
+      "tag": "0265_party_association_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 277,
+      "version": "7",
+      "when": 1787819553441,
+      "tag": "0266_party_association_backfill",
       "breakpoints": true
     }
   ]
