@@ -3,6 +3,7 @@ import {
   businessParties,
   clientPartyMap,
   contactPartyMap,
+  crmOrgPartyMap,
   leadPartyMap,
 } from "../../db/schema/party";
 
@@ -45,6 +46,12 @@ export const PARTY_OF_CLIENT = and(
 export const PARTY_OF_CONTACT = and(
   eq(businessParties.partyId, contactPartyMap.partyId),
   eq(businessParties.organizationId, contactPartyMap.organizationId),
+);
+
+/** The fourth, from ticket 25: a company id and the party it became. */
+export const PARTY_OF_CRM_ORG = and(
+  eq(businessParties.partyId, crmOrgPartyMap.partyId),
+  eq(businessParties.organizationId, crmOrgPartyMap.organizationId),
 );
 
 /*

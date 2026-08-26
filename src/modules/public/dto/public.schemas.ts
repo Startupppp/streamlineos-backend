@@ -133,3 +133,26 @@ export type ExternalReferrerRegisterInput = z.infer<typeof externalReferrerRegis
 export type ExternalReferralSubmitInput = z.infer<typeof externalReferralSubmitSchema>;
 export type ContactSubmitInput = z.infer<typeof contactSubmitSchema>;
 export type WaitlistJoinInput = z.infer<typeof waitlistJoinSchema>;
+
+
+/**
+ * Claiming a waitlist invitation.
+ *
+ * Ticket 13. Note what is *not* here: an email address. It comes from the entry
+ * the token identifies, so somebody holding a token for one address cannot
+ * provision a tenant for another.
+ */
+export const waitlistClaimSchema = z
+  .object({
+    token: z.string().min(32).max(128),
+    firstName: z.string().min(1).max(100),
+    lastName: z.string().max(100).optional(),
+    companyName: z.string().min(1).max(200),
+    /** Decides the region the tenant is placed in; see ticket 09. */
+    country: z.string().length(2).optional(),
+  })
+  .strict();
+export type WaitlistClaimInput = z.infer<typeof waitlistClaimSchema>;
+
+export const waitlistAdmitSchema = z.object({ entryId: z.coerce.number().int().positive() }).strict();
+export type WaitlistAdmitInput = z.infer<typeof waitlistAdmitSchema>;

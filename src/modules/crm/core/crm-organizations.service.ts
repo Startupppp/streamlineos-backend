@@ -1,64 +1,131 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
-import { crmOrganizations, contacts, deals, tickets } from "../../../db/schema";
-import { businessParties, contactPartyMap, leadPartyMap } from "../../../db/schema/party";
-import { CONTACT_MIRROR } from "../../party/party-legacy-mirror";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { aliasedTable, and, asc, count, desc, eq, ilike, isNull, lt, or, sql } from "drizzle-orm";
+import { contacts, crmOrganizations, tickets } from "../../../db/schema";
+import { businessParties, contactPartyMap, crmOrgPartyMap } from "../../../db/schema/party";
+import { CONTACT_MIRROR, ORGANISATION_MIRROR } from "../../party/party-legacy-mirror";
 import {
-  PARTY_OF_CONTACT,
-  PARTY_OF_LEAD,
-  leadPriority,
-  leadSource,
-  leadStatus,
-} from "../crm-party-reads";
+  createMirroredOrganization,
+  softDeleteMirroredOrganizations,
+  updateMirroredOrganization,
+  updateMirroredOrganizations,
+} from "../../party/party-legacy-orgs";
+import { PARTY_OF_CRM_ORG } from "../crm-party-reads";
+import { PartyMergeService } from "../../party/party-merge.service";
+import { isLegacyResolved, resolveLegacyParty } from "../../party/party-legacy-seam";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import type {
+  MergeOrgsInput,
+  OrgDuplicatesQueryInput,
   OrganizationCreateInput,
   OrganizationListInput,
   OrganizationUpdateInput,
 } from "./dto/organizations.schemas";
 
-const HIERARCHY_MAX_DEPTH = 100;
-const ORG_CONTACTS_LIMIT = 100;
 const DUPLICATE_CANDIDATE_LIMIT = 5;
+const ORG_EMPLOYEE_LIMIT = 100;
 
-export interface OrgHierarchyNode {
-  id: number;
-  name: string;
-  industry: string | null;
-  healthScore: number | null;
-  parentId: number | null;
-  children: OrgHierarchyNode[];
-}
+/**
+ * `business_parties` a second time, as the person rather than the company.
+ *
+ * The employer link is self-referential, so the detail read has both ends of it
+ * in one query and each needs its own name.
+ */
+const employee = aliasedTable(businessParties, "employee_party");
 
-export interface OrgRollup {
-  totalContacts: number;
-  totalDeals: number;
-  openDeals: number;
-  totalDealValue: number;
-  totalLeads: number;
-}
-
-export interface OrgTimelineEvent {
-  id: string;
-  date: string;
-  type: "contact_created" | "deal_created" | "lead_linked" | "note_added";
-  description: string;
-  entityId: number;
-}
-
+/**
+ * Companies, which are parties.
+ *
+ * Ticket 25's half of the convergence. `crm_organizations` was the fifth
+ * identity table — a company record with a name, a domain, an industry, a health
+ * score and its own merge service, which is Party built twice — so this surface
+ * now reads `business_parties` where `party_kind = 'ORGANISATION'` and joins
+ * `crm_org_party_map` only to keep answering in the integer ids that every
+ * bookmark, `roadmap_items.crm_organization_id` and `tickets.customer_id` is
+ * still holding. `/crm/organizations` and `/party/parties?partyKind=ORGANISATION`
+ * are now one list under two routes rather than two lists.
+ *
+ * The inner join to the map is what supplies that `id`, and it is the reason a
+ * company created directly on the Party surface does not appear here yet. When
+ * `crm_organizations` is dropped the join goes with it and the party id becomes
+ * the id.
+ *
+ * Every write goes through `party-legacy-orgs.ts`, as tickets 03–07 did for the
+ * other four tables. Nothing in this file writes `crm_organizations` directly.
+ */
 function escapeLike(input: string): string {
   return input.replaceAll("%", "\\%").replaceAll("_", "\\_");
 }
+
+/** The company columns as the list and detail responses have always spelled them. */
+const COMPANY_COLUMNS = {
+  id: crmOrgPartyMap.crmOrganizationId,
+  name: businessParties.name,
+  domain: businessParties.domain,
+  industry: businessParties.industry,
+  size: businessParties.companySize,
+  website: businessParties.website,
+  linkedinUrl: businessParties.linkedinUrl,
+  description: businessParties.description,
+  createdAt: businessParties.createdAt,
+};
 
 @Injectable()
 export class CrmOrganizationsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly merges: PartyMergeService,
   ) {}
+
+  /**
+   * The party behind a company id, with the tenant asserted on both sides.
+   *
+   * A company in another organisation resolves to nothing rather than to a
+   * forbidden, so the caller can 404 it: a 403 on somebody else's id confirms
+   * the record exists.
+   */
+  private async partyOf(orgId: string, crmOrganizationId: number): Promise<string | null> {
+    const resolution = await resolveLegacyParty(this.db, orgId, {
+      kind: "ORGANISATION",
+      legacyId: crmOrganizationId,
+    });
+    if (!isLegacyResolved(resolution) || resolution.party.deletedAt) return null;
+    return resolution.party.partyId;
+  }
+
+  /**
+   * What makes a party a company on this surface, with the tenant on both sides.
+   *
+   * The tenant is named as a literal on the map AND on the party rather than
+   * left to the join to correlate: `PARTY_OF_CRM_ORG` already makes a
+   * cross-tenant party unreachable, and restating it means a hand-written
+   * `party_id` in a WHERE cannot reach one either.
+   */
+  private static isCompany(orgId: string) {
+    return and(
+      eq(crmOrgPartyMap.organizationId, orgId),
+      eq(businessParties.organizationId, orgId),
+      eq(businessParties.partyKind, "ORGANISATION"),
+      isNull(businessParties.deletedAt),
+    );
+  }
+
+  /** The company projection, spelled once for the three reads that share it. */
+  private companyQuery() {
+    return this.db.select(COMPANY_COLUMNS).from(crmOrgPartyMap).innerJoin(businessParties, PARTY_OF_CRM_ORG);
+  }
+
+  private countCompanies(where: ReturnType<typeof and>) {
+    return this.db
+      .select({ count: count() })
+      .from(crmOrgPartyMap)
+      .innerJoin(businessParties, PARTY_OF_CRM_ORG)
+      .where(where)
+      .then((rows) => rows[0]);
+  }
 
   list(orgId: string, filters: OrganizationListInput) {
     const searchTerm = (filters.search ?? filters.q ?? "").trim();
@@ -75,9 +142,8 @@ export class CrmOrganizationsService {
     const limit = filters.pageSize;
     const offset = (filters.page - 1) * filters.pageSize;
     const where = and(
-      eq(crmOrganizations.orgId, orgId),
-      isNull(crmOrganizations.deletedAt),
-      searchTerm ? ilike(crmOrganizations.name, `%${escapeLike(searchTerm)}%`) : undefined,
+      CrmOrganizationsService.isCompany(orgId),
+      searchTerm ? ilike(businessParties.name, `%${escapeLike(searchTerm)}%`) : undefined,
     );
 
     const openRequestsSq = this.db
@@ -86,35 +152,33 @@ export class CrmOrganizationsService {
         openCount: count().as("open_count"),
       })
       .from(tickets)
-      .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), sql`${tickets.customerId} IS NOT NULL`))
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          isNull(tickets.deletedAt),
+          sql`${tickets.customerId} IS NOT NULL`,
+        ),
+      )
       .groupBy(tickets.customerId)
       .as("open_requests_sq");
 
     const [organizations, countRow] = await Promise.all([
       this.db
         .select({
-          id: crmOrganizations.id,
-          name: crmOrganizations.name,
-          domain: crmOrganizations.domain,
-          industry: crmOrganizations.industry,
-          size: crmOrganizations.size,
-          website: crmOrganizations.website,
-          linkedinUrl: crmOrganizations.linkedinUrl,
-          description: crmOrganizations.description,
-          createdAt: crmOrganizations.createdAt,
+          ...COMPANY_COLUMNS,
           openRequestCount: sql<number>`COALESCE(${openRequestsSq.openCount}, 0)`,
         })
-        .from(crmOrganizations)
-        .leftJoin(openRequestsSq, eq(openRequestsSq.customerId, crmOrganizations.id))
+        .from(crmOrgPartyMap)
+        .innerJoin(businessParties, PARTY_OF_CRM_ORG)
+        .leftJoin(openRequestsSq, eq(openRequestsSq.customerId, crmOrgPartyMap.crmOrganizationId))
+        // `created_at` alone is not a total order -- a backfill stamped whole
+        // batches with the same second -- so page two could repeat or skip a
+        // company. The id breaks the tie.
+        .orderBy(desc(businessParties.createdAt), desc(crmOrgPartyMap.crmOrganizationId))
         .where(where)
-        .orderBy(desc(crmOrganizations.createdAt))
         .limit(limit)
         .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)` })
-        .from(crmOrganizations)
-        .where(where)
-        .then((rows) => rows[0]),
+      this.countCompanies(where),
     ]);
 
     const totalCount = Number(countRow?.count ?? 0);
@@ -123,40 +187,87 @@ export class CrmOrganizationsService {
   }
 
   /**
-   * Same criteria the duplicate REPORT uses (`getDuplicateOrgs`): exact domain
-   * match, or case-insensitive name match. Surfaced as a WARNING, never a block
-   * — two genuinely distinct customers can share a name, and refusing the write
-   * would be the irreversible choice. Callers decide what to do with it.
+   * Same criteria the duplicate REPORT uses: exact domain match, or a
+   * case-insensitive name match. Surfaced as a WARNING, never a block — two
+   * genuinely distinct customers can share a name, and refusing the write would
+   * be the irreversible choice. Callers decide what to do with it.
    */
   async findPotentialDuplicates(
     orgId: string,
     input: { name?: string; domain?: string | null },
   ): Promise<{ id: number; name: string; domain: string | null; matchReason: "domain" | "name" }[]> {
     const predicates = [];
-    if (input.domain) predicates.push(eq(crmOrganizations.domain, input.domain));
-    if (input.name) predicates.push(ilike(crmOrganizations.name, input.name));
+    if (input.domain) predicates.push(eq(businessParties.domain, input.domain));
+    // `lower(x) = lower(y)`, where this used to be `ILIKE`. A company called
+    // "100%_Cotton" was a LIKE *pattern* under the old spelling and matched
+    // things it is not.
+    if (input.name)
+      predicates.push(sql`lower(${businessParties.name}) = lower(${input.name})`);
     if (predicates.length === 0) return [];
 
-    const rows = await this.db
-      .select({
-        id: crmOrganizations.id,
-        name: crmOrganizations.name,
-        domain: crmOrganizations.domain,
-      })
-      .from(crmOrganizations)
-      .where(
-        and(
-          eq(crmOrganizations.orgId, orgId),
-          isNull(crmOrganizations.deletedAt),
-          or(...predicates),
-        ),
-      )
+    const rows = await this.companyQuery()
+      .where(and(CrmOrganizationsService.isCompany(orgId), or(...predicates)))
+      .orderBy(asc(crmOrgPartyMap.crmOrganizationId))
       .limit(DUPLICATE_CANDIDATE_LIMIT);
 
     return rows.map((row) => ({
-      ...row,
+      id: row.id,
+      name: row.name,
+      domain: row.domain,
       matchReason:
         input.domain && row.domain === input.domain ? ("domain" as const) : ("name" as const),
+    }));
+  }
+
+  /**
+   * Pairs that look like the same company.
+   *
+   * The report the merge screen reads, and the same criteria
+   * `findPotentialDuplicates` applies to one candidate. Over parties now, which
+   * is what lets a merge from this screen go through `PartyMergeService`.
+   */
+  async getDuplicateOrgs(orgId: string, query: OrgDuplicatesQueryInput) {
+    const other = aliasedTable(businessParties, "other_party");
+    const otherMap = aliasedTable(crmOrgPartyMap, "other_map");
+
+    const rows = await this.db
+      .select({
+        id1: crmOrgPartyMap.crmOrganizationId,
+        name1: businessParties.name,
+        domain1: businessParties.domain,
+        id2: otherMap.crmOrganizationId,
+        name2: other.name,
+        domain2: other.domain,
+        matchesDomain: sql<boolean>`${businessParties.domain} IS NOT NULL AND ${businessParties.domain} = ${other.domain}`,
+      })
+      .from(crmOrgPartyMap)
+      .innerJoin(businessParties, PARTY_OF_CRM_ORG)
+      .innerJoin(otherMap, eq(otherMap.organizationId, crmOrgPartyMap.organizationId))
+      .innerJoin(
+        other,
+        and(eq(other.partyId, otherMap.partyId), eq(other.organizationId, otherMap.organizationId)),
+      )
+      .where(
+        and(
+          CrmOrganizationsService.isCompany(orgId),
+          eq(other.partyKind, "ORGANISATION"),
+          isNull(other.deletedAt),
+          // Each pair once, in one arrangement.
+          lt(crmOrgPartyMap.crmOrganizationId, otherMap.crmOrganizationId),
+          or(
+            and(sql`${businessParties.domain} IS NOT NULL`, eq(businessParties.domain, other.domain)),
+            sql`lower(${businessParties.name}) = lower(${other.name})`,
+          ),
+        ),
+      )
+      .orderBy(asc(crmOrgPartyMap.crmOrganizationId), asc(otherMap.crmOrganizationId))
+      .limit(query.limit)
+      .offset((query.page - 1) * query.limit);
+
+    return rows.map((row) => ({
+      org1: { id: row.id1, name: row.name1, domain: row.domain1 },
+      org2: { id: row.id2, name: row.name2, domain: row.domain2 },
+      matchReason: row.matchesDomain ? "domain" : "name",
     }));
   }
 
@@ -166,82 +277,102 @@ export class CrmOrganizationsService {
       domain: input.domain ?? null,
     });
 
-    const [org] = await this.db
-      .insert(crmOrganizations)
-      .values({
-        orgId,
-        name: input.name,
-        domain: input.domain ?? null,
-        industry: input.industry ?? null,
-        size: input.size ?? null,
-        website: input.website || null,
-        linkedinUrl: input.linkedinUrl || null,
-        description: input.description ?? null,
-      })
-      .returning({
-        id: crmOrganizations.id,
-        name: crmOrganizations.name,
-        domain: crmOrganizations.domain,
-        industry: crmOrganizations.industry,
-        size: crmOrganizations.size,
-        website: crmOrganizations.website,
-        linkedinUrl: crmOrganizations.linkedinUrl,
-        description: crmOrganizations.description,
-        createdAt: crmOrganizations.createdAt,
-      });
+    const row = await createMirroredOrganization(this.db, orgId, {
+      orgId,
+      name: input.name,
+      domain: input.domain ?? null,
+      industry: input.industry ?? null,
+      size: input.size ?? null,
+      website: input.website || null,
+      linkedinUrl: input.linkedinUrl || null,
+      description: input.description ?? null,
+    });
+
     await this.invalidateOrgCaches(orgId);
-    return { ...org, possibleDuplicates };
+    return {
+      id: row.id,
+      name: row.name,
+      domain: row.domain,
+      industry: row.industry,
+      size: row.size,
+      website: row.website,
+      linkedinUrl: row.linkedinUrl,
+      description: row.description,
+      createdAt: row.createdAt,
+      possibleDuplicates,
+    };
   }
 
+  /**
+   * One company and the people who work there.
+   *
+   * The employees come off `employer_party_id` now rather than
+   * `contacts.organization_id` — the whole point of ticket 25 is that a party's
+   * employer is another party, which is what makes "who else works here" a
+   * question with an answer. The response keeps the `contacts` shape it has
+   * always had, derived from each employee's party through the same mirror the
+   * writer uses, so the caller reads the party's values and not the mirror's copy
+   * of them.
+   */
   async getWithContacts(orgId: string, id: number) {
-    const [orgRows, orgContacts] = await Promise.all([
+    const partyId = await this.partyOf(orgId, id);
+    if (!partyId) return null;
+
+    const [[company], [party], employees] = await Promise.all([
       this.db
         .select()
         .from(crmOrganizations)
-        .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt)))
+        .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId)))
         .limit(1),
-      // `contacts.organization_id` is the one column on this row Party does not
-      // own -- a party's employer should be another party, and nothing yet gives
-      // `crm_organizations` parties to point at -- so the legacy row still
-      // answers "who works here". Everything the caller then reads off it comes
-      // from the party, through the same derivation the writer uses, so the
-      // response is the party's values and not the mirror's copy of them.
       this.db
-        .select({ legacy: contacts, party: businessParties })
-        .from(contacts)
+        .select()
+        .from(businessParties)
+        .where(
+          and(eq(businessParties.partyId, partyId), eq(businessParties.organizationId, orgId)),
+        )
+        .limit(1),
+      this.db
+        .select({ legacy: contacts, party: employee })
+        .from(employee)
         .innerJoin(
           contactPartyMap,
           and(
-            eq(contactPartyMap.contactId, contacts.id),
-            eq(contactPartyMap.organizationId, orgId),
+            eq(contactPartyMap.partyId, employee.partyId),
+            eq(contactPartyMap.organizationId, employee.organizationId),
           ),
         )
-        .innerJoin(businessParties, PARTY_OF_CONTACT)
+        .innerJoin(
+          contacts,
+          and(
+            eq(contacts.id, contactPartyMap.contactId),
+            eq(contacts.orgId, contactPartyMap.organizationId),
+          ),
+        )
         .where(
           and(
-            eq(contacts.orgId, orgId),
-            eq(contacts.organizationId, id),
-            isNull(businessParties.deletedAt),
+            eq(employee.organizationId, orgId),
+            eq(employee.employerPartyId, partyId),
+            isNull(employee.deletedAt),
           ),
         )
-        .limit(ORG_CONTACTS_LIMIT),
+        // Named, then keyed: the list is shown to a person, and `created_at`
+        // alone repeats across a bulk import.
+        .orderBy(asc(employee.name), asc(contactPartyMap.contactId))
+        .limit(ORG_EMPLOYEE_LIMIT),
     ]);
+    if (!company || !party) return null;
 
-    const [org] = orgRows;
-    if (!org) return null;
-
+    // The legacy-owned columns off the row, everything else derived from the
+    // party, so the response is the party's values and not the mirror's copy.
     return {
-      ...org,
-      contacts: orgContacts.map((row) => ({ ...row.legacy, ...CONTACT_MIRROR.derive(row.party) })),
+      ...company,
+      ...ORGANISATION_MIRROR.derive(party),
+      contacts: employees.map((row) => ({ ...row.legacy, ...CONTACT_MIRROR.derive(row.party) })),
     };
   }
 
   async exists(orgId: string, id: number): Promise<boolean> {
-    const [row] = await this.db
-      .select({ id: crmOrganizations.id })
-      .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt)));
-    return Boolean(row);
+    return Boolean(await this.partyOf(orgId, id));
   }
 
   private async invalidateOrgCaches(orgId: string): Promise<void> {
@@ -252,325 +383,118 @@ export class CrmOrganizationsService {
   }
 
   async applyUpdate(orgId: string, id: number, input: OrganizationUpdateInput) {
-    const updated = await this.db
-      .update(crmOrganizations)
-      .set({
-        ...(input.name !== undefined && { name: input.name }),
-        ...(input.domain !== undefined && { domain: input.domain }),
-        ...(input.industry !== undefined && { industry: input.industry }),
-        ...(input.size !== undefined && { size: input.size }),
-        ...(input.website !== undefined && { website: input.website }),
-        ...(input.linkedinUrl !== undefined && { linkedinUrl: input.linkedinUrl }),
-        ...(input.description !== undefined && { description: input.description }),
-        ...(input.healthScore !== undefined && { healthScore: input.healthScore }),
-        ...(input.parentId !== undefined && { parentId: input.parentId }),
-        ...(input.notes !== undefined && { notes: input.notes }),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId)))
-      .returning()
-      .then((rows) => rows[0]);
+    const updated = await updateMirroredOrganization(this.db, orgId, id, {
+      ...(input.name !== undefined && { name: input.name }),
+      ...(input.domain !== undefined && { domain: input.domain }),
+      ...(input.industry !== undefined && { industry: input.industry }),
+      ...(input.size !== undefined && { size: input.size }),
+      ...(input.website !== undefined && { website: input.website }),
+      ...(input.linkedinUrl !== undefined && { linkedinUrl: input.linkedinUrl }),
+      ...(input.description !== undefined && { description: input.description }),
+      ...(input.healthScore !== undefined && { healthScore: input.healthScore }),
+      ...(input.parentId !== undefined && { parentId: input.parentId }),
+      ...(input.notes !== undefined && { notes: input.notes }),
+    });
     await this.invalidateOrgCaches(orgId);
     return updated;
   }
 
   async remove(orgId: string, id: number): Promise<boolean> {
-    const [updated] = await this.db
-      .update(crmOrganizations)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt)))
-      .returning({ id: crmOrganizations.id });
+    const [removed] = await softDeleteMirroredOrganizations(this.db, orgId, [id]);
     await this.invalidateOrgCaches(orgId);
-    return Boolean(updated);
+    return Boolean(removed);
   }
 
-  async wouldCreateCycle(orgId: string, accountId: number, candidateParentId: number): Promise<boolean> {
-    if (candidateParentId === accountId) return true;
-
-    const result = await this.db.execute(sql`
-      WITH RECURSIVE ancestors AS (
-        SELECT id, parent_id, 1 AS depth
-        FROM crm_organizations
-        WHERE org_id = ${orgId} AND id = ${candidateParentId} AND deleted_at IS NULL
-        UNION ALL
-        SELECT o.id, o.parent_id, a.depth + 1
-        FROM crm_organizations o
-        JOIN ancestors a ON o.id = a.parent_id
-        WHERE o.org_id = ${orgId} AND o.deleted_at IS NULL AND a.depth < ${HIERARCHY_MAX_DEPTH}
-      )
-      SELECT 1 FROM ancestors WHERE id = ${accountId} LIMIT 1
-    `);
-
-    return result.length > 0;
-  }
-
-  private async getAllDescendantIds(orgId: string, accountId: number): Promise<number[]> {
-    const rows = await this.db.execute(sql`
-      WITH RECURSIVE descendants AS (
-        SELECT id, 1 AS depth
-        FROM crm_organizations
-        WHERE org_id = ${orgId} AND id = ${accountId} AND deleted_at IS NULL
-        UNION
-        SELECT o.id, d.depth + 1
-        FROM crm_organizations o
-        JOIN descendants d ON o.parent_id = d.id
-        WHERE o.org_id = ${orgId} AND o.deleted_at IS NULL AND d.depth < ${HIERARCHY_MAX_DEPTH}
-      )
-      SELECT id FROM descendants
-    `);
-
-    const ids = rows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id));
-    return ids.length > 0 ? ids : [accountId];
-  }
-
-  async getAccountHierarchy(orgId: string, accountId: number): Promise<OrgHierarchyNode | null> {
-    const ids = await this.getAllDescendantIds(orgId, accountId);
-
-    const rows = await this.db
-      .select({
-        id: crmOrganizations.id,
-        name: crmOrganizations.name,
-        industry: crmOrganizations.industry,
-        healthScore: crmOrganizations.healthScore,
-        parentId: crmOrganizations.parentId,
-      })
-      .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt), inArray(crmOrganizations.id, ids)));
-
-    const nodeMap = new Map<number, OrgHierarchyNode>();
-    for (const row of rows) {
-      nodeMap.set(row.id, { ...row, children: [] });
-    }
-
-    let root: OrgHierarchyNode | null = null;
-    for (const node of nodeMap.values()) {
-      if (node.id === accountId) {
-        root = node;
-      } else if (node.parentId !== null && nodeMap.has(node.parentId)) {
-        nodeMap.get(node.parentId)!.children.push(node);
-      }
-    }
-
-    return root;
-  }
-
-  getAccountRollup(orgId: string, accountId: number): Promise<OrgRollup> {
-    return this.cache.cachedVersioned(
-      CACHE_KEYS.crmOrganizationDetailNamespace(orgId),
-      `rollup:${accountId}`,
-      () => this.queryAccountRollup(orgId, accountId),
-      CACHE_TTL.SHORT,
-    );
-  }
-
-  private async queryAccountRollup(orgId: string, accountId: number): Promise<OrgRollup> {
-    const ids = await this.getAllDescendantIds(orgId, accountId);
-
-    const contactCountRows = await this.db
-      .select({ count: sql<string>`count(*)` })
-      .from(contacts)
-      .where(
-        and(
-          eq(contacts.orgId, orgId),
-          sql`${contacts.organizationId} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
-        ),
-      );
-
-    const totalContacts = Number(contactCountRows[0]?.count ?? 0);
-
-    const orgRows = await this.db
-      .select({ name: crmOrganizations.name })
-      .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt), inArray(crmOrganizations.id, ids)));
-
-    const orgNames = orgRows.map((r) => r.name);
-
-    let totalDeals = 0;
-    let openDeals = 0;
-    let totalDealValue = 0;
-
-    if (orgNames.length > 0) {
-      const dealAgg = await this.db
-        .select({
-          totalDeals: count(),
-          openDeals: sql<number>`COUNT(*) FILTER (WHERE ${deals.stage} NOT IN ('CLOSED_WON', 'CLOSED_LOST'))::int`,
-          totalDealValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
-        })
-        .from(deals)
-        .where(
-          and(
-            eq(deals.orgId, orgId), isNull(deals.deletedAt),
-            or(...orgNames.map((n) => ilike(deals.name, `%${n.replaceAll("%", "\\%")}%`))),
-          ),
-        );
-
-      totalDeals = Number(dealAgg[0]?.totalDeals ?? 0);
-      openDeals = Number(dealAgg[0]?.openDeals ?? 0);
-      totalDealValue = Number(dealAgg[0]?.totalDealValue ?? 0);
-    }
-
-    const leadCountRows = await this.db
-      .select({ count: sql<string>`count(*)` })
-      .from(leadPartyMap)
-      .innerJoin(businessParties, PARTY_OF_LEAD)
-      .where(
-        and(
-          eq(leadPartyMap.organizationId, orgId),
-          isNull(businessParties.deletedAt),
-          orgNames.length > 0
-            ? or(...orgNames.map((n) => ilike(businessParties.companyName, `%${n.replaceAll("%", "\\%")}%`)))
-            : sql`false`,
-        ),
-      );
-
-    const totalLeads = Number(leadCountRows[0]?.count ?? 0);
-
-    return { totalContacts, totalDeals, openDeals, totalDealValue, totalLeads };
-  }
-
-  getAccountTimeline(orgId: string, accountId: number, limit = 20): Promise<OrgTimelineEvent[]> {
-    return this.cache.cachedVersioned(
-      CACHE_KEYS.crmOrganizationDetailNamespace(orgId),
-      `timeline:${accountId}:${limit}`,
-      () => this.queryAccountTimeline(orgId, accountId, limit),
-      CACHE_TTL.SHORT,
-    );
-  }
-
-  private async queryAccountTimeline(orgId: string, accountId: number, limit: number): Promise<OrgTimelineEvent[]> {
-    const orgRow = await this.db
-      .select({ name: crmOrganizations.name, notes: crmOrganizations.notes })
-      .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.id, accountId), eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt)))
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
-
-    if (!orgRow) return [];
-
-    const safeName = orgRow.name.replaceAll("%", "\\%");
-
-    const [contactRows, dealRows, leadRows] = await Promise.all([
-      this.db
-        .select({ id: contacts.id, name: businessParties.name, createdAt: businessParties.createdAt })
-        .from(contacts)
-        .innerJoin(
-          contactPartyMap,
-          and(
-            eq(contactPartyMap.contactId, contacts.id),
-            eq(contactPartyMap.organizationId, orgId),
-          ),
-        )
-        .innerJoin(businessParties, PARTY_OF_CONTACT)
-        .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, accountId)))
-        .orderBy(sql`${businessParties.createdAt} desc`)
-        .limit(limit),
-      this.db
-        .select({ id: deals.id, name: deals.name, stage: deals.stage, createdAt: deals.createdAt })
-        .from(deals)
-        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), ilike(deals.name, `%${safeName}%`)))
-        .orderBy(sql`${deals.createdAt} desc`)
-        .limit(limit),
-      this.db
-        .select({ id: leadPartyMap.leadId, name: businessParties.name, createdAt: businessParties.createdAt })
-        .from(leadPartyMap)
-        .innerJoin(businessParties, PARTY_OF_LEAD)
-        .where(and(
-          eq(leadPartyMap.organizationId, orgId),
-          isNull(businessParties.deletedAt),
-          ilike(businessParties.companyName, `%${safeName}%`),
-        ))
-        .orderBy(sql`${businessParties.createdAt} desc`)
-        .limit(limit),
+  /**
+   * Two company records that are one company.
+   *
+   * Delegated to `PartyMergeService`, which is the one merge mechanism this
+   * codebase has: snapshotted, attributable and reversible. The service this
+   * replaced rewrote both rows in SQL, set `merged_into_id` and offered no way
+   * back — and `merged_into_id` is not written any more, for the same reason
+   * `leads.merged_into_id` stopped being written: `party_merges` is the record,
+   * and a second pointer nothing can revert is worse than none.
+   *
+   * **The survivor may not be the id the caller nominated.** `chooseSurvivor`
+   * keeps the older record, because a merge that discards the record with the
+   * longer history discards the history. So the response names the survivor the
+   * merge actually chose rather than echoing `primaryId` back; a caller that
+   * assumed those were the same thing now gets told otherwise.
+   */
+  async mergeOrganizations(orgId: string, input: MergeOrgsInput, actorId: string) {
+    const [primaryPartyId, duplicatePartyId] = await Promise.all([
+      this.partyOf(orgId, input.primaryId),
+      this.partyOf(orgId, input.duplicateId),
     ]);
 
-    const events: OrgTimelineEvent[] = [];
+    if (!primaryPartyId) throw new NotFoundException("Primary organization not found in this org");
+    if (!duplicatePartyId)
+      throw new NotFoundException("Duplicate organization not found in this org");
 
-    for (const c of contactRows) {
-      events.push({
-        id: `contact-${c.id}`,
-        date: c.createdAt?.toISOString() ?? new Date().toISOString(),
-        type: "contact_created",
-        description: `Contact "${c.name}" added to organization`,
-        entityId: c.id,
-      });
-    }
+    // The record the user picked survives. The dialog shows two company cards
+    // and asks which one to keep, and `planMerge` resolves every field conflict
+    // in the survivor's favour -- so letting `chooseSurvivor` overrule the
+    // choice would hand a stale stub's name, domain and industry to the record
+    // the user was looking at, and report success. The retired
+    // `crm-org-merge.service` kept `primaryId` too; this is that behaviour, not
+    // a new one.
+    const outcome = await this.merges.merge(orgId, {
+      leftPartyId: primaryPartyId,
+      rightPartyId: duplicatePartyId,
+      decidedBy: "USER",
+      userId: actorId,
+      preferSurvivorPartyId: primaryPartyId,
+    });
 
-    for (const d of dealRows) {
-      events.push({
-        id: `deal-${d.id}`,
-        date: d.createdAt?.toISOString() ?? new Date().toISOString(),
-        type: "deal_created",
-        description: `Deal "${d.name}" (${d.stage}) linked`,
-        entityId: d.id,
-      });
-    }
+    await this.reparentSubsidiaries(orgId, input.duplicateId, input.primaryId);
 
-    for (const l of leadRows) {
-      events.push({
-        id: `lead-${l.id}`,
-        date: l.createdAt?.toISOString() ?? new Date().toISOString(),
-        type: "lead_linked",
-        description: `Lead "${l.name ?? "Unnamed"}" linked (company match)`,
-        entityId: l.id,
-      });
-    }
+    await this.invalidateOrgCaches(orgId);
 
-    if (orgRow.notes) {
-      events.push({
-        id: `note-${accountId}`,
-        date: new Date().toISOString(),
-        type: "note_added",
-        description: "Account notes updated",
-        entityId: accountId,
-      });
-    }
-
-    return events
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, limit);
+    return {
+      success: true,
+      survivorId: input.primaryId,
+      mergedId: input.duplicateId,
+      partyMergeId: outcome.partyMergeId,
+      conflicts: outcome.conflicts,
+    };
   }
 
-  async getRelatedLeads(orgId: string, id: number) {
-    const [org] = await this.db
-      .select({ name: crmOrganizations.name })
+  /**
+   * The subsidiaries of the company that lost, handed to the one that won.
+   *
+   * The account hierarchy lives in `crm_organizations.parent_id`, which Party
+   * deliberately did not absorb -- a subsidiary's parent is not its employer, and
+   * one column serving both would make `employer_party_id` a lie. So the merge
+   * has to move it explicitly, or every child of the loser would be left pointing
+   * at a soft-deleted row and would silently drop out of `getAccountHierarchy`,
+   * which filters deleted parents out.
+   *
+   * Through the writer like every other legacy write, never a direct UPDATE.
+   *
+   * **The one part of an org merge a revert does not undo.** `party_merges`
+   * snapshots what Party owns, and `parent_id` is not that -- there is nowhere in
+   * the snapshot for it to go until the hierarchy itself converges onto Party.
+   * Reverting a merge restores both companies and leaves the subsidiaries on the
+   * survivor; re-parenting them is a manual step. Stated here rather than
+   * discovered later, and it is the argument for converging the hierarchy next.
+   */
+  private async reparentSubsidiaries(
+    orgId: string,
+    mergedId: number,
+    survivorId: number,
+  ): Promise<void> {
+    const children = await this.db
+      .select({ id: crmOrganizations.id })
       .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt)));
-
-    if (!org) return null;
-
-    const linkedContactLeadIds = await this.db
-      .select({ leadId: contacts.leadId })
-      .from(contacts)
-      .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, id)))
-      .then((rows) => rows.map((r) => r.leadId).filter((lid): lid is number => lid !== null));
-
-    const safeName = org.name.replaceAll("%", "\\%").replaceAll("_", "\\_");
-
-    const conditions = [ilike(businessParties.companyName, `%${safeName}%`)];
-    if (linkedContactLeadIds.length > 0) {
-      conditions.push(inArray(leadPartyMap.leadId, linkedContactLeadIds));
-    }
-
-    return this.db
-      .select({
-        id: leadPartyMap.leadId,
-        name: businessParties.name,
-        email: businessParties.email,
-        phone: businessParties.phone,
-        status: leadStatus,
-        priority: leadPriority,
-        company: businessParties.companyName,
-        source: leadSource,
-        createdAt: businessParties.createdAt,
-      })
-      .from(leadPartyMap)
-      .innerJoin(businessParties, PARTY_OF_LEAD)
-      .where(and(
-        eq(leadPartyMap.organizationId, orgId),
-        isNull(businessParties.deletedAt),
-        or(...conditions),
-      ))
-      .orderBy(businessParties.createdAt)
-      .limit(50);
+      .where(
+        and(eq(crmOrganizations.orgId, orgId), eq(crmOrganizations.parentId, mergedId)),
+      );
+    if (children.length === 0) return;
+    await updateMirroredOrganizations(
+      this.db,
+      orgId,
+      children.map((child) => child.id),
+      { parentId: survivorId },
+    );
   }
 }

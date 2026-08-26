@@ -1,7 +1,5 @@
 import { randomBytes } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
-import { APP_CONFIG } from "../../config/config.module";
-import type { AppConfig } from "../../config/env.validation";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { platformWaitlist } from "../../db/schema";
@@ -15,11 +13,12 @@ import {
 import type { WaitlistJoinInput } from "./dto/public.schemas";
 
 /**
- * Where a signup announces itself when nothing is configured. The addresses are
- * the founders' own, so the list is never silently accumulating unread rows —
- * `WAITLIST_NOTIFICATION_EMAILS` overrides them per deployment.
+ * Where every waitlist signup announces itself. Deliberately hardcoded rather
+ * than read from the environment, so the notification cannot silently go
+ * nowhere because a deployment forgot to set a variable — the cost is that
+ * changing a recipient is a code change and a deploy.
  */
-const DEFAULT_NOTIFICATION_EMAILS = [
+const NOTIFICATION_EMAILS = [
   "tarunchintakunta@gmail.com",
   "adityachalla01@gmail.com",
 ];
@@ -34,7 +33,6 @@ export interface WaitlistJoinResult {
 export class WaitlistService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly email: EmailService,
     private readonly turnstile: TurnstileService,
   ) {}
@@ -102,14 +100,6 @@ export class WaitlistService {
     };
   }
 
-
-  private getNotificationEmails(): string[] {
-    const configured = this.config.WAITLIST_NOTIFICATION_EMAILS?.split(",")
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0);
-    return configured?.length ? configured : DEFAULT_NOTIFICATION_EMAILS;
-  }
-
   /*
    * Best-effort on purpose. The row is already durable, so a provider outage
    * must not turn a captured signup into a 500 that tells the visitor to try
@@ -136,7 +126,7 @@ export class WaitlistService {
         returning: alreadyJoined,
       });
       await this.email.sendEmail({
-        to: this.getNotificationEmails(),
+        to: NOTIFICATION_EMAILS,
         replyTo: input.email,
         subject: admin.subject,
         html: admin.html,

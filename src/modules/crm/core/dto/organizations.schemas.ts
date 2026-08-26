@@ -32,6 +32,38 @@ export const organizationUpdateSchema = z.object({
   notes: z.string().optional().nullable(),
 }).strict();
 
+/**
+ * The merge and duplicate payloads, moved here when `crm-org-merge.service.ts`
+ * was retired. They describe organizations, and there is no second service left
+ * for them to belong to.
+ */
+export const mergeOrgsSchema = z.object({
+  primaryId: z.number().int().positive(),
+  duplicateId: z.number().int().positive(),
+}).strict().refine((v) => v.primaryId !== v.duplicateId, {
+  message: "primaryId and duplicateId must differ",
+});
+
+export const orgDuplicatesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+/** At least one discriminator is required — an empty check would match every org. */
+export const orgDuplicateCheckSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    domain: z.string().trim().min(1).max(255).optional(),
+  })
+  .strict()
+  .refine((v) => Boolean(v.name || v.domain), {
+    message: "Provide a name or a domain to check",
+  });
+
+export type MergeOrgsInput = z.infer<typeof mergeOrgsSchema>;
+export type OrgDuplicatesQueryInput = z.infer<typeof orgDuplicatesQuerySchema>;
+export type OrgDuplicateCheckInput = z.infer<typeof orgDuplicateCheckSchema>;
+
 export type OrganizationListInput = z.infer<typeof organizationListSchema>;
 export type OrganizationCreateInput = z.infer<typeof organizationCreateSchema>;
 export type OrganizationUpdateInput = z.infer<typeof organizationUpdateSchema>;
