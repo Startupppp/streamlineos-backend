@@ -45,5 +45,6 @@ export * from "./global-compliance";
 export * from "./workforce-planning";
 export * from "./forms";
 export * from "./governance";
+export * from "./taxonomy";
 export * from "./enterprise-comp";
 export * from "./enterprise-ops";
