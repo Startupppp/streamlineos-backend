@@ -17,7 +17,7 @@ export class AssetCategoriesService {
 
   async list(orgId: string, query: ListCategoriesQuery) {
     const cacheKey = `${query.page}:${query.pageSize}`;
-    return this.cache.cachedVersionedForOrg(orgId, 'fin:asset-categories', cacheKey, async () => {
+    return this.cache.cachedVersionedForOrg(orgId, "fin:asset-categories", cacheKey, async () => {
       const { limit, offset } = paginateOffset(query);
       const where = eq(accAssetCategories.orgId, orgId);
       const [items, totals] = await Promise.all([
@@ -48,7 +48,7 @@ export class AssetCategoriesService {
           defaultUsefulLifeMonths: input.defaultUsefulLifeMonths ?? null,
         })
         .returning();
-      await this.cache.invalidateNamespaceForOrg(orgId, 'fin:asset-categories');
+      await this.cache.invalidateNamespaceForOrg(orgId, "fin:asset-categories");
       return row;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -76,7 +76,7 @@ export class AssetCategoriesService {
         .set({ ...input, updatedAt: new Date() })
         .where(and(eq(accAssetCategories.id, categoryId), eq(accAssetCategories.orgId, orgId)))
         .returning();
-      await this.cache.invalidateNamespaceForOrg(orgId, 'fin:asset-categories');
+      await this.cache.invalidateNamespaceForOrg(orgId, "fin:asset-categories");
       return row;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

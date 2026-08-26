@@ -159,7 +159,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["FinancePostingService.postJournal", "InvoicesWriteService (any invoice write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "fin:forecast:<orgId>",
@@ -168,7 +168,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["InvoicesWriteService (any invoice write)", "TransfersService (any transfer)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "fin:banking:accounts:<orgId>",
@@ -177,7 +177,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["BankAccountsService (any write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "fin:assets:list:<orgId>",
@@ -186,7 +186,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["AssetsService (any write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "fin:asset-categories:<orgId>",
@@ -216,7 +216,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["InvoicesWriteService (any invoice write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "fin:tax-reports:<orgId>",
@@ -225,7 +225,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["InvoicesWriteService (any invoice write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "fin:expense-policies:<orgId>",
@@ -234,7 +234,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["ExpensePoliciesService (any write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "org:hierarchy:<orgId>",
