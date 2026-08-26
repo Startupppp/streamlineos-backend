@@ -4,10 +4,11 @@ import {
   businessParties,
   clientPartyMap,
   contactPartyMap,
+  crmOrgPartyMap,
   leadPartyMap,
   partyMerges,
 } from "../../db/schema/party";
-import { clients, contacts } from "../../db/schema/crm/contacts";
+import { clients, contacts, crmOrganizations } from "../../db/schema/crm/contacts";
 import { leads } from "../../db/schema/crm/leads";
 
 /**
@@ -37,12 +38,21 @@ import { leads } from "../../db/schema/crm/leads";
  * `deletedAt` comes back with the answer so the caller can decide.
  */
 
-export type LegacyPartyKind = "LEAD" | "CLIENT" | "CONTACT" | "PARTY";
+export type LegacyPartyKind = "LEAD" | "CLIENT" | "CONTACT" | "ORGANISATION" | "PARTY";
 
-/** The three tables whose ids are integers and need a map to be resolved. */
-export type MappedLegacyKind = Extract<LegacyPartyKind, "LEAD" | "CLIENT" | "CONTACT">;
+/** The four tables whose ids are integers and need a map to be resolved. */
+export type MappedLegacyKind = Extract<
+  LegacyPartyKind,
+  "LEAD" | "CLIENT" | "CONTACT" | "ORGANISATION"
+>;
 
-export const MAPPED_LEGACY_KINDS: readonly MappedLegacyKind[] = ["LEAD", "CLIENT", "CONTACT"];
+export const MAPPED_LEGACY_KINDS: readonly MappedLegacyKind[] = [
+  "LEAD",
+  "CLIENT",
+  "CONTACT",
+  // `crm_organizations`, the fifth identity table nobody counted. Ticket 25.
+  "ORGANISATION",
+];
 
 /**
  * `(legacyKind, legacyId)`, with the id typed by the kind that owns it.
@@ -58,6 +68,7 @@ export type LegacyResolutionPath =
   | "lead-map"
   | "client-map"
   | "contact-map"
+  | "crm-org-map"
   | "party-record";
 
 export interface ResolvedLegacyParty {
@@ -161,6 +172,7 @@ const PATH_BY_KIND: Record<MappedLegacyKind, LegacyResolutionPath> = {
   LEAD: "lead-map",
   CLIENT: "client-map",
   CONTACT: "contact-map",
+  ORGANISATION: "crm-org-map",
 };
 
 export async function resolveLegacyParty(
@@ -281,20 +293,38 @@ async function selectThroughMap(
         ),
       );
 
+  if (kind === "CONTACT")
+    return db
+      .select({ ...PARTY_COLUMNS, legacyId: contactPartyMap.contactId })
+      .from(contactPartyMap)
+      .innerJoin(
+        businessParties,
+        and(
+          eq(businessParties.partyId, contactPartyMap.partyId),
+          eq(businessParties.organizationId, contactPartyMap.organizationId),
+        ),
+      )
+      .where(
+        and(
+          eq(contactPartyMap.organizationId, organizationId),
+          inArray(contactPartyMap.contactId, legacyIds),
+        ),
+      );
+
   return db
-    .select({ ...PARTY_COLUMNS, legacyId: contactPartyMap.contactId })
-    .from(contactPartyMap)
+    .select({ ...PARTY_COLUMNS, legacyId: crmOrgPartyMap.crmOrganizationId })
+    .from(crmOrgPartyMap)
     .innerJoin(
       businessParties,
       and(
-        eq(businessParties.partyId, contactPartyMap.partyId),
-        eq(businessParties.organizationId, contactPartyMap.organizationId),
+        eq(businessParties.partyId, crmOrgPartyMap.partyId),
+        eq(businessParties.organizationId, crmOrgPartyMap.organizationId),
       ),
     )
     .where(
       and(
-        eq(contactPartyMap.organizationId, organizationId),
-        inArray(contactPartyMap.contactId, legacyIds),
+        eq(crmOrgPartyMap.organizationId, organizationId),
+        inArray(crmOrgPartyMap.crmOrganizationId, legacyIds),
       ),
     );
 }
@@ -371,6 +401,18 @@ export async function countUnmappedLegacyRows(
       ),
   );
 
+  const unmappedOrganisations = notExists(
+    db
+      .select({ one: sql`1` })
+      .from(crmOrgPartyMap)
+      .where(
+        and(
+          eq(crmOrgPartyMap.organizationId, crmOrganizations.orgId),
+          eq(crmOrgPartyMap.crmOrganizationId, crmOrganizations.id),
+        ),
+      ),
+  );
+
   const [lead] = await db
     .select({ n: count() })
     .from(leads)
@@ -391,10 +433,19 @@ export async function countUnmappedLegacyRows(
         ? and(eq(contacts.orgId, organizationId), unmappedContacts)
         : unmappedContacts,
     );
+  const [organisation] = await db
+    .select({ n: count() })
+    .from(crmOrganizations)
+    .where(
+      organizationId
+        ? and(eq(crmOrganizations.orgId, organizationId), unmappedOrganisations)
+        : unmappedOrganisations,
+    );
 
   return {
     LEAD: lead?.n ?? 0,
     CLIENT: client?.n ?? 0,
     CONTACT: contact?.n ?? 0,
+    ORGANISATION: organisation?.n ?? 0,
   };
 }

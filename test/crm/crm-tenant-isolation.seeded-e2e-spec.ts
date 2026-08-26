@@ -36,20 +36,108 @@ import { seedOrg } from "test/helpers/seed-builder";
 const OWNER_URL = process.env.DATABASE_URL;
 const describeIfAppRole = OWNER_URL ? describe : describe.skip;
 
-/** Every CRM table that carries tenant data and has a policy. */
+/**
+ * Every CRM table that carries tenant data and has a policy.
+ *
+ * Asked of the database, not assembled by hand. The hand-written version claimed
+ * to be exhaustive while naming 11 of the 23 tables migrations 0206-0231 enable
+ * RLS on, and when the drift guard below was added to stop that happening again
+ * it found 48 more — every automation, blueprint, pipeline, sequence, pricebook
+ * and quote table in the module, plus `party_identifiers` and three of the four
+ * legacy identity maps. All of them had a policy nobody had ever proved fails
+ * closed.
+ *
+ * Three of those maps escaped the guard as well, because it matched table names
+ * by prefix and `lead_party_map`, `client_party_map` and `contact_party_map`
+ * begin with the legacy entity rather than with `crm_` or `party_`. The fourth,
+ * `crm_org_party_map`, was caught only because ticket 25 happened to name it
+ * after the module. A guard whose reach depends on a naming coincidence is a
+ * guard for the tables somebody remembered to name well.
+ */
 const TENANT_TABLES = [
-  "business_parties",
-  "party_contacts",
-  "party_roles",
-  "subjects",
   "activities",
+  "activity_participants",
   "autonomous_decisions",
-  "autonomy_switches",
   "autonomy_corrections",
-  "autonomy_shadow_scores",
   "autonomy_holds",
   "autonomy_settings",
+  "autonomy_shadow_scores",
+  "autonomy_switches",
+  "business_parties",
+  "client_party_map",
+  "contact_party_map",
+  "crm_activities",
+  "crm_automation_actions",
+  "crm_automation_events",
+  "crm_automation_rules",
+  "crm_automation_runs",
+  "crm_blueprint_transitions",
+  "crm_blueprints",
+  "crm_campaigns",
+  "crm_companies",
+  "crm_connector_records",
+  "crm_connector_syncs",
+  "crm_contact_channel_consent",
+  "crm_contact_consent_events",
+  "crm_contact_roles",
+  "crm_deal_competitors",
+  "crm_deal_stakeholders",
+  "crm_deals",
+  "crm_email_templates",
+  "crm_forecast_snapshots",
+  "crm_import_rows",
+  "crm_imports",
+  "crm_lead_touchpoints",
+  "crm_mailbox_sync",
+  "crm_monthly_metrics",
+  "crm_options",
+  "crm_org_party_map",
+  "crm_organizations",
+  "crm_people",
+  "crm_pipeline_stages",
+  "crm_pipelines",
+  "crm_pricebook_entries",
+  "crm_pricebooks",
+  "crm_products",
+  "crm_quote_settings",
+  "crm_quote_templates",
+  "crm_sequence_enrollments",
+  "crm_sequence_steps",
+  "crm_sequences",
+  "crm_sla_breach_log",
+  "crm_sla_policies",
+  "crm_support_tickets",
+  "crm_suppression_hashes",
+  "crm_team_performance",
+  "crm_ui_metadata",
+  "crm_validation_rules",
+  "deal_activities",
+  "deal_approval_rules",
+  "deal_approvals",
+  "deal_meeting_attendees",
+  "deal_meetings",
+  "deal_stage_transitions",
+  "deals",
+  "inbound_events",
+  "lead_party_map",
+  "party_contacts",
+  "party_duplicate_candidates",
+  "party_identifiers",
+  "party_merges",
+  "party_roles",
+  "subject_party_links",
+  "subject_types",
+  "subjects",
 ] as const;
+
+/**
+ * What a CRM table is called, for the drift guard below.
+ *
+ * Name-matched rather than hand-listed a second time: a second hand list would
+ * drift in exactly the way the first one did.
+ */
+const CRM_TABLE_PATTERN =
+  "^(business_parties|party_|subject|deal|activit|inbound_events|crm_|autonom)|_party_map$";
 
 /**
  * A short-lived password for `streamline_app`, set through the owner connection.
@@ -114,6 +202,27 @@ describeIfAppRole("[seeded-e2e] CRM tenant isolation, as the application role", 
       SELECT current_user AS who,
              (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass`;
     expect(row?.bypass).toBe(false);
+  });
+
+  it("matches the tables RLS is actually enabled on", async () => {
+    /**
+     * The list above is the input to every case below, so a table missing from
+     * it is not a failing test — it is an absent one, which reads as green.
+     */
+    const enabled = await appSql.unsafe(
+      `SELECT c.relname AS table
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relrowsecurity
+          AND c.relname ~ $1
+        ORDER BY c.relname`,
+      [CRM_TABLE_PATTERN],
+    );
+    const unproven = enabled
+      .map((row: { table: string }) => row.table)
+      .filter((table: string) => !TENANT_TABLES.includes(table as (typeof TENANT_TABLES)[number]));
+    expect(unproven).toEqual([]);
   });
 
   describe("with no tenant context at all", () => {

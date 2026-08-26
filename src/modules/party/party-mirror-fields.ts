@@ -1,5 +1,5 @@
 import { businessParties } from "../../db/schema/party";
-import { clients, contacts } from "../../db/schema/crm/contacts";
+import { clients, contacts, crmOrganizations } from "../../db/schema/crm/contacts";
 import { leads } from "../../db/schema/crm/leads";
 import type { MappedLegacyKind } from "./party-legacy-seam";
 
@@ -37,6 +37,7 @@ export type PartyPatch = Partial<typeof businessParties.$inferInsert>;
 export type LeadInsert = typeof leads.$inferInsert;
 export type ClientInsert = typeof clients.$inferInsert;
 export type ContactInsert = typeof contacts.$inferInsert;
+export type CrmOrgInsert = typeof crmOrganizations.$inferInsert;
 
 /**
  * One Party column's contribution to one legacy table.
@@ -55,6 +56,7 @@ interface MirrorTargets {
   readonly LEAD?: MirrorCell<LeadInsert>;
   readonly CLIENT?: MirrorCell<ClientInsert>;
   readonly CONTACT?: MirrorCell<ContactInsert>;
+  readonly ORGANISATION?: MirrorCell<CrmOrgInsert>;
 }
 
 /**
@@ -87,6 +89,7 @@ export const PARTY_FIELD_MIRROR: Record<keyof PartyRow, PartyFieldMirror> = {
     LEAD: { derive: (p) => ({ orgId: p.organizationId }), absorb: () => ({}) },
     CLIENT: { derive: (p) => ({ orgId: p.organizationId }), absorb: () => ({}) },
     CONTACT: { derive: (p) => ({ orgId: p.organizationId }), absorb: () => ({}) },
+    ORGANISATION: { derive: (p) => ({ orgId: p.organizationId }), absorb: () => ({}) },
   },
   partyType: {
     // Phase 1 models "customer and supplier" as two `party_roles` rows so that
@@ -104,10 +107,14 @@ export const PARTY_FIELD_MIRROR: Record<keyof PartyRow, PartyFieldMirror> = {
       },
     },
   },
+  partyKind: noLegacyColumn(
+    "No legacy table records whether a record is a person or a company -- `crm_organizations` implies it by existing, and 0264 sets it there rather than deriving it from a column that is not on the row.",
+  ),
   name: {
     LEAD: { derive: (p) => ({ name: p.name }), absorb: (l) => ({ name: l.name }) },
     CLIENT: { derive: (p) => ({ name: p.name }), absorb: (l) => ({ name: l.name }) },
     CONTACT: { derive: (p) => ({ name: p.name }), absorb: (l) => ({ name: l.name }) },
+    ORGANISATION: { derive: (p) => ({ name: p.name }), absorb: (l) => ({ name: l.name }) },
   },
   legalName: noLegacyColumn(
     "`clients.name` is the only name the legacy tables carry; the registered name is new here.",
@@ -121,6 +128,10 @@ export const PARTY_FIELD_MIRROR: Record<keyof PartyRow, PartyFieldMirror> = {
     CONTACT: {
       derive: (p) => ({ websiteUrl: p.website }),
       absorb: (l) => ({ website: l.websiteUrl }),
+    },
+    ORGANISATION: {
+      derive: (p) => ({ website: p.website }),
+      absorb: (l) => ({ website: l.website }),
     },
   },
   email: {
@@ -148,6 +159,7 @@ export const PARTY_FIELD_MIRROR: Record<keyof PartyRow, PartyFieldMirror> = {
   notes: {
     LEAD: { derive: (p) => ({ notes: p.notes }), absorb: (l) => ({ notes: l.notes }) },
     CLIENT: { derive: (p) => ({ notes: p.notes }), absorb: (l) => ({ notes: l.notes }) },
+    ORGANISATION: { derive: (p) => ({ notes: p.notes }), absorb: (l) => ({ notes: l.notes }) },
   },
   jobTitle: {
     LEAD: {
@@ -177,6 +189,30 @@ export const PARTY_FIELD_MIRROR: Record<keyof PartyRow, PartyFieldMirror> = {
       absorb: (l) => ({ companyName: l.company }),
     },
   },
+  employerPartyId: noLegacyColumn(
+    "`contacts.organization_id` is an integer `crm_organizations` id and this is a party id; translating between them needs `crm_org_party_map`, and a cell here is a pure function of one row with no database. `party-legacy-employer.ts` does it inside the writer instead, and `PartyDivergenceService.findEmployerDisagreements` is the check that would otherwise have been lost with it.",
+  ),
+  domain: {
+    ORGANISATION: { derive: (p) => ({ domain: p.domain }), absorb: (l) => ({ domain: l.domain }) },
+  },
+  industry: {
+    ORGANISATION: {
+      derive: (p) => ({ industry: p.industry }),
+      absorb: (l) => ({ industry: l.industry }),
+    },
+  },
+  companySize: {
+    ORGANISATION: {
+      derive: (p) => ({ size: p.companySize }),
+      absorb: (l) => ({ companySize: l.size }),
+    },
+  },
+  description: {
+    ORGANISATION: {
+      derive: (p) => ({ description: p.description }),
+      absorb: (l) => ({ description: l.description }),
+    },
+  },
   whatsappPhone: {
     LEAD: {
       derive: (p) => ({ whatsappNumber: p.whatsappPhone }),
@@ -191,6 +227,10 @@ export const PARTY_FIELD_MIRROR: Record<keyof PartyRow, PartyFieldMirror> = {
   },
   linkedinUrl: {
     CONTACT: {
+      derive: (p) => ({ linkedinUrl: p.linkedinUrl }),
+      absorb: (l) => ({ linkedinUrl: l.linkedinUrl }),
+    },
+    ORGANISATION: {
       derive: (p) => ({ linkedinUrl: p.linkedinUrl }),
       absorb: (l) => ({ linkedinUrl: l.linkedinUrl }),
     },
@@ -370,6 +410,12 @@ export const PARTY_FIELD_MIRROR: Record<keyof PartyRow, PartyFieldMirror> = {
       derive: (p) => ({ healthScore: p.healthScore ?? 50 }),
       absorb: (l) => ({ healthScore: l.healthScore }),
     },
+    // `crm_organizations.health_score` is nullable, so this one carries the
+    // absence rather than inventing a 50 the way `clients` forces.
+    ORGANISATION: {
+      derive: (p) => ({ healthScore: p.healthScore }),
+      absorb: (l) => ({ healthScore: l.healthScore }),
+    },
   },
   healthStatus: {
     CLIENT: {
@@ -408,6 +454,10 @@ export const PARTY_FIELD_MIRROR: Record<keyof PartyRow, PartyFieldMirror> = {
     // not allowed to make.
     LEAD: { derive: (p) => ({ deletedAt: p.deletedAt }), absorb: (l) => ({ deletedAt: l.deletedAt }) },
     CONTACT: {
+      derive: (p) => ({ deletedAt: p.deletedAt }),
+      absorb: (l) => ({ deletedAt: l.deletedAt }),
+    },
+    ORGANISATION: {
       derive: (p) => ({ deletedAt: p.deletedAt }),
       absorb: (l) => ({ deletedAt: l.deletedAt }),
     },
@@ -458,10 +508,18 @@ export const LEGACY_OWNED_COLUMNS: Record<MappedLegacyKind, Readonly<Record<stri
   CONTACT: {
     id: "The legacy identity itself.",
     organizationId:
-      "A real link to `crm_organizations`. A party's employer should be another party, and nothing yet gives `crm_organizations` parties to point at; only the free text moved to `companyName`.",
+      "The employer, which Party now owns as `employer_party_id`. Listed here because the two speak different id spaces -- an integer `crm_organizations` id against a party id -- so the column is maintained by `party-legacy-employer.ts` through `crm_org_party_map` rather than by a pure cell above. Legacy-owned in shape only; nothing outside the writer sets it.",
     leadId: "Which lead this contact came from -- a legacy-to-legacy link.",
     dealId:
       "A deal association carried on the contact row; `party_roles` and the deal tables own that in the merged model.",
+    mergedIntoId: "The legacy merge pointer; see `leads.mergedIntoId`.",
+    createdAt: "Stamped by the table.",
+    updatedAt: "Stamped by the table.",
+  },
+  ORGANISATION: {
+    id: "The legacy identity itself; `crm_org_party_map` is how it reaches a Party.",
+    parentId:
+      "The account hierarchy -- which company owns which. A party-to-party link like `employer_party_id`, and deliberately not folded into it: a subsidiary's parent is not its employer, and one column serving both would make the name a lie. Ticket 25 converged the identity and left the hierarchy where it is.",
     mergedIntoId: "The legacy merge pointer; see `leads.mergedIntoId`.",
     createdAt: "Stamped by the table.",
     updatedAt: "Stamped by the table.",

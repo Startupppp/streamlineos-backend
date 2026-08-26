@@ -1,6 +1,6 @@
 import { getTableColumns } from "drizzle-orm";
 import { businessParties } from "../../db/schema/party";
-import { clients, contacts } from "../../db/schema/crm/contacts";
+import { clients, contacts, crmOrganizations } from "../../db/schema/crm/contacts";
 import { leads } from "../../db/schema/crm/leads";
 import {
   CLIENT_MIRROR,
@@ -8,6 +8,7 @@ import {
   diffLegacyMirror,
   LEAD_MIRROR,
   LEGACY_OWNED_COLUMNS,
+  ORGANISATION_MIRROR,
   mirroredColumns,
   PARTY_FIELD_MIRROR,
   valuesAgree,
@@ -81,6 +82,12 @@ const PARTY: PartyRow = {
   churnRiskScore: 18,
   churnRiskReasoning: "Renewed twice without discount.",
   tags: ["vip", "beta"],
+  partyKind: "ORGANISATION",
+  employerPartyId: null,
+  domain: "acme.example",
+  industry: "Manufacturing",
+  companySize: "51-200",
+  description: "Makes things out of other things.",
   deletedAt: null,
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   updatedAt: new Date("2026-02-05T00:00:00.000Z"),
@@ -131,17 +138,34 @@ const SPARSE_PARTY: PartyRow = {
   churnRiskScore: null,
   churnRiskReasoning: null,
   tags: [],
+  partyKind: null,
+  employerPartyId: null,
+  domain: null,
+  industry: null,
+  companySize: null,
+  description: null,
 };
 
 const BLANK_PARTY: PartyRow = { ...SPARSE_PARTY, name: "", partyType: "CUSTOMER", status: "active" };
 
-const LEGACY_TABLE = { LEAD: leads, CLIENT: clients, CONTACT: contacts };
-const ENGINE = { LEAD: LEAD_MIRROR, CLIENT: CLIENT_MIRROR, CONTACT: CONTACT_MIRROR };
+const LEGACY_TABLE = {
+  LEAD: leads,
+  CLIENT: clients,
+  CONTACT: contacts,
+  ORGANISATION: crmOrganizations,
+};
+const ENGINE = {
+  LEAD: LEAD_MIRROR,
+  CLIENT: CLIENT_MIRROR,
+  CONTACT: CONTACT_MIRROR,
+  ORGANISATION: ORGANISATION_MIRROR,
+};
 
 function derived(kind: MappedLegacyKind, party: PartyRow): Record<string, unknown> {
   if (kind === "LEAD") return LEAD_MIRROR.derive(party);
   if (kind === "CLIENT") return CLIENT_MIRROR.derive(party);
-  return CONTACT_MIRROR.derive(party);
+  if (kind === "CONTACT") return CONTACT_MIRROR.derive(party);
+  return ORGANISATION_MIRROR.derive(party);
 }
 
 describe("party-legacy-mirror — a new Party field cannot be forgotten", () => {
@@ -158,7 +182,12 @@ describe("party-legacy-mirror — a new Party field cannot be forgotten", () => 
         if (!entry.legacyHasNoColumn.trim()) undecided.push(column);
         continue;
       }
-      if (!("LEAD" in entry) && !("CLIENT" in entry) && !("CONTACT" in entry))
+      if (
+        !("LEAD" in entry) &&
+        !("CLIENT" in entry) &&
+        !("CONTACT" in entry) &&
+        !("ORGANISATION" in entry)
+      )
         undecided.push(column);
     }
     expect(undecided).toEqual([]);
@@ -247,6 +276,18 @@ describe("party-legacy-mirror — derivation", () => {
   it("carries the tenant, so a mirror cannot land in another organisation", () => {
     for (const kind of MAPPED_LEGACY_KINDS)
       expect(derived(kind, PARTY).orgId).toBe("org-1");
+  });
+
+  it("carries the company fields onto crm_organizations", () => {
+    const company = ORGANISATION_MIRROR.derive(PARTY);
+    expect(company.domain).toBe("acme.example");
+    expect(company.industry).toBe("Manufacturing");
+    // Renamed: Party calls it `companySize` because `size` beside `healthScore`
+    // and `qualificationScore` would not say what it measures.
+    expect(company.size).toBe("51-200");
+    expect(company.description).toBe("Makes things out of other things.");
+    // Nullable here, where `clients.health_score` forces a 50 the party never had.
+    expect(ORGANISATION_MIRROR.derive(SPARSE_PARTY).healthScore).toBeNull();
   });
 });
 

@@ -3,6 +3,7 @@ import {
   PARTY_FIELD_MIRROR,
   type ClientInsert,
   type ContactInsert,
+  type CrmOrgInsert,
   type ErasedRow,
   type LeadInsert,
   type MirrorCell,
@@ -52,6 +53,7 @@ const MIRROR_PROBE: PartyRow = {
   partyId: "probe",
   organizationId: "probe",
   partyType: "CUSTOMER",
+  partyKind: "ORGANISATION",
   name: "probe",
   legalName: "probe",
   displayName: "probe",
@@ -65,12 +67,17 @@ const MIRROR_PROBE: PartyRow = {
   jobTitle: "probe",
   department: "probe",
   companyName: "probe",
+  employerPartyId: null,
   whatsappPhone: "probe",
   avatarUrl: "probe",
   linkedinUrl: "probe",
   socialProfiles: {},
   city: "probe",
   state: "probe",
+  domain: "probe",
+  industry: "probe",
+  companySize: "11-50",
+  description: "probe",
   lifecycleStage: "NEW",
   priority: "WARM",
   qualificationScore: 0,
@@ -234,6 +241,16 @@ function contactCells(): NamedCell<ContactInsert>[] {
   return named;
 }
 
+function organisationCells(): NamedCell<CrmOrgInsert>[] {
+  const named: NamedCell<CrmOrgInsert>[] = [];
+  for (const [partyColumn, entry] of Object.entries(PARTY_FIELD_MIRROR)) {
+    if ("legacyHasNoColumn" in entry || !("ORGANISATION" in entry)) continue;
+    const cell = entry.ORGANISATION;
+    if (cell) named.push({ partyColumn, columns: Object.keys(cell.derive(MIRROR_PROBE)), cell });
+  }
+  return named;
+}
+
 /**
  * Legacy columns Party does not and will not own, and why.
  *
@@ -247,6 +264,10 @@ function contactCells(): NamedCell<ContactInsert>[] {
 export const LEAD_MIRROR = buildEngine(leadCells(), LEGACY_OWNED_COLUMNS.LEAD);
 export const CLIENT_MIRROR = buildEngine(clientCells(), LEGACY_OWNED_COLUMNS.CLIENT);
 export const CONTACT_MIRROR = buildEngine(contactCells(), LEGACY_OWNED_COLUMNS.CONTACT);
+export const ORGANISATION_MIRROR = buildEngine(
+  organisationCells(),
+  LEGACY_OWNED_COLUMNS.ORGANISATION,
+);
 
 /**
  * The kind-dispatched half, for the divergence sweep.
@@ -258,7 +279,8 @@ export const CONTACT_MIRROR = buildEngine(contactCells(), LEGACY_OWNED_COLUMNS.C
 export function mirroredColumns(kind: MappedLegacyKind): readonly string[] {
   if (kind === "LEAD") return LEAD_MIRROR.columns;
   if (kind === "CLIENT") return CLIENT_MIRROR.columns;
-  return CONTACT_MIRROR.columns;
+  if (kind === "CONTACT") return CONTACT_MIRROR.columns;
+  return ORGANISATION_MIRROR.columns;
 }
 
 export function diffLegacyMirror(
@@ -268,7 +290,8 @@ export function diffLegacyMirror(
 ): MirrorFieldDivergence[] {
   if (kind === "LEAD") return LEAD_MIRROR.diff(party, stored);
   if (kind === "CLIENT") return CLIENT_MIRROR.diff(party, stored);
-  return CONTACT_MIRROR.diff(party, stored);
+  if (kind === "CONTACT") return CONTACT_MIRROR.diff(party, stored);
+  return ORGANISATION_MIRROR.diff(party, stored);
 }
 
 /**

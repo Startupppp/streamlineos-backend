@@ -56,6 +56,14 @@ export const PARTY_PERMISSIONS: Permission[] = [
     description: "Merge two parties, and reverse a merge",
   },
   {
+    // Operational rather than a record permission: the answer names every field
+    // of every record that disagrees, which is a read of the whole CRM.
+    name: "party:divergence:view",
+    resource: "party:divergence",
+    action: "view",
+    description: "See which legacy CRM rows disagree with the party they mirror",
+  },
+  {
     name: "party:subjects:view",
     resource: "party:subjects",
     action: "view",
