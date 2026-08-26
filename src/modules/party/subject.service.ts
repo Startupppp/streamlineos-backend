@@ -173,6 +173,19 @@ export class SubjectService {
 
     const resolvedTypeId = subjectTypeId ?? (typeKey ? await this.typeIdForKey(organizationId, typeKey) : undefined);
 
+    /**
+     * A `typeKey` that names nothing returns nothing.
+     *
+     * `resolvedTypeId` was fed straight into `resolvedTypeId ? eq(...) :
+     * undefined`, so an unresolvable key dropped the predicate entirely and the
+     * caller got **every subject in the organisation** — properties, tickets and
+     * candidates in one list — instead of an empty page. A typo or a retired key
+     * turned a scoped read into a full dump, and it looked like a working list
+     * rather than an error.
+     */
+    if (typeKey && !resolvedTypeId)
+      return buildCursorPage([], limit, () => ({ sortValue: "", id: "" }));
+
     const conditions = and(
       eq(subjects.organizationId, organizationId),
       isNull(subjects.deletedAt),
