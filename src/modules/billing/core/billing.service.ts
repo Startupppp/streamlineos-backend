@@ -326,10 +326,18 @@ export class BillingService {
       .recordEvent({
         type: "new_subscription",
         orgId,
-        plan: input.plan,
-        mrr: PLAN_PRICES_PAISE[input.plan],
-        amount: PLAN_PRICES_PAISE[input.plan],
-        metadata: { paymentId: input.razorpay_payment_id, billingCycle: "monthly" },
+        plan,
+        /*
+          MRR is a monthly figure, so an annual sale contributes a twelfth of
+          what it charged -- not the whole thing, and not the list monthly price.
+          All four fields previously came from the plan's monthly rate with the
+          cycle hardcoded, so an annual PROFESSIONAL sale was booked as 2,499 of
+          monthly revenue instead of 23,990.40 taken once. Same mistake as the
+          activation path itself made; the figures now come from the order.
+        */
+        mrr: billingCycle === "annual" ? Math.round(amount / 12) : amount,
+        amount,
+        metadata: { paymentId: input.razorpay_payment_id, billingCycle },
       })
       .catch((err: unknown) => logger.warn("[billing] revenue event record failed", { orgId, err }));
 
