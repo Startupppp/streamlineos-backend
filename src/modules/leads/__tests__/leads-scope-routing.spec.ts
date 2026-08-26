@@ -24,16 +24,18 @@ function buildDb() {
     }),
   });
 
-  const countRow = Promise.resolve([{ total: 0 }]);
-
-  let callN = 0;
+  /*
+    One query per status, not two. The board used to fetch rows and then count
+    them, so this alternated a row-shaped result with a bare count; the count is
+    now folded into the row as `_total`. Alternating outlived the second query
+    and handed every even-numbered status a promise with no `.orderBy` on it,
+    which is a mock that fails the moment a board has more than one column.
+  */
   return {
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue(
         withJoins({
-          where: jest.fn().mockImplementation(() => {
-            return callN++ % 2 === 0 ? leadsRow : countRow;
-          }),
+          where: jest.fn().mockImplementation(() => leadsRow),
           orderBy: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([]),
           }),
