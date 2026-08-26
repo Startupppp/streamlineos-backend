@@ -58,7 +58,7 @@ export class KbSourceAdapter implements KbContentAdapter {
     }
 
     if (source.fileKey && source.mimeType && isExtractableMime(source.mimeType)) {
-      const { body } = await this.storage.getFileStream(source.fileKey);
+      const { body } = await this.storage.getFileStream(orgId, source.fileKey);
       const buffer = await streamToBuffer(body);
       const text = await extractAttachmentText(buffer, source.mimeType);
       if (text.trim()) await this.indexing.indexSource(orgId, sourceId, text);

@@ -26,10 +26,10 @@ const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 describe("KB cross-tenant isolation", () => {
   it("retrieveTopSources always applies the caller's orgId to the WHERE predicate", async () => {
     const capturedConditions: unknown[] = [];
-    const chain = {
+    const chain: Record<string, jest.Mock> = {
       from: jest.fn().mockReturnThis(),
       innerJoin: jest.fn().mockReturnThis(),
-      where: jest.fn((cond) => {
+      where: jest.fn((cond: unknown) => {
         capturedConditions.push(cond);
         return chain;
       }),

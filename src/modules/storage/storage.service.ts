@@ -372,13 +372,15 @@ export class StorageService {
   }
 
   async uploadToKey(
+    orgId: string,
     buffer: Buffer,
     key: string,
     mimeType: string,
     bucketOverride?: string,
   ): Promise<void> {
-    const bucketName = this.resolveBucket(bucketOverride);
-    await this.client.send(
+    const placement = await this.placementFor(orgId);
+    const bucketName = this.requireBucketFrom(placement, bucketOverride);
+    await placement.client.send(
       new PutObjectCommand({
         Bucket: bucketName,
         Key: key,
@@ -388,8 +390,16 @@ export class StorageService {
     );
   }
 
-  async getFileUrl(key: string, expiresIn = 3600): Promise<string> {
-    const bucketName = this.requireBucket();
+  /**
+   * A signed URL is signed against one region's endpoint.
+   *
+   * Minted from the primary while the object sits in the tenant's own bucket,
+   * it is a link that 404s for every organisation not placed there — so the
+   * organisation is a parameter here exactly as it is for the write.
+   */
+  async getFileUrl(orgId: string, key: string, expiresIn = 3600): Promise<string> {
+    const placement = await this.placementFor(orgId);
+    const bucketName = this.requireBucketFrom(placement);
     const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
     return getSignedUrl(placement.client, command, { expiresIn });
   }

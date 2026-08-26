@@ -112,11 +112,11 @@ export class OnboardingDocumentsController {
     });
 
     const uploadDeferred = registerAfterCommit(async () => {
-      await this.storage.uploadToKey(compressedBuffer, key, compressedMimeType);
+      await this.storage.uploadToKey(u.orgId, compressedBuffer, key, compressedMimeType);
     });
 
     if (!uploadDeferred) {
-      await this.storage.uploadToKey(compressedBuffer, key, compressedMimeType);
+      await this.storage.uploadToKey(u.orgId, compressedBuffer, key, compressedMimeType);
     }
 
     return { url };
