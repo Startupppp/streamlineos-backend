@@ -63,6 +63,14 @@ describe("logger", () => {
     expect(meta.error).toMatchObject({ name: "Error", message: "boom" });
   });
 
+  it("includes the cause chain so a driver error's root is visible", () => {
+    const cause = new Error("ECONNREFUSED 127.0.0.1:5432");
+    logger.error("query failed", { error: new Error("outer", { cause }) });
+    const meta = capture.lines[0].meta as { error: Record<string, unknown> };
+    expect(meta.error).toMatchObject({ name: "Error", message: "outer" });
+    expect(meta.error.cause).toMatchObject({ name: "Error", message: "ECONNREFUSED 127.0.0.1:5432" });
+  });
+
   it("writes warnings and errors to stderr and everything else to stdout", () => {
     capture.restore();
     const out = jest.spyOn(process.stdout, "write").mockReturnValue(true);

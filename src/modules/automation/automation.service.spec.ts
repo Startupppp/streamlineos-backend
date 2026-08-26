@@ -243,3 +243,126 @@ describe("AutomationService — rule CRUD", () => {
     });
   });
 });
+
+describe("AutomationService.runAutomationsForEvent() — batch writes", () => {
+  let service: AutomationService;
+  let insertedRuns: unknown[];
+  let updatedRuleIds: number[];
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    insertedRuns = [];
+    updatedRuleIds = [];
+
+    mockDb.query.automationRules.findMany.mockResolvedValue([]);
+    mockDb.query.automationRuns.findMany.mockResolvedValue([]);
+
+    mockDb.insert.mockImplementation(() => ({
+      values: jest.fn().mockImplementation((rows: unknown) => {
+        const arr = Array.isArray(rows) ? rows : [rows];
+        insertedRuns.push(...arr);
+        return Promise.resolve([{ id: 1 }]);
+      }),
+    }));
+
+    mockDb.update.mockImplementation(() => ({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockImplementation((_cond: unknown, ids?: number[]) => {
+          if (ids) updatedRuleIds.push(...ids);
+          return Promise.resolve([]);
+        }),
+      }),
+    }));
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AutomationService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: NotificationsService, useValue: mockNotifications },
+        { provide: AutomationEmailService, useValue: mockEmail },
+        { provide: PlanLimitsService, useValue: mockPlanLimits },
+        { provide: AiNodeExecutorService, useValue: mockAiNodeExecutor },
+      ],
+    }).compile();
+    service = module.get(AutomationService);
+  });
+
+  it("no rules for trigger → returns without any inserts or updates", async () => {
+    mockDb.query.automationRules.findMany.mockResolvedValueOnce([]);
+
+    await service.runAutomationsForEvent("org1", "ticket.priority_changed", { ticketId: 1 });
+
+    expect(insertedRuns).toHaveLength(0);
+    expect(mockDb.update).not.toHaveBeenCalled();
+  });
+
+  it("one matched rule → one run record inserted with status 'success', runCount updated", async () => {
+    mockDb.query.automationRules.findMany.mockResolvedValueOnce([
+      { id: 7, conditions: [], actions: [{ type: "create_task", config: { title: "Task A" } }] },
+    ]);
+
+    await service.runAutomationsForEvent("org1", "ticket.priority_changed", { ticketId: 1 });
+
+    expect(insertedRuns).toHaveLength(1);
+    expect((insertedRuns[0] as Record<string, unknown>)["status"]).toBe("success");
+    expect((insertedRuns[0] as Record<string, unknown>)["ruleId"]).toBe(7);
+    expect(mockDb.update).toHaveBeenCalled();
+  });
+
+  it("rule conditions don't match → run record inserted with status 'skipped', runCount NOT updated", async () => {
+    mockDb.query.automationRules.findMany.mockResolvedValueOnce([
+      {
+        id: 8,
+        conditions: [{ field: "priority", op: "eq", value: "URGENT" }],
+        actions: [],
+      },
+    ]);
+
+    await service.runAutomationsForEvent("org1", "ticket.priority_changed", { priority: "LOW" });
+
+    expect(insertedRuns).toHaveLength(1);
+    expect((insertedRuns[0] as Record<string, unknown>)["status"]).toBe("skipped");
+    expect(mockDb.update).not.toHaveBeenCalled();
+  });
+
+  it("two rules — one matching, one not → two run records, only matched rule's id sent to update", async () => {
+    mockDb.query.automationRules.findMany.mockResolvedValueOnce([
+      { id: 10, conditions: [], actions: [{ type: "create_task", config: { title: "T" } }] },
+      { id: 11, conditions: [{ field: "priority", op: "eq", value: "URGENT" }], actions: [] },
+    ]);
+
+    await service.runAutomationsForEvent("org1", "ticket.priority_changed", { priority: "LOW" });
+
+    expect(insertedRuns).toHaveLength(2);
+    const statuses = (insertedRuns as Array<Record<string, unknown>>).map((r) => r["status"]);
+    expect(statuses).toContain("success");
+    expect(statuses).toContain("skipped");
+    expect(mockDb.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("action failure → run record inserted with status 'failed', error message set", async () => {
+    mockNotifications.create.mockRejectedValueOnce(new Error("notification failed"));
+
+    mockDb.query.automationRules.findMany.mockResolvedValueOnce([
+      { id: 12, conditions: [], actions: [{ type: "notify_all", config: { title: "T", message: "M" } }] },
+    ]);
+
+    await service.runAutomationsForEvent("org1", "ticket.priority_changed", { ticketId: 1 });
+
+    expect(insertedRuns).toHaveLength(1);
+    const run = insertedRuns[0] as Record<string, unknown>;
+    expect(run["status"]).toBe("failed");
+    expect(typeof run["error"]).toBe("string");
+  });
+
+  it("running the same event twice → two separate sets of run records (one per invocation)", async () => {
+    mockDb.query.automationRules.findMany.mockResolvedValue([
+      { id: 20, conditions: [], actions: [{ type: "create_task", config: { title: "T" } }] },
+    ]);
+
+    await service.runAutomationsForEvent("org1", "ticket.priority_changed", { ticketId: 1 });
+    await service.runAutomationsForEvent("org1", "ticket.priority_changed", { ticketId: 2 });
+
+    expect(insertedRuns).toHaveLength(2);
+  });
+});

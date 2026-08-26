@@ -220,6 +220,22 @@ export class MatchingService {
 
     const clientMap = new Map(clientRows.map((c) => [c.id, c.name]));
 
+    const txnIds = txns.map((t) => t.id);
+    const existingMatchRows = await this.db
+      .select({ bankTransactionId: finReconciliationMatches.bankTransactionId })
+      .from(finReconciliationMatches)
+      .where(
+        and(
+          eq(finReconciliationMatches.orgId, orgId),
+          inArray(finReconciliationMatches.bankTransactionId, txnIds),
+        ),
+      );
+    const existingMatchTxnIds = new Set(existingMatchRows.map((r) => r.bankTransactionId));
+
+    type MatchInsert = typeof finReconciliationMatches.$inferInsert;
+    const matchesToInsert: MatchInsert[] = [];
+    const txnIdsToSuggest: number[] = [];
+
     for (const txn of txns) {
       const txnAmount = parseFloat(txn.amount);
       const absAmount = Math.abs(txnAmount);
@@ -235,18 +251,11 @@ export class MatchingService {
         if (!allMatch) continue;
 
         ruleMatched = true;
-        const existing = await this.db.query.finReconciliationMatches.findFirst({
-          where: and(
-            eq(finReconciliationMatches.orgId, orgId),
-            eq(finReconciliationMatches.bankTransactionId, txn.id),
-          ),
-          columns: { id: true },
-        });
-        if (existing) break;
+        if (existingMatchTxnIds.has(txn.id)) break;
 
         const matchType = action.type === "fee" ? "BANK_FEE" : action.type === "transfer" ? "TRANSFER" : "MANUAL_JOURNAL";
 
-        await this.db.insert(finReconciliationMatches).values({
+        matchesToInsert.push({
           orgId,
           bankTransactionId: txn.id,
           journalEntryId: null,
@@ -256,12 +265,8 @@ export class MatchingService {
           confidence: "90.00",
           isConfirmed: false,
         });
-
-        await this.db
-          .update(finBankTransactions)
-          .set({ status: "SUGGESTED" })
-          .where(and(eq(finBankTransactions.id, txn.id), eq(finBankTransactions.orgId, orgId)));
-
+        existingMatchTxnIds.add(txn.id);
+        txnIdsToSuggest.push(txn.id);
         break;
       }
 
@@ -335,16 +340,9 @@ export class MatchingService {
       const best = candidates.sort((a, b) => b.score - a.score)[0];
       if (!best || best.score < 60) continue;
 
-      const existing = await this.db.query.finReconciliationMatches.findFirst({
-        where: and(
-          eq(finReconciliationMatches.orgId, orgId),
-          eq(finReconciliationMatches.bankTransactionId, txn.id),
-        ),
-        columns: { id: true },
-      });
-      if (existing) continue;
+      if (existingMatchTxnIds.has(txn.id)) continue;
 
-      await this.db.insert(finReconciliationMatches).values({
+      matchesToInsert.push({
         orgId,
         bankTransactionId: txn.id,
         journalEntryId: best.candidate.journalEntryId ?? null,
@@ -354,11 +352,24 @@ export class MatchingService {
         confidence: String(Math.min(best.score, 100).toFixed(2)),
         isConfirmed: false,
       });
+      existingMatchTxnIds.add(txn.id);
+      txnIdsToSuggest.push(txn.id);
+    }
 
+    if (matchesToInsert.length > 0) {
+      await this.db.insert(finReconciliationMatches).values(matchesToInsert).onConflictDoNothing();
+    }
+
+    if (txnIdsToSuggest.length > 0) {
       await this.db
         .update(finBankTransactions)
         .set({ status: "SUGGESTED" })
-        .where(and(eq(finBankTransactions.id, txn.id), eq(finBankTransactions.orgId, orgId)));
+        .where(
+          and(
+            inArray(finBankTransactions.id, txnIdsToSuggest),
+            eq(finBankTransactions.orgId, orgId),
+          ),
+        );
     }
   }
 }

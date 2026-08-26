@@ -11,6 +11,7 @@ import { AiCreditsService } from "./ai-credits.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
+import { ExternalEffectLedger, ExternalEffectLeaseBusyError } from "../../../common/outbox/external-effect-ledger";
 import {
   FakeProviderAdapter,
   FAKE_WEBHOOK_SECRET,
@@ -60,6 +61,15 @@ function makeAudit() {
   return { log: jest.fn() };
 }
 
+function makeEffectLedger() {
+  return {
+    execute: jest.fn().mockImplementation(async (_effect: unknown, send: () => Promise<void>) => {
+      await send();
+      return "EXECUTED";
+    }),
+  };
+}
+
 function makePlanLimits() {
   return { bust: jest.fn(), resolveTier: jest.fn().mockResolvedValue({ plan: "STARTER" }) };
 }
@@ -99,15 +109,18 @@ function makeWebhookDb() {
 async function buildService(
   db: unknown,
   providers: PaymentProviderResolver,
+  aiCredits = makeAiCredits(),
+  effectLedger = makeEffectLedger(),
 ): Promise<BillingService> {
   const module = await Test.createTestingModule({
     providers: [
       BillingService,
       { provide: DRIZZLE, useValue: db },
-      { provide: AiCreditsService, useValue: makeAiCredits() },
+      { provide: AiCreditsService, useValue: aiCredits },
       { provide: AuditService, useValue: makeAudit() },
       { provide: PlanLimitsService, useValue: makePlanLimits() },
       { provide: PaymentProviderResolver, useValue: providers },
+      { provide: ExternalEffectLedger, useValue: effectLedger },
     ],
   }).compile();
   return module.get(BillingService);
@@ -225,18 +238,7 @@ describe("BillingService payment webhook — provider resolved through registry"
       const aiCredits = makeAiCredits();
       const db = makeWebhookDb();
       const providers = makeResolver(new FakeProviderAdapter());
-
-      const module = await Test.createTestingModule({
-        providers: [
-          BillingService,
-          { provide: DRIZZLE, useValue: db },
-          { provide: AiCreditsService, useValue: aiCredits },
-          { provide: AuditService, useValue: makeAudit() },
-          { provide: PlanLimitsService, useValue: makePlanLimits() },
-          { provide: PaymentProviderResolver, useValue: providers },
-        ],
-      }).compile();
-      const svc = module.get(BillingService);
+      const svc = await buildService(db, providers, aiCredits);
 
       const result = await svc.handleRazorpayWebhook("org1", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
@@ -267,6 +269,92 @@ describe("BillingService payment webhook — provider resolved through registry"
       expect(result1.body).toEqual(result2.body);
       expect(providers1.resolve).toHaveBeenCalledWith("org1", "razorpay");
       expect(providers2.resolve).toHaveBeenCalledWith("org1", "stripe");
+    });
+  });
+
+  describe("credit grant durability — no fire-and-forget", () => {
+    it("returns 500 when the AI pack credit grant fails so the provider retries", async () => {
+      const aiCredits = {
+        grantPlanCredits: jest.fn().mockResolvedValue(undefined),
+        grantAiPackCreditsFromWebhook: jest.fn().mockRejectedValue(new Error("db unavailable")),
+      };
+      const ledger = {
+        execute: jest.fn().mockImplementation(async (_effect: unknown, send: () => Promise<void>) => {
+          await send();
+          return "EXECUTED";
+        }),
+      };
+      const db = makeWebhookDb();
+      const svc = await buildService(db, makeResolver(new FakeProviderAdapter()), aiCredits, ledger);
+
+      const result = await svc.handleRazorpayWebhook("org1", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+
+      expect(result.status).toBe(500);
+      expect(result.body).toMatchObject({ ok: false });
+    });
+
+    it("returns 200 on replay without invoking the grant again", async () => {
+      const aiCredits = makeAiCredits();
+      const ledger = {
+        execute: jest.fn().mockResolvedValue("ALREADY_SUCCEEDED"),
+      };
+      const db = makeWebhookDb();
+      const svc = await buildService(db, makeResolver(new FakeProviderAdapter()), aiCredits, ledger);
+
+      const result = await svc.handleRazorpayWebhook("org1", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+
+      expect(result.status).toBe(200);
+      expect(result.body).toMatchObject({ ok: true });
+      expect(aiCredits.grantAiPackCreditsFromWebhook).not.toHaveBeenCalled();
+    });
+
+    it("returns 503 when the grant lease is held by a concurrent attempt", async () => {
+      const ledger = {
+        execute: jest.fn().mockRejectedValue(new ExternalEffectLeaseBusyError("pay_test_002:pack-credit-grant")),
+      };
+      const db = makeWebhookDb();
+      const svc = await buildService(db, makeResolver(new FakeProviderAdapter()), makeAiCredits(), ledger);
+
+      const result = await svc.handleRazorpayWebhook("org1", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+
+      expect(result.status).toBe(503);
+      expect(result.body).toMatchObject({ ok: false });
+    });
+
+    it("forged event never reaches the ledger or grant", async () => {
+      const ledger = { execute: jest.fn() };
+      const aiCredits = makeAiCredits();
+      const db = makeWebhookDb();
+      const svc = await buildService(db, makeResolver(new FakeProviderAdapter()), aiCredits, ledger);
+
+      await svc.handleRazorpayWebhook("org1", CAPTURE_EVENT_BODY, "forged-sig");
+
+      expect(ledger.execute).not.toHaveBeenCalled();
+      expect(aiCredits.grantAiPackCreditsFromWebhook).not.toHaveBeenCalled();
+    });
+
+    it("out-of-order duplicate payment event returns 200 without a second grant", async () => {
+      const aiCredits = makeAiCredits();
+      let callCount = 0;
+      const ledger = {
+        execute: jest.fn().mockImplementation(async (_effect: unknown, send: () => Promise<void>) => {
+          callCount += 1;
+          if (callCount === 1) {
+            await send();
+            return "EXECUTED";
+          }
+          return "ALREADY_SUCCEEDED";
+        }),
+      };
+      const db = makeWebhookDb();
+      const svc = await buildService(db, makeResolver(new FakeProviderAdapter()), aiCredits, ledger);
+
+      const first = await svc.handleRazorpayWebhook("org1", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const second = await svc.handleRazorpayWebhook("org1", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      expect(aiCredits.grantAiPackCreditsFromWebhook).toHaveBeenCalledTimes(1);
     });
   });
 });

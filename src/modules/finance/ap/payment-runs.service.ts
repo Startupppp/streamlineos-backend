@@ -282,6 +282,16 @@ export class PaymentRunsService {
       .limit(1);
     const baseCurrency = settingsRows[0]?.baseCurrency ?? "INR";
 
+    const billIds = pendingItems.map((item) => item.billId).filter((id): id is number => id !== null);
+    const billMap = new Map<number, typeof purchaseBills.$inferSelect>();
+    if (billIds.length > 0) {
+      const bills = await this.db
+        .select()
+        .from(purchaseBills)
+        .where(and(inArray(purchaseBills.id, billIds), eq(purchaseBills.orgId, orgId)));
+      for (const b of bills) billMap.set(b.id, b);
+    }
+
     for (const item of pendingItems) {
       type FxCapture = { billId: number; currency: string; exchangeRate: string; amount: number; userId: string };
       let fxCapture: FxCapture | null = null;
@@ -313,13 +323,7 @@ export class PaymentRunsService {
             })
             .onConflictDoNothing();
 
-          const bill = await tx
-            .select()
-            .from(purchaseBills)
-            .where(and(eq(purchaseBills.id, item.billId), eq(purchaseBills.orgId, orgId)))
-            .limit(1);
-
-          const billRow = bill[0];
+          const billRow = item.billId !== null ? (billMap.get(item.billId) ?? null) : null;
           if (billRow) {
             const newPaid = round2(Number(billRow.amountPaid ?? 0) + Number(item.amount));
             const total = Number(billRow.total ?? 0);

@@ -14,9 +14,10 @@ import { EnterpriseQuotesService } from "./enterprise-quotes.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { PaymentsModule } from "../payments/payments.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
 
 @Module({
-  imports: [NotificationsModule, PaymentsModule],
+  imports: [NotificationsModule, PaymentsModule, OutboxModule],
   controllers: [BillingController, RazorpayWebhookController],
   providers: [BillingService, MarketplaceService, AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService],
   exports: [AiCreditsService, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService],

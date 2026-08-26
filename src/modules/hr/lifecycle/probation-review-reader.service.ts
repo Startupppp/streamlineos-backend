@@ -1,8 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { hrPeople } from "../../../db/schema/hr/core-people";
+import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
 import { hrProbationReviews } from "../../../db/schema/hr/probation";
 import type { ListProbationReviewsInput } from "./dto/probation.schemas";
 import {
@@ -139,5 +139,40 @@ export class ProbationReviewReaderService {
       .from(hrPeople)
       .where(and(eq(hrPeople.orgId, orgId), inArray(hrPeople.id, [...new Set(personIds)])));
     return new Map(people.map((person) => [person.id, person.userId]));
+  }
+
+  async isOnProbationDuring(orgId: string, userId: string, leaveStartDate: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: hrProbationReviews.id })
+      .from(hrProbationReviews)
+      .innerJoin(
+        hrEmployments,
+        and(
+          eq(hrEmployments.id, hrProbationReviews.employmentId),
+          eq(hrEmployments.orgId, hrProbationReviews.orgId),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
+      .innerJoin(
+        hrPeople,
+        and(
+          eq(hrPeople.id, hrEmployments.personId),
+          eq(hrPeople.orgId, hrProbationReviews.orgId),
+          isNull(hrPeople.deletedAt),
+        ),
+      )
+      .where(
+        and(
+          eq(hrProbationReviews.orgId, orgId),
+          eq(hrPeople.userId, userId),
+          inArray(hrProbationReviews.status, ["in_probation", "review_due", "extended"]),
+          gte(
+            sql<string>`coalesce(${hrProbationReviews.extendedUntil}, ${hrProbationReviews.probationEndDate})`,
+            leaveStartDate,
+          ),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
   }
 }

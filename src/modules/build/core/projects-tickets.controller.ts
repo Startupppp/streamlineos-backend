@@ -144,7 +144,7 @@ export class ProjectsTicketsController {
   ) {
     return this.subresources.getActivity(u.orgId, projectId, ticketId, {
       limit: query.limit,
-      before: query.before,
+      cursor: query.cursor,
     });
   }
 

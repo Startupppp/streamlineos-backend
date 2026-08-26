@@ -44,6 +44,7 @@ import {
   TRIAL_PLAN,
 } from "./plan-entitlements.constants";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { ExternalEffectLedger, ExternalEffectLeaseBusyError } from "../../../common/outbox/external-effect-ledger";
 
 interface WebhookResult {
   status: number;
@@ -58,6 +59,7 @@ export class BillingService {
     private readonly aiCredits: AiCreditsService,
     private readonly planLimits: PlanLimitsService,
     private readonly providers: PaymentProviderResolver,
+    private readonly externalEffectLedger: ExternalEffectLedger,
   ) {}
 
   async getSubscription(orgId: string) {
@@ -370,27 +372,33 @@ export class BillingService {
     ) {
       const packId = parseInt(String(payment.notes.packId), 10);
       if (!isNaN(packId)) {
-        this.aiCredits
-          .grantAiPackCreditsFromWebhook(resolvedOrg.id, packId, payment.id)
-          .catch((err: unknown) =>
-            logger.warn(`[billing:${providerKey}] ai pack credit grant failed (non-fatal)`, {
-              orgId: resolvedOrg.id,
-              packId,
-              paymentId: payment.id,
-              err,
-            }),
+        try {
+          await this.externalEffectLedger.execute(
+            {
+              organizationId: resolvedOrg.id,
+              producerEventId: payment.id,
+              effectKey: `${payment.id}:pack-credit-grant`,
+              effectType: "billing.ai-pack-credit-grant",
+              providerIdempotency: "NONE",
+            },
+            () => this.aiCredits.grantAiPackCreditsFromWebhook(resolvedOrg.id, packId, payment.id),
           );
+        } catch (err: unknown) {
+          if (err instanceof ExternalEffectLeaseBusyError)
+            return { status: 503, body: { ok: false, error: "grant in-flight" } };
+          logger.error(`[billing:${providerKey}] ai pack credit grant failed`, { orgId: resolvedOrg.id, packId, paymentId: payment.id, err });
+          return { status: 500, body: { ok: false } };
+        }
       }
     }
 
     if (event.event === "payment.failed" && payment.status === "failed" && resolvedOrg) {
-      this.transitionToPastDue(resolvedOrg.id, payment.id).catch((err: unknown) =>
-        logger.warn(`[billing:${providerKey}] PAST_DUE transition failed (non-fatal)`, {
-          orgId: resolvedOrg.id,
-          paymentId: payment.id,
-          err,
-        }),
-      );
+      try {
+        await this.transitionToPastDue(resolvedOrg.id, payment.id);
+      } catch (err: unknown) {
+        logger.error(`[billing:${providerKey}] PAST_DUE transition failed`, { orgId: resolvedOrg.id, paymentId: payment.id, err });
+        return { status: 500, body: { ok: false } };
+      }
     }
 
     return { status: 200, body: { ok: true } };

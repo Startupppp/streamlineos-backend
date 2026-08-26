@@ -91,6 +91,7 @@ describe("LeavesWriteService server-derived approver", () => {
           name: "Manager",
         }),
       } as never,
+      { isOnProbationDuring: jest.fn().mockResolvedValue(false) } as never,
     );
     const afterCommit: AfterCommitHook[] = [];
     const context = {

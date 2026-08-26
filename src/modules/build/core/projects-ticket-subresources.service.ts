@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, isNull, lt } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import {
   ticketActivityLog,
   ticketAttachments,
@@ -118,7 +119,7 @@ export class ProjectsTicketSubresourcesService {
     orgId: string,
     projectId: number,
     ticketId: number,
-    opts: { limit: number; before?: number },
+    opts: { limit: number; cursor?: string },
   ) {
     const ticket = await this.db.query.tickets.findFirst({
       where: and(
@@ -131,12 +132,16 @@ export class ProjectsTicketSubresourcesService {
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
+    const position = decodeCursor(opts.cursor);
+    const rawId = position !== null ? Number(position.sortValue) : NaN;
+    const beforeId = isNaN(rawId) ? undefined : rawId;
+
     const conditions = [
       eq(ticketActivityLog.ticketId, ticketId),
       eq(ticketActivityLog.orgId, orgId),
     ];
-    if (opts.before !== undefined)
-      conditions.push(lt(ticketActivityLog.id, opts.before));
+    if (beforeId !== undefined)
+      conditions.push(lt(ticketActivityLog.id, beforeId));
 
     const rows = await this.db
       .select({
@@ -155,9 +160,9 @@ export class ProjectsTicketSubresourcesService {
       .leftJoin(users, eq(users.id, ticketActivityLog.userId))
       .where(and(...conditions))
       .orderBy(desc(ticketActivityLog.id))
-      .limit(opts.limit);
+      .limit(opts.limit + 1);
 
-    return rows.map((row) => {
+    const mapped = rows.map((row) => {
       const fallbackName =
         `${row.userFirstName ?? ""} ${row.userLastName ?? ""}`.trim();
       const resolvedName =
@@ -174,6 +179,11 @@ export class ProjectsTicketSubresourcesService {
           : null,
       };
     });
+
+    return buildCursorPage(mapped, opts.limit, (r) => ({
+      sortValue: String(r.id),
+      id: String(r.id),
+    }));
   }
 
   getSubtasks(orgId: string, ticketId: number) {
