@@ -189,6 +189,15 @@ export const BUDGETS = [
     ],
   },
   {
+    id: "kb-page-id-probe-sdf",
+    ceiling: 3_000,
+    minRows: 30,
+    rowCountSql: `SELECT count(*)::int FROM kb_pages WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.hasKbPageProbe ? ["policy", 51] : null),
+    sql: `SELECT * FROM app.search_kb_page_ids($1, $2)`,
+    planAssertions: [],
+  },
+  {
     id: "kb-space-pages",
     ceiling: 8_000,
     minRows: 30,

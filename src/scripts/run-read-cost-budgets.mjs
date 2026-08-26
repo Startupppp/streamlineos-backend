@@ -167,6 +167,12 @@ async function main() {
         WHERE org_id = ${ORG} AND accrual_type = 'MONTHLY' AND is_active = true`;
       const leaveTypeIds = leaveTypePolicies.map((r) => r.leave_type_id);
 
+      const [kbPageProbe] = await tx`
+        SELECT 1 AS present FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'app' AND p.proname = 'search_kb_page_ids'
+        LIMIT 1`;
+
       return {
         orgId: ORG,
         projectId: project?.project_id ?? null,
@@ -178,6 +184,7 @@ async function main() {
         spaceId: space?.space_id ?? null,
         payrollRunId: payrollRun?.run_id ?? null,
         leaveTypeIds,
+        hasKbPageProbe: kbPageProbe !== undefined,
         period,
       };
     });
