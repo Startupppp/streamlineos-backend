@@ -18,6 +18,15 @@ import { applyScope } from "../access/apply-scope";
 import { authorize, type AccessResolver } from "../access/authorize";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
+import { logger } from "../../common/logger/logger.service";
+
+const UNDEFINED_FUNCTION = "42883";
+
+function isUndefinedFunction(err: unknown): boolean {
+  if (typeof err !== "object" || err === null || !("code" in err)) return false;
+  const { code } = err;
+  return code === UNDEFINED_FUNCTION;
+}
 
 /**
  * Global search, reading identity from Party.
@@ -116,10 +125,27 @@ export class SearchService {
     );
   }
 
+  private async probeIds(
+    statement: SQL<unknown>,
+    probeName: string,
+  ): Promise<Record<string, unknown>[] | null> {
+    try {
+      return await this.db.execute(statement);
+    } catch (err: unknown) {
+      if (!isUndefinedFunction(err)) throw err;
+      logger.error(`search probe ${probeName} is missing; falling back to an unindexed scan`, {
+        cause: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+  }
+
   private async leadCompanyCondition(q: string, pattern: string): Promise<SQL<unknown>> {
-    const rows = await this.db.execute(
+    const rows = await this.probeIds(
       sql`SELECT app.search_party_ids_by_company(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`,
+      "search_party_ids_by_company",
     );
+    if (rows === null) return ilike(businessParties.companyName, pattern);
     if (rows.length > PARTY_SEARCH_CAP) return ilike(businessParties.companyName, pattern);
     if (rows.length === 0) return sql`false`;
     return inArray(businessParties.partyId, rows.map((r) => String(r["id"])));
@@ -127,9 +153,11 @@ export class SearchService {
 
   private async dealCondition(q: string, pattern: string): Promise<SQL<unknown>> {
     const fallback = or(ilike(deals.name, pattern), ilike(deals.contactPerson, pattern)) ?? sql`false`;
-    const rows = await this.db.execute(
+    const rows = await this.probeIds(
       sql`SELECT app.search_deal_ids(${q}, ${DEAL_SEARCH_CAP + 1}) AS id`,
+      "search_deal_ids",
     );
+    if (rows === null) return fallback;
     if (rows.length > DEAL_SEARCH_CAP) return fallback;
     if (rows.length === 0) return sql`false`;
     return inArray(deals.id, rows.map((r) => Number(r["id"])));
@@ -142,9 +170,11 @@ export class SearchService {
         ilike(businessParties.email, pattern),
         ilike(businessParties.companyName, pattern),
       ) ?? sql`false`;
-    const rows = await this.db.execute(
+    const rows = await this.probeIds(
       sql`SELECT app.search_contact_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`,
+      "search_contact_party_ids",
     );
+    if (rows === null) return fallback;
     if (rows.length > PARTY_SEARCH_CAP) return fallback;
     if (rows.length === 0) return sql`false`;
     return inArray(businessParties.partyId, rows.map((r) => String(r["id"])));
@@ -153,18 +183,22 @@ export class SearchService {
   private async clientPartyCondition(q: string, pattern: string): Promise<SQL<unknown>> {
     const fallback =
       or(ilike(businessParties.name, pattern), ilike(businessParties.companyName, pattern)) ?? sql`false`;
-    const rows = await this.db.execute(
+    const rows = await this.probeIds(
       sql`SELECT app.search_client_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`,
+      "search_client_party_ids",
     );
+    if (rows === null) return fallback;
     if (rows.length > PARTY_SEARCH_CAP) return fallback;
     if (rows.length === 0) return sql`false`;
     return inArray(businessParties.partyId, rows.map((r) => String(r["id"])));
   }
 
   private async ticketTitleCondition(q: string, pattern: string): Promise<SQL<unknown>> {
-    const rows = await this.db.execute(
+    const rows = await this.probeIds(
       sql`SELECT app.search_ticket_ids(${q}, ${TICKET_ID_CAP + 1}) AS id`,
+      "search_ticket_ids",
     );
+    if (rows === null) return ilike(tickets.title, pattern);
     if (rows.length > TICKET_ID_CAP) return ilike(tickets.title, pattern);
     if (rows.length === 0) return sql`false`;
     return inArray(tickets.id, rows.map((r) => Number(r["id"])));
