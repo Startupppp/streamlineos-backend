@@ -2,7 +2,14 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq, getTableColumns, gt, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
-import { activities, businessParties, partyContacts, subjects } from "../../../db/schema";
+import {
+  activities,
+  businessParties,
+  crmPipelines,
+  deals,
+  partyContacts,
+  subjects,
+} from "../../../db/schema";
 
 /**
  * Getting everything back out again.
@@ -27,13 +34,41 @@ import { activities, businessParties, partyContacts, subjects } from "../../../d
 /** A page at a time, so a large tenant does not become one enormous statement. */
 const PAGE = 1_000;
 
-export type ExportEntity = "parties" | "contacts" | "subjects" | "activities";
+export type ExportEntity =
+  | "parties"
+  | "contacts"
+  | "subjects"
+  | "activities"
+  | "deals"
+  | "pipelines";
+
+/**
+ * Everything a departing tenant takes with them.
+ *
+ * Deals and pipelines are here because an export that returns the people but
+ * not the pipeline they were being moved through, or the deals sitting in it,
+ * is a sample rather than their data. A table added to the CRM and not added
+ * here silently narrows what a customer can leave with, and nothing complains —
+ * which is why `crm-export.spec.ts` asserts this list rather than describing it.
+ */
 export const EXPORT_ENTITIES: readonly ExportEntity[] = [
   "parties",
   "contacts",
   "subjects",
   "activities",
+  "deals",
+  "pipelines",
 ];
+
+/**
+ * The entities whose primary key is an integer rather than text.
+ *
+ * The cursor walks `WHERE key > last`, and it was written when every exported
+ * key was a uuid string. `deals.id` is a `serial`, and a string cursor against
+ * an integer key ends the walk after the first page — a tenant with 1,001 deals
+ * would have exported 1,000 of them with nothing to say the rest were missing.
+ */
+export const NUMERIC_KEY_ENTITIES: readonly ExportEntity[] = ["deals"];
 
 /**
  * The key each entity is walked by, and the columns it writes.
@@ -43,18 +78,22 @@ export const EXPORT_ENTITIES: readonly ExportEntity[] = [
  * old union-of-keys rule was reaching for the same guarantee and could only
  * offer it once every row was in memory.
  */
-const KEY_COLUMN: Readonly<Record<ExportEntity, string>> = {
+export const KEY_COLUMN: Readonly<Record<ExportEntity, string>> = {
   parties: "partyId",
   contacts: "partyContactId",
   subjects: "subjectId",
   activities: "activityId",
+  deals: "id",
+  pipelines: "id",
 };
 
-const EXPORT_COLUMNS: Readonly<Record<ExportEntity, readonly string[]>> = {
+export const EXPORT_COLUMNS: Readonly<Record<ExportEntity, readonly string[]>> = {
   parties: Object.keys(getTableColumns(businessParties)),
   contacts: Object.keys(getTableColumns(partyContacts)),
   subjects: Object.keys(getTableColumns(subjects)),
   activities: Object.keys(getTableColumns(activities)),
+  deals: Object.keys(getTableColumns(deals)),
+  pipelines: Object.keys(getTableColumns(crmPipelines)),
 };
 
 @Injectable()
@@ -117,7 +156,8 @@ export class CrmExportService {
     entity: ExportEntity,
   ): AsyncGenerator<Record<string, unknown>[]> {
     const keyColumn = KEY_COLUMN[entity];
-    let after = "";
+    const numeric = NUMERIC_KEY_ENTITIES.includes(entity);
+    let after: string | number = numeric ? 0 : "";
 
     for (;;) {
       const rows = await this.pageAfter(organizationId, entity, after);
@@ -127,17 +167,29 @@ export class CrmExportService {
       if (rows.length < PAGE) return;
 
       const last = rows[rows.length - 1]?.[keyColumn];
-      // A primary key is never null; stopping rather than looping on a cursor
-      // that cannot advance is the safe reading of "never".
-      if (typeof last !== "string" || last === "") return;
-      after = last;
+      /*
+       * A primary key is never null; stopping rather than looping on a cursor
+       * that cannot advance is the safe reading of "never".
+       *
+       * The type has to match the key's own, not merely be truthy. Requiring a
+       * string here while `deals.id` is a `serial` ended the walk after the
+       * first page and reported a complete export — the failure mode being a
+       * short file rather than an error.
+       */
+      if (numeric) {
+        if (typeof last !== "number") return;
+        after = last;
+      } else {
+        if (typeof last !== "string" || last === "") return;
+        after = last;
+      }
     }
   }
 
   private async pageAfter(
     organizationId: string,
     entity: ExportEntity,
-    after: string,
+    after: string | number,
   ): Promise<Record<string, unknown>[]> {
     switch (entity) {
       case "parties":
@@ -148,7 +200,7 @@ export class CrmExportService {
             and(
               eq(businessParties.organizationId, organizationId),
               isNull(businessParties.deletedAt),
-              gt(businessParties.partyId, after),
+              gt(businessParties.partyId, typeof after === "string" ? after : ""),
             ),
           )
           .orderBy(asc(businessParties.partyId))
@@ -162,7 +214,7 @@ export class CrmExportService {
             and(
               eq(partyContacts.organizationId, organizationId),
               isNull(partyContacts.deletedAt),
-              gt(partyContacts.partyContactId, after),
+              gt(partyContacts.partyContactId, typeof after === "string" ? after : ""),
             ),
           )
           .orderBy(asc(partyContacts.partyContactId))
@@ -176,10 +228,37 @@ export class CrmExportService {
             and(
               eq(subjects.organizationId, organizationId),
               isNull(subjects.deletedAt),
-              gt(subjects.subjectId, after),
+              gt(subjects.subjectId, typeof after === "string" ? after : ""),
             ),
           )
           .orderBy(asc(subjects.subjectId))
+          .limit(PAGE);
+
+      case "deals":
+        return this.db
+          .select()
+          .from(deals)
+          .where(
+            and(
+              eq(deals.orgId, organizationId),
+              isNull(deals.deletedAt),
+              gt(deals.id, typeof after === "number" ? after : 0),
+            ),
+          )
+          .orderBy(asc(deals.id))
+          .limit(PAGE);
+
+      case "pipelines":
+        return this.db
+          .select()
+          .from(crmPipelines)
+          .where(
+            and(
+              eq(crmPipelines.orgId, organizationId),
+              gt(crmPipelines.id, typeof after === "string" ? after : ""),
+            ),
+          )
+          .orderBy(asc(crmPipelines.id))
           .limit(PAGE);
 
       case "activities":
@@ -190,7 +269,7 @@ export class CrmExportService {
             and(
               eq(activities.organizationId, organizationId),
               isNull(activities.deletedAt),
-              gt(activities.activityId, after),
+              gt(activities.activityId, typeof after === "string" ? after : ""),
             ),
           )
           .orderBy(asc(activities.activityId))
