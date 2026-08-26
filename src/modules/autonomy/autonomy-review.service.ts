@@ -29,6 +29,7 @@ import { planReversal, type TargetState } from "./reversal-plan";
 import { resolveSwitch, switchesFor, type SwitchRow } from "./kill-switch";
 import { ROUTINE_KINDS, type ListDecisionsQuery, type ReverseDecisionInput, type SetSwitchInput } from "./dto/autonomy-review.schemas";
 import { softDeletePartyWithMirror } from "../party/party-legacy-writer";
+import { AutonomyRepairService } from "./autonomy-repair.service";
 
 /**
  * Reading and undoing what the system did on its own.
@@ -51,6 +52,15 @@ export class AutonomyReviewService {
     @Optional()
     @Inject(forwardRef(() => AutonomyHoldService))
     private readonly holds?: AutonomyHoldService,
+    /**
+     * Optional for the same reason the holds are: the feed is constructed by
+     * hand in several specs that care about listing and nothing else, and a
+     * required dependency there would make every one of them assemble a repair
+     * service to test a cursor. A reversal that reaches this without it refuses
+     * rather than half-succeeding.
+     */
+    @Optional()
+    private readonly repairs?: AutonomyRepairService,
   ) {}
 
   // ── The feed ──────────────────────────────────────────────────────────────
@@ -223,7 +233,7 @@ export class AutonomyReviewService {
 
     if (!decision) throw new NotFoundException("Decision not found");
 
-    const target = await this.loadTarget(organizationId, decision.kind, decision);
+    const target = await this.loadTarget(organizationId, decision.kind, decisionId, decision);
     const plan = planReversal(
       {
         kind: decision.kind,
@@ -270,6 +280,7 @@ export class AutonomyReviewService {
     const { field, systemValue, humanValue } = await this.applyReversal(
       organizationId,
       userId,
+      decisionId,
       plan,
     );
 
@@ -299,6 +310,7 @@ export class AutonomyReviewService {
   private async applyReversal(
     organizationId: string,
     userId: string,
+    decisionId: string,
     plan: Extract<ReturnType<typeof planReversal>, { ok: true }>,
   ): Promise<{ field: string; systemValue: string | null; humanValue: string | null }> {
     switch (plan.action) {
@@ -338,6 +350,32 @@ export class AutonomyReviewService {
         return { field: "task", systemValue: "created", humanValue: "removed" };
       }
 
+      case "restore-fields": {
+        /**
+         * Delegated whole, because the batch is not a single write.
+         *
+         * Each value is put back only if it is still the value the system wrote,
+         * so a batch reversal is N guarded restores rather than one statement —
+         * and the guard is the point: a reviewer undoing four hundred repairs
+         * must not overwrite the three somebody has since corrected by hand.
+         */
+        if (!this.repairs)
+          throw new ConflictException("Repairs cannot be reversed from here right now.");
+
+        const { reverted, skipped } = await this.repairs.revertBatch(
+          organizationId,
+          userId,
+          decisionId,
+          null,
+        );
+
+        return {
+          field: "repairs",
+          systemValue: String(reverted + skipped),
+          humanValue: String(reverted),
+        };
+      }
+
       case "delete-party": {
         // The party is canonical and every legacy row mapped to it is a mirror,
         // so reversing an autonomous creation has to take both down together --
@@ -365,6 +403,7 @@ export class AutonomyReviewService {
   private async loadTarget(
     organizationId: string,
     kind: DecisionKind,
+    decisionId: string,
     decision: { dealId: string | null; activityId: string | null; partyId: string | null },
   ): Promise<TargetState> {
     if (kind === "stage.advanced") {
@@ -395,6 +434,14 @@ export class AutonomyReviewService {
         .limit(1);
 
       return row ? { kind: "activity", deletedAt: row.deletedAt, completedAt: row.completedAt } : null;
+    }
+
+    if (kind === "field.repaired") {
+      if (!this.repairs) return null;
+      return {
+        kind: "repairs",
+        unreverted: await this.repairs.countUnreverted(organizationId, decisionId),
+      };
     }
 
     if (kind === "party.created") {
@@ -444,7 +491,16 @@ export class AutonomyReviewService {
     return {
       switches: rows,
       /** The resolved answer per action type — what actually governs behaviour. */
-      effective: (["task.extracted", "stage.advanced", "party.created", "activity.logged", "quote.sent"] as const).map(
+      effective: (
+        [
+          "task.extracted",
+          "stage.advanced",
+          "party.created",
+          "activity.logged",
+          "quote.sent",
+          "field.repaired",
+        ] as const
+      ).map(
         (kind) => ({ kind, ...resolveSwitch(organizationId, kind, scoped) }),
       ),
     };

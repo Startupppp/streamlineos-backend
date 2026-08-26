@@ -23,6 +23,20 @@ export const DECISION_KINDS = [
   "party.created",
   "activity.logged",
   "quote.sent",
+  /**
+   * A batch of deterministic field repairs, applied with nobody watching.
+   *
+   * One row per batch rather than per value: four hundred identically malformed
+   * numbers are one decision, and four hundred entries here would bury every
+   * judgement in the feed under clerical work. The individual values live in
+   * `autonomy_repairs`, which is what makes the batch undoable item by item as
+   * well as whole.
+   *
+   * It is a decision kind rather than a private ledger so that the existing kill
+   * switch, review feed, reversal path and scoreboard all reach it with no
+   * second mechanism for an operator to remember.
+   */
+  "field.repaired",
 ] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 

@@ -12,6 +12,7 @@ import type { DataScope } from "../access/access.types";
 import { AutonomyReviewService } from "./autonomy-review.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
+import { AutonomyRepairService } from "./autonomy-repair.service";
 import {
   listDecisionsQuerySchema,
   reverseDecisionSchema,
@@ -27,9 +28,21 @@ import {
   type ReviewQueueQuery,
   type UpdateAutonomySettingsInput,
   type CancelHoldInput,
+  runRepairsSchema,
+  setRepairPolicySchema,
+  listRepairsQuerySchema,
+  revertRepairSchema,
+  repairMeasureQuerySchema,
+  type RunRepairsInput,
+  type SetRepairPolicyInput,
+  type ListRepairsQuery,
+  type RevertRepairInput,
+  type RepairMeasureQuery,
 } from "./dto/autonomy-review.schemas";
 
 const REVIEW_PERMISSION = "crm:autonomy:view";
+/** Deciding what the system may change unattended, which is not the kill switch. */
+const REPAIR_PERMISSION = "crm:autonomy:repair";
 
 @Controller("crm/autonomy")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -38,6 +51,7 @@ export class AutonomyReviewController {
     private readonly svc: AutonomyReviewService,
     private readonly scoring: AutonomyScoringService,
     private readonly holds: AutonomyHoldService,
+    private readonly repairs: AutonomyRepairService,
     private readonly access: AccessService,
   ) {}
 
@@ -168,6 +182,93 @@ export class AutonomyReviewController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.scoring.updateSettings(u.orgId, body);
+  }
+
+  // ── Unattended repair ─────────────────────────────────────────────────────
+
+  /**
+   * Which classes this organisation lets the system repair without asking.
+   *
+   * Behind the view key. A reader of the feed asking "why was that not fixed"
+   * needs the answer, and it is the same evidence they would use to decide
+   * whether to grant the class — hiding it behind the ability to change it would
+   * invert the decision it informs.
+   */
+  @Get("repair-policies")
+  @RequirePermission(REVIEW_PERMISSION)
+  repairPolicies(@CurrentUser() u: CurrentUserContext) {
+    return this.repairs.policiesFor(u.orgId);
+  }
+
+  /**
+   * Grant or withhold one class.
+   *
+   * Its own key rather than `crm:autonomy:manage`: that one governs whether an
+   * action type runs at all, and this governs whether the system may change
+   * stored customer data unattended. They are different authorities, and folding
+   * the second into the first would make it impossible to give somebody the
+   * kill switch without also giving them this.
+   */
+  @Patch("repair-policies")
+  @Idempotent("crm.autonomy.repair-policy")
+  @RequirePermission(REPAIR_PERMISSION)
+  setRepairPolicy(
+    @Body(new ZodValidationPipe(setRepairPolicySchema)) body: SetRepairPolicyInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.repairs.setPolicy(u.orgId, u.userId, body);
+  }
+
+  /** Run the loop now. Every class is still asked separately whether it may. */
+  @Post("repairs/run")
+  @Idempotent("crm.autonomy.repair-run")
+  @RequirePermission(REPAIR_PERMISSION)
+  runRepairs(
+    @Body(new ZodValidationPipe(runRepairsSchema)) body: RunRepairsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.repairs.runRepairs(u.orgId, body);
+  }
+
+  /** Every value the system rewrote, newest first. */
+  @Get("repairs")
+  @RequirePermission(REVIEW_PERMISSION)
+  listRepairs(
+    @Query(new ZodValidationPipe(listRepairsQuerySchema)) query: ListRepairsQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.repairs.listRepairs(u.orgId, query);
+  }
+
+  /**
+   * Put one value back, without touching the rest of its batch.
+   *
+   * Same key as reversing any other autonomous action, because it is one: a
+   * reviewer who may undo a stage change may undo a repair. The batch-wide undo
+   * is the ordinary `decisions/:decisionId/reverse` above.
+   */
+  @Post("repairs/:repairId/revert")
+  @Idempotent("crm.autonomy.repair-revert")
+  @RequirePermission("crm:autonomy:reverse")
+  revertRepair(
+    @Param("repairId") repairId: string,
+    @Body(new ZodValidationPipe(revertRepairSchema)) body: RevertRepairInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.repairs.revertOne(u.orgId, u.userId, repairId, body.reason ?? null);
+  }
+
+  /**
+   * How much of the queue the system cleared, against how much a person did,
+   * and what is left.
+   */
+  @Get("repair-measure")
+  @RequirePermission(REVIEW_PERMISSION)
+  repairMeasure(
+    @Query(new ZodValidationPipe(repairMeasureQuerySchema)) query: RepairMeasureQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.repairs.measure(u.orgId, query.days);
   }
 
   /**

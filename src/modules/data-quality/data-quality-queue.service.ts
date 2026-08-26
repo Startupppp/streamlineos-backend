@@ -445,6 +445,152 @@ export class DataQualityQueueService {
     return Number(row?.n ?? 0);
   }
 
+  // ── What the repair loop is allowed to ask for ────────────────────────────
+
+  /**
+   * The seam `AutonomyModule` reaches the queue through, and all of it.
+   *
+   * Three narrow methods rather than a shared table, because the repair loop
+   * lives on the other side of a module boundary and the queue is deliberately
+   * ignorant of autonomy — `data-quality.module.ts` says so, and the dependency
+   * runs the other way round. What the loop needs is: candidates of a shape,
+   * a way to close them naming the decision that did it, and a way to put them
+   * back. Nothing here knows what a repair class is.
+   */
+  async repairCandidates(
+    organizationId: string,
+    findingKinds: readonly string[],
+    limit: number,
+  ) {
+    if (findingKinds.length === 0) return [];
+
+    return this.db
+      .select({
+        findingId: dataQualityFindings.findingId,
+        findingKind: dataQualityFindings.findingKind,
+        groupKey: dataQualityFindings.groupKey,
+        partyId: dataQualityFindings.partyId,
+        evidence: dataQualityFindings.evidence,
+      })
+      .from(dataQualityFindings)
+      .where(
+        and(
+          eq(dataQualityFindings.organizationId, organizationId),
+          eq(dataQualityFindings.status, "open"),
+          inArray(dataQualityFindings.findingKind, [...findingKinds]),
+        ),
+      )
+      /** Oldest first, so a backlog larger than one batch is worked down its own end. */
+      .orderBy(asc(dataQualityFindings.firstDetectedAt), asc(dataQualityFindings.findingId))
+      .limit(Math.min(limit, MAX_BULK));
+  }
+
+  /**
+   * Close a batch, naming the autonomous decision that closed it.
+   *
+   * `status = 'open'` sits in the predicate for the same reason it does in the
+   * human path: a person resolving the same finding a moment earlier takes it,
+   * and this simply covers fewer rows rather than overwriting their decision.
+   * One statement, whatever the size of the batch.
+   */
+  async closeAsRepaired(
+    organizationId: string,
+    autonomousDecisionId: string,
+    findingIds: readonly string[],
+  ): Promise<string[]> {
+    if (findingIds.length === 0) return [];
+
+    const rows = await this.db
+      .update(dataQualityFindings)
+      .set({
+        status: "resolved",
+        resolvedAt: new Date(),
+        /**
+         * Left null on purpose: nobody resolved this. The decision column beside
+         * it is who did, and a sentinel user here would put the system into a
+         * column every screen renders as a person.
+         */
+        resolvedByUserId: null,
+        autonomousDecisionId,
+        lastError: null,
+      })
+      .where(
+        and(
+          eq(dataQualityFindings.organizationId, organizationId),
+          eq(dataQualityFindings.status, "open"),
+          inArray(dataQualityFindings.findingId, [...findingIds]),
+        ),
+      )
+      .returning({ findingId: dataQualityFindings.findingId });
+
+    return rows.map((row) => row.findingId);
+  }
+
+  /**
+   * Put findings back after their repair was taken back.
+   *
+   * `autonomousDecisionId` is deliberately left in place, exactly as
+   * `resolutionId` is on the human path: a reopened finding still points at the
+   * last decision taken about it, which is how "what did that reversal cover"
+   * stays answerable afterwards.
+   */
+  async reopenAfterRepairReverted(
+    organizationId: string,
+    findingIds: readonly string[],
+  ): Promise<number> {
+    if (findingIds.length === 0) return 0;
+
+    const rows = await this.db
+      .update(dataQualityFindings)
+      .set({ status: "open", resolvedAt: null, resolvedByUserId: null })
+      .where(
+        and(
+          eq(dataQualityFindings.organizationId, organizationId),
+          inArray(dataQualityFindings.findingId, [...findingIds]),
+        ),
+      )
+      .returning({ findingId: dataQualityFindings.findingId });
+
+    return rows.length;
+  }
+
+  /**
+   * How much of the queue the system cleared, and how much a person did.
+   *
+   * The loop's measure, and it is a single grouped read because the two ledgers
+   * are two columns on the same row rather than two tables to reconcile. A
+   * finding closed with neither pointer predates the repair loop; it is counted
+   * as neither rather than assigned to one, because guessing would move the
+   * ratio this number exists to make honest.
+   */
+  async resolutionMix(
+    organizationId: string,
+    since: Date,
+  ): Promise<{ automated: number; manual: number; unattributed: number }> {
+    const [row] = await this.db
+      .select({
+        automated: sql<number>`count(*) FILTER (WHERE ${dataQualityFindings.autonomousDecisionId} IS NOT NULL)`,
+        manual: sql<number>`count(*) FILTER (WHERE ${dataQualityFindings.resolutionId} IS NOT NULL)`,
+        total: count(),
+      })
+      .from(dataQualityFindings)
+      .where(
+        and(
+          eq(dataQualityFindings.organizationId, organizationId),
+          gte(dataQualityFindings.resolvedAt, since),
+        ),
+      );
+
+    const automated = Number(row?.automated ?? 0);
+    const manual = Number(row?.manual ?? 0);
+
+    return {
+      automated,
+      manual,
+      unattributed: Math.max(0, Number(row?.total ?? 0) - automated - manual),
+    };
+  }
+
   // ── The decision ledger ───────────────────────────────────────────────────
 
   async listResolutions(organizationId: string, query: ListResolutionsQuery) {

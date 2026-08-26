@@ -401,6 +401,16 @@ export const CRM_PERMISSIONS: Permission[] = [
     description: "Turn autonomous CRM action types on or off for the organisation",
   },
   {
+    // Separate from `:manage`, which governs whether an action type runs at all.
+    // This one governs whether the system may change stored customer data with
+    // nobody watching, and that is a different thing to hand somebody.
+    name: "crm:autonomy:repair",
+    resource: "crm:autonomy",
+    action: "repair",
+    description:
+      "Choose which classes of data problem the CRM may repair unattended, and run the repair loop",
+  },
+  {
     name: "crm:imports:manage",
     resource: "crm:imports",
     action: "manage",

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DECISION_KINDS, DECISION_OUTCOMES } from "../../../db/schema/crm/autonomous-decisions";
+import { REPAIR_CLASSES } from "../../../db/schema/crm/autonomy-repairs";
 import { queryBoolean } from "../../../common/validation/query-boolean";
 
 /**
@@ -106,3 +107,71 @@ export const cancelHoldSchema = z
   .strict();
 
 export type CancelHoldInput = z.infer<typeof cancelHoldSchema>;
+
+// ── Unattended repair ───────────────────────────────────────────────────────
+
+/**
+ * How many values one repair decision may cover.
+ *
+ * Four hundred is the ticket's own figure — four hundred identically malformed
+ * numbers — and it is the same number `data-quality`'s `MAX_BULK` uses, because
+ * the two are the same bound seen from either side: whatever a person can decide
+ * in one click, the system may repair in one decision. A larger backlog is
+ * repaired in successive runs and the response says what is left, so nobody
+ * reads a finished run as a finished queue.
+ */
+export const MAX_REPAIRS_PER_DECISION = 400;
+
+export const runRepairsSchema = z
+  .object({
+    /**
+     * Which classes to consider. Absent means every class in the enumeration —
+     * which is not the same as every class being repaired, because each one is
+     * still asked separately whether this tenant allows it.
+     */
+    classes: z.array(z.enum(REPAIR_CLASSES)).min(1).optional(),
+    limit: z.number().int().min(1).max(MAX_REPAIRS_PER_DECISION).default(MAX_REPAIRS_PER_DECISION),
+  })
+  .strict();
+
+export type RunRepairsInput = z.infer<typeof runRepairsSchema>;
+
+export const setRepairPolicySchema = z
+  .object({
+    /**
+     * A closed enum rather than a string, so a class that does not exist is a
+     * 400 naming the field instead of a stored row that silently governs
+     * nothing. The predicate refuses an unknown class as well; this is the
+     * boundary saying so first.
+     */
+    repairClass: z.enum(REPAIR_CLASSES),
+    enabled: z.boolean(),
+    reason: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+
+export type SetRepairPolicyInput = z.infer<typeof setRepairPolicySchema>;
+
+export const listRepairsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+    cursor: z.string().min(1).max(512).optional(),
+    repairClass: z.enum(REPAIR_CLASSES).optional(),
+    /** Only what a person has taken back — the correction rate's own read. */
+    revertedOnly: queryBoolean.optional(),
+  })
+  .strict();
+
+export type ListRepairsQuery = z.infer<typeof listRepairsQuerySchema>;
+
+export const revertRepairSchema = z
+  .object({ reason: z.string().trim().min(1).max(500).optional() })
+  .strict();
+
+export type RevertRepairInput = z.infer<typeof revertRepairSchema>;
+
+export const repairMeasureQuerySchema = z
+  .object({ days: z.coerce.number().int().min(1).max(365).default(30) })
+  .strict();
+
+export type RepairMeasureQuery = z.infer<typeof repairMeasureQuerySchema>;

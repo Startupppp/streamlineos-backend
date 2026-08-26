@@ -56,7 +56,16 @@ function digitsOf(value: string): string {
 const MIN_PLAUSIBLE_DIGITS = 7;
 const MAX_E164_DIGITS = 15;
 
-function emailFailure(raw: string): { groupKey: string; detail: string } | null {
+/**
+ * What is wrong with this address, in the words the finding uses, or null.
+ *
+ * Exported because the repair loop needs the *same* answer this producer gives:
+ * `autonomy/repair-classes.ts` proposes a fix and then asks this whether the fix
+ * is actually an address. A second validator over there would eventually
+ * disagree with this one, and the direction it would disagree in is a repair
+ * writing a value the next sweep immediately files again.
+ */
+export function emailFailure(raw: string): { groupKey: string; detail: string } | null {
   const value = normaliseEmail(raw);
   if (value.length === 0) return null;
 
@@ -78,7 +87,8 @@ function emailFailure(raw: string): { groupKey: string; detail: string } | null 
   return null;
 }
 
-function phoneFailure(raw: string): { groupKey: string; detail: string } | null {
+/** The same, for a phone number, and exported for the same reason. */
+export function phoneFailure(raw: string): { groupKey: string; detail: string } | null {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return null;
 

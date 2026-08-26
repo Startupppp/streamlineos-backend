@@ -8,6 +8,7 @@ import { AutonomyReviewService } from "./autonomy-review.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
 import { AutonomyHoldWorkflow } from "./autonomy-hold.workflow";
+import { AutonomyRepairService } from "./autonomy-repair.service";
 import { QuotesModule } from "../quotes/quotes.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { WorkflowModule } from "../../common/workflow/workflow.module";
@@ -26,7 +27,8 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
  * decision ledger this module writes -- putting it elsewhere would mean two
  * modules agreeing on what a decision means.
  *
- * `DataQualityModule` is imported for one number. The scoreboard is where a
+ * `DataQualityModule` is imported for one number and, since the repair loop, for
+ * one narrow seam. The scoreboard is where a The scoreboard is where a
  * tenant asks whether any of this is working, and how good the dataset is
  * belongs in that answer rather than on a second surface nobody would think to
  * open -- a rising correction rate and a rising dataset-health penalty are
@@ -51,7 +53,14 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
     AutonomyScoringService,
     AutonomyHoldService,
     AutonomyHoldWorkflow,
+    AutonomyRepairService,
   ],
-  exports: [AutonomyService, AutonomyReviewService, AutonomyScoringService, AutonomyHoldService],
+  exports: [
+    AutonomyService,
+    AutonomyReviewService,
+    AutonomyScoringService,
+    AutonomyHoldService,
+    AutonomyRepairService,
+  ],
 })
 export class AutonomyModule {}

@@ -256,6 +256,20 @@ export const dataQualityFindings = pgTable(
     /** The one decision that closed this, and the one that can undo it. */
     resolutionId: text("resolution_id"),
     /**
+     * The same, when the decision was the system's rather than a person's.
+     *
+     * A deliberate mirror of `resolutionId` rather than a flag. Both name one
+     * decision covering many findings, so the two ledgers stay separable — which
+     * is what makes "the ratio of automated to manual resolution" a countable
+     * number instead of an inference from which columns happen to be null.
+     *
+     * Exactly one of the pair is set on a closed finding. Not enforced by a
+     * CHECK: a finding reopened after a failed remediation legitimately keeps a
+     * pointer while `status` returns to `open`, and a constraint written to
+     * allow that would no longer be saying anything.
+     */
+    autonomousDecisionId: text("autonomous_decision_id"),
+    /**
      * What an undo needs, captured at the moment the action succeeded.
      *
      * A merge leaves a `party_merge_id`; reconstructing it later from the
@@ -304,6 +318,10 @@ export const dataQualityFindings = pgTable(
     index("idx_data_quality_findings_party").on(t.organizationId, t.partyId, t.status),
     /** What one decision covered — the undo's own read. */
     index("idx_data_quality_findings_resolution").on(t.organizationId, t.resolutionId),
+    /** The same for a repair batch, which reopens by exactly this predicate. */
+    index("idx_data_quality_findings_autonomous_decision")
+      .on(t.organizationId, t.autonomousDecisionId)
+      .where(sql`autonomous_decision_id is not null`),
     /**
      * "Is the dataset getting better or worse" is opened-in-window against
      * closed-in-window, and the closed half has no other indexed path to it.

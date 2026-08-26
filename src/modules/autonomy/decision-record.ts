@@ -26,6 +26,11 @@ const REVERSIBILITY: Readonly<Record<DecisionKind, ReversibilityClass>> = {
   "party.created": "instant",
   "activity.logged": "instant",
   "quote.sent": "hold",
+  /**
+   * The value each repair replaced is recorded before the write, so putting it
+   * back is one statement per value and one predicate for the batch.
+   */
+  "field.repaired": "instant",
 };
 
 export function reversibilityFor(kind: DecisionKind): ReversibilityClass {
@@ -46,6 +51,17 @@ const ACT_THRESHOLD: Readonly<Record<DecisionKind, number>> = {
   "party.created": 0.7,
   "stage.advanced": 0.85,
   "quote.sent": 0.9,
+  /**
+   * Deliberately unreachable, and stated rather than omitted.
+   *
+   * A repair never consults a model, so it never asks `shouldAct` — the
+   * enumeration in `repair-classes.ts` is the entire authority and every class
+   * in it is a pure function over the value. One is what a threshold means when
+   * nothing below certainty may act: if anything ever routes a repair through
+   * here, only a decision recorded at certainty gets through, which is the
+   * failure mode that fails closed.
+   */
+  "field.repaired": 1,
 };
 
 export function actThresholdFor(kind: DecisionKind): number {
