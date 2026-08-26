@@ -1,10 +1,11 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
 import { keysetBefore } from "../../common/pagination/keyset";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { activities, activityParticipants, users } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
+import { RelationshipStateService } from "../relationships/relationship-state.service";
 import {
   buildTimelinePage,
   decodeTimelineCursor,
@@ -47,6 +48,14 @@ export class ActivitiesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    /**
+     * Optional, for the reason the ingress seam takes its own collaborators
+     * optionally: recording what happened must not depend on the thing that
+     * summarises it. A relationship state one activity behind is repaired by the
+     * next activity or by a rebuild; an activity refused because a derived table
+     * could not be written is a lost record of something that happened.
+     */
+    @Optional() private readonly relationships?: RelationshipStateService,
   ) {}
 
   /**
@@ -122,7 +131,7 @@ export class ActivitiesService {
     input: CreateActivityInput,
     source = "manual",
   ) {
-    return this.db.transaction(async (tx) => {
+    const created = await this.db.transaction(async (tx) => {
       const [row] = await (tx as Db)
         .insert(activities)
         .values({
@@ -158,6 +167,28 @@ export class ActivitiesService {
 
       return row;
     });
+
+    await this.materialise(organizationId, created?.activityId);
+    return created;
+  }
+
+  /**
+   * The materialisation, after the write it derives from.
+   *
+   * Ticket 01's fourth criterion is that the relationship state moves when an
+   * activity arrives rather than waiting for a sweep, and this is the half of
+   * that which is not the ingress seam — an activity typed into the CRM by a rep
+   * changes what the relationship looks like exactly as much as one that
+   * arrived through an adapter.
+   *
+   * Outside the transaction on purpose. It reads the row it is summarising, so
+   * inside it would be reading its own uncommitted write on a handle the fold
+   * has no business holding; and by the platform's own rule, work that must not
+   * fail the request does not share the request's transaction.
+   */
+  private async materialise(organizationId: string, activityId: string | undefined): Promise<void> {
+    if (!activityId || !this.relationships) return;
+    await this.relationships.tryOnActivity(organizationId, activityId);
   }
 
   async update(
@@ -196,6 +227,9 @@ export class ActivitiesService {
       metadata: { ...audited.metadata, changed: Object.keys(input) },
     });
 
+    // `subject` is one of the fields the relationship fold reads, so an edit
+    // that is invisible to a timeline still moves the derived state.
+    await this.materialise(organizationId, activityId);
     return row;
   }
 
@@ -251,6 +285,8 @@ export class ActivitiesService {
       resourceId: activityId,
       metadata: audited.metadata,
     });
+
+    await this.materialise(organizationId, activityId);
   }
 
   /** Everyone who was on it, resolved so no caller renders an identifier. */

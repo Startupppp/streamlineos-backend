@@ -14,6 +14,7 @@ import type { StepContext, WorkflowRunContext } from "../../common/workflow";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { getRegionRegistry, hasRegionRegistry } from "../../common/region/region-registry";
 import { AutonomyService } from "../autonomy/autonomy.service";
+import { RelationshipStateService } from "../relationships/relationship-state.service";
 import { AutonomyScoringService } from "../autonomy/autonomy-scoring.service";
 import { buildDecision } from "../autonomy/decision-record";
 import { INBOUND_WORKFLOW } from "./inbound-ingress.service";
@@ -64,6 +65,14 @@ export class InboundIngressWorkflow implements OnModuleInit {
     @Optional() private readonly autonomy?: AutonomyService,
     /** Optional for the same reason as `autonomy`: measurement must not gate filing. */
     @Optional() private readonly scoring?: AutonomyScoringService,
+    /**
+     * Optional for the third time, and for the same reason. Ticket 01's model of
+     * what normal looks like is derived from the activities, so a state that
+     * failed to update is repaired by the next message on the relationship or by
+     * an explicit rebuild — while a delivery rejected because a summary could not
+     * be written is a customer's message the CRM never filed.
+     */
+    @Optional() private readonly relationships?: RelationshipStateService,
   ) {}
 
   onModuleInit(): void {
@@ -279,6 +288,25 @@ export class InboundIngressWorkflow implements OnModuleInit {
         })),
       );
 
+      return null;
+    });
+
+    /**
+     * What normal looks like for this relationship, brought up to date.
+     *
+     * Before extraction rather than after, because ticket 02's silence
+     * judgement and ticket 03's participant judgement both read this row, and a
+     * detector reasoning about a state that predates the message it was woken by
+     * would be answering last week's question.
+     *
+     * Its own step for the ordinary reason every step here has its own: a retry
+     * re-materialises without creating a second party and a second activity
+     * first. It cannot throw the run down — a relationship summary is not worth
+     * a dead-lettered delivery — but the failure is logged rather than swallowed.
+     */
+    await step.run("materialise-relationship", async () => {
+      if (!this.relationships) return null;
+      await this.relationships.tryOnActivity(context.organizationId, activity.activityId);
       return null;
     });
 

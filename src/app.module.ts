@@ -84,6 +84,7 @@ import { MailModule } from "./modules/mail/mail.module";
 import { DirectoryModule } from "./modules/directory/directory.module";
 import { PartyModule } from "./modules/party/party.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
+import { RelationshipsModule } from "./modules/relationships/relationships.module";
 import { IngressModule } from "./modules/ingress/ingress.module";
 import { AutonomyModule } from "./modules/autonomy/autonomy.module";
 import { CrmImportModule } from "./modules/crm/import/crm-import.module";
@@ -155,6 +156,7 @@ import { RecordLayoutsModule } from "./modules/record-layouts/record-layouts.mod
     PartyModule,
     DataQualityModule,
     ActivitiesModule,
+    RelationshipsModule,
     IngressModule,
     AutonomyModule,
     CrmImportModule,
