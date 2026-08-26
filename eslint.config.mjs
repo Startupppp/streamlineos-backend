@@ -160,7 +160,7 @@ export default tseslint.config(
           patterns: [
             {
               group: ["**/db/schema", "**/db/schema/crm/**"],
-              importNames: ["leads", "clients", "contacts"],
+              importNames: ["leads", "clients", "contacts", "crmOrganizations"],
               message:
                 "The legacy identity tables are being retired. Resolve through the Party seam instead — see src/modules/party/party-legacy-seam.ts.",
             },

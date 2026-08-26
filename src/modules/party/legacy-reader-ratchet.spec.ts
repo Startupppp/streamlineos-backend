@@ -71,6 +71,31 @@ describe("the legacy identity tables gain no new readers", () => {
   // what is left here is `contacts.lead_id` and `contacts.deal_id`, the
   // associations that scope a contact and that Party has no column for yet.
   "src/modules/search/search.service.ts",
+
+  // ---------------------------------------------------------------------
+  // Revealed by widening the detection, not added by anyone.
+  //
+  // These read a legacy table through a relational `with:` include or raw SQL,
+  // so the symbol-import scan above never saw them. They have been there the
+  // whole time. Recording them is the same move ticket 25 made when
+  // `crm_organizations` turned out to be the fifth identity table: the list
+  // grows because what is *watched* grew, never because a rule was relaxed.
+  //
+  // Six are live, in modules that have never heard of this phase, which is
+  // exactly why nobody counted them. Each reads a customer's name off the
+  // mirror while the party id sits on the same row -- `deals.party_id` is
+  // already written, so most of these are a projection change, not a migration.
+  // They are the real remaining cost of ticket 08's DROP.
+  "src/modules/clients/client-accounts.service.ts",
+  "src/modules/crm/metadata/crm-data-quality.service.ts",
+  "src/modules/csat/csat.service.ts",
+  "src/modules/inventory/sales-orders/so-core.service.ts",
+  "src/modules/invoices/invoices.service.ts",
+  "src/modules/support/core/support-tickets.service.ts",
+  // Two tests: a mocked db shaped like the old query, and a seam test that
+  // names the tables it backfills. Both go when the tables do.
+  "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
+  "src/modules/party/party-legacy-backfill.db.spec.ts",
   ];
 
   /** Import of the Drizzle table symbol, which is how a read actually begins. */
@@ -79,6 +104,67 @@ describe("the legacy identity tables gain no new readers", () => {
     "gs",
   );
   const LEGACY_TABLES = new Set(["leads", "clients", "contacts", "crmOrganizations"]);
+
+  /*
+    A symbol import is how a read *usually* begins, and for a long time this file
+    assumed it was the only way. It is not, and the two vectors it missed are the
+    ones a migration is least likely to notice.
+
+    A relational include -- `db.query.deals.findMany({ with: { client: true } })`
+    -- resolves through a relation declared in the schema, so the call site names
+    neither the table nor its symbol and reads the whole legacy row anyway. Raw
+    SQL does the same thing more plainly. Both were invisible here, and both are
+    live: the census that found them is in the phase 2 audit, and it moved the
+    non-seam reader count from 11 to 18.
+
+    These are matched textually, which is coarse -- `FROM leads` inside a string
+    that is not SQL would match. Coarse in this direction is the right error:
+    a false positive costs an argument in review, a false negative costs a table
+    that cannot be dropped and nobody knows why.
+  */
+  const LEGACY_RELATIONS = new Set(["client", "lead", "contact", "organization"]);
+  const RELATIONAL_INCLUDE = new RegExp(
+    String.raw`\bwith\s*:\s*\{[^}]*\b(${[...LEGACY_RELATIONS].join("|")})\s*:`,
+    "gs",
+  );
+  const LEGACY_SQL_TABLES = ["leads", "clients", "contacts", "crm_organizations"];
+  const RAW_SQL_READ = new RegExp(
+    String.raw`\b(?:FROM|JOIN)\s+"?(${LEGACY_SQL_TABLES.join("|")})"?\b`,
+    "gis",
+  );
+  const DB_QUERY_ACCESS = new RegExp(
+    String.raw`\bdb\.query\.(leads|clients|contacts|crmOrganizations)\b`,
+    "gs",
+  );
+
+  /*
+    Comments are stripped first, and this is not a nicety.
+
+    Half of this phase's work is files that describe the read they removed --
+    `dashboard-crm.service.ts` and `plan-limits.service.ts` both carry a comment
+    naming the table they no longer touch. Matching prose would report a migrated
+    file as a reader, and a debt register that counts finished work never reaches
+    zero. `backfill-slugs-exist.spec.ts` strips for the same reason.
+  */
+  const executable = (source: string): string =>
+    source
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .split("\n")
+      .map((line) => line.replace(/\/\/.*$/, ""))
+      .join("\n");
+
+  /** Every way this file knows of to reach a legacy identity table. */
+  function readsLegacy(rawSource: string): boolean {
+    const source = executable(rawSource);
+    for (const match of source.matchAll(LEGACY_IMPORT))
+      for (const raw of match[1]!.split(","))
+        if (LEGACY_TABLES.has(raw.split(" as ")[0]!.trim())) return true;
+    return (
+      RELATIONAL_INCLUDE.test(source) ||
+      RAW_SQL_READ.test(source) ||
+      DB_QUERY_ACCESS.test(source)
+    );
+  }
 
   function readersInTree(): string[] {
     /*
@@ -95,15 +181,18 @@ describe("the legacy identity tables gain no new readers", () => {
       .split("\n")
       // Tracked-but-deleted paths are still listed, and another session is
       // mid-refactor in this tree, so existence is checked rather than assumed.
-      .filter((f) => f && !f.includes("db/schema/") && existsSync(f));
+      .filter(
+        (f) =>
+          f &&
+          !f.includes("db/schema/") &&
+          // The guard names every table and relation it looks for, so it matches
+          // itself by construction. Excluding it is not a loophole: nothing in
+          // here queries anything.
+          !f.endsWith("legacy-reader-ratchet.spec.ts") &&
+          existsSync(f),
+      );
 
-    return tracked.filter((file) => {
-      const source = readFileSync(file, "utf8");
-      for (const match of source.matchAll(LEGACY_IMPORT))
-        for (const raw of match[1]!.split(","))
-          if (LEGACY_TABLES.has(raw.split(" as ")[0]!.trim())) return true;
-      return false;
-    });
+    return tracked.filter((file) => readsLegacy(readFileSync(file, "utf8")));
   }
 
   it("has no reader that is not already known", () => {
