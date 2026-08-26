@@ -97,3 +97,25 @@ export function isPlaceable(
 ): boolean {
   return configuredRegions.includes(placement.region);
 }
+
+/**
+ * What to tell a prospect about where their data would live.
+ *
+ * Every European evaluation asks this before it asks anything else, and the
+ * answer has to be available without a login -- a compliance review that has to
+ * contact us to find out where data rests is a review that stalls.
+ */
+export interface ResidencyOption {
+  readonly region: PlacementRegion;
+  readonly description: string;
+  /** Example countries placed here, so a reader can locate themselves. */
+  readonly examples: readonly string[];
+}
+
+export function residencyOptions(): ResidencyOption[] {
+  return [
+    { region: "eu", description: DESCRIPTIONS.eu, examples: ["Germany", "France", "Ireland", "Netherlands"] },
+    { region: "us", description: DESCRIPTIONS.us, examples: ["United States", "Canada", "Mexico"] },
+    { region: "india", description: DESCRIPTIONS.india, examples: ["India", "Sri Lanka", "Bangladesh"] },
+  ];
+}

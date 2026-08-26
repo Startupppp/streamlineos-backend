@@ -30,6 +30,8 @@ const TIERS: Record<string, Tier> = {
   // prefetching the link, bounded against enumeration.
   "notifications:unsubscribe": { limit: 30, windowSecs: 60 },
   "public:contact": { limit: 5, windowSecs: 3600 },
+  // Read-only marketing reads. Generous: an evaluation reloads a pricing page.
+  "public:pricing": { limit: 120, windowSecs: 60 },
   // The subprocessor register is @Public() because the people who read it are a
   // prospect's counsel and a customer's compliance officer, who have no login.
   // The read is generous; the subscribe is an unauthenticated write taking an

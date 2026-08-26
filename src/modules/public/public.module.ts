@@ -12,11 +12,12 @@ import { PublicFormsService } from "./public-forms.service";
 import { ContactService } from "./contact.service";
 import { WaitlistService } from "./waitlist.service";
 import { TurnstileService } from "../../common/security/turnstile.service";
+import { PublicPricingService } from "./pricing.service";
 
 @Module({
   imports: [CrmAutomationStudioModule, BillingModule],
   controllers: [PublicController],
-  providers: [
+  providers: [PublicPricingService, 
     RecruitmentService,
     RoadmapService,
     KbService,
