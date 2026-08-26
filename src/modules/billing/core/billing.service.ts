@@ -110,6 +110,12 @@ export class BillingService {
 
     const order = await this.razorpay.createOrder({
       amount,
+      // Stated rather than defaulted. The plan catalogue prices in four
+      // currencies now, but the charge is still INR because Razorpay is the only
+      // provider configured; this is one of exactly two places that becomes
+      // tenant-aware when a second provider lands, and it is visible here rather
+      // than hidden behind a `??` in the adapter.
+      currency: "INR",
       receipt: `sub_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
       notes: { orgId, plan, userId, billingCycle },
     });
@@ -437,6 +443,9 @@ export class BillingService {
       if (!pack) throw new BadRequestException("AI credit pack not found");
       const order = await this.razorpay.createOrder({
         amount: pack.priceInPaise * quantity,
+        // The second of the two sites that becomes tenant-aware with a second
+        // provider. The pack price is already denominated in paise by name.
+        currency: "INR",
         receipt: `aip_${packId}_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
         notes: {
           orgId: String(orgId),

@@ -49,7 +49,7 @@ export class RazorpayService implements PlatformPaymentProvider {
       },
       body: JSON.stringify({
         amount: params.amount,
-        currency: params.currency ?? "INR",
+        currency: params.currency,
         receipt: params.receipt,
         notes: params.notes,
       }),

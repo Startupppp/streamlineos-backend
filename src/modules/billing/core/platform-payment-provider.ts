@@ -39,11 +39,14 @@ export interface CreatePlatformOrderParams {
   readonly receipt: string;
   readonly notes: Record<string, string>;
   /**
-   * ISO 4217. Optional only so extraction changes no behaviour -- the previous
-   * implementation hardcoded INR in the request body. Ticket 03 makes every
-   * caller pass it explicitly and removes the default.
+   * ISO 4217, and required.
+   *
+   * It was briefly optional with an INR default, which is what ticket 01
+   * inherited from a hardcoded literal in the request body. A default here is
+   * the currency bug with a longer fuse: a caller that forgets charges rupees to
+   * somebody who was quoted dollars, and nothing in the type says so.
    */
-  readonly currency?: string;
+  readonly currency: string;
 }
 
 export interface PlatformPaymentProvider {
