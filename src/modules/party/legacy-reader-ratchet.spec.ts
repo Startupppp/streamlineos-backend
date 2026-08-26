@@ -4,8 +4,8 @@ import { execSync } from "node:child_process";
 /**
  * A ratchet over the identity migration, held while it is in progress.
  *
- * Phase 2 moves every reader of `leads`, `clients` and `contacts` onto Party and
- * then drops those tables. That runs as five independent batches over five
+ * Phase 2 moves every reader of `leads`, `clients`, `contacts` and
+ * `crm_organizations` onto Party and then drops those tables. That runs as five independent batches over five
  * modules, so for most of the phase the old tables still exist and still work —
  * which is exactly the window in which somebody adds a fifty-first call site in
  * good faith and nothing complains.
@@ -22,13 +22,18 @@ import { execSync } from "node:child_process";
  *   - a file ON the list that no longer imports one also fails, so the list
  *     cannot rot into a stale allowlist that quietly permits anything.
  *
- * When it reaches zero, `contacts`, `clients` and `leads` have no readers left
- * and ticket 08 can drop them.
+ * When it reaches zero, `contacts`, `clients`, `leads` and `crm_organizations`
+ * have no readers left and ticket 08 can drop them.
+ *
+ * The list grew ONCE, in ticket 25, when `crm_organizations` turned out to be the
+ * fifth identity table and joined the ratchet with the readers it already had.
+ * That is a widening of what is watched, not a relaxation of it, and it may not
+ * happen again: from here the list only shrinks.
  */
 describe("the legacy identity tables gain no new readers", () => {
   /**
-   * Every file importing `leads`, `clients` or `contacts` from the schema, as of
-   * the start of Phase 2. Delete lines as each migrate batch lands; never add one.
+   * Every file importing `leads`, `clients`, `contacts` or `crm_organizations`
+   * from the schema. Delete lines as each migrate batch lands; never add one.
    */
   const KNOWN_READERS = [
   "src/modules/clients/clients.service.ts",
@@ -36,8 +41,12 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/contacts/contacts.service.ts",
   "src/modules/crm/core/crm-customer360-sections.service.ts",
   "src/modules/crm/core/crm-customer360.service.ts",
-  "src/modules/crm/core/crm-org-merge.service.ts",
   "src/modules/crm/core/crm-organizations.service.ts",
+  // The account hierarchy: `crm_organizations.parent_id` is a company-to-company
+  // link Party deliberately did not absorb into `employer_party_id`, because a
+  // subsidiary's parent is not its employer. It is the last thing keeping this
+  // file on the list.
+  "src/modules/crm/core/crm-organizations-insights.service.ts",
   "src/modules/cron/cron-weekly-recap.service.ts",
   "src/modules/inventory/returns/customer-returns.service.ts",
   "src/modules/leads/leads.controller.e2e-spec.ts",
@@ -49,8 +58,10 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/party/party-divergence.service.ts",
   "src/modules/party/party-legacy-clients.ts",
   "src/modules/party/party-legacy-contacts.ts",
+  "src/modules/party/party-legacy-employer.ts",
   "src/modules/party/party-legacy-leads.ts",
   "src/modules/party/party-legacy-mirror.spec.ts",
+  "src/modules/party/party-legacy-orgs.ts",
   "src/modules/party/party-legacy-seam.ts",
   "src/modules/party/party-legacy-writer.db.spec.ts",
   "src/modules/party/party-legacy-writer.spec.ts",
@@ -67,7 +78,7 @@ describe("the legacy identity tables gain no new readers", () => {
     String.raw`import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*['"]([^'"]*(?:db/schema|schema/crm)[^'"]*)['"]`,
     "gs",
   );
-  const LEGACY_TABLES = new Set(["leads", "clients", "contacts"]);
+  const LEGACY_TABLES = new Set(["leads", "clients", "contacts", "crmOrganizations"]);
 
   function readersInTree(): string[] {
     /*

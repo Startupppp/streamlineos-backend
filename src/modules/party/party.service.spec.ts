@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { PartyService } from "./party.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
@@ -12,6 +13,7 @@ const PARTY_ID = "party-uuid-1";
 const CONTACT_ID = "contact-uuid-1";
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
+const mockCache = { invalidateNamespace: jest.fn() } as unknown as CacheService;
 
 function makeParty(overrides: Record<string, unknown> = {}) {
   return {
@@ -93,6 +95,9 @@ describe("PartyService", () => {
         PartyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
+        // Companies are cached under the CRM namespaces since ticket 25 made
+        // `/crm/organizations` this list under a filter; a write here bumps them.
+        { provide: CacheService, useValue: mockCache },
         // A plan with room. Ticket 07 made `createParty` assert one, and every
         // test here predates that and is about something else; the limit's own
         // behaviour is asserted next to the guard rather than smuggled in as a

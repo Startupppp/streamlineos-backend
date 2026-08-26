@@ -80,6 +80,12 @@ const PARTY: PartyRow = {
   churnRiskScore: null,
   churnRiskReasoning: null,
   tags: [],
+  partyKind: null,
+  employerPartyId: null,
+  domain: null,
+  industry: null,
+  companySize: null,
+  description: null,
   deletedAt: null,
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   updatedAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -293,9 +299,10 @@ describe("party-legacy-writer — the party is written first, in one transaction
 
     expect(fake.trace()).toEqual([
       "update:party@1",
-      // All three maps are asked, because a merge can leave one party answering
-      // for a lead, a client and a contact at once.
+      // All four maps are asked, because a merge can leave one party answering
+      // for a lead, a client, a contact and a company at once.
       "select:leadMap@1",
+      "select:other@1",
       "select:other@1",
       "select:other@1",
       "update:leads@1",

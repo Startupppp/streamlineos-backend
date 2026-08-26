@@ -16,7 +16,9 @@ jest.mock("./party-legacy-seam", () => ({
   ...jest.requireActual("./party-legacy-seam"),
   // Its own query builds a `NOT EXISTS` correlated subquery, which a chain fake
   // cannot stand in for. Its behaviour is covered by `party-legacy-seam.spec.ts`.
-  countUnmappedLegacyRows: jest.fn().mockResolvedValue({ LEAD: 2, CLIENT: 0, CONTACT: 0 }),
+  countUnmappedLegacyRows: jest
+    .fn()
+    .mockResolvedValue({ LEAD: 2, CLIENT: 0, CONTACT: 0, ORGANISATION: 0 }),
 }));
 
 const ORG = "org-1";
@@ -70,6 +72,12 @@ const PARTY: PartyRow = {
   churnRiskScore: null,
   churnRiskReasoning: null,
   tags: [],
+  partyKind: null,
+  employerPartyId: null,
+  domain: null,
+  industry: null,
+  companySize: null,
+  description: null,
   deletedAt: null,
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   updatedAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -81,8 +89,9 @@ interface Fake {
 }
 
 /**
- * One queued answer per terminal `.limit(...)`: the LEAD, CLIENT and CONTACT
- * scans in that order, then the deleted-client sweep.
+ * One queued answer per terminal `.limit(...)`: the LEAD, CLIENT, CONTACT and
+ * ORGANISATION scans in that order, then the deleted-client sweep, then the
+ * employer check.
  */
 function fakeDb(answers: unknown[][]): Fake {
   let next = 0;
@@ -108,11 +117,11 @@ function leadRow(overrides: Record<string, unknown> = {}) {
 
 describe("PartyDivergenceService", () => {
   it("reports a legacy row that disagrees, and names the party column behind it", async () => {
-    const { db, writes } = fakeDb([[leadRow({ designation: "Stale Title" })], [], [], []]);
+    const { db, writes } = fakeDb([[leadRow({ designation: "Stale Title" })], [], [], [], [], []]);
 
     const report = await new PartyDivergenceService(db).report(ORG);
 
-    expect(report.divergentCount).toEqual({ LEAD: 1, CLIENT: 0, CONTACT: 0 });
+    expect(report.divergentCount).toEqual({ LEAD: 1, CLIENT: 0, CONTACT: 0, ORGANISATION: 0 });
     expect(report.divergent).toEqual([
       {
         kind: "LEAD",
@@ -132,28 +141,28 @@ describe("PartyDivergenceService", () => {
   });
 
   it("reports nothing when the mirror still derives from its party", async () => {
-    const { db, writes } = fakeDb([[leadRow()], [], [], []]);
+    const { db, writes } = fakeDb([[leadRow()], [], [], [], [], []]);
 
     const report = await new PartyDivergenceService(db).report(ORG);
 
     expect(report.divergent).toEqual([]);
-    expect(report.scanned).toEqual({ LEAD: 1, CLIENT: 0, CONTACT: 0 });
+    expect(report.scanned).toEqual({ LEAD: 1, CLIENT: 0, CONTACT: 0, ORGANISATION: 0 });
     expect(writes).not.toHaveBeenCalled();
   });
 
   it("carries the unmapped counts, which are a different failure from divergence", async () => {
-    const { db } = fakeDb([[], [], [], []]);
+    const { db } = fakeDb([[], [], [], [], [], []]);
 
     const report = await new PartyDivergenceService(db).report(ORG);
 
     // A row with no party at all is not a stale mirror; 0241 made that
     // impossible for everything that existed, so a count here means rows
     // arrived out of band.
-    expect(report.unmapped).toEqual({ LEAD: 2, CLIENT: 0, CONTACT: 0 });
+    expect(report.unmapped).toEqual({ LEAD: 2, CLIENT: 0, CONTACT: 0, ORGANISATION: 0 });
   });
 
   it("lists a deleted party's client mirror separately, because no write can fix it", async () => {
-    const { db, writes } = fakeDb([[], [], [], [{ legacyId: 3, partyId: "party-1" }]]);
+    const { db, writes } = fakeDb([[], [], [], [], [{ legacyId: 3, partyId: "party-1" }], []]);
 
     const report = await new PartyDivergenceService(db).report(ORG);
 
@@ -170,12 +179,17 @@ describe("PartyDivergenceService", () => {
   });
 
   it("says where to resume when a kind fills the scan window", async () => {
-    const { db } = fakeDb([[leadRow()], [], [], []]);
+    const { db } = fakeDb([[leadRow()], [], [], [], [], []]);
 
     const report = await new PartyDivergenceService(db).report(ORG, { limit: 1 });
 
     expect(report.truncated).toBe(true);
-    expect(report.nextAfter).toEqual({ LEAD: 7, CLIENT: null, CONTACT: null });
+    expect(report.nextAfter).toEqual({
+      LEAD: 7,
+      CLIENT: null,
+      CONTACT: null,
+      ORGANISATION: null,
+    });
   });
 
   it("scans only the kind it was asked for", async () => {
@@ -183,7 +197,7 @@ describe("PartyDivergenceService", () => {
 
     const report = await new PartyDivergenceService(db).report(ORG, { kinds: ["LEAD"] });
 
-    expect(report.scanned).toEqual({ LEAD: 1, CLIENT: 0, CONTACT: 0 });
+    expect(report.scanned).toEqual({ LEAD: 1, CLIENT: 0, CONTACT: 0, ORGANISATION: 0 });
     expect(report.divergentCount.LEAD).toBe(1);
   });
 
@@ -194,6 +208,72 @@ describe("PartyDivergenceService", () => {
       LEAD: mirroredColumns("LEAD"),
       CLIENT: mirroredColumns("CLIENT"),
       CONTACT: mirroredColumns("CONTACT"),
+      ORGANISATION: mirroredColumns("ORGANISATION"),
     });
+  });
+
+  /**
+   * The one mirrored value the offline diff cannot check.
+   *
+   * `contacts.organization_id` is an integer company id and `employer_party_id`
+   * is a party id, so settling them needs `crm_org_party_map` -- a query, which a
+   * `MirrorCell` deliberately is not. Leaving it unchecked would put the blind
+   * spot exactly where drift is most likely: every other mirrored column is a
+   * copy and this one is a conversion.
+   */
+  it("reports an employer the legacy column disagrees with, and still writes nothing", async () => {
+    const { db, writes } = fakeDb([
+      [],
+      [],
+      [],
+      [],
+      [],
+      [
+        {
+          contactId: 11,
+          partyId: "party-1",
+          employerPartyId: "party-acme",
+          legacyOrganizationId: 4,
+          expectedOrganizationId: 9,
+        },
+      ],
+    ]);
+
+    const report = await new PartyDivergenceService(db).report(ORG);
+
+    expect(report.employerDisagreements).toEqual([
+      {
+        contactId: 11,
+        partyId: "party-1",
+        employerPartyId: "party-acme",
+        legacyOrganizationId: 4,
+        expectedOrganizationId: 9,
+        reason: expect.stringContaining("crm_org_party_map"),
+      },
+    ]);
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it("says so when the employer is a party the legacy column cannot name", async () => {
+    const { db } = fakeDb([
+      [],
+      [],
+      [],
+      [],
+      [],
+      [
+        {
+          contactId: 12,
+          partyId: "party-2",
+          employerPartyId: "party-native-company",
+          legacyOrganizationId: null,
+          expectedOrganizationId: null,
+        },
+      ],
+    ]);
+
+    const report = await new PartyDivergenceService(db).report(ORG);
+
+    expect(report.employerDisagreements[0]?.reason).toContain("no crm_organizations row");
   });
 });

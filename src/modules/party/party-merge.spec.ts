@@ -10,14 +10,21 @@ import {
 import { PartyMergeService } from "./party-merge.service";
 
 /**
- * Merging two records that turn out to be one person has to leave *both* legacy
- * identifiers resolving — to the survivor. Phase 1's merge is the only mechanism
- * for that, so the map rows move with everything else the merge moves, and the
- * snapshot carries them back on a revert.
+ * The two things a merge has to get right, over one database double.
  *
- * The alternative, walking the merge ledger at resolution time, is a second
+ * **Legacy identifiers.** Merging two records that turn out to be one person has
+ * to leave *both* legacy identifiers resolving — to the survivor. Phase 1's
+ * merge is the only mechanism for that, so the map rows move with everything
+ * else the merge moves, and the snapshot carries them back on a revert. The
+ * alternative, walking the merge ledger at resolution time, is a second
  * mechanism that has to agree with the first forever. These tests are what says
  * we did not build it.
+ *
+ * **Which record survives.** The default keeps the older one; a caller who was
+ * asked may name the survivor instead. That distinction is load-bearing on a
+ * destructive action and is easy to lose in a refactor — ticket 25 lost it once
+ * already, by routing a dialog that asks the user to pick through a service that
+ * ignored the answer.
  */
 
 interface Write {
@@ -237,5 +244,87 @@ describe("PartyMergeService and legacy identifiers", () => {
       new PartyMergeService(db, audit).revert("org-1", "merge-0"),
     ).resolves.toMatchObject({ restoredPartyId: "party-new" });
     expect(updatesTo(recorded, leadPartyMap)).toEqual([]);
+  });
+});
+
+describe("PartyMergeService and which record survives", () => {
+  let recorded: Recorded;
+
+  beforeEach(() => {
+    recorded = { updates: [], inserts: [], deletes: [] };
+    (audit.logCritical as unknown as jest.Mock).mockReset();
+  });
+
+  /** The one row that records the decision, whichever way it went. */
+  const mergeRecordIn = (recorded: Recorded): Record<string, unknown> =>
+    recorded.inserts.filter((write) => write.table === partyMerges)[0]?.values ?? {};
+
+  const queue = (): Record<string, unknown>[][] => [
+    [survivor],
+    [loser],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+  ];
+
+  it("keeps the older record when nobody was asked", async () => {
+    const db = fakeDb(queue(), recorded);
+
+    const outcome = await new PartyMergeService(db, audit).merge("org-1", {
+      leftPartyId: "party-old",
+      rightPartyId: "party-new",
+      decidedBy: "SYSTEM",
+    });
+
+    expect(outcome.survivorPartyId).toBe("party-old");
+    expect(mergeRecordIn(recorded).survivorPartyId).toBe("party-old");
+  });
+
+  /**
+   * The regression this file is named for. `party-new` is the *younger* record,
+   * so `chooseSurvivor` would discard it — and `planMerge` resolves every field
+   * conflict in the survivor's favour, so discarding it means handing the older
+   * stub's name and domain to the record the user was looking straight at, and
+   * reporting success.
+   */
+  it("keeps the record the caller nominated, even when it is the younger one", async () => {
+    const db = fakeDb(queue(), recorded);
+
+    const outcome = await new PartyMergeService(db, audit).merge("org-1", {
+      leftPartyId: "party-old",
+      rightPartyId: "party-new",
+      decidedBy: "USER",
+      userId: "u-1",
+      preferSurvivorPartyId: "party-new",
+    });
+
+    expect(outcome.survivorPartyId).toBe("party-new");
+    expect(mergeRecordIn(recorded).survivorPartyId).toBe("party-new");
+  });
+
+  /**
+   * Rejected rather than ignored. A nomination naming neither side is a caller
+   * bug, and the merge is destructive — falling back to the default here would
+   * carry out a different merge than the one that was asked for, which is the
+   * exact failure the option exists to prevent.
+   */
+  it("refuses a nomination that names neither party", async () => {
+    const db = fakeDb(queue(), recorded);
+
+    await expect(
+      new PartyMergeService(db, audit).merge("org-1", {
+        leftPartyId: "party-old",
+        rightPartyId: "party-new",
+        decidedBy: "USER",
+        preferSurvivorPartyId: "party-somewhere-else",
+      }),
+    ).rejects.toThrow(/must name one of the two parties/);
+
+    expect(recorded.inserts.filter((write) => write.table === partyMerges)).toEqual([]);
   });
 });

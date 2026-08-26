@@ -6,6 +6,7 @@ import {
   businessParties,
   clientPartyMap,
   contactPartyMap,
+  crmOrgPartyMap,
   leadPartyMap,
   partyContacts,
   partyDuplicateCandidates,
@@ -21,6 +22,7 @@ import {
   type IdentifierClaim,
 } from "./party-identifiers";
 import { chooseSurvivor, orderPair, planMerge } from "./party-merge-plan";
+import { refreshEmployerColumns, repointEmployerParties } from "./party-legacy-employer";
 import {
   refreshPartyMirrors,
   restorePartyWithMirror,
@@ -42,6 +44,16 @@ interface MergeSnapshot {
    */
   movedIdentifierIds?: string[];
   /**
+   * Parties whose employer was the losing record, handed to the survivor.
+   *
+   * When two company records turn out to be one, the people who work at the
+   * loser work at the survivor — the retired `crm-org-merge.service` did the
+   * same re-point one level down, on `contacts.organization_id`, and could not
+   * undo it. Optional for the same reason as the two above: merges recorded
+   * before ticket 25 have no such key.
+   */
+  movedEmployeePartyIds?: string[];
+  /**
    * Legacy identifiers re-pointed onto the survivor, per kind.
    *
    * Optional because merges recorded before the expand step have no such
@@ -54,9 +66,17 @@ interface LegacyIdsByKind {
   lead: number[];
   client: number[];
   contact: number[];
+  /**
+   * `crm_organizations` ids, optional where the other three are not.
+   *
+   * Merges recorded before ticket 25 have no such key in their snapshot, and a
+   * revert has to read those snapshots too — the same reason `movedLegacyIds`
+   * itself is optional one level up.
+   */
+  organisation?: number[];
 }
 
-const NO_LEGACY_IDS: LegacyIdsByKind = { lead: [], client: [], contact: [] };
+const NO_LEGACY_IDS: LegacyIdsByKind = { lead: [], client: [], contact: [], organisation: [] };
 
 export interface MergeOutcome {
   partyMergeId: string;
@@ -116,6 +136,18 @@ export class PartyMergeService {
    * `decidedBy` distinguishes a merge the detector was confident enough to make
    * on its own from one a human confirmed, because the two deserve different
    * scrutiny when someone reviews what happened.
+   *
+   * `preferSurvivorPartyId` names the record that must survive, and is for the
+   * screens where a person chose one. Without it `chooseSurvivor` keeps the
+   * older record, which is the right default for a merge nobody was asked
+   * about; it is the wrong answer when somebody was, because the dialog exists
+   * precisely to make that choice and `planMerge` gives the survivor's field
+   * values priority. Silently keeping the other one hands a stale stub's name
+   * and domain to a record the user was looking straight at.
+   *
+   * The identifier-stability argument behind older-wins does not apply once a
+   * legacy map exists: `repointLegacyIds` moves the loser's ids onto the
+   * survivor, so an old id in a bookmark or a foreign key resolves either way.
    */
   async merge(
     organizationId: string,
@@ -124,6 +156,7 @@ export class PartyMergeService {
       rightPartyId: string;
       decidedBy: "SYSTEM" | "USER";
       userId?: string;
+      preferSurvivorPartyId?: string;
     },
   ): Promise<MergeOutcome> {
     if (input.leftPartyId === input.rightPartyId)
@@ -138,10 +171,19 @@ export class PartyMergeService {
     // absent, or the response confirms it exists.
     if (!left || !right) throw new NotFoundException("Party not found");
 
-    const { survivor: survivorId, merged: mergedId } = chooseSurvivor(
-      { partyId: left.partyId, createdAt: left.createdAt },
-      { partyId: right.partyId, createdAt: right.createdAt },
-    );
+    const preferred = input.preferSurvivorPartyId;
+    if (preferred && preferred !== left.partyId && preferred !== right.partyId)
+      throw new BadRequestException("preferSurvivorPartyId must name one of the two parties");
+
+    const { survivor: survivorId, merged: mergedId } = preferred
+      ? {
+          survivor: preferred,
+          merged: preferred === left.partyId ? right.partyId : left.partyId,
+        }
+      : chooseSurvivor(
+          { partyId: left.partyId, createdAt: left.createdAt },
+          { partyId: right.partyId, createdAt: right.createdAt },
+        );
     const survivor = survivorId === left.partyId ? left : right;
     const loser = survivorId === left.partyId ? right : left;
 
@@ -165,6 +207,18 @@ export class PartyMergeService {
     const addedRoles = loserRoles.filter((role) => !survivorRoles.includes(role));
     const movedContactIds = loserContacts.map((contact) => contact.partyContactId);
     const movedLegacyIds = await this.legacyIdsOf(organizationId, mergedId);
+
+    /*
+     * Before the soft delete below, and recorded, so the revert can hand them
+     * back. Not `ON DELETE CASCADE`'s problem either way: the loser is
+     * soft-deleted, so nothing at the database level would ever fire.
+     */
+    const movedEmployeePartyIds = await repointEmployerParties(
+      this.db,
+      organizationId,
+      mergedId,
+      survivorId,
+    );
 
     /**
      * Read before the move below, which is the only moment the two sides still
@@ -208,6 +262,7 @@ export class PartyMergeService {
       addedRoles,
       movedLegacyIds,
       movedIdentifierIds,
+      movedEmployeePartyIds,
     };
 
     if (Object.keys(plan.survivorPatch).length > 0 || plan.customFields)
@@ -236,6 +291,11 @@ export class PartyMergeService {
     // After the re-point, not before it: the survivor has just inherited legacy
     // rows it has never derived, and they still hold the loser's values.
     await refreshPartyMirrors(this.db, organizationId, survivorId);
+
+    // The employees' own mirrors: `contacts.organization_id` still names the
+    // company this merge just removed. One statement rather than one call per
+    // person, which matters at the size a merge of two big accounts reaches.
+    await refreshEmployerColumns(this.db, organizationId, movedEmployeePartyIds);
 
     if (addedRoles.length > 0)
       await this.db
@@ -369,6 +429,20 @@ export class PartyMergeService {
       record.mergedPartyId,
     );
 
+    const movedEmployeePartyIds = snapshot.movedEmployeePartyIds ?? [];
+    if (movedEmployeePartyIds.length > 0) {
+      await this.db
+        .update(businessParties)
+        .set({ employerPartyId: record.mergedPartyId })
+        .where(
+          and(
+            eq(businessParties.organizationId, organizationId),
+            inArray(businessParties.partyId, movedEmployeePartyIds),
+          ),
+        );
+      await refreshEmployerColumns(this.db, organizationId, movedEmployeePartyIds);
+    }
+
     // Both sides, after the ids move back: the restored party has re-acquired
     // legacy rows the survivor was deriving a moment ago.
     await refreshPartyMirrors(this.db, organizationId, record.mergedPartyId);
@@ -414,7 +488,7 @@ export class PartyMergeService {
     organizationId: string,
     partyId: string,
   ): Promise<LegacyIdsByKind> {
-    const [lead, client, contact] = await Promise.all([
+    const [lead, client, contact, organisation] = await Promise.all([
       this.db
         .select({ id: leadPartyMap.leadId })
         .from(leadPartyMap)
@@ -442,12 +516,22 @@ export class PartyMergeService {
             eq(contactPartyMap.partyId, partyId),
           ),
         ),
+      this.db
+        .select({ id: crmOrgPartyMap.crmOrganizationId })
+        .from(crmOrgPartyMap)
+        .where(
+          and(
+            eq(crmOrgPartyMap.organizationId, organizationId),
+            eq(crmOrgPartyMap.partyId, partyId),
+          ),
+        ),
     ]);
 
     return {
       lead: lead.map((row) => row.id),
       client: client.map((row) => row.id),
       contact: contact.map((row) => row.id),
+      organisation: organisation.map((row) => row.id),
     };
   }
 
@@ -486,6 +570,21 @@ export class PartyMergeService {
           and(
             eq(contactPartyMap.organizationId, organizationId),
             inArray(contactPartyMap.contactId, ids.contact),
+          ),
+        );
+
+    // The `crm_organizations` ids the loser answered for. This is what retires
+    // `crm_organizations.merged_into_id` as a mechanism: an old company id keeps
+    // resolving because its map row moved, not because a second merge table
+    // recorded a pointer nothing can undo.
+    if (ids.organisation && ids.organisation.length > 0)
+      await this.db
+        .update(crmOrgPartyMap)
+        .set({ partyId })
+        .where(
+          and(
+            eq(crmOrgPartyMap.organizationId, organizationId),
+            inArray(crmOrgPartyMap.crmOrganizationId, ids.organisation),
           ),
         );
   }

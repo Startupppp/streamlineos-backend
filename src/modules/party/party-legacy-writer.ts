@@ -4,20 +4,23 @@ import {
   businessParties,
   clientPartyMap,
   contactPartyMap,
+  crmOrgPartyMap,
   leadPartyMap,
   partyRoles,
 } from "../../db/schema/party";
-import { clients, contacts } from "../../db/schema/crm/contacts";
+import { clients, contacts, crmOrganizations } from "../../db/schema/crm/contacts";
 import { leads } from "../../db/schema/crm/leads";
 import {
   CLIENT_MIRROR,
   CONTACT_MIRROR,
   LEAD_MIRROR,
+  ORGANISATION_MIRROR,
   type PartyPatch,
   type PartyRow,
 } from "./party-legacy-mirror";
 import type { MappedLegacyKind } from "./party-legacy-seam";
 import { claimIdentifiers, claimsOfPatch, identifierClaimsOfColumns } from "./party-identifiers";
+import { employerLegacyIds } from "./party-legacy-employer";
 
 /**
  * The shared half of the Party-first write, and the Party surface itself.
@@ -59,12 +62,24 @@ export type ContactRow = typeof contacts.$inferSelect;
 export type LeadInsert = typeof leads.$inferInsert;
 export type ClientInsert = typeof clients.$inferInsert;
 export type ContactInsert = typeof contacts.$inferInsert;
+export type CrmOrgRow = typeof crmOrganizations.$inferSelect;
+export type CrmOrgInsert = typeof crmOrganizations.$inferInsert;
 
-/** What 0241 gave the backfilled rows; new rows get the same, for the same reason. */
-const ROLE_FOR_KIND: Record<MappedLegacyKind, string> = {
+/**
+ * What 0241 gave the backfilled rows; new rows get the same, for the same reason.
+ *
+ * `ORGANISATION` gets none, and the null is the decision rather than an omission.
+ * A `party_roles` row says what a party is *to us* — prospect, customer, vendor
+ * — and a company record says no such thing: `crm_organizations` is a company
+ * that exists, not a relationship we have with it. The CUSTOMER role arrives with
+ * a deal or an invoice, from whichever module records that. Granting one here
+ * would put every company anybody ever typed into the customer list.
+ */
+const ROLE_FOR_KIND: Record<MappedLegacyKind, string | null> = {
   LEAD: "PROSPECT",
   CLIENT: "CUSTOMER",
   CONTACT: "CONTACT",
+  ORGANISATION: null,
 };
 
 export interface MirrorWriteOptions {
@@ -162,9 +177,11 @@ export async function grantRole(
   kind: MappedLegacyKind,
   assignedBy: string,
 ): Promise<void> {
+  const role = ROLE_FOR_KIND[kind];
+  if (!role) return;
   await db
     .insert(partyRoles)
-    .values({ organizationId, partyId, role: ROLE_FOR_KIND[kind], assignedBy })
+    .values({ organizationId, partyId, role, assignedBy })
     .onConflictDoNothing();
 }
 
@@ -275,7 +292,7 @@ async function refreshMirrorsOfParty(
   organizationId: string,
   party: PartyRow,
 ): Promise<void> {
-  const [leadRows, clientRows, contactRows] = await Promise.all([
+  const [leadRows, clientRows, contactRows, orgRows] = await Promise.all([
     db
       .select({ id: leadPartyMap.leadId })
       .from(leadPartyMap)
@@ -303,6 +320,15 @@ async function refreshMirrorsOfParty(
           eq(contactPartyMap.partyId, party.partyId),
         ),
       ),
+    db
+      .select({ id: crmOrgPartyMap.crmOrganizationId })
+      .from(crmOrgPartyMap)
+      .where(
+        and(
+          eq(crmOrgPartyMap.organizationId, organizationId),
+          eq(crmOrgPartyMap.partyId, party.partyId),
+        ),
+      ),
   ]);
 
   const leadIds = leadRows.map((row) => row.id);
@@ -323,8 +349,42 @@ async function refreshMirrorsOfParty(
   if (contactIds.length > 0)
     await db
       .update(contacts)
-      .set(CONTACT_MIRROR.derive(party))
+      .set({
+        ...CONTACT_MIRROR.derive(party),
+        // Outside the pure derivation because it crosses id spaces; see
+        // `party-legacy-employer.ts`. Without it, moving somebody to a new
+        // employer on the Party surface would leave `contacts.organization_id`
+        // pointing at the old one indefinitely.
+        ...(await employerColumnOf(db, organizationId, party)),
+      })
       .where(and(eq(contacts.orgId, organizationId), inArray(contacts.id, contactIds)));
+
+  const crmOrgIds = orgRows.map((row) => row.id);
+  if (crmOrgIds.length > 0)
+    await db
+      .update(crmOrganizations)
+      .set(ORGANISATION_MIRROR.derive(party))
+      .where(
+        and(eq(crmOrganizations.orgId, organizationId), inArray(crmOrganizations.id, crmOrgIds)),
+      );
+}
+
+/**
+ * The `contacts.organization_id` this party's employer means, as a patch.
+ *
+ * A whole column rather than a conditional: a party with no employer must write
+ * `null`, not nothing, or clearing an employer would silently leave the old one
+ * on the legacy row — which is the exact shape of stale the mirror exists to
+ * rule out.
+ */
+export async function employerColumnOf(
+  db: MirrorDb,
+  organizationId: string,
+  party: PartyRow,
+): Promise<{ organizationId: number | null }> {
+  if (!party.employerPartyId) return { organizationId: null };
+  const legacy = await employerLegacyIds(db, organizationId, [party.employerPartyId]);
+  return { organizationId: legacy.get(party.employerPartyId) ?? null };
 }
 
 /**
@@ -409,5 +469,14 @@ export async function countMirroredRows(
     .select({ n: sql<number>`count(*)::int` })
     .from(contactPartyMap)
     .where(eq(contactPartyMap.organizationId, organizationId));
-  return { LEAD: lead?.n ?? 0, CLIENT: client?.n ?? 0, CONTACT: contact?.n ?? 0 };
+  const [organisation] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(crmOrgPartyMap)
+    .where(eq(crmOrgPartyMap.organizationId, organizationId));
+  return {
+    LEAD: lead?.n ?? 0,
+    CLIENT: client?.n ?? 0,
+    CONTACT: contact?.n ?? 0,
+    ORGANISATION: organisation?.n ?? 0,
+  };
 }

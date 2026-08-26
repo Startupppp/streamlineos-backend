@@ -1,6 +1,7 @@
 /**
  * Real-database tests for the legacy backfill's central claim: that after it
- * runs, *every* row in `leads`, `clients` and `contacts` resolves to a Party.
+ * runs, *every* row in `leads`, `clients`, `contacts` and `crm_organizations`
+ * resolves to a Party.
  *
  * Guarded by CRM_DB_TESTS=1 so the default hermetic `jest` run is unaffected and
  * CI without a database does not fail. Run with:
@@ -23,6 +24,20 @@ import postgres from "postgres";
 
 const ENABLED = process.env.CRM_DB_TESTS === "1";
 const describeDb = ENABLED ? describe : describe.skip;
+
+/**
+ * Jest's default is five seconds. Every test here opens a connection to a remote
+ * Neon database and applies five migration files to it before it asserts
+ * anything, and the two that run first pay the connection setup on top. Ticket
+ * 25 added three of those five, which pushed exactly those two over the line —
+ * they were passing at four seconds and now time out, while the same work in a
+ * later test passes at one and a half.
+ *
+ * Raised rather than optimised, because the cost is the network and the point of
+ * the file is to pay it. A failure here should mean the SQL is wrong, never that
+ * the database was a little further away today.
+ */
+if (ENABLED) jest.setTimeout(60_000);
 
 /** Read on demand: the default hermetic run loads this file only to skip it. */
 const migration = (name: string) =>
@@ -53,17 +68,26 @@ interface Probe {
   unmappedLeads: number;
   unmappedClients: number;
   unmappedContacts: number;
+  unmappedOrganisations: number;
 }
 
 describeDb("legacy backfill — real database", () => {
   let sql: ReturnType<typeof postgres>;
   let expand: string;
   let backfill: string;
+  let companyExpand: string;
+  let companyMap: string;
+  let companyBackfill: string;
 
   beforeAll(() => {
     sql = connect();
     expand = migration("0240_party_expand_legacy_fields.sql");
     backfill = migration("0241_party_legacy_backfill.sql");
+    // Ticket 25: `crm_organizations` was the fifth identity table, and it joined
+    // the same expand-backfill shape three migrations later.
+    companyExpand = migration("0262_party_company_columns.sql");
+    companyMap = migration("0263_crm_org_party_map.sql");
+    companyBackfill = migration("0264_crm_org_party_backfill.sql");
   });
 
   afterAll(async () => {
@@ -82,6 +106,8 @@ describeDb("legacy backfill — real database", () => {
       await sql.begin(async (tx) => {
         await tx.unsafe("SET LOCAL statement_timeout = '60s'").simple();
         await tx.unsafe(expand).simple();
+        await tx.unsafe(companyExpand).simple();
+        await tx.unsafe(companyMap).simple();
 
         const [org] = await tx`SELECT id FROM organizations LIMIT 1`;
         if (!org) throw new Error("CRM_DB_TESTS needs at least one organization to scope fixtures to");
@@ -103,18 +129,31 @@ describeDb("legacy backfill — real database", () => {
           INSERT INTO clients (org_id, name, gstin, is_vendor, investment_value, health_score)
           VALUES (${orgId}, ${`client ${marker}`}, '29ABCDE1234F1Z5', true, 125000.00, 82)
           RETURNING id`;
+        const [company] = await tx`
+          INSERT INTO crm_organizations (org_id, name, domain, industry, size, website,
+                                         linkedin_url, description, health_score, notes)
+          VALUES (${orgId}, ${`company ${marker}`}, ${`${marker}.example`}, 'Manufacturing',
+                  '51-200', 'https://acme.test', 'https://linkedin.test/acme',
+                  'Makes things out of other things.', 64, 'Renews in March.')
+          RETURNING id`;
+        // The row ticket 25 exists for: a contact whose employer is a company
+        // record. Before it, `contacts.organization_id` pointed at a table Party
+        // could not reach, and every migrate batch left the column behind.
         const [contact] = await tx`
-          INSERT INTO contacts (org_id, name, title, twitter_url, tags)
-          VALUES (${orgId}, ${`contact ${marker}`}, 'CTO', 'https://x.test/a', '["beta"]'::jsonb)
+          INSERT INTO contacts (org_id, name, title, twitter_url, tags, organization_id)
+          VALUES (${orgId}, ${`contact ${marker}`}, 'CTO', 'https://x.test/a', '["beta"]'::jsonb,
+                  ${company.id as number})
           RETURNING id`;
 
         await tx.unsafe(backfill).simple();
+        await tx.unsafe(companyBackfill).simple();
 
         captured = await body(tx, orgId, {
           liveLead: liveLead.id as number,
           deadLead: deadLead.id as number,
           client: client.id as number,
           contact: contact.id as number,
+          company: company.id as number,
         });
 
         throw new Rollback();
@@ -136,18 +175,27 @@ describeDb("legacy backfill — real database", () => {
             WHERE m.organization_id = c.org_id AND m.client_id = c.id)) AS unmapped_clients,
         (SELECT count(*) FROM contacts ct
           WHERE NOT EXISTS (SELECT 1 FROM contact_party_map m
-            WHERE m.organization_id = ct.org_id AND m.contact_id = ct.id)) AS unmapped_contacts`;
+            WHERE m.organization_id = ct.org_id AND m.contact_id = ct.id)) AS unmapped_contacts,
+        (SELECT count(*) FROM crm_organizations o
+          WHERE NOT EXISTS (SELECT 1 FROM crm_org_party_map m
+            WHERE m.organization_id = o.org_id AND m.crm_organization_id = o.id)) AS unmapped_orgs`;
     return {
       unmappedLeads: Number(row.unmapped_leads),
       unmappedClients: Number(row.unmapped_clients),
       unmappedContacts: Number(row.unmapped_contacts),
+      unmappedOrganisations: Number(row.unmapped_orgs),
     };
   }
 
   it("leaves no row in any legacy table without a Party", async () => {
     const result = await withBackfill(async (tx) => probe(tx));
 
-    expect(result).toEqual({ unmappedLeads: 0, unmappedClients: 0, unmappedContacts: 0 });
+    expect(result).toEqual({
+      unmappedLeads: 0,
+      unmappedClients: 0,
+      unmappedContacts: 0,
+      unmappedOrganisations: 0,
+    });
   });
 
   it("resolves each legacy id to the Party carrying that record's own fields", async () => {
@@ -229,10 +277,81 @@ describeDb("legacy backfill — real database", () => {
     expect(roles).toEqual(["CUSTOMER", "VENDOR"]);
   });
 
+  it("carries a company's own fields onto its Party, and says it is one", async () => {
+    const company = await withBackfill(async (tx, orgId, ids) => {
+      const [row] = await tx`
+        SELECT p.name, p.party_kind, p.domain, p.industry, p.company_size, p.website,
+               p.linkedin_url, p.description, p.health_score, p.notes
+        FROM crm_org_party_map m
+        JOIN business_parties p
+          ON p.organization_id = m.organization_id AND p.party_id = m.party_id
+        WHERE m.organization_id = ${orgId} AND m.crm_organization_id = ${ids.company}`;
+      return row;
+    });
+
+    expect(company).toMatchObject({
+      party_kind: "ORGANISATION",
+      industry: "Manufacturing",
+      company_size: "51-200",
+      website: "https://acme.test",
+      linkedin_url: "https://linkedin.test/acme",
+      description: "Makes things out of other things.",
+      health_score: 64,
+      notes: "Renews in March.",
+    });
+  });
+
+  /**
+   * The line the whole ticket exists for.
+   *
+   * `contacts.organization_id` was a foreign key to `crm_organizations` with
+   * nothing on Party to point at, which is why every migrate batch left the
+   * column behind as "association-only" and `contacts` could not be dropped.
+   */
+  it("re-points a contact's employer onto the company's Party", async () => {
+    const link = await withBackfill(async (tx, orgId, ids) => {
+      const [row] = await tx`
+        SELECT p.employer_party_id, cm.party_id AS company_party_id
+        FROM contact_party_map m
+        JOIN business_parties p
+          ON p.organization_id = m.organization_id AND p.party_id = m.party_id
+        JOIN crm_org_party_map cm
+          ON cm.organization_id = m.organization_id AND cm.crm_organization_id = ${ids.company}
+        WHERE m.organization_id = ${orgId} AND m.contact_id = ${ids.contact}`;
+      return row;
+    });
+
+    expect(link.employer_party_id).toBe(link.company_party_id);
+    expect(link.employer_party_id).not.toBeNull();
+  });
+
+  /**
+   * A company record is not a relationship.
+   *
+   * 0241 granted PROSPECT, CUSTOMER and CONTACT because those legacy tables each
+   * record a stance towards someone. `crm_organizations` records only that a
+   * company exists; CUSTOMER arrives with a deal. Granting one here would put
+   * every company anybody has ever typed into the customer list.
+   */
+  it("grants a company no party_roles row at all", async () => {
+    const roles = await withBackfill(async (tx, orgId, ids) => {
+      const rows = await tx`
+        SELECT r.role
+        FROM crm_org_party_map m
+        JOIN party_roles r
+          ON r.organization_id = m.organization_id AND r.party_id = m.party_id
+        WHERE m.organization_id = ${orgId} AND m.crm_organization_id = ${ids.company}`;
+      return rows.map((row) => row.role as string);
+    });
+
+    expect(roles).toEqual([]);
+  });
+
   it("creates nothing on a second run", async () => {
     const counts = await withBackfill(async (tx) => {
       const [before] = await tx`SELECT count(*) AS n FROM business_parties`;
       await tx.unsafe(backfill).simple();
+      await tx.unsafe(companyBackfill).simple();
       const [after] = await tx`SELECT count(*) AS n FROM business_parties`;
       return { before: Number(before.n), after: Number(after.n) };
     });
