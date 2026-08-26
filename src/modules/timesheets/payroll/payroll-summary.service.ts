@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheets, timesheetSettings, holidays, leaveRequests, users } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import { computeLeaveDays, computeOvertime, isWeekend, round2 } from "./lib/payroll-calc";
@@ -117,8 +117,9 @@ export class PayrollSummaryService {
     }
 
     const hash = `${query.start}-${query.end}-${query.userId ?? ""}-${query.includeExported}-${scope}-${actorUserId}`;
-    return this.cache.cachedVersioned(
-      CACHE_KEYS.payrollSummaryNamespace(orgId),
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "timesheets:payroll:summary",
       hash,
       () => this.compute(orgId, query, scope, actorUserId),
       CACHE_TTL.SHORT,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidRrule } from "./occurrence-exception.schemas";
 
 /**
  * The web calendar fetches three whole months (previous, current, next), whose
@@ -81,6 +82,8 @@ export const createEventSchema = z
     linkedLeadId: z.number().int().optional(),
     syncConnectionId: z.number().int().positive().optional(),
     addConference: z.boolean().optional(),
+    rrule: z.string().refine(isValidRrule, "Must be a valid RFC 5545 RRULE string").optional(),
+    recurrenceEnd: z.string().datetime().optional(),
   })
   .refine(
     (v) => {
@@ -112,6 +115,8 @@ export const updateEventSchema = z.object({
   postMeetingNotes: z.string().nullable().optional(),
   linkedDealId: z.number().int().nullable().optional(),
   linkedLeadId: z.number().int().nullable().optional(),
+  rrule: z.string().refine(isValidRrule, "Must be a valid RFC 5545 RRULE string").nullable().optional(),
+  recurrenceEnd: z.string().datetime().nullable().optional(),
 });
 
 export const rsvpSchema = z.object({

@@ -670,6 +670,42 @@ export const BUDGETS = [
     ],
   },
   {
+    id: "leave-accrual-ledger-dedup",
+    ceiling: 100,
+    minRows: 10,
+    rowCountSql: `SELECT count(*)::int FROM hr_leave_ledger WHERE org_id = $1`,
+    params: (f) => (f.leaveTypeIds && f.leaveTypeIds.length > 0 ? [f.orgId, f.leaveTypeIds, f.period] : null),
+    sql: `
+      SELECT user_id, leave_type_id
+      FROM hr_leave_ledger
+      WHERE org_id = $1
+        AND leave_type_id = ANY($2)
+        AND txn_type = 'accrual'
+        AND period = $3
+        AND source = 'cron'`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "hr_leave_ledger" },
+    ],
+  },
+  {
+    id: "leave-accrual-balance-read",
+    ceiling: 200,
+    minRows: 10,
+    rowCountSql: `SELECT count(*)::int FROM leave_balances WHERE org_id = $1`,
+    params: (f) => (f.leaveTypeIds && f.leaveTypeIds.length > 0
+      ? [f.orgId, f.leaveTypeIds, parseInt(f.period.slice(0, 4), 10)]
+      : null),
+    sql: `
+      SELECT user_id, leave_type_id, balance
+      FROM leave_balances
+      WHERE org_id = $1
+        AND leave_type_id = ANY($2)
+        AND year = $3`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "leave_balances" },
+    ],
+  },
+  {
     id: "chat-saved-messages",
     ceiling: 5_000,
     minRows: 50,

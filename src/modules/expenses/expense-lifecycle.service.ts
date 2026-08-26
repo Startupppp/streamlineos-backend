@@ -16,7 +16,6 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { compareDecimals, formatDecimal } from "../accounting/core/money.util";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -235,7 +234,7 @@ export class ExpenseLifecycleService {
       });
     }
 
-    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
+    await this.cache.invalidateNamespaceForOrg(u.orgId, "hr:expenses");
 
     return {
       success: true,
@@ -358,7 +357,7 @@ export class ExpenseLifecycleService {
       variables: { amount: expense.amount, category: expense.category },
     });
 
-    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
+    await this.cache.invalidateNamespaceForOrg(u.orgId, "hr:expenses");
 
     return { success: true, entryId: postResult.entryId };
   }
@@ -421,7 +420,7 @@ export class ExpenseLifecycleService {
       variables: { amount: expense.amount, category: expense.category, reason: rejectionReason },
     });
 
-    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
+    await this.cache.invalidateNamespaceForOrg(u.orgId, "hr:expenses");
 
     return { success: true };
   }

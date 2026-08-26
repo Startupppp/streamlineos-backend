@@ -97,6 +97,7 @@ describe("ModuleStandingMutationsService.grantAdminStanding", () => {
   it("grants MODULE_ADMIN standing and bumps permissions version", async () => {
     const auditLog = jest.fn();
     const txMock = {
+      execute: jest.fn().mockResolvedValue(undefined),
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockReturnValue({ onConflictDoNothing: jest.fn().mockResolvedValue(undefined) }),
       }),
@@ -198,6 +199,7 @@ describe("ModuleStandingMutationsService.revokeStanding", () => {
   it("removes all module role assignments, bumps permissions, and audits", async () => {
     const auditLog = jest.fn();
     const txMock = {
+      execute: jest.fn().mockResolvedValue(undefined),
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
     };
     const mockDb = {
@@ -275,6 +277,7 @@ describe("ModuleStandingMutationsService.directTransferOwnership", () => {
       : [];
 
     const txMock = {
+      execute: jest.fn().mockResolvedValue(undefined),
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(prevRows) }),

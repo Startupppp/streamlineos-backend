@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, gte, lte, inArray } from "drizzle-orm";
 import {
   calendarEvents,
+  calendarEventExceptions,
   eventAttendees,
   leaveRequests,
   users,
@@ -12,6 +13,7 @@ import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateEventInput, RsvpInput, UpdateEventInput } from "./dto/calendar.schemas";
+import type { UpsertOccurrenceExceptionInput } from "./dto/occurrence-exception.schemas";
 import { EmailService } from "../email/email.service";
 import { getCalendarInviteEmail } from "../email/templates/calendar";
 import { CalendarEventsAggregateService } from "./calendar-events-aggregate.service";
@@ -105,6 +107,8 @@ export class CalendarService {
             agenda: input.agenda ?? null,
             linkedDealId: input.linkedDealId ?? null,
             linkedLeadId: input.linkedLeadId ?? null,
+            rrule: input.rrule ?? null,
+            recurrenceEnd: input.recurrenceEnd ? new Date(input.recurrenceEnd) : null,
           })
           .returning();
         return { event: insertedRows[0], eventConflicts: conflicts };
@@ -261,6 +265,9 @@ export class CalendarService {
       updateData.postMeetingNotes = input.postMeetingNotes ?? null;
     if (input.linkedDealId !== undefined) updateData.linkedDealId = input.linkedDealId ?? null;
     if (input.linkedLeadId !== undefined) updateData.linkedLeadId = input.linkedLeadId ?? null;
+    if (input.rrule !== undefined) updateData.rrule = input.rrule ?? null;
+    if (input.recurrenceEnd !== undefined)
+      updateData.recurrenceEnd = input.recurrenceEnd ? new Date(input.recurrenceEnd) : null;
 
     const [event] = await this.db
       .update(calendarEvents)
@@ -417,6 +424,65 @@ export class CalendarService {
         user: { columns: { id: true, name: true, email: true, image: true } },
       },
     });
+  }
+
+  private async getRecurringEventForOwner(orgId: string, userId: string, eventId: number) {
+    const rows = await this.db
+      .select({ createdBy: calendarEvents.createdBy, rrule: calendarEvents.rrule })
+      .from(calendarEvents)
+      .where(and(eq(calendarEvents.id, eventId), eq(calendarEvents.orgId, orgId)))
+      .limit(1);
+    const ev = rows[0];
+    if (!ev || ev.createdBy !== userId || !ev.rrule) return null;
+    return ev;
+  }
+
+  async upsertOccurrenceException(
+    orgId: string,
+    userId: string,
+    eventId: number,
+    occurrenceStartIso: string,
+    input: UpsertOccurrenceExceptionInput,
+  ) {
+    if (!(await this.getRecurringEventForOwner(orgId, userId, eventId))) return null;
+    const occurrenceStart = new Date(occurrenceStartIso);
+    const [row] = await this.db
+      .insert(calendarEventExceptions)
+      .values({
+        orgId,
+        eventId,
+        occurrenceStart,
+        isCancelled: false,
+        modifiedTitle: input.modifiedTitle ?? null,
+        modifiedStart: input.modifiedStart ? new Date(input.modifiedStart) : null,
+        modifiedEnd: input.modifiedEnd ? new Date(input.modifiedEnd) : null,
+      })
+      .onConflictDoUpdate({
+        target: [calendarEventExceptions.orgId, calendarEventExceptions.eventId, calendarEventExceptions.occurrenceStart],
+        set: {
+          isCancelled: false,
+          modifiedTitle: input.modifiedTitle ?? null,
+          modifiedStart: input.modifiedStart ? new Date(input.modifiedStart) : null,
+          modifiedEnd: input.modifiedEnd ? new Date(input.modifiedEnd) : null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
+  }
+
+  async cancelOccurrence(orgId: string, userId: string, eventId: number, occurrenceStartIso: string) {
+    if (!(await this.getRecurringEventForOwner(orgId, userId, eventId))) return null;
+    const occurrenceStart = new Date(occurrenceStartIso);
+    const [row] = await this.db
+      .insert(calendarEventExceptions)
+      .values({ orgId, eventId, occurrenceStart, isCancelled: true })
+      .onConflictDoUpdate({
+        target: [calendarEventExceptions.orgId, calendarEventExceptions.eventId, calendarEventExceptions.occurrenceStart],
+        set: { isCancelled: true, updatedAt: new Date() },
+      })
+      .returning();
+    return row;
   }
 
   exportEvents(orgId: string, from: Date, to: Date) {

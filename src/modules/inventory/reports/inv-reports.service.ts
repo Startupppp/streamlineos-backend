@@ -29,8 +29,9 @@ export class InvReportsService {
     const scope = await this.warehouseScope.resolve(orgId, userId);
     const scopeKey = scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
     const stockScope = this.warehouseScope.locationPredicate(scope, sql`${invStockLevels.locationId}`);
-    return this.cache.cached(
-      `${CACHE_KEYS.invDashboard(orgId)}:${scopeKey}`,
+    return this.cache.cachedForOrg(
+      orgId,
+      `inv:dashboard:${scopeKey}`,
       async () => {
         const [stockSummary, lowStockRows, draftPoRows, openSoRows] = await Promise.all([
           this.db

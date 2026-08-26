@@ -232,6 +232,8 @@ export const calendarEvents = pgTable("calendar_events", {
   postMeetingNotes: text("post_meeting_notes"),
   linkedDealId: integer("linked_deal_id"),
   linkedLeadId: integer("linked_lead_id"),
+  rrule: text("rrule"),
+  recurrenceEnd: timestamp("recurrence_end", { withTimezone: true }),
   reminder15MinSent: boolean("reminder_15min_sent").default(false).notNull(),
   integrationConnectionId: integer("integration_connection_id"),
   externalEventId: text("external_event_id"),

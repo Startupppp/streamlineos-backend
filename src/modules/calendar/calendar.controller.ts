@@ -8,6 +8,7 @@ import {
   NotFoundException,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Put,
   Query,
@@ -44,6 +45,10 @@ import {
   setSourcePreferenceSchema,
   type SetSourcePreferenceInput,
 } from "./dto/source-preference.schemas";
+import {
+  upsertOccurrenceExceptionSchema,
+  type UpsertOccurrenceExceptionInput,
+} from "./dto/occurrence-exception.schemas";
 
 function pad(value: number): string {
   return value < 10 ? `0${value}` : String(value);
@@ -145,6 +150,43 @@ export class CalendarController {
     const attendee = await this.calendar.rsvp(u.orgId, u.userId, eventId, body);
     if (!attendee) throw new NotFoundException("Event not found");
     return attendee;
+  }
+
+  @Patch("events/:eventId/occurrences/:occurrenceStart")
+  @HttpCode(200)
+  async upsertOccurrenceException(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @Param("occurrenceStart") occurrenceStart: string,
+    @Body(new ZodValidationPipe(upsertOccurrenceExceptionSchema))
+    body: UpsertOccurrenceExceptionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const row = await this.calendar.upsertOccurrenceException(
+      u.orgId,
+      u.userId,
+      eventId,
+      occurrenceStart,
+      body,
+    );
+    if (!row) throw new NotFoundException("Event not found, not a recurring event, or not authorized");
+    return row;
+  }
+
+  @Delete("events/:eventId/occurrences/:occurrenceStart")
+  @HttpCode(200)
+  async cancelOccurrence(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @Param("occurrenceStart") occurrenceStart: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const row = await this.calendar.cancelOccurrence(
+      u.orgId,
+      u.userId,
+      eventId,
+      occurrenceStart,
+    );
+    if (!row) throw new NotFoundException("Event not found, not a recurring event, or not authorized");
+    return row;
   }
 
   @Get("events/:eventId/rsvp")

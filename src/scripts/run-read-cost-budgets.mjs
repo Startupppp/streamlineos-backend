@@ -158,6 +158,15 @@ async function main() {
         SELECT id AS run_id FROM payroll_runs
         WHERE org_id = ${ORG} ORDER BY id DESC LIMIT 1`;
 
+      const now = new Date();
+      const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+      const leaveTypePolicies = await tx`
+        SELECT DISTINCT leave_type_id
+        FROM leave_policies
+        WHERE org_id = ${ORG} AND accrual_type = 'MONTHLY' AND is_active = true`;
+      const leaveTypeIds = leaveTypePolicies.map((r) => r.leave_type_id);
+
       return {
         orgId: ORG,
         projectId: project?.project_id ?? null,
@@ -168,6 +177,8 @@ async function main() {
         channelMessages: channel?.n ?? 0,
         spaceId: space?.space_id ?? null,
         payrollRunId: payrollRun?.run_id ?? null,
+        leaveTypeIds,
+        period,
       };
     });
 
@@ -177,7 +188,8 @@ async function main() {
           ` · project ${fixtures.projectId} (${fixtures.projectTickets} tickets)` +
           ` · participant ${fixtures.userId} (${fixtures.participationOrgWide} rows)` +
           ` · channel ${fixtures.channelId} (${fixtures.channelMessages} msgs)` +
-          ` · space ${fixtures.spaceId} · payroll run ${fixtures.payrollRunId}`,
+          ` · space ${fixtures.spaceId} · payroll run ${fixtures.payrollRunId}` +
+          ` · leave types ${fixtures.leaveTypeIds.length} (period ${fixtures.period})`,
       );
       console.log(`\nRunning ${budgets.length} budgets…\n`);
     }

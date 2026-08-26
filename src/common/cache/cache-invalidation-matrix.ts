@@ -22,13 +22,25 @@
  *
  * Session-revocation safety:
  *   The tombstone at revoked:session:<id> has a TTL matching the JWT lifetime,
- *   so an LRU eviction before expiry cannot be distinguished from a miss in the
- *   current guard (jwt-auth.guard.ts:122-131) — the guard does not fall back to
- *   the database on a null result, only on a Redis error.  The risk window is
- *   bounded by REVOCATION_CACHE_TTL_MS (5 s in-process) and the fact that an
- *   active session refreshes its tombstone's LRU position on every request.
- *   Open improvement: fall back to isRevokedInDatabase on a null result as well
- *   as on a Redis error.
+ *   so an LRU eviction before expiry cannot be distinguished from "never
+ *   revoked" in the current guard (jwt-auth.guard.ts) — it falls back to
+ *   isRevokedInDatabase only on a Redis *error*, not on a null result, because
+ *   a null result is also what every non-revoked session produces on every
+ *   request. Falling back to the database on null was tried (2026-08-26) and
+ *   reverted: JwtAuthGuard is a global APP_GUARD, so it turned into a
+ *   mandatory database round trip on every request whose 5-second in-process
+ *   cache (REVOCATION_CACHE_TTL_MS) had gone stale, for the entire platform's
+ *   traffic — not just the rare evicted-tombstone case.
+ *   The residual risk is bounded, not zero: an active session refreshes its
+ *   tombstone's LRU position on every read, so a revoked session still being
+ *   probed stays hot; the exposure is a revoked session that goes idle right
+ *   as Redis is under memory pressure.
+ *   The structurally correct fix is to stop relying on TTL-based eviction
+ *   safety for tombstones at all: give them no TTL (matching how namespace
+ *   version counters are protected from volatile-lru above) and clean them up
+ *   with an explicit scheduled sweep instead of letting Redis expire them —
+ *   not done here; recorded as the real follow-up rather than the null-check
+ *   that was tried and reverted.
  */
 
 export type InvalidationTrigger =
@@ -180,13 +192,13 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
     namespace: "fin:asset-categories:<orgId>",
     description: "Asset categories",
     invalidation: { kind: "ttl-only", reason: "Low-churn reference data; TTL 5 min is acceptable" },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "fin:tax-codes:<orgId>",
     description: "Tax codes",
     invalidation: { kind: "ttl-only", reason: "Low-churn reference data; TTL 5 min is acceptable" },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "fin:tax-payments:<orgId>",
@@ -195,7 +207,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["TaxService (any write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "fin:tax-dashboard:<orgId>",
@@ -261,7 +273,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["ExpensesService (any write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "sales:kpis:<orgId>",
@@ -288,7 +300,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["CrmOrganizationsService (any write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "crm:organizations:detail:<orgId>",
@@ -297,7 +309,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["CrmOrganizationsService (any write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "inv:products:list:<orgId>",
@@ -306,7 +318,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["InventoryProductsService (any write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "inv:po:list:<orgId>",
@@ -315,7 +327,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["PurchaseOrdersService (any write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "inv:grn:list:<orgId>",
@@ -324,7 +336,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["GrnService (any write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "inv:vendors:list:<orgId>",
@@ -342,7 +354,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["SalesOrdersService (any write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "inv:stock:summary:<orgId>",
@@ -360,7 +372,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "ttl-only",
       reason: "Aggregate; TTL-only is a deliberate decision — staleness < 5 min is acceptable",
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "inv:replenishment:suggestions:<orgId>",
@@ -426,7 +438,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
     namespace: "support:reports:overview:<orgId>",
     description: "Support reports overview",
     invalidation: { kind: "ttl-only", reason: "Aggregate; TTL-only is a deliberate decision" },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "timesheets:payroll:summary:<orgId>",
@@ -435,7 +447,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["PayrollService (any run/post)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "timesheets:payroll:exports:<orgId>",
@@ -444,7 +456,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["PayrollExportsService (any write)"],
     },
-    migrated: false,
+    migrated: true,
   },
   {
     namespace: "search:<orgId>:<userId>",

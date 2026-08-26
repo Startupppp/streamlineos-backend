@@ -52,6 +52,7 @@ import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
+import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { CronLeaseService } from "./cron-lease.service";
@@ -121,6 +122,7 @@ import { OutboxModule } from "../../common/outbox/outbox.module";
     CronIdempotencyService,
     CronBuildRetentionService,
     CronBuildSnapshotsService,
+    CronKbChunkRetentionService,
     CronOrganizationService,
     CronOrgPurgeWorkerService,
     CronLeaseService,

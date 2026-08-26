@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
-import { and, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAccessService } from "../core/kb-access.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import { kbArticles, kbPages } from "../../../db/schema";
+import { kbArticles, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { pageVisibleTo } from "./kb-page-visibility";
@@ -158,13 +158,17 @@ export class KbAskService {
   ): Promise<AskCitation[]> {
     const articleIds = top.filter((s) => s.kind === "article").map((s) => s.id);
     const pageIds = top.filter((s) => s.kind === "page").map((s) => s.id);
+    const sourceIds = sources.map((s) => s.sourceId);
 
-    const [visibleArticles, visiblePages] = await Promise.all([
+    const [visibleArticles, visiblePages, visibleSources] = await Promise.all([
       articleIds.length > 0
         ? this.resolveVisibleArticles(user, articleIds)
         : Promise.resolve(new Set<number>()),
       pageIds.length > 0
         ? this.resolveVisiblePages(user, pageIds)
+        : Promise.resolve(new Set<number>()),
+      sourceIds.length > 0
+        ? this.resolveVisibleSources(user, sourceIds)
         : Promise.resolve(new Set<number>()),
     ]);
 
@@ -177,9 +181,29 @@ export class KbAskService {
       }
     }
     for (const s of sources) {
-      citations.push({ kind: "source", sourceId: s.sourceId, title: s.title, spaceId: s.spaceId, updatedAt: s.updatedAt });
+      if (visibleSources.has(s.sourceId)) {
+        citations.push({ kind: "source", sourceId: s.sourceId, title: s.title, spaceId: s.spaceId, updatedAt: s.updatedAt });
+      }
     }
     return citations;
+  }
+
+  private async resolveVisibleSources(user: CurrentUserContext, ids: number[]): Promise<Set<number>> {
+    const accessibleSpaceIds = await this.access.getAccessibleSpaceIds(user);
+    const spaceFilter = accessibleSpaceIds.length > 0
+      ? or(isNull(kbSources.spaceId), inArray(kbSources.spaceId, accessibleSpaceIds))
+      : isNull(kbSources.spaceId);
+    const rows = await this.db
+      .select({ id: kbSources.id })
+      .from(kbSources)
+      .where(and(
+        eq(kbSources.orgId, user.orgId),
+        inArray(kbSources.id, ids),
+        isNull(kbSources.deletedAt),
+        eq(kbSources.status, "ready"),
+        spaceFilter,
+      ));
+    return new Set(rows.map((r) => r.id));
   }
 
   private async resolveVisibleArticles(user: CurrentUserContext, ids: number[]): Promise<Set<number>> {

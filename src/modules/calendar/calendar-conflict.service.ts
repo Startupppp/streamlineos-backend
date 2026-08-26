@@ -1,9 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gt, inArray, lt } from "drizzle-orm";
-import { calendarEvents, eventAttendees } from "../../db/schema";
+import { and, eq, gt, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { calendarEvents, calendarEventExceptions, eventAttendees } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../db/drizzle.types";
-import { expandToOccurrences, type CalendarOccurrence } from "./calendar-occurrence.service";
+import {
+  expandToOccurrences,
+  type CalendarEventException,
+  type CalendarOccurrence,
+} from "./calendar-occurrence.service";
 
 const CONFLICT_SCAN_LIMIT = 100;
 
@@ -39,18 +43,66 @@ export class CalendarConflictService {
         timezone: calendarEvents.timezone,
         orgId: calendarEvents.orgId,
         createdBy: calendarEvents.createdBy,
+        rrule: calendarEvents.rrule,
+        recurrenceEnd: calendarEvents.recurrenceEnd,
       })
       .from(calendarEvents)
       .where(
         and(
           eq(calendarEvents.orgId, orgId),
-          lt(calendarEvents.startDate, endDate),
-          gt(calendarEvents.endDate, startDate),
+          or(
+            and(
+              isNull(calendarEvents.rrule),
+              lt(calendarEvents.startDate, endDate),
+              gt(calendarEvents.endDate, startDate),
+            ),
+            and(
+              isNotNull(calendarEvents.rrule),
+              lt(calendarEvents.startDate, endDate),
+              or(
+                isNull(calendarEvents.recurrenceEnd),
+                gt(calendarEvents.recurrenceEnd, startDate),
+              ),
+            ),
+          ),
         ),
       )
       .limit(CONFLICT_SCAN_LIMIT);
 
     if (rows.length === 0) return [];
+
+    const recurringIds = rows.filter((r) => r.rrule !== null).map((r) => r.id);
+
+    const exceptionsByEvent = new Map<number, CalendarEventException[]>();
+    if (recurringIds.length > 0) {
+      const excRows = await tx
+        .select({
+          eventId: calendarEventExceptions.eventId,
+          occurrenceStart: calendarEventExceptions.occurrenceStart,
+          isCancelled: calendarEventExceptions.isCancelled,
+          modifiedTitle: calendarEventExceptions.modifiedTitle,
+          modifiedStart: calendarEventExceptions.modifiedStart,
+          modifiedEnd: calendarEventExceptions.modifiedEnd,
+        })
+        .from(calendarEventExceptions)
+        .where(
+          and(
+            eq(calendarEventExceptions.orgId, orgId),
+            inArray(calendarEventExceptions.eventId, recurringIds),
+          ),
+        );
+      for (const ex of excRows) {
+        const list = exceptionsByEvent.get(ex.eventId) ?? [];
+        list.push({
+          occurrenceStart: ex.occurrenceStart,
+          isCancelled: ex.isCancelled,
+          modifiedTitle: ex.modifiedTitle,
+          modifiedStart: ex.modifiedStart,
+          modifiedEnd: ex.modifiedEnd,
+        });
+        exceptionsByEvent.set(ex.eventId, list);
+      }
+    }
 
     const eventIds = rows.map((r) => r.id);
     const attendeeRows = await tx
@@ -71,6 +123,7 @@ export class CalendarConflictService {
       const rsvpStatus = rsvpMap.get(row.id) ?? null;
       if (row.createdBy !== userId && rsvpStatus === null) continue;
       if (rsvpStatus === "declined") continue;
+      const exceptions = exceptionsByEvent.get(row.id) ?? [];
       occurrences.push(
         ...expandToOccurrences(
           {
@@ -81,9 +134,12 @@ export class CalendarConflictService {
             allDay: row.allDay ?? false,
             timezone: row.timezone,
             orgId: row.orgId,
+            rrule: row.rrule,
+            recurrenceEnd: row.recurrenceEnd,
           },
           startDate,
           endDate,
+          exceptions,
         ),
       );
     }

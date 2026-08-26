@@ -10,6 +10,7 @@ import { Public } from "../../common/auth/public.decorator";
 import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronKbService } from "./cron-kb.service";
+import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronSupportService } from "./cron-support.service";
 import { SupportKbGapService } from "../support/kb-gap/support-kb-gap.service";
 import { CronLeaseService } from "./cron-lease.service";
@@ -19,6 +20,7 @@ import { CronLeaseService } from "./cron-lease.service";
 export class CronSupportController {
   constructor(
     private readonly kb: CronKbService,
+    private readonly kbChunkRetention: CronKbChunkRetentionService,
     private readonly support: CronSupportService,
     private readonly supportKbGap: SupportKbGapService,
     private readonly cronLease: CronLeaseService,
@@ -55,6 +57,17 @@ export class CronSupportController {
   @HttpCode(200)
   postKbTrashPurge(@Headers("authorization") authorization?: string) {
     return this.runKbTrashPurge(authorization);
+  }
+
+  @Get("kb-chunk-retention-sweep")
+  getKbChunkRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runKbChunkRetentionSweep(authorization);
+  }
+
+  @Post("kb-chunk-retention-sweep")
+  @HttpCode(200)
+  postKbChunkRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runKbChunkRetentionSweep(authorization);
   }
 
   @Get("support-kb-gap-detect")
@@ -121,6 +134,25 @@ export class CronSupportController {
       };
     } catch (error) {
       logger.error("KB trash purge cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runKbChunkRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("kb-chunk-retention-sweep", 600, () =>
+        this.kbChunkRetention.pruneStaleChunks(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "kb-chunk-retention-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `KB chunk retention: pruned ${result.articleChunksPruned} article chunks, ${result.pageChunksPruned} page chunks across ${result.orgsProcessed} orgs`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("KB chunk retention sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

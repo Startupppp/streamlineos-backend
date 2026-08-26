@@ -2017,6 +2017,20 @@
       "when": 1787830360441,
       "tag": "0513_leave_accrual_sweep_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 289,
+      "version": "7",
+      "when": 1787830361441,
+      "tag": "0507_calendar_recurrence_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 290,
+      "version": "7",
+      "when": 1787830362441,
+      "tag": "0508_calendar_event_exceptions",
+      "breakpoints": true
     }
   ]
 }

@@ -3,7 +3,6 @@ import { and, count, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { paginateOffset, buildListResponse } from "../../../common/pagination/pagination";
 import { accAssetCategories } from "../../../db/schema/accounting/finance-assets";
 import { ledgerAccounts } from "../../../db/schema/accounting/accounting";
@@ -18,7 +17,7 @@ export class AssetCategoriesService {
 
   async list(orgId: string, query: ListCategoriesQuery) {
     const cacheKey = `${query.page}:${query.pageSize}`;
-    return this.cache.cachedVersioned(CACHE_KEYS.finAssetCategoriesNamespace(orgId), cacheKey, async () => {
+    return this.cache.cachedVersionedForOrg(orgId, 'fin:asset-categories', cacheKey, async () => {
       const { limit, offset } = paginateOffset(query);
       const where = eq(accAssetCategories.orgId, orgId);
       const [items, totals] = await Promise.all([
@@ -49,7 +48,7 @@ export class AssetCategoriesService {
           defaultUsefulLifeMonths: input.defaultUsefulLifeMonths ?? null,
         })
         .returning();
-      await this.cache.invalidateNamespace(CACHE_KEYS.finAssetCategoriesNamespace(orgId));
+      await this.cache.invalidateNamespaceForOrg(orgId, 'fin:asset-categories');
       return row;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -77,7 +76,7 @@ export class AssetCategoriesService {
         .set({ ...input, updatedAt: new Date() })
         .where(and(eq(accAssetCategories.id, categoryId), eq(accAssetCategories.orgId, orgId)))
         .returning();
-      await this.cache.invalidateNamespace(CACHE_KEYS.finAssetCategoriesNamespace(orgId));
+      await this.cache.invalidateNamespaceForOrg(orgId, 'fin:asset-categories');
       return row;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
