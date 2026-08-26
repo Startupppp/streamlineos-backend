@@ -153,9 +153,9 @@ export class HrExportWorkerService implements OnModuleInit, OnModuleDestroy {
         });
         return true;
       });
-      if (!completed) await this.files.delete(generated.fileKey);
+      if (!completed) await this.files.delete(job.orgId, generated.fileKey);
     } catch (error: unknown) {
-      if (generatedFileKey) await this.files.delete(generatedFileKey).catch(() => undefined);
+      if (generatedFileKey) await this.files.delete(job.orgId, generatedFileKey).catch(() => undefined);
       const processingError =
         error instanceof HrExportProcessingError
           ? error
@@ -183,7 +183,7 @@ export class HrExportWorkerService implements OnModuleInit, OnModuleDestroy {
   private async expireArtifact(job: HrExportJobRow): Promise<void> {
     if (!job.fileKey) return;
     try {
-      await this.files.delete(job.fileKey);
+      await this.files.delete(job.orgId, job.fileKey);
       await this.inTenant(job.orgId, () => this.jobs.markExpired(job.id));
     } catch (error: unknown) {
       this.logger.error(`Could not expire HR export job ${job.id}`, {

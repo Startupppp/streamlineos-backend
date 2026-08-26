@@ -307,7 +307,7 @@ export class PayoutBatchesService {
       if (this.storage.isConfigured()) {
         const batchId = newBatch.id;
         const hooked = registerAfterCommit(async () => {
-          const uploaded = await this.storage.uploadFile(csvBuffer, "payroll/bank-batches", fileName, "text/csv");
+          const uploaded = await this.storage.uploadFile(orgId, csvBuffer, "payroll/bank-batches", fileName, "text/csv");
           await runInNewTenantTransaction(this.db, orgId, async (tx) => {
             await tx
               .update(payrollBankBatches)
@@ -703,7 +703,7 @@ export class PayoutBatchesService {
       throw new NotFoundException("File not available for this batch");
     }
 
-    const url = await this.storage.getFileUrl(batch.fileKey, 3600);
+    const url = await this.storage.getFileUrl(orgId, batch.fileKey, 3600);
     return { url, batchNumber: batch.batchNumber };
   }
 

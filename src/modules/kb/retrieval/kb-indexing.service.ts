@@ -418,7 +418,7 @@ export class KbIndexingService {
 
     let text: string;
     try {
-      const { body } = await this.storage.getFileStream(attachment.fileKey);
+      const { body } = await this.storage.getFileStream(orgId, attachment.fileKey);
       const buffer = await this.streamToBuffer(body);
       text = await extractAttachmentText(buffer, attachment.mimeType);
     } catch (err) {

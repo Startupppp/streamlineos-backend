@@ -75,16 +75,39 @@ export type StorageConfig = Pick<
   | "NEXT_PUBLIC_R2_PUBLIC_URL"
 >;
 
+/** A resolved region: where the bytes go, and the client that can reach them. */
+interface StoragePlacement {
+  readonly client: S3Client;
+  readonly bucketName?: string;
+  readonly publicUrl?: string;
+}
+
 @Injectable()
 export class StorageService {
-  private readonly client: S3Client;
+  /**
+   * One client per region, not one client per service.
+   *
+   * The constructor used to build a single `S3Client` from the primary region's
+   * endpoint and credentials. That made the region seam decorative: a call for a
+   * US organisation resolved the US bucket name and then sent it to the EU
+   * endpoint, because the client had been decided before anyone asked whose file
+   * it was. Cached by endpoint and key rather than rebuilt per call — an
+   * S3Client holds a connection pool, and one per upload would be a socket leak
+   * wearing a region's name.
+   */
+  private readonly clients = new Map<string, S3Client>();
 
   constructor(
     private readonly compression: MediaCompressionService,
     @Inject(APP_CONFIG) private readonly config: StorageConfig,
-  ) {
-    const cfg = this.getConfig();
-    this.client = new S3Client({
+  ) {}
+
+  private clientFor(cfg: R2Config): S3Client {
+    const cacheKey = `${cfg.region}|${cfg.endpoint ?? ""}|${cfg.accessKeyId ?? ""}`;
+    const existing = this.clients.get(cacheKey);
+    if (existing) return existing;
+
+    const client = new S3Client({
       region: cfg.region,
       endpoint: cfg.endpoint,
       credentials:
@@ -97,6 +120,41 @@ export class StorageService {
         throwOnRequestTimeout: true,
       },
     });
+    this.clients.set(cacheKey, client);
+    return client;
+  }
+
+  /**
+   * Where this organisation's files live.
+   *
+   * With a registry installed this resolves through the *same* placement lookup
+   * the database uses, so a tenant's rows and its documents cannot end up in
+   * different regions. Without one — a single-region deployment — it is the
+   * injected configuration, unchanged, so the existing behaviour and the
+   * existing pool are exactly what they were.
+   *
+   * It does not fall back. An organisation nobody placed, or one placed in a
+   * region this deployment does not serve, raises from `storageForOrg` and the
+   * operation never runs. A silent fallback to the primary bucket is how one
+   * tenant's documents are written into another region, and there is no undo.
+   */
+  private async placementFor(orgId: string): Promise<StoragePlacement> {
+    if (!hasRegionRegistry()) {
+      const cfg = this.getConfig();
+      return {
+        client: this.clientFor(cfg),
+        bucketName: cfg.bucketName,
+        publicUrl: this.config.NEXT_PUBLIC_R2_PUBLIC_URL,
+      };
+    }
+
+    const storage = await getRegionRegistry().storageForOrg(orgId);
+    const cfg = StorageService.toR2Config(storage);
+    return {
+      client: this.clientFor(cfg),
+      bucketName: cfg.bucketName,
+      publicUrl: storage.publicUrl ?? this.config.NEXT_PUBLIC_R2_PUBLIC_URL,
+    };
   }
 
   private static toR2Config(storage: RegionStorageConfig): R2Config {
@@ -137,26 +195,33 @@ export class StorageService {
     );
   }
 
-  private requireBucket(): string {
-    const { bucketName } = this.getConfig();
-    if (!bucketName) throw new ServiceUnavailableException("R2 bucket not configured");
-    return bucketName;
-  }
-
-  private resolveBucket(override?: string): string {
-    const bucket = override || this.getConfig().bucketName;
+  /**
+   * The bucket for a resolved placement.
+   *
+   * Replaces `requireBucket`/`resolveBucket`, which both read the *primary*
+   * region's configuration regardless of whose file it was — the same mistake
+   * as the shared client, one layer down.
+   */
+  private requireBucketFrom(placement: StoragePlacement, override?: string): string {
+    const bucket = override || placement.bucketName;
     if (!bucket) throw new ServiceUnavailableException("R2 bucket not configured");
     return bucket;
   }
 
-  private publicUrlFor(folder: string, key: string, override?: string): string {
+  private publicUrlFor(
+    folder: string,
+    key: string,
+    regionPublicUrl: string | undefined,
+    override?: string,
+  ): string {
     const folderRoot = folder.split("/", 1)[0] ?? folder;
     if (PRIVATE_HR_FOLDERS.has(folderRoot)) return key;
-    const publicBase = override ?? this.config.NEXT_PUBLIC_R2_PUBLIC_URL;
+    const publicBase = override ?? regionPublicUrl;
     return publicBase ? `${publicBase}/${key}` : key;
   }
 
   async uploadFile(
+    orgId: string,
     buffer: Buffer,
     folder = "uploads",
     fileName = "file",
@@ -164,12 +229,13 @@ export class StorageService {
     bucketOverride?: string,
     publicUrlOverride?: string,
   ): Promise<UploadResult> {
-    const bucketName = this.resolveBucket(bucketOverride);
+    const placement = await this.placementFor(orgId);
+    const bucketName = this.requireBucketFrom(placement, bucketOverride);
 
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
     const key = `${folder}/${randomUUID()}-${sanitizedName}`;
 
-    await this.client.send(
+    await placement.client.send(
       new PutObjectCommand({
         Bucket: bucketName,
         Key: key,
@@ -179,7 +245,7 @@ export class StorageService {
     );
 
     return {
-      url: this.publicUrlFor(folder, key, publicUrlOverride),
+      url: this.publicUrlFor(folder, key, placement.publicUrl, publicUrlOverride),
       key,
       size: buffer.length,
       mimeType,
@@ -187,6 +253,7 @@ export class StorageService {
   }
 
   async uploadFileStream(
+    orgId: string,
     body: Readable,
     contentLength: number,
     folder = "uploads",
@@ -195,11 +262,12 @@ export class StorageService {
     bucketOverride?: string,
     publicUrlOverride?: string,
   ): Promise<UploadResult> {
-    const bucketName = this.resolveBucket(bucketOverride);
+    const placement = await this.placementFor(orgId);
+    const bucketName = this.requireBucketFrom(placement, bucketOverride);
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
     const key = `${folder}/${randomUUID()}-${sanitizedName}`;
 
-    await this.client.send(
+    await placement.client.send(
       new PutObjectCommand({
         Bucket: bucketName,
         Key: key,
@@ -210,7 +278,7 @@ export class StorageService {
     );
 
     return {
-      url: this.publicUrlFor(folder, key, publicUrlOverride),
+      url: this.publicUrlFor(folder, key, placement.publicUrl, publicUrlOverride),
       key,
       size: contentLength,
       mimeType,
@@ -218,6 +286,7 @@ export class StorageService {
   }
 
   async uploadCompressed(
+    orgId: string,
     buffer: Buffer,
     folder = "uploads",
     fileName = "file",
@@ -227,6 +296,7 @@ export class StorageService {
   ): Promise<UploadResult> {
     const compressed = await this.compression.compress(buffer, mimeType, fileName);
     return this.uploadFile(
+      orgId,
       compressed.buffer,
       folder,
       compressed.fileName,
@@ -236,31 +306,35 @@ export class StorageService {
     );
   }
 
-  async getFileUrl(key: string, expiresIn = 3600): Promise<string> {
-    const bucketName = this.requireBucket();
+  async getFileUrl(orgId: string, key: string, expiresIn = 3600): Promise<string> {
+    const placement = await this.placementFor(orgId);
+    const bucketName = this.requireBucketFrom(placement);
     const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
-    return getSignedUrl(this.client, command, { expiresIn });
+    return getSignedUrl(placement.client, command, { expiresIn });
   }
 
-  async deleteFile(key: string): Promise<void> {
-    const bucketName = this.requireBucket();
-    await this.client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: key }));
+  async deleteFile(orgId: string, key: string): Promise<void> {
+    const placement = await this.placementFor(orgId);
+    const bucketName = this.requireBucketFrom(placement);
+    await placement.client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: key }));
   }
 
-  async fileExists(key: string): Promise<boolean> {
-    const { bucketName } = this.getConfig();
+  async fileExists(orgId: string, key: string): Promise<boolean> {
+    const placement = await this.placementFor(orgId);
+    const bucketName = placement.bucketName;
     if (!bucketName) return false;
     try {
-      await this.client.send(new HeadObjectCommand({ Bucket: bucketName, Key: key }));
+      await placement.client.send(new HeadObjectCommand({ Bucket: bucketName, Key: key }));
       return true;
     } catch {
       return false;
     }
   }
 
-  async getFileStream(key: string): Promise<FileStreamResult> {
-    const bucketName = this.requireBucket();
-    const response = await this.client.send(
+  async getFileStream(orgId: string, key: string): Promise<FileStreamResult> {
+    const placement = await this.placementFor(orgId);
+    const bucketName = this.requireBucketFrom(placement);
+    const response = await placement.client.send(
       new GetObjectCommand({ Bucket: bucketName, Key: key }),
     );
     const body = response.Body;
