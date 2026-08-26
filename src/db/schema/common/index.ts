@@ -23,3 +23,4 @@ export * from "./resource-grants";
 export * from "./legal-entities";
 export * from "./record-layouts";
 export * from "./subprocessors";
+export * from "./subject-requests";
