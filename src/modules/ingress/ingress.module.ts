@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AutonomyModule } from "../autonomy/autonomy.module";
+import { BillingModule } from "../billing/core/billing.module";
 import { MailModule } from "../mail/mail.module";
 import { CrmMailboxController } from "./adapters/crm-mailbox.controller";
 import { CrmMailboxService } from "./adapters/crm-mailbox.service";
@@ -15,7 +16,7 @@ import { InboundIngressWorkflow } from "./inbound-ingress.workflow";
  * every run rather than failing loudly, so this registration is load-bearing.
  */
 @Module({
-  imports: [AutonomyModule, MailModule],
+  imports: [AutonomyModule, BillingModule, MailModule],
   controllers: [InboundIngressController, CrmMailboxController],
   providers: [InboundIngressService, InboundIngressWorkflow, CrmMailboxService],
   exports: [InboundIngressService, CrmMailboxService],

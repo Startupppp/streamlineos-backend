@@ -4,6 +4,7 @@ import { businessParties, partyContacts, partyRoles } from "../../db/schema/part
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { softDeletePartyWithMirror, updatePartyWithMirror } from "./party-legacy-writer";
 import { claimIdentifiers, identifierClaimsOfColumns } from "./party-identifiers";
@@ -46,6 +47,7 @@ export class PartyService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private async loadParty(organizationId: string, partyId: string): Promise<PartyRow> {
@@ -180,6 +182,17 @@ export class PartyService {
   }
 
   async createParty(organizationId: string, userId: string, input: CreatePartyInput) {
+    /**
+     * The human path's share of ticket 07.
+     *
+     * The ticket is about autonomous writers, and closing only that half would
+     * have left the odd position that a plan limit binds the robot and not the
+     * person -- so the same record, created by hand, was unbounded. This is the
+     * ordinary throwing assertion every other write path in the platform uses,
+     * because here there *is* somebody to be told.
+     */
+    await this.planLimits.assertWithinLimit(organizationId, "crmContacts");
+
     const [row] = await this.db
       .insert(businessParties)
       .values({

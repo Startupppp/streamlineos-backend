@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { BillingModule } from "../billing/core/billing.module";
 import { PartyController } from "./party.controller";
 import { PartyMergeController } from "./party-merge.controller";
 import { PartyService } from "./party.service";
@@ -9,6 +10,7 @@ import { SubjectController } from "./subject.controller";
 import { SubjectService } from "./subject.service";
 
 @Module({
+  imports: [BillingModule],
   controllers: [PartyController, PartyMergeController, SubjectController],
   providers: [PartyService, PartyDivergenceService, PartyMergeService, PartyRolesService, SubjectService],
   exports: [PartyDivergenceService, PartyMergeService, PartyRolesService, SubjectService],

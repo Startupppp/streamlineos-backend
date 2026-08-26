@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { WorkflowModule } from "../../common/workflow/workflow.module";
+import { BillingModule } from "../billing/core/billing.module";
 import { IntegrationsModule } from "../integrations/core/integrations.module";
 import { CrmImportController } from "./crm-import.controller";
 import { CrmImportService } from "./crm-import.service";
@@ -20,7 +21,7 @@ import { CrmConnectorWorkflow } from "./crm-connector.workflow";
   // `IntegrationsModule` for `ComposioGateway` only. Nothing here touches
   // `IntegrationsService`, and nothing writes `user_integration_connections`:
   // the connectors read that table as a mirror and go out through the gateway.
-  imports: [WorkflowModule, IntegrationsModule],
+  imports: [WorkflowModule, IntegrationsModule, BillingModule],
   controllers: [CrmImportController],
   providers: [
     CrmImportService,

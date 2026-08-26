@@ -44,38 +44,47 @@ export type WriteVerdict =
 export interface WriteRequest {
   readonly kind: DecisionKind;
   readonly limitKey: string;
-  readonly limit: number;
+  /** The plan's allowance. `null` is the catalogue's word for unlimited. */
+  readonly limit: number | null;
   readonly current: number;
   /** How many rows this write would add. */
   readonly adding?: number;
 }
 
 /**
- * A negative limit is the platform's convention for unlimited.
+ * What the plan catalogue means by "no limit".
  *
- * Reading it as zero would refuse every autonomous write on an unlimited plan,
- * which is the exact inverse of the intent and would be discovered by the
- * largest customers first.
+ * `PLAN_LIMITS` writes it as `null`. This guard originally accepted only a
+ * negative number, which is a convention the platform does not use anywhere --
+ * so an ENTERPRISE plan arrived with `null`, failed `current + 1 <= null`, and
+ * every autonomous write on the most expensive plan we sell would have been
+ * refused. Reading it as zero fails the same way.
+ *
+ * The negative case is kept because it costs nothing and because a caller that
+ * computes a remaining allowance can legitimately arrive here below zero.
  */
-export function isUnlimited(limit: number): boolean {
-  return limit < 0;
+export function isUnlimited(limit: number | null): boolean {
+  return limit === null || limit < 0;
 }
 
 export function evaluateAutonomousWrite(request: WriteRequest): WriteVerdict {
   const adding = request.adding ?? 1;
 
-  if (isUnlimited(request.limit)) return { allowed: true };
-  if (request.current + adding <= request.limit) return { allowed: true };
+  const limit = request.limit;
+  if (isUnlimited(limit)) return { allowed: true };
+  // `isUnlimited` has ruled out null; this narrows it for the compiler.
+  if (limit === null) return { allowed: true };
+  if (request.current + adding <= limit) return { allowed: true };
 
   const reason =
-    `The plan allows ${request.limit} ${request.limitKey}, and this organisation has ` +
+    `The plan allows ${limit} ${request.limitKey}, and this organisation has ` +
     `${request.current}. The system did not create ${adding === 1 ? "another" : `${adding} more`}.`;
 
   return {
     allowed: false,
     reason,
     limitKey: request.limitKey,
-    limit: request.limit,
+    limit,
     current: request.current,
     decision: {
       kind: request.kind,
@@ -87,7 +96,7 @@ export function evaluateAutonomousWrite(request: WriteRequest): WriteVerdict {
       decision: {
         refusedBy: "plan-limit",
         limitKey: request.limitKey,
-        limit: request.limit,
+        limit,
         current: request.current,
         adding,
       },

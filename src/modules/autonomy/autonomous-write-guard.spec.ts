@@ -30,6 +30,19 @@ describe("evaluateAutonomousWrite", () => {
     expect(evaluateAutonomousWrite({ ...REQUEST, limit: -1, current: 10_000 }).allowed).toBe(true);
   });
 
+  it("treats a null limit as unlimited, because that is what the plan catalogue means by it", () => {
+    // `PLAN_LIMITS` writes unlimited as `null`, not as a negative number. This
+    // guard was written against a convention the platform does not use, so a
+    // plan whose limit really is unlimited arrived here as `null`, compared as
+    // `null + 1 <= null` -- false -- and refused every autonomous write on the
+    // most expensive plan we sell. Read from the catalogue, not from a guess
+    // about it.
+    expect(isUnlimited(null)).toBe(true);
+    expect(
+      evaluateAutonomousWrite({ ...REQUEST, limit: null, current: 10_000 }).allowed,
+    ).toBe(true);
+  });
+
   it("records the refusal as skipped, not failed", () => {
     // Nothing went wrong. A tenant reading the review feed should see a decision
     // rather than an error they might report as a bug.

@@ -22,6 +22,7 @@ import type { Db } from "../../db/drizzle.types";
 import {
   activities,
   activityParticipants,
+  autonomousDecisions,
   businessParties,
   inboundEvents,
   partyIdentifiers,
@@ -90,6 +91,7 @@ function tableName(table: unknown): string {
   if (table === activityParticipants) return "activity_participants";
   if (table === inboundEvents) return "inbound_events";
   if (table === partyIdentifiers) return "party_identifiers";
+  if (table === autonomousDecisions) return "autonomous_decisions";
   return "unknown";
 }
 
@@ -97,13 +99,29 @@ function tableName(table: unknown): string {
  * A database stand-in that answers the four reads the workflow makes and records
  * every write, so the assertions are about behaviour rather than about SQL.
  */
-function makeDb(recorder: Recorder, existingParty: string | null, payload = FIXTURE): Db {
+function makeDb(
+  recorder: Recorder,
+  existingParty: string | null,
+  payload = FIXTURE,
+  liveParties = 0,
+): Db {
   let selectCall = 0;
 
   return {
     select: jest.fn().mockImplementation(() => ({
       from: jest.fn().mockImplementation(() => ({
+        /**
+         * Two shapes of read, told apart by whether the caller narrows.
+         *
+         * Every read this workflow made until ticket 07 ended in `.limit(1)`.
+         * The plan-limit count does not — it is an aggregate over the whole
+         * tenant — so it awaits the builder straight off `where`. Making the
+         * return value both thenable and `.limit()`-able answers both without
+         * the harness having to guess which one it is looking at.
+         */
         where: jest.fn().mockImplementation(() => ({
+          then: (resolve: (rows: unknown) => unknown) =>
+            Promise.resolve([{ current: liveParties }]).then(resolve),
           limit: jest.fn().mockImplementation(async () => {
             selectCall += 1;
             // First read: the receipt's payload. Second: the sender's identifier.
@@ -170,9 +188,19 @@ const CALL_FIXTURE: InboundCommunicationEvent = {
   ],
 };
 
-async function runWorkflow(db: Db, store: WorkflowStepStore): Promise<void> {
+async function runWorkflow(
+  db: Db,
+  store: WorkflowStepStore,
+  planLimits?: { limitFor: (orgId: string, key: string) => Promise<number | null> },
+): Promise<void> {
   const registry = new WorkflowRegistry();
-  const workflow = new InboundIngressWorkflow(db, registry);
+  const workflow = new InboundIngressWorkflow(
+    db,
+    registry,
+    undefined,
+    undefined,
+    planLimits as never,
+  );
   workflow.onModuleInit();
 
   const definition = registry.get("crm.inbound-communication");
@@ -388,5 +416,104 @@ describe("inbound ingress, end to end from a fixture", () => {
       "shadow-score",
       "mark-processed",
     ]);
+  });
+});
+
+/**
+ * Ticket 07 — the limit binds the writer nobody asked to write.
+ *
+ * Every quota in the platform was written for a request a person made, and this
+ * path has no person on it. The tests below assert the consequence rather than
+ * the call: no party row, the message still filed, and a decision a tenant can
+ * read. A test that the guard was *consulted* would pass just as happily with
+ * the party still being created.
+ */
+describe("a plan limit reached, with nobody there to be told about it", () => {
+  const AT_CAP = { limitFor: async () => 100 };
+
+  it("does not create the party the plan has no room for", async () => {
+    const recorder: Recorder = { inserts: [], updates: [] };
+    await runWorkflow(makeDb(recorder, null, FIXTURE, 100), memoryStore(), AT_CAP);
+
+    expect(insertsInto(recorder, "business_parties")).toEqual([]);
+  });
+
+  /**
+   * The half that makes refusing safe enough to do.
+   *
+   * A cap that drops the customer's email is worse than no cap: the tenant has
+   * lost a message and does not know it. The communication is filed
+   * unattributed, so it is visible, searchable, and a person can attach it to
+   * somebody by hand.
+   */
+  it("still files the message, unattributed rather than unrecorded", async () => {
+    const recorder: Recorder = { inserts: [], updates: [] };
+    await runWorkflow(makeDb(recorder, null, FIXTURE, 100), memoryStore(), AT_CAP);
+
+    const logged = insertsInto(recorder, "activities");
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({ partyId: null, subject: "Quote for Q3" });
+  });
+
+  it("records the refusal as a decision, so the tenant discovers the limit", async () => {
+    const recorder: Recorder = { inserts: [], updates: [] };
+    await runWorkflow(makeDb(recorder, null, FIXTURE, 100), memoryStore(), AT_CAP);
+
+    const refusal = insertsInto(recorder, "autonomous_decisions").find(
+      (row) => row["outcome"] === "skipped",
+    );
+
+    expect(refusal).toMatchObject({ kind: "party.created", outcome: "skipped" });
+    // Naming the limit and the count is the difference between a tenant knowing
+    // they have a problem and knowing how to stop having it.
+    expect(String(refusal?.["summary"])).toContain("100");
+    expect(refusal?.["decision"]).toMatchObject({
+      refusedBy: "plan-limit",
+      limit: 100,
+      current: 100,
+    });
+  });
+
+  it("also claims no identifier, so the refused party cannot be half-created", async () => {
+    const recorder: Recorder = { inserts: [], updates: [] };
+    await runWorkflow(makeDb(recorder, null, FIXTURE, 100), memoryStore(), AT_CAP);
+
+    expect(insertsInto(recorder, "party_identifiers")).toEqual([]);
+  });
+
+  it("closes the receipt, so the refusal does not retry forever", async () => {
+    const store = memoryStore();
+    await runWorkflow(
+      makeDb({ inserts: [], updates: [] }, null, FIXTURE, 100),
+      store,
+      AT_CAP,
+    );
+
+    expect(store.rows.map((row) => row.stepName)).toContain("mark-processed");
+  });
+
+  it("creates the party when the plan still has room", async () => {
+    const recorder: Recorder = { inserts: [], updates: [] };
+    await runWorkflow(makeDb(recorder, null, FIXTURE, 99), memoryStore(), AT_CAP);
+
+    expect(insertsInto(recorder, "business_parties")).toHaveLength(1);
+  });
+
+  /**
+   * The inverse failure, which the largest customers would have found first.
+   *
+   * `PLAN_LIMITS` spells unlimited `null`. A guard that read that as zero — or
+   * that only understood a negative sentinel — would refuse every autonomous
+   * write on the most expensive plan we sell.
+   */
+  it("creates the party on an unlimited plan rather than refusing every one", async () => {
+    const recorder: Recorder = { inserts: [], updates: [] };
+    await runWorkflow(
+      makeDb(recorder, null, FIXTURE, 10_000),
+      memoryStore(),
+      { limitFor: async () => null },
+    );
+
+    expect(insertsInto(recorder, "business_parties")).toHaveLength(1);
   });
 });

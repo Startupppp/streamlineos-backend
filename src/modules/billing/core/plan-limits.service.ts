@@ -244,6 +244,34 @@ export class PlanLimitsService {
     };
   }
 
+  /**
+   * The allowance itself, without asserting anything about it.
+   *
+   * `assertWithinLimit` is the right shape for a request a person made: it
+   * throws, the handler unwinds, and the person is told to upgrade. It is the
+   * wrong shape for an autonomous write, where throwing unwinds an ingest that
+   * was carrying a customer's message -- refusing to record that an email
+   * arrived, because a plan limit was reached, loses the message.
+   *
+   * So the autonomous path needs the number rather than the exception, and
+   * decides for itself what to do with it. `null` means unlimited, which is the
+   * catalogue's own convention and is passed through unchanged rather than
+   * being flattened into a sentinel that the caller then has to decode.
+   *
+   * Deliberately no count: the population a limit governs is not the same
+   * question as the allowance, and on the autonomous path it is not the same
+   * answer either -- see the note in the inbound workflow.
+   */
+  async limitFor(orgId: string, key: LimitKey): Promise<number | null> {
+    const { tier, plan } = await this.resolveTier(orgId);
+    const limit = PLAN_LIMITS[key][plan];
+    if (key === "members" && tier === "ENTERPRISE") {
+      const negotiated = await this.fetchNegotiatedSeats(orgId);
+      if (negotiated !== null) return negotiated;
+    }
+    return limit;
+  }
+
   async assertWithinLimit(
     orgId: string,
     key: LimitKey,

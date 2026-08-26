@@ -266,8 +266,22 @@ function plannedRow(over: Partial<Record<string, unknown>> = {}): Record<string,
 }
 
 const workflows = { start: jest.fn(() => Promise.resolve("run-1")) };
+
+/**
+ * A plan with room, so these tests keep asking what they were written to ask.
+ *
+ * `assertWithinLimit` returns without complaint on an unlimited plan, which is
+ * the state every test in this file assumes and none of them is about. The
+ * limit's own behaviour is asserted where it belongs, next to the guard.
+ */
+const unlimitedPlan = { assertWithinLimit: jest.fn(async () => undefined) };
+
 const service = (fake: FakeDb) =>
-  new CrmImportService(fake.db, workflows as unknown as WorkflowRunnerService);
+  new CrmImportService(
+    fake.db,
+    workflows as unknown as WorkflowRunnerService,
+    unlimitedPlan as never,
+  );
 
 beforeAll(() => {
   // The per-row failure is logged on purpose; the test output is not the place.

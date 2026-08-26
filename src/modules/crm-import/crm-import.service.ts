@@ -11,6 +11,7 @@ import {
 } from "../../db/schema";
 import type { ImportStatus, StoredColumnMapping } from "../../db/schema/crm/imports";
 import { WorkflowRunnerService } from "../../common/workflow";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { PartyFingerprint } from "../party/party-duplicates";
 import {
@@ -161,6 +162,7 @@ export class CrmImportService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly workflows: WorkflowRunnerService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   /**
@@ -305,6 +307,36 @@ export class CrmImportService {
     if (!imported) throw new NotFoundException("Import not found");
     if (imported.status !== "previewing" && imported.status !== "committing")
       throw new ConflictException(`That import is already ${imported.status}.`);
+
+    /**
+     * The whole file against the plan, before any of it lands.
+     *
+     * Checked here rather than per row, for the reason `startRevert` gives just
+     * below about its window: the refusal reaches the person who pressed
+     * Commit, as a refusal. Per-row enforcement would import the first eight
+     * hundred rows and dead-letter the run on the eight hundred and first,
+     * leaving a half-imported file and a workflow error where an ordinary
+     * answer belonged -- and a half-imported file is the one outcome this
+     * module's preview/commit split exists to prevent.
+     *
+     * Only `create` rows count. A merge folds into a record that already
+     * exists, and a skip writes nothing.
+     */
+    const [creating] = await this.db
+      .select({ rows: sql<number>`count(*)::int` })
+      .from(crmImportRows)
+      .where(
+        and(
+          eq(crmImportRows.organizationId, organizationId),
+          eq(crmImportRows.crmImportId, crmImportId),
+          eq(crmImportRows.action, "create"),
+          isNull(crmImportRows.committedAt),
+        ),
+      );
+
+    if (creating && creating.rows > 0) {
+      await this.planLimits.assertWithinLimit(organizationId, "crmContacts", creating.rows);
+    }
 
     return this.startPhase(organizationId, crmImportId, {
       workflowName: COMMIT_WORKFLOW,
