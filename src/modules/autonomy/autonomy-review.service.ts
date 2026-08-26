@@ -19,7 +19,7 @@ import {
   businessParties,
   deals,
 } from "../../db/schema";
-import type { DecisionKind } from "../../db/schema/crm/autonomous-decisions";
+import { DECISION_KINDS, type DecisionKind } from "../../db/schema/crm/autonomous-decisions";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
@@ -444,7 +444,7 @@ export class AutonomyReviewService {
     return {
       switches: rows,
       /** The resolved answer per action type — what actually governs behaviour. */
-      effective: (["task.extracted", "stage.advanced", "party.created", "activity.logged", "quote.sent"] as const).map(
+      effective: DECISION_KINDS.map(
         (kind) => ({ kind, ...resolveSwitch(organizationId, kind, scoped) }),
       ),
     };
