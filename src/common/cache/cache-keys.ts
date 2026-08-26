@@ -1,5 +1,4 @@
 export const CACHE_KEYS = {
-  dashboardStats: (orgId: string) => `dashboard:stats:${orgId}`,
   userSession: (userId: string) => `user:session:${userId}`,
   membershipAccount: (userId: string) => `membership:account:${userId}`,
 
@@ -64,7 +63,6 @@ export const CACHE_KEYS = {
   leadBoard: (orgId: string, hash: string) => `leads:board:${orgId}:${hash}`,
   leadStats: (orgId: string, hash: string) => `leads:stats:${orgId}:${hash}`,
 
-  executiveDashboard: (orgId: string) => `dashboard:executive:${orgId}`,
   announcementsList: (orgId: string) => `dashboard:announcements:${orgId}`,
 
   invoicesList: (orgId: string, hash: string) =>
