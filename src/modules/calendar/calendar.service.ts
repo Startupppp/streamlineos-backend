@@ -85,14 +85,13 @@ export class CalendarService {
           location: input.location ?? null,
           startDate,
           endDate,
+          timezone: input.timezone,
           allDay: input.allDay ?? false,
           color: input.color ?? "blue",
           category: input.category,
           entityType: input.entityType ?? null,
           entityId: input.entityId ?? null,
           attendeeIds,
-          isRecurring: input.isRecurring ?? false,
-          recurringRule: input.recurringRule ?? null,
           agenda: input.agenda ?? null,
           linkedDealId: input.linkedDealId ?? null,
           linkedLeadId: input.linkedLeadId ?? null,
@@ -245,8 +244,7 @@ export class CalendarService {
       await assertUsersInOrg(this.db, orgId, input.attendeeIds);
       updateData.attendeeIds = input.attendeeIds;
     }
-    if (input.isRecurring !== undefined) updateData.isRecurring = input.isRecurring;
-    if (input.recurringRule !== undefined) updateData.recurringRule = input.recurringRule ?? null;
+    if (input.timezone !== undefined) updateData.timezone = input.timezone;
     if (input.agenda !== undefined) updateData.agenda = input.agenda ?? null;
     if (input.postMeetingNotes !== undefined)
       updateData.postMeetingNotes = input.postMeetingNotes ?? null;

@@ -12,7 +12,7 @@ import {
   notificationSuppressionReasonEnum,
 } from "./enums";
 import { organizations, users } from "./auth";
-import { notifications } from "./shared";
+import { broadcasts, notifications } from "./shared";
 
 export const notificationEvents = pgTable("notification_events", {
   id: serial("id").primaryKey(),
@@ -412,5 +412,30 @@ export const broadcastAudienceTargets = pgTable(
     uniqueIndex("uniq_broadcast_audience_target").on(t.broadcastId, t.kind, t.targetId),
     index("idx_broadcast_audience_lookup").on(t.orgId, t.kind, t.targetId),
     uniqueIndex("uniq_broadcast_audience_targets_org_id").on(t.orgId, t.id),
+  ],
+);
+
+/**
+ * c21-02. One row per user who has DISMISSED a broadcast. Unread state is the
+ * absence of a row, so publishing writes nothing per recipient and stays O(1)
+ * whatever the audience size — a 50,000-member announcement used to be 500
+ * sequential inserts inside one transaction, past the HTTP timeout.
+ *
+ * Every index leads with org_id: under RLS the planner cannot use one that
+ * omits it, so a covering index without it exists and does nothing.
+ */
+export const broadcastReadReceipts = pgTable(
+  "broadcast_read_receipts",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    broadcastId: integer("broadcast_id").references(() => broadcasts.id, { onDelete: "cascade" }).notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uniq_broadcast_read_receipts_org_user_broadcast").on(t.orgId, t.broadcastId, t.userId),
+    index("idx_broadcast_read_receipts_admin").on(t.orgId, t.broadcastId),
+    index("idx_broadcast_read_receipts_user").on(t.orgId, t.userId),
   ],
 );

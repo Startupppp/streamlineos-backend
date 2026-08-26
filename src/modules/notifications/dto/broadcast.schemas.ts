@@ -32,6 +32,11 @@ export const listBroadcastsSchema = z.object({
   cursor: z.coerce.number().optional(),
 });
 
+export const listBroadcastInboxSchema = z.object({
+  limit: z.coerce.number().min(1).max(100).optional().default(20),
+});
+
 export type CreateBroadcastInput = z.infer<typeof createBroadcastSchema>;
 export type UpdateBroadcastInput = z.infer<typeof updateBroadcastSchema>;
 export type ListBroadcastsInput = z.infer<typeof listBroadcastsSchema>;
+export type ListBroadcastInboxInput = z.infer<typeof listBroadcastInboxSchema>;

@@ -55,6 +55,7 @@ import {
   conversationsListQuerySchema,
 } from "../dto/request.schemas";
 import { ToolAccessService } from "../tool-access.service";
+import { AI_EVENT_TIMEZONE } from "../ai-event-timezone";
 
 const TICKET_TYPES = ["TASK", "BUG", "STORY", "EPIC", "SUBTASK"] as const;
 const TICKET_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
@@ -294,6 +295,7 @@ export class ChatAssistantController {
           title: String(payload["title"]),
           startDate: String(payload["startDate"]),
           endDate: String(payload["endDate"]),
+          timezone: AI_EVENT_TIMEZONE,
           description: payload["description"] !== undefined ? String(payload["description"]) : undefined,
           category: "reminder",
           color: "blue",

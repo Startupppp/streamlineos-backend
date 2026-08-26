@@ -2,6 +2,7 @@ import { Test } from "@nestjs/testing";
 import { BroadcastsService } from "./broadcasts.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { NotificationDispatchService } from "./notification-dispatch.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
 const ORG_ID = "org-aaaaaaaa-0000-0000-0000-000000000001";
@@ -18,8 +19,9 @@ const mockCache = {
   invalidatePattern: jest.fn().mockResolvedValue(undefined),
 };
 const mockAudit = { log: jest.fn() };
+const mockDispatch = { emit: jest.fn().mockResolvedValue({ notified: 0, deferred: true }) };
 
-function makeBroadcast() {
+function makeBroadcast(channels: string[] = ["IN_APP"]) {
   return {
     id: 1,
     orgId: ORG_ID,
@@ -28,10 +30,7 @@ function makeBroadcast() {
     type: "INFO" as const,
     priority: "NORMAL" as const,
     category: "HRMS" as const,
-    channels: ["IN_APP"] as string[],
-    // SCH-017: the JSONB is still written, but resolution reads audienceType plus the
-    // junction table. Left populated here precisely so a regression back onto the JSONB
-    // path would still fail these tests rather than quietly pass.
+    channels,
     audience: { type: "departments", departmentIds: [DEPT_ID_1, DEPT_ID_2] },
     audienceType: "departments" as const,
     status: "DRAFT" as const,
@@ -50,15 +49,10 @@ describe("BroadcastsService — department audience recipient resolution", () =>
   let mockDb: {
     query: { broadcasts: { findFirst: jest.Mock } };
     select: jest.Mock;
-    transaction: jest.Mock;
+    update: jest.Mock;
   };
   let memberWhere: jest.Mock;
 
-  /**
-   * Two reads now happen: the audience targets, then the members those targets expand
-   * to. The member query is the one with the join, so asserting on it distinguishes
-   * "resolved nobody" from "never asked".
-   */
   function mockReads(targetIds: string[], members: Array<{ userId: string }>) {
     memberWhere = jest.fn().mockResolvedValue(members);
     const junctionWhere = jest.fn().mockResolvedValue(targetIds.map((targetId) => ({ targetId })));
@@ -71,33 +65,31 @@ describe("BroadcastsService — department audience recipient resolution", () =>
     return { junctionWhere };
   }
 
-  function mockPublishTransaction(recipientCount: number) {
+  function mockPublish(recipientCount: number) {
     const updated = {
       ...makeBroadcast(),
       status: "SENT" as const,
       sentAt: new Date(),
       recipientCount,
-      deliveredCount: recipientCount,
+      deliveredCount: 0,
     };
-    mockDb.transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
-      fn({
-        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
-        update: jest.fn().mockReturnValue({
-          set: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([updated]) }),
-          }),
+    mockDb.update.mockReturnValue({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([updated]),
         }),
       }),
-    );
+    });
   }
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockDispatch.emit.mockResolvedValue({ notified: 0, deferred: true });
 
     mockDb = {
       query: { broadcasts: { findFirst: jest.fn() } },
       select: jest.fn(),
-      transaction: jest.fn(),
+      update: jest.fn(),
     };
 
     const module = await Test.createTestingModule({
@@ -106,6 +98,7 @@ describe("BroadcastsService — department audience recipient resolution", () =>
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: mockCache },
         { provide: AuditService, useValue: mockAudit },
+        { provide: NotificationDispatchService, useValue: mockDispatch },
       ],
     }).compile();
 
@@ -115,7 +108,7 @@ describe("BroadcastsService — department audience recipient resolution", () =>
   it("resolves department members via orgDepartmentId and reports the correct recipient count", async () => {
     mockDb.query.broadcasts.findFirst.mockResolvedValue(makeBroadcast());
     mockReads([DEPT_ID_1, DEPT_ID_2], [{ userId: USER_ID_A }, { userId: USER_ID_B }]);
-    mockPublishTransaction(2);
+    mockPublish(2);
 
     const result = await svc.publish(ORG_ID, ACTOR_ID, 1);
 
@@ -127,22 +120,46 @@ describe("BroadcastsService — department audience recipient resolution", () =>
   it("returns zero recipients and skips the member query when the audience has no targets", async () => {
     mockDb.query.broadcasts.findFirst.mockResolvedValue(makeBroadcast());
     mockReads([], []);
-    mockPublishTransaction(0);
+    mockPublish(0);
 
     const result = await svc.publish(ORG_ID, ACTOR_ID, 1);
 
     expect(result.recipientCount).toBe(0);
-    // The junction is still read; the expensive members join is not reached.
     expect(memberWhere).not.toHaveBeenCalled();
   });
 
   it("deduplicates repeated department ids before querying", async () => {
     mockDb.query.broadcasts.findFirst.mockResolvedValue(makeBroadcast());
     mockReads([DEPT_ID_1, DEPT_ID_1, DEPT_ID_2], [{ userId: USER_ID_A }]);
-    mockPublishTransaction(1);
+    mockPublish(1);
 
     await svc.publish(ORG_ID, ACTOR_ID, 1);
 
     expect(memberWhere).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call dispatch.emit when the broadcast has only IN_APP channel", async () => {
+    mockDb.query.broadcasts.findFirst.mockResolvedValue(makeBroadcast(["IN_APP"]));
+    mockReads([DEPT_ID_1], [{ userId: USER_ID_A }]);
+    mockPublish(1);
+
+    await svc.publish(ORG_ID, ACTOR_ID, 1);
+
+    expect(mockDispatch.emit).not.toHaveBeenCalled();
+  });
+
+  it("calls dispatch.emit when the broadcast includes EMAIL", async () => {
+    mockDb.query.broadcasts.findFirst.mockResolvedValue(makeBroadcast(["IN_APP", "EMAIL"]));
+    mockReads([DEPT_ID_1], [{ userId: USER_ID_A }]);
+    mockPublish(1);
+
+    await svc.publish(ORG_ID, ACTOR_ID, 1);
+
+    expect(mockDispatch.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventKey: "notification.broadcast.published",
+        targetUserIds: [USER_ID_A],
+      }),
+    );
   });
 });

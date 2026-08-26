@@ -12,6 +12,18 @@ import { z } from "zod";
 export const CALENDAR_MAX_SPAN_DAYS = 120;
 export const CALENDAR_EVENTS_CAP = 2000;
 
+const ianaTimezone = z.string().refine(
+  (tz) => {
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: tz });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  "Must be a valid IANA timezone name",
+);
+
 const titleSchema = z
   .string()
   .min(2, "Event title must be at least 2 characters")
@@ -56,14 +68,13 @@ export const createEventSchema = z
     location: z.string().optional(),
     startDate: z.string(),
     endDate: z.string(),
+    timezone: ianaTimezone,
     allDay: z.boolean().optional(),
     color: z.string().optional(),
     category: z.string().default("general"),
     entityType: z.string().optional(),
     entityId: z.string().optional(),
     attendeeIds: z.array(z.string()).optional(),
-    isRecurring: z.boolean().optional(),
-    recurringRule: z.string().optional(),
     agenda: z.string().optional(),
     linkedDealId: z.number().int().optional(),
     linkedLeadId: z.number().int().optional(),
@@ -89,14 +100,13 @@ export const updateEventSchema = z.object({
   location: z.string().nullable().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
+  timezone: ianaTimezone.optional(),
   allDay: z.boolean().optional(),
   color: z.string().nullable().optional(),
   category: z.string().optional(),
   entityType: z.string().nullable().optional(),
   entityId: z.string().nullable().optional(),
   attendeeIds: z.array(z.string()).optional(),
-  isRecurring: z.boolean().optional(),
-  recurringRule: z.string().nullable().optional(),
   agenda: z.string().nullable().optional(),
   postMeetingNotes: z.string().nullable().optional(),
   linkedDealId: z.number().int().nullable().optional(),

@@ -697,6 +697,30 @@ const SUPPORT = [
   ),
 ];
 
+/**
+ * C21-02. Fan-out-on-read: IN_APP is not in defaultChannels or allowedChannels,
+ * so the dispatch pipeline never writes per-user notification rows for this event.
+ * IN_APP delivery is served by the /broadcasts/inbox endpoint (absence-of-receipt
+ * pattern). Non-IN_APP channels go through the pipeline so preferences, quiet
+ * hours and email all apply.
+ */
+const BROADCAST_EMAIL: NotificationChannel[] = ["EMAIL"];
+const BROADCAST_ALLOWED: NotificationChannel[] = ["EMAIL", "PUSH", "SMS", "WHATSAPP"];
+
+const BROADCASTS = [
+  e("notification.broadcast.published", "notification", "SYSTEM", "Organization announcement", {
+    description: "An organization-wide broadcast was published to your audience group",
+    defaultPriority: "NORMAL",
+    defaultType: "INFO",
+    defaultChannels: BROADCAST_EMAIL,
+    allowedChannels: BROADCAST_ALLOWED,
+    mandatory: false,
+    userConfigurable: true,
+    quietHoursBehavior: "respect",
+    dedupeWindowSeconds: 0,
+  }),
+];
+
 const SYSTEM = [
   e(
     "compliance.policy.updated",
@@ -1056,6 +1080,7 @@ export const NOTIFICATION_EVENT_CATALOG = [
     ...ACCOUNTING,
     ...OWNERSHIP,
     ...ORGANIZATION,
+    ...BROADCASTS,
   ];
 
 /**
