@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
+import { keysetBefore } from "../../common/pagination/keyset";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { activities, activityParticipants, users } from "../../db/schema";
@@ -12,7 +13,6 @@ import {
 } from "./activity-timeline";
 import type {
   CreateActivityInput,
-  MyTasksQuery,
   TimelineQuery,
   UpdateActivityInput,
 } from "./dto/activity.schemas";
@@ -73,7 +73,7 @@ export class ActivitiesService {
       // Keyset on both columns: timestamps collide, so ordering on occurred_at
       // alone skips or repeats rows at every page boundary.
       position
-        ? sql`(${activities.occurredAt}, ${activities.activityId}) < (${new Date(position.occurredAt)}, ${position.activityId})`
+        ? keysetBefore(activities.occurredAt, activities.activityId, { sortValue: position.occurredAt, id: position.activityId })
         : undefined,
     ];
 
@@ -102,44 +102,20 @@ export class ActivitiesService {
   }
 
   /** A person's own tasks — the same rows the timeline shows, read by assignee. */
-  async myTasks(organizationId: string, userId: string, query: MyTasksQuery): Promise<TimelinePage> {
-    const position = decodeTimelineCursor(query.cursor);
-
-    const conditions: (SQL | undefined)[] = [
-      eq(activities.organizationId, organizationId),
-      isNull(activities.deletedAt),
-      eq(activities.kind, "task"),
-      eq(activities.assigneeUserId, userId),
-      query.includeCompleted ? undefined : isNull(activities.completedAt),
-      position
-        ? sql`(${activities.occurredAt}, ${activities.activityId}) < (${new Date(position.occurredAt)}, ${position.activityId})`
-        : undefined,
-    ];
-
-    const rows = await this.db
-      .select({
-        activityId: activities.activityId,
-        kind: activities.kind,
-        occurredAt: activities.occurredAt,
-        subject: activities.subject,
-        body: activities.body,
-        threadId: activities.threadId,
-        actorKind: activities.actorKind,
-        actorLabel: activities.actorLabel,
-        actorName: users.name,
-        dueAt: activities.dueAt,
-        completedAt: activities.completedAt,
-        source: activities.source,
-      })
-      .from(activities)
-      .leftJoin(users, eq(users.id, activities.actorUserId))
-      .where(and(...conditions))
-      .orderBy(desc(activities.occurredAt), desc(activities.activityId))
-      .limit(query.limit + 1);
-
-    return buildTimelinePage(rows as TimelineEntry[], query.limit);
-  }
-
+  /**
+   * The same rows the timeline shows, read by assignee instead of by anchor —
+   * and read in a different order, because it answers a different question.
+   *
+   * Soonest first, undated last. A task list ordered by when each row was
+   * written puts this morning's note above last week's overdue call, which
+   * buries exactly the row the screen exists to surface; it also walks past
+   * `idx_activities_assignee_open`, which the schema declares on `due_at`.
+   *
+   * The anchor rides along because "Follow up" with no customer beside it is not
+   * actionable. Three left joins rather than a lookup per row: the page is
+   * bounded at 100, and N+1 on a screen someone opens every morning is the
+   * kind of slow that never gets attributed to the query that caused it.
+   */
   async create(
     organizationId: string,
     actor: ActivityActor,
