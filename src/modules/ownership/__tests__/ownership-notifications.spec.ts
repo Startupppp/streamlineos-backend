@@ -94,6 +94,8 @@ describe("Ownership transfer notifications", () => {
           useValue: {
             invalidate: jest.fn().mockResolvedValue(undefined),
             invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+            invalidateForOrg: jest.fn().mockResolvedValue(undefined),
           },
         },
         { provide: NotificationDispatchService, useValue: { emit } },

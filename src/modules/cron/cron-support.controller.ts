@@ -14,6 +14,7 @@ import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronSupportService } from "./cron-support.service";
 import { SupportKbGapService } from "../support/kb-gap/support-kb-gap.service";
 import { CronLeaseService } from "./cron-lease.service";
+import { SessionsService } from "../sessions/sessions.service";
 
 @Public()
 @Controller("cron")
@@ -24,6 +25,7 @@ export class CronSupportController {
     private readonly support: CronSupportService,
     private readonly supportKbGap: SupportKbGapService,
     private readonly cronLease: CronLeaseService,
+    private readonly sessions: SessionsService,
   ) {}
 
   @Get("support-sla-escalations")
@@ -79,6 +81,17 @@ export class CronSupportController {
   @HttpCode(200)
   postSupportKbGapDetect(@Headers("authorization") authorization?: string) {
     return this.runSupportKbGapDetect(authorization);
+  }
+
+  @Get("session-revocation-prune")
+  getSessionRevocationPrune(@Headers("authorization") authorization?: string) {
+    return this.runSessionRevocationPrune(authorization);
+  }
+
+  @Post("session-revocation-prune")
+  @HttpCode(200)
+  postSessionRevocationPrune(@Headers("authorization") authorization?: string) {
+    return this.runSessionRevocationPrune(authorization);
   }
 
   private async runSupportSlaEscalations(authorization?: string) {
@@ -172,6 +185,24 @@ export class CronSupportController {
       };
     } catch (error) {
       logger.error("Support KB gap detect cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+  private async runSessionRevocationPrune(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("session-revocation-prune", 120, () =>
+        this.sessions.pruneExpiredRevocations(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "session-revocation-prune already running" };
+      return {
+        success: true,
+        message: `Pruned ${outcome.result.removed} expired session tombstones`,
+        ...outcome.result,
+      };
+    } catch (error) {
+      logger.error("Session revocation prune cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

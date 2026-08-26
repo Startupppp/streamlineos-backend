@@ -12,6 +12,7 @@ import { assertCronSecret } from "./cron-secret";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
+import { NotificationRetentionService } from "../notifications/notification-retention.service";
 import { NotificationOutboxRelayService } from "../notifications/notification-outbox-relay.service";
 import { NotificationDigestService } from "../notifications/notification-digest.service";
 import { CronOrganizationService } from "./cron-organization.service";
@@ -40,6 +41,7 @@ export class CronPlatformController {
     private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
     private readonly idempotency: CronIdempotencyService,
     private readonly notificationRetention: CronNotificationRetentionService,
+    private readonly partitionRetention: NotificationRetentionService,
     private readonly outboxRelay: NotificationOutboxRelayService,
     private readonly digest: NotificationDigestService,
     private readonly buildDueSweep: BuildDueSweepService,
@@ -112,6 +114,17 @@ export class CronPlatformController {
   @HttpCode(200)
   postNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runNotificationsRetentionSweep(authorization);
+  }
+
+  @Get("notifications-retention-detach")
+  getNotificationsRetentionDetach(@Headers("authorization") authorization?: string) {
+    return this.runNotificationsRetentionDetach(authorization);
+  }
+
+  @Post("notifications-retention-detach")
+  @HttpCode(200)
+  postNotificationsRetentionDetach(@Headers("authorization") authorization?: string) {
+    return this.runNotificationsRetentionDetach(authorization);
   }
 
   @Get("chat-reply-reminders")
@@ -329,6 +342,24 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Notification retention sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runNotificationsRetentionDetach(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.partitionRetention.sweep();
+      if (result === null) {
+        return { success: true, skipped: true, message: "notification-retention-detach already running" };
+      }
+      return {
+        success: true,
+        message: `Detached ${result.partitionsDetached} partitions and dropped ${result.partitionsDropped}`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Notification retention detach cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

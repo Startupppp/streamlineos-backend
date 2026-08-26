@@ -99,6 +99,8 @@ describe("OrgMembershipService access notifications", () => {
           useValue: {
             invalidate: jest.fn().mockResolvedValue(undefined),
             invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+            invalidateForOrg: jest.fn().mockResolvedValue(undefined),
           },
         },
         { provide: SessionsService, useValue: { revokeAllForUser: jest.fn() } },

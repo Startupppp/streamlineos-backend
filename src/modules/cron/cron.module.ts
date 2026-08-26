@@ -33,6 +33,7 @@ import { CronSupportController } from "./cron-support.controller";
 import { CronBuildController } from "./cron-build.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
+import { NotificationRetentionService } from "../notifications/notification-retention.service";
 import { CronAttendanceService } from "./cron-attendance.service";
 import { CronBillingService } from "./cron-billing.service";
 import { CronWorkflowService } from "./cron-workflow.service";
@@ -59,6 +60,7 @@ import { CronLeaseService } from "./cron-lease.service";
 import { ProjectsModule } from "../build/core/projects.module";
 import { CrmModule } from "../crm/core/crm.module";
 import { OutboxModule } from "../../common/outbox/outbox.module";
+import { SessionsModule } from "../sessions/sessions.module";
 
 @Module({
   imports: [
@@ -91,6 +93,7 @@ import { OutboxModule } from "../../common/outbox/outbox.module";
     ProjectsModule,
     CrmModule,
     OutboxModule,
+    SessionsModule,
   ],
   controllers: [
     CronBillingController,
@@ -117,6 +120,7 @@ import { OutboxModule } from "../../common/outbox/outbox.module";
     CronSupportService,
     CronNotificationDeliveryService,
     CronNotificationRetentionService,
+    NotificationRetentionService,
     CronFinanceService,
     CronCrmTasksService,
     CronIdempotencyService,
