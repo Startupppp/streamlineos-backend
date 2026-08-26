@@ -78,4 +78,41 @@ describe("no cursor rebuilds a Date inside a sql template", () => {
 
     expect(offenders.map((path) => path.slice(root.length + 1))).toEqual([]);
   });
+
+  /**
+   * The same defect, in the form the rule above cannot see.
+   *
+   * `${new Date(` only matches a Date built on the spot. Both instances actually
+   * in this repository interpolated a variable that already held one —
+   * `AutonomyService.loadThread` bound the thread window's upper edge as
+   * `<= (${trigger.occurredAt}, …)`, and `claimDueRuns` wrote
+   * `lease_expires_at = ${lease}` — so both read as ordinary template
+   * interpolation and neither was a cursor rebuild. The first threw on every
+   * threaded message and the second on every claim, which meant the durable
+   * runtime never ran a workflow at all; both were found by driving the ingress
+   * path against a real database, not by this file.
+   *
+   * So the shape to grep for is the tuple bound rather than the Date: in a
+   * keyset comparison the right-hand side is always a value, and a value that
+   * does not go through `sql.param` reaches the driver with no type attached.
+   */
+  it("binds every keyset tuple through sql.param", () => {
+    const unbound = /sql`[^`]*\)\s*[<>]=?\s*\(\s*\$\{(?!sql\.param)/;
+
+    // The rule still recognises the shape it exists to catch.
+    expect(
+      unbound.test(
+        "sql`(${activities.occurredAt}, ${activities.activityId}) <= (${trigger.occurredAt}, ${trigger.activityId})`",
+      ),
+    ).toBe(true);
+    expect(
+      unbound.test(
+        "sql`(${sortColumn}, ${idColumn}) < (${sql.param(at(position), sortColumn)}, ${sql.param(position.id, idColumn)})`",
+      ),
+    ).toBe(false);
+
+    const offenders = sources(root).filter((path) => unbound.test(readFileSync(path, "utf8")));
+
+    expect(offenders.map((path) => path.slice(root.length + 1))).toEqual([]);
+  });
 });
