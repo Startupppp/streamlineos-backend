@@ -234,6 +234,16 @@ export const SHARED_PERMISSIONS: Permission[] = [
     description: "Manage custom fields",
   },
   {
+    // Rearranging a record type is administration, and separate from reading
+    // one: an arrangement carries no record data, only field names the layout
+    // description already publishes, so every member reads their tenant's in
+    // order to render anything at all.
+    name: "settings:record-layouts:manage",
+    resource: "settings:record-layouts",
+    action: "manage",
+    description: "Reorder, hide and group the fields of a record type for this organisation",
+  },
+  {
     name: "settings:email-templates:manage",
     resource: "settings:email-templates",
     action: "manage",

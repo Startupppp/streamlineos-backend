@@ -81,11 +81,13 @@ import { AgentAccessModule } from "./modules/agent-access/agent-access.module";
 import { MailModule } from "./modules/mail/mail.module";
 import { DirectoryModule } from "./modules/directory/directory.module";
 import { PartyModule } from "./modules/party/party.module";
+import { RendererModule } from "./modules/renderer/renderer.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
 import { IngressModule } from "./modules/ingress/ingress.module";
 import { AutonomyModule } from "./modules/autonomy/autonomy.module";
 import { CrmImportModule } from "./modules/crm-import/crm-import.module";
 import { DataQualityModule } from "./modules/data-quality/data-quality.module";
+import { IssuesModule } from "./modules/issues/issues.module";
 import { PortalModule } from "./modules/portal/portal.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
@@ -95,7 +97,6 @@ import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
 import { BuildModule } from "./modules/build/build.module";
 import { ZodValidationInterceptor } from "./common/validation/zod-validation.interceptor";
-import { IssuesModule } from "./modules/issues/issues.module";
 
 @Module({
   imports: [
@@ -148,6 +149,7 @@ import { IssuesModule } from "./modules/issues/issues.module";
     HrModule,
     DirectoryModule,
     PartyModule,
+    RendererModule,
     ActivitiesModule,
     IngressModule,
     AutonomyModule,
