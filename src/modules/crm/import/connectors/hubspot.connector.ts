@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  canConnectorLand,
   ConnectorShapeError,
   describePayload,
   readCell,
@@ -169,7 +170,7 @@ function stream(
 ): ConnectorStreamDescriptor {
   return {
     target,
-    writable: target === "party",
+    writable: canConnectorLand(target),
     fields,
     // `since` is deliberately unused — see the file docblock.
     firstRequest: () => ({ method: "GET", path: listPath(object, fields) }),
@@ -183,7 +184,7 @@ export const HUBSPOT_CONNECTOR: ConnectorDescriptor = {
   streams: {
     accounts: stream("accounts", "companies", COMPANY_FIELDS, "party"),
     contacts: stream("contacts", "contacts", CONTACT_FIELDS, "subject"),
-    deals: stream("deals", "deals", DEAL_FIELDS, "pipeline-stage"),
+    deals: stream("deals", "deals", DEAL_FIELDS, "pipeline"),
     activities: stream("activities", "tasks", ENGAGEMENT_FIELDS, "activity"),
   },
 };

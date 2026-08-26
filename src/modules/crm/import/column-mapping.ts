@@ -1,3 +1,12 @@
+import {
+  fieldsFor,
+  groupOf,
+  IDENTITY_FIELDS,
+  synonymsFor,
+  type ImportEntity,
+  type ImportField,
+} from "./import-entities";
+
 /**
  * Working out what a column means, without asking a model first.
  *
@@ -10,34 +19,19 @@
  * Ambiguity resolves to `unmapped`, never to a guess. A column silently mapped
  * to the wrong field writes wrong data into every row of the file, and the user
  * only finds out later — which is the one outcome an import must not have.
- */
-
-/** The fields an import can land on today. */
-export const IMPORT_FIELDS = [
-  "name",
-  "legalName",
-  "displayName",
-  "email",
-  "phone",
-  "website",
-  "taxNumber",
-  "notes",
-  "partyType",
-  "status",
-] as const;
-export type ImportField = (typeof IMPORT_FIELDS)[number];
-
-/**
- * Narrows a string a person sent us to a field this import can land on.
  *
- * The override DTO already enumerates these, so today every answer that reaches
- * `applyOverrides` is valid — but "valid because one caller happens to validate
- * it" is a coupling that breaks silently the moment a second caller appears.
- * Narrowed here instead, where the list lives.
+ * ── Why the entity is a parameter ──────────────────────────────────────────
+ *
+ * "Stage" means a party's lifecycle on an accounts export and a deal's position
+ * on an opportunities one; "Amount" means nothing at all on either. So the
+ * vocabulary is per entity and lives in `import-entities.ts`, while the RULES
+ * below — head noun, exact-wins, cross-reference — are shared, because they are
+ * properties of how English column names are written rather than of what is
+ * being imported. The entity defaults to `party` so that every existing caller,
+ * including the mapping evals, keeps its exact answers.
  */
-export function isImportField(value: string): value is ImportField {
-  return (IMPORT_FIELDS as readonly string[]).includes(value);
-}
+
+export { IDENTITY_FIELDS, isFieldOf, type ImportEntity, type ImportField } from "./import-entities";
 
 export type ColumnMapping =
   | { readonly kind: "mapped"; readonly field: ImportField; readonly confidence: number }
@@ -51,53 +45,23 @@ export interface MappedColumn {
 }
 
 /**
- * Header spellings seen in real exports, per field.
- *
- * Compared after normalisation, so `Company Name`, `company_name` and
- * `COMPANY NAME` are one entry rather than three.
- */
-const SYNONYMS: Readonly<Record<ImportField, readonly string[]>> = {
-  name: [
-    "name", "company", "company name", "account", "account name", "organisation",
-    "organization", "organisation name", "organization name", "business name",
-    "customer", "customer name", "client", "client name", "company account",
-  ],
-  legalName: ["legal name", "registered name", "legal entity", "legal entity name", "trading name"],
-  displayName: ["display name", "short name", "nickname", "friendly name", "alias"],
-  email: ["email", "e mail", "email address", "primary email", "work email", "contact email", "mail"],
-  phone: [
-    "phone", "telephone", "phone number", "primary phone", "work phone", "mobile",
-    "mobile number", "contact number", "tel", "office phone",
-  ],
-  website: [
-    "website", "web site", "url", "web", "homepage", "company website",
-    // "Company Domain Name" is HubSpot's domain field. Listed as a phrase so it
-    // beats the bare "name" that also ends that header.
-    "domain", "domain name", "company domain name", "web address",
-    // A bare "site" is deliberately NOT here. Salesforce's "Account Site" is a
-    // location label — "HQ", "Bangalore" — and `website` is one of the four
-    // identifiers a row is matched on, so reading it as a URL gives every
-    // account at the same office the same blocking key. "Web site" still maps,
-    // because that spelling is unambiguous.
-  ],
-  taxNumber: ["tax number", "tax id", "vat", "vat number", "gst", "gstin", "abn", "ein", "tax registration"],
-  notes: ["notes", "note", "description", "comments", "remarks", "background", "about"],
-  partyType: ["type", "party type", "account type", "record type", "relationship", "category"],
-  status: ["status", "state", "account status", "lifecycle stage", "stage"],
-};
-
-/**
  * Headers that name a field we deliberately do not import.
  *
  * Recorded rather than ignored so the preview can say "left alone" instead of
  * silently dropping a column the user can see in their file. An identifier from
  * another system is the clearest case: importing it as a name would be absurd,
  * and importing it as our id would be worse.
+ *
+ * The modification timestamps matter more now than they did: an activities
+ * import reads "date" as when something happened, and "Last Modified Date" read
+ * that way would land every message in a mail folder at the moment somebody last
+ * touched the record.
  */
 const KNOWN_IGNORED = new Set([
   "id", "record id", "row id", "created at", "created date", "create date",
   "updated at", "updated date", "modified date", "last modified", "owner id",
   "created by", "modified by", "last activity date",
+  "last modified date", "date created", "date modified", "date updated",
 ]);
 
 /**
@@ -113,25 +77,6 @@ const IGNORABLE_HEAD = new Set([
   // bookkeeping as "Created Date"; only the spelling differs.
   "created", "modified", "updated",
 ]);
-
-/**
- * The fields that decide WHICH record a row is, rather than what it says.
- *
- * Four of these are the keys `import-plan` blocks and matches on, and `name` is
- * what the record is called. A value that belongs to somebody else landing in
- * one of them does not produce a slightly wrong record — it produces the wrong
- * record, because two rows that share an identifier are scored as one party and
- * merged above 0.85. Exported so the mapping evals can gate on exactly this set
- * rather than on a second list that drifts from it.
- */
-export const IDENTITY_FIELDS: readonly ImportField[] = [
-  "name",
-  "legalName",
-  "email",
-  "phone",
-  "taxNumber",
-  "website",
-];
 
 export function isIdentityField(field: string): boolean {
   return (IDENTITY_FIELDS as readonly string[]).includes(field);
@@ -193,11 +138,22 @@ const ENTITY_GROUP: Readonly<Record<string, string>> = {
  * account's description as much as of its e-mail address. Refusing uniformly is
  * also the module's existing doctrine: ambiguity resolves away from a guess, and
  * "whose is this?" is exactly the question a person can answer from the preview.
+ *
+ * `entityGroup` is the fallback when the head noun names no kind of record on
+ * its own. That is what tells a deals export that "Account Name" is the
+ * customer while "Deal Name" is the deal — read the other way, every
+ * opportunity in the file is renamed after the company it belongs to and the
+ * real deal names are gone. Parties leave it unset, so their answers cannot
+ * move: `Primary Contact Email` is still the party's e-mail address there.
  */
-function isCrossReference(prefixWords: readonly string[], headWord: string): boolean {
+function isCrossReference(
+  prefixWords: readonly string[],
+  headWord: string,
+  entityGroup: string | undefined,
+): boolean {
   if (prefixWords.some((word) => FOREIGN_QUALIFIERS.has(word))) return true;
 
-  const headGroup = ENTITY_GROUP[headWord];
+  const headGroup = ENTITY_GROUP[headWord] ?? entityGroup;
   if (!headGroup) return false;
 
   return prefixWords.some((word) => {
@@ -217,20 +173,23 @@ export function normaliseHeader(header: string): string {
 }
 
 /**
- * What one header means.
+ * What one header means, for the entity this file is being imported as.
  *
  * Exact synonym match wins outright. Failing that, a header that contains a
  * synonym as a whole phrase is a weaker match — `Primary Contact Email` should
  * find `email` — but a header matching two fields that way is **ambiguous**
  * rather than resolved by whichever list happened to be searched first.
  */
-export function mapColumn(header: string): ColumnMapping {
+export function mapColumn(header: string, entity: ImportEntity = "party"): ColumnMapping {
   const normalised = normaliseHeader(header);
   if (!normalised) return { kind: "unmapped" };
   if (KNOWN_IGNORED.has(normalised)) return { kind: "unmapped" };
 
-  for (const field of IMPORT_FIELDS)
-    if (SYNONYMS[field].includes(normalised)) return { kind: "mapped", field, confidence: 1 };
+  const fields = fieldsFor(entity);
+
+  for (const field of fields)
+    if (synonymsFor(entity, field).includes(normalised))
+      return { kind: "mapped", field, confidence: 1 };
 
   /**
    * Failing an exact match, the field is whatever the header's HEAD NOUN names.
@@ -245,10 +204,12 @@ export function mapColumn(header: string): ColumnMapping {
    * So only a synonym that reaches the end of the header counts. Among those,
    * the longest wins: "Company Domain Name" is a domain, not a name.
    */
-  const head = IMPORT_FIELDS.map((field) => ({
-    field,
-    length: longestTrailingSynonym(normalised, SYNONYMS[field]),
-  })).filter((candidate) => candidate.length > 0);
+  const head = fields
+    .map((field) => ({
+      field,
+      length: longestTrailingSynonym(normalised, synonymsFor(entity, field)),
+    }))
+    .filter((candidate) => candidate.length > 0);
 
   if (head.length > 0) {
     const longest = Math.max(...head.map((candidate) => candidate.length));
@@ -268,7 +229,7 @@ export function mapColumn(header: string): ColumnMapping {
     const prefix = normalised.slice(0, normalised.length - longest).trim();
     if (prefix) {
       const headWord = normalised.split(" ").at(-1) ?? "";
-      if (isCrossReference(prefix.split(" "), headWord))
+      if (isCrossReference(prefix.split(" "), headWord, groupOf(entity)))
         /**
          * A custom field, not `unmapped`. The column is real and the user can
          * see it in their file; it simply describes another record. Keeping it
@@ -319,7 +280,6 @@ function longestTrailingSynonym(haystack: string, needles: readonly string[]): n
   return best;
 }
 
-
 /** A stable, readable key. Two files with the same header land in one place. */
 export function customKeyFor(normalisedHeader: string): string {
   return normalisedHeader.replace(/\s+/g, "_").slice(0, 60);
@@ -332,11 +292,14 @@ export function customKeyFor(normalisedHeader: string): string {
  * `name`, and the second silently overwrites the first for every row. The
  * first wins and the rest become ambiguous, so a person decides.
  */
-export function mapColumns(headers: readonly string[]): MappedColumn[] {
+export function mapColumns(
+  headers: readonly string[],
+  entity: ImportEntity = "party",
+): MappedColumn[] {
   const taken = new Set<ImportField>();
 
   return headers.map((header) => {
-    const mapping = mapColumn(header);
+    const mapping = mapColumn(header, entity);
 
     if (mapping.kind === "mapped") {
       if (taken.has(mapping.field))

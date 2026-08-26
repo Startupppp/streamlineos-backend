@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  canConnectorLand,
   ConnectorShapeError,
   describePayload,
   readCell,
@@ -156,7 +157,7 @@ function stream(
 ): ConnectorStreamDescriptor {
   return {
     target,
-    writable: target === "party",
+    writable: canConnectorLand(target),
     fields,
     // `since` is deliberately unused: the v1 collection endpoints have no
     // modified-time filter, and `/v1/recents` is a differently-shaped payload
@@ -172,7 +173,7 @@ export const PIPEDRIVE_CONNECTOR: ConnectorDescriptor = {
   streams: {
     accounts: stream("accounts", "organizations", ORGANIZATION_FIELDS, "update_time", "party"),
     contacts: stream("contacts", "persons", PERSON_FIELDS, "update_time", "subject"),
-    deals: stream("deals", "deals", DEAL_FIELDS, "update_time", "pipeline-stage"),
+    deals: stream("deals", "deals", DEAL_FIELDS, "update_time", "pipeline"),
     activities: stream("activities", "activities", ACTIVITY_FIELDS, "update_time", "activity"),
   },
 };

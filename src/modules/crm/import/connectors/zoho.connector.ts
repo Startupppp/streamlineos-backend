@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  canConnectorLand,
   ConnectorShapeError,
   describePayload,
   readCell,
@@ -182,7 +183,7 @@ function stream(
 ): ConnectorStreamDescriptor {
   return {
     target,
-    writable: target === "party",
+    writable: canConnectorLand(target),
     fields,
     // `since` is deliberately unused — see the file docblock.
     firstRequest: () => ({ method: "GET", path: modulePath(module, fields) }),
@@ -196,7 +197,7 @@ export const ZOHO_CONNECTOR: ConnectorDescriptor = {
   streams: {
     accounts: stream("accounts", "Accounts", ACCOUNT_FIELDS, "party"),
     contacts: stream("contacts", "Contacts", CONTACT_FIELDS, "subject"),
-    deals: stream("deals", "Deals", DEAL_FIELDS, "pipeline-stage"),
+    deals: stream("deals", "Deals", DEAL_FIELDS, "pipeline"),
     activities: stream("activities", "Tasks", TASK_FIELDS, "activity"),
   },
 };

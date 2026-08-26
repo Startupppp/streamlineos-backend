@@ -20,6 +20,19 @@ import { organizations } from "../common/auth";
  */
 export type RowAction = "create" | "update" | "merge" | "review" | "skip";
 
+/**
+ * Which entity a file is being imported as.
+ *
+ * Declared here for the same reason `RowAction` is: schema is the lower layer,
+ * so the shapes a column stores are named here and `import-entities.ts` imports
+ * them back rather than the other way round. The discriminator lives on the
+ * IMPORT rather than on each row, which is what keeps `crm_import_rows` free of
+ * the `entity_type` + `entity_id` pair this repository bans — one file is for
+ * one entity, decided once, and no row can disagree with its parent.
+ */
+export const IMPORT_TARGET_ENTITIES = ["party", "subject", "pipeline", "activity"] as const;
+export type ImportTargetEntity = (typeof IMPORT_TARGET_ENTITIES)[number];
+
 /** The stored form of one column's decided meaning. */
 export interface StoredColumnMapping {
   readonly header: string;
@@ -61,6 +74,29 @@ export const crmImports = pgTable(
 
     status: text("status").$type<ImportStatus>().default("previewing").notNull(),
     sourceFilename: text("source_filename"),
+
+    /**
+     * Which entity this file lands as.
+     *
+     * `party` by default, because every import before this column existed was
+     * one. It decides the field vocabulary the columns were read with, which
+     * table the commit writes and which table the undo puts back — so it is
+     * frozen at preview time along with the mapping, for the same reason:
+     * re-deciding on read would let the commit be a different import from the
+     * one the tenant approved.
+     */
+    targetEntity: text("target_entity").$type<ImportTargetEntity>().default("party").notNull(),
+    /**
+     * Which subject type a subject import lands as.
+     *
+     * `subjects.subject_type_id` is NOT NULL and no column of somebody else's
+     * export can name one of this tenant's types, so the tenant chooses it when
+     * they start the import. A CHECK ties it to `target_entity`: set for a
+     * subject import and null for every other, so "a subject import with no
+     * type" is unrepresentable rather than a NOT NULL violation on row four
+     * thousand.
+     */
+    targetSubjectTypeId: text("target_subject_type_id"),
 
     /**
      * The confirmed mapping, stored rather than re-inferred.
@@ -135,7 +171,7 @@ export const crmImportRows = pgTable(
 
     values: jsonb("values").$type<Record<string, string>>(),
     customFields: jsonb("custom_fields").$type<Record<string, string>>(),
-    matchedPartyId: text("matched_party_id"),
+    matchedRecordId: text("matched_record_id"),
     duplicateOfRow: integer("duplicate_of_row"),
 
     /**
@@ -156,8 +192,14 @@ export const crmImportRows = pgTable(
      * delete, the other what to put back. Without the before-image an undo can
      * remove what it created but not restore what it overwrote — which is the
      * half people actually care about.
+     *
+     * Named for the record rather than the party since 0281: which table it
+     * lives in is `crm_imports.target_entity`, on the parent row. There is no
+     * foreign key on it and there never was one — a party id here has always
+     * been an ordinary text column — so nothing is lost by it now naming a
+     * subject, a deal or an activity instead.
      */
-    createdPartyId: text("created_party_id"),
+    createdRecordId: text("created_record_id"),
     previous: jsonb("previous").$type<Record<string, unknown>>(),
     /** The finding a `review` row filed, so the undo can close it again. */
     dataQualityFindingId: text("data_quality_finding_id"),

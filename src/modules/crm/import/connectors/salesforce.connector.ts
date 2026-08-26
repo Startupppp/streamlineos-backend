@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  canConnectorLand,
   ConnectorShapeError,
   describePayload,
   readCell,
@@ -160,7 +161,7 @@ function stream(
 ): ConnectorStreamDescriptor {
   return {
     target,
-    writable: target === "party",
+    writable: canConnectorLand(target),
     fields,
     firstRequest: (since) => ({ method: "GET", path: queryPath(object, fields, since) }),
     parsePage: (raw) => parse(name, fields, raw),
@@ -173,7 +174,7 @@ export const SALESFORCE_CONNECTOR: ConnectorDescriptor = {
   streams: {
     accounts: stream("accounts", "Account", ACCOUNT_FIELDS, "party"),
     contacts: stream("contacts", "Contact", CONTACT_FIELDS, "subject"),
-    deals: stream("deals", "Opportunity", OPPORTUNITY_FIELDS, "pipeline-stage"),
+    deals: stream("deals", "Opportunity", OPPORTUNITY_FIELDS, "pipeline"),
     activities: stream("activities", "Task", TASK_FIELDS, "activity"),
   },
 };
