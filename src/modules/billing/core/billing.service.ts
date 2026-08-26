@@ -29,6 +29,7 @@ import {
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import {
+  planSchema,
   webhookEventSchema,
   type BillingCycle,
   type CreateCouponInput,
@@ -145,10 +146,48 @@ export class BillingService {
       throw new BadRequestException("Payment verification failed: invalid signature");
     }
 
-    const amount = PLAN_PRICES_PAISE[input.plan];
+    /*
+      Every commercial fact comes from the order, not from `input`.
+
+      The signature is computed over `orderId|paymentId`, so it proves the
+      payment happened -- it says nothing about what was bought. Reading the plan
+      and the cycle from the request body meant the buyer declared them: an order
+      created and paid at STARTER could be verified with `plan: "ENTERPRISE"` and
+      the subscription would be written at the tier the body asked for. The
+      amount had the same shape, from the other direction: `createOrder` charged
+      twelve discounted months for an annual order, and this recomputed the
+      MONTHLY price to store, so an annual customer was billed ~23,990 and
+      recorded as having paid 2,499, then given one month of access.
+
+      The order is the record of the sale, held by the party that took the money.
+      `notes` is what `createOrder` attached to it, echoed back verbatim.
+    */
+    const order = await this.razorpay.fetchOrder(input.razorpay_order_id);
+
+    /*
+      An order carries the org it was created for. Without this check a valid
+      order id belonging to another tenant activates a subscription here -- the
+      signature would verify, because it is a real order of ours. Cross-tenant
+      misses are 404 by convention, but this one is a 400: the caller supplied a
+      malformed pairing rather than probed for a record's existence.
+    */
+    if (order.notes.orgId !== orgId) {
+      throw new BadRequestException("Payment verification failed: order belongs to another organisation");
+    }
+
+    if (order.notes.plan !== input.plan) {
+      throw new BadRequestException(
+        "Payment verification failed: this order was not for the requested plan",
+      );
+    }
+
+    const plan = planSchema.parse(order.notes.plan);
+    const billingCycle: BillingCycle = order.notes.billingCycle === "annual" ? "annual" : "monthly";
+    const amount = order.amount;
+
     const now = new Date();
     const periodEnd = new Date(now);
-    periodEnd.setMonth(periodEnd.getMonth() + 1);
+    periodEnd.setMonth(periodEnd.getMonth() + (billingCycle === "annual" ? 12 : 1));
 
     try {
       await this.db.transaction(async (tx) => {
@@ -161,7 +200,7 @@ export class BillingService {
           await tx
             .update(subscriptions)
             .set({
-              plan: input.plan,
+              plan,
               status: "ACTIVE",
               currentPeriodStart: now,
               currentPeriodEnd: periodEnd,
@@ -174,7 +213,7 @@ export class BillingService {
             .insert(subscriptions)
             .values({
               orgId,
-              plan: input.plan,
+              plan,
               status: "ACTIVE",
               currentPeriodStart: now,
               currentPeriodEnd: periodEnd,
@@ -194,7 +233,9 @@ export class BillingService {
           providerPaymentRef: input.razorpay_payment_id,
           providerOrderRef: input.razorpay_order_id,
           amount: (amount / 100).toFixed(2),
-          currency: "INR",
+          // What the order was denominated in, not what the only configured
+          // provider happens to charge today.
+          currency: order.currency,
           status: "captured",
           paidAt: now,
         });

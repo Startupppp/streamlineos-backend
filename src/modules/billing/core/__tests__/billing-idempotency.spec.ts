@@ -4,7 +4,10 @@ import { BillingService } from "../billing.service";
 import { AiCreditsService } from "../ai-credits.service";
 import { AiCreditsReservationService } from "../ai-credits-reservation.service";
 import { AiCreditsPacksService } from "../ai-credits-packs.service";
-import { PLATFORM_PAYMENT_PROVIDER } from "../platform-payment-provider";
+import {
+  PLATFORM_PAYMENT_PROVIDER,
+  type PlatformPaymentProvider,
+} from "../platform-payment-provider";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { PlanLimitsService } from "../plan-limits.service";
 import { creditsToMilli, milliToCredits } from "../../../ai/core/billing/ai-model-pricing.constants";
@@ -53,12 +56,23 @@ const VERIFY_INPUT = {
   plan: "STARTER" as const,
 };
 
-function makeRazorpay(configured = true, signatureValid = true) {
+/* Typed as the interface, for the reason set out in `billing.service.spec.ts`. */
+function makeRazorpay(configured = true, signatureValid = true, orgId = "org-1") {
   return {
+    providerKey: "razorpay",
     isConfigured: jest.fn().mockReturnValue(configured),
+    getPublishableKey: jest.fn().mockReturnValue("rzp_test"),
+    createOrder: jest.fn(),
+    fetchOrder: jest.fn().mockResolvedValue({
+      id: VERIFY_INPUT.razorpay_order_id,
+      amount: 99900,
+      currency: "INR",
+      status: "paid",
+      notes: { orgId, plan: "STARTER", billingCycle: "monthly", userId: "user-1" },
+    }),
     verifyPaymentSignature: jest.fn().mockReturnValue(signatureValid),
-    getKeyId: jest.fn().mockReturnValue("rzp_test"),
-  };
+    verifyWebhookSignature: jest.fn().mockReturnValue(true),
+  } as unknown as jest.Mocked<PlatformPaymentProvider>;
 }
 
 function makePlanLimits() {
@@ -74,12 +88,12 @@ function makeMockAiCreditsForBilling() {
 }
 
 describe("BillingService.verifyAndActivate — idempotency", () => {
-  async function buildBilling(db: unknown): Promise<BillingService> {
+  async function buildBilling(db: unknown, orgId = "org-1"): Promise<BillingService> {
     const module = await Test.createTestingModule({
       providers: [
         BillingService,
         { provide: DRIZZLE, useValue: db },
-        { provide: PLATFORM_PAYMENT_PROVIDER, useValue: makeRazorpay() },
+        { provide: PLATFORM_PAYMENT_PROVIDER, useValue: makeRazorpay(true, true, orgId) },
         { provide: AiCreditsService, useValue: makeMockAiCreditsForBilling() },
         { provide: AuditService, useValue: makeAuditService() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },
@@ -90,7 +104,7 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
 
   it("23505 on subscription_payments insert → returns success, not 500 (idempotent retry)", async () => {
     const db = { transaction: jest.fn().mockRejectedValue({ code: "23505" }) };
-    const svc = await buildBilling(db);
+    const svc = await buildBilling(db, "org-idp");
 
     const result = await svc.verifyAndActivate("org-idp", "user-1", VERIFY_INPUT);
 
