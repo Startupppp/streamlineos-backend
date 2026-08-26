@@ -7,6 +7,9 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { AuditService } from "../../common/audit/audit.service";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { JournalPostingService } from "../accounting/posting/journal-posting.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -36,6 +39,7 @@ export class InvoicesWriteService {
     private readonly planLimits: PlanLimitsService,
     private readonly paymentService: InvoicesPaymentService,
     private readonly updateService: InvoicesUpdateService,
+    private readonly cache: CacheService,
   ) {}
 
   async createInvoice(
@@ -186,6 +190,14 @@ export class InvoicesWriteService {
       return inserted;
     });
 
+    const invalidate = () => Promise.all([
+      this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finTaxReportsNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId)),
+    ]);
+    if (!registerAfterCommit(invalidate)) await invalidate();
+
     this.audit.log({
       action: "accounting.invoice.created",
       userId,
@@ -198,13 +210,21 @@ export class InvoicesWriteService {
     return { invoice, posted: status === "ISSUED" };
   }
 
-  updateInvoice(
+  async updateInvoice(
     orgId: string,
     userId: string,
     invoiceId: number,
     input: UpdateInvoiceInput,
   ): Promise<{ success: true; posted: boolean }> {
-    return this.updateService.updateInvoice(orgId, userId, invoiceId, input);
+    const result = await this.updateService.updateInvoice(orgId, userId, invoiceId, input);
+    const invalidate = () => Promise.all([
+      this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finTaxReportsNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId)),
+    ]);
+    if (!registerAfterCommit(invalidate)) await invalidate();
+    return result;
   }
 
   recordPayment(
@@ -216,12 +236,20 @@ export class InvoicesWriteService {
     return this.paymentService.recordPayment(orgId, userId, invoiceId, input);
   }
 
-  voidInvoice(
+  async voidInvoice(
     orgId: string,
     userId: string,
     invoiceId: number,
   ): Promise<{ success: true }> {
-    return this.lifecycle.voidInvoice(orgId, userId, invoiceId);
+    const result = await this.lifecycle.voidInvoice(orgId, userId, invoiceId);
+    const invalidate = () => Promise.all([
+      this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finTaxReportsNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId)),
+    ]);
+    if (!registerAfterCommit(invalidate)) await invalidate();
+    return result;
   }
 
   markOverdueInvoices(orgId?: string): Promise<{ updated: number }> {

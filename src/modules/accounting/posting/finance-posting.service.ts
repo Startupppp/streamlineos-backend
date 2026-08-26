@@ -19,6 +19,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { ACCT_STATEMENTS_NS } from "../settings/accounting-settings.constants";
 import {
   addDecimals,
@@ -403,7 +404,10 @@ export class FinancePostingService {
     });
 
     if (postedDirectly) {
-      const invalidate = () => this.cache.invalidateNamespace(ACCT_STATEMENTS_NS(orgId));
+      const invalidate = () => Promise.all([
+        this.cache.invalidateNamespace(ACCT_STATEMENTS_NS(orgId)),
+        this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId)),
+      ]);
       if (!registerAfterCommit(invalidate)) await invalidate();
     }
 
@@ -527,7 +531,10 @@ export class FinancePostingService {
       return reversal.id;
     });
 
-    const invalidate = () => this.cache.invalidateNamespace(ACCT_STATEMENTS_NS(orgId));
+    const invalidate = () => Promise.all([
+      this.cache.invalidateNamespace(ACCT_STATEMENTS_NS(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId)),
+    ]);
     if (!registerAfterCommit(invalidate)) await invalidate();
 
     this.audit.log({

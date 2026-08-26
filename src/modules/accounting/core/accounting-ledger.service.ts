@@ -18,6 +18,7 @@ import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { JournalPostingService, type DraftLine } from "../posting/journal-posting.service";
 import { FinancePostingService } from "../posting/finance-posting.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { ACCT_STATEMENTS_NS } from "../settings/accounting-settings.constants";
 import { addDecimals, compareDecimals } from "./money.util";
 import {
@@ -335,7 +336,10 @@ export class AccountingLedgerService {
         status: journalEntries.status,
       });
 
-    const invalidate = () => this.cache.invalidateNamespace(ACCT_STATEMENTS_NS(orgId));
+    const invalidate = () => Promise.all([
+      this.cache.invalidateNamespace(ACCT_STATEMENTS_NS(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId)),
+    ]);
     if (!registerAfterCommit(invalidate)) await invalidate();
 
     this.audit.log({
@@ -427,7 +431,10 @@ export class AccountingLedgerService {
       return reversed;
     });
 
-    const invalidateStatements = () => this.cache.invalidateNamespace(ACCT_STATEMENTS_NS(orgId));
+    const invalidateStatements = () => Promise.all([
+      this.cache.invalidateNamespace(ACCT_STATEMENTS_NS(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId)),
+    ]);
     if (!registerAfterCommit(invalidateStatements)) await invalidateStatements();
 
     this.audit.log({

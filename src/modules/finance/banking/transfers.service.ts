@@ -187,6 +187,7 @@ export class TransfersService {
 
     await this.cache.invalidateNamespace(CACHE_KEYS.finBankAccountsNamespace(orgId));
     await this.cache.invalidate(CACHE_TRANSFERS(orgId));
+    await this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId));
 
     this.audit.log({
       action: "banking.transfer.create",

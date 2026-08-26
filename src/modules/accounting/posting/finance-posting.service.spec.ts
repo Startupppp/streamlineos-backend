@@ -4,9 +4,11 @@ import { FinancePostingService } from "./finance-posting.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { PostJournalInput } from "../core/finance-posting.types";
+import { ACCT_STATEMENTS_NS } from "../settings/accounting-settings.constants";
 
 const USER: CurrentUserContext = {
   userId: "u1",
@@ -42,6 +44,7 @@ describe("FinancePostingService", () => {
   };
   let mockAudit: { log: jest.Mock };
   let mockDispatch: { emit: jest.Mock };
+  let mockCache: { invalidateNamespace: jest.Mock };
 
   beforeEach(async () => {
     const selectChain = {
@@ -67,7 +70,7 @@ describe("FinancePostingService", () => {
     mockAudit = { log: jest.fn() };
     mockDispatch = { emit: jest.fn().mockResolvedValue(undefined) };
 
-    const mockCache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) };
+    mockCache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -267,6 +270,172 @@ describe("FinancePostingService", () => {
       await expect(service.reverseJournal(USER, 1)).rejects.toThrow(
         /Only POSTED entries can be reversed/i,
       );
+    });
+  });
+
+  describe("postJournal — cache invalidation after commit", () => {
+    function setupSuccessfulPost() {
+      let outerCallCount = 0;
+      mockDb.select.mockImplementation(() => ({
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockImplementation(() => {
+          outerCallCount++;
+          if (outerCallCount === 1) return Promise.resolve([{ status: "OPEN" }]);
+          return Promise.resolve([{ baseCurrency: "INR" }]);
+        }),
+      }));
+
+      mockDb.transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const txSelect = jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue([]),
+        });
+        const txInsert = jest.fn()
+          .mockReturnValueOnce({
+            values: jest.fn().mockReturnThis(),
+            onConflictDoNothing: jest.fn().mockReturnThis(),
+            onConflictDoUpdate: jest.fn().mockReturnThis(),
+            returning: jest.fn().mockResolvedValue([{ next: 2, padding: 5 }]),
+          })
+          .mockReturnValueOnce({
+            values: jest.fn().mockReturnThis(),
+            returning: jest.fn().mockResolvedValue([{ id: 42, entryNumber: "JE-202401-00001" }]),
+          })
+          .mockReturnValue({
+            values: jest.fn().mockResolvedValue(undefined),
+          });
+        return fn({ select: txSelect, insert: txInsert, update: jest.fn() });
+      });
+    }
+
+    it("bumps finReportsNamespace after a direct post", async () => {
+      setupSuccessfulPost();
+      await service.postJournal(USER, makeBalancedInput({ sourceType: "invoice" }));
+      const allKeys = mockCache.invalidateNamespace.mock.calls.map((c: unknown[]) => c[0]);
+      expect(allKeys).toContain(CACHE_KEYS.finReportsNamespace(USER.orgId));
+    });
+
+    it("bumps ACCT_STATEMENTS_NS and finReportsNamespace together", async () => {
+      setupSuccessfulPost();
+      await service.postJournal(USER, makeBalancedInput({ sourceType: "invoice" }));
+      const allKeys = mockCache.invalidateNamespace.mock.calls.map((c: unknown[]) => c[0]);
+      expect(allKeys).toContain(ACCT_STATEMENTS_NS(USER.orgId));
+      expect(allKeys).toContain(CACHE_KEYS.finReportsNamespace(USER.orgId));
+    });
+
+    it("does not bump finReportsNamespace when entry is pending approval", async () => {
+      let outerCallCount = 0;
+      mockDb.select.mockImplementation(() => ({
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockImplementation(() => {
+          outerCallCount++;
+          if (outerCallCount === 1) return Promise.resolve([{ status: "OPEN" }]);
+          return Promise.resolve([{ baseCurrency: "INR" }]);
+        }),
+      }));
+
+      mockDb.transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const txSelect = jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue([]),
+        });
+        const txSelectApproval = jest.fn()
+          .mockReturnValueOnce({
+            from: jest.fn().mockReturnThis(),
+            where: jest.fn().mockReturnThis(),
+            limit: jest.fn().mockResolvedValue([]),
+          })
+          .mockReturnValue({
+            from: jest.fn().mockReturnThis(),
+            where: jest.fn().mockReturnThis(),
+            limit: jest.fn().mockResolvedValue([{ id: 1, approverUserId: null, minAmount: null }]),
+          });
+
+        const txInsert = jest.fn()
+          .mockReturnValueOnce({
+            values: jest.fn().mockReturnThis(),
+            onConflictDoNothing: jest.fn().mockReturnThis(),
+            onConflictDoUpdate: jest.fn().mockReturnThis(),
+            returning: jest.fn().mockResolvedValue([{ next: 2, padding: 5 }]),
+          })
+          .mockReturnValueOnce({
+            values: jest.fn().mockReturnThis(),
+            returning: jest.fn().mockResolvedValue([{ id: 42, entryNumber: "JE-202401-00001" }]),
+          })
+          .mockReturnValue({
+            values: jest.fn().mockResolvedValue(undefined),
+          });
+
+        let selectCallCount = 0;
+        const combinedSelect = jest.fn().mockImplementation(() => {
+          selectCallCount++;
+          if (selectCallCount === 1) return txSelect();
+          return txSelectApproval();
+        });
+
+        return fn({ select: combinedSelect, insert: txInsert, update: jest.fn() });
+      });
+
+      await service.postJournal(USER, makeBalancedInput({ sourceType: "manual" }));
+      expect(mockCache.invalidateNamespace).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("reverseJournal — cache invalidation after commit", () => {
+    it("bumps finReportsNamespace after reversal", async () => {
+      mockDb.select.mockImplementation(() => ({
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue([{ status: "OPEN" }]),
+      }));
+
+      mockDb.transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const postedEntry = {
+          id: 10,
+          orgId: USER.orgId,
+          status: "POSTED",
+          entryNumber: "JE-202401-00001",
+          sourceType: "invoice",
+          sourceId: "s1",
+          sourceEvent: "create",
+          currency: "INR",
+        };
+        let txSelectCallCount = 0;
+        const txSelect = jest.fn().mockImplementation(() => ({
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockImplementation(() => {
+            txSelectCallCount++;
+            if (txSelectCallCount === 1) return Promise.resolve([postedEntry]);
+            return Promise.resolve([]);
+          }),
+        }));
+        const txInsert = jest.fn()
+          .mockReturnValueOnce({
+            values: jest.fn().mockReturnThis(),
+            onConflictDoNothing: jest.fn().mockReturnThis(),
+            onConflictDoUpdate: jest.fn().mockReturnThis(),
+            returning: jest.fn().mockResolvedValue([{ next: 3, padding: 5 }]),
+          })
+          .mockReturnValue({
+            values: jest.fn().mockReturnThis(),
+            returning: jest.fn().mockResolvedValue([{ id: 99 }]),
+          });
+        const txUpdate = jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnThis(),
+          where: jest.fn().mockResolvedValue(undefined),
+        });
+        return fn({ select: txSelect, insert: txInsert, update: txUpdate });
+      });
+
+      await service.reverseJournal(USER, 10);
+      const allKeys = mockCache.invalidateNamespace.mock.calls.map((c: unknown[]) => c[0]);
+      expect(allKeys).toContain(CACHE_KEYS.finReportsNamespace(USER.orgId));
+      expect(allKeys).toContain(ACCT_STATEMENTS_NS(USER.orgId));
     });
   });
 
