@@ -296,6 +296,8 @@ describe("KbPageBackfillService — backfillAll", () => {
       after: 5,
       indexed: 0,
       failed: 0,
+      scanned: 0,
+      nextPageId: null,
     });
 
     const result = await svc.backfillAll({ delayMs: 0 });
@@ -334,8 +336,24 @@ describe("KbPageBackfillService — backfillAll", () => {
     jest
       .spyOn(svc, "backfillOrg")
       .mockRejectedValueOnce(new Error("fatal org error"))
-      .mockResolvedValueOnce({ orgId: "org-b", before: 1, after: 2, indexed: 1, failed: 0 })
-      .mockResolvedValueOnce({ orgId: "org-c", before: 0, after: 0, indexed: 0, failed: 0 });
+      .mockResolvedValueOnce({
+        orgId: "org-b",
+        before: 1,
+        after: 2,
+        indexed: 1,
+        failed: 0,
+        scanned: 1,
+        nextPageId: null,
+      })
+      .mockResolvedValueOnce({
+        orgId: "org-c",
+        before: 0,
+        after: 0,
+        indexed: 0,
+        failed: 0,
+        scanned: 0,
+        nextPageId: null,
+      });
 
     const result = await svc.backfillAll({ delayMs: 0 });
 

@@ -180,7 +180,11 @@ export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleD
       await this.markFinished(null);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      await this.markFinished(msg).catch(() => undefined);
+      await this.markFinished(msg).catch((e: unknown) => {
+        logger.warn("payroll-calendar-reminder: markFinished failed after run error", {
+          cause: e instanceof Error ? e.message : String(e),
+        });
+      });
       throw error;
     }
   }

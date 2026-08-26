@@ -1933,6 +1933,41 @@
       "when": 1787812353441,
       "tag": "0487_hr_people_org_person_validate",
       "breakpoints": true
+    },
+    {
+      "idx": 277,
+      "version": "7",
+      "when": 1787815953441,
+      "tag": "0490_provider_webhook_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 278,
+      "version": "7",
+      "when": 1787819553441,
+      "tag": "0491_migrate_dunning_to_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 279,
+      "version": "7",
+      "when": 1787823153441,
+      "tag": "0492_invoice_immutability_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 280,
+      "version": "7",
+      "when": 1787826753441,
+      "tag": "0497_ticket_key_lookup_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 281,
+      "version": "7",
+      "when": 1787830353441,
+      "tag": "0498_kb_ingestion_hardening",
+      "breakpoints": true
     }
   ]
 }

@@ -7,7 +7,6 @@ import {
   type ErrorReport,
 } from "../observability/error-reporter";
 import { runWithObservabilityContext } from "../observability/observability-context";
-import { resetErrorReporter, setErrorReporter } from "../observability/error-reporter";
 
 function hostWith(): { host: ArgumentsHost; json: jest.Mock; status: jest.Mock } {
   const json = jest.fn();

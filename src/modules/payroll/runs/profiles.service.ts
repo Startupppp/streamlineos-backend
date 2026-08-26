@@ -2,6 +2,8 @@ import { BadRequestException, ConflictException, Injectable, Inject } from "@nes
 import { and, eq, desc, ilike, or, count, ne, isNull, gte, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { logger } from "../../../common/logger/logger.service";
 import {
   employeeSalaryProfiles,
   employeeSalaryProfileComponents,
@@ -267,7 +269,14 @@ export class ProfilesService {
           })
           .returning();
         inserted = row;
-      } catch {
+      } catch (err) {
+        if (getPostgresErrorCode(err) !== "23505") {
+          logger.error("profiles.createWorkerProfile: insert failed unexpectedly", {
+            orgId,
+            cause: err instanceof Error ? err.message : String(err),
+          });
+          throw err;
+        }
         throw new ConflictException(
           `A salary profile already exists for this worker effective ${body.effectiveFrom}`,
         );
@@ -477,7 +486,14 @@ export class ProfilesService {
           })
           .returning();
         inserted = row;
-      } catch {
+      } catch (err) {
+        if (getPostgresErrorCode(err) !== "23505") {
+          logger.error("profiles.createEmployeeProfile: insert failed unexpectedly", {
+            orgId,
+            cause: err instanceof Error ? err.message : String(err),
+          });
+          throw err;
+        }
         throw new ConflictException(
           `A salary profile already exists for this employee effective ${body.effectiveFrom}`,
         );
@@ -499,7 +515,14 @@ export class ProfilesService {
               sortOrder: idx,
             })),
           );
-        } catch {
+        } catch (err) {
+          if (getPostgresErrorCode(err) !== "23505") {
+            logger.error("profiles.createProfile: component insert failed unexpectedly", {
+              orgId,
+              cause: err instanceof Error ? err.message : String(err),
+            });
+            throw err;
+          }
           throw new ConflictException("Duplicate component assignment on profile is not allowed");
         }
       }

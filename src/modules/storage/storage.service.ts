@@ -59,13 +59,29 @@ const PRIVATE_HR_FOLDERS = new Set([
   "hr-exports",
 ]);
 
+/**
+ * Only the object-storage settings this service reads. The full `AppConfig` is
+ * still what gets injected — it satisfies this structurally — but stating the
+ * six fields keeps the constructor honest and lets a test supply them without
+ * standing up every unrelated environment variable.
+ */
+export type StorageConfig = Pick<
+  AppConfig,
+  | "R2_REGION"
+  | "R2_BUCKET_NAME"
+  | "R2_ACCESS_KEY_ID"
+  | "R2_SECRET_ACCESS_KEY"
+  | "R2_ENDPOINT"
+  | "NEXT_PUBLIC_R2_PUBLIC_URL"
+>;
+
 @Injectable()
 export class StorageService {
   private readonly client: S3Client;
 
   constructor(
     private readonly compression: MediaCompressionService,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(APP_CONFIG) private readonly config: StorageConfig,
   ) {
     const cfg = this.getConfig();
     this.client = new S3Client({

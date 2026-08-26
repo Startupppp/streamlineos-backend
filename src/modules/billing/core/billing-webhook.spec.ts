@@ -1,5 +1,4 @@
 import { Test } from "@nestjs/testing";
-import { jest } from "@jest/globals";
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: async (db: { insert: unknown }, fn: (tx: { insert: unknown }) => Promise<unknown>) => fn(db),

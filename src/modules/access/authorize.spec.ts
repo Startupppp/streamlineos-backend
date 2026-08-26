@@ -100,6 +100,19 @@ describe("authorize", () => {
     expect(result).toEqual({ allow: false, scope: "none", reason: "FORBIDDEN" });
   });
 
+  it("fails closed on a completely unknown key that appears in no module catalog", async () => {
+    const resolver = makeResolver(new Map(), ["hr"]);
+    const result = await authorize(resolver, makeCtx({ isOrgOwner: true }), "nonexistent:ghost:action");
+    expect(result.allow).toBe(false);
+    expect(result.reason).toBe("NO_MODULE");
+  });
+
+  it("fails closed on a malformed key with no module segment", async () => {
+    const resolver = makeResolver(new Map(), ["hr"]);
+    const result = await authorize(resolver, makeCtx({ isOrgOwner: true }), "bare-key");
+    expect(result.allow).toBe(false);
+  });
+
   it("denies with FORBIDDEN when the resolved scope is none", async () => {
     const resolver = makeResolver(new Map([["hr:employees:view", "none"]]), ["hr"]);
     const result = await authorize(resolver, makeCtx(), "hr:employees:view");

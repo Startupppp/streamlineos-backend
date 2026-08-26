@@ -6,12 +6,14 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { kbPages, kbPageFavorites, kbPageTemplates, kbSpaces } from "../../../db/schema";
 import type { KbPageContent } from "../../../db/schema/kb/pages";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { extractMentionUserIds } from "./kb-page-content.util";
@@ -21,7 +23,6 @@ import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { computeVerificationInterval, shouldResetTrust } from "./kb-page-governance.util";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
-import { KbIndexingService } from "../retrieval/kb-indexing.service";
 import { resyncPageLinks, snapshotIfNeeded } from "./kb-page-edit.util";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 
@@ -35,7 +36,6 @@ export class KbPagesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
     private readonly reviews: KbPageReviewsService,
-    private readonly indexing: KbIndexingService,
     private readonly planLimits: PlanLimitsService,
   ) {}
 
@@ -170,6 +170,8 @@ export class KbPagesService {
     if (input.ownerUserId !== undefined) values.ownerUserId = input.ownerUserId;
 
     const contentChanged = input.content !== undefined;
+    const aclChanged = input.spaceId !== undefined;
+    const needsReindex = contentChanged || aclChanged;
     if (shouldResetTrust(current.trustState, contentChanged)) {
       values.trustState = "unverified";
     }
@@ -196,14 +198,21 @@ export class KbPagesService {
         }
       }
 
+      if (needsReindex) {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "kb_page",
+          aggregateId: String(pageId),
+          aggregateVersion: Date.now(),
+          eventType: "kb.content.index",
+          payload: { contentType: "page", contentId: pageId },
+          occurredAt: new Date(),
+        });
+      }
+
       return updated;
     });
-
-    if (contentChanged) {
-      this.indexing.indexPage(orgId, pageId).catch((err: unknown) => {
-        this.logger.error(`Failed to index page ${pageId}: ${err}`);
-      });
-    }
 
     return result;
   }
@@ -221,27 +230,90 @@ export class KbPagesService {
   }
 
   async publish(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    const result = await this.setStatus(user, pageId, "published");
-    this.indexing.indexPage(user.orgId, pageId).catch((err: unknown) => {
-      this.logger.error(`Failed to index page ${pageId}: ${err}`);
+    await assertPageAccessible(this.db, user, pageId);
+    const orgId = user.orgId;
+    const current = await this.db.query.kbPages.findFirst({
+      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
+      columns: { id: true },
     });
-    return result;
+    if (!current) throw new NotFoundException("Page not found");
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(kbPages)
+        .set({ status: "published", lastEditedById: user.userId })
+        .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
+        .returning();
+      if (!updated) throw new NotFoundException("Page not found");
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "kb_page",
+        aggregateId: String(pageId),
+        aggregateVersion: Date.now(),
+        eventType: "kb.content.index",
+        payload: { contentType: "page", contentId: pageId },
+        occurredAt: new Date(),
+      });
+      return updated;
+    });
   }
 
   async archive(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    const result = await this.setStatus(user, pageId, "archived");
-    this.indexing.removePageChunks(user.orgId, pageId).catch((err: unknown) => {
-      this.logger.error(`Failed to remove chunks for page ${pageId}: ${err}`);
+    await assertPageAccessible(this.db, user, pageId);
+    const orgId = user.orgId;
+    const current = await this.db.query.kbPages.findFirst({
+      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
+      columns: { id: true },
     });
-    return result;
+    if (!current) throw new NotFoundException("Page not found");
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(kbPages)
+        .set({ status: "archived", lastEditedById: user.userId })
+        .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
+        .returning();
+      if (!updated) throw new NotFoundException("Page not found");
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "kb_page",
+        aggregateId: String(pageId),
+        aggregateVersion: Date.now(),
+        eventType: "kb.content.index",
+        payload: { contentType: "page", contentId: pageId },
+        occurredAt: new Date(),
+      });
+      return updated;
+    });
   }
 
   async unarchive(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    const result = await this.setStatus(user, pageId, "draft");
-    this.indexing.removePageChunks(user.orgId, pageId).catch((err: unknown) => {
-      this.logger.error(`Failed to remove chunks for page ${pageId}: ${err}`);
+    await assertPageAccessible(this.db, user, pageId);
+    const orgId = user.orgId;
+    const current = await this.db.query.kbPages.findFirst({
+      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
+      columns: { id: true },
     });
-    return result;
+    if (!current) throw new NotFoundException("Page not found");
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(kbPages)
+        .set({ status: "draft", lastEditedById: user.userId })
+        .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
+        .returning();
+      if (!updated) throw new NotFoundException("Page not found");
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "kb_page",
+        aggregateId: String(pageId),
+        aggregateVersion: Date.now(),
+        eventType: "kb.content.index",
+        payload: { contentType: "page", contentId: pageId },
+        occurredAt: new Date(),
+      });
+      return updated;
+    });
   }
 
   private async setStatus(

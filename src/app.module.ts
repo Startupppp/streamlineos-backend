@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
-import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { APP_GUARD, APP_INTERCEPTOR, DiscoveryModule } from "@nestjs/core";
+import { RouteClassifierGuard } from "./common/auth/route-classifier.guard";
 import {
   TenantContextInterceptor,
   TenantContextService,
@@ -100,6 +101,7 @@ import { IssuesModule } from "./modules/issues/issues.module";
 
 @Module({
   imports: [
+    DiscoveryModule,
     RegionModule,
     WorkflowModule,
     ConfigModule,
@@ -188,6 +190,7 @@ import { IssuesModule } from "./modules/issues/issues.module";
     MeService,
     Reflector,
     TenantContextService,
+    { provide: APP_GUARD, useClass: RouteClassifierGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: MfaGuard },
     { provide: APP_GUARD, useClass: ModuleGuard },

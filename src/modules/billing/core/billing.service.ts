@@ -11,6 +11,7 @@ import {
   billingProfiles,
   coupons,
   couponRedemptions,
+  dunningAttempts,
   invoices,
   organizationMembers,
   organizations,
@@ -18,12 +19,14 @@ import {
   subscriptionPayments,
   subscriptions,
 } from "../../../db/schema";
+import { providerWebhookEvents } from "../../../db/schema/billing/provider-webhook-events";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { logger } from "../../../common/logger/logger.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
+import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import {
   webhookEventSchema,
@@ -43,7 +46,10 @@ import {
   buildPlanCatalog,
   TRIAL_PLAN,
 } from "./plan-entitlements.constants";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../../common/tenant/run-in-tenant-transaction";
 import { ExternalEffectLedger, ExternalEffectLeaseBusyError } from "../../../common/outbox/external-effect-ledger";
 
 interface WebhookResult {
@@ -58,6 +64,7 @@ export class BillingService {
     private readonly audit: AuditService,
     private readonly aiCredits: AiCreditsService,
     private readonly planLimits: PlanLimitsService,
+    private readonly revenueAnalytics: RevenueAnalyticsService,
     private readonly providers: PaymentProviderResolver,
     private readonly externalEffectLedger: ExternalEffectLedger,
   ) {}
@@ -241,11 +248,36 @@ export class BillingService {
       metadata: { plan: input.plan, paymentId: input.razorpay_payment_id },
     });
 
-    this.aiCredits
-      .grantPlanCredits(orgId, input.plan, userId, input.razorpay_payment_id)
-      .catch((err: unknown) =>
-        logger.warn("[billing] plan credit grant failed (non-fatal)", { orgId, plan: input.plan, err }),
+    try {
+      await this.externalEffectLedger.execute(
+        {
+          organizationId: orgId,
+          producerEventId: input.razorpay_payment_id,
+          effectKey: `${input.razorpay_payment_id}:plan-credit-grant`,
+          effectType: "billing.plan-credit-grant",
+          providerIdempotency: "NONE",
+        },
+        () => this.aiCredits.grantPlanCredits(orgId, input.plan, userId, input.razorpay_payment_id),
       );
+    } catch (err: unknown) {
+      if (err instanceof ExternalEffectLeaseBusyError) {
+        logger.warn("[billing] plan credit grant already in flight", { orgId, plan: input.plan });
+      } else {
+        logger.error("[billing] plan credit grant failed", { orgId, plan: input.plan, err });
+        throw new ServiceUnavailableException("Payment recorded but credits could not be granted. The system will retry automatically.");
+      }
+    }
+
+    void this.revenueAnalytics
+      .recordEvent({
+        type: "new_subscription",
+        orgId,
+        plan: input.plan,
+        mrr: PLAN_PRICES_PAISE[input.plan],
+        amount: PLAN_PRICES_PAISE[input.plan],
+        metadata: { paymentId: input.razorpay_payment_id, billingCycle: "monthly" },
+      })
+      .catch((err: unknown) => logger.warn("[billing] revenue event record failed", { orgId, err }));
 
     return { success: true, plan: input.plan, status: "ACTIVE" };
   }
@@ -350,6 +382,38 @@ export class BillingService {
       return { status: 200, body: { ok: true, ignored: event.event } };
     }
 
+    const providerEventId = normalized.providerEventId ?? payment.id;
+    try {
+      // The tenant interceptor resolves an org from the portal header or the
+      // authenticated user, and this route is @Public() with neither — so no
+      // transaction is open and no GUC is set. Every table touched here has RLS,
+      // and app.current_org_id() raises 42501 rather than returning null, so a
+      // bare this.db write is denied outright. The URL orgId is this route's
+      // tenant selector, so it is what opens the transaction.
+      const inserted = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+        tx
+          .insert(providerWebhookEvents)
+          .values({
+            orgId,
+            provider: providerKey,
+            providerEventId,
+            eventType: event.event,
+            rawPayload: JSON.parse(rawBody),
+          })
+          .onConflictDoNothing({
+            target: [providerWebhookEvents.provider, providerWebhookEvents.providerEventId],
+          })
+          .returning({ id: providerWebhookEvents.id }),
+      );
+      if (inserted.length === 0) {
+        logger.warn(`[billing:${providerKey}] duplicate event ignored`, { providerEventId });
+        return { status: 200, body: { ok: true, duplicate: true } };
+      }
+    } catch (error) {
+      logger.error(`[billing:${providerKey}] failed to record provider event`, { error });
+      return { status: 500, body: { ok: false } };
+    }
+
     const org = await this.findOrgFromNotes(payment.notes);
     if (org && org.id !== orgId) {
       logger.warn(`[billing:${providerKey}] webhook organization does not match endpoint organization`);
@@ -400,6 +464,19 @@ export class BillingService {
         return { status: 500, body: { ok: false } };
       }
     }
+
+    await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx
+        .update(providerWebhookEvents)
+        .set({ processedAt: new Date() })
+        .where(
+          and(
+            eq(providerWebhookEvents.orgId, orgId),
+            eq(providerWebhookEvents.provider, providerKey),
+            eq(providerWebhookEvents.providerEventId, providerEventId),
+          ),
+        ),
+    );
 
     return { status: 200, body: { ok: true } };
   }
@@ -482,10 +559,27 @@ export class BillingService {
             ...meta,
             pastDueAt: now.toISOString(),
             lastFailedPaymentId: paymentId,
-            dunningAttempts: [] as number[],
           },
         })
         .where(eq(subscriptions.id, existing.id));
+      await tx
+        .insert(dunningAttempts)
+        .values({
+          orgId,
+          subscriptionId: existing.id,
+          periodStart: now,
+          milestone: "D+1",
+          status: "PENDING",
+          providerRetryId: paymentId,
+        })
+        .onConflictDoNothing({
+          target: [
+            dunningAttempts.orgId,
+            dunningAttempts.subscriptionId,
+            dunningAttempts.periodStart,
+            dunningAttempts.milestone,
+          ],
+        });
     }, { orgId });
     await this.planLimits.bust(orgId);
     logger.info("[billing] subscription transitioned to PAST_DUE", { orgId, paymentId });

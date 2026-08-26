@@ -59,7 +59,6 @@ const TICKET_LIST_COLUMNS = {
   id: true,
   orgId: true,
   title: true,
-  description: true,
   type: true,
   status: true,
   priority: true,

@@ -160,6 +160,15 @@ export class KbIndexingService {
     const chunks = this.chunkText(article.contentText);
     const contentHash = this.sha256(article.contentText);
 
+    if (chunks.length === 0) {
+      await this.removeArticleChunks(orgId, articleId);
+      return;
+    }
+
+    const embeddings = await Promise.all(
+      chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
+    );
+
     await this.db.transaction(async (tx) => {
       await tx
         .delete(kbArticleChunks)
@@ -170,12 +179,6 @@ export class KbIndexingService {
             eq(kbArticleChunks.source, "article_body"),
           ),
         );
-
-      if (chunks.length === 0) return;
-
-      const embeddings = await Promise.all(
-        chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
-      );
 
       const valuesToInsert = chunks.map((chunk, index) => ({
         orgId,
@@ -248,6 +251,15 @@ export class KbIndexingService {
 
     const chunks = this.chunkText(page.contentText);
 
+    if (chunks.length === 0) {
+      await this.removePageChunks(orgId, pageId);
+      return 0;
+    }
+
+    const embeddings = await Promise.all(
+      chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
+    );
+
     await this.db.transaction(async (tx) => {
       await tx
         .delete(kbArticleChunks)
@@ -258,12 +270,6 @@ export class KbIndexingService {
             eq(kbArticleChunks.source, "page_body"),
           ),
         );
-
-      if (chunks.length === 0) return;
-
-      const embeddings = await Promise.all(
-        chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
-      );
 
       const valuesToInsert = chunks.map((chunk, index) => ({
         orgId,
@@ -318,6 +324,15 @@ export class KbIndexingService {
     if (!this.embeddings.isConfigured()) return 0;
     const chunks = this.chunkText(text);
 
+    if (chunks.length === 0) {
+      await this.removeSourceChunks(orgId, sourceId);
+      return 0;
+    }
+
+    const embeddings = await Promise.all(
+      chunks.map((c) => this.embeddings.embedQuery(c)),
+    );
+
     await this.db.transaction(async (tx) => {
       await tx
         .delete(kbArticleChunks)
@@ -328,12 +343,6 @@ export class KbIndexingService {
             eq(kbArticleChunks.source, "source"),
           ),
         );
-
-      if (chunks.length === 0) return;
-
-      const embeddings = await Promise.all(
-        chunks.map((c) => this.embeddings.embedQuery(c)),
-      );
 
       const valuesToInsert = chunks.map((chunk, index) => ({
         orgId,
@@ -422,6 +431,15 @@ export class KbIndexingService {
 
     const chunks = this.chunkText(text);
 
+    if (chunks.length === 0) {
+      await this.removeAttachmentChunks(orgId, attachmentId);
+      return { chunks: 0, warning: `${attachment.fileName}: no extractable text` };
+    }
+
+    const embeddings = await Promise.all(
+      chunks.map((c) => this.embeddings.embedQuery(c)),
+    );
+
     await this.db.transaction(async (tx) => {
       await tx
         .delete(kbArticleChunks)
@@ -432,12 +450,6 @@ export class KbIndexingService {
             eq(kbArticleChunks.source, "attachment"),
           ),
         );
-
-      if (chunks.length === 0) return;
-
-      const embeddings = await Promise.all(
-        chunks.map((c) => this.embeddings.embedQuery(c)),
-      );
 
       const valuesToInsert = chunks.map((chunk, index) => ({
         orgId,
@@ -455,13 +467,7 @@ export class KbIndexingService {
       await tx.insert(kbArticleChunks).values(valuesToInsert);
     });
 
-    return {
-      chunks: chunks.length,
-      warning:
-        chunks.length === 0
-          ? `${attachment.fileName}: no extractable text`
-          : null,
-    };
+    return { chunks: chunks.length, warning: null };
   }
 
   async removeAttachmentChunks(

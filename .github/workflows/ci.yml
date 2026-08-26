@@ -83,6 +83,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      - name: RLS coverage verification
+        run: pnpm db:verify-rls
+        env:
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
+
       - name: Seeded isolation suite
         run: pnpm test:e2e:seeded
         env:

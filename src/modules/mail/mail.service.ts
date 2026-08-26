@@ -6,8 +6,11 @@ import { OutlookMailProvider } from "./providers/outlook-mail.provider";
 import {
   decodeCursor,
   encodeCursor,
+  isPartialGmailCursor,
   mergeMessagesByDate,
+  type AccountCursorValue,
   type NormalizerConnectionMeta,
+  type OpaqueCursor,
 } from "./providers/mail-normalizers";
 import { MailAccountsService, type MailAccount } from "./mail-accounts.service";
 import type {
@@ -59,14 +62,28 @@ export class MailService {
 
     const allMessages: ReturnType<typeof mergeMessagesByDate> = [];
     const accountErrors: MailListResponse["accountErrors"] = [];
-    const nextCursorMap: Record<number, string | number | undefined> = {};
+    const accountFetches: Array<{
+      accId: number;
+      provider: string;
+      messages: ReturnType<typeof mergeMessagesByDate>;
+      nextPageToken: string | undefined;
+      outlookHasMore: boolean;
+      currentCursorValue: AccountCursorValue;
+    }> = [];
 
     settled.forEach((outcome, i) => {
       const acc = targetAccounts[i];
       if (!acc) return;
       if (outcome.status === "fulfilled") {
         allMessages.push(...outcome.value.messages);
-        nextCursorMap[acc.id] = outcome.value.nextProviderCursor;
+        accountFetches.push({
+          accId: acc.id,
+          provider: acc.provider,
+          messages: outcome.value.messages,
+          nextPageToken: outcome.value.nextPageToken,
+          outlookHasMore: outcome.value.outlookHasMore,
+          currentCursorValue: parsedCursor[acc.id],
+        });
       } else {
         const err = outcome.reason;
         const message = err instanceof Error ? err.message : "Failed to load messages";
@@ -78,6 +95,33 @@ export class MailService {
     });
 
     const merged = mergeMessagesByDate(allMessages).slice(0, limit);
+    const mergedIds = new Set(merged.map((m) => `${m.accountId}:${m.id}`));
+
+    const nextCursorMap: OpaqueCursor = {};
+    for (const fetch of accountFetches) {
+      const consumed = fetch.messages.filter((m) => mergedIds.has(`${m.accountId}:${m.id}`)).length;
+      if (fetch.provider === "outlook") {
+        if (!fetch.outlookHasMore && consumed === fetch.messages.length) {
+          nextCursorMap[fetch.accId] = undefined;
+        } else {
+          const prevSkip = typeof fetch.currentCursorValue === "number" ? fetch.currentCursorValue : 0;
+          nextCursorMap[fetch.accId] = prevSkip + consumed;
+        }
+      } else if (consumed === fetch.messages.length) {
+        nextCursorMap[fetch.accId] = fetch.nextPageToken;
+      } else {
+        const prevToken = isPartialGmailCursor(fetch.currentCursorValue)
+          ? fetch.currentCursorValue.token
+          : typeof fetch.currentCursorValue === "string"
+            ? fetch.currentCursorValue
+            : "";
+        const prevSkip = isPartialGmailCursor(fetch.currentCursorValue) ? fetch.currentCursorValue.skip : 0;
+        nextCursorMap[fetch.accId] = consumed > 0
+          ? { token: prevToken, skip: prevSkip + consumed }
+          : fetch.currentCursorValue;
+      }
+    }
+
     const hasMore = Object.values(nextCursorMap).some((v) => v !== undefined && v !== null);
     const nextCursor = hasMore ? encodeCursor(nextCursorMap) : null;
 
@@ -89,23 +133,30 @@ export class MailService {
     acc: MailAccount,
     folder: MailFolder,
     limit: number,
-    parsedCursor: Record<number, string | number | undefined>,
+    parsedCursor: OpaqueCursor,
     query: string | undefined,
     skipCache: boolean,
-  ): Promise<{ messages: ReturnType<typeof mergeMessagesByDate>; nextProviderCursor: string | number | undefined }> {
+  ): Promise<{ messages: ReturnType<typeof mergeMessagesByDate>; nextPageToken: string | undefined; outlookHasMore: boolean }> {
     const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     const cursorValue = parsedCursor[acc.id];
-    const cacheKey = `${folder}:${String(cursorValue ?? "")}:${query ?? ""}`;
+    const cacheKey = `${folder}:${JSON.stringify(cursorValue ?? "")}:${query ?? ""}`;
 
     const fetcher = async () => {
       if (acc.provider === "gmail") {
-        const pageToken = typeof cursorValue === "string" ? cursorValue : undefined;
-        const result = await this.gmail.listMessages(userId, conn, folder, limit, pageToken, query);
-        return { messages: result.messages, nextProviderCursor: result.nextPageToken ?? undefined };
+        let pageToken: string | undefined;
+        let withinPageSkip = 0;
+        if (isPartialGmailCursor(cursorValue)) {
+          pageToken = cursorValue.token || undefined;
+          withinPageSkip = cursorValue.skip;
+        } else if (typeof cursorValue === "string") {
+          pageToken = cursorValue;
+        }
+        const result = await this.gmail.listMessages(userId, conn, folder, limit + withinPageSkip, pageToken, query);
+        return { messages: result.messages.slice(withinPageSkip), nextPageToken: result.nextPageToken ?? undefined, outlookHasMore: false };
       }
       const skip = typeof cursorValue === "number" ? cursorValue : 0;
       const result = await this.outlook.listMessages(userId, conn, folder, limit, skip, query);
-      return { messages: result.messages, nextProviderCursor: result.nextSkip ?? undefined };
+      return { messages: result.messages, nextPageToken: undefined, outlookHasMore: result.nextSkip !== null && result.nextSkip !== undefined };
     };
 
     if (skipCache) return fetcher();

@@ -12,7 +12,13 @@ import { AppModule } from "./app.module";
 import { validateEnv } from "./config/env.validation";
 import { AllExceptionsFilter } from "./common/http/all-exceptions.filter";
 import { correlationIdMiddleware } from "./common/http/correlation-id.middleware";
-import { structuredNestLogger } from "./common/observability";
+import {
+  LogErrorReporter,
+  LogSpanExporter,
+  setErrorReporter,
+  setSpanExporter,
+  structuredNestLogger,
+} from "./common/observability";
 import { ResponseTransformInterceptor } from "./common/interceptors/response-transform.interceptor";
 import { logger } from "./common/logger/logger.service";
 
@@ -54,6 +60,13 @@ async function bootstrap(): Promise<void> {
   // `Logger`, through the structured logger so every line is JSON and carries the
   // request's correlation id.
   app.useLogger(structuredNestLogger);
+
+  // Both ports default to a noop, so an unwired deployment reports nothing and
+  // says nothing about it. These two calls are what make c20 real: errors reach
+  // a queryable log record, and every finished span carries the latency p95 is
+  // computed from.
+  setErrorReporter(new LogErrorReporter());
+  setSpanExporter(new LogSpanExporter());
 
   app.use(helmet());
   app.use(compression());

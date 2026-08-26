@@ -80,6 +80,8 @@ export const kbArticles = pgTable(
     archivedAt: timestamp("archived_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+    aclRevision: integer("acl_revision").notNull().default(1),
+    contentRevision: integer("content_revision").notNull().default(1),
   },
   (table) => [
     uniqueIndex("uniq_kb_articles_org_slug").on(table.orgId, table.slug),

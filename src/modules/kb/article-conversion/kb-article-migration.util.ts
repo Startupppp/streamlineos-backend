@@ -1,6 +1,18 @@
 import { kbArticles } from "../../../db/schema";
 
-type ArticleRow = typeof kbArticles.$inferSelect;
+/**
+ * Exactly the columns the mapping reads, rather than the whole row. Depending on
+ * `$inferSelect` made every new column on `kb_articles` a compile error in this
+ * util's tests, which is a lot of churn for a function that touches six fields.
+ *
+ * `visibility` is listed although the mapping ignores it: a support article is
+ * always published to the org, whatever it was before, and the tests assert that
+ * collapse. Dropping it from the type would make those cases unwritable.
+ */
+type ArticleRow = Pick<
+  typeof kbArticles.$inferSelect,
+  "id" | "title" | "contentText" | "lastVerifiedAt" | "ownerId" | "authorId" | "visibility"
+>;
 
 export interface MappedPage {
   title: string;

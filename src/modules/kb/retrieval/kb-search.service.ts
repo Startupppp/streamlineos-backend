@@ -319,7 +319,7 @@ export class KbSearchService {
     pageVisibility: SQL,
   ): Promise<number[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
-    const term = `%${query}%`;
+    const keywordCond = await this.resolvePageKeywordCondition(query, pool, tsquery);
     const rows = await this.db
       .select({ id: kbPages.id })
       .from(kbPages)
@@ -328,12 +328,21 @@ export class KbSearchService {
           eq(kbPages.orgId, orgId),
           isNull(kbPages.deletedAt),
           pageVisibility,
-          sql`(fts @@ ${tsquery} OR (numnode(${tsquery}) = 0 AND ${kbPages.title} ILIKE ${term}))`,
+          keywordCond,
         ),
       )
       .orderBy(desc(sql`ts_rank(fts, ${tsquery})`), desc(kbPages.updatedAt))
       .limit(pool);
     return rows.map((row) => row.id);
+  }
+
+  private async resolvePageKeywordCondition(q: string, cap: number, tsquery: SQL): Promise<SQL> {
+    const term = `%${q}%`;
+    const fallback = sql`(fts @@ ${tsquery} OR (numnode(${tsquery}) = 0 AND ${kbPages.title} ILIKE ${term}))`;
+    const rows = await this.db.execute(sql`SELECT app.search_kb_page_ids(${q}, ${cap + 1}) AS id`);
+    if (rows.length === 0 || rows.length > cap) return fallback;
+    const ids = rows.map((r) => Number(r["id"]));
+    return inArray(kbPages.id, ids);
   }
 
   private async pageVectorCandidates(

@@ -33,6 +33,7 @@ function makeProvider(withAdapter = true, providerKey = "razorpay"): Organizatio
     createOrder: (params) => adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
     verifyPaymentSignature: (params) => adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
     verifyWebhookSignature: (params) => adapter.verifyWebhookSignature({ ...params, webhookSecret: "fake-webhook-secret-at-least-32chars" }),
+    normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
   };
 }
 

@@ -333,8 +333,19 @@ export function normalizeOutlookMessage(
   return { ...summary, cc, bodyHtml, bodyText, attachments };
 }
 
+export interface PartialGmailCursor {
+  readonly token: string;
+  readonly skip: number;
+}
+
+export type AccountCursorValue = string | number | PartialGmailCursor | undefined;
+
 export interface OpaqueCursor {
-  [accountId: number]: string | number | undefined;
+  [accountId: number]: AccountCursorValue;
+}
+
+export function isPartialGmailCursor(v: unknown): v is PartialGmailCursor {
+  return typeof v === "object" && v !== null && typeof (v as Record<string, unknown>).token === "string" && typeof (v as Record<string, unknown>).skip === "number";
 }
 
 export function encodeCursor(cursor: OpaqueCursor): string {

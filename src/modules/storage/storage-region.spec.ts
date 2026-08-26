@@ -7,7 +7,7 @@ import {
   setRegionRegistry,
   type RegionBinding,
 } from "../../common/region/region-registry";
-import { StorageService } from "./storage.service";
+import { StorageService, type StorageConfig } from "./storage.service";
 
 const topology = resolveRegionTopology({
   PRIMARY_REGION: "eu",
@@ -36,7 +36,15 @@ function install(placement: Record<string, string | null>): void {
 }
 
 function service(): StorageService {
-  return new StorageService({} as MediaCompressionService);
+  const config: StorageConfig = {
+    R2_REGION: "auto",
+    R2_BUCKET_NAME: "default-files",
+    R2_ACCESS_KEY_ID: "test-key",
+    R2_SECRET_ACCESS_KEY: "test-secret",
+    R2_ENDPOINT: "https://default.r2.example",
+    NEXT_PUBLIC_R2_PUBLIC_URL: "https://files.example",
+  };
+  return new StorageService({} as MediaCompressionService, config);
 }
 
 describe("StorageService region placement", () => {
