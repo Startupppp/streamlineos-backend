@@ -165,8 +165,10 @@ export class CrmConnectorService {
 
     if (!descriptor.writable)
       throw new BadRequestException(
-        `${input.provider} ${input.stream} records map onto ${descriptor.target}, which has no importer yet. ` +
-          "Only records that land as parties can be brought in, so this would read them and write nothing.",
+        `${input.provider} ${input.stream} records map onto ${descriptor.target}, which a connected ` +
+          "account cannot land on its own — a subject import has to be told which subject type the " +
+          "records are, and nothing in the provider's payload says. Paste the export instead, where " +
+          "you can choose one.",
       );
 
     return this.inOwnTransaction(input.organizationId, async () => {
@@ -514,6 +516,14 @@ export class CrmConnectorService {
       organizationId,
       userId: connection?.userId ?? sync.connectionId.toString(),
       filename: `${sync.provider} ${sync.stream} (connected account)`,
+      /**
+       * The stream's own declared target, not a default.
+       *
+       * Every stream said what it lands as long before any of them could land;
+       * dropping it here would read a competitor's Opportunities and write them
+       * as companies, which is the failure that looks most like success.
+       */
+      entity: descriptor.target,
       headers,
       rows,
     });

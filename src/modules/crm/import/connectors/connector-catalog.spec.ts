@@ -6,6 +6,7 @@ import { planImport } from "../import-plan";
 import { CONNECTORS, connectorFor, streamFor } from "./connector-catalog";
 import { watermarkAfterWalk } from "./connector-watermark";
 import {
+  canConnectorLand,
   ConnectorShapeError,
   CONNECTOR_PROVIDERS,
   CONNECTOR_STREAMS,
@@ -13,6 +14,7 @@ import {
   toIntermediate,
   type ConnectorProvider,
 } from "./connector-source";
+import { IMPORT_ENTITIES } from "../import-entities";
 
 /**
  * The connectors, driven from fixtures.
@@ -61,22 +63,31 @@ describe("the connector catalog", () => {
   /**
    * Only what can actually be landed is marked writable.
    *
-   * `party` has an importer — a plan, a preview, a durable commit and an undo.
-   * The other three targets have none, and a connector that read them would
-   * write nothing while looking exactly like one that worked.
+   * All four targets have writers now, so this is no longer "party and nothing
+   * else" — it is `canConnectorLand`, and the one remaining refusal is
+   * `subject`: `subjects.subject_type_id` is NOT NULL, the tenant chooses which
+   * declared type a file lands as, and a background sync has nobody to ask. A
+   * connector that read them anyway would write nothing while looking exactly
+   * like one that worked.
+   *
+   * Asserted against the predicate rather than restated, so a connector that
+   * hard-coded its own answer goes red here.
    */
-  it("marks a stream writable only where its target has an importer", () => {
+  it("marks a stream writable only where its target can be landed", () => {
     for (const provider of CONNECTOR_PROVIDERS)
       for (const stream of CONNECTOR_STREAMS) {
         const declared = streamFor(provider, stream);
-        expect(declared.writable).toBe(declared.target === "party");
+        expect(declared.writable).toBe(canConnectorLand(declared.target));
+        expect(declared.writable).toBe(declared.target !== "subject");
       }
 
-    // All four targets are declared, so the refusal can name the right one.
+    // All four targets are declared, so the refusal can name the right one —
+    // and they are the importer's own entity names, not a parallel spelling.
     const targets = new Set(
       CONNECTOR_STREAMS.map((stream) => streamFor("salesforce", stream).target),
     );
-    expect([...targets].sort()).toEqual(["activity", "party", "pipeline-stage", "subject"]);
+    expect([...targets].sort()).toEqual(["activity", "party", "pipeline", "subject"]);
+    for (const target of targets) expect(IMPORT_ENTITIES).toContain(target);
   });
 
   /**

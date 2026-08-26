@@ -33,6 +33,9 @@ function pgError(code: string, message: string): Error {
 
 interface FakeOptions {
   importStatus?: string;
+  /** Which entity the import writes. Every import before 0281 was a party one. */
+  targetEntity?: string;
+  targetSubjectTypeId?: string | null;
   revertDeadlineAt?: Date | null;
   rows?: Record<string, unknown>[];
   parties?: Record<string, unknown>[];
@@ -193,6 +196,8 @@ class FakeDb {
           {
             status: this.options.importStatus ?? "previewing",
             sourceFilename: "zoho.csv",
+            targetEntity: this.options.targetEntity ?? "party",
+            targetSubjectTypeId: this.options.targetSubjectTypeId ?? null,
             workflowRunId: null,
             revertWorkflowRunId: null,
             revertDeadlineAt: this.options.revertDeadlineAt ?? null,
@@ -257,7 +262,7 @@ function plannedRow(over: Partial<Record<string, unknown>> = {}): Record<string,
     action: "create",
     values: { name: "Acme" },
     customFields: {},
-    matchedPartyId: null,
+    matchedRecordId: null,
     match: null,
     committedAt: null,
     revertedAt: null,
@@ -360,7 +365,7 @@ describe("commitBatch", () => {
     // without the record of how to undo it.
     const created = fake
       .landed("update", crmImportRows)
-      .filter((statement) => statement.set?.createdPartyId !== undefined);
+      .filter((statement) => statement.set?.createdRecordId !== undefined);
     expect(created).toHaveLength(2);
   });
 
@@ -472,7 +477,7 @@ describe("commitBatch", () => {
       rows: [
         plannedRow({
           action: "update",
-          matchedPartyId: "party-9",
+          matchedRecordId: "party-9",
           values: { name: "Acme", partyType: "VENDOR", email: "ops@acme.example" },
         }),
       ],
@@ -501,7 +506,7 @@ describe("commitBatch", () => {
       rows: [
         plannedRow({
           action: "update",
-          matchedPartyId: "party-9",
+          matchedRecordId: "party-9",
           values: { name: "Acme", partyType: "SOMETHING_ELSE" },
         }),
       ],
@@ -537,7 +542,7 @@ describe("a row the scorer would not commit to", () => {
       rows: [
         plannedRow({
           action: "review",
-          matchedPartyId: "party-9",
+          matchedRecordId: "party-9",
           match: { score: 0.55, signals: ["phone"], candidateName: "Acme Trading Ltd" },
           values: { name: "Acme Trading", phone: "+441234567890" },
           reason: "Looks like something you already have.",
@@ -583,7 +588,7 @@ describe("a row the scorer would not commit to", () => {
 
   it("fails the row rather than filing a question with nothing in it", async () => {
     const fake = new FakeDb({
-      rows: [plannedRow({ action: "review", matchedPartyId: null, match: null })],
+      rows: [plannedRow({ action: "review", matchedRecordId: null, match: null })],
     });
 
     const result = await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
@@ -643,13 +648,13 @@ describe("finishing and taking back", () => {
             crmImportRowId: "row-1",
             rowNumber: 1,
             committedAt: new Date(),
-            createdPartyId: "party-1",
+            createdRecordId: "party-1",
           }),
           plannedRow({
             crmImportRowId: "row-2",
             rowNumber: 2,
             action: "update",
-            matchedPartyId: "party-9",
+            matchedRecordId: "party-9",
             committedAt: new Date(),
             previous: { name: "Acme", email: "curated@acme.example" },
           }),
@@ -690,7 +695,7 @@ describe("finishing and taking back", () => {
       // party the tenant re-created in between.
       const fake = new FakeDb({
         importStatus: "reverting",
-        rows: [plannedRow({ committedAt: new Date(), createdPartyId: "party-1" })],
+        rows: [plannedRow({ committedAt: new Date(), createdRecordId: "party-1" })],
       });
 
       const first = await service(fake).revertBatch(ORG, IMPORT, WHOLE_FILE);

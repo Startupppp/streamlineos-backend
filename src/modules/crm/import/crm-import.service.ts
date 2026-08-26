@@ -1,28 +1,37 @@
-import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
+import { and, asc, desc, eq, gte, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../../db/drizzle.types";
 import {
-  businessParties,
   crmImportRows,
   crmImports,
   dataQualityFindings,
+  subjectTypes,
   workflowRuns,
 } from "../../../db/schema";
 import type { ImportStatus, StoredColumnMapping } from "../../../db/schema/crm/imports";
 import { WorkflowRunnerService } from "../../../common/workflow";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { PartyFingerprint } from "../../party/party-duplicates";
+import { mapColumns, needsConfirmation } from "./column-mapping";
+import type { ImportEntity } from "./import-entities";
 import {
-  duplicateFieldAssignments,
-  isImportField,
-  mapColumns,
-  needsConfirmation,
-  type MappedColumn,
-} from "./column-mapping";
-import { blockingKeysFor, isPartyType, planImport, type BlockingKeys, type RowMatch } from "./import-plan";
-import { softDeletePartyWithMirror, updatePartyWithMirror } from "../../party/party-legacy-writer";
-import { claimIdentifiers, identifierClaimsOfColumns } from "../../party/party-identifiers";
+  defaultPipelineId,
+  existingFingerprints,
+  MAX_CANDIDATES,
+  partiesByName,
+  subjectsByReference,
+} from "./import-lookups";
+import { applyOverrides } from "./import-overrides";
+import { blockingKeysFor, lookupKeysFor, planImport, type RowMatch } from "./import-plan";
+import { writerFor, type WriteContext } from "./writers";
 import { uncertaintyFinding } from "./import-uncertainty";
 import { COMMIT_WORKFLOW, REVERT_WORKFLOW } from "./import-workflow-names";
 
@@ -38,19 +47,6 @@ import { COMMIT_WORKFLOW, REVERT_WORKFLOW } from "./import-workflow-names";
  */
 export const MAX_ROWS = 5_000;
 
-/**
- * How many existing parties one preview will weigh a file against.
- *
- * A ceiling rather than a sample: candidates are fetched by identifier now, so
- * a tenant reaches this only by having thousands of parties that genuinely
- * share a tax number, an address or a phone line with the file. That is worth
- * saying out loud, which is what `warnings` is for.
- */
-const MAX_CANDIDATES = 10_000;
-
-/** Identifiers per statement, so a five-thousand-row file is a few queries. */
-const KEYS_PER_QUERY = 500;
-
 /** Rows per INSERT, so a five-thousand-row plan is ten statements, not one. */
 const PLAN_INSERT_CHUNK = 500;
 
@@ -64,31 +60,6 @@ const PLAN_INSERT_CHUNK = 500;
  * enough that the before-images are not an indefinite second copy of the CRM.
  */
 export const REVERT_WINDOW_DAYS = 30;
-
-/**
- * The normalisations `party-duplicates` compares with, written in SQL.
- *
- * These may be WIDER than their TypeScript counterparts — an extra candidate
- * costs one comparison — but never narrower: a candidate this fails to fetch is
- * a duplicate party created in silence.
- */
-const NORMALISED: Readonly<Record<"taxNumber" | "email" | "phone" | "host", SQL>> = {
-  taxNumber: sql`upper(regexp_replace(coalesce(${businessParties.taxNumber}, ''), '[^A-Za-z0-9]', '', 'g'))`,
-  email: sql`lower(trim(coalesce(${businessParties.email}, '')))`,
-  phone: sql`right(regexp_replace(coalesce(${businessParties.phone}, ''), '[^0-9]', '', 'g'), 10)`,
-  host: sql`regexp_replace(regexp_replace(regexp_replace(lower(trim(coalesce(${businessParties.website}, ''))), '^[a-z]+://', ''), '/.*$', ''), '^www\\.', '')`,
-};
-
-/**
- * The values these columns hold when nobody has chosen one.
- *
- * Read off the schema rather than repeated here, so a changed default cannot
- * quietly re-break the fields it governs.
- */
-const COLUMN_DEFAULTS: Readonly<Record<string, unknown>> = {
-  partyType: businessParties.partyType.default,
-  status: businessParties.status.default,
-};
 
 /** Statuses a run is still going to do something about. */
 const LIVE_RUN_STATUSES = ["PENDING", "RUNNING", "SLEEPING"];
@@ -113,6 +84,19 @@ export type PhaseExtent = {
    */
   readonly maxRowNumber: number;
 };
+
+/**
+ * What every row of one file has in common.
+ *
+ * Read once per batch. The entity is what decides which writer runs, and the
+ * two identifiers are the things a writer cannot get from the row: a subject's
+ * type and a deal's pipeline are properties of the import, not of the line.
+ */
+interface ImportContext {
+  readonly entity: ImportEntity;
+  readonly filename: string | null;
+  readonly write: WriteContext;
+}
 
 /** What one batch step did, and what the run adds up. Mutable: it is a tally. */
 export type BatchOutcome = {
@@ -175,6 +159,10 @@ export class CrmImportService {
     organizationId: string;
     userId: string;
     filename?: string;
+    /** Which entity this file lands as. Every file before this column was a party. */
+    entity?: ImportEntity;
+    /** Required for, and only for, a subject import. */
+    subjectTypeId?: string;
     headers: readonly string[];
     rows: readonly (readonly string[])[];
     /** A person's answers to ambiguous columns, from a previous preview. */
@@ -185,13 +173,47 @@ export class CrmImportService {
         `That file has ${input.rows.length} rows; ${MAX_ROWS} is the most this import handles.`,
       );
 
-    const columns = applyOverrides(mapColumns(input.headers), input.overrides);
-    const unanswered = needsConfirmation(columns);
-    const candidates = await this.existingFingerprints(
+    const entity = input.entity ?? "party";
+    const subjectTypeId = await this.resolveSubjectType(
       input.organizationId,
-      blockingKeysFor(columns, input.rows),
+      entity,
+      input.subjectTypeId,
     );
-    const plan = planImport({ columns, rows: input.rows, existing: candidates.fingerprints });
+
+    const columns = applyOverrides(entity, mapColumns(input.headers, entity), input.overrides);
+    const unanswered = needsConfirmation(columns);
+
+    /**
+     * The party scorer runs for parties and nothing else.
+     *
+     * It is a weighted combination of several weak identifiers, and the weights
+     * are calibrated against companies. Pointing it at deals or activities would
+     * be a different claim entirely, so those entities say `none` and this asks
+     * for no candidates at all rather than fetching a set nothing scores.
+     */
+    const candidates =
+      entity === "party"
+        ? await existingFingerprints(
+            this.db,
+            input.organizationId,
+            blockingKeysFor(columns, input.rows),
+          )
+        : { fingerprints: [] as PartyFingerprint[], truncated: false };
+
+    const keys = lookupKeysFor(entity, columns, input.rows);
+    const plan = planImport({
+      entity,
+      columns,
+      rows: input.rows,
+      existing: candidates.fingerprints,
+      existingByKey: await subjectsByReference(
+        this.db,
+        input.organizationId,
+        subjectTypeId,
+        keys.naturalKeys,
+      ),
+      anchors: await partiesByName(this.db, input.organizationId, keys.anchorKeys),
+    });
 
     const warnings = candidates.truncated
       ? [
@@ -205,6 +227,8 @@ export class CrmImportService {
         organizationId: input.organizationId,
         status: "previewing",
         sourceFilename: input.filename ?? null,
+        targetEntity: entity,
+        targetSubjectTypeId: subjectTypeId,
         columns: columns as unknown as StoredColumnMapping[],
         summary: plan.summary,
         createdByUserId: input.userId,
@@ -221,7 +245,7 @@ export class CrmImportService {
       reason: row.reason,
       values: row.values as Record<string, string>,
       customFields: row.customFields as Record<string, string>,
-      matchedPartyId: row.matchedPartyId ?? null,
+      matchedRecordId: row.matchedRecordId ?? null,
       duplicateOfRow: row.duplicateOfRow ?? null,
       match: row.match ? { ...row.match, signals: [...row.match.signals] } : null,
     }));
@@ -233,6 +257,8 @@ export class CrmImportService {
 
     return {
       crmImportId: imported.id,
+      entity,
+      subjectTypeId,
       columns,
       needsConfirmation: unanswered,
       summary: plan.summary,
@@ -241,6 +267,45 @@ export class CrmImportService {
       // browser is a preview nobody waits for.
       rows: plan.rows.slice(0, 50),
     };
+  }
+
+  /**
+   * Which subject type a subject import lands as, checked against this tenant.
+   *
+   * A 404 rather than a 403 for a type belonging to somebody else, because a 403
+   * on another organisation's id confirms that the id exists. Checked here, at
+   * preview, so a wrong choice is a sentence the person can act on rather than a
+   * NOT NULL violation discovered on row four thousand of the commit.
+   */
+  private async resolveSubjectType(
+    organizationId: string,
+    entity: ImportEntity,
+    subjectTypeId: string | undefined,
+  ): Promise<string | null> {
+    // Null for everything else, which is what `chk_crm_imports_subject_type`
+    // requires: a party import carrying a subject type would mean the entity
+    // changed after the plan was made.
+    if (entity !== "subject") return null;
+
+    if (!subjectTypeId)
+      throw new BadRequestException(
+        "A subject import has to say which subject type these rows are, because nothing in the file can.",
+      );
+
+    const [type] = await this.db
+      .select({ subjectTypeId: subjectTypes.subjectTypeId })
+      .from(subjectTypes)
+      .where(
+        and(
+          eq(subjectTypes.organizationId, organizationId),
+          eq(subjectTypes.subjectTypeId, subjectTypeId),
+          isNull(subjectTypes.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!type) throw new NotFoundException("Subject type not found");
+    return type.subjectTypeId;
   }
 
   /** The stored plan, for the preview screen and for the commit. */
@@ -271,6 +336,28 @@ export class CrmImportService {
       .limit(200);
 
     return { ...imported, rows };
+  }
+
+  /**
+   * Which entity this import writes, for a caller that has only its identifier.
+   *
+   * A 404 for an import belonging to somebody else, like every other read here:
+   * a 403 on another organisation's id confirms the id exists.
+   */
+  async targetEntityOf(organizationId: string, crmImportId: string): Promise<ImportEntity> {
+    const [imported] = await this.db
+      .select({ targetEntity: crmImports.targetEntity })
+      .from(crmImports)
+      .where(
+        and(
+          eq(crmImports.organizationId, organizationId),
+          eq(crmImports.crmImportId, crmImportId),
+        ),
+      )
+      .limit(1);
+
+    if (!imported) throw new NotFoundException("Import not found");
+    return imported.targetEntity;
   }
 
   // ── Starting the durable runs ─────────────────────────────────────────────
@@ -529,7 +616,9 @@ export class CrmImportService {
 
     if (rows.length === 0) return NO_OUTCOME;
 
-    const filename = await this.filenameOf(organizationId, crmImportId);
+    // Read once per batch rather than per row: it is the same answer for every
+    // row of a file, and it is what decides which writer runs.
+    const context = await this.importContext(organizationId, crmImportId);
     const tally = { ...NO_OUTCOME };
 
     for (const row of rows) {
@@ -550,7 +639,7 @@ export class CrmImportService {
          * row that records how to undo it.
          */
         const outcome = await this.db.transaction((tx) =>
-          this.commitRow(tx, organizationId, crmImportId, row.crmImportRowId, filename),
+          this.commitRow(tx, organizationId, crmImportId, row.crmImportRowId, context),
         );
 
         if (outcome) tally[outcome] += 1;
@@ -665,11 +754,14 @@ export class CrmImportService {
       .orderBy(desc(crmImportRows.rowNumber));
 
     const tally = { deleted: 0, restored: 0, dismissed: 0, failed: 0 };
+    if (rows.length === 0) return tally;
+
+    const context = await this.importContext(organizationId, crmImportId);
 
     for (const row of rows) {
       try {
         const outcome = await this.db.transaction((tx) =>
-          this.revertRow(tx, organizationId, row.crmImportRowId),
+          this.revertRow(tx, organizationId, row.crmImportRowId, context),
         );
         if (outcome) tally[outcome] += 1;
       } catch (error) {
@@ -744,7 +836,7 @@ export class CrmImportService {
         total: sql<number>`count(*)::int`,
         done: sql<number>`count(*) filter (where ${crmImportRows.committedAt} is not null)::int`,
         reverted: sql<number>`count(*) filter (where ${crmImportRows.revertedAt} is not null)::int`,
-        created: sql<number>`count(*) filter (where ${crmImportRows.createdPartyId} is not null)::int`,
+        created: sql<number>`count(*) filter (where ${crmImportRows.createdRecordId} is not null)::int`,
         updated: sql<number>`count(*) filter (where ${crmImportRows.previous} is not null)::int`,
         review: sql<number>`count(*) filter (where ${crmImportRows.dataQualityFindingId} is not null)::int`,
         merged: sql<number>`count(*) filter (where ${crmImportRows.action} = 'merge' and ${crmImportRows.committedAt} is not null and ${crmImportRows.error} is null)::int`,
@@ -823,7 +915,7 @@ export class CrmImportService {
     organizationId: string,
     crmImportId: string,
     rowId: string,
-    filename: string | null,
+    context: ImportContext,
   ): Promise<keyof BatchOutcome | null> {
     /**
      * Claim first, and in this savepoint.
@@ -849,8 +941,6 @@ export class CrmImportService {
     // Somebody else has this row. Not an error, and not counted twice.
     if (!row) return null;
 
-    const values = row.values ?? {};
-
     if (row.action === "skip") return "skipped";
 
     // Its values were folded into the row it repeats while the plan was made,
@@ -859,67 +949,25 @@ export class CrmImportService {
     if (row.action === "merge") return "merged";
 
     if (row.action === "review") {
-      await this.fileUncertainty(tx, organizationId, crmImportId, row, filename);
+      await this.fileUncertainty(tx, organizationId, crmImportId, row, context.filename);
       return "review";
     }
 
+    /**
+     * From here on the entity decides everything, and nothing else does.
+     *
+     * This is the seam the whole ticket is about: adding a fifth entity is a
+     * writer and a vocabulary, not another branch in this method.
+     */
+    const writer = writerFor(context.entity);
+    const planned = { values: row.values ?? {}, customFields: row.customFields ?? null };
+
     if (row.action === "create") {
-      const [party] = await tx
-        .insert(businessParties)
-        .values({
-          organizationId,
-          name: values.name ?? "",
-          legalName: values.legalName ?? null,
-          displayName: values.displayName ?? null,
-          email: values.email ?? null,
-          phone: values.phone ?? null,
-          website: values.website ?? null,
-          taxNumber: values.taxNumber ?? null,
-          notes: values.notes ?? null,
-          /**
-           * The file's answer, not a constant.
-           *
-           * `partyType` and `status` are mapped columns with synonyms, so a
-           * file whose Type column says VENDOR is previewed as VENDOR — and
-           * hard-coding CUSTOMER here turned a supplier list into a customer
-           * list, which is the preview-versus-commit divergence this module
-           * exists to prevent. Checked again rather than trusted: `values` is
-           * stored JSONB and may have been planned before the enum was.
-           * `undefined` leaves the column's own default in place.
-           */
-          partyType: isPartyType(values.partyType) ? values.partyType : undefined,
-          status: values.status || undefined,
-          customFields: row.customFields ?? null,
-        })
-        .returning({
-          partyId: businessParties.partyId,
-          email: businessParties.email,
-          phone: businessParties.phone,
-          whatsappPhone: businessParties.whatsappPhone,
-        });
-
-      if (!party) throw new Error("insert returned no row");
-
-      /**
-       * The identifiers the new party is reachable at, claimed here.
-       *
-       * `applyPartyPatch` claims on every update, so the update path above is
-       * already covered — but this insert writes `business_parties` directly and
-       * would otherwise be the one uncovered path in the codebase. An imported
-       * party whose e-mail address nothing had claimed matches no inbound
-       * channel at all, which is exactly the record a tenant most wants matched:
-       * the one they just migrated in.
-       */
-      await claimIdentifiers(
-        tx,
-        organizationId,
-        party.partyId,
-        identifierClaimsOfColumns(party),
-      );
+      const recordId = await writer.create(tx, context.write, planned);
 
       await tx
         .update(crmImportRows)
-        .set({ createdPartyId: party.partyId })
+        .set({ createdRecordId: recordId })
         .where(
           and(
             eq(crmImportRows.organizationId, organizationId),
@@ -930,61 +978,27 @@ export class CrmImportService {
       return "created";
     }
 
-    if (!row.matchedPartyId) throw new Error("an update row with nothing to update");
-
-    const [before] = await tx
-      .select()
-      .from(businessParties)
-      .where(
-        and(
-          eq(businessParties.organizationId, organizationId),
-          eq(businessParties.partyId, row.matchedPartyId),
-        ),
-      )
-      .limit(1);
-
-    if (!before) throw new Error("the matched party no longer exists");
+    if (!row.matchedRecordId) throw new Error("an update row with nothing to update");
 
     /**
-     * Only fills gaps.
+     * Refused loudly rather than skipped quietly.
      *
-     * An import is somebody else's export, and overwriting a value a person
-     * curated here with a staler one from another system is the complaint
-     * this avoids. A blank stays blank until the file has something for it.
-     *
-     * A column's default counts as blank. `party_type` and `status` are NOT
-     * NULL with defaults, so their `current` is never empty and the rule above
-     * would never fill either — leaving two advertised import fields silently
-     * unfillable on every update row.
+     * An entity whose match strategy is `none` can never plan an `update`, so
+     * this can only be a plan stored by older code against a different entity —
+     * which is exactly when doing nothing and reporting success is worst.
      */
-    const patch: Record<string, string> = {};
-    for (const [key, value] of Object.entries(values)) {
-      if (!value) continue;
-      // An enum column takes the values the enum has and no others, whatever an
-      // older stored plan may hold.
-      if (key === "partyType" && !isPartyType(value)) continue;
+    const updates = writer.updates;
+    if (!updates)
+      throw new Error(`a ${context.entity} import cannot update an existing record`);
 
-      const current = (before as unknown as Record<string, unknown>)[key];
-      const untouched =
-        current === null ||
-        current === undefined ||
-        current === "" ||
-        current === COLUMN_DEFAULTS[key];
+    const before = await updates.before(tx, context.write, row.matchedRecordId);
+    if (!before) throw new Error("the matched record no longer exists");
 
-      if (untouched) patch[key] = value;
-    }
-
-    // The import matched an existing party, which may already answer for a lead,
-    // a client or a contact; those rows are derived from it and have to move with
-    // it inside this row's savepoint.
-    await updatePartyWithMirror(tx, organizationId, row.matchedPartyId, {
-      ...patch,
-      customFields: { ...(before.customFields ?? {}), ...(row.customFields ?? {}) },
-    });
+    await updates.fillGaps(tx, context.write, row.matchedRecordId, before, planned);
 
     await tx
       .update(crmImportRows)
-      .set({ previous: before as unknown as Record<string, unknown> })
+      .set({ previous: before })
       .where(
         and(
           eq(crmImportRows.organizationId, organizationId),
@@ -1021,13 +1035,19 @@ export class CrmImportService {
     row: typeof crmImportRows.$inferSelect,
     filename: string | null,
   ): Promise<void> {
-    if (!row.matchedPartyId || !row.match)
+    if (!row.matchedRecordId || !row.match)
       throw new Error("a review row with nothing recorded about why");
 
     const finding = uncertaintyFinding({
       crmImportId,
       rowNumber: row.rowNumber,
-      matchedPartyId: row.matchedPartyId,
+      /**
+       * Still a party, and that is not an assumption. `review` is produced only
+       * by the fingerprint strategy, which only parties use, so the matched
+       * record here is always a party — and the data-quality queue's duplicate
+       * finding is about a pair of parties specifically.
+       */
+      matchedPartyId: row.matchedRecordId,
       match: row.match as RowMatch,
       values: row.values ?? {},
       reason: row.reason,
@@ -1083,6 +1103,7 @@ export class CrmImportService {
     tx: TenantTx,
     organizationId: string,
     rowId: string,
+    context: ImportContext,
   ): Promise<"deleted" | "restored" | "dismissed" | null> {
     const [row] = await tx
       .update(crmImportRows)
@@ -1099,28 +1120,21 @@ export class CrmImportService {
 
     if (!row) return null;
 
-    if (row.createdPartyId) {
-      // Soft delete, as everywhere else: the row leaves the product without
+    const writer = writerFor(context.entity);
+
+    if (row.createdRecordId) {
+      // Soft delete, as everywhere else: the record leaves the product without
       // leaving the database, so a wrong undo is itself recoverable.
-      await softDeletePartyWithMirror(tx, organizationId, row.createdPartyId);
+      await writer.remove(tx, context.write, row.createdRecordId);
       return "deleted";
     }
 
-    if (row.previous && row.matchedPartyId) {
-      const before = row.previous;
-      await updatePartyWithMirror(tx, organizationId, row.matchedPartyId, {
-        name: String(before.name ?? ""),
-        legalName: (before.legalName as string | null) ?? null,
-        displayName: (before.displayName as string | null) ?? null,
-        email: (before.email as string | null) ?? null,
-        phone: (before.phone as string | null) ?? null,
-        website: (before.website as string | null) ?? null,
-        taxNumber: (before.taxNumber as string | null) ?? null,
-        notes: (before.notes as string | null) ?? null,
-        customFields: (before.customFields as Record<string, unknown> | null) ?? null,
-        ...(isPartyType(before.partyType) ? { partyType: before.partyType } : {}),
-        ...(typeof before.status === "string" ? { status: before.status } : {}),
-      });
+    if (row.previous && row.matchedRecordId) {
+      const updates = writer.updates;
+      if (!updates)
+        throw new Error(`a ${context.entity} import has nothing to put a record back with`);
+
+      await updates.restore(tx, context.write, row.matchedRecordId, row.previous);
       return "restored";
     }
 
@@ -1175,9 +1189,24 @@ export class CrmImportService {
     };
   }
 
-  private async filenameOf(organizationId: string, crmImportId: string): Promise<string | null> {
+  /**
+   * Everything a batch needs that is the same for every row of the file.
+   *
+   * Read from the import rather than re-derived, for the reason the stored
+   * mapping exists at all: the entity was decided when the tenant approved the
+   * preview, and working it out again at commit time would let the commit be a
+   * different import from the one they saw.
+   */
+  private async importContext(
+    organizationId: string,
+    crmImportId: string,
+  ): Promise<ImportContext> {
     const [imported] = await this.db
-      .select({ sourceFilename: crmImports.sourceFilename })
+      .select({
+        sourceFilename: crmImports.sourceFilename,
+        targetEntity: crmImports.targetEntity,
+        targetSubjectTypeId: crmImports.targetSubjectTypeId,
+      })
       .from(crmImports)
       .where(
         and(
@@ -1187,129 +1216,19 @@ export class CrmImportService {
       )
       .limit(1);
 
-    return imported?.sourceFilename ?? null;
-  }
+    if (!imported) throw new NotFoundException("Import not found");
 
-  /**
-   * The parties this file could match, projected to what matters.
-   *
-   * Fetched by identifier rather than as the first ten thousand rows the table
-   * happened to return. Postgres does not promise an order without one, and
-   * that slice shifts as rows are updated and vacuumed — so the same file
-   * previewed twice could plan a row as `update` on Monday and `create` on
-   * Tuesday, and quietly grow a second copy of a customer. The determinism the
-   * plan is tested for held only for tenants under the cap.
-   *
-   * `blockingKeysFor` explains why these four identifiers are sufficient rather
-   * than merely convenient.
-   */
-  private async existingFingerprints(
-    organizationId: string,
-    keys: BlockingKeys,
-  ): Promise<{ fingerprints: PartyFingerprint[]; truncated: boolean }> {
-    const lookups = [
-      { expression: NORMALISED.taxNumber, values: keys.taxNumbers },
-      { expression: NORMALISED.email, values: keys.emails },
-      { expression: NORMALISED.phone, values: keys.phones },
-      { expression: NORMALISED.host, values: keys.hosts },
-    ].filter((lookup) => lookup.values.length > 0);
-
-    // A file with no identifier in it cannot match anything, so there is
-    // nothing to compare against and no query worth issuing.
-    if (lookups.length === 0) return { fingerprints: [], truncated: false };
-
-    const found = new Map<string, PartyFingerprint>();
-    const passes = Math.max(
-      ...lookups.map((lookup) => Math.ceil(lookup.values.length / KEYS_PER_QUERY)),
-    );
-
-    for (let pass = 0; pass < passes && found.size <= MAX_CANDIDATES; pass += 1) {
-      const conditions = lookups
-        .map((lookup) => ({
-          expression: lookup.expression,
-          slice: lookup.values.slice(pass * KEYS_PER_QUERY, (pass + 1) * KEYS_PER_QUERY),
-        }))
-        .filter((lookup) => lookup.slice.length > 0)
-        .map((lookup) => inArray(lookup.expression, [...lookup.slice]));
-
-      if (conditions.length === 0) continue;
-
-      const rows = await this.db
-        .select({
-          partyId: businessParties.partyId,
-          name: businessParties.name,
-          legalName: businessParties.legalName,
-          email: businessParties.email,
-          phone: businessParties.phone,
-          taxNumber: businessParties.taxNumber,
-          website: businessParties.website,
-        })
-        .from(businessParties)
-        .where(
-          and(
-            eq(businessParties.organizationId, organizationId),
-            isNull(businessParties.deletedAt),
-            or(...conditions),
-          ),
-        )
-        // One past the ceiling, so "there are more" is known rather than guessed.
-        .limit(MAX_CANDIDATES + 1 - found.size);
-
-      for (const party of rows) found.set(party.partyId, party);
-    }
+    const entity = imported.targetEntity;
 
     return {
-      fingerprints: [...found.values()].slice(0, MAX_CANDIDATES),
-      truncated: found.size > MAX_CANDIDATES,
+      entity,
+      filename: imported.sourceFilename,
+      write: {
+        organizationId,
+        subjectTypeId: imported.targetSubjectTypeId,
+        pipelineId: entity === "pipeline" ? await defaultPipelineId(this.db, organizationId) : null,
+      },
     };
   }
-}
 
-/**
- * A person's answers to the columns the system would not guess.
- *
- * Applied to the mapping rather than remembered separately, so there is one
- * description of what each column means by the time anything is planned.
- */
-function applyOverrides(
-  columns: MappedColumn[],
-  overrides: Readonly<Record<string, string>> | undefined,
-): MappedColumn[] {
-  const answered = !overrides
-    ? columns
-    : columns.map((column): MappedColumn => {
-        const answer = overrides[column.header];
-        if (!answer) return column;
-        if (answer === "__ignore__")
-          return { header: column.header, mapping: { kind: "unmapped" } };
-
-        // Narrowed rather than asserted. The preview DTO enumerates these, so
-        // every answer arriving today is a field — but "safe because one caller
-        // validates it" is the coupling that breaks in silence when a second
-        // caller appears.
-        if (!isImportField(answer))
-          throw new ConflictException(`"${answer}" is not a field this import can fill.`);
-
-        return {
-          header: column.header,
-          // A person's answer is certain by definition; that is what asking was for.
-          mapping: { kind: "mapped", field: answer, confidence: 1 },
-        };
-      });
-
-  /**
-   * `mapColumns` refuses to map one field twice, but it runs before these
-   * answers are applied and an answer names a field outright — so two columns
-   * can still end up claiming `name`, and the rightmost would silently win for
-   * every row of the file. Asking again is pointless when the answer to the
-   * question caused it, so this is a refusal with the way out in it.
-   */
-  const [collision] = duplicateFieldAssignments(answered);
-  if (collision)
-    throw new ConflictException(
-      `"${collision.headers.join('" and "')}" are both set to ${collision.field}. ` +
-        `One field can only be filled from one column — set the others to "__ignore__" or give them a field of their own.`,
-    );
-
-  return answered;
 }

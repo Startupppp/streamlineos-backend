@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { activities, activityParticipants, crmPipelineStages } from "../../db/schema";
+import { keysetAtOrBefore } from "../../common/pagination/keyset";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { AutonomyActionsService } from "./autonomy-actions.service";
 import { classifyDelivery } from "./deterministic";
@@ -325,7 +326,21 @@ export class AutonomyService {
           eq(activities.organizationId, organizationId),
           eq(activities.threadId, trigger.threadId),
           gte(activities.occurredAt, windowStart(trigger.occurredAt)),
-          sql`(${activities.occurredAt}, ${activities.activityId}) <= (${trigger.occurredAt}, ${trigger.activityId})`,
+          /**
+           * Bound through the columns, not interpolated.
+           *
+           * Written inline this was `<= (${trigger.occurredAt}, …)`, which hands
+           * postgres-js a bare `Date` it cannot serialise — valid SQL, clean
+           * typecheck, and a throw on every threaded message the moment a real
+           * connection is involved. Because it sits inside `extract-and-act`,
+           * the failure was not confined to autonomy: the step threw, the run
+           * retried to exhaustion, `mark-processed` never ran, and an accepted
+           * inbound delivery was never filed.
+           */
+          keysetAtOrBefore(activities.occurredAt, activities.activityId, {
+            sortValue: trigger.occurredAt,
+            id: trigger.activityId,
+          }),
           isNull(activities.deletedAt),
         ),
       )

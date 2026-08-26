@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Post,
@@ -11,6 +12,7 @@ import {
 import { once } from "node:events";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { AccessService } from "../../access/access.service";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -18,8 +20,11 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { CrmImportService, type ImportProgress } from "./crm-import.service";
+import type { ImportEntity } from "./import-entities";
+import { IMPORT_ENTITY_PERMISSIONS } from "./import-permissions";
 import { CrmConnectorService } from "./crm-connector.service";
 import type { ConnectorProvider, ConnectorStream } from "./connectors/connector-source";
+import { streamFor } from "./connectors/connector-catalog";
 import { ImportPump } from "./import-pump";
 import { CrmExportService, type ExportEntity } from "./crm-export.service";
 import {
@@ -39,19 +44,42 @@ export class CrmImportController {
     private readonly exports: CrmExportService,
     private readonly connectors: CrmConnectorService,
     private readonly pump: ImportPump,
+    private readonly access: AccessService,
   ) {}
+
+  /**
+   * The caller may import, and may also write the thing this file is.
+   *
+   * `@RequirePermission("crm:imports:manage")` on the handler answers the first
+   * question, and it is static per route — so the second, which depends on the
+   * request, is asked here. See `import-permissions.ts` for why it is these keys
+   * and why they are not new ones.
+   */
+  private async assertMayWrite(user: CurrentUserContext, entity: ImportEntity): Promise<void> {
+    const key = IMPORT_ENTITY_PERMISSIONS[entity];
+    if (await this.access.holds(user, key)) return;
+
+    throw new ForbiddenException(
+      `Importing ${entity} records writes them, which needs ${key}.`,
+    );
+  }
 
   /** What this file would do. Writes nothing to the CRM. */
   @Post("imports/preview")
   @RequirePermission("crm:imports:manage")
-  preview(
+  async preview(
     @Body(new ZodValidationPipe(previewImportSchema)) body: PreviewImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    const entity = body.entity as ImportEntity;
+    await this.assertMayWrite(u, entity);
+
     return this.imports.preview({
       organizationId: u.orgId,
       userId: u.userId,
       filename: body.filename,
+      entity,
+      subjectTypeId: body.subjectTypeId,
       headers: body.headers,
       rows: body.rows,
       overrides: body.overrides,
@@ -90,6 +118,8 @@ export class CrmImportController {
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<ImportProgress> {
+    await this.assertMayWrite(u, await this.imports.targetEntityOf(u.orgId, crmImportId));
+
     const runId = await this.imports.startCommit(u.orgId, crmImportId);
     await this.pump.advance(u.orgId, runId);
     return this.imports.progress(u.orgId, crmImportId);
@@ -109,6 +139,10 @@ export class CrmImportController {
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<ImportProgress> {
+    // An undo writes too: it soft-deletes what the import created and puts back
+    // what it overwrote. Same right, same check.
+    await this.assertMayWrite(u, await this.imports.targetEntityOf(u.orgId, crmImportId));
+
     const runId = await this.imports.startRevert(u.orgId, u.userId, crmImportId);
     await this.pump.advance(u.orgId, runId);
     return this.imports.progress(u.orgId, crmImportId);
@@ -154,6 +188,11 @@ export class CrmImportController {
     @Body(new ZodValidationPipe(connectorSyncSchema)) body: ConnectorSyncInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.assertMayWrite(
+      u,
+      targetOf(body.provider as ConnectorProvider, body.stream as ConnectorStream),
+    );
+
     const { crmConnectorSyncId, workflowRunId } = await this.connectors.startSync({
       organizationId: u.orgId,
       userId: u.userId,
@@ -231,6 +270,11 @@ export class CrmImportController {
 
     await writeAll(res, envelope(this.exports.archiveChunks(u.orgId)));
   }
+}
+
+/** What a connected account's records would be landed as. */
+function targetOf(provider: ConnectorProvider, stream: ConnectorStream): ImportEntity {
+  return streamFor(provider, stream).target;
 }
 
 /**

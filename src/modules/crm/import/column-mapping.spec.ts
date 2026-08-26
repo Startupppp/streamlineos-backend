@@ -1,6 +1,6 @@
 import {
   duplicateFieldAssignments,
-  isImportField,
+  isFieldOf,
   mapColumn,
   mapColumns,
   needsConfirmation,
@@ -115,13 +115,15 @@ describe("duplicateFieldAssignments", () => {
   });
 });
 
-describe("isImportField", () => {
+describe("isFieldOf", () => {
   it("accepts a field this import can fill and refuses anything else", () => {
-    expect(isImportField("name")).toBe(true);
-    expect(isImportField("partyType")).toBe(true);
+    expect(isFieldOf("party", "name")).toBe(true);
+    expect(isFieldOf("party", "partyType")).toBe(true);
     // A column of the table is not automatically a field of the import.
-    expect(isImportField("partyId")).toBe(false);
-    expect(isImportField("__ignore__")).toBe(false);
+    expect(isFieldOf("party", "partyId")).toBe(false);
+    expect(isFieldOf("party", "__ignore__")).toBe(false);
+    // Nor is a real field of some other entity.
+    expect(isFieldOf("party", "closeDate")).toBe(false);
   });
 });
 

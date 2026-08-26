@@ -47,3 +47,22 @@ export function keysetBefore(
 ): SQL {
   return sql`(${sortColumn}, ${idColumn}) < (${sql.param(at(position), sortColumn)}, ${sql.param(position.id, idColumn)})`;
 }
+
+/**
+ * Everything up to and including the position, newest-first.
+ *
+ * `<=` rather than `<` because the anchor is part of the window rather than the
+ * page before it: the thread a message belongs to includes that message. It is
+ * the same tuple bound the same way, and it lives here rather than at its call
+ * site for the reason in this file's header — an inclusive bound written inline
+ * reaches the driver as a bare `Date` just as readily as an exclusive one, and
+ * that is how it was written in `AutonomyService.loadThread` until the ingress
+ * path was first driven against a real database.
+ */
+export function keysetAtOrBefore(
+  sortColumn: PgColumn,
+  idColumn: PgColumn,
+  position: KeysetPosition,
+): SQL {
+  return sql`(${sortColumn}, ${idColumn}) <= (${sql.param(at(position), sortColumn)}, ${sql.param(position.id, idColumn)})`;
+}

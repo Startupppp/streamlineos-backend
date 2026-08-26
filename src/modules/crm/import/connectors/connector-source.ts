@@ -1,3 +1,6 @@
+import type { ImportEntity } from "../import-entities";
+import { writerFor } from "../writers";
+
 /**
  * What a direct connector produces, and why it is not allowed to produce
  * anything else.
@@ -30,8 +33,16 @@
  * connector emits are labels that dataset actually covers.
  */
 
-/** What a connector's records can be landed as. */
-export type TargetEntity = "party" | "subject" | "pipeline-stage" | "activity";
+/**
+ * What a connector's records can be landed as.
+ *
+ * The importer's own entity union, not a parallel one. It was spelled
+ * separately here while only parties had an importer, and the two drifted
+ * immediately — this said `pipeline-stage` where the importer says `pipeline`.
+ * Aliased rather than re-declared so a fifth entity cannot be added to one and
+ * not the other.
+ */
+export type TargetEntity = ImportEntity;
 
 export type ConnectorProvider = "salesforce" | "hubspot" | "zoho" | "pipedrive";
 
@@ -131,14 +142,18 @@ export interface ConnectorStreamDescriptor {
   /** What these records would be landed as. */
   readonly target: TargetEntity;
   /**
-   * Whether this repository has anywhere to put them today.
+   * Whether a connector can land these records without being asked anything.
    *
-   * `false` is not a stub. Only `party` has an importer — a plan, a preview, a
-   * durable commit and an undo — and the first thing this ticket asks for is
-   * that a connector must not acquire a write path of its own. So a stream whose
-   * target has no importer is refused **before any provider call is made**,
-   * naming the target, rather than read and quietly dropped. Reading records
-   * nobody can land is the failure mode that looks most like success.
+   * `false` is not a stub. A stream whose target cannot be landed is refused
+   * **before any provider call is made**, naming the target, rather than read
+   * and quietly dropped — reading records nobody can land is the failure mode
+   * that looks most like success.
+   *
+   * Every entity has a writer now, so the only thing still unlandable is
+   * `subject`: `subjects.subject_type_id` is NOT NULL, the tenant chooses which
+   * declared type a file lands as, and a background sync has nobody to ask.
+   * Derived by `canConnectorLand` rather than restated per connector, so this
+   * stops being true the moment a connector is given somewhere to get the answer.
    */
   readonly writable: boolean;
   readonly fields: readonly ConnectorField[];
@@ -153,6 +168,17 @@ export interface ConnectorDescriptor {
   /** What `user_integration_connections.toolkit` would carry. See the catalog. */
   readonly toolkit: string;
   readonly streams: Readonly<Record<ConnectorStream, ConnectorStreamDescriptor>>;
+}
+
+/**
+ * Whether a walk can land this target with nothing but the records it read.
+ *
+ * A writer is necessary and not sufficient. A subject import also needs the
+ * subject type the rows land as, which comes from the person starting the
+ * import and which nothing in a provider's payload can supply.
+ */
+export function canConnectorLand(target: TargetEntity): boolean {
+  return target !== "subject" && writerFor(target) !== undefined;
 }
 
 /**

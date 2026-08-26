@@ -130,7 +130,7 @@ describe("planImport", () => {
         [["Acme Trading Ltd", "ops@acme.example", "+441234567890", "", ""]],
         [existingParty()],
       );
-      expect(result.rows[0]).toMatchObject({ action: "update", matchedPartyId: "p-1" });
+      expect(result.rows[0]).toMatchObject({ action: "update", matchedRecordId: "p-1" });
     });
 
     /**
@@ -150,7 +150,7 @@ describe("planImport", () => {
         [existingParty({ name: "Acme Trading Group", email: null, phone: "+441234567890" })],
       );
       expect(result.rows[0]?.action).toBe("review");
-      expect(result.rows[0]?.matchedPartyId).toBe("p-1");
+      expect(result.rows[0]?.matchedRecordId).toBe("p-1");
       expect(result.rows[0]?.reason).toMatch(/not close enough/i);
       expect(result.summary).toMatchObject({ create: 0, review: 1 });
     });

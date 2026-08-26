@@ -1,5 +1,9 @@
 import dotenv from "dotenv";
 import postgres from "postgres";
+import {
+  IMPORT_ENTITY_PERMISSIONS,
+  IMPORT_PERMISSION,
+} from "../../crm/import/import-permissions";
 
 /**
  * The invariant that this programme has broken twice, checked where the truth is.
@@ -64,6 +68,48 @@ describeDb("every CRM permission reaches somebody", () => {
     // The fix is a backfill migration targeting `${MODULE}_MODULE_OWNER|ADMIN|MEMBER`,
     // never a `ROLE_TEMPLATES` slug.
     expect(orphans.map((row) => row.name)).toEqual([]);
+  });
+
+  /**
+   * The importer writes four tables now, and the check that says so has to hold.
+   *
+   * `crm:imports:manage` authorises running an import; `IMPORT_ENTITY_PERMISSIONS`
+   * says the caller must also hold the right to write the thing the file IS.
+   * That is a new refusal, and a new refusal that nobody can satisfy is an
+   * outage rather than a guard — so the claim is measured here rather than
+   * reasoned about from the catalogue. A catalogue grep would say all five keys
+   * exist and tell you nothing about who holds them.
+   *
+   * `party:` keys are reachable for a CRM role by design, not by accident:
+   * `MODULE_REGISTRY` gives the CRM module `administersNamespaces: ["party"]`
+   * so a CRM administrator can manage the customers their deals point at.
+   *
+   * The party row is the one that would be a REGRESSION rather than a new
+   * restriction — party import ships today on `crm:imports:manage` alone — so it
+   * is asserted with the rest rather than assumed.
+   */
+  it("lets everyone who can import also write what they are importing", async () => {
+    const entityKeys = Object.values(IMPORT_ENTITY_PERMISSIONS);
+
+    const gaps = await sql<{ slug: string; org_id: string; missing: string }[]>`
+      SELECT r."slug", g."org_id", k."key" AS missing
+      FROM "role_permission_grants" g
+      JOIN "roles" r ON r."id" = g."role_id"
+      CROSS JOIN unnest(${sql.array(entityKeys)}::text[]) AS k("key")
+      WHERE g."permission_key" = ${IMPORT_PERMISSION}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "role_permission_grants" held
+          WHERE held."role_id" = g."role_id"
+            AND held."permission_key" = k."key"
+        )
+      ORDER BY 1, 3
+    `;
+
+    // A role that may start an import but may not write what the import writes.
+    // The fix is a backfill migration targeting `${MODULE}_MODULE_OWNER|ADMIN`,
+    // never a `ROLE_TEMPLATES` slug — or dropping the entity check for that key.
+    expect(gaps.map((row) => `${row.slug}: ${row.missing}`)).toEqual([]);
   });
 
   it("gives members read keys only", async () => {

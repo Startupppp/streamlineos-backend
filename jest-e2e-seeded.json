@@ -14,5 +14,5 @@
   ],
   "moduleNameMapper": { "^src/(.*)$": "<rootDir>/src/$1", "^test/(.*)$": "<rootDir>/test/$1" },
   "setupFiles": ["dotenv/config"],
-  "runInBand": true
+  "maxWorkers": 1
 }
