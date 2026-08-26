@@ -39,36 +39,95 @@ const describeIfAppRole = OWNER_URL ? describe : describe.skip;
 /**
  * Every CRM table that carries tenant data and has a policy.
  *
- * This claimed to be exhaustive while naming 11 of the 23 tables migrations
- * 0206-0231 enable RLS on — so `deals`, every import table, the ingress events
- * and both subject link tables went unproven for the whole of Phase 1, on a
- * list whose comment said otherwise. `matches the tables RLS is actually
- * enabled on` below now fails if it drifts again rather than quietly shrinking.
+ * Asked of the database, not assembled by hand. The hand-written version claimed
+ * to be exhaustive while naming 11 of the 23 tables migrations 0206-0231 enable
+ * RLS on, and when the drift guard below was added to stop that happening again
+ * it found 48 more — every automation, blueprint, pipeline, sequence, pricebook
+ * and quote table in the module, plus `party_identifiers` and three of the four
+ * legacy identity maps. All of them had a policy nobody had ever proved fails
+ * closed.
+ *
+ * Three of those maps escaped the guard as well, because it matched table names
+ * by prefix and `lead_party_map`, `client_party_map` and `contact_party_map`
+ * begin with the legacy entity rather than with `crm_` or `party_`. The fourth,
+ * `crm_org_party_map`, was caught only because ticket 25 happened to name it
+ * after the module. A guard whose reach depends on a naming coincidence is a
+ * guard for the tables somebody remembered to name well.
  */
 const TENANT_TABLES = [
-  "business_parties",
-  "party_contacts",
-  "party_roles",
-  "party_duplicate_candidates",
-  "party_merges",
-  "subjects",
-  "subject_types",
-  "subject_party_links",
-  "deals",
-  "deal_stage_transitions",
-  "deal_activities",
   "activities",
   "activity_participants",
-  "inbound_events",
-  "crm_imports",
-  "crm_import_rows",
-  "crm_mailbox_sync",
   "autonomous_decisions",
-  "autonomy_switches",
   "autonomy_corrections",
-  "autonomy_shadow_scores",
   "autonomy_holds",
   "autonomy_settings",
+  "autonomy_shadow_scores",
+  "autonomy_switches",
+  "business_parties",
+  "client_party_map",
+  "contact_party_map",
+  "crm_activities",
+  "crm_automation_actions",
+  "crm_automation_events",
+  "crm_automation_rules",
+  "crm_automation_runs",
+  "crm_blueprint_transitions",
+  "crm_blueprints",
+  "crm_campaigns",
+  "crm_companies",
+  "crm_connector_records",
+  "crm_connector_syncs",
+  "crm_contact_channel_consent",
+  "crm_contact_consent_events",
+  "crm_contact_roles",
+  "crm_deal_competitors",
+  "crm_deal_stakeholders",
+  "crm_deals",
+  "crm_email_templates",
+  "crm_forecast_snapshots",
+  "crm_import_rows",
+  "crm_imports",
+  "crm_lead_touchpoints",
+  "crm_mailbox_sync",
+  "crm_monthly_metrics",
+  "crm_options",
+  "crm_org_party_map",
+  "crm_organizations",
+  "crm_people",
+  "crm_pipeline_stages",
+  "crm_pipelines",
+  "crm_pricebook_entries",
+  "crm_pricebooks",
+  "crm_products",
+  "crm_quote_settings",
+  "crm_quote_templates",
+  "crm_sequence_enrollments",
+  "crm_sequence_steps",
+  "crm_sequences",
+  "crm_sla_breach_log",
+  "crm_sla_policies",
+  "crm_support_tickets",
+  "crm_suppression_hashes",
+  "crm_team_performance",
+  "crm_ui_metadata",
+  "crm_validation_rules",
+  "deal_activities",
+  "deal_approval_rules",
+  "deal_approvals",
+  "deal_meeting_attendees",
+  "deal_meetings",
+  "deal_stage_transitions",
+  "deals",
+  "inbound_events",
+  "lead_party_map",
+  "party_contacts",
+  "party_duplicate_candidates",
+  "party_identifiers",
+  "party_merges",
+  "party_roles",
+  "subject_party_links",
+  "subject_types",
+  "subjects",
 ] as const;
 
 /**
@@ -78,7 +137,7 @@ const TENANT_TABLES = [
  * drift in exactly the way the first one did.
  */
 const CRM_TABLE_PATTERN =
-  "^(business_parties|party_|subject|deal|activit|inbound_events|crm_|autonom)";
+  "^(business_parties|party_|subject|deal|activit|inbound_events|crm_|autonom)|_party_map$";
 
 /**
  * A short-lived password for `streamline_app`, set through the owner connection.
