@@ -7,17 +7,17 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, sql } from "drizzle-orm";
-import { DRIZZLE } from "../../db/drizzle.constants";
-import type { Db } from "../../db/drizzle.types";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import type { Db } from "../../../db/drizzle.types";
 import {
   crmConnectorRecords,
   crmConnectorSyncs,
   userIntegrationConnections,
   workflowRuns,
-} from "../../db/schema";
-import { WorkflowRunnerService } from "../../common/workflow";
-import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
-import { ComposioGateway } from "../integrations/core/composio.gateway";
+} from "../../../db/schema";
+import { WorkflowRunnerService } from "../../../common/workflow";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { ComposioGateway } from "../../integrations/core/composio.gateway";
 import { CrmImportService, MAX_ROWS } from "./crm-import.service";
 import { connectorFor, streamFor } from "./connectors/connector-catalog";
 import { watermarkAfterWalk } from "./connectors/connector-watermark";

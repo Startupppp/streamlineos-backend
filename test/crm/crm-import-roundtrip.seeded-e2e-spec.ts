@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
-import { CrmImportService } from "src/modules/crm-import/crm-import.service";
-import { CrmExportService, toCsv } from "src/modules/crm-import/crm-export.service";
+import { CrmImportService } from "src/modules/crm/import/crm-import.service";
+import { CrmExportService, toCsv } from "src/modules/crm/import/crm-export.service";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";

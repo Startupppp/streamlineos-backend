@@ -1,4 +1,4 @@
-import { AUTO_MERGE_THRESHOLD, REVIEW_THRESHOLD } from "../party/party-duplicates";
+import { AUTO_MERGE_THRESHOLD, REVIEW_THRESHOLD } from "../../party/party-duplicates";
 import { rowIdentityKey, uncertaintyFinding } from "./import-uncertainty";
 
 const held = (over: Partial<Parameters<typeof uncertaintyFinding>[0]> = {}) =>

@@ -15,14 +15,14 @@
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 
 import { Logger } from "@nestjs/common";
-import { createStepContext } from "../../common/workflow/step-context";
-import { WorkflowRegistry } from "../../common/workflow";
+import { createStepContext } from "../../../common/workflow/step-context";
+import { WorkflowRegistry } from "../../../common/workflow";
 import {
   isSuspension,
   type JsonValue,
   type RecordedStep,
   type WorkflowStepStore,
-} from "../../common/workflow/workflow.types";
+} from "../../../common/workflow/workflow.types";
 import type {
   CrmConnectorService,
   PageOutcome,

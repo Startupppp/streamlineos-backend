@@ -1,6 +1,6 @@
 import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
-import { WorkflowRegistry } from "../../common/workflow";
-import type { JsonValue, StepContext, WorkflowRunContext } from "../../common/workflow";
+import { WorkflowRegistry } from "../../../common/workflow";
+import type { JsonValue, StepContext, WorkflowRunContext } from "../../../common/workflow";
 import { ATTEMPT_BUDGET_MS, pauseStepName } from "./import-batches";
 import {
   CrmConnectorService,

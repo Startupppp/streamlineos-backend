@@ -85,7 +85,7 @@ import { PartyModule } from "./modules/party/party.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
 import { IngressModule } from "./modules/ingress/ingress.module";
 import { AutonomyModule } from "./modules/autonomy/autonomy.module";
-import { CrmImportModule } from "./modules/crm-import/crm-import.module";
+import { CrmImportModule } from "./modules/crm/import/crm-import.module";
 import { PortalModule } from "./modules/portal/portal.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";

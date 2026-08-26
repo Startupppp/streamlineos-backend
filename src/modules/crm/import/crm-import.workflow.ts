@@ -1,6 +1,6 @@
 import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
-import { WorkflowRegistry } from "../../common/workflow";
-import type { JsonValue, StepContext, WorkflowRunContext } from "../../common/workflow";
+import { WorkflowRegistry } from "../../../common/workflow";
+import type { JsonValue, StepContext, WorkflowRunContext } from "../../../common/workflow";
 import { CrmImportService, type BatchOutcome, type PhaseExtent } from "./crm-import.service";
 import { ATTEMPT_BUDGET_MS, batchStepName, pauseStepName, rowWindows } from "./import-batches";
 import { COMMIT_WORKFLOW, REVERT_WORKFLOW } from "./import-workflow-names";
