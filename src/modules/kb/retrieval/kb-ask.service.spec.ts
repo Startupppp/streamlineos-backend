@@ -5,6 +5,8 @@ import { KbAskService } from "./kb-ask.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
+import { KbAccessService } from "../core/kb-access.service";
+import { DRIZZLE } from "../../../db/drizzle.constants";
 
 const makeGatewayOk = (text: string) => ({
   ok: true as const,
@@ -57,6 +59,24 @@ const mockSearch = {
   retrieveAttachmentSnippets: jest.fn().mockResolvedValue(null),
 };
 
+/*
+  ask() re-checks every retrieved citation against the asker's own visibility
+  before returning it, so the two fakes below stand in for that second pass:
+  the space the article lives in is accessible, and the id survives the
+  re-read. Narrow either one and the citation is correctly dropped.
+*/
+const mockAccess = {
+  getAccessibleSpaceIds: jest.fn().mockResolvedValue([articleResult.spaceId]),
+};
+
+const mockDb = {
+  select: jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockResolvedValue([{ id: articleResult.id }]),
+    }),
+  }),
+};
+
 const user = {
   userId: "user1",
   orgId: "org1",
@@ -83,6 +103,8 @@ describe("KbAskService", () => {
         { provide: AiGatewayService, useValue: mockGateway },
         { provide: KbEventsService, useValue: mockEvents },
         { provide: KbSearchService, useValue: mockSearch },
+        { provide: KbAccessService, useValue: mockAccess },
+        { provide: DRIZZLE, useValue: mockDb },
       ],
     }).compile();
     service = module.get(KbAskService);

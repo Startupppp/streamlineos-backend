@@ -9,6 +9,7 @@ import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { CacheService } from "../../common/cache/cache.service";
+import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
 
 const mockDb = {
   query: {
@@ -55,6 +56,19 @@ const mockEntities = {
   actionsFor: jest.fn().mockResolvedValue([]),
   submitAction: jest.fn(),
   isKnownType: jest.fn().mockReturnValue(true),
+  withResolvedReferences: jest
+    .fn()
+    .mockImplementation(async (_actor: unknown, messages: unknown[]) => messages),
+};
+
+/*
+  send() attaches a .catch to the dispatch, so these have to hand back a real
+  promise — a bare jest.fn() returns undefined and the failure lands in the
+  post-commit hook rather than at the call.
+*/
+const mockFanout = {
+  dispatchRealtime: jest.fn().mockResolvedValue(undefined),
+  dispatchDeferred: jest.fn().mockResolvedValue(undefined),
 };
 
 const mockOrgSettings = {
@@ -78,6 +92,7 @@ describe("ChatMessagesService", () => {
         { provide: ChatReplyRemindersService, useValue: mockReplyReminders },
         { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
         { provide: EntityReferenceService, useValue: mockEntities },
+        { provide: MESSAGE_FANOUT_PROVIDER, useValue: mockFanout },
       ],
     }).compile();
     service = module.get(ChatMessagesService);

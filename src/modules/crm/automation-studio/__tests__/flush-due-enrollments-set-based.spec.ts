@@ -1,6 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { CrmSequencesRunnerService } from "../crm-sequences-runner.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
+import { CrmOutboundEmailService } from "../../consent/crm-outbound-email.service";
 
 type StepRow = { id: number; sequenceId: number; stepType: string; sortOrder: number; config: Record<string, unknown>; waitHours: number };
 type EnrollmentUpdateCall = { id: string; status: string; currentStep?: number };
@@ -114,10 +115,10 @@ describe("CrmSequencesRunnerService.flushDueEnrollments() — set-based reads", 
       providers: [
         CrmSequencesRunnerService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: "CrmOutboundEmailService", useValue: mockEmail },
+        { provide: CrmOutboundEmailService, useValue: mockEmail },
       ],
     })
-      .overrideProvider("CrmOutboundEmailService")
+      .overrideProvider(CrmOutboundEmailService)
       .useValue(mockEmail)
       .compile();
 
@@ -169,10 +170,10 @@ describe("CrmSequencesRunnerService.flushDueEnrollments() — set-based reads", 
       providers: [
         CrmSequencesRunnerService,
         { provide: DRIZZLE, useValue: emptyDb },
-        { provide: "CrmOutboundEmailService", useValue: mockEmail },
+        { provide: CrmOutboundEmailService, useValue: mockEmail },
       ],
     })
-      .overrideProvider("CrmOutboundEmailService")
+      .overrideProvider(CrmOutboundEmailService)
       .useValue(mockEmail)
       .compile();
 
@@ -226,10 +227,10 @@ describe("CrmSequencesRunnerService — idempotency: a converted lead already in
       providers: [
         CrmSequencesRunnerService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: "CrmOutboundEmailService", useValue: { send: jest.fn() } },
+        { provide: CrmOutboundEmailService, useValue: { send: jest.fn() } },
       ],
     })
-      .overrideProvider("CrmOutboundEmailService")
+      .overrideProvider(CrmOutboundEmailService)
       .useValue({ send: jest.fn() })
       .compile();
 
