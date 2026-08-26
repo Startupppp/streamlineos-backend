@@ -3,8 +3,10 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
 import {
+  razorpayFetchedOrderSchema,
   razorpayOrderErrorSchema,
   razorpayOrderSchema,
+  type RazorpayFetchedOrder,
   type RazorpayOrder,
 } from "./dto/billing.schemas";
 import type {
@@ -69,6 +71,32 @@ export class RazorpayService implements PlatformPaymentProvider {
 
     const data: unknown = await response.json();
     return razorpayOrderSchema.parse(data);
+  }
+
+  /**
+   * Reads an order back, so activation can learn what was charged.
+   *
+   * A failure here is deliberately fatal to the caller: the alternative is
+   * trusting the browser for the plan and the period, which is precisely the
+   * hole this closes. Better a customer retries a verify than gets a tier they
+   * did not pay for.
+   */
+  async fetchOrder(orderId: string): Promise<RazorpayFetchedOrder> {
+    const auth = Buffer.from(`${this.keyId}:${this.keySecret}`).toString("base64");
+    const response = await fetch(
+      `https://api.razorpay.com/v1/orders/${encodeURIComponent(orderId)}`,
+      { headers: { Authorization: `Basic ${auth}` } },
+    );
+
+    if (!response.ok) {
+      throw new HttpException(
+        `Razorpay order lookup failed for ${orderId}`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+
+    const data: unknown = await response.json();
+    return razorpayFetchedOrderSchema.parse(data);
   }
 
   verifyPaymentSignature(orderId: string, paymentId: string, signature: string): boolean {

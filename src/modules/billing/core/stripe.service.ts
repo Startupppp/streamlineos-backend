@@ -1,10 +1,15 @@
 import { HttpException, HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
-import { stripeErrorSchema, stripePaymentIntentSchema } from "./dto/billing.schemas";
+import {
+  stripeErrorSchema,
+  stripeFetchedIntentSchema,
+  stripePaymentIntentSchema,
+} from "./dto/billing.schemas";
 import type {
   CreatePlatformOrderParams,
   PlatformOrder,
+  PlatformOrderRecord,
   PlatformPaymentProvider,
 } from "./platform-payment-provider";
 import { verifyStripeWebhook } from "./stripe-signature";
@@ -127,6 +132,46 @@ export class StripeService implements PlatformPaymentProvider {
    * the safer of the two flows in any case: a browser that never comes back
    * still credits the subscription.
    */
+
+  /**
+   * Reads a payment intent back, so activation can learn what was charged.
+   *
+   * `metadata` is Stripe's word for what Razorpay calls notes; both are returned
+   * verbatim, so the caller reads the terms of the sale the same way whichever
+   * provider took the money.
+   */
+  async fetchOrder(orderId: string): Promise<PlatformOrderRecord> {
+    if (!this.secretKey) {
+      throw new HttpException(
+        "Stripe is not configured on this deployment.",
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    const response = await fetch(
+      `https://api.stripe.com/v1/payment_intents/${encodeURIComponent(orderId)}`,
+      { headers: { Authorization: `Bearer ${this.secretKey}` } },
+    );
+
+    if (!response.ok) {
+      throw new HttpException(
+        `Stripe payment intent lookup failed for ${orderId}`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+
+    const data: unknown = await response.json();
+    const intent = stripeFetchedIntentSchema.parse(data);
+
+    return {
+      id: intent.id,
+      amount: intent.amount,
+      currency: intent.currency.toUpperCase(),
+      status: intent.status,
+      notes: intent.metadata,
+    };
+  }
+
   verifyPaymentSignature(): boolean {
     return false;
   }

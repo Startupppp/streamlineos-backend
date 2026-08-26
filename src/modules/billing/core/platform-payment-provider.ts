@@ -33,6 +33,31 @@ export interface PlatformOrder {
   readonly currency: string;
 }
 
+/**
+ * An order as the provider currently holds it, read back by id.
+ *
+ * Activation needs this because the browser's verify callback carries ids and a
+ * signature and nothing else -- no amount, no plan, no billing cycle. Deriving
+ * those from the request body means the buyer states what they bought, and the
+ * signature does not contradict them: it is computed over `orderId|paymentId`,
+ * so it proves the payment is real without proving it paid for the thing being
+ * claimed. Reading the order back moves every commercial fact to the side that
+ * took the money.
+ *
+ * `notes` is what `createOrder` attached, returned verbatim. Both providers in
+ * this class support arbitrary string metadata on an order and echo it on read,
+ * which is what makes this the portable place to keep the terms of the sale.
+ */
+export interface PlatformOrderRecord {
+  readonly id: string;
+  /** Minor units, as actually charged -- discounts and cycle already applied. */
+  readonly amount: number;
+  readonly currency: string;
+  /** Provider-specific lifecycle string; `paid` is the only one worth acting on. */
+  readonly status: string;
+  readonly notes: Record<string, string>;
+}
+
 export interface CreatePlatformOrderParams {
   /** Minor units. The platform stores paise and cents alike as integers. */
   readonly amount: number;
@@ -66,6 +91,15 @@ export interface PlatformPaymentProvider {
   getPublishableKey(): string | null;
 
   createOrder(params: CreatePlatformOrderParams): Promise<PlatformOrder>;
+
+  /**
+   * Reads an order back by id.
+   *
+   * Throws if the provider does not have it. A caller that cannot read the order
+   * must refuse the activation rather than fall back to the request body --
+   * falling back is the bug this exists to remove.
+   */
+  fetchOrder(orderId: string): Promise<PlatformOrderRecord>;
 
   verifyPaymentSignature(orderId: string, paymentId: string, signature: string): boolean;
 

@@ -32,6 +32,19 @@ export const razorpayOrderSchema = z.object({
   amount: z.number(),
   currency: z.string(),
 });
+
+/*
+  The same order, read back rather than created. `status` and `notes` only exist
+  on a fetch, and `notes` is where the terms of the sale live -- the plan and the
+  billing cycle the buyer actually paid for. Razorpay coerces note values to
+  strings, so the record is typed that way rather than pretending it round-trips
+  richer types.
+*/
+export const razorpayFetchedOrderSchema = razorpayOrderSchema.extend({
+  status: z.string(),
+  notes: z.record(z.string(), z.string()).default({}),
+});
+export type RazorpayFetchedOrder = z.infer<typeof razorpayFetchedOrderSchema>;
 export type RazorpayOrder = z.infer<typeof razorpayOrderSchema>;
 
 export const razorpayOrderErrorSchema = z.object({
@@ -56,6 +69,17 @@ export const stripePaymentIntentSchema = z.object({
   currency: z.string(),
   client_secret: z.string().nullable().optional(),
 });
+
+/*
+  The same intent, read back. Stripe keeps arbitrary pairs in `metadata` where
+  Razorpay keeps them in `notes`; both echo them verbatim on a fetch, which is
+  what lets one activation path read the terms of the sale from either provider.
+*/
+export const stripeFetchedIntentSchema = stripePaymentIntentSchema.extend({
+  status: z.string(),
+  metadata: z.record(z.string(), z.string()).default({}),
+});
+export type StripeFetchedIntent = z.infer<typeof stripeFetchedIntentSchema>;
 export type StripePaymentIntent = z.infer<typeof stripePaymentIntentSchema>;
 
 export const stripeErrorSchema = z.object({
