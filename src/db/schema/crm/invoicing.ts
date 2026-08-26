@@ -188,6 +188,14 @@ export const quotes = pgTable("quotes", {
   approvedAt: timestamp("approved_at"),
   signedAt: timestamp("signed_at"),
   signedDocumentRef: text("signed_document_ref"),
+  /**
+   * The generated quote as it was sent.
+   *
+   * Not `signedDocumentRef`, which is the counter-signed copy that came back —
+   * keeping them apart is what preserves the difference between what was
+   * offered and what was agreed. Null until a document is generated.
+   */
+  documentKey: text("document_key"),
   convertedInvoiceId: integer("converted_invoice_id").references(() => invoices.id, { onDelete: "set null" }),
   // Rate snapshot at issue time, matching `invoices` and `purchase_bills`.
   // Without it a quote's historical value silently re-prices whenever
