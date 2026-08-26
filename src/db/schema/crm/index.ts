@@ -14,6 +14,7 @@ export * from "./contacts";
 export * from "./contact-roles";
 export * from "./consent";
 export * from "./deals";
+export * from "./deal-forecast";
 export * from "./invoicing";
 export * from "./analytics";
 export * from "./sla";
