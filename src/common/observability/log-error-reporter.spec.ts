@@ -49,6 +49,38 @@ describe("LogErrorReporter", () => {
     });
   });
 
+  it("carries a release marker and a fingerprint that groups repeat occurrences", () => {
+    const previous = process.env["APP_RELEASE"];
+    process.env["APP_RELEASE"] = "sha-abc123";
+    try {
+      const frame = "DealsService.find (/app/src/modules/crm/deals.service.ts:44:11)";
+      const occurrence = (id: string): Error => {
+        const error = new Error(`row ${id} is not visible`);
+        error.stack = [`Error: row ${id} is not visible`, `    at ${frame}`].join("\n");
+        return error;
+      };
+
+      const first = capture(reportOf(occurrence("8f14e45f-ceea-467a-9a3f-000000000000"))).record;
+      const second = capture(reportOf(occurrence("1a2b3c4d-5e6f-4a7b-8c9d-111111111111"))).record;
+
+      expect(first["release"]).toBe("sha-abc123");
+      expect(first["fingerprint"]).toBe(second["fingerprint"]);
+    } finally {
+      if (previous === undefined) delete process.env["APP_RELEASE"];
+      else process.env["APP_RELEASE"] = previous;
+    }
+  });
+
+  it("reports an unset release as unknown rather than omitting the field", () => {
+    const previous = process.env["APP_RELEASE"];
+    delete process.env["APP_RELEASE"];
+    try {
+      expect(capture(reportOf(new Error("boom"))).record["release"]).toBe("unknown");
+    } finally {
+      if (previous !== undefined) process.env["APP_RELEASE"] = previous;
+    }
+  });
+
   it("redacts a credential passed as extra detail", () => {
     const { line, record } = capture(
       reportOf(new Error("boom"), {

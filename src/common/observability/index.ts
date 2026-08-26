@@ -20,6 +20,8 @@ export {
   sqlstateOf,
   SQLSTATE_INSUFFICIENT_PRIVILEGE,
 } from "./error-classification";
+export { fingerprintOf } from "./error-fingerprint";
+export { currentRelease } from "./release";
 export { redact, truncateForLog } from "./redact";
 export { structuredNestLogger } from "./nest-logger.adapter";
 export { LogSpanExporter } from "./log-span-exporter";

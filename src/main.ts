@@ -15,6 +15,7 @@ import { correlationIdMiddleware } from "./common/http/correlation-id.middleware
 import {
   LogErrorReporter,
   LogSpanExporter,
+  reportError,
   setErrorReporter,
   setSpanExporter,
   structuredNestLogger,
@@ -33,6 +34,11 @@ process.on("unhandledRejection", (reason: unknown) => {
   logger.error("Unhandled promise rejection — process kept alive", {
     error: describeError(reason),
   });
+  // Also through the reporter, so a rejection is fingerprinted and classified
+  // like any other failure. A dropped `void something(...)` is exactly how the
+  // tenant-context outage stayed invisible, and that is the classification
+  // (`errorClass: "tenant-context"`) that would have named it.
+  reportError(reason, { source: "unhandledRejection" });
 });
 
 async function bootstrap(): Promise<void> {

@@ -1,5 +1,7 @@
 import type { ErrorReport, ErrorReporter } from "./error-reporter";
 import { isTenantContextError, sqlstateOf } from "./error-classification";
+import { fingerprintOf } from "./error-fingerprint";
+import { currentRelease } from "./release";
 import { redact, truncateForLog } from "./redact";
 
 /**
@@ -46,6 +48,11 @@ export class LogErrorReporter implements ErrorReporter {
         actorId: context?.actorId,
         method: context?.method,
         route: context?.route,
+        // Grouping and release marking, the two things giving up an error
+        // tracker cost. `count(*) group by fingerprint` turns N lines back into
+        // one incident, and `release` is what implicates a deploy in a spike.
+        fingerprint: fingerprintOf(report.error, context?.route),
+        release: currentRelease(),
         // Lifted out of the cause chain: the SQLSTATE is the only thing that
         // distinguishes a missing tenant GUC from any other 500, and it appears
         // nowhere in the message an alert would otherwise have to match on.
