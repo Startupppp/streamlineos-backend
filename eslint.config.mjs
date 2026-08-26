@@ -129,16 +129,6 @@ export default tseslint.config(
     files: ["src/**/*.ts"],
     ignores: [
       "src/db/schema/**",
-      "src/modules/clients/clients.service.ts",
-      "src/modules/contacts/contact-roles.service.ts",
-      "src/modules/contacts/contacts.service.ts",
-      "src/modules/crm/core/crm-customer360-sections.service.ts",
-      "src/modules/crm/core/crm-customer360.service.ts",
-      "src/modules/crm/core/crm-organizations-insights.service.ts",
-      "src/modules/crm/core/crm-organizations.service.ts",
-      "src/modules/cron/cron-weekly-recap.service.ts",
-      "src/modules/inventory/returns/customer-returns.service.ts",
-      "src/modules/leads/leads.controller.e2e-spec.ts",
       "src/modules/party/party-divergence.service.ts",
       "src/modules/party/party-legacy-backfill.db.spec.ts",
       "src/modules/party/party-legacy-clients.ts",
@@ -152,7 +142,6 @@ export default tseslint.config(
       "src/modules/party/party-legacy-writer.spec.ts",
       "src/modules/party/party-legacy-writer.ts",
       "src/modules/party/party-mirror-fields.ts",
-      "src/modules/search/search.service.ts",
     ],
     rules: {
       "no-restricted-imports": [

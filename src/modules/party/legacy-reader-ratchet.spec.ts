@@ -230,7 +230,22 @@ describe("the legacy identity tables gain no new readers", () => {
       .map((match) => match[1]!)
       .filter((path) => !path.endsWith("/**"));
 
-    expect([...exempt].sort()).toEqual([...KNOWN_READERS].sort());
+    /*
+      A subset, not an equality, and the difference is load-bearing.
+
+      Equality held only while a read meant an import. Widening the detection to
+      relational includes and raw SQL broke it permanently: `csat.service.ts` and
+      four others reach a legacy table without naming its symbol, so they belong
+      on the register and need no exemption from an *import* rule. Asserting
+      equality would force us to exempt files that never trip the rule, which is
+      how an exemption list grows for no reason.
+
+      The direction the docblock above calls the worse one is exactly what this
+      still catches: a file exempted here but absent from the register is one
+      nobody is stopped from copying.
+    */
+    const exemptedButUnregistered = exempt.filter((path) => !KNOWN_READERS.includes(path));
+    expect(exemptedButUnregistered).toEqual([]);
   });
 
   it("reports how much of the migration is left", () => {
