@@ -28,7 +28,23 @@ export class ZodValidationInterceptor implements NestInterceptor {
     }
     if (schemas.query) {
       const parsedQuery = schemas.query.parse(req.query);
-      Object.assign(req.query, parsedQuery);
+      /*
+        Redefined, not assigned into. Express 5 exposes `query` as a getter that
+        re-parses the URL on every access, so `Object.assign(req.query, parsed)`
+        mutates a throwaway object and the handler reads the raw strings back.
+        Validation still rejected bad input, which is why this looked like it
+        worked — but no coercion, default or transform ever reached a handler:
+        `limit` stayed a string, so `limit + 1` concatenated, and an omitted one
+        stayed undefined, so the read ran unbounded; `?includeCompleted=false`
+        stayed the string "false", which is truthy, so a filter a caller
+        explicitly turned off stayed on.
+      */
+      Object.defineProperty(req, "query", {
+        value: parsedQuery,
+        configurable: true,
+        enumerable: true,
+        writable: true,
+      });
     }
     if (schemas.params) {
       const parsedParams = schemas.params.parse(req.params);
