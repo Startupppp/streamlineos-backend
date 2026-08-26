@@ -12,6 +12,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
+import { logger } from "../../common/logger/logger.service";
 
 function toDateStr(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -40,6 +41,8 @@ export class CronLeaveService {
     let totalYearlyResetCount: number | null = null;
 
     await forEachOrg(this.db, "monthly-leave-reset", async (_tx, orgId) => {
+      const sweepStart = Date.now();
+
       const accrual = await this.accrueMonthlyLeaves(now, orgId);
       totalAccruedCount += accrual.accruedCount;
 
@@ -47,10 +50,20 @@ export class CronLeaveService {
       totalExpiredCount += expiry.expiredCount;
 
       const yearStartMonth = await this.resolveLeaveYearStartMonth(orgId);
+      let resetCount: number | undefined;
       if (yearStartMonth === currentMonth) {
         const result = await this.resetYearlyLeaveBalances(orgId, now.getFullYear());
         totalYearlyResetCount = (totalYearlyResetCount ?? 0) + result.resetCount;
+        resetCount = result.resetCount;
       }
+
+      logger.info("[monthly-leave-reset] org sweep complete", {
+        orgId,
+        durationMs: Date.now() - sweepStart,
+        accruedCount: accrual.accruedCount,
+        expiredCount: expiry.expiredCount,
+        ...(resetCount !== undefined ? { yearlyResetCount: resetCount } : {}),
+      });
     });
 
     return {

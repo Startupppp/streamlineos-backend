@@ -5,7 +5,6 @@ import { type Db } from "../../../db/drizzle.module";
 import { accountingPeriods, journalEntries, journalLines, ledgerAccounts } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { SETTINGS_CACHE_KEY } from "./accounting-settings.constants";
 import type { PostOpeningBalancesInput } from "./dto/settings.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { FinancePostingService } from "../posting/finance-posting.service";
@@ -115,7 +114,7 @@ export class OpeningBalancesService {
       lines,
     });
 
-    await this.cache.invalidate(SETTINGS_CACHE_KEY(u.orgId));
+    await this.cache.invalidateForOrg(u.orgId, "acc:settings");
 
     this.audit.log({
       action: "accounting.opening_balances.posted",

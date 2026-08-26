@@ -236,6 +236,43 @@ export class StorageService {
     );
   }
 
+  async compressAndPreGenerateKey(
+    buffer: Buffer,
+    folder: string,
+    fileName: string,
+    mimeType: string,
+    publicUrlOverride?: string,
+  ): Promise<{ key: string; url: string; compressedBuffer: Buffer; compressedMimeType: string; size: number }> {
+    const compressed = await this.compression.compress(buffer, mimeType, fileName);
+    const sanitizedName = compressed.fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
+    const key = `${folder}/${randomUUID()}-${sanitizedName}`;
+    const url = this.publicUrlFor(folder, key, publicUrlOverride);
+    return {
+      key,
+      url,
+      compressedBuffer: compressed.buffer,
+      compressedMimeType: compressed.mimeType,
+      size: compressed.buffer.length,
+    };
+  }
+
+  async uploadToKey(
+    buffer: Buffer,
+    key: string,
+    mimeType: string,
+    bucketOverride?: string,
+  ): Promise<void> {
+    const bucketName = this.resolveBucket(bucketOverride);
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+        Body: buffer,
+        ContentType: mimeType,
+      }),
+    );
+  }
+
   async getFileUrl(key: string, expiresIn = 3600): Promise<string> {
     const bucketName = this.requireBucket();
     const command = new GetObjectCommand({ Bucket: bucketName, Key: key });

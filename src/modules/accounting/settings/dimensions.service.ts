@@ -19,8 +19,6 @@ import type {
   UpdateDimensionValueInput,
 } from "./dto/dimensions.schemas";
 
-const DIMENSIONS_CACHE_KEY = (orgId: string) => `acc:dimensions:${orgId}`;
-
 @Injectable()
 export class DimensionsService {
   constructor(
@@ -30,8 +28,9 @@ export class DimensionsService {
   ) {}
 
   async listDimensions(orgId: string) {
-    return this.cache.cached(
-      DIMENSIONS_CACHE_KEY(orgId),
+    return this.cache.cachedForOrg(
+      orgId,
+      "acc:dimensions",
       async () => {
         const dims = await this.db
           .select({
@@ -82,7 +81,7 @@ export class DimensionsService {
 
       if (!dim) throw new InternalServerErrorException("Failed to create dimension.");
 
-      await this.cache.invalidate(DIMENSIONS_CACHE_KEY(u.orgId));
+      await this.cache.invalidateForOrg(u.orgId, "acc:dimensions");
 
       this.audit.log({
         action: "accounting.dimension.created",
@@ -126,7 +125,7 @@ export class DimensionsService {
 
     if (!updated) throw new InternalServerErrorException("Failed to update dimension.");
 
-    await this.cache.invalidate(DIMENSIONS_CACHE_KEY(u.orgId));
+    await this.cache.invalidateForOrg(u.orgId, "acc:dimensions");
 
     this.audit.log({
       action: "accounting.dimension.updated",
@@ -189,7 +188,7 @@ export class DimensionsService {
 
       if (!val) throw new InternalServerErrorException("Failed to create dimension value.");
 
-      await this.cache.invalidate(DIMENSIONS_CACHE_KEY(u.orgId));
+      await this.cache.invalidateForOrg(u.orgId, "acc:dimensions");
 
       this.audit.log({
         action: "accounting.dimension_value.created",

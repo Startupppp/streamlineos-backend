@@ -179,7 +179,11 @@ export class KbPagesService {
     const result = await this.db.transaction(async (tx) => {
       const [updated] = await tx
         .update(kbPages)
-        .set(values)
+        .set({
+          ...values,
+          ...(contentChanged ? { contentRevision: sql`content_revision + 1` } : {}),
+          ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
+        })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning();
       if (!updated) throw new NotFoundException("Page not found");
@@ -206,7 +210,12 @@ export class KbPagesService {
           aggregateId: String(pageId),
           aggregateVersion: Date.now(),
           eventType: "kb.content.index",
-          payload: { contentType: "page", contentId: pageId },
+          payload: {
+            contentType: "page",
+            contentId: pageId,
+            contentRevision: updated.contentRevision,
+            aclRevision: updated.aclRevision,
+          },
           occurredAt: new Date(),
         });
       }
@@ -251,7 +260,7 @@ export class KbPagesService {
         aggregateId: String(pageId),
         aggregateVersion: Date.now(),
         eventType: "kb.content.index",
-        payload: { contentType: "page", contentId: pageId },
+        payload: { contentType: "page", contentId: pageId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
         occurredAt: new Date(),
       });
       return updated;
@@ -280,7 +289,7 @@ export class KbPagesService {
         aggregateId: String(pageId),
         aggregateVersion: Date.now(),
         eventType: "kb.content.index",
-        payload: { contentType: "page", contentId: pageId },
+        payload: { contentType: "page", contentId: pageId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
         occurredAt: new Date(),
       });
       return updated;
@@ -309,7 +318,7 @@ export class KbPagesService {
         aggregateId: String(pageId),
         aggregateVersion: Date.now(),
         eventType: "kb.content.index",
-        payload: { contentType: "page", contentId: pageId },
+        payload: { contentType: "page", contentId: pageId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
         occurredAt: new Date(),
       });
       return updated;
@@ -447,19 +456,41 @@ export class KbPagesService {
       throw new NotFoundException("Page not found");
     }
 
-    const update: Partial<typeof kbPages.$inferInsert> = { visibility };
-    if (visibility === "public" && !page.publicToken) {
-      const { randomBytes } = await import("node:crypto");
-      update.publicToken = randomBytes(24).toString("hex");
-    }
+    const publicToken =
+      visibility === "public" && !page.publicToken
+        ? (await import("node:crypto")).randomBytes(24).toString("hex")
+        : undefined;
 
-    const [updated] = await this.db
-      .update(kbPages)
-      .set(update)
-      .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-      .returning();
-    if (!updated) throw new NotFoundException("Page not found");
-    return updated;
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(kbPages)
+        .set({
+          visibility,
+          ...(publicToken !== undefined ? { publicToken } : {}),
+          aclRevision: sql`acl_revision + 1`,
+        })
+        .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
+        .returning();
+      if (!updated) throw new NotFoundException("Page not found");
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "kb_page",
+        aggregateId: String(pageId),
+        aggregateVersion: Date.now(),
+        eventType: "kb.content.index",
+        payload: {
+          contentType: "page",
+          contentId: pageId,
+          contentRevision: updated.contentRevision,
+          aclRevision: updated.aclRevision,
+        },
+        occurredAt: new Date(),
+      });
+
+      return updated;
+    });
   }
 
   async getPublicPage(token: string): Promise<{

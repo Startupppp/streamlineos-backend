@@ -1,8 +1,5 @@
 import type { SystemAccountPurpose } from "./dto/settings.schemas";
 
-export const SETTINGS_CACHE_KEY = (orgId: string) => `acc:settings:${orgId}`;
-export const COA_TREE_CACHE_KEY = (orgId: string) => `acc:coa:tree:${orgId}`;
-export const SETUP_STATUS_CACHE_KEY = (orgId: string) => `acc:setup-status:${orgId}`;
 export const ACCT_STATEMENTS_NS = (orgId: string) => `acc:statements:${orgId}`;
 
 export const PURPOSE_ALLOWED_TYPES: Record<SystemAccountPurpose, string[]> = {

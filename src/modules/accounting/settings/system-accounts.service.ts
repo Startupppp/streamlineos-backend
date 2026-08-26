@@ -5,7 +5,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { accSystemAccountMap, ledgerAccounts } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { SETTINGS_CACHE_KEY, PURPOSE_ALLOWED_TYPES, PURPOSE_SUGGESTED_CODE } from "./accounting-settings.constants";
+import { PURPOSE_ALLOWED_TYPES, PURPOSE_SUGGESTED_CODE } from "./accounting-settings.constants";
 import type { SystemAccountPurpose, UpsertSystemAccountInput } from "./dto/settings.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -115,7 +115,7 @@ export class SystemAccountsService {
         set: { accountId: input.accountId, updatedAt: new Date() },
       });
 
-    await this.cache.invalidate(SETTINGS_CACHE_KEY(u.orgId));
+    await this.cache.invalidateForOrg(u.orgId, "acc:settings");
 
     this.audit.log({
       action: "accounting.system_account.mapped",

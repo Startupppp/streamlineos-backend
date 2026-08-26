@@ -288,7 +288,10 @@ export class KbSearchService {
       const rows = await this.db
         .select({ articleId: kbArticleChunks.articleId })
         .from(kbArticleChunks)
-        .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
+        .innerJoin(kbArticles, and(
+          eq(kbArticles.id, kbArticleChunks.articleId),
+          sql`(${kbArticleChunks.aclRevision} IS NULL OR ${kbArticleChunks.aclRevision} = ${kbArticles.aclRevision})`,
+        ))
         .where(and(...conditions))
         .orderBy(distance)
         .limit(pool * 4);
@@ -356,6 +359,10 @@ export class KbSearchService {
       const rows = await this.db
         .select({ pageId: kbArticleChunks.pageId })
         .from(kbArticleChunks)
+        .innerJoin(kbPages, and(
+          eq(kbPages.id, kbArticleChunks.pageId),
+          sql`(${kbArticleChunks.aclRevision} IS NULL OR ${kbArticleChunks.aclRevision} = ${kbPages.aclRevision})`,
+        ))
         .where(
           and(
             eq(kbArticleChunks.orgId, orgId),

@@ -5,7 +5,6 @@ import { type Db } from "../../../db/drizzle.module";
 import { accSystemAccountMap, journalLines, ledgerAccounts } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { COA_TREE_CACHE_KEY, SETTINGS_CACHE_KEY } from "./accounting-settings.constants";
 import { COA_TEMPLATES } from "./coa-templates.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -32,8 +31,9 @@ export class CoaService {
   ) {}
 
   async getTree(orgId: string) {
-    return this.cache.cached(
-      COA_TREE_CACHE_KEY(orgId),
+    return this.cache.cachedForOrg(
+      orgId,
+      "acc:coa:tree",
       async () => {
         const rows = await this.db
           .select({
@@ -95,6 +95,7 @@ export class CoaService {
     );
   }
 
+
   async deactivateAccount(u: CurrentUserContext, accountId: number) {
     const [account] = await this.db
       .select({ id: ledgerAccounts.id, isActive: ledgerAccounts.isActive, orgId: ledgerAccounts.orgId })
@@ -121,7 +122,7 @@ export class CoaService {
       .set({ isActive: false, updatedAt: new Date() })
       .where(and(eq(ledgerAccounts.id, accountId), eq(ledgerAccounts.orgId, u.orgId)));
 
-    await this.cache.invalidate(COA_TREE_CACHE_KEY(u.orgId));
+    await this.cache.invalidateForOrg(u.orgId, "acc:coa:tree");
 
     this.audit.log({
       action: "accounting.account.deactivated",
@@ -148,7 +149,7 @@ export class CoaService {
       .set({ isActive: true, updatedAt: new Date() })
       .where(and(eq(ledgerAccounts.id, accountId), eq(ledgerAccounts.orgId, u.orgId)));
 
-    await this.cache.invalidate(COA_TREE_CACHE_KEY(u.orgId));
+    await this.cache.invalidateForOrg(u.orgId, "acc:coa:tree");
 
     this.audit.log({
       action: "accounting.account.activated",
@@ -185,7 +186,7 @@ export class CoaService {
       .set({ isActive: false, updatedAt: new Date() })
       .where(and(eq(ledgerAccounts.id, accountId), eq(ledgerAccounts.orgId, u.orgId)));
 
-    await this.cache.invalidate(COA_TREE_CACHE_KEY(u.orgId));
+    await this.cache.invalidateForOrg(u.orgId, "acc:coa:tree");
 
     this.audit.log({
       action: "accounting.account.deleted",
@@ -235,8 +236,8 @@ export class CoaService {
       );
     }
 
-    await this.cache.invalidate(COA_TREE_CACHE_KEY(u.orgId));
-    await this.cache.invalidate(SETTINGS_CACHE_KEY(u.orgId));
+    await this.cache.invalidateForOrg(u.orgId, "acc:coa:tree");
+    await this.cache.invalidateForOrg(u.orgId, "acc:settings");
 
     this.audit.log({
       action: "accounting.coa.template_applied",

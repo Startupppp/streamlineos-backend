@@ -76,6 +76,7 @@ export class KbIndexingService {
     pageVisibility: string | null;
     pageProjectId: number | null;
     pageCreatedById: string | null;
+    aclRevision: number | null;
   } | null> {
     const [existing] = await this.db
       .select({
@@ -83,6 +84,7 @@ export class KbIndexingService {
         pageVisibility: kbArticleChunks.pageVisibility,
         pageProjectId: kbArticleChunks.pageProjectId,
         pageCreatedById: kbArticleChunks.pageCreatedById,
+        aclRevision: kbArticleChunks.aclRevision,
       })
       .from(kbArticleChunks)
       .where(
@@ -136,6 +138,8 @@ export class KbIndexingService {
       columns: {
         status: true,
         contentText: true,
+        contentRevision: true,
+        aclRevision: true,
       },
     });
 
@@ -159,6 +163,8 @@ export class KbIndexingService {
 
     const chunks = this.chunkText(article.contentText);
     const contentHash = this.sha256(article.contentText);
+    const contentRevision = article.contentRevision;
+    const aclRevision = article.aclRevision;
 
     if (chunks.length === 0) {
       await this.removeArticleChunks(orgId, articleId);
@@ -192,6 +198,8 @@ export class KbIndexingService {
         tokens: Math.ceil(chunk.length / 4),
         embedding: embeddings[index],
         embeddingModel: EMBEDDING_MODEL,
+        contentRevision,
+        aclRevision,
       }));
 
       await tx.insert(kbArticleChunks).values(valuesToInsert);
@@ -208,6 +216,8 @@ export class KbIndexingService {
         contentText: true,
         projectId: true,
         createdById: true,
+        aclRevision: true,
+        contentRevision: true,
       },
     });
 
@@ -223,12 +233,15 @@ export class KbIndexingService {
 
     const stored = await this.getPageChunkState(orgId, pageId);
     const contentHash = this.sha256(page.contentText);
+    const aclRevision = page.aclRevision;
+    const contentRevision = page.contentRevision;
 
     if (stored !== null && stored.contentHash === contentHash) {
       const aclChanged =
         stored.pageVisibility !== page.visibility ||
         stored.pageProjectId !== page.projectId ||
-        stored.pageCreatedById !== page.createdById;
+        stored.pageCreatedById !== page.createdById ||
+        stored.aclRevision !== aclRevision;
 
       if (!aclChanged) return 0;
 
@@ -238,6 +251,7 @@ export class KbIndexingService {
           pageVisibility: page.visibility,
           pageProjectId: page.projectId,
           pageCreatedById: page.createdById,
+          aclRevision,
         })
         .where(
           and(
@@ -245,7 +259,7 @@ export class KbIndexingService {
             eq(kbArticleChunks.orgId, orgId),
             eq(kbArticleChunks.source, "page_body"),
           ),
-      );
+        );
       return 0;
     }
 
@@ -286,6 +300,8 @@ export class KbIndexingService {
         pageVisibility: page.visibility,
         pageProjectId: page.projectId,
         pageCreatedById: page.createdById,
+        aclRevision,
+        contentRevision,
       }));
 
       await tx.insert(kbArticleChunks).values(valuesToInsert);

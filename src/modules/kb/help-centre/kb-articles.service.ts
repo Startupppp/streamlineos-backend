@@ -246,13 +246,18 @@ export class KbArticlesService {
 
     const titleChanged = input.title !== undefined && input.title !== current.title;
     const contentChanged = input.content !== undefined && input.content !== current.content;
+    const aclChanged = input.visibility !== undefined && input.visibility !== current.visibility;
 
     const updated = await this.db.transaction(async (tx) => {
       let result: ArticleRow;
       if (Object.keys(values).length > 0) {
         const [row] = await tx
           .update(kbArticles)
-          .set(values)
+          .set({
+            ...values,
+            ...(contentChanged ? { contentRevision: sql`content_revision + 1` } : {}),
+            ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
+          })
           .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
           .returning();
         result = row;
@@ -264,7 +269,7 @@ export class KbArticlesService {
         await this.snapshot(tx, orgId, result, user.userId, input.changeSummary);
       }
 
-      if (result.status === "published" && contentChanged) {
+      if (result.status === "published" && (contentChanged || aclChanged)) {
         await OutboxWriter.emit(tx, {
           eventId: randomUUID(),
           organizationId: orgId,
@@ -272,7 +277,12 @@ export class KbArticlesService {
           aggregateId: String(articleId),
           aggregateVersion: Date.now(),
           eventType: "kb.content.index",
-          payload: { contentType: "article", contentId: articleId },
+          payload: {
+            contentType: "article",
+            contentId: articleId,
+            contentRevision: result.contentRevision,
+            aclRevision: result.aclRevision,
+          },
           occurredAt: new Date(),
         });
       }
@@ -312,7 +322,7 @@ export class KbArticlesService {
         aggregateId: String(articleId),
         aggregateVersion: Date.now(),
         eventType: "kb.content.index",
-        payload: { contentType: "article", contentId: articleId },
+        payload: { contentType: "article", contentId: articleId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
         occurredAt: new Date(),
       });
       return updated;
@@ -343,7 +353,7 @@ export class KbArticlesService {
         aggregateId: String(articleId),
         aggregateVersion: Date.now(),
         eventType: "kb.content.index",
-        payload: { contentType: "article", contentId: articleId },
+        payload: { contentType: "article", contentId: articleId, contentRevision: result.contentRevision, aclRevision: result.aclRevision },
         occurredAt: new Date(),
       });
       return result;
@@ -369,7 +379,7 @@ export class KbArticlesService {
         aggregateId: String(articleId),
         aggregateVersion: Date.now(),
         eventType: "kb.content.index",
-        payload: { contentType: "article", contentId: articleId },
+        payload: { contentType: "article", contentId: articleId, contentRevision: row.contentRevision, aclRevision: row.aclRevision },
         occurredAt: new Date(),
       });
       return row;
@@ -466,7 +476,7 @@ export class KbArticlesService {
           aggregateId: String(articleId),
           aggregateVersion: Date.now(),
           eventType: "kb.content.index",
-          payload: { contentType: "article", contentId: articleId },
+          payload: { contentType: "article", contentId: articleId, contentRevision: result.contentRevision, aclRevision: result.aclRevision },
           occurredAt: new Date(),
         });
       }

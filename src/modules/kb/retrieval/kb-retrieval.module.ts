@@ -5,6 +5,13 @@ import { KbCoreModule } from "../core/kb-core.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { KbIndexingService } from "./kb-indexing.service";
 import { KbIngestionConsumer } from "./kb-ingestion-consumer";
+import {
+  KbContentAdapterRegistry,
+  KbPageAdapter,
+  KbArticleAdapter,
+  KbSourceAdapter,
+  KbAttachmentAdapter,
+} from "./kb-content-adapter";
 import { KbPageBackfillService } from "./kb-page-backfill.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAskService } from "./kb-ask.service";
@@ -21,6 +28,11 @@ import { KbPageIndexingController } from "./kb-page-indexing.controller";
   controllers: [KbSearchController, KbAskController, KbResearchBriefController, KbPageIndexingController],
   providers: [
     KbIndexingService,
+    KbContentAdapterRegistry,
+    KbPageAdapter,
+    KbArticleAdapter,
+    KbSourceAdapter,
+    KbAttachmentAdapter,
     KbIngestionConsumer,
     KbPageBackfillService,
     KbSearchService,

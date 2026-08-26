@@ -12,7 +12,7 @@ import {
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { SETTINGS_CACHE_KEY, SETUP_STATUS_CACHE_KEY, SEQUENCE_DEFAULTS } from "./accounting-settings.constants";
+import { SEQUENCE_DEFAULTS } from "./accounting-settings.constants";
 import type { UpdateSettingsInput, UpdateSequenceInput, SequenceEntityType, UpsertPaymentTermsInput } from "./dto/settings.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -42,7 +42,7 @@ export class AccountingSettingsService {
   }
 
   async getSettings(orgId: string) {
-    return this.cache.cached(SETTINGS_CACHE_KEY(orgId), () => this.getOrCreateSettings(orgId), 300);
+    return this.cache.cachedForOrg(orgId, "acc:settings", () => this.getOrCreateSettings(orgId), 300);
   }
 
   async updateSettings(u: CurrentUserContext, input: UpdateSettingsInput) {
@@ -66,8 +66,8 @@ export class AccountingSettingsService {
       .returning();
 
     await Promise.all([
-      this.cache.invalidate(SETTINGS_CACHE_KEY(u.orgId)),
-      this.cache.invalidate(SETUP_STATUS_CACHE_KEY(u.orgId)),
+      this.cache.invalidateForOrg(u.orgId, "acc:settings"),
+      this.cache.invalidateForOrg(u.orgId, "acc:setup-status"),
     ]);
 
     this.audit.log({
@@ -88,7 +88,7 @@ export class AccountingSettingsService {
   }
 
   async getSetupStatus(orgId: string) {
-    return this.cache.cached(SETUP_STATUS_CACHE_KEY(orgId), () => this.fetchSetupStatus(orgId), 60);
+    return this.cache.cachedForOrg(orgId, "acc:setup-status", () => this.fetchSetupStatus(orgId), 60);
   }
 
   private async fetchSetupStatus(orgId: string) {
@@ -186,7 +186,7 @@ export class AccountingSettingsService {
       .where(eq(accountingSettings.orgId, u.orgId))
       .returning();
 
-    await this.cache.invalidate(SETTINGS_CACHE_KEY(u.orgId));
+    await this.cache.invalidateForOrg(u.orgId, "acc:settings");
 
     this.audit.log({
       action: "accounting.settings.payment_terms_updated",

@@ -4,6 +4,38 @@ import postgres from "postgres";
 import * as dotenv from "dotenv";
 import { BUDGETS } from "./read-cost-budgets.mjs";
 
+export function validateBudgets(budgets) {
+  const errors = [];
+  for (let i = 0; i < budgets.length; i++) {
+    const b = budgets[i];
+    const tag = `budget[${i}]${typeof b?.id === "string" ? ` "${b.id}"` : ""}`;
+    if (!b || typeof b !== "object") { errors.push(`${tag}: must be an object`); continue; }
+    if (typeof b.id !== "string" || !b.id) errors.push(`${tag}: id must be a non-empty string`);
+    if (typeof b.ceiling !== "number" || b.ceiling < 0 || !Number.isFinite(b.ceiling))
+      errors.push(`${tag}: ceiling must be a finite non-negative number`);
+    if (typeof b.minRows !== "number" || b.minRows < 1 || !Number.isFinite(b.minRows))
+      errors.push(`${tag}: minRows must be a positive finite number`);
+    if (typeof b.rowCountSql !== "string" || !b.rowCountSql.trim())
+      errors.push(`${tag}: rowCountSql must be a non-empty string`);
+    if (typeof b.sql !== "string" || !b.sql.trim())
+      errors.push(`${tag}: sql must be a non-empty string`);
+    if (typeof b.params !== "function")
+      errors.push(`${tag}: params must be a function`);
+    if (!Array.isArray(b.planAssertions)) {
+      errors.push(`${tag}: planAssertions must be an array`);
+    } else {
+      for (let j = 0; j < b.planAssertions.length; j++) {
+        const a = b.planAssertions[j];
+        const atag = `${tag}.planAssertions[${j}]`;
+        if (typeof a?.kind !== "string") errors.push(`${atag}: kind must be a string`);
+        if (typeof a?.relation !== "string" || !a.relation)
+          errors.push(`${atag}: relation must be a non-empty string`);
+      }
+    }
+  }
+  return errors;
+}
+
 export function walk(node, out) {
   out.push({
     type: node["Node Type"],
@@ -82,13 +114,25 @@ async function main() {
 
   const ORG = process.env.SEED_ORG_ID ?? "aa5627a2-a7de-4dca-97d2-135f3a5f801b";
   const SELF_TEST = process.argv.includes("--self-test");
+
+  const validationErrors = validateBudgets(BUDGETS);
+  if (validationErrors.length > 0) {
+    for (const e of validationErrors) console.error("INVALID BUDGET:", e);
+    process.exit(1);
+  }
+
+  const idsArg = process.argv.find((a) => a.startsWith("--ids="));
+  const filterIds = idsArg ? new Set(idsArg.slice("--ids=".length).split(",").filter(Boolean)) : null;
+
   const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
   const db = postgres(url, { max: 1, prepare: false, ssl, onnotice: () => {} });
 
   try {
     const budgets = SELF_TEST
       ? [{ ...BUDGETS[0], id: "self-test", ceiling: 0 }]
-      : BUDGETS;
+      : filterIds
+        ? BUDGETS.filter((b) => filterIds.has(b.id))
+        : BUDGETS;
 
     const fixtures = await db.begin(async (tx) => {
       await tx`SELECT set_config('app.organization_id', ${ORG}, true)`;
