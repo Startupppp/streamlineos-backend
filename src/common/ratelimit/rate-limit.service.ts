@@ -30,6 +30,12 @@ const TIERS: Record<string, Tier> = {
   // prefetching the link, bounded against enumeration.
   "notifications:unsubscribe": { limit: 30, windowSecs: 60 },
   "public:contact": { limit: 5, windowSecs: 3600 },
+  // The subprocessor register is @Public() because the people who read it are a
+  // prospect's counsel and a customer's compliance officer, who have no login.
+  // The read is generous; the subscribe is an unauthenticated write taking an
+  // email address, which is the shape of every mailing-list abuse there is.
+  "compliance:subprocessors": { limit: 60, windowSecs: 60 },
+  "compliance:subscribe": { limit: 5, windowSecs: 3600 },
   "public:waitlist": { limit: 5, windowSecs: 3600 },
   "public:roadmap": { limit: 60, windowSecs: 60 },
   "public:roadmap-vote": { limit: 10, windowSecs: 3600 },

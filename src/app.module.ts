@@ -82,6 +82,7 @@ import { MailModule } from "./modules/mail/mail.module";
 import { DirectoryModule } from "./modules/directory/directory.module";
 import { PartyModule } from "./modules/party/party.module";
 import { RendererModule } from "./modules/renderer/renderer.module";
+import { ComplianceModule } from "./modules/compliance/compliance.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
 import { IngressModule } from "./modules/ingress/ingress.module";
 import { AutonomyModule } from "./modules/autonomy/autonomy.module";
@@ -150,6 +151,7 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     DirectoryModule,
     PartyModule,
     RendererModule,
+    ComplianceModule,
     ActivitiesModule,
     IngressModule,
     AutonomyModule,
