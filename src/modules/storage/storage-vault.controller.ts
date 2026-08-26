@@ -1,6 +1,5 @@
 import {
   Controller,
-  Delete,
   ForbiddenException,
   HttpCode,
   Inject,
@@ -70,39 +69,5 @@ export class StorageVaultController {
     }
 
     return { ...doc, signedUrl };
-  }
-
-  @Delete(":documentId")
-  async remove(
-    @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Param("documentId", ParseIntPipe) documentId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ): Promise<{ success: boolean }> {
-    if (!u.isOrgOwner) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:documents:manage")) {
-        throw new ForbiddenException("Forbidden");
-      }
-    }
-
-    const doc = await this.db.query.candidateDocumentsVault.findFirst({
-      where: and(
-        eq(candidateDocumentsVault.id, documentId),
-        eq(candidateDocumentsVault.candidateId, candidateId),
-        eq(candidateDocumentsVault.orgId, u.orgId),
-      ),
-    });
-    if (!doc) throw new NotFoundException("Document not found.");
-
-    await this.db.transaction(async (tx) => {
-      await tx.insert(vaultAccessLogs).values({
-        vaultDocumentId: documentId,
-        accessedBy: u.userId,
-        action: "DELETE",
-      });
-      await tx.delete(candidateDocumentsVault).where(eq(candidateDocumentsVault.id, documentId));
-    });
-
-    return { success: true };
   }
 }
