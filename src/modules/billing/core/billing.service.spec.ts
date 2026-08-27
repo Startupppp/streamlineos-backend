@@ -236,6 +236,33 @@ describe("BillingService.verifyAndActivate — goes through the registry", () =>
   });
 });
 
+describe("c17-02 — the checkout does not report success it cannot back", () => {
+  it("fails the request when the plan credit grant fails, rather than returning success", async () => {
+    const aiCredits = {
+      grantPlanCredits: jest.fn().mockRejectedValue(new Error("db unavailable")),
+      listPacks: jest.fn().mockResolvedValue([]),
+    };
+    const svc = await buildService(makeDb(), makeResolver(), aiCredits);
+
+    await expect(svc.verifyAndActivate("org1", "user1", VALID_INPUT)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+  });
+
+  it("says the payment was recorded, so the customer is not told the charge failed", async () => {
+    const aiCredits = {
+      grantPlanCredits: jest.fn().mockRejectedValue(new Error("db unavailable")),
+      listPacks: jest.fn().mockResolvedValue([]),
+    };
+    const svc = await buildService(makeDb(), makeResolver(), aiCredits);
+
+    const error = await svc.verifyAndActivate("org1", "user1", VALID_INPUT).catch((e: unknown) => e);
+
+    expect((error as { message: string }).message).toContain("Payment recorded");
+    expect((error as { message: string }).message).toContain("retry");
+  });
+});
+
 describe("c17-05 — an activation enqueues its revenue event in the activating transaction", () => {
   it("a first paid activation enqueues new business", async () => {
     const db = makeDb({ subscription: null });

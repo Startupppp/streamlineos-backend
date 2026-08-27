@@ -1,0 +1,113 @@
+import { and, asc, eq, isNull } from "drizzle-orm";
+import { providerWebhookEvents } from "../../../db/schema/billing/provider-webhook-events";
+import { type Db } from "../../../db/drizzle.module";
+import { logger } from "../../../common/logger/logger.service";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+
+// RETRY means recorded but never finished, so the work must run again; PROCESSED is the only no-op.
+export type ProviderEventClaim =
+  | "RECORDED"
+  | "RETRY"
+  | "PROCESSED"
+  | "FOREIGN"
+  | "ERROR";
+
+export interface ProviderEventKey {
+  orgId: string;
+  providerKey: string;
+  providerEventId: string;
+}
+
+export class ProviderEventLedger {
+  constructor(private readonly db: Db) {}
+
+  // ON CONFLICT alone cannot tell a completed replay from a failed attempt, and answering
+  // "duplicate" to both is what let a failed grant be acknowledged; only processed_at separates
+  // them. The route is @Public() with no ambient GUC, so the URL orgId opens the transaction RLS
+  // requires.
+  async claim(
+    key: ProviderEventKey,
+    event: { eventType: string; rawBody: string },
+  ): Promise<ProviderEventClaim> {
+    const { orgId, providerKey, providerEventId } = key;
+    try {
+      return await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+        const inserted = await tx
+          .insert(providerWebhookEvents)
+          .values({
+            orgId,
+            provider: providerKey,
+            providerEventId,
+            eventType: event.eventType,
+            rawPayload: JSON.parse(event.rawBody),
+          })
+          .onConflictDoNothing({
+            target: [
+              providerWebhookEvents.provider,
+              providerWebhookEvents.providerEventId,
+            ],
+          })
+          .returning({ id: providerWebhookEvents.id });
+        if (inserted.length > 0) return "RECORDED";
+
+        const [existing] = await tx
+          .select({ processedAt: providerWebhookEvents.processedAt })
+          .from(providerWebhookEvents)
+          .where(this.matches(key))
+          .limit(1);
+        // The index is global but the read is tenant-scoped: no visible row means another tenant
+        // holds this id, and reporting that as accepted would silently drop a real event.
+        if (!existing) return "FOREIGN";
+        return existing.processedAt === null ? "RETRY" : "PROCESSED";
+      });
+    } catch (error) {
+      logger.error(`[billing:${providerKey}] failed to record provider event`, {
+        error,
+        providerEventId,
+      });
+      return "ERROR";
+    }
+  }
+
+  /** Stamps the event processed inside the caller's transaction — never on its own. */
+  acknowledge(
+    tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+    key: ProviderEventKey,
+  ) {
+    return tx
+      .update(providerWebhookEvents)
+      .set({ processedAt: new Date() })
+      .where(this.matches(key));
+  }
+
+  // The stuck-provisioning queue; the raw payload is withheld because it carries payer detail.
+  async listUnprocessed(orgId: string) {
+    const rows = await this.db
+      .select({
+        id: providerWebhookEvents.id,
+        provider: providerWebhookEvents.provider,
+        providerEventId: providerWebhookEvents.providerEventId,
+        eventType: providerWebhookEvents.eventType,
+        receivedAt: providerWebhookEvents.createdAt,
+      })
+      .from(providerWebhookEvents)
+      .where(
+        and(
+          eq(providerWebhookEvents.orgId, orgId),
+          isNull(providerWebhookEvents.processedAt),
+        ),
+      )
+      .orderBy(asc(providerWebhookEvents.createdAt))
+      .limit(100);
+
+    return { events: rows, total: rows.length };
+  }
+
+  private matches(key: ProviderEventKey) {
+    return and(
+      eq(providerWebhookEvents.orgId, key.orgId),
+      eq(providerWebhookEvents.provider, key.providerKey),
+      eq(providerWebhookEvents.providerEventId, key.providerEventId),
+    );
+  }
+}

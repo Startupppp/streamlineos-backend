@@ -6,20 +6,16 @@
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   billingProfiles,
   coupons,
   couponRedemptions,
-  dunningAttempts,
   invoices,
   organizationMembers,
-  organizations,
-  platformPayments,
   subscriptionPayments,
   subscriptions,
 } from "../../../db/schema";
-import { providerWebhookEvents } from "../../../db/schema/billing/provider-webhook-events";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -27,7 +23,7 @@ import { logger } from "../../../common/logger/logger.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
-import { classifyPlanChange, type RevenueEventInput } from "./revenue-events";
+import { classifyPlanChange } from "./revenue-events";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
 import { PaymentWebhookHealthService } from "../payments/payment-webhook-health.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
@@ -38,17 +34,18 @@ import {
   COUPON_NOT_FOUND,
   type CouponEvaluation,
 } from "./coupon-pricing";
-import { forwardOnlyStatusGuard } from "./payment-status-order";
 import {
-  webhookEventSchema,
+  BillingWebhookHandler,
+  type WebhookResult,
+} from "./billing-webhook.handler";
+import { BillingCoupons } from "./billing-coupons";
+import {
   type BillingCycle,
   type CreateCouponInput,
   type Plan,
-  type RazorpayPayment,
   type UpdateBillingProfileInput,
   type UpdateCouponInput,
   type VerifyPaymentInput,
-  type WebhookEvent,
 } from "./dto/billing.schemas";
 import {
   PLAN_LIMITS,
@@ -58,18 +55,9 @@ import {
   TRIAL_PLAN,
 } from "./plan-entitlements.constants";
 import {
-  runInNewTenantTransaction,
-  runInTenantTransaction,
-} from "../../../common/tenant/run-in-tenant-transaction";
-import { ExternalEffectLedger, ExternalEffectLeaseBusyError } from "../../../common/outbox/external-effect-ledger";
-
-interface WebhookResult {
-  status: number;
-  body: Record<string, unknown>;
-}
-
-// RETRY means recorded but never finished, so the work must run again; PROCESSED is the only no-op.
-type ProviderEventClaim = "RECORDED" | "RETRY" | "PROCESSED" | "FOREIGN" | "ERROR";
+  ExternalEffectLedger,
+  ExternalEffectLeaseBusyError,
+} from "../../../common/outbox/external-effect-ledger";
 
 @Injectable()
 export class BillingService {
@@ -83,7 +71,22 @@ export class BillingService {
     private readonly externalEffectLedger: ExternalEffectLedger,
     private readonly paymentWebhooks: PaymentWebhookHealthService,
     private readonly paymentNotices: PaymentAnalyticsService,
-  ) {}
+  ) {
+    this.couponAdmin = new BillingCoupons(this.db);
+    this.webhooks = new BillingWebhookHandler({
+      db: this.db,
+      aiCredits: this.aiCredits,
+      planLimits: this.planLimits,
+      revenueAnalytics: this.revenueAnalytics,
+      providers: this.providers,
+      externalEffectLedger: this.externalEffectLedger,
+      paymentWebhooks: this.paymentWebhooks,
+      paymentNotices: this.paymentNotices,
+    });
+  }
+
+  private readonly webhooks: BillingWebhookHandler;
+  private readonly couponAdmin: BillingCoupons;
 
   async getSubscription(orgId: string) {
     const subscription = await this.db.query.subscriptions.findFirst({
@@ -91,7 +94,9 @@ export class BillingService {
       with: {
         payments: {
           limit: 5,
-          orderBy: (payment, { desc: descending }) => [descending(payment.createdAt)],
+          orderBy: (payment, { desc: descending }) => [
+            descending(payment.createdAt),
+          ],
         },
       },
     });
@@ -104,22 +109,40 @@ export class BillingService {
     };
   }
 
-  async createOrder(orgId: string, userId: string, plan: Plan, billingCycle: BillingCycle = "monthly", couponId?: number) {
+  async createOrder(
+    orgId: string,
+    userId: string,
+    plan: Plan,
+    billingCycle: BillingCycle = "monthly",
+    couponId?: number,
+  ) {
     const adapter = await this.providers.resolveConfigured(orgId);
     if (adapter === undefined || !adapter.isReady()) {
-      throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
+      throw new ServiceUnavailableException(
+        "Payment gateway not configured. Contact support.",
+      );
     }
 
     if (!PLAN_PRICES_PAISE[plan]) throw new BadRequestException("Invalid plan");
 
-    const baseAmount = planBaseAmountPaise(plan, billingCycle, ANNUAL_DISCOUNT_PCT);
+    const baseAmount = planBaseAmountPaise(
+      plan,
+      billingCycle,
+      ANNUAL_DISCOUNT_PCT,
+    );
     let amount = baseAmount;
     let couponDiscountAmount = 0;
 
     if (couponId) {
       // Pricing without these rules charged a discount redemption then refused, leaving a paid customer with no subscription.
-      const evaluation = await this.evaluateCouponForOrg(couponId, orgId, plan, baseAmount);
-      if (!evaluation.eligible) throw new BadRequestException(evaluation.reason);
+      const evaluation = await this.couponAdmin.evaluate(
+        couponId,
+        orgId,
+        plan,
+        baseAmount,
+      );
+      if (!evaluation.eligible)
+        throw new BadRequestException(evaluation.reason);
       couponDiscountAmount = evaluation.discountAmount;
       amount = applyDiscount(baseAmount, couponDiscountAmount);
     }
@@ -142,10 +165,16 @@ export class BillingService {
     };
   }
 
-  async verifyAndActivate(orgId: string, userId: string, input: VerifyPaymentInput) {
+  async verifyAndActivate(
+    orgId: string,
+    userId: string,
+    input: VerifyPaymentInput,
+  ) {
     const adapter = await this.providers.resolveConfigured(orgId);
     if (adapter === undefined || !adapter.isReady()) {
-      throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
+      throw new ServiceUnavailableException(
+        "Payment gateway not configured. Contact support.",
+      );
     }
 
     const valid = adapter.verifyPaymentSignature({
@@ -154,7 +183,9 @@ export class BillingService {
       signature: input.razorpay_signature,
     });
     if (!valid) {
-      throw new BadRequestException("Payment verification failed: invalid signature");
+      throw new BadRequestException(
+        "Payment verification failed: invalid signature",
+      );
     }
 
     const amount = PLAN_PRICES_PAISE[input.plan];
@@ -219,13 +250,20 @@ export class BillingService {
               usedCount: coupons.usedCount,
             })
             .from(coupons)
-            .where(and(eq(coupons.id, input.couponId), eq(coupons.isActive, true)))
+            .where(
+              and(eq(coupons.id, input.couponId), eq(coupons.isActive, true)),
+            )
             .for("update")
             .limit(1);
 
           if (lockedCoupon) {
-            if (lockedCoupon.maxUses !== null && lockedCoupon.usedCount >= lockedCoupon.maxUses) {
-              throw new BadRequestException("This coupon has reached its usage limit");
+            if (
+              lockedCoupon.maxUses !== null &&
+              lockedCoupon.usedCount >= lockedCoupon.maxUses
+            ) {
+              throw new BadRequestException(
+                "This coupon has reached its usage limit",
+              );
             }
 
             await tx
@@ -250,7 +288,10 @@ export class BillingService {
             previousPlan: revenue.previousPlan,
             mrr: revenue.mrr,
             amount: revenue.mrr,
-            metadata: { paymentId: input.razorpay_payment_id, source: "verify-and-activate" },
+            metadata: {
+              paymentId: input.razorpay_payment_id,
+              source: "verify-and-activate",
+            },
           });
         }
       });
@@ -258,7 +299,9 @@ export class BillingService {
       const pgErr = err as { code?: string; constraint?: string };
       if (pgErr.code === "23505") {
         if (pgErr.constraint === "uq_coupon_redemptions_coupon_org") {
-          throw new ConflictException("This coupon has already been used by your organization");
+          throw new ConflictException(
+            "This coupon has already been used by your organization",
+          );
         }
         return { success: true, plan: input.plan, status: "ACTIVE" };
       }
@@ -284,444 +327,75 @@ export class BillingService {
           effectType: "billing.plan-credit-grant",
           providerIdempotency: "NONE",
         },
-        () => this.aiCredits.grantPlanCredits(orgId, input.plan, userId, input.razorpay_payment_id),
+        () =>
+          this.aiCredits.grantPlanCredits(
+            orgId,
+            input.plan,
+            userId,
+            input.razorpay_payment_id,
+          ),
       );
     } catch (err: unknown) {
       if (err instanceof ExternalEffectLeaseBusyError) {
-        logger.warn("[billing] plan credit grant already in flight", { orgId, plan: input.plan });
+        logger.warn("[billing] plan credit grant already in flight", {
+          orgId,
+          plan: input.plan,
+        });
       } else {
-        logger.error("[billing] plan credit grant failed", { orgId, plan: input.plan, err });
-        throw new ServiceUnavailableException("Payment recorded but credits could not be granted. The system will retry automatically.");
+        logger.error("[billing] plan credit grant failed", {
+          orgId,
+          plan: input.plan,
+          err,
+        });
+        throw new ServiceUnavailableException(
+          "Payment recorded but credits could not be granted. The system will retry automatically.",
+        );
       }
     }
 
     return { success: true, plan: input.plan, status: "ACTIVE" };
   }
 
-  // Advisory only: the count and redemption row are written under FOR UPDATE in verifyAndActivate.
-  private async evaluateCouponForOrg(
-    couponId: number,
-    orgId: string,
-    plan: Plan,
-    baseAmountPaise: number,
-  ): Promise<CouponEvaluation> {
-    const coupon = await this.db.query.coupons.findFirst({
-      where: and(eq(coupons.id, couponId), eq(coupons.isActive, true)),
-    });
-    const alreadyRedeemed = coupon
-      ? await this.db.query.couponRedemptions.findFirst({
-          where: and(eq(couponRedemptions.couponId, coupon.id), eq(couponRedemptions.orgId, orgId)),
-        })
-      : undefined;
-
-    return evaluateCoupon({
-      coupon: coupon ?? undefined,
-      baseAmountPaise,
-      plan,
-      alreadyRedeemedByOrg: alreadyRedeemed !== undefined && alreadyRedeemed !== null,
-      now: new Date(),
-    });
+  validateCoupon(code: string, orgId: string, plan: Plan) {
+    return this.couponAdmin.validate(code, orgId, plan);
   }
 
-  async validateCoupon(code: string, orgId: string, plan: Plan): Promise<{
-    valid: boolean;
-    couponId: number | null;
-    type: "PERCENTAGE" | "FIXED" | null;
-    value: number | null;
-    discountAmount: number | null;
-    message: string;
-  }> {
-    const normalizedCode = code.trim().toUpperCase();
-    const coupon = await this.db.query.coupons.findFirst({
-      where: and(
-        eq(coupons.code, normalizedCode),
-        eq(coupons.isActive, true),
-      ),
-    });
-
-    if (!coupon) {
-      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: COUPON_NOT_FOUND };
-    }
-
-    const evaluation = await this.evaluateCouponForOrg(coupon.id, orgId, plan, PLAN_PRICES_PAISE[plan]);
-    if (!evaluation.eligible) {
-      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: evaluation.reason };
-    }
-
-    return {
-      valid: true,
-      couponId: evaluation.couponId,
-      type: evaluation.type,
-      value: evaluation.value,
-      discountAmount: evaluation.discountAmount,
-      message: evaluation.type === "PERCENTAGE"
-        ? `${evaluation.value}% discount applied`
-        : `₹${evaluation.value} discount applied`,
-    };
+  listCoupons() {
+    return this.couponAdmin.list();
   }
 
-  /**
-   * Provider-neutral webhook entry point. Provider-specific signature verification and envelope
-   * parsing stay inside the configured adapter; billing only applies the normalized event.
-   */
-  async handlePaymentProviderWebhook(
+  createCoupon(data: CreateCouponInput) {
+    return this.couponAdmin.create(data);
+  }
+
+  updateCoupon(id: number, data: UpdateCouponInput) {
+    return this.couponAdmin.update(id, data);
+  }
+
+  deleteCoupon(id: number) {
+    return this.couponAdmin.remove(id);
+  }
+
+
+  handlePaymentProviderWebhook(
     orgId: string,
     providerKey: string,
     rawBody: string,
     signature: string,
   ): Promise<WebhookResult> {
-    const adapter = await this.providers.resolve(orgId, providerKey);
-    if (!adapter) {
-      logger.warn("[billing] no payment provider registered for webhook verification");
-      return { status: 503, body: { ok: false } };
-    }
-    if (!adapter.verifyWebhookSignature({ rawBody, signature })) {
-      // Reported through the same channel the primary receiver uses, not just a log line.
-      logger.warn(`[billing:${providerKey}] invalid webhook signature`);
-      await this.paymentWebhooks.recordSignatureFailure(orgId, providerKey);
-      return { status: 401, body: { ok: false } };
-    }
-
-    const normalized = adapter.normalizeWebhook(rawBody);
-    if (!normalized.ok) {
-      return {
-        status: 400,
-        body: { ok: false, error: normalized.error === "invalid_json" ? "invalid JSON" : "invalid payload" },
-      };
-    }
-
-    const parsed = webhookEventSchema.safeParse({ event: normalized.eventType, payload: normalized.payload });
-    if (!parsed.success) {
-      logger.warn(`[billing:${providerKey}] normalized webhook payload validation failed`, {
-        issues: parsed.error.issues,
-      });
-      return { status: 400, body: { ok: false, error: "invalid payload" } };
-    }
-    const event: WebhookEvent = parsed.data;
-
-    const payment = event.payload.payment?.entity;
-    if (!payment) {
-      return { status: 200, body: { ok: true, ignored: event.event } };
-    }
-
-    const providerEventId = normalized.providerEventId ?? payment.id;
-    const claim = await this.claimProviderEvent({
-      orgId,
-      providerKey,
-      providerEventId,
-      eventType: event.event,
-      rawBody,
-    });
-    if (claim === "ERROR") return { status: 500, body: { ok: false } };
-    if (claim === "PROCESSED") {
-      logger.warn(`[billing:${providerKey}] duplicate event ignored`, { providerEventId });
-      return { status: 200, body: { ok: true, duplicate: true } };
-    }
-    if (claim === "FOREIGN") {
-      logger.error(`[billing:${providerKey}] provider event id is already recorded against another tenant`, {
-        providerEventId,
-        orgId,
-      });
-      return { status: 409, body: { ok: false, error: "event already recorded" } };
-    }
-
-    const org = await this.findOrgFromNotes(payment.notes);
-    if (org && org.id !== orgId) {
-      logger.warn(`[billing:${providerKey}] webhook organization does not match endpoint organization`);
-      return { status: 400, body: { ok: false, error: "organization mismatch" } };
-    }
-    const resolvedOrg = org ?? { id: orgId };
-
-    try {
-      await this.persistPayment(payment, resolvedOrg.id);
-    } catch (error) {
-      logger.error(`[billing:${providerKey}] failed to persist payment`, { error });
-      return { status: 500, body: { ok: false } };
-    }
-
-    const revenue: RevenueEventInput[] = [];
-
-    if (
-      event.event === "payment.captured" &&
-      payment.status === "captured" &&
-      payment.notes?.packId &&
-      resolvedOrg
-    ) {
-      const packId = parseInt(String(payment.notes.packId), 10);
-      if (!isNaN(packId)) {
-        try {
-          await this.externalEffectLedger.execute(
-            {
-              organizationId: resolvedOrg.id,
-              producerEventId: payment.id,
-              effectKey: `${payment.id}:pack-credit-grant`,
-              effectType: "billing.ai-pack-credit-grant",
-              providerIdempotency: "NONE",
-            },
-            () => this.aiCredits.grantAiPackCreditsFromWebhook(resolvedOrg.id, packId, payment.id),
-          );
-          revenue.push({
-            type: "addon_purchase",
-            orgId: resolvedOrg.id,
-            mrr: 0,
-            amount: payment.amount,
-            metadata: { paymentId: payment.id, packId, source: "provider-webhook" },
-          });
-        } catch (err: unknown) {
-          if (err instanceof ExternalEffectLeaseBusyError)
-            return { status: 503, body: { ok: false, error: "grant in-flight" } };
-          logger.error(`[billing:${providerKey}] ai pack credit grant failed`, { orgId: resolvedOrg.id, packId, paymentId: payment.id, err });
-          await this.notifyProvisioningFailure(resolvedOrg.id, payment.id, "the AI credits you purchased could not be added");
-          return { status: 500, body: { ok: false } };
-        }
-      }
-    }
-
-    if (event.event === "payment.failed" && payment.status === "failed" && resolvedOrg) {
-      try {
-        await this.transitionToPastDue(resolvedOrg.id, payment.id);
-      } catch (err: unknown) {
-        logger.error(`[billing:${providerKey}] PAST_DUE transition failed`, { orgId: resolvedOrg.id, paymentId: payment.id, err });
-        return { status: 500, body: { ok: false } };
-      }
-    }
-
-    if (payment.status === "refunded") {
-      revenue.push({
-        type: "refund",
-        orgId: resolvedOrg.id,
-        mrr: 0,
-        amount: payment.amount,
-        metadata: { paymentId: payment.id, source: "provider-webhook" },
-      });
-    }
-
-    // Success is claimed only here: the revenue events and the processed_at stamp commit together.
-    try {
-      await runInNewTenantTransaction(this.db, orgId, async (tx) => {
-        for (const entry of revenue) await this.revenueAnalytics.emit(tx, entry);
-        await tx
-          .update(providerWebhookEvents)
-          .set({ processedAt: new Date() })
-          .where(
-            and(
-              eq(providerWebhookEvents.orgId, orgId),
-              eq(providerWebhookEvents.provider, providerKey),
-              eq(providerWebhookEvents.providerEventId, providerEventId),
-            ),
-          );
-      });
-    } catch (error) {
-      logger.error(`[billing:${providerKey}] failed to acknowledge the provider event`, { error, providerEventId });
-      await this.notifyProvisioningFailure(orgId, payment.id, "your payment was received but its billing effects have not completed");
-      return { status: 500, body: { ok: false } };
-    }
-
-    return { status: 200, body: { ok: true } };
+    return this.webhooks.handle(orgId, providerKey, rawBody, signature);
   }
 
-  // ON CONFLICT alone cannot tell a completed replay from a failed attempt, and answering "duplicate"
-  // to both is what let a failed grant be acknowledged; only processed_at distinguishes them. The
-  // route is @Public() with no ambient GUC, so the URL orgId opens the transaction RLS requires.
-  private async claimProviderEvent(input: {
-    orgId: string;
-    providerKey: string;
-    providerEventId: string;
-    eventType: string;
-    rawBody: string;
-  }): Promise<ProviderEventClaim> {
-    const { orgId, providerKey, providerEventId, eventType, rawBody } = input;
-    try {
-      return await runInNewTenantTransaction(this.db, orgId, async (tx) => {
-        const inserted = await tx
-          .insert(providerWebhookEvents)
-          .values({
-            orgId,
-            provider: providerKey,
-            providerEventId,
-            eventType,
-            rawPayload: JSON.parse(rawBody),
-          })
-          .onConflictDoNothing({
-            target: [providerWebhookEvents.provider, providerWebhookEvents.providerEventId],
-          })
-          .returning({ id: providerWebhookEvents.id });
-        if (inserted.length > 0) return "RECORDED";
-
-        const [existing] = await tx
-          .select({ processedAt: providerWebhookEvents.processedAt })
-          .from(providerWebhookEvents)
-          .where(
-            and(
-              eq(providerWebhookEvents.orgId, orgId),
-              eq(providerWebhookEvents.provider, providerKey),
-              eq(providerWebhookEvents.providerEventId, providerEventId),
-            ),
-          )
-          .limit(1);
-        // The index is global but the read is tenant-scoped: no visible row means another tenant holds it.
-        if (!existing) return "FOREIGN";
-        return existing.processedAt === null ? "RETRY" : "PROCESSED";
-      });
-    } catch (error) {
-      logger.error(`[billing:${providerKey}] failed to record provider event`, { error, providerEventId });
-      return "ERROR";
-    }
+  handleRazorpayWebhook(
+    orgId: string,
+    rawBody: string,
+    signature: string,
+  ): Promise<WebhookResult> {
+    return this.webhooks.handle(orgId, "razorpay", rawBody, signature);
   }
 
-  // Through the effect ledger so a retrying provider produces one message, not a stream.
-  private async notifyProvisioningFailure(orgId: string, paymentId: string, detail: string): Promise<void> {
-    try {
-      await this.externalEffectLedger.execute(
-        {
-          organizationId: orgId,
-          producerEventId: paymentId,
-          effectKey: `${paymentId}:provisioning-failure-notice`,
-          effectType: "billing.provisioning-failure-notice",
-          providerIdempotency: "NONE",
-        },
-        () =>
-          runInNewTenantTransaction(this.db, orgId, () =>
-            this.paymentNotices.notifyOwner(orgId, {
-              title: "Payment received — provisioning is still pending",
-              message: `${detail}. We are retrying automatically; contact support if this does not clear shortly.`,
-              type: "WARNING",
-              priority: "HIGH",
-              link: "/settings/billing",
-            }),
-          ),
-      );
-    } catch (err: unknown) {
-      if (err instanceof ExternalEffectLeaseBusyError) return;
-      logger.error("[billing] could not tell the organisation about a provisioning failure", { orgId, paymentId, err });
-    }
-  }
-
-  // The stuck-provisioning queue; the raw payload is withheld because it carries payer detail.
-  async listProvisioningFailures(orgId: string) {
-    const rows = await this.db
-      .select({
-        id: providerWebhookEvents.id,
-        provider: providerWebhookEvents.provider,
-        providerEventId: providerWebhookEvents.providerEventId,
-        eventType: providerWebhookEvents.eventType,
-        receivedAt: providerWebhookEvents.createdAt,
-      })
-      .from(providerWebhookEvents)
-      .where(and(eq(providerWebhookEvents.orgId, orgId), isNull(providerWebhookEvents.processedAt)))
-      .orderBy(asc(providerWebhookEvents.createdAt))
-      .limit(100);
-
-    return { events: rows, total: rows.length };
-  }
-
-  /** Compatibility API for internal callers that still use the original method name. */
-  handleRazorpayWebhook(orgId: string, rawBody: string, signature: string): Promise<WebhookResult> {
-    return this.handlePaymentProviderWebhook(orgId, "razorpay", rawBody, signature);
-  }
-
-  // Forward-only: without setWhere a redelivered `authorized` reverted a captured row and nulled its timestamp.
-  private async persistPayment(payment: RazorpayPayment, orgId: string | null): Promise<void> {
-    const fields = {
-      razorpayPaymentId: payment.id,
-      razorpayOrderId: payment.order_id ?? null,
-      orgId,
-      customerEmail: payment.email ?? null,
-      amount: payment.amount,
-      currency: payment.currency,
-      status: payment.status,
-      method: payment.method ?? null,
-      description: payment.description ?? null,
-      metadata: payment.notes ? { notes: payment.notes } : null,
-      capturedAt: payment.status === "captured" ? new Date() : null,
-      refundedAt: payment.status === "refunded" ? new Date() : null,
-    };
-
-    const conflict = {
-      target: platformPayments.razorpayPaymentId,
-      set: {
-        ...fields,
-        capturedAt: payment.status === "captured" ? new Date() : sql`${platformPayments.capturedAt}`,
-        refundedAt: payment.status === "refunded" ? new Date() : sql`${platformPayments.refundedAt}`,
-      },
-      setWhere: forwardOnlyStatusGuard(platformPayments.status, payment.status),
-    };
-
-    if (orgId !== null) {
-      await runInTenantTransaction(this.db, async (tx) => {
-        await tx.insert(platformPayments).values(fields).onConflictDoUpdate(conflict);
-      }, { orgId });
-    } else {
-      await this.db.insert(platformPayments).values(fields).onConflictDoUpdate(conflict);
-    }
-  }
-
-  private async findOrgFromNotes(
-    notes?: Record<string, string>,
-  ): Promise<{ id: string } | null> {
-    if (!notes) return null;
-    // Subscription orders embed orgId directly — prefer direct lookup over slug search.
-    const directId = notes.orgId ?? notes.org_id;
-    if (directId) {
-      const org = await this.db.query.organizations.findFirst({
-        where: eq(organizations.id, directId),
-        columns: { id: true },
-      });
-      if (org) return org;
-    }
-    const slug = notes.org_slug ?? notes.organization_slug ?? notes.orgSlug;
-    if (!slug) return null;
-    const org = await this.db.query.organizations.findFirst({
-      where: eq(organizations.slug, slug),
-      columns: { id: true },
-    });
-    return org ?? null;
-  }
-
-  private async transitionToPastDue(orgId: string, paymentId: string): Promise<void> {
-    const now = new Date();
-    await runInTenantTransaction(this.db, async (tx) => {
-      const [existing] = await tx
-        .select({ id: subscriptions.id, metadata: subscriptions.metadata })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.orgId, orgId), eq(subscriptions.status, "ACTIVE")))
-        .for("update")
-        .limit(1);
-      if (!existing) return;
-      const meta = existing.metadata ?? {};
-      await tx
-        .update(subscriptions)
-        .set({
-          status: "PAST_DUE",
-          updatedAt: now,
-          metadata: {
-            ...meta,
-            pastDueAt: now.toISOString(),
-            lastFailedPaymentId: paymentId,
-          },
-        })
-        .where(eq(subscriptions.id, existing.id));
-      await tx
-        .insert(dunningAttempts)
-        .values({
-          orgId,
-          subscriptionId: existing.id,
-          periodStart: now,
-          milestone: "D+1",
-          status: "PENDING",
-          providerRetryId: paymentId,
-        })
-        .onConflictDoNothing({
-          target: [
-            dunningAttempts.orgId,
-            dunningAttempts.subscriptionId,
-            dunningAttempts.periodStart,
-            dunningAttempts.milestone,
-          ],
-        });
-    }, { orgId });
-    await this.planLimits.bust(orgId);
-    logger.info("[billing] subscription transitioned to PAST_DUE", { orgId, paymentId });
+  listProvisioningFailures(orgId: string) {
+    return this.webhooks.listProvisioningFailures(orgId);
   }
 
   getPlans() {
@@ -738,9 +412,11 @@ export class BillingService {
       const packs = await this.aiCredits.listPacks();
       const pack = packs.find((p) => p.id === packId);
       if (!pack) throw new BadRequestException("AI credit pack not found");
-    const addonAdapter = await this.providers.resolveConfigured(orgId);
+      const addonAdapter = await this.providers.resolveConfigured(orgId);
       if (addonAdapter === undefined || !addonAdapter.isReady()) {
-        throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
+        throw new ServiceUnavailableException(
+          "Payment gateway not configured. Contact support.",
+        );
       }
       const { providerOrderId: addonOrderId } = await addonAdapter.createOrder({
         amount: String(pack.priceInPaise * quantity),
@@ -786,69 +462,89 @@ export class BillingService {
     return updated;
   }
 
-  async listCoupons() {
-    const all = await this.db.query.coupons.findMany({
-      orderBy: (c, { desc: d }) => [d(c.createdAt)],
-      with: { redemptions: true },
-      limit: 100,
-    });
-    return all;
-  }
-
-  async createCoupon(data: CreateCouponInput) {
-    try {
-      const [created] = await this.db.insert(coupons).values({
-        code: data.code.toUpperCase(),
-        type: data.type,
-        value: String(data.value),
-        maxUses: data.maxUses,
-        applicablePlans: data.applicablePlans,
-        expiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined,
-      }).returning();
-      return created;
-    } catch (err: unknown) {
-      if (typeof err === "object" && err !== null && (err as { code?: string }).code === "23505") {
-        throw new ConflictException("A coupon with this code already exists");
-      }
-      throw err;
-    }
-  }
-
-  async updateCoupon(id: number, data: UpdateCouponInput) {
-    const [updated] = await this.db.update(coupons)
-      .set({
-        ...(data.code !== undefined ? { code: data.code.toUpperCase() } : {}),
-        ...(data.type !== undefined ? { type: data.type } : {}),
-        ...(data.value !== undefined ? { value: String(data.value) } : {}),
-        ...(data.maxUses !== undefined ? { maxUses: data.maxUses } : {}),
-        ...(data.applicablePlans !== undefined ? { applicablePlans: data.applicablePlans } : {}),
-        ...(data.expiresAt !== undefined ? { expiresAt: new Date(data.expiresAt) } : {}),
-        ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
-        updatedAt: new Date(),
-      })
-      .where(eq(coupons.id, id))
-      .returning();
-    if (!updated) throw new NotFoundException("Coupon not found");
-    return updated;
-  }
-
-  async deleteCoupon(id: number) {
-    await this.db.update(coupons).set({ isActive: false, updatedAt: new Date() }).where(eq(coupons.id, id));
-    return { success: true };
-  }
 
   listAddons() {
     return {
       addons: [
-        { id: "ai_credits", name: "AI Credit Packs", description: "Purchase additional AI processing credits", icon: "Zap", available: true, href: "/billing/ai-credits" },
-        { id: "extra_storage", name: "Extra Storage", description: "Add 100GB of document and file storage", icon: "HardDrive", priceInPaise: 49900, available: true },
-        { id: "whatsapp", name: "WhatsApp Messaging", description: "1000 WhatsApp messages/month", icon: "MessageSquare", priceInPaise: 199900, available: false, comingSoon: true },
-        { id: "sms_credits", name: "SMS Credits", description: "Bulk SMS for notifications and alerts", icon: "Phone", priceInPaise: 99900, available: false, comingSoon: true },
-        { id: "voice_ai", name: "Voice AI", description: "AI-powered voice calling and transcription", icon: "Mic", priceInPaise: 499900, available: false, comingSoon: true },
-        { id: "white_label", name: "White Label", description: "Remove StreamlineOS branding", icon: "Tag", priceInPaise: 999900, available: false, comingSoon: true },
-        { id: "custom_domain", name: "Custom Domain", description: "Use your own domain for the platform", icon: "Globe", priceInPaise: 299900, available: false, comingSoon: true },
-        { id: "premium_support", name: "Premium Support", description: "24/7 dedicated support with SLA guarantees", icon: "HeadphonesIcon", priceInPaise: 1999900, available: false, comingSoon: true },
-        { id: "api_capacity", name: "API Capacity", description: "Higher API rate limits and throughput", icon: "Server", priceInPaise: 149900, available: false, comingSoon: true },
+        {
+          id: "ai_credits",
+          name: "AI Credit Packs",
+          description: "Purchase additional AI processing credits",
+          icon: "Zap",
+          available: true,
+          href: "/billing/ai-credits",
+        },
+        {
+          id: "extra_storage",
+          name: "Extra Storage",
+          description: "Add 100GB of document and file storage",
+          icon: "HardDrive",
+          priceInPaise: 49900,
+          available: true,
+        },
+        {
+          id: "whatsapp",
+          name: "WhatsApp Messaging",
+          description: "1000 WhatsApp messages/month",
+          icon: "MessageSquare",
+          priceInPaise: 199900,
+          available: false,
+          comingSoon: true,
+        },
+        {
+          id: "sms_credits",
+          name: "SMS Credits",
+          description: "Bulk SMS for notifications and alerts",
+          icon: "Phone",
+          priceInPaise: 99900,
+          available: false,
+          comingSoon: true,
+        },
+        {
+          id: "voice_ai",
+          name: "Voice AI",
+          description: "AI-powered voice calling and transcription",
+          icon: "Mic",
+          priceInPaise: 499900,
+          available: false,
+          comingSoon: true,
+        },
+        {
+          id: "white_label",
+          name: "White Label",
+          description: "Remove StreamlineOS branding",
+          icon: "Tag",
+          priceInPaise: 999900,
+          available: false,
+          comingSoon: true,
+        },
+        {
+          id: "custom_domain",
+          name: "Custom Domain",
+          description: "Use your own domain for the platform",
+          icon: "Globe",
+          priceInPaise: 299900,
+          available: false,
+          comingSoon: true,
+        },
+        {
+          id: "premium_support",
+          name: "Premium Support",
+          description: "24/7 dedicated support with SLA guarantees",
+          icon: "HeadphonesIcon",
+          priceInPaise: 1999900,
+          available: false,
+          comingSoon: true,
+        },
+        {
+          id: "api_capacity",
+          name: "API Capacity",
+          description: "Higher API rate limits and throughput",
+          icon: "Server",
+          priceInPaise: 149900,
+          available: false,
+          comingSoon: true,
+        },
       ],
     };
   }
@@ -898,11 +594,13 @@ export class BillingService {
       where: (a, { eq }) => eq(a.orgId, orgId),
     });
     if (!affiliate) throw new NotFoundException("Affiliate not found");
-    if (affiliate.pendingPayout === 0) throw new BadRequestException("No pending payout available");
+    if (affiliate.pendingPayout === 0)
+      throw new BadRequestException("No pending payout available");
     return {
       success: true,
       amount: affiliate.pendingPayout,
-      message: "Payout request submitted. Our team will process it within 5-7 business days.",
+      message:
+        "Payout request submitted. Our team will process it within 5-7 business days.",
     };
   }
 
@@ -910,7 +608,12 @@ export class BillingService {
     const [subscription, invoiceStats] = await Promise.all([
       this.db.query.subscriptions.findFirst({
         where: eq(subscriptions.orgId, orgId),
-        columns: { plan: true, status: true, trialEndsAt: true, currentPeriodEnd: true },
+        columns: {
+          plan: true,
+          status: true,
+          trialEndsAt: true,
+          currentPeriodEnd: true,
+        },
       }),
       this.db
         .select({
@@ -929,7 +632,12 @@ export class BillingService {
     const now = Date.now();
     const trialDaysRemaining =
       subscription?.status === "TRIAL" && subscription.trialEndsAt
-        ? Math.max(0, Math.ceil((new Date(subscription.trialEndsAt).getTime() - now) / 86_400_000))
+        ? Math.max(
+            0,
+            Math.ceil(
+              (new Date(subscription.trialEndsAt).getTime() - now) / 86_400_000,
+            ),
+          )
         : null;
 
     return {
@@ -953,7 +661,8 @@ export class BillingService {
         failed: 0,
         voided: 0,
       },
-      isConfigured: (await this.providers.resolveConfigured(orgId))?.isReady() ?? false,
+      isConfigured:
+        (await this.providers.resolveConfigured(orgId))?.isReady() ?? false,
     };
   }
 }
