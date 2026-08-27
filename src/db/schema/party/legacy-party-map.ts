@@ -8,6 +8,7 @@ import {
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
+import { sql } from "drizzle-orm";
 import { businessParties } from "./business-parties";
 import { leads } from "../crm/leads";
 import { clients, contacts, crmOrganizations } from "../crm/contacts";
@@ -40,7 +41,18 @@ export const leadPartyMap = pgTable(
   "lead_party_map",
   {
     organizationId: text("organization_id").notNull(),
-    leadId: integer("lead_id").notNull(),
+    /**
+    * The identifier the record is publicly known by, minted here.
+    *
+    * Ticket 08. This used to come from the legacy table's serial; migration
+    * 0277 detached that sequence with `OWNED BY NONE` and pointed this column's
+    * default at it, so the number survives `DROP TABLE` and numbering continues
+    * unbroken. Declared here so Drizzle knows it is optional on insert -- the
+    * database supplies it, exactly as the legacy table used to.
+    */
+    leadId: integer("lead_id")
+      .notNull()
+      .default(sql`nextval('leads_id_seq')`),
     partyId: text("party_id").notNull(),
     /** `migration:0241` for the backfill, a user id when someone re-pointed it. */
     linkedBy: text("linked_by"),
@@ -74,7 +86,18 @@ export const clientPartyMap = pgTable(
   "client_party_map",
   {
     organizationId: text("organization_id").notNull(),
-    clientId: integer("client_id").notNull(),
+    /**
+    * The identifier the record is publicly known by, minted here.
+    *
+    * Ticket 08. This used to come from the legacy table's serial; migration
+    * 0277 detached that sequence with `OWNED BY NONE` and pointed this column's
+    * default at it, so the number survives `DROP TABLE` and numbering continues
+    * unbroken. Declared here so Drizzle knows it is optional on insert -- the
+    * database supplies it, exactly as the legacy table used to.
+    */
+    clientId: integer("client_id")
+      .notNull()
+      .default(sql`nextval('clients_id_seq')`),
     partyId: text("party_id").notNull(),
     linkedBy: text("linked_by"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -104,7 +127,18 @@ export const contactPartyMap = pgTable(
   "contact_party_map",
   {
     organizationId: text("organization_id").notNull(),
-    contactId: integer("contact_id").notNull(),
+    /**
+    * The identifier the record is publicly known by, minted here.
+    *
+    * Ticket 08. This used to come from the legacy table's serial; migration
+    * 0277 detached that sequence with `OWNED BY NONE` and pointed this column's
+    * default at it, so the number survives `DROP TABLE` and numbering continues
+    * unbroken. Declared here so Drizzle knows it is optional on insert -- the
+    * database supplies it, exactly as the legacy table used to.
+    */
+    contactId: integer("contact_id")
+      .notNull()
+      .default(sql`nextval('contacts_id_seq')`),
     partyId: text("party_id").notNull(),
     linkedBy: text("linked_by"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -150,7 +184,18 @@ export const crmOrgPartyMap = pgTable(
   "crm_org_party_map",
   {
     organizationId: text("organization_id").notNull(),
-    crmOrganizationId: integer("crm_organization_id").notNull(),
+    /**
+    * The identifier the record is publicly known by, minted here.
+    *
+    * Ticket 08. This used to come from the legacy table's serial; migration
+    * 0277 detached that sequence with `OWNED BY NONE` and pointed this column's
+    * default at it, so the number survives `DROP TABLE` and numbering continues
+    * unbroken. Declared here so Drizzle knows it is optional on insert -- the
+    * database supplies it, exactly as the legacy table used to.
+    */
+    crmOrganizationId: integer("crm_organization_id")
+      .notNull()
+      .default(sql`nextval('crm_organizations_id_seq')`),
     partyId: text("party_id").notNull(),
     /** `migration:0264` for the backfill, a user id when someone re-pointed it. */
     linkedBy: text("linked_by"),

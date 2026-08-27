@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { leadPartyMap } from "../../db/schema/party";
 import { leads } from "../../db/schema/crm/leads";
 import { LEAD_MIRROR } from "./party-legacy-mirror";
+import type { PartyRow } from "./party-mirror-fields";
 import {
   applyPartyPatch,
   grantRole,
@@ -12,6 +13,7 @@ import {
   type LeadRow,
   type MirrorDb,
   type MirrorWriteOptions,
+  mintLegacyId,
 } from "./party-legacy-writer";
 
 /**
@@ -75,6 +77,38 @@ async function adoptLead(
   return party.partyId;
 }
 
+/**
+ * A lead row, assembled from the Party it mirrors.
+ *
+ * The values come from `LEAD_MIRROR.derive` and nowhere else -- the same
+ * derivation that used to be handed to `insert(leads)`. What the table
+ * contributed on top was the serial and two timestamps, and Party carries both
+ * timestamps already.
+ *
+ * The `??` arms narrow `Partial<LeadInsert>` to the NOT NULL shape; they do not
+ * decide it. The derivation is total over every column it owns, which the mirror
+ * spec asserts separately.
+ */
+function legacyLeadRow(
+  leadId: number,
+  organizationId: string,
+  party: PartyRow,
+  legacyOwnedPatch: Partial<LeadInsert>,
+): LeadRow {
+  const derived = LEAD_MIRROR.derive(party);
+
+  return {
+    ...derived,
+    ...legacyOwnedPatch,
+    id: leadId,
+    orgId: organizationId,
+    name: derived.name ?? party.name,
+    createdAt: party.createdAt,
+    updatedAt: party.updatedAt,
+    deletedAt: party.deletedAt,
+  } as LeadRow;
+}
+
 export async function createMirroredLead(
   db: MirrorDb,
   organizationId: string,
@@ -86,28 +120,30 @@ export async function createMirroredLead(
     const { partyPatch, legacyOwnedPatch } = LEAD_MIRROR.split(values, bare);
     const party = await applyPartyPatch(tx, organizationId, bare.partyId, partyPatch);
 
-    const [row] = await tx
-      .insert(leads)
-      // `orgId` and `name` restated only so the required half of `LeadInsert` is
-      // visibly satisfied; the spread that follows is what actually sets them,
-      // and the spec asserts the derivation owns both columns.
-      .values({
-        orgId: organizationId,
-        name: party.name,
-        ...LEAD_MIRROR.derive(party),
-        ...legacyOwnedPatch,
-      })
-      .returning();
-    if (!row) throw new Error("Failed to mirror the party into leads");
-
-    await tx.insert(leadPartyMap).values({
+    /**
+     * The identifier comes from the map now, not from a `leads` insert.
+     *
+     * Ticket 08's contract. The row this used to write was already **derived**
+     * from the Party -- `LEAD_MIRROR.derive(party)` produced every mirrored
+     * column and the table only added the serial and its timestamps. So the
+     * table was contributing one thing that mattered: the number. Migration 0277
+     * moved the minting to `lead_party_map`, and the shape is assembled from the
+     * same derivation that would have been written.
+     *
+     * That is why this is not a behaviour change dressed as a refactor: the
+     * values are identical, and the divergence check that used to compare them
+     * has nothing left to compare because there is only one copy.
+     */
+    const leadId = await mintLegacyId(
+      tx,
       organizationId,
-      leadId: row.id,
-      partyId: party.partyId,
-      linkedBy: options.linkedBy ?? "mirror:create",
-    });
+      party.partyId,
+      "LEAD",
+      options.linkedBy ?? "mirror:create",
+    );
     await grantRole(tx, organizationId, party.partyId, "LEAD", options.linkedBy ?? "mirror:create");
-    return row;
+
+    return legacyLeadRow(leadId, organizationId, party, legacyOwnedPatch);
   });
 }
 
