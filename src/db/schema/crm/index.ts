@@ -7,6 +7,7 @@ export * from "./autonomy-corrections";
 export * from "./autonomy-scoring";
 export * from "./autonomy-holds";
 export * from "./outbound";
+export * from "./autonomy-repairs";
 export * from "./imports";
 export * from "./mailbox-sync";
 export * from "./connector-syncs";
