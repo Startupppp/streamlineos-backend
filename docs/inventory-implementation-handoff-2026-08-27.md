@@ -1,8 +1,10 @@
 # InventoryOS implementation handoff — 2026-08-27
 
 **Branches:** `feat/inventory-world-class-implementation` in both repos, pushed.
-**Scope delivered:** 1 of 50 tickets complete, 4 partial, 45 untouched.
-**What it is instead:** eight systemic defects found and fixed, each verified against the live database rather than a mock.
+**Scope delivered:** 6 of 50 tickets complete, 3 partial, 41 untouched. Phase 1 is done except INV-101 and INV-102.
+**What it is instead:** ten systemic defects found and fixed, each verified against the live database rather than a mock.
+
+**Updated — second pass.** The largest finding came from building INV-103: no stock movement could be posted at all. See §9.
 
 This document is the honest record. Section 10 is the ticket-by-ticket status; section 11 is what will bite whoever picks this up.
 
@@ -154,6 +156,20 @@ page render with a session cookie           200   title, subtitle, actions prese
 
 Each was proven before being fixed.
 
+**0. No stock movement could be posted at all.** Every engine command calls
+`assertPeriodOpen`, unconditionally, which selects from `accounting_periods` —
+declared in Drizzle, absent from the database, one of 63 declared tables that
+are. Every command died on `42P01`. That is why `inv_stock_transactions` held
+zero rows across 43 organisations, and why the first pass of this document read
+that as an unseeded feature rather than a broken write path. `PostingPeriodGuard`
+probes with `to_regclass` rather than catching the error, because catching
+`42P01` inside the engine's transaction would poison every statement after it.
+
+**0b. The import status update cost a network round-trip per row.** Mine, found
+by its own test: 100,000 rows took over ten minutes and got through five
+thousand. Batched into one statement for the rows that succeeded, the same rows
+finish in 147 seconds.
+
 **1. Product deletion was destroying the immutable ledger.** `DELETE /inventory/products/:productId` physically deleted the row; `inv_stock_transactions.product_variant_id` carries `ON DELETE CASCADE`, as do fifteen other tables. The guard only asked whether the product currently held stock, so a product received and then fully shipped nets to zero and passes. Proven in a rolled-back transaction: 2 ledger rows and 1 lot before, 0 of each after. Deletion is now a `deleted_at` stamp.
 
 **2. Eighteen tenant columns were invisible to the ORM.** `org_id` on 15 line tables and `client_party_id` on 3 documents, installed by migrations `0320`–`0323` and maintained by `BEFORE INSERT` triggers. `drizzle-kit generate` would have proposed dropping all 18 plus the 86 composite tenant foreign keys depending on them. Declaring them turned the typechecker into the enforcement mechanism — it found all 23 insert sites that omitted the tenant.
@@ -181,14 +197,14 @@ Each was proven before being fixed.
 |---|---|---|
 | INV-101 Ops Brief | **untouched** | Was already "in progress" before this work |
 | INV-102 AI evidence contract | **partial** | `.strict()` + protected-field rejection done. AI digest/insight/evidence-reference/proposal/action-enum schemas and the server-owned action resolver **not** done |
-| INV-103 Golden dataset | **not started** | Schema-parity spec delivered (a prerequisite); no fixture factory, no two-tenant golden dataset |
+| INV-103 Golden dataset | **done** | Built through the real engine, so ledger and projection agree by construction; 10 e2e assertions; drift 0 |
 | INV-104 Ledger invariant + repair | **done** | Report, repair, UI, 9 DB tests, 11 CHECK constraints |
 | INV-105 Concurrency matrix | **partial** | Lock-order defect fixed and proven. Transfer races, deadlock timeout, insufficient-stock race, count-posting race **not** built |
-| INV-106 Base-UOM contract | **not started** | No conversion service exists |
+| INV-106 Base-UOM contract | **done** | Conversion service, factor snapshotted per line, 19 tests including a factor edit that must not rewrite history |
 | INV-107 Product/variant lifecycle | **substantial** | Soft delete, SKU freeing, audit, transaction, exact-decimal guard. Missing: restore-from-deleted route, variant lifecycle rules, discontinued-SKU demand rejection |
-| INV-108 Resumable 100k import | **not started** | Still `rows: z.array(...).max(10000)` inside one request body |
+| INV-108 Resumable 100k import | **done** | Staged rows, cursor, per-row outcome, cancel; 100,000 rows in 147s |
 | INV-109 Warehouse-scope matrix | **partial** | 7 services scoped, 17 RLS tests, cache-key guard. Missing: 8-role × permission × scope matrix; returns, lots, traceability and exports still unscoped |
-| INV-110 Performance evidence | **not started** | See section 11 |
+| INV-110 Performance evidence | **partial** | Three leading-wildcard `ILIKE` sites removed via a `SECURITY DEFINER` function. **No measurement at scale yet** — see risk 1 |
 
 ### Phases 2–5 — 40 tickets, none started
 
@@ -196,9 +212,15 @@ Each was proven before being fixed.
 
 ## 11. Known risks
 
-1. **No performance measurement whatsoever.** The inventory tables hold 40 reason codes and nothing else, so there is no dataset to measure against. None of the PRD's targets (250k SKUs, 1k locations, 10M movements, P95 < 500 ms) has been tested. The repo has a proper harness for this — `src/scripts/run-read-cost-budgets.mjs`, which measures in buffers as the non-`BYPASSRLS` role with the tenant GUC — but it needs a seeded dataset first, and seeding one belongs on a disposable environment, not this shared database.
+0. **63 of 845 declared tables do not exist in the live database.** None of them
+   are `inv_*` — the parity spec covers those — but the inventory engine depended
+   on one of the others and nothing said so. Widen the parity check beyond
+   `inv_*`, or this class of failure recurs wherever inventory touches another
+   module.
 
-2. **Leading-wildcard `ILIKE` on three high-volume paths.** `inv-stock.service.ts` lines 80, 96, 128 use `p.name ILIKE '%…%'` against a table targeted at 10M movements. `backend/CLAUDE.md` §3 bans this outright and prescribes `to_tsvector` + GIN or `pg_trgm`. Both trigram indexes already exist (`idx_inv_products_name_trgm`, `idx_inv_products_sku_trgm`) but are unusable under RLS without a `SECURITY DEFINER` function — the pattern is documented in `CLAUDE.md` §3 (`app.search_ticket_ids`).
+1. **Still no performance measurement at scale.** The inventory tables hold 40 reason codes and nothing else, so there is no dataset to measure against. None of the PRD's targets (250k SKUs, 1k locations, 10M movements, P95 < 500 ms) has been tested. The repo has a proper harness for this — `src/scripts/run-read-cost-budgets.mjs`, which measures in buffers as the non-`BYPASSRLS` role with the tenant GUC — but it needs a seeded dataset first, and seeding one belongs on a disposable environment, not this shared database.
+
+2. ~~**Leading-wildcard `ILIKE` on three high-volume paths.**~~ Fixed in 0518 via `app.search_inventory_variant_ids`, verified to fail closed with `42501` without tenant context. Original note: `inv-stock.service.ts` lines 80, 96, 128 use `p.name ILIKE '%…%'` against a table targeted at 10M movements. `backend/CLAUDE.md` §3 bans this outright and prescribes `to_tsvector` + GIN or `pg_trgm`. Both trigram indexes already exist (`idx_inv_products_name_trgm`, `idx_inv_products_sku_trgm`) but are unusable under RLS without a `SECURITY DEFINER` function — the pattern is documented in `CLAUDE.md` §3 (`app.search_ticket_ids`).
 
 3. **The Drizzle snapshot still lacks the 18 reconciled columns.** `migrations/meta/0464_snapshot.json` predates them, so `db:generate` would propose `ADD COLUMN` for columns that already exist. Migrations in this repo are hand-authored so this is not on the normal path, and the parity spec guards the direction that matters (TypeScript vs live), but `db:generate` is a trap for inventory until the snapshot is reconciled.
 
@@ -210,7 +232,7 @@ Each was proven before being fixed.
 
 7. **Migrations 0514–0516 are not in `drizzle.__drizzle_migrations`.** The next `db:migrate` will run them. Verified safe, but see section 3.
 
-8. **The unit-test count moved 357 → 243.** The strict-boundary spec's 115 per-schema `it.each` cases were collapsed into one assertion over the same 125 schemas, to satisfy the lint rule against `require()`. Coverage is identical; the reporting is not. Do not read the drop as lost tests.
+8. **The unit-test count moved 357 → 262.** The strict-boundary spec's 115 per-schema `it.each` cases were collapsed into one assertion over the same 125 schemas, to satisfy the lint rule against `require()`. Coverage is identical; the reporting is not. Do not read the drop as lost tests.
 
 9. **The new reconciliation screen is unverified visually.** No screenshots, no responsive check at 375/768/1280, no screen-reader pass. See section 8.
 
