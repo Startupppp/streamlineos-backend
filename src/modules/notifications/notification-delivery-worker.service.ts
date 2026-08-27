@@ -13,6 +13,7 @@ import { forEachOrg, withTenant, runWithTenantContext } from "../../common/tenan
 import { filterOrgMemberIds } from "../../common/tenant/org-membership";
 import { NotificationCircuitBreaker } from "./notification-circuit-breaker";
 import {
+  DeliveryClass,
   backoffMinutesForAttempt,
   resolveDeliveryClassForEvent,
 } from "./notification-delivery-class";
@@ -162,10 +163,7 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
               .set({
                 status: "PENDING",
                 runAt: new Date(
-                  Date.now() +
-                    backoffMsWithJitter(
-                      backoffMinutesForAttempt(resolveDeliveryClassForEvent(undefined), 1),
-                    ),
+                  Date.now() + backoffMsWithJitter(backoffMinutesForAttempt(DeliveryClass.PRODUCT_EVENT, 1)),
                 ),
                 lastError: "worker exception",
               })

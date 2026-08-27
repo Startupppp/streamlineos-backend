@@ -121,14 +121,16 @@ export function backoffMinutesForAttempt(deliveryClass: DeliveryClass, attempt: 
 
 /**
  * Every event in the catalog is a product event by construction — the catalog *is* the
- * product-event pipeline. The other four classes describe senders that never enter it, which is
- * why they appear in `notification-caller-inventory.ts` rather than here.
+ * product-event pipeline, so this returns PRODUCT_EVENT for every key including unknown and absent
+ * ones. The other four classes describe senders that never enter this pipeline, which is why they
+ * appear in `notification-caller-inventory.ts` rather than here.
  *
- * An unknown or absent key resolves to PRODUCT_EVENT rather than throwing: a delivery already
- * committed must not become unretryable because its event was renamed.
+ * It takes the key anyway, and deliberately: this is the seam a second class would arrive through,
+ * and resolving it at the call site is what makes adding one a change to this function rather than
+ * a change to the delivery worker. Falling back rather than throwing matters too — a delivery
+ * already committed must not become unretryable because its event was renamed.
  */
-export function resolveDeliveryClassForEvent(eventKey: string | undefined): DeliveryClass {
-  if (!eventKey) return DeliveryClass.PRODUCT_EVENT;
+export function resolveDeliveryClassForEvent(_eventKey: string | undefined): DeliveryClass {
   return DeliveryClass.PRODUCT_EVENT;
 }
 
