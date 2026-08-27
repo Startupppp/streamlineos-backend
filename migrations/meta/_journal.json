@@ -2196,47 +2196,54 @@
     {
       "idx": 313,
       "version": "7",
+      "when": 1787830366441,
+      "tag": "0278_drop_legacy_identity_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 314,
+      "version": "7",
       "when": 1787830375441,
       "tag": "0530_crm_deal_forecast_models",
       "breakpoints": true
     },
     {
-      "idx": 314,
+      "idx": 315,
       "version": "7",
       "when": 1787830376441,
       "tag": "0272_client_id_to_party_id",
       "breakpoints": true
     },
     {
-      "idx": 315,
+      "idx": 316,
       "version": "7",
       "when": 1787830377441,
       "tag": "0273_derive_party_from_client",
       "breakpoints": true
     },
     {
-      "idx": 316,
+      "idx": 317,
       "version": "7",
       "when": 1787830378441,
       "tag": "0274_customer_returns_party",
       "breakpoints": true
     },
     {
-      "idx": 317,
+      "idx": 318,
       "version": "7",
       "when": 1787830379441,
       "tag": "0275_lead_contact_org_party_columns",
       "breakpoints": true
     },
     {
-      "idx": 318,
+      "idx": 319,
       "version": "7",
       "when": 1787830379442,
       "tag": "0531_platform_payments_provider_contract",
       "breakpoints": true
     },
     {
-      "idx": 319,
+      "idx": 320,
       "version": "7",
       "when": 1787830380442,
       "tag": "0276_derive_party_from_legacy",
