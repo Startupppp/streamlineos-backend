@@ -30,6 +30,15 @@ function at(position: KeysetPosition): Date {
   return position.sortValue instanceof Date ? position.sortValue : new Date(position.sortValue);
 }
 
+// For a sort column that is already text and totally ordered with its id — a lexorank, a code — where `at()` must not coerce.
+export function keysetAfterValue(
+  sortColumn: PgColumn,
+  idColumn: PgColumn,
+  position: KeysetPosition,
+): SQL {
+  return sql`(${sortColumn}, ${idColumn}) > (${sql.param(String(position.sortValue), sortColumn)}, ${sql.param(Number(position.id), idColumn)})`;
+}
+
 /** Everything strictly after the position, for a list read oldest-first. */
 export function keysetAfter(
   sortColumn: PgColumn,

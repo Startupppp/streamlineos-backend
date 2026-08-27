@@ -9,6 +9,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
@@ -64,15 +65,11 @@ export class BroadcastsService {
           filters.cursor ? lt(broadcasts.id, filters.cursor) : undefined,
         ),
       )
-      .orderBy(desc(broadcasts.createdAt))
+      .orderBy(desc(broadcasts.id))
       .limit(limit + 1);
 
-    const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, limit) : rows;
-    return {
-      items,
-      nextCursor: hasMore ? items[items.length - 1]?.id : undefined,
-    };
+    const page = buildIdCursorPage(rows, limit, (row) => row.id);
+    return { items: page.data, nextCursor: page.nextCursor };
   }
 
   async findOne(orgId: string, id: number) {

@@ -24,6 +24,9 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
+import { totalOverWindow } from "../../../common/pagination/window-count";
 import { AccessService } from "../../access/access.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -327,6 +330,10 @@ export class ProjectsTicketsReadService {
           ? [asc(col), desc(tickets.createdAt), asc(tickets.id)]
           : [desc(col), desc(tickets.createdAt), asc(tickets.id)];
 
+    if (query.paging === "cursor") {
+      return this.listTicketsByCursor(where, limit, query.cursor);
+    }
+
     if (scope !== "all") {
       const { ids, total } = await this.pageScopedTicketIds(
         where,
@@ -353,6 +360,51 @@ export class ProjectsTicketsReadService {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
+   * The board scrolls a list the whole team is writing to, so it pages by keyset on
+   * `(rank, id)` — the order it already renders in, and a total order because `id` is unique.
+   */
+  private async listTicketsByCursor(
+    where: SQL<unknown> | undefined,
+    limit: number,
+    cursor: string | undefined,
+  ) {
+    const position = decodeCursor(cursor);
+    const bounded = position
+      ? and(where, keysetAfterValue(tickets.rank, tickets.id, position))
+      : where;
+
+    const rows = await this.db
+      .select({ id: tickets.id, rank: tickets.rank, total: totalOverWindow })
+      .from(tickets)
+      .where(bounded)
+      .orderBy(asc(tickets.rank), asc(tickets.id))
+      .limit(limit + 1);
+
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.rank ?? "",
+      id: String(row.id),
+    }));
+
+    const ids = page.data.map((row) => row.id);
+    const data =
+      ids.length > 0
+        ? await this.queryTickets(
+            inArray(tickets.id, ids),
+            [asc(tickets.rank), asc(tickets.id)],
+            limit,
+          )
+        : [];
+
+    return {
+      data,
+      total: position ? undefined : Number(page.data[0]?.total ?? 0),
+      limit,
+      nextCursor: page.pagination.nextCursor,
+      hasMore: page.pagination.hasMore,
     };
   }
 

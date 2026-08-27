@@ -34,8 +34,10 @@ const csvToIntArray = z
   );
 
 export const ticketsListQuerySchema = baseListQuerySchema
-  .omit({ cursor: true, sortDir: true })
+  .omit({ sortDir: true })
   .extend({
+    // Opts the board's infinite scroll into keyset paging; every other caller keeps page numbers.
+    paging: z.enum(["page", "cursor"]).default("page"),
     search: z.string().optional(),
     status: csvToStringArray,
     priority: z
