@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createEnterpriseQuoteSchema = z.object({
   subject: z.string().min(1),
@@ -26,7 +27,7 @@ export type RejectEnterpriseQuoteInput = z.infer<typeof rejectEnterpriseQuoteSch
 
 export const listEnterpriseQuotesSchema = z.object({
   status: z.enum(["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"]).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20),
 });
 export type ListEnterpriseQuotesQuery = z.infer<typeof listEnterpriseQuotesSchema>;

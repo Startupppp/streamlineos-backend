@@ -72,7 +72,7 @@ export const scoreboardQuerySchema = z
 export type ScoreboardQuery = z.infer<typeof scoreboardQuerySchema>;
 
 export const reviewQueueQuerySchema = z
-  .object({ limit: z.coerce.number().int().min(1).max(100).default(25) })
+  .object({ limit: pageSizeField(25) })
   .strict();
 
 export type ReviewQueueQuery = z.infer<typeof reviewQueueQuerySchema>;

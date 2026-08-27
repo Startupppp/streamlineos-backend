@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const aiCreditsUsageQuerySchema = z.object({
   days: z.coerce.number().refine((v) => v === 7 || v === 30 || v === 90, {
@@ -22,6 +23,6 @@ export const autoTopUpSchema = z.object({
 });
 
 export const listTransactionsSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20),
 });
