@@ -17,7 +17,6 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PartyService } from "./party.service";
-import { PartyDivergenceService } from "./party-divergence.service";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import {
   listPartiesQuerySchema,
@@ -25,8 +24,6 @@ import {
   updatePartySchema,
   createContactSchema,
   updateContactSchema,
-  mirrorDivergenceQuerySchema,
-  type MirrorDivergenceQuery,
   type ListPartiesQuery,
   type CreatePartyInput,
   type UpdatePartyInput,
@@ -37,31 +34,7 @@ import {
 @Controller("party")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class PartyController {
-  constructor(
-    private readonly svc: PartyService,
-    private readonly divergence: PartyDivergenceService,
-  ) {}
-
-  /**
-   * What the legacy mirror looks like right now.
-   *
-   * A GET because it changes nothing: it reports every `leads`, `clients` or
-   * `contacts` row that disagrees with the Party it mirrors, and repairs none of
-   * them. Silently rewriting a side would destroy the evidence of how the two
-   * came apart, which is the only thing worth having once they have.
-   */
-  @Get("mirror/divergence")
-  @RequirePermission("party:divergence:view")
-  mirrorDivergence(
-    @Query(new ZodValidationPipe(mirrorDivergenceQuerySchema)) query: MirrorDivergenceQuery,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.divergence.report(u.orgId, {
-      kinds: query.kind ? [query.kind] : undefined,
-      limit: query.limit,
-      after: query.kind ? { [query.kind]: query.after } : undefined,
-    });
-  }
+  constructor(private readonly svc: PartyService) {}
 
   @Get("parties")
   @RequirePermission("party:parties:view")

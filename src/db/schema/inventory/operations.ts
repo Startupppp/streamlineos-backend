@@ -6,7 +6,6 @@ import {
   invReturnStatusEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { clients } from "../crm/contacts";
 import { invProductVariants, invCategories } from "./core";
 import { invLocations, invWarehouses } from "./warehouses";
 import { invVendors, invPurchaseOrders, invGrns } from "./purchase-orders";
@@ -55,7 +54,7 @@ export const invCustomerReturns = pgTable("inv_customer_returns", {
   returnNumber: text("return_number").notNull(),
   soId: integer("so_id").references(() => invSalesOrders.id, { onDelete: "set null" }),
   shipmentId: integer("shipment_id").references(() => invShipments.id, { onDelete: "set null" }),
-  clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  clientId: integer("client_id"),
   /**
    * The party this return's customer is. Ticket 08's expand.
    *

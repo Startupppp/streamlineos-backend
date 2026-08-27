@@ -2,12 +2,11 @@ import { pgTable, text, serial, timestamp, boolean, integer, index, unique, type
 import { relations } from "drizzle-orm";
 import { supportTicketStatusEnum, supportTicketPriorityEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { clients } from "../crm/contacts";
 
 export const supportTickets = pgTable("support_tickets", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  clientId: integer("client_id").references(() => clients.id),
+  clientId: integer("client_id"),
   /**
   * The party this row belongs to. Ticket 08's expand.
   *
@@ -88,7 +87,6 @@ export const supportTicketAttachments = pgTable("support_ticket_attachments", {
 
 export const supportTicketsRelations = relations(supportTickets, ({ one, many }) => ({
   organization: one(organizations, { fields: [supportTickets.orgId], references: [organizations.id] }),
-  client: one(clients, { fields: [supportTickets.clientId], references: [clients.id] }),
   assignee: one(users, { fields: [supportTickets.assigneeId], references: [users.id] }),
   creator: one(users, { fields: [supportTickets.createdBy], references: [users.id] }),
   messages: many(supportTicketMessages),

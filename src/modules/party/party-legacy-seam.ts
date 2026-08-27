@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNull, notExists, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.types";
 import {
   businessParties,
@@ -8,8 +8,6 @@ import {
   leadPartyMap,
   partyMerges,
 } from "../../db/schema/party";
-import { clients, contacts, crmOrganizations } from "../../db/schema/crm/contacts";
-import { leads } from "../../db/schema/crm/leads";
 
 /**
  * One way to find the Party behind a legacy identifier.
@@ -350,102 +348,4 @@ export async function resolveLegacyPartyIds(
     resolved.set(row.legacyId, row.partyId);
 
   return resolved;
-}
-
-/**
- * Legacy rows that no Party answers for.
- *
- * The backfill's claim is that this is zero for every kind, and a claim nobody
- * can check is a claim that decays. Also the thing to run after restoring a
- * database or importing legacy rows out of band.
- *
- * `organizationId` is optional here and nowhere else: an operator asking whether
- * the migration is complete is asking about every tenant at once. Never call it
- * from a request path without one.
- */
-export async function countUnmappedLegacyRows(
-  db: Db,
-  organizationId?: string,
-): Promise<Record<MappedLegacyKind, number>> {
-  const unmappedLeads = notExists(
-    db
-      .select({ one: sql`1` })
-      .from(leadPartyMap)
-      .where(
-        and(
-          eq(leadPartyMap.organizationId, leads.orgId),
-          eq(leadPartyMap.leadId, leads.id),
-        ),
-      ),
-  );
-  const unmappedClients = notExists(
-    db
-      .select({ one: sql`1` })
-      .from(clientPartyMap)
-      .where(
-        and(
-          eq(clientPartyMap.organizationId, clients.orgId),
-          eq(clientPartyMap.clientId, clients.id),
-        ),
-      ),
-  );
-  const unmappedContacts = notExists(
-    db
-      .select({ one: sql`1` })
-      .from(contactPartyMap)
-      .where(
-        and(
-          eq(contactPartyMap.organizationId, contacts.orgId),
-          eq(contactPartyMap.contactId, contacts.id),
-        ),
-      ),
-  );
-
-  const unmappedOrganisations = notExists(
-    db
-      .select({ one: sql`1` })
-      .from(crmOrgPartyMap)
-      .where(
-        and(
-          eq(crmOrgPartyMap.organizationId, crmOrganizations.orgId),
-          eq(crmOrgPartyMap.crmOrganizationId, crmOrganizations.id),
-        ),
-      ),
-  );
-
-  const [lead] = await db
-    .select({ n: count() })
-    .from(leads)
-    .where(
-      organizationId ? and(eq(leads.orgId, organizationId), unmappedLeads) : unmappedLeads,
-    );
-  const [client] = await db
-    .select({ n: count() })
-    .from(clients)
-    .where(
-      organizationId ? and(eq(clients.orgId, organizationId), unmappedClients) : unmappedClients,
-    );
-  const [contact] = await db
-    .select({ n: count() })
-    .from(contacts)
-    .where(
-      organizationId
-        ? and(eq(contacts.orgId, organizationId), unmappedContacts)
-        : unmappedContacts,
-    );
-  const [organisation] = await db
-    .select({ n: count() })
-    .from(crmOrganizations)
-    .where(
-      organizationId
-        ? and(eq(crmOrganizations.orgId, organizationId), unmappedOrganisations)
-        : unmappedOrganisations,
-    );
-
-  return {
-    LEAD: lead?.n ?? 0,
-    CLIENT: client?.n ?? 0,
-    CONTACT: contact?.n ?? 0,
-    ORGANISATION: organisation?.n ?? 0,
-  };
 }

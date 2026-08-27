@@ -1,6 +1,5 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { businessParties, leadPartyMap } from "../../db/schema/party";
-import { leads } from "../../db/schema/crm/leads";
 import { LEAD_MIRROR } from "./party-legacy-mirror";
 import type { PartyRow } from "./party-mirror-fields";
 import {
@@ -53,29 +52,6 @@ async function partyIdsForLeads(
  * truth exactly once, which is correct precisely because there is no Party to
  * contradict it. `linked_by` records which rows came in this way.
  */
-async function adoptLead(
-  db: MirrorDb,
-  organizationId: string,
-  leadId: number,
-): Promise<string | null> {
-  const [row] = await db
-    .select()
-    .from(leads)
-    .where(and(eq(leads.id, leadId), eq(leads.orgId, organizationId)))
-    .limit(1);
-  if (!row) return null;
-
-  const party = await insertBareParty(db, organizationId, row.name);
-  const { partyPatch } = LEAD_MIRROR.split(row, party);
-  await applyPartyPatch(db, organizationId, party.partyId, partyPatch);
-  await db
-    .insert(leadPartyMap)
-    .values({ organizationId, leadId, partyId: party.partyId, linkedBy: "mirror:adopt" })
-    .onConflictDoNothing();
-  await grantRole(db, organizationId, party.partyId, "LEAD", "mirror:adopt");
-  return party.partyId;
-}
-
 /**
  * A lead row, assembled from the Party it mirrors.
  *
@@ -178,12 +154,17 @@ export async function updateMirroredLeads(
   if (ids.length === 0) return [];
 
   return db.transaction(async (tx) => {
+    /*
+     * An id with no map row is an id that names nothing.
+     *
+     * There used to be an adoption pass here, for a legacy row that existed
+     * without a party -- the state the dual-write window could produce. Ticket
+     * 08 removed the table it read, and with it the state: the map row IS the
+     * record now, so no party for an id means the record does not exist, and
+     * the caller gets one fewer row back exactly as it always did for an id
+     * that was never real.
+     */
     const partyByLead = await partyIdsForLeads(tx, organizationId, ids);
-    for (const leadId of ids) {
-      if (partyByLead.has(leadId)) continue;
-      const adopted = await adoptLead(tx, organizationId, leadId);
-      if (adopted) partyByLead.set(leadId, adopted);
-    }
 
     const moved = await movePartiesFor(
       tx,

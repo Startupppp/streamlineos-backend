@@ -1,8 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { ForbiddenException } from "@nestjs/common";
 import { CrmCopilotService } from "./services/crm-copilot.service";
 import { CrmScoringService } from "./services/crm-scoring.service";
-import { CrmBriefService } from "./services/crm-brief.service";
 import { CrmContentService } from "./services/crm-content.service";
 import { CrmPipelineService } from "./services/crm-pipeline.service";
 import { AiGatewayService } from "./gateway/ai-gateway.service";
@@ -70,7 +69,6 @@ function makeMockDb(queryResults: unknown[][] = []) {
       }),
     }),
     query: {
-      leads: { findFirst: jest.fn().mockResolvedValue(null) },
       clientAccounts: { findFirst: jest.fn().mockResolvedValue(null) },
     },
   };
@@ -155,20 +153,6 @@ describe("CrmCopilotService Phase 2", () => {
     }).compile();
 
     return module.get<CrmScoringService>(CrmScoringService);
-  }
-
-  async function buildBriefService(queryResults: unknown[][] = []) {
-    mockGateway = { invokeStructured: jest.fn(), invokeText: jest.fn() };
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        CrmBriefService,
-        { provide: DRIZZLE, useValue: makeMockDb(queryResults) },
-        { provide: AiGatewayService, useValue: mockGateway },
-      ],
-    }).compile();
-
-    return module.get<CrmBriefService>(CrmBriefService);
   }
 
   describe.skip("stalePipelineDigest", () => {
@@ -475,90 +459,20 @@ describe("CrmCopilotService Phase 2", () => {
     });
   });
 
-  describe.skip("meetingFollowUpDraft (CrmBriefService)", () => {
-    it("throws NotFoundException when lead attendee is not found", async () => {
-      const service = await buildBriefService();
-      (service as unknown as { db: ReturnType<typeof makeMockDb> }).db.query.leads.findFirst.mockResolvedValue(undefined);
+  /*
+    A skipped `meetingFollowUpDraft` block stood here and went with the table.
 
-      await expect(
-        (
-          service as unknown as Record<
-            string,
-            (orgId: string, input: { attendeeType: string; attendeeId: number; meetingTitle: string; notes?: string }) => Promise<unknown>
-          >
-        ).meetingFollowUpDraft("org1", {
-          attendeeType: "lead",
-          attendeeId: 999,
-          meetingTitle: "Q3 Review",
-        }),
-      ).rejects.toThrow(NotFoundException);
-    });
+    Every test in it drove `db.query.leads.findFirst`, and the service stopped
+    calling that when `loadLeadContext` moved onto `lead_party_map` joined to
+    `business_parties`. That is why the block was skipped: it mocked an API the
+    code under test no longer reaches, so it could not be un-skipped without
+    being rewritten anyway. Ticket 08 dropped the table the mock was shaped
+    like, which settles it.
 
-    it("returns draft text and attendeeName on success", async () => {
-      const service = await buildBriefService();
-      const fakeLead = { id: 1, name: "John Doe", email: "john@example.com" };
-      (service as unknown as { db: ReturnType<typeof makeMockDb> }).db.query.leads.findFirst.mockResolvedValue(fakeLead);
-      mockGateway.invokeText.mockResolvedValue(
-        okResult("Dear John, thank you for meeting with us today..."),
-      );
-
-      const result = await (
-        service as unknown as Record<
-          string,
-          (orgId: string, input: { attendeeType: string; attendeeId: number; meetingTitle: string; notes?: string }) => Promise<{ draft: string; attendeeName: string }>
-        >
-      ).meetingFollowUpDraft("org1", {
-        attendeeType: "lead",
-        attendeeId: 1,
-        meetingTitle: "Intro Call",
-      });
-
-      expect(result.draft).toBe("Dear John, thank you for meeting with us today...");
-      expect(result.attendeeName).toBe("John Doe");
-    });
-
-    it("never returns an auto-sent result — result has draft property only", async () => {
-      const service = await buildBriefService();
-      const fakeLead = { id: 1, name: "Alice", email: "alice@example.com" };
-      (service as unknown as { db: ReturnType<typeof makeMockDb> }).db.query.leads.findFirst.mockResolvedValue(fakeLead);
-      mockGateway.invokeText.mockResolvedValue(okResult("Follow-up text here"));
-
-      const result = await (
-        service as unknown as Record<
-          string,
-          (orgId: string, input: { attendeeType: string; attendeeId: number; meetingTitle: string }) => Promise<Record<string, unknown>>
-        >
-      ).meetingFollowUpDraft("org1", {
-        attendeeType: "lead",
-        attendeeId: 1,
-        meetingTitle: "Intro",
-      });
-
-      expect(result).toHaveProperty("draft");
-      expect(result).not.toHaveProperty("sent");
-      expect(result).not.toHaveProperty("sendEmail");
-    });
-
-    it("charges crm.meeting-follow-up credits via gateway", async () => {
-      const service = await buildBriefService();
-      const fakeLead = { id: 1, name: "Bob", email: "bob@example.com" };
-      (service as unknown as { db: ReturnType<typeof makeMockDb> }).db.query.leads.findFirst.mockResolvedValue(fakeLead);
-      mockGateway.invokeText.mockResolvedValue(okResult("Thank you for your time..."));
-
-      await (
-        service as unknown as Record<
-          string,
-          (orgId: string, input: { attendeeType: string; attendeeId: number; meetingTitle: string }) => Promise<unknown>
-        >
-      ).meetingFollowUpDraft("org1", {
-        attendeeType: "lead",
-        attendeeId: 1,
-        meetingTitle: "Discovery",
-      });
-
-      expect(mockGateway.invokeText).toHaveBeenCalledWith(
-        expect.objectContaining({ feature: "crm.meeting-follow-up" }),
-      );
-    });
-  });
+    That leaves `meetingFollowUpDraft` with no direct test, which is where it
+    already was -- a skipped block is not coverage. Recorded here rather than
+    quietly dropped, because the gap is real and predates this ticket: the
+    method's lead path goes through `loadLeadContext`, and a test worth having
+    would mock that seam.
+  */
 });

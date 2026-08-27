@@ -13,6 +13,7 @@ import { CrmValidationService } from "../crm/metadata/crm-validation.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { toMinorUnits, toTransitionRow } from "./deal-stage-ledger";
+import { withPartyLabels } from "./deal-party-projection";
 import type {
   CreateDealInput,
   DealBulkDeleteInput,
@@ -36,7 +37,7 @@ export class DealsCrudService {
     return this.cache.cachedVersioned(
       `deals:list:${orgId}`,
       hash,
-      () => {
+      async () => {
         const conditions: SQL[] = [
           eq(deals.orgId, orgId), isNull(deals.deletedAt),
           applyScope(scope, orgId, userId, { ownerColumn: deals.assignedToId }),
@@ -44,17 +45,18 @@ export class DealsCrudService {
         if (query.stage) conditions.push(eq(deals.stage, query.stage));
         if (query.assignedToId) conditions.push(eq(deals.assignedToId, query.assignedToId));
 
-        return this.db.query.deals.findMany({
+        const rows = await this.db.query.deals.findMany({
           where: and(...conditions),
           with: {
             assignedTo: { columns: { id: true, name: true, image: true } },
-            lead: { columns: { id: true, name: true } },
-            client: { columns: { id: true, name: true } },
           },
           orderBy: [desc(deals.updatedAt)],
           limit: query.limit ?? 50,
           offset: query.offset ?? 0,
         });
+        // `lead` and `client` come from Party now; see `deal-party-projection.ts`.
+        // One extra statement for the page, not one per deal.
+        return withPartyLabels(this.db, orgId, rows);
       },
       CACHE_TTL.SHORT,
     );
@@ -128,15 +130,16 @@ export class DealsCrudService {
     return deal;
   }
 
-  getDeal(orgId: string, dealId: number) {
-    return this.db.query.deals.findFirst({
+  async getDeal(orgId: string, dealId: number) {
+    const deal = await this.db.query.deals.findFirst({
       where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
       with: {
         assignedTo: { columns: { id: true, name: true, image: true } },
-        lead: { columns: { id: true, name: true, email: true, phone: true } },
-        client: { columns: { id: true, name: true } },
       },
     });
+    if (!deal) return deal;
+    const [withLabels] = await withPartyLabels(this.db, orgId, [deal]);
+    return withLabels;
   }
 
   async deleteDeal(orgId: string, userId: string, dealId: number) {

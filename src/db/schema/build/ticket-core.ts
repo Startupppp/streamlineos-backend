@@ -21,7 +21,6 @@ import {
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { projects, sprints, projectStatuses, modules, cycles } from "./core";
-import { clients } from "../crm/contacts";
 
 export const tickets = build.table(
   "tickets",
@@ -110,10 +109,6 @@ export const tickets = build.table(
     foreignKey({
       columns: [t.recurrenceParentId],
       foreignColumns: [t.id],
-    }).onDelete("set null"),
-    foreignKey({
-      columns: [t.customerId],
-      foreignColumns: [clients.id],
     }).onDelete("set null"),
     foreignKey({
       name: "fk_tickets_status",

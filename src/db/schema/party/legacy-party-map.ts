@@ -10,8 +10,6 @@ import {
 import { organizations } from "../common/auth";
 import { sql } from "drizzle-orm";
 import { businessParties } from "./business-parties";
-import { leads } from "../crm/leads";
-import { clients, contacts, crmOrganizations } from "../crm/contacts";
 
 /**
  * Which Party a legacy identifier means.
@@ -23,13 +21,18 @@ import { clients, contacts, crmOrganizations } from "../crm/contacts";
  * Party.
  *
  * A real table, and one per legacy kind rather than one polymorphic
- * `(kind, id)` table. The polymorphic shape is banned for new tables here for
- * the reason it matters most in exactly this case: it carries no referential
- * integrity, so nothing stops a row pointing at a lead that no longer exists,
- * and a resolution that quietly returns the wrong person is worse than one that
- * fails. With a real composite foreign key, deleting the legacy row takes the
- * mapping with it and the resolver simply misses. The polymorphism lives in
- * TypeScript, in `party-legacy-seam.ts`, where it is checked.
+ * `(kind, id)` table. The polymorphic shape is banned for new tables here, and
+ * the typed columns are what let each map carry its own primary key on
+ * `(organization_id, <kind>_id)` -- which is what makes these identifiers real
+ * rather than conventional. The polymorphism lives in TypeScript, in
+ * `party-legacy-seam.ts`, where it is checked.
+ *
+ * These used to carry a composite foreign key back to the legacy row, so that
+ * deleting it took the mapping with it. Ticket 08 inverted that relationship
+ * rather than weakening it: 0277 detached the sequences and pointed each map
+ * column's DEFAULT at them, 0278 dropped the tables, and the map row IS the
+ * record now. There is nothing left to point at, and nothing left that could
+ * delete a record out from under its mapping.
  *
  * Not unique on `party_id`: after a merge, several legacy identifiers
  * legitimately answer to one surviving Party. That is the point of it.
@@ -70,11 +73,6 @@ export const leadPartyMap = pgTable(
       name: "fk_lead_party_map_org",
     }).onDelete("cascade"),
     foreignKey({
-      columns: [t.organizationId, t.leadId],
-      foreignColumns: [leads.orgId, leads.id],
-      name: "fk_lead_party_map_lead",
-    }).onDelete("cascade"),
-    foreignKey({
       columns: [t.organizationId, t.partyId],
       foreignColumns: [businessParties.organizationId, businessParties.partyId],
       name: "fk_lead_party_map_party",
@@ -111,11 +109,6 @@ export const clientPartyMap = pgTable(
       name: "fk_client_party_map_org",
     }).onDelete("cascade"),
     foreignKey({
-      columns: [t.organizationId, t.clientId],
-      foreignColumns: [clients.orgId, clients.id],
-      name: "fk_client_party_map_client",
-    }).onDelete("cascade"),
-    foreignKey({
       columns: [t.organizationId, t.partyId],
       foreignColumns: [businessParties.organizationId, businessParties.partyId],
       name: "fk_client_party_map_party",
@@ -150,11 +143,6 @@ export const contactPartyMap = pgTable(
       columns: [t.organizationId],
       foreignColumns: [organizations.id],
       name: "fk_contact_party_map_org",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [t.organizationId, t.contactId],
-      foreignColumns: [contacts.orgId, contacts.id],
-      name: "fk_contact_party_map_contact",
     }).onDelete("cascade"),
     foreignKey({
       columns: [t.organizationId, t.partyId],
@@ -211,11 +199,6 @@ export const crmOrgPartyMap = pgTable(
       columns: [t.organizationId],
       foreignColumns: [organizations.id],
       name: "fk_crm_org_party_map_org",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [t.organizationId, t.crmOrganizationId],
-      foreignColumns: [crmOrganizations.orgId, crmOrganizations.id],
-      name: "fk_crm_org_party_map_crm_org",
     }).onDelete("cascade"),
     foreignKey({
       columns: [t.organizationId, t.partyId],

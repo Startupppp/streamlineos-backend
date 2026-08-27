@@ -2,7 +2,6 @@ import { pgTable, text, serial, timestamp, decimal, date, integer, index, unique
 import { relations } from "drizzle-orm";
 import { invSoStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { clients } from "../crm/contacts";
 import { invoices } from "../crm/invoicing";
 import { invProductVariants, invUom } from "./core";
 import { invWarehouses } from "./warehouses";
@@ -10,7 +9,7 @@ import { invWarehouses } from "./warehouses";
 export const invSalesOrders = pgTable("inv_sales_orders", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  clientId: integer("client_id"),
   /**
   * The party this row belongs to. Ticket 08's expand.
   *
@@ -66,7 +65,6 @@ export const invSoLines = pgTable("inv_so_lines", {
 
 export const invSalesOrdersRelations = relations(invSalesOrders, ({ one, many }) => ({
   organization: one(organizations, { fields: [invSalesOrders.orgId], references: [organizations.id] }),
-  client: one(clients, { fields: [invSalesOrders.clientId], references: [clients.id] }),
   warehouse: one(invWarehouses, { fields: [invSalesOrders.warehouseId], references: [invWarehouses.id] }),
   invoice: one(invoices, { fields: [invSalesOrders.invoiceId], references: [invoices.id] }),
   creator: one(users, { fields: [invSalesOrders.createdBy], references: [users.id] }),

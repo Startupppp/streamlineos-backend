@@ -263,3 +263,160 @@ export type LegacyCrmOrgInsert = {
   createdAt?: Date;
   updatedAt?: Date;
 };
+
+/**
+ * The same columns again, as values.
+ *
+ * `party-legacy-mirror.spec.ts` asserts that every legacy column is either
+ * mirrored from Party or declared legacy-owned, with no column in both and none
+ * in neither. That check needs the column list at *runtime*, and it used to get
+ * it from `getTableColumns(leads)` — which is exactly the dependency ticket 08
+ * removes. A type cannot be enumerated at runtime, so the list has to exist
+ * twice.
+ *
+ * Listing it twice is only safe if the two cannot drift, so `columnsOf` makes
+ * drift a compile error in both directions: a column named here that the type
+ * does not have is rejected by `keyof`, and a column the type has that is
+ * missing here makes the helper's second parameter unsatisfiable, so `tsc`
+ * names the absent column back at you. Adding a column to a shape above without
+ * adding it here does not build.
+ *
+ * This is the same job `legacy-shapes.spec.ts` did for the shapes themselves,
+ * done in the one direction that outlives the tables. That spec compared these
+ * types to `$inferSelect` and could only ever run while the tables existed; it
+ * ran, it passed, and it went with them.
+ */
+type Complete<T, K extends readonly (keyof T)[]> = [Exclude<keyof T, K[number]>] extends [never]
+  ? K
+  : { __missing: Exclude<keyof T, K[number]> };
+
+const columnsOf =
+  <T,>() =>
+  <K extends readonly (keyof T)[]>(...columns: K & Complete<T, K>): readonly string[] =>
+    columns as readonly string[];
+
+const LEAD_COLUMNS = columnsOf<LegacyLeadRow>()(
+  "id",
+  "orgId",
+  "name",
+  "email",
+  "phone",
+  "whatsappNumber",
+  "source",
+  "campaignId",
+  "status",
+  "priority",
+  "investmentInterest",
+  "potentialValue",
+  "notes",
+  "assignedToId",
+  "assignedById",
+  "verifiedById",
+  "assignedAt",
+  "convertedAt",
+  "lostReason",
+  "company",
+  "designation",
+  "city",
+  "referredBy",
+  "tags",
+  "score",
+  "slaDeadline",
+  "website",
+  "subSource",
+  "dmLeadId",
+  "followUpDate",
+  "followUpNotes",
+  "customData",
+  "utmSource",
+  "utmMedium",
+  "utmCampaign",
+  "utmContent",
+  "utmTerm",
+  "ipAddress",
+  "referrerUrl",
+  "createdAt",
+  "updatedAt",
+  "deletedAt",
+  "mergedIntoId",
+);
+
+const CLIENT_COLUMNS = columnsOf<LegacyClientRow>()(
+  "id",
+  "orgId",
+  "leadId",
+  "name",
+  "email",
+  "phone",
+  "company",
+  "designation",
+  "city",
+  "state",
+  "gstin",
+  "isVendor",
+  "investmentValue",
+  "status",
+  "accountManagerId",
+  "notes",
+  "healthScore",
+  "healthStatus",
+  "lastHealthCheck",
+  "churnRiskScore",
+  "churnRiskReasoning",
+  "convertedAt",
+  "createdAt",
+  "updatedAt",
+);
+
+const CONTACT_COLUMNS = columnsOf<LegacyContactRow>()(
+  "id",
+  "orgId",
+  "name",
+  "email",
+  "phone",
+  "title",
+  "department",
+  "company",
+  "organizationId",
+  "linkedinUrl",
+  "twitterUrl",
+  "websiteUrl",
+  "avatarUrl",
+  "leadId",
+  "dealId",
+  "tags",
+  "deletedAt",
+  "mergedIntoId",
+  "createdAt",
+  "updatedAt",
+);
+
+const ORGANISATION_COLUMNS = columnsOf<LegacyCrmOrgRow>()(
+  "id",
+  "orgId",
+  "name",
+  "domain",
+  "industry",
+  "size",
+  "website",
+  "linkedinUrl",
+  "description",
+  "healthScore",
+  "parentId",
+  "notes",
+  "deletedAt",
+  "mergedIntoId",
+  "createdAt",
+  "updatedAt",
+);
+
+
+export const LEGACY_COLUMNS: Record<
+  "LEAD" | "CLIENT" | "CONTACT" | "ORGANISATION",
+  readonly string[]
+> = {
+  LEAD: LEAD_COLUMNS,
+  CLIENT: CLIENT_COLUMNS,
+  CONTACT: CONTACT_COLUMNS,
+  ORGANISATION: ORGANISATION_COLUMNS,
+};

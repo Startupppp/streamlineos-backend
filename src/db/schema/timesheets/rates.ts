@@ -12,7 +12,6 @@ import {
 import { organizations, users } from "../common/auth";
 import { projects } from "../build/core";
 import { timesheetBillingTypeEnum } from "./enums";
-import { clients } from "../crm/contacts";
 
 export const timesheetRateCards = pgTable("timesheet_rate_cards", {
   id: serial("id").primaryKey(),
@@ -35,7 +34,7 @@ export const timesheetRates = pgTable("timesheet_rates", {
   rateCardId: integer("rate_card_id").references(() => timesheetRateCards.id, { onDelete: "set null" }),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
-  clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  clientId: integer("client_id"),
   /**
   * The party this row belongs to. Ticket 08's expand.
   *

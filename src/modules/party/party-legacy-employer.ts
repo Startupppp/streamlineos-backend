@@ -1,7 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.types";
-import { businessParties, contactPartyMap, crmOrgPartyMap } from "../../db/schema/party";
-import { contacts } from "../../db/schema/crm/contacts";
+import { businessParties, crmOrgPartyMap } from "../../db/schema/party";
 
 /**
  * The one translation between an employer and the column that used to hold it.

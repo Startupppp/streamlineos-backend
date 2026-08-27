@@ -1,6 +1,5 @@
 import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
-import { clients } from "../crm/contacts";
 
 export const supportAgentSkills = pgTable(
   "support_agent_skills",
@@ -39,7 +38,7 @@ export const supportVipClients = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+    clientId: integer("client_id").notNull(),
     /**
     * The party this row belongs to. Ticket 08's expand.
     *

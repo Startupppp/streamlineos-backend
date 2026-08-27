@@ -24,13 +24,7 @@ import {
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
-import { leads } from "./leads";
-import {
-  clients,
-  clientAccounts,
-  contacts,
-  crmOrganizations,
-} from "./contacts";
+import { clientAccounts } from "./contacts";
 import { crmPipelines } from "./metadata";
 import { crmPeople } from "./analytics";
 import { crmSla } from "./sla";
@@ -42,9 +36,7 @@ export const deals = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    leadId: integer("lead_id").references(() => leads.id, {
-      onDelete: "set null",
-    }),
+    leadId: integer("lead_id"),
     /**
      * The party behind this row's legacy id. Ticket 08's expand.
      *
@@ -53,9 +45,7 @@ export const deals = pgTable(
      * has to remember.
      */
     leadPartyId: text("lead_party_id"),
-    clientId: integer("client_id").references(() => clients.id, {
-      onDelete: "set null",
-    }),
+    clientId: integer("client_id"),
     name: text("name").notNull(),
     /**
      * The deal's worth, in the organisation's currency's minor units.
@@ -431,7 +421,7 @@ export const crmDealStakeholders = pgTable(
       .references(() => deals.id, { onDelete: "cascade" })
       .notNull(),
     contactId: integer("contact_id")
-      .references(() => contacts.id, { onDelete: "cascade" })
+      
       .notNull(),
     /**
      * The party behind this row's legacy id. Ticket 08's expand.
@@ -808,7 +798,7 @@ export const crmSlaBreachLog = pgTable(
     orgId: text("org_id").notNull(),
     leadId: integer("lead_id")
       .notNull()
-      .references(() => leads.id, { onDelete: "cascade" }),
+      ,
     policyId: integer("policy_id").references(() => crmSla.id, {
       onDelete: "set null",
     }),
@@ -828,26 +818,11 @@ export const crmSlaBreachLog = pgTable(
   ],
 );
 
-export const contactsRelations = relations(contacts, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [contacts.orgId],
-    references: [organizations.id],
-  }),
-  crmOrganization: one(crmOrganizations, {
-    fields: [contacts.organizationId],
-    references: [crmOrganizations.id],
-  }),
-  lead: one(leads, { fields: [contacts.leadId], references: [leads.id] }),
-  deal: one(deals, { fields: [contacts.dealId], references: [deals.id] }),
-}));
-
 export const dealsRelations = relations(deals, ({ one, many }) => ({
   organization: one(organizations, {
     fields: [deals.orgId],
     references: [organizations.id],
   }),
-  lead: one(leads, { fields: [deals.leadId], references: [leads.id] }),
-  client: one(clients, { fields: [deals.clientId], references: [clients.id] }),
   assignedTo: one(users, {
     fields: [deals.assignedToId],
     references: [users.id],
@@ -1005,10 +980,6 @@ export const crmDealStakeholdersRelations = relations(
     deal: one(deals, {
       fields: [crmDealStakeholders.dealId],
       references: [deals.id],
-    }),
-    contact: one(contacts, {
-      fields: [crmDealStakeholders.contactId],
-      references: [contacts.id],
     }),
     organization: one(organizations, {
       fields: [crmDealStakeholders.orgId],

@@ -1,75 +1,15 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   leadEmailDirectionEnum, leadTaskStatusEnum, scoringOperatorEnum,
   assignmentRuleTypeEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { crmCampaigns } from "./campaigns";
-
-export const leads = pgTable("leads", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  email: text("email"),
-  phone: text("phone"),
-  whatsappNumber: text("whatsapp_number"),
-  source: text("source").default("other").notNull(),
-  campaignId: integer("campaign_id").references(() => crmCampaigns.id, { onDelete: "set null" }),
-  status: text("status").default("NEW").notNull(),
-  priority: text("priority").default("WARM").notNull(),
-  investmentInterest: decimal("investment_interest", { precision: 15, scale: 2 }),
-  potentialValue: decimal("potential_value", { precision: 15, scale: 2 }),
-  notes: text("notes"),
-  assignedToId: text("assigned_to_id").references(() => users.id, { onDelete: "set null" }),
-  assignedById: text("assigned_by_id").references(() => users.id, { onDelete: "set null" }),
-  verifiedById: text("verified_by_id").references(() => users.id, { onDelete: "set null" }),
-  assignedAt: timestamp("assigned_at"),
-  convertedAt: timestamp("converted_at"),
-  lostReason: text("lost_reason"),
-  company: text("company"),
-  designation: text("designation"),
-  city: text("city"),
-  referredBy: text("referred_by"),
-  tags: text("tags").array(),
-  score: integer("score").default(0).notNull(),
-  slaDeadline: timestamp("sla_deadline"),
-  website: text("website"),
-  subSource: text("sub_source"),
-  dmLeadId: integer("dm_lead_id"),
-  followUpDate: timestamp("follow_up_date"),
-  followUpNotes: text("follow_up_notes"),
-  customData: jsonb("custom_data").$type<Record<string, unknown>>(),
-  utmSource: text("utm_source"),
-  utmMedium: text("utm_medium"),
-  utmCampaign: text("utm_campaign"),
-  utmContent: text("utm_content"),
-  utmTerm: text("utm_term"),
-  ipAddress: text("ip_address"),
-  referrerUrl: text("referrer_url"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-  deletedAt: timestamp("deleted_at"),
-  mergedIntoId: integer("merged_into_id"),
-}, (table) => [
-  foreignKey({ columns: [table.mergedIntoId], foreignColumns: [table.id] }).onDelete("set null"),
-  index("idx_leads_org_status_created").on(table.orgId, table.status, table.createdAt),
-  index("idx_leads_assigned_to").on(table.assignedToId),
-  index("idx_leads_org_assigned_status").on(table.orgId, table.assignedToId, table.status),
-  index("idx_leads_source").on(table.source),
-  index("idx_leads_score").on(table.score),
-  index("idx_leads_deleted").on(table.deletedAt),
-  index("idx_leads_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
-  index("idx_leads_email_trgm").using("gin", table.email.op("gin_trgm_ops")),
-  index("idx_leads_phone_trgm").using("gin", table.phone.op("gin_trgm_ops")),
-  index("idx_leads_company_trgm").using("gin", table.company.op("gin_trgm_ops")),
-  unique("uniq_leads_org_id").on(table.orgId, table.id),
-]);
 
 export const leadActivities = pgTable("lead_activities", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  leadId: integer("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
+  leadId: integer("lead_id").notNull(),
   /**
   * The party behind this row's legacy id. Ticket 08's expand.
   *
@@ -98,7 +38,7 @@ export const leadActivities = pgTable("lead_activities", {
 
 export const leadNotes = pgTable("lead_notes", {
   id: serial("id").primaryKey(),
-  leadId: integer("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
+  leadId: integer("lead_id").notNull(),
   /**
   * The party behind this row's legacy id. Ticket 08's expand.
   *
@@ -119,7 +59,7 @@ export const leadNotes = pgTable("lead_notes", {
 
 export const leadTasks = pgTable("lead_tasks", {
   id: serial("id").primaryKey(),
-  leadId: integer("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
+  leadId: integer("lead_id").notNull(),
   /**
   * The party behind this row's legacy id. Ticket 08's expand.
   *
@@ -142,7 +82,7 @@ export const leadTasks = pgTable("lead_tasks", {
 
 export const leadEmails = pgTable("lead_emails", {
   id: serial("id").primaryKey(),
-  leadId: integer("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
+  leadId: integer("lead_id").notNull(),
   /**
   * The party behind this row's legacy id. Ticket 08's expand.
   *
@@ -248,31 +188,16 @@ export const webLeadForms = pgTable("web_lead_forms", {
   unique("uniq_web_lead_forms_org_id").on(table.orgId, table.id),
 ]);
 
-export const leadsRelations = relations(leads, ({ one, many }) => ({
-  organization: one(organizations, { fields: [leads.orgId], references: [organizations.id] }),
-  assignedTo: one(users, { fields: [leads.assignedToId], references: [users.id], relationName: "leadAssignee" }),
-  assignedBy: one(users, { fields: [leads.assignedById], references: [users.id], relationName: "leadAssigner" }),
-  campaign: one(crmCampaigns, { fields: [leads.campaignId], references: [crmCampaigns.id] }),
-  activities: many(leadActivities),
-}));
-
 export const leadActivitiesRelations = relations(leadActivities, ({ one }) => ({
-  lead: one(leads, { fields: [leadActivities.leadId], references: [leads.id] }),
   user: one(users, { fields: [leadActivities.userId], references: [users.id] }),
 }));
 
 export const leadNotesRelations = relations(leadNotes, ({ one }) => ({
-  lead: one(leads, { fields: [leadNotes.leadId], references: [leads.id] }),
   author: one(users, { fields: [leadNotes.authorId], references: [users.id] }),
 }));
 
 export const leadTasksRelations = relations(leadTasks, ({ one }) => ({
-  lead: one(leads, { fields: [leadTasks.leadId], references: [leads.id] }),
   assignee: one(users, { fields: [leadTasks.assigneeId], references: [users.id] }),
-}));
-
-export const leadEmailsRelations = relations(leadEmails, ({ one }) => ({
-  lead: one(leads, { fields: [leadEmails.leadId], references: [leads.id] }),
 }));
 
 export const leadScoringRulesRelations = relations(leadScoringRules, ({ one }) => ({

@@ -9,20 +9,10 @@ import {
   leadPartyMap,
   partyRoles,
 } from "../../db/schema/party";
-import { clients, contacts, crmOrganizations } from "../../db/schema/crm/contacts";
-import { leads } from "../../db/schema/crm/leads";
-import {
-  CLIENT_MIRROR,
-  CONTACT_MIRROR,
-  LEAD_MIRROR,
-  ORGANISATION_MIRROR,
-  type PartyPatch,
-  type PartyRow,
-} from "./party-legacy-mirror";
+import { type PartyPatch, type PartyRow } from "./party-legacy-mirror";
 import type { MappedLegacyKind } from "./party-legacy-seam";
 import { claimIdentifiers, claimsOfPatch, identifierClaimsOfColumns } from "./party-identifiers";
 import { employerLegacyIds } from "./party-legacy-employer";
-import { convertedFromColumnOf, parentColumnOf } from "./party-legacy-associations";
 
 /**
  * The shared half of the Party-first write, and the Party surface itself.

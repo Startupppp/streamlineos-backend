@@ -1,7 +1,6 @@
 import { getTableColumns } from "drizzle-orm";
 import { businessParties } from "../../db/schema/party";
-import { clients, contacts, crmOrganizations } from "../../db/schema/crm/contacts";
-import { leads } from "../../db/schema/crm/leads";
+import { LEGACY_COLUMNS } from "./legacy-shapes";
 import {
   CLIENT_MIRROR,
   CONTACT_MIRROR,
@@ -157,12 +156,6 @@ const SPARSE_PARTY: PartyRow = {
 
 const BLANK_PARTY: PartyRow = { ...SPARSE_PARTY, name: "", partyType: "CUSTOMER", status: "active" };
 
-const LEGACY_TABLE = {
-  LEAD: leads,
-  CLIENT: clients,
-  CONTACT: contacts,
-  ORGANISATION: crmOrganizations,
-};
 const ENGINE = {
   LEAD: LEAD_MIRROR,
   CLIENT: CLIENT_MIRROR,
@@ -207,7 +200,7 @@ describe("party-legacy-mirror — a new Party field cannot be forgotten", () => 
     (kind) => {
       const mirrored = new Set(mirroredColumns(kind));
       const owned = new Set(Object.keys(LEGACY_OWNED_COLUMNS[kind]));
-      const actual = Object.keys(getTableColumns(LEGACY_TABLE[kind]));
+      const actual = LEGACY_COLUMNS[kind];
 
       expect([...mirrored].filter((column) => owned.has(column))).toEqual([]);
       expect([...new Set([...mirrored, ...owned])].sort()).toEqual([...actual].sort());

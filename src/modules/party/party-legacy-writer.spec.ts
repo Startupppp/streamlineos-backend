@@ -1,7 +1,5 @@
 import type { Db } from "../../db/drizzle.types";
 import { businessParties, leadPartyMap, partyRoles } from "../../db/schema/party";
-import { clients, contacts } from "../../db/schema/crm/contacts";
-import { leads } from "../../db/schema/crm/leads";
 import { LEAD_MIRROR, type PartyRow } from "./party-legacy-mirror";
 import { updatePartyWithMirror } from "./party-legacy-writer";
 import {
@@ -158,11 +156,18 @@ class FakeDb {
   }
 }
 
+/**
+ * Every table this writer is allowed to touch, by name.
+ *
+ * The four legacy tables used to be named here too. They are gone, and nothing
+ * replaces the branches: a statement against a table this function does not
+ * know reads as `other`, and every assertion below is an exact `toEqual` on the
+ * whole trace. So a reintroduced write does not have to be anticipated to be
+ * caught -- it shows up as an `other` nobody expected, which is the property
+ * that made these traces worth inverting rather than deleting.
+ */
 function tableName(table: unknown): string {
   if (table === businessParties) return "party";
-  if (table === leads) return "leads";
-  if (table === clients) return "clients";
-  if (table === contacts) return "contacts";
   if (table === leadPartyMap) return "leadMap";
   if (table === partyRoles) return "roles";
   return "other";
@@ -183,8 +188,6 @@ function world(overrides: Partial<Record<string, unknown[]>> = {}): Answer {
      */
     if (statement.table === leadPartyMap && statement.kind === "insert")
       return overrides.leadMapInsert ?? [{ id: 7, leadId: 7 }];
-    if (statement.table === leads)
-      return overrides.leads ?? [{ id: 7, orgId: "org-1", name: "Ada Lovelace" }];
     if (statement.kind === "select") return [];
     return [];
   };

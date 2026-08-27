@@ -7,12 +7,11 @@ import {
   crmConsentStatusEnum,
   crmLegalBasisEnum,
 } from "../common/enums";
-import { contacts } from "./contacts";
 
 export const crmContactChannelConsent = pgTable("crm_contact_channel_consent", {
   id: uuid("id").primaryKey().defaultRandom(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  contactId: integer("contact_id").references(() => contacts.id, { onDelete: "cascade" }).notNull(),
+  contactId: integer("contact_id").notNull(),
   /**
   * The party behind this row's legacy id. Ticket 08's expand.
   *
@@ -46,7 +45,7 @@ export const crmContactChannelConsent = pgTable("crm_contact_channel_consent", {
 export const crmContactConsentEvents = pgTable("crm_contact_consent_events", {
   id: uuid("id").primaryKey().defaultRandom(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  contactId: integer("contact_id").references(() => contacts.id, { onDelete: "cascade" }).notNull(),
+  contactId: integer("contact_id").notNull(),
   /**
   * The party behind this row's legacy id. Ticket 08's expand.
   *
@@ -70,7 +69,6 @@ export const crmContactConsentEvents = pgTable("crm_contact_consent_events", {
 ]);
 
 export const crmContactChannelConsentRelations = relations(crmContactChannelConsent, ({ one }) => ({
-  contact: one(contacts, { fields: [crmContactChannelConsent.contactId], references: [contacts.id] }),
   organization: one(organizations, { fields: [crmContactChannelConsent.orgId], references: [organizations.id] }),
   recordedBy: one(users, {
     fields: [crmContactChannelConsent.recordedByUserId],
@@ -79,7 +77,6 @@ export const crmContactChannelConsentRelations = relations(crmContactChannelCons
 }));
 
 export const crmContactConsentEventsRelations = relations(crmContactConsentEvents, ({ one }) => ({
-  contact: one(contacts, { fields: [crmContactConsentEvents.contactId], references: [contacts.id] }),
   organization: one(organizations, { fields: [crmContactConsentEvents.orgId], references: [organizations.id] }),
 }));
 

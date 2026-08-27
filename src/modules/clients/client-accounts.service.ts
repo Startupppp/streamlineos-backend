@@ -12,6 +12,7 @@ import {
   notifications,
   users,
 } from "../../db/schema";
+import { businessParties } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { REDIS } from "../../common/cache/cache.service";
@@ -104,10 +105,42 @@ export class ClientAccountsService {
       with: {
         salesRep: { columns: { id: true, name: true, image: true, email: true } },
         assignedCrm: { columns: { id: true, name: true, image: true, email: true } },
-        lead: { columns: { id: true, name: true, source: true, priority: true } },
       },
     });
     if (!account) return null;
+
+    /*
+      The lead this account came from, read off Party.
+
+      This was `with: { lead: {...} }`, resolving onto the `leads` table ticket
+      08 dropped. Every column it asked for is a Party column and has been since
+      phase 2 -- `source` is `acquisition_source`, `priority` is `priority`, and
+      the mirror derived both from here. So the include was reading a copy.
+
+      The projected shape does not change: `{ id, name, source, priority }` with
+      `id` still the integer `lead_id`, which `lead_party_map` mints and this row
+      still carries. The frontend's `lead?: { id; name; source; priority }` is
+      unchanged.
+    */
+    const [lead] = account.leadPartyId
+      ? await this.db
+          .select({
+            id: clientAccounts.leadId,
+            name: businessParties.name,
+            source: businessParties.acquisitionSource,
+            priority: businessParties.priority,
+          })
+          .from(clientAccounts)
+          .innerJoin(
+            businessParties,
+            and(
+              eq(businessParties.organizationId, clientAccounts.orgId),
+              eq(businessParties.partyId, account.leadPartyId),
+            ),
+          )
+          .where(and(eq(clientAccounts.id, account.id), eq(clientAccounts.orgId, orgId)))
+          .limit(1)
+      : [];
 
     const activities = await this.db.query.clientAccountActivities.findMany({
       where: eq(clientAccountActivities.clientAccountId, id),
@@ -115,7 +148,7 @@ export class ClientAccountsService {
       with: { user: { columns: { id: true, name: true, image: true } } },
     });
 
-    return { ...account, activities };
+    return { ...account, lead: lead ?? null, activities };
   }
 
   async getClientActivities(orgId: string, clientAccountId: number) {

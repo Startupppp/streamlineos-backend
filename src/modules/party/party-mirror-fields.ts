@@ -1,7 +1,5 @@
 import { businessParties } from "../../db/schema/party";
 import type { LegacyClientInsert, LegacyContactInsert, LegacyCrmOrgInsert, LegacyLeadInsert } from "./legacy-shapes";
-import { clients, contacts, crmOrganizations } from "../../db/schema/crm/contacts";
-import { leads } from "../../db/schema/crm/leads";
 import type { MappedLegacyKind } from "./party-legacy-seam";
 
 /**

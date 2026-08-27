@@ -2,14 +2,13 @@ import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, inde
 import { relations } from "drizzle-orm";
 import { invPoStatusEnum, invGrnQualityEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { clients } from "../crm/contacts";
 import { invProductVariants, invUom } from "./core";
 import { invLocations, invWarehouses } from "./warehouses";
 
 export const invVendors = pgTable("inv_vendors", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  clientId: integer("client_id"),
   /**
   * The party this row belongs to. Ticket 08's expand.
   *
@@ -117,7 +116,6 @@ export const invGrnLines = pgTable("inv_grn_lines", {
 
 export const invVendorsRelations = relations(invVendors, ({ one, many }) => ({
   organization: one(organizations, { fields: [invVendors.orgId], references: [organizations.id] }),
-  client: one(clients, { fields: [invVendors.clientId], references: [clients.id] }),
   creator: one(users, { fields: [invVendors.createdBy], references: [users.id] }),
   purchaseOrders: many(invPurchaseOrders),
 }));

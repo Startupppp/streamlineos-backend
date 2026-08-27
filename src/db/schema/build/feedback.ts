@@ -15,7 +15,6 @@ import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
-import { contacts, crmOrganizations } from "../crm/contacts";
 import { managedProducts } from "./managed-products";
 
 export interface FeedbucketAiAnalysis {
@@ -149,8 +148,8 @@ export const feedbucketSubmissions = build.table(
     networkLogs: jsonb("network_logs").$type<FeedbucketNetworkEntry[]>(),
     reporterName: text("reporter_name"),
     reporterEmail: text("reporter_email"),
-    crmContactId: integer("crm_contact_id").references(() => contacts.id, { onDelete: "set null" }),
-    crmOrganizationId: integer("crm_organization_id").references(() => crmOrganizations.id, { onDelete: "set null" }),
+    crmContactId: integer("crm_contact_id"),
+    crmOrganizationId: integer("crm_organization_id"),
     accountValueSnapshot: decimal("account_value_snapshot", { precision: 15, scale: 2 }),
     assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
     linkedTicketId: integer("linked_ticket_id").references(() => tickets.id, { onDelete: "set null" }),
@@ -217,8 +216,6 @@ export const feedbucketSubmissionsRelations = relations(feedbucketSubmissions, (
     fields: [feedbucketSubmissions.linkedTicketId],
     references: [tickets.id],
   }),
-  crmContact: one(contacts, { fields: [feedbucketSubmissions.crmContactId], references: [contacts.id] }),
-  crmOrganization: one(crmOrganizations, { fields: [feedbucketSubmissions.crmOrganizationId], references: [crmOrganizations.id] }),
   attachments: many(feedbucketAttachments),
 }));
 

@@ -55,7 +55,20 @@ export const PERSONAL_DATA_TABLES: readonly PersonalDataTable[] = [
   { table: "blog_authors", columns: ["email"], scope: "global" },
   { table: "booking_link_interviewers", columns: ["contact_email", "contact_phone", "reference_email", "reference_phone"], scope: "org_id" },
   { table: "broadcasts", columns: ["email_enabled", "ip_address", "user_agent", "whatsapp_enabled"], scope: "org_id" },
-  { table: "business_parties", columns: ["email", "phone", "tax_number", "whatsapp_phone"], scope: "organization_id" },
+  /*
+    Took over from `leads`, `clients`, `contacts` and `crm_organizations`, which
+    ticket 08 dropped. Their personal data did not go with them -- it was always
+    a mirror of these columns, and `gstin` and `whatsapp_number` are `tax_number`
+    and `whatsapp_phone` under the merged model's names.
+
+    `acquisition_context` is the one that is not a rename. `leads.ip_address` was
+    a column; on a party it is a key inside this JSONB blob, so the registry's
+    scan -- which reads column declarations, not the shape of a JSON value --
+    cannot find it. Listed by hand for exactly that reason: an IP address is
+    personal data wherever it is stored, and this is the storage nobody would
+    have flagged.
+  */
+  { table: "business_parties", columns: ["acquisition_context", "email", "phone", "tax_number", "whatsapp_phone"], scope: "organization_id" },
   { table: "calendar_events", columns: ["email_enabled", "whatsapp_enabled"], scope: "org_id" },
   { table: "calibration_participants", columns: ["contact_email", "contact_phone", "reference_email", "reference_phone"], scope: "org_id" },
   { table: "calibration_sessions", columns: ["contact_email", "contact_phone", "reference_email", "reference_phone"], scope: "org_id" },
@@ -74,12 +87,9 @@ export const PERSONAL_DATA_TABLES: readonly PersonalDataTable[] = [
   { table: "client_onboarding_items", columns: ["respondent_email"], scope: "org_id" },
   { table: "client_onboarding_templates", columns: ["respondent_email"], scope: "org_id" },
   { table: "client_opportunities", columns: ["respondent_email"], scope: "org_id" },
-  { table: "clients", columns: ["client_email", "client_phone", "client_whatsapp", "email", "gstin", "phone", "respondent_email"], scope: "org_id" },
-  { table: "contacts", columns: ["email", "phone", "respondent_email"], scope: "org_id" },
   { table: "crm_contact_channel_consent", columns: ["address_hash"], scope: "org_id" },
   { table: "crm_contact_consent_events", columns: ["address_hash"], scope: "org_id" },
   { table: "crm_mailbox_sync", columns: ["mailbox_address"], scope: "organization_id" },
-  { table: "crm_organizations", columns: ["email", "phone", "respondent_email"], scope: "org_id" },
   { table: "crm_outbound_messages", columns: ["recipient_email"], scope: "organization_id" },
   { table: "crm_people", columns: ["email", "phone"], scope: "org_id" },
   { table: "crm_suppression_hashes", columns: ["address_hash"], scope: "org_id" },
@@ -128,7 +138,6 @@ export const PERSONAL_DATA_TABLES: readonly PersonalDataTable[] = [
   { table: "lead_emails", columns: ["from_email", "to_email"], scope: "org_id" },
   { table: "lead_notes", columns: ["from_email", "to_email"], scope: "org_id" },
   { table: "lead_tasks", columns: ["from_email", "to_email"], scope: "org_id" },
-  { table: "leads", columns: ["email", "from_email", "ip_address", "phone", "to_email", "whatsapp_number"], scope: "org_id" },
   { table: "legal_entities", columns: ["gstin", "pan", "registered_address"], scope: "org_id" },
   { table: "login_history", columns: ["ip_address", "user_agent"], scope: "org_id" },
   { table: "magic_link_tokens", columns: ["ip_address", "user_agent"], scope: "org_id" },

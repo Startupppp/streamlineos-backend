@@ -69,27 +69,8 @@ export const updateContactSchema = z.object({
   isPrimary: z.boolean().optional(),
 });
 
-/**
- * The mirror check's scan window.
- *
- * `after` resumes a truncated scan of one kind, so it only means anything
- * alongside `kind` -- without one it would silently skip the low ids of all
- * three tables and report a clean mirror it never looked at.
- */
-export const mirrorDivergenceQuerySchema = z
-  .object({
-    kind: z.enum(["LEAD", "CLIENT", "CONTACT", "ORGANISATION"]).optional(),
-    limit: z.coerce.number().int().min(1).max(500).default(200),
-    after: z.coerce.number().int().min(0).default(0),
-  })
-  .refine((query) => query.after === 0 || query.kind !== undefined, {
-    message: "after resumes a single kind's scan and requires kind",
-    path: ["after"],
-  });
-
 export type ListPartiesQuery = z.infer<typeof listPartiesQuerySchema>;
 export type CreatePartyInput = z.infer<typeof createPartySchema>;
 export type UpdatePartyInput = z.infer<typeof updatePartySchema>;
 export type CreateContactInput = z.infer<typeof createContactSchema>;
 export type UpdateContactInput = z.infer<typeof updateContactSchema>;
-export type MirrorDivergenceQuery = z.infer<typeof mirrorDivergenceQuerySchema>;
