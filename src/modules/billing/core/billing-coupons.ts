@@ -14,8 +14,7 @@ import {
   type UpdateCouponInput,
 } from "./dto/billing.schemas";
 
-// Every read of a coupon goes through `evaluate`, so the checkout, the validator and the
-// redemption transaction cannot disagree about whether a code may be used.
+// Every read goes through `evaluate`, so checkout, validation and redemption cannot disagree.
 export class BillingCoupons {
   constructor(private readonly db: Db) {}
 

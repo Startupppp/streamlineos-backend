@@ -40,8 +40,7 @@ export function couponDiscountPaise(coupon: CouponRecord, baseAmountPaise: numbe
     : Math.round(Math.min(value * 100, baseAmountPaise));
 }
 
-// One evaluator for pricing, validation and redemption: these rules lived only in validateCoupon,
-// so checkout discounted coupons redemption then refused, charging customers with no subscription.
+// One evaluator for pricing, validation and redemption — checkout used to skip all of it.
 export function evaluateCoupon(input: {
   coupon: CouponRecord | undefined;
   baseAmountPaise: number;

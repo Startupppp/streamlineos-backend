@@ -21,7 +21,7 @@ export interface RevenueMetrics {
   refundRate: number;
 }
 
-// Level comes from subscription state, movement from the event stream; pure so the two reconcile in a test.
+// Level from subscription state, movement from the event stream; pure so the two reconcile in a test.
 export function summariseMovements(input: {
   mrr: number;
   totalActive: number;

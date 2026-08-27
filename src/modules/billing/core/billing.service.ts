@@ -134,7 +134,7 @@ export class BillingService {
     let couponDiscountAmount = 0;
 
     if (couponId) {
-      // Pricing without these rules charged a discount redemption then refused, leaving a paid customer with no subscription.
+      // Without these rules checkout discounted a coupon redemption then refused.
       const evaluation = await this.couponAdmin.evaluate(
         couponId,
         orgId,

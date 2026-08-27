@@ -18,8 +18,7 @@ export class BillingPaymentState {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
-  // Forward-only: without setWhere a redelivered `authorized` reverted a captured row and nulled
-  // its capture timestamp, so the payment record silently disagreed with the money taken.
+  // Forward-only: without setWhere a redelivered `authorized` reverted a captured row.
   async persistPayment(payment: RazorpayPayment, orgId: string): Promise<void> {
     const fields = {
       razorpayPaymentId: payment.id,

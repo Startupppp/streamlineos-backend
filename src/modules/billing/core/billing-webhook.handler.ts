@@ -36,8 +36,7 @@ export interface BillingWebhookDeps {
   paymentNotices: PaymentAnalyticsService;
 }
 
-// Record, act, then acknowledge. A collaborator of BillingService rather than a Nest provider,
-// because nothing outside billing resolves it.
+// Record, act, then acknowledge. A collaborator, not a provider — nothing outside billing resolves it.
 export class BillingWebhookHandler {
   private readonly ledger: ProviderEventLedger;
   private readonly state: BillingPaymentState;

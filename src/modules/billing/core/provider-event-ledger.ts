@@ -21,10 +21,7 @@ export interface ProviderEventKey {
 export class ProviderEventLedger {
   constructor(private readonly db: Db) {}
 
-  // ON CONFLICT alone cannot tell a completed replay from a failed attempt, and answering
-  // "duplicate" to both is what let a failed grant be acknowledged; only processed_at separates
-  // them. The route is @Public() with no ambient GUC, so the URL orgId opens the transaction RLS
-  // requires.
+  // ON CONFLICT cannot tell a completed replay from a failed attempt; only processed_at can.
   async claim(
     key: ProviderEventKey,
     event: { eventType: string; rawBody: string },
@@ -55,8 +52,7 @@ export class ProviderEventLedger {
           .from(providerWebhookEvents)
           .where(this.matches(key))
           .limit(1);
-        // The index is global but the read is tenant-scoped: no visible row means another tenant
-        // holds this id, and reporting that as accepted would silently drop a real event.
+        // The index is global, the read tenant-scoped: no visible row means another tenant holds it.
         if (!existing) return "FOREIGN";
         return existing.processedAt === null ? "RETRY" : "PROCESSED";
       });
