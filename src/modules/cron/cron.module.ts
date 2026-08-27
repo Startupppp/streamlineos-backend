@@ -25,6 +25,9 @@ import { CronPlatformController } from "./cron-platform.controller";
 import { CronOutboxController } from "./cron-outbox.controller";
 import { CronSupportController } from "./cron-support.controller";
 import { CronBuildController } from "./cron-build.controller";
+import { CronCrmLifecycleService } from "./cron-crm-lifecycle.service";
+import { CallAnalysisAnalyserModule } from "../call-analysis/analyse/call-analysis-analyser.module";
+import { CustomerLifecycleModule } from "../customer-lifecycle/customer-lifecycle.module";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
 import { CronAttendanceService } from "./cron-attendance.service";
@@ -78,6 +81,16 @@ import { OutboxModule } from "../../common/outbox/outbox.module";
     ProjectsModule,
     CrmModule,
     OutboxModule,
+    /*
+      Phase 5. The analyser rather than the read module: a sweep is the one
+      thing that may cause analysis, and ticket 01 asks that the read path be
+      structurally unable to. Importing the read module here would put no
+      analysis capability in the cron controller, but it would put the reader in
+      a graph that also holds the writer, which is the property
+      `read-cannot-analyse.spec.ts` protects.
+    */
+    CallAnalysisAnalyserModule,
+    CustomerLifecycleModule,
   ],
   controllers: [
     CronBillingController,
@@ -112,6 +125,7 @@ import { OutboxModule } from "../../common/outbox/outbox.module";
     CronOrganizationService,
     CronOrgPurgeWorkerService,
     CronLeaseService,
+    CronCrmLifecycleService,
   ],
 })
 export class CronModule {}

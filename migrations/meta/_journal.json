@@ -2241,6 +2241,27 @@
       "when": 1787830380443,
       "tag": "0532_seed_subprocessor_register",
       "breakpoints": true
+    },
+    {
+      "idx": 320,
+      "version": "7",
+      "when": 1787830380444,
+      "tag": "0533_call_analysis",
+      "breakpoints": true
+    },
+    {
+      "idx": 321,
+      "version": "7",
+      "when": 1787830380445,
+      "tag": "0534_customer_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 322,
+      "version": "7",
+      "when": 1787830380446,
+      "tag": "0535_crm_mcp",
+      "breakpoints": true
     }
   ]
 }

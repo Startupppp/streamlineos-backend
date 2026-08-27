@@ -15,6 +15,8 @@ import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronLeaseService } from "./cron-lease.service";
+import { CallAnalysisSweepService } from "../call-analysis/analyse/call-analysis-sweep.service";
+import { CronCrmLifecycleService } from "./cron-crm-lifecycle.service";
 
 @Public()
 @Controller("cron")
@@ -26,6 +28,8 @@ export class CronBuildController {
     private readonly buildRetention: CronBuildRetentionService,
     private readonly buildSnapshots: CronBuildSnapshotsService,
     private readonly cronLease: CronLeaseService,
+    private readonly callAnalysis: CallAnalysisSweepService,
+    private readonly crmLifecycle: CronCrmLifecycleService,
   ) {}
 
   @Get("projects-recurring-flush")
@@ -48,6 +52,28 @@ export class CronBuildController {
   @HttpCode(200)
   postCrmSequencesFlush(@Headers("authorization") authorization?: string) {
     return this.runCrmSequencesFlush(authorization);
+  }
+
+  @Get("call-analysis-sweep")
+  getCallAnalysisSweep(@Headers("authorization") authorization?: string) {
+    return this.runCallAnalysisSweep(authorization);
+  }
+
+  @Post("call-analysis-sweep")
+  @HttpCode(200)
+  postCallAnalysisSweep(@Headers("authorization") authorization?: string) {
+    return this.runCallAnalysisSweep(authorization);
+  }
+
+  @Get("crm-lifecycle-sweep")
+  getCrmLifecycleSweep(@Headers("authorization") authorization?: string) {
+    return this.runCrmLifecycleSweep(authorization);
+  }
+
+  @Post("crm-lifecycle-sweep")
+  @HttpCode(200)
+  postCrmLifecycleSweep(@Headers("authorization") authorization?: string) {
+    return this.runCrmLifecycleSweep(authorization);
   }
 
   @Get("crm-tasks-overdue-flush")
@@ -117,6 +143,65 @@ export class CronBuildController {
       };
     } catch (error) {
       logger.error("CRM sequences flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  /**
+   * Phase 5, ticket 01. Analysis runs here and nowhere else.
+   *
+   * The lease window is long because the sweep starts one durable workflow run
+   * per organisation and the model calls inside them are the single largest
+   * cost in the product — a second sweep overlapping the first would pay for
+   * every one of them twice. The workflow itself is idempotent on the hour key,
+   * so an overlap would not corrupt anything; it would only be expensive, which
+   * is reason enough.
+   */
+  private async runCallAnalysisSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("call-analysis-sweep", 900, () =>
+        this.callAnalysis.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "call-analysis-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Call analysis sweep: ${result.organizations} organisations, ${result.runs} runs`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Call analysis sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  /**
+   * Phase 5, tickets 07 and 09.
+   *
+   * Without this, a closed-won deal produces a lifecycle record only when
+   * somebody happens to POST to the endpoint — which is to say never — and the
+   * renewal triggers that depend on those records have nothing to read.
+   */
+  private async runCrmLifecycleSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("crm-lifecycle-sweep", 600, () =>
+        this.crmLifecycle.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "crm-lifecycle-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `CRM lifecycle sweep: ${result.organizations} organisations, ` +
+          `${result.lifecyclesOpened} lifecycles opened, ${result.triggersFired} renewals triggered`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("CRM lifecycle sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

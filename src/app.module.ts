@@ -87,6 +87,11 @@ import { RendererModule } from "./modules/renderer/renderer.module";
 import { ComplianceModule } from "./modules/compliance/compliance.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
 import { RelationshipsModule } from "./modules/relationships/relationships.module";
+import { CallAnalysisReadModule } from "./modules/call-analysis/read/call-analysis-read.module";
+import { CallAnalysisAnalyserModule } from "./modules/call-analysis/analyse/call-analysis-analyser.module";
+import { CustomerLifecycleModule } from "./modules/customer-lifecycle/customer-lifecycle.module";
+import { AttributionModule } from "./modules/attribution/attribution.module";
+import { CrmMcpModule } from "./modules/crm-mcp/crm-mcp.module";
 import { IngressModule } from "./modules/ingress/ingress.module";
 import { AutonomyModule } from "./modules/autonomy/autonomy.module";
 import { CrmImportModule } from "./modules/crm/import/crm-import.module";
@@ -160,6 +165,17 @@ import { IssuesModule } from "./modules/issues/issues.module";
     DataQualityModule,
     ActivitiesModule,
     RelationshipsModule,
+    /*
+      Phase 5. The read half and the analysing half of call analysis are
+      separate modules on purpose: ticket 01 asks that re-analysis on view be
+      impossible by construction, and the read module's import closure does not
+      contain the analyser or the model gateway.
+    */
+    CallAnalysisReadModule,
+    CallAnalysisAnalyserModule,
+    CustomerLifecycleModule,
+    AttributionModule,
+    CrmMcpModule,
     IngressModule,
     AutonomyModule,
     CrmImportModule,

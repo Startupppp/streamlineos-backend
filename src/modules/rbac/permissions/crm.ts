@@ -302,6 +302,26 @@ export const CRM_PERMISSIONS: Permission[] = [
     action: "view",
     description: "Read the unified timeline of calls, emails, meetings, notes and tasks",
   },
+  /*
+    Two keys rather than one, and the split is phase 5 ticket 02 rather than
+    tidiness. Seeing your own calls is something every seller should have from
+    the day they are hired; seeing the team pooled is a manager's. A single key
+    would mean granting a rep the team surface in order to give them their own,
+    which is the shape the ticket says people route around — a coaching tool
+    that arrives as a surveillance report.
+  */
+  {
+    name: "crm:call-analysis:view-own",
+    resource: "crm:call-analysis",
+    action: "view-own",
+    description: "See your own call analyses, your own trend, and coaching prompts about yourself",
+  },
+  {
+    name: "crm:call-analysis:view-team",
+    resource: "crm:call-analysis",
+    action: "view-team",
+    description: "See pooled team call aggregates and coaching prompts, never an individual call",
+  },
   {
     name: "crm:activities:manage",
     resource: "crm:activities",

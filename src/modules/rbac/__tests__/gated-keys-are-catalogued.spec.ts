@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { ALL_PERMISSION_NAMES } from "../permissions";
 
 /**
@@ -32,6 +33,8 @@ describe("every gated permission key is in the catalogue", () => {
   const KEY = /@RequirePermission\(\s*"([^"]+)"/g;
   /** A decorator taking a constant rather than a literal; counted, not guessed at. */
   const NON_LITERAL = /@RequirePermission\(\s*(?!")/g;
+  /** `@RequirePermission(SOME_CONSTANT)` — the identifier, for resolution below. */
+  const NAMED = /@RequirePermission\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/g;
 
   const sourceFiles = (): string[] =>
     execSync('git ls-files --cached --others --exclude-standard -- "src/**/*.ts"', {
@@ -60,10 +63,59 @@ describe("every gated permission key is in the catalogue", () => {
       if (!source.includes("@RequirePermission")) continue;
 
       for (const match of source.matchAll(KEY)) gates.push({ file, key: match[1] });
-      viaConstant += [...source.matchAll(NON_LITERAL)].length;
+
+      /*
+        A decorator naming a constant is BETTER code than one naming a literal,
+        and the reason is the bug two files over: `call-analysis-backfill.spec.ts`
+        requires the constant form precisely so a decorator and its backfill
+        migration cannot drift by a typo nobody notices until a tenant reports a
+        403. Asking those routes to inline their strings so this regex can read
+        them would make the code worse to keep a test simple.
+
+        So the constant is followed instead. Only the ones that cannot be
+        resolved — a computed key, a re-export chain, a constant built from
+        parts — remain uncovered, and those are what `viaConstant` counts.
+      */
+      let unresolved = [...source.matchAll(NON_LITERAL)].length;
+      for (const match of source.matchAll(NAMED)) {
+        const key = resolveConstant(file, source, match[1]!);
+        if (key === null) continue;
+        gates.push({ file, key });
+        unresolved -= 1;
+      }
+      viaConstant += Math.max(0, unresolved);
     }
 
     return { gates, viaConstant };
+  };
+
+  /**
+   * The literal behind `@RequirePermission(SOME_CONSTANT)`, or null.
+   *
+   * Deliberately shallow: one hop, to a relative import, to an
+   * `export const NAME = "literal"` in that file. Anything deeper is a chain
+   * this test should not be simulating a compiler for, and is honestly reported
+   * as uncovered rather than guessed at.
+   */
+  const resolveConstant = (file: string, source: string, identifier: string): string | null => {
+    const importOf = new RegExp(
+      `import\\s*\\{[^}]*\\b${identifier}\\b[^}]*\\}\\s*from\\s*"(\\.[^"]+)"`,
+    );
+    const declaredHere = new RegExp(`export\\s+const\\s+${identifier}\\s*=\\s*"([^"]+)"`);
+
+    const here = declaredHere.exec(source);
+    if (here) return here[1]!;
+
+    const imported = importOf.exec(source);
+    if (!imported) return null;
+
+    const base = resolve(dirname(file), imported[1]!);
+    for (const candidate of [`${base}.ts`, join(base, "index.ts")]) {
+      if (!existsSync(candidate)) continue;
+      const target = declaredHere.exec(readFileSync(candidate, "utf8"));
+      if (target) return target[1]!;
+    }
+    return null;
   };
 
   it("finds no gate naming a key the catalogue does not have", () => {
@@ -88,10 +140,25 @@ describe("every gated permission key is in the catalogue", () => {
    * regex cannot resolve; if that number grows the scan is quietly covering
    * less than it looks like it is, and this fails and says so.
    */
-  it("reads almost every gate directly, and names how many it cannot", () => {
+  it("reads almost every gate, and names how many it cannot", () => {
     const { gates, viaConstant } = scan();
 
     expect(gates.length).toBeGreaterThan(2500);
     expect(viaConstant).toBeLessThanOrEqual(25);
+  });
+
+  it("actually follows a constant to its literal, rather than passing vacuously", () => {
+    /*
+      Without this, the resolution above could quietly resolve nothing — every
+      constant would fall through to `viaConstant`, the cap would still hold at
+      today's count, and the first person to add a gated route behind a constant
+      would find the coverage claim was never true.
+    */
+    const { gates } = scan();
+    const resolved = gates.filter((gate) => gate.key.startsWith("crm:call-analysis:"));
+    expect(resolved.map((gate) => gate.key).sort()).toEqual([
+      "crm:call-analysis:view-own",
+      "crm:call-analysis:view-team",
+    ]);
   });
 });
