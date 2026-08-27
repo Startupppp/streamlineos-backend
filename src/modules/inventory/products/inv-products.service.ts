@@ -43,8 +43,8 @@ export class InvProductsService {
     return this.crud.updateProduct(orgId, productId, data);
   }
 
-  deleteProduct(orgId: string, productId: number) {
-    return this.crud.deleteProduct(orgId, productId);
+  deleteProduct(orgId: string, productId: number, userId: string) {
+    return this.crud.deleteProduct(orgId, productId, userId);
   }
 
   archiveProduct(orgId: string, productId: number, userId: string) {

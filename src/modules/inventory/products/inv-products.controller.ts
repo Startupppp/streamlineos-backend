@@ -160,7 +160,7 @@ export class InvProductsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:delete")
   async delete(@Param("productId", ParseIntPipe) productId: number, @CurrentUser() u: CurrentUserContext) {
-    await this.products.deleteProduct(u.orgId, productId);
+    await this.products.deleteProduct(u.orgId, productId, u.userId);
   }
 
   @Post(":productId/variants")

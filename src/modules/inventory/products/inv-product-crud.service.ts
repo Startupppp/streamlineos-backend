@@ -5,7 +5,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from "@nestjs/common";
-import { and, eq, ilike, or, desc, sql, inArray } from "drizzle-orm";
+import { and, eq, ilike, isNull, or, desc, sql, inArray } from "drizzle-orm";
 import { assertNoBarcodeConflict } from "./lib/barcode-conflict";
 import {
   invProducts,
@@ -125,7 +125,9 @@ export class InvProductCrudService {
       CACHE_KEYS.invProductsNamespace(orgId),
       hash,
       async () => {
-        const conditions = [eq(invProducts.orgId, orgId)];
+        // A deleted product must not come back through a list. The partial
+        // index on (org_id, id) WHERE deleted_at IS NULL covers this predicate.
+        const conditions = [eq(invProducts.orgId, orgId), isNull(invProducts.deletedAt)];
         if (status) conditions.push(eq(invProducts.status, status));
         if (productType)
           conditions.push(eq(invProducts.productType, productType));
@@ -179,7 +181,11 @@ export class InvProductCrudService {
   async getProduct(orgId: string, productId: number, userId?: string) {
     const showCost = userId ? await this.costVisibility.canSeeCost(orgId, userId) : false;
     const product = await this.db.query.invProducts.findFirst({
-      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
+      where: and(
+        eq(invProducts.id, productId),
+        eq(invProducts.orgId, orgId),
+        isNull(invProducts.deletedAt),
+      ),
       with: {
         category: true,
         uom: true,
@@ -228,8 +234,14 @@ export class InvProductCrudService {
       const sku = providedSku ?? (await this.generateNextSku(orgId));
 
       if (providedSku) {
+        // The uniqueness index is partial on deleted_at IS NULL, so a SKU
+        // freed by a deletion is available again and this pre-check has to agree.
         const existing = await this.db.query.invProducts.findFirst({
-          where: and(eq(invProducts.orgId, orgId), eq(invProducts.sku, sku)),
+          where: and(
+            eq(invProducts.orgId, orgId),
+            eq(invProducts.sku, sku),
+            isNull(invProducts.deletedAt),
+          ),
           columns: { id: true },
         });
         if (existing)
@@ -282,7 +294,11 @@ export class InvProductCrudService {
     data: UpdateProductInput,
   ) {
     const existing = await this.db.query.invProducts.findFirst({
-      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
+      where: and(
+        eq(invProducts.id, productId),
+        eq(invProducts.orgId, orgId),
+        isNull(invProducts.deletedAt),
+      ),
       columns: { id: true, trackingMethod: true, costingMethod: true },
     });
     if (!existing) throw new NotFoundException("Product not found");
@@ -330,32 +346,98 @@ export class InvProductCrudService {
     return updated;
   }
 
-  async deleteProduct(orgId: string, productId: number) {
-    const existing = await this.db.query.invProducts.findFirst({
-      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
-      columns: { id: true },
+  /**
+   * Removes a product from the catalogue without destroying anything.
+   *
+   * This used to be a physical DELETE, and inv_stock_transactions.product_variant_id
+   * carries ON DELETE CASCADE — so a product that was received and then fully
+   * shipped nets to zero on hand, passes the stock guard below, and takes its
+   * whole movement history with it, along with its lots, serials, valuation
+   * layers and cost history. Proven in a rolled-back transaction: two ledger
+   * rows and one lot before, zero of each after.
+   *
+   * Now it stamps deleted_at, so the ledger is unreachable by this path. The
+   * conflict guards stay, because hiding a product that still holds stock or
+   * sits on an open order is a mistake worth refusing rather than absorbing.
+   */
+  async deleteProduct(orgId: string, productId: number, userId: string) {
+    return this.db.transaction(async (tx) => {
+      const existing = await tx.query.invProducts.findFirst({
+        where: and(
+          eq(invProducts.id, productId),
+          eq(invProducts.orgId, orgId),
+          isNull(invProducts.deletedAt),
+        ),
+        columns: { id: true, sku: true, name: true },
+      });
+      if (!existing) throw new NotFoundException("Product not found");
+
+      const variants = await tx.query.invProductVariants.findMany({
+        where: and(
+          eq(invProductVariants.productId, productId),
+          eq(invProductVariants.orgId, orgId),
+          isNull(invProductVariants.deletedAt),
+        ),
+        columns: { id: true },
+      });
+
+      if (variants.length > 0) {
+        const variantIds = variants.map((v) => v.id);
+        await this.assertNothingDependsOn(tx, orgId, variantIds);
+      }
+
+      const deletedAt = new Date();
+      await tx
+        .update(invProducts)
+        .set({ deletedAt })
+        .where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)));
+      await tx
+        .update(invProductVariants)
+        .set({ deletedAt })
+        .where(and(
+          eq(invProductVariants.productId, productId),
+          eq(invProductVariants.orgId, orgId),
+          isNull(invProductVariants.deletedAt),
+        ));
+
+      await this.audit.insert(tx, {
+        orgId,
+        actorUserId: userId,
+        action: "product.deleted",
+        resourceType: "product",
+        resourceId: String(productId),
+        before: { sku: existing.sku, name: existing.name, deletedAt: null },
+        after: { deletedAt: deletedAt.toISOString(), variantsDeleted: variants.length },
+      });
+
+      await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
+      await this.cache.invalidateNamespace(CACHE_KEYS.invProductsNamespace(orgId));
     });
-    if (!existing) throw new NotFoundException("Product not found");
+  }
 
-    const variants = await this.db.query.invProductVariants.findMany({
-      where: and(
-        eq(invProductVariants.productId, productId),
-        eq(invProductVariants.orgId, orgId),
-      ),
-      columns: { id: true },
-    });
-
-    if (variants.length > 0) {
-      const variantIds = variants.map((v) => v.id);
-
+  /**
+   * Refuses when the product still holds stock or sits on an open document.
+   *
+   * The quantity comparison is done in Postgres, not JavaScript: the previous
+   * `parseFloat(sum) > 0` read an 18,4 numeric through a float, which is the one
+   * arithmetic the PRD forbids outright for stock.
+   */
+  private async assertNothingDependsOn(
+    tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+    orgId: string,
+    variantIds: number[],
+  ): Promise<void> {
       const [stockRows, openPoLines, openSoLines] = await Promise.all([
-        this.db
+        tx
           .select({
-            total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')`,
+            positive: sql<boolean>`COALESCE(SUM(${invStockLevels.onHand}), 0) > 0`,
           })
           .from(invStockLevels)
-          .where(inArray(invStockLevels.productVariantId, variantIds)),
-        this.db
+          .where(and(
+            eq(invStockLevels.orgId, orgId),
+            inArray(invStockLevels.productVariantId, variantIds),
+          )),
+        tx
           .select({ id: invPoLines.id })
           .from(invPoLines)
           .innerJoin(
@@ -364,17 +446,19 @@ export class InvProductCrudService {
           )
           .where(
             and(
+              eq(invPurchaseOrders.orgId, orgId),
               inArray(invPoLines.productVariantId, variantIds),
               inArray(invPurchaseOrders.status, ["DRAFT", "SENT", "PARTIAL"]),
             ),
           )
           .limit(1),
-        this.db
+        tx
           .select({ id: invSoLines.id })
           .from(invSoLines)
           .innerJoin(invSalesOrders, eq(invSoLines.soId, invSalesOrders.id))
           .where(
             and(
+              eq(invSalesOrders.orgId, orgId),
               inArray(invSoLines.productVariantId, variantIds),
               inArray(invSalesOrders.status, ["DRAFT", "CONFIRMED"]),
             ),
@@ -382,7 +466,7 @@ export class InvProductCrudService {
           .limit(1),
       ]);
 
-      if (parseFloat(stockRows[0]?.total ?? "0") > 0) {
+      if (stockRows[0]?.positive === true) {
         throw new ConflictException(
           "Cannot delete product with existing stock. Archive it instead.",
         );
@@ -393,18 +477,15 @@ export class InvProductCrudService {
           "Cannot delete product referenced in open purchase or sales orders. Archive it instead.",
         );
       }
-    }
-
-    await this.db
-      .delete(invProducts)
-      .where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)));
-    await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invProductsNamespace(orgId));
   }
 
   async archiveProduct(orgId: string, productId: number, userId: string) {
     const existing = await this.db.query.invProducts.findFirst({
-      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
+      where: and(
+        eq(invProducts.id, productId),
+        eq(invProducts.orgId, orgId),
+        isNull(invProducts.deletedAt),
+      ),
       columns: { id: true, status: true },
     });
     if (!existing) throw new NotFoundException("Product not found");
@@ -432,7 +513,11 @@ export class InvProductCrudService {
 
   async restoreProduct(orgId: string, productId: number, userId: string) {
     const existing = await this.db.query.invProducts.findFirst({
-      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
+      where: and(
+        eq(invProducts.id, productId),
+        eq(invProducts.orgId, orgId),
+        isNull(invProducts.deletedAt),
+      ),
       columns: { id: true, status: true },
     });
     if (!existing) throw new NotFoundException("Product not found");

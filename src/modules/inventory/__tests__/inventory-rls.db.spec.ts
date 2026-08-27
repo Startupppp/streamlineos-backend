@@ -52,7 +52,14 @@ describeDb("inventory row-level security", () => {
     if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
     const ownerUrl = process.env.DATABASE_URL;
     if (!ownerUrl) throw new Error("DATABASE_URL required for INV_DB_TESTS");
-    owner = postgres(sessionUrl(ownerUrl), { prepare: false, max: 2, onnotice: () => undefined });
+    owner = postgres(sessionUrl(ownerUrl), {
+      prepare: false,
+      max: 2,
+      onnotice: () => undefined,
+      // A blocked GRANT should say so rather than sit behind another suite's
+      // locks until the jest timeout turns it into an unexplained failure.
+      connection: { lock_timeout: "5s" },
+    });
 
     usingDeployedRole = Boolean(process.env.APP_DATABASE_URL);
     if (!usingDeployedRole) {
@@ -62,7 +69,14 @@ describeDb("inventory row-level security", () => {
           THEN CREATE ROLE ${PROBE_ROLE} NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
         END $$;`);
       await owner.unsafe(`GRANT USAGE ON SCHEMA public, app TO ${PROBE_ROLE}`);
-      await owner.unsafe(`GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA public TO ${PROBE_ROLE}`);
+      // Only the tables under test. `ON ALL TABLES IN SCHEMA public` takes a
+      // lock on all 735 of them, which collided with the other database suites
+      // and failed this whole file roughly one run in three — as a beforeAll
+      // failure, so it read as seventeen broken assertions rather than one
+      // contended GRANT.
+      await owner.unsafe(
+        `GRANT SELECT, INSERT ON ${TENANT_TABLES.join(", ")} TO ${PROBE_ROLE}`,
+      );
       await owner.unsafe(`GRANT EXECUTE ON FUNCTION app.current_org_id() TO ${PROBE_ROLE}`);
       await owner.unsafe(`GRANT ${PROBE_ROLE} TO CURRENT_USER`);
     }

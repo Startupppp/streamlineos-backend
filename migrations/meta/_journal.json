@@ -2073,6 +2073,13 @@
       "when": 1787830368441,
       "tag": "0515_inventory_ledger_invariants",
       "breakpoints": true
+    },
+    {
+      "idx": 297,
+      "version": "7",
+      "when": 1787830369441,
+      "tag": "0516_inventory_soft_delete",
+      "breakpoints": true
     }
   ]
 }

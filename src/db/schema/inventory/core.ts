@@ -68,8 +68,12 @@ export const invProducts = pgTable("inv_products", {
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at"),
 }, (table) => [
-  uniqueIndex("uniq_inv_products_org_sku").on(table.orgId, table.sku),
+  // Partial: a deleted product must not hold its SKU hostage, and the scope is
+  // the tenant — a bare unique index lets one organisation's code block another's.
+  uniqueIndex("uniq_inv_products_org_sku_live").on(table.orgId, table.sku).where(sql`${table.deletedAt} IS NULL`),
+  index("idx_inv_products_org_live").on(table.orgId, table.id).where(sql`${table.deletedAt} IS NULL`),
   unique("uniq_inv_products_org_id").on(table.orgId, table.id),
   index("idx_inv_products_org_status").on(table.orgId, table.status),
   index("idx_inv_products_category").on(table.categoryId),
@@ -91,8 +95,10 @@ export const invProductVariants = pgTable("inv_product_variants", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at"),
 }, (table) => [
-  uniqueIndex("uniq_inv_variants_org_sku").on(table.orgId, table.sku),
+  uniqueIndex("uniq_inv_product_variants_org_sku_live").on(table.orgId, table.sku).where(sql`${table.deletedAt} IS NULL`),
+  index("idx_inv_product_variants_org_live").on(table.orgId, table.id).where(sql`${table.deletedAt} IS NULL`),
   unique("uniq_inv_product_variants_org_id").on(table.orgId, table.id),
   index("idx_inv_variants_product").on(table.productId),
   index("idx_inv_variants_barcode").on(table.barcode),
