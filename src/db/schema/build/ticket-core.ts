@@ -82,6 +82,15 @@ export const tickets = build.table(
       withTimezone: true,
     }),
     customerId: integer("customer_id"),
+    /**
+     * The party this ticket's customer is. Ticket 08's expand.
+     *
+     * Beside `customer_id` rather than replacing it, so every existing reader
+     * keeps working while readers move over one at a time. The database carries
+     * the foreign key to `business_parties`; Drizzle never declared one for
+     * `customer_id` either, which is why neither is expressed here.
+     */
+    customerPartyId: text("customer_party_id"),
     version: integer("version").notNull().default(1),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

@@ -142,6 +142,14 @@ export const clientOpportunities = pgTable("client_opportunities", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+  /**
+   * The party this row's client is. Ticket 08's expand.
+   *
+   * Beside `client_id` rather than replacing it: every existing reader keeps
+   * working while readers move over one at a time, and the old column goes in
+   * the contract migration once none is left.
+   */
+  clientPartyId: text("client_party_id"),
   title: text("title").notNull(),
   type: text("type").default("upsell").notNull(),
   stage: text("stage").default("identified").notNull(),
@@ -175,6 +183,14 @@ export const clientOnboardingItems = pgTable("client_onboarding_items", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+  /**
+   * The party this row's client is. Ticket 08's expand.
+   *
+   * Beside `client_id` rather than replacing it: every existing reader keeps
+   * working while readers move over one at a time, and the old column goes in
+   * the contract migration once none is left.
+   */
+  clientPartyId: text("client_party_id"),
   templateId: integer("template_id").references(() => clientOnboardingTemplates.id),
   title: text("title").notNull(),
   description: text("description"),
@@ -195,6 +211,15 @@ export const csatSurveys = pgTable("csat_surveys", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }),
+  /**
+  * The party this row belongs to. Ticket 08's expand.
+  *
+  * Beside `client_id` rather than replacing it: every existing reader keeps
+  * working while readers move over one at a time, and the old column goes in
+  * the contract migration once none is left. Nullable until then -- a null
+  * means "not yet backfilled", which is a state worth being able to see.
+  */
+  clientPartyId: text("client_party_id"),
   title: text("title").notNull(),
   question: text("question").notNull().default("How satisfied are you with our service?"),
   scaleMax: integer("scale_max").default(5).notNull(),

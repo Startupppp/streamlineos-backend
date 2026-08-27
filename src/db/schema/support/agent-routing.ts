@@ -40,6 +40,15 @@ export const supportVipClients = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+    /**
+    * The party this row belongs to. Ticket 08's expand.
+    *
+    * Beside `client_id` rather than replacing it: every existing reader keeps
+    * working while readers move over one at a time, and the old column goes in
+    * the contract migration once none is left. Nullable until then -- a null
+    * means "not yet backfilled", which is a state worth being able to see.
+    */
+    clientPartyId: text("client_party_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

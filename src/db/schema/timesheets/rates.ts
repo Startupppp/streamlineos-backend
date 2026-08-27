@@ -8,8 +8,7 @@ import {
   date,
   integer,
   index,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+  uniqueIndex, } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
 import { projects } from "../build/core";
 import { timesheetBillingTypeEnum } from "./enums";
@@ -37,6 +36,15 @@ export const timesheetRates = pgTable("timesheet_rates", {
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  /**
+  * The party this row belongs to. Ticket 08's expand.
+  *
+  * Beside `client_id` rather than replacing it: every existing reader keeps
+  * working while readers move over one at a time, and the old column goes in
+  * the contract migration once none is left. Nullable until then -- a null
+  * means "not yet backfilled", which is a state worth being able to see.
+  */
+  clientPartyId: text("client_party_id"),
   taskId: integer("task_id"),
   billingType: timesheetBillingTypeEnum("billing_type").notNull().default("BILLABLE"),
   billRate: decimal("bill_rate", { precision: 10, scale: 2 }).notNull(),
