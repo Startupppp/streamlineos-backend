@@ -5,12 +5,12 @@ export const listInsightsSchema = z.object({
   type: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type ListInsightsInput = z.infer<typeof listInsightsSchema>;
 
 export const updateInsightStatusSchema = z.object({
   status: z.enum(["ACKNOWLEDGED", "DISMISSED"]),
-});
+}).strict();
 export type UpdateInsightStatusInput = z.infer<typeof updateInsightStatusSchema>;
 
 type InsightType =

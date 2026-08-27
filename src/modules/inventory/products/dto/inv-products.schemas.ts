@@ -10,7 +10,7 @@ export const listProductsSchema = z.object({
   search: z.string().trim().max(200).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type ListProductsInput = z.infer<typeof listProductsSchema>;
 
 export const createProductSchema = z.object({
@@ -48,7 +48,7 @@ export const createProductSchema = z.object({
   hasVariants: z.boolean().default(false),
   imageUrl: z.string().url().optional(),
   customFields: z.record(z.string(), z.unknown()).optional(),
-});
+}).strict();
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
 export const updateProductSchema = createProductSchema.partial();
@@ -66,7 +66,7 @@ export const createVariantSchema = z.object({
   costPrice: z.string().regex(DECIMAL_PATTERN).default("0"),
   sellingPrice: z.string().regex(DECIMAL_PATTERN).default("0"),
   attributeValues: z.record(z.string(), z.string()).default({}),
-});
+}).strict();
 export type CreateVariantInput = z.infer<typeof createVariantSchema>;
 
 export const updateVariantSchema = createVariantSchema.partial();
@@ -84,7 +84,7 @@ export const createCategorySchema = z.object({
     .refine((v) => VALID_NAME_RE.test(v), "Name must contain at least one letter or number."),
   parentCategoryId: z.number().int().positive().optional(),
   description: z.string().trim().max(500, "Description must be 500 characters or fewer.").optional(),
-});
+}).strict();
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 
 export const createUomSchema = z.object({
@@ -106,7 +106,7 @@ export const createUomSchema = z.object({
     .optional(),
   roundingPrecision: z.number().int().min(0).max(6).optional(),
   isBase: z.boolean().optional(),
-});
+}).strict();
 export type CreateUomInput = z.infer<typeof createUomSchema>;
 
 export const listVariantsSchema = z.object({
@@ -116,7 +116,7 @@ export const listVariantsSchema = z.object({
     .transform((v) => v === "true"),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type ListVariantsInput = z.infer<typeof listVariantsSchema>;
 
 export const updateCategorySchema = z.object({
@@ -131,7 +131,7 @@ export const updateCategorySchema = z.object({
   parentCategoryId: z.number().int().positive().nullable().optional(),
   description: z.string().trim().max(500, "Description must be 500 characters or fewer.").nullable().optional(),
   isActive: z.boolean().optional(),
-});
+}).strict();
 export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
 
 export const updateUomSchema = z.object({
@@ -156,5 +156,5 @@ export const updateUomSchema = z.object({
   roundingPrecision: z.number().int().min(0).max(6).optional(),
   isBase: z.boolean().optional(),
   isActive: z.boolean().optional(),
-});
+}).strict();
 export type UpdateUomInput = z.infer<typeof updateUomSchema>;

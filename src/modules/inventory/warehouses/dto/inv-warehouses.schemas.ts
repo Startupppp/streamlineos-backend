@@ -52,7 +52,7 @@ export const createWarehouseSchema = z.object({
   branchId: z.string().trim().max(100).optional(),
   managerUserId: z.string().trim().optional(),
   isActive: z.boolean().optional(),
-});
+}).strict();
 export type CreateWarehouseInput = z.infer<typeof createWarehouseSchema>;
 
 export const updateWarehouseSchema = createWarehouseSchema.partial();
@@ -68,7 +68,7 @@ export const createLocationSchema = z.object({
   isSellable: z.boolean().optional(),
   capacity: z.string().trim().regex(/^\d+(\.\d+)?$/, "Must be a valid decimal number").optional(),
   isActive: z.boolean().optional(),
-});
+}).strict();
 export type CreateLocationInput = z.infer<typeof createLocationSchema>;
 
 export const updateLocationSchema = createLocationSchema.partial();
@@ -77,7 +77,7 @@ export type UpdateLocationInput = z.infer<typeof updateLocationSchema>;
 export const listWarehouseStockSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type ListWarehouseStockInput = z.infer<typeof listWarehouseStockSchema>;
 
 export const listWarehousesSchema = z.object({
@@ -88,5 +88,5 @@ export const listWarehousesSchema = z.object({
   city: z.string().trim().max(100).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(100),
-});
+}).strict();
 export type ListWarehousesInput = z.infer<typeof listWarehousesSchema>;

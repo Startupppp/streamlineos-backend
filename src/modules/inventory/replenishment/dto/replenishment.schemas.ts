@@ -7,7 +7,7 @@ export const listRulesSchema = z.object({
   active: queryBoolean.optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type ListRulesInput = z.infer<typeof listRulesSchema>;
 
 const minMaxRefinement = (data: { minQty: number; maxQty?: number }) =>
@@ -25,6 +25,7 @@ export const createRuleSchema = z
     leadTimeDays: z.number().int().min(0).optional(),
     safetyStock: z.number().min(0).optional(),
   })
+  .strict()
   .refine(minMaxRefinement, minMaxMessage);
 export type CreateRuleInput = z.infer<typeof createRuleSchema>;
 
@@ -38,6 +39,7 @@ export const updateRuleSchema = z
     safetyStock: z.number().min(0).optional(),
     isActive: z.boolean().optional(),
   })
+  .strict()
   .refine((d) => d.maxQty == null || d.minQty == null || d.maxQty >= d.minQty, minMaxMessage);
 export type UpdateRuleInput = z.infer<typeof updateRuleSchema>;
 
@@ -49,20 +51,20 @@ export const generatePoSchema = z.object({
       productVariantId: z.number().int().positive(),
       suggestedQty: z.number().positive(),
       unitCost: z.number().min(0).optional(),
-    }),
+    }).strict(),
   ).min(1),
-});
+}).strict();
 export type GeneratePoInput = z.infer<typeof generatePoSchema>;
 
 export const suggestionsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type SuggestionsQueryInput = z.infer<typeof suggestionsQuerySchema>;
 
 export const forecastingSchema = z.object({
   variantId: z.coerce.number().int().positive().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type ForecastingInput = z.infer<typeof forecastingSchema>;

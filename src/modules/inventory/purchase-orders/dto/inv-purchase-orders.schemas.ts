@@ -5,7 +5,7 @@ export const listPoSchema = z.object({
   vendorId: z.coerce.number().int().positive().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type ListPoInput = z.infer<typeof listPoSchema>;
 
 const poLineSchema = z.object({
@@ -14,7 +14,7 @@ const poLineSchema = z.object({
   unitCost: z.string().regex(/^\d+(\.\d{1,4})?$/),
   taxRate: z.string().regex(/^\d+(\.\d{1,2})?$/).default("0"),
   lineOrder: z.number().int().min(0).default(0),
-});
+}).strict();
 
 export const createPoSchema = z.object({
   vendorId: z.number().int().positive(),
@@ -24,7 +24,7 @@ export const createPoSchema = z.object({
   currency: z.string().length(3).default("INR"),
   notes: z.string().max(2000).optional(),
   lines: z.array(poLineSchema).min(1),
-});
+}).strict();
 export type CreatePoInput = z.infer<typeof createPoSchema>;
 
 export const updatePoSchema = z.object({
@@ -35,7 +35,7 @@ export const updatePoSchema = z.object({
   currency: z.string().length(3).optional(),
   notes: z.string().max(2000).optional(),
   lines: z.array(poLineSchema).min(1).optional(),
-});
+}).strict();
 export type UpdatePoInput = z.infer<typeof updatePoSchema>;
 
 const grnLotLineSchema = z.object({
@@ -47,14 +47,14 @@ const grnLotLineSchema = z.object({
   expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   manufactureDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   serialNumbers: z.array(z.string().max(100)).optional(),
-});
+}).strict();
 
 export const createGrnSchema = z.object({
   receivedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   locationId: z.number().int().positive().optional(),
   notes: z.string().max(2000).optional(),
   lines: z.array(grnLotLineSchema).min(1),
-});
+}).strict();
 export type CreateGrnInput = z.infer<typeof createGrnSchema>;
 
 export const listGrnSchema = z.object({
@@ -64,10 +64,10 @@ export const listGrnSchema = z.object({
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type ListGrnInput = z.infer<typeof listGrnSchema>;
 
 export const reverseGrnSchema = z.object({
   reason: z.string().max(500),
-});
+}).strict();
 export type ReverseGrnInput = z.infer<typeof reverseGrnSchema>;

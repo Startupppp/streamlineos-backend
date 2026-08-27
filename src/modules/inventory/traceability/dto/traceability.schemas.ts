@@ -8,7 +8,7 @@ export const listLotsSchema = z.object({
   search: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type ListLotsInput = z.infer<typeof listLotsSchema>;
 
 export const listSerialsSchema = z.object({
@@ -17,17 +17,17 @@ export const listSerialsSchema = z.object({
   search: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type ListSerialsInput = z.infer<typeof listSerialsSchema>;
 
 export const expiryQuerySchema = z.object({
   withinDays: z.coerce.number().int().min(1).default(30),
-});
+}).strict();
 export type ExpiryQueryInput = z.infer<typeof expiryQuerySchema>;
 
 export const updateLotStatusSchema = z.object({
   status: z.enum(["ACTIVE", "BLOCKED"]),
-});
+}).strict();
 export type UpdateLotStatusInput = z.infer<typeof updateLotStatusSchema>;
 
 export const traceabilityQuerySchema = z
@@ -35,6 +35,7 @@ export const traceabilityQuerySchema = z
     lotId: z.coerce.number().int().positive().optional(),
     serialId: z.coerce.number().int().positive().optional(),
   })
+  .strict()
   .refine((d) => d.lotId != null || d.serialId != null, {
     message: "lotId or serialId is required",
   });

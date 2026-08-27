@@ -3,7 +3,7 @@ import { z } from "zod";
 const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 
 export const stockSummaryQuerySchema = paginationSchema;
 export type StockSummaryQueryInput = z.infer<typeof stockSummaryQuerySchema>;
@@ -16,7 +16,7 @@ export const movementsQuerySchema = z.object({
   toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type MovementsQueryInput = z.infer<typeof movementsQuerySchema>;
 
 export const valuationReportSchema = z.object({
@@ -24,14 +24,14 @@ export const valuationReportSchema = z.object({
   categoryId: z.coerce.number().int().positive().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type ValuationReportInput = z.infer<typeof valuationReportSchema>;
 
 export const slowMovingQuerySchema = z.object({
   days: z.coerce.number().int().min(1).default(60),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type SlowMovingQueryInput = z.infer<typeof slowMovingQuerySchema>;
 
 export const expiryReportSchema = z.object({
@@ -40,5 +40,5 @@ export const expiryReportSchema = z.object({
   status: z.enum(["ACTIVE", "EXPIRED", "BLOCKED", "CONSUMED", "RECALLED"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type ExpiryReportInput = z.infer<typeof expiryReportSchema>;

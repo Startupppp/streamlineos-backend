@@ -6,7 +6,7 @@ export const listVendorsSchema = z.object({
   isActive: queryBoolean.optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict();
 export type ListVendorsInput = z.infer<typeof listVendorsSchema>;
 
 export const createVendorSchema = z.object({
@@ -21,7 +21,7 @@ export const createVendorSchema = z.object({
   paymentTermsDays: z.number().int().min(0).default(30),
   currency: z.string().length(3).default("INR"),
   notes: z.string().trim().max(2000).optional(),
-});
+}).strict();
 export type CreateVendorInput = z.infer<typeof createVendorSchema>;
 
 export const updateVendorSchema = createVendorSchema.partial().extend({

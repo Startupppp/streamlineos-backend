@@ -6,6 +6,6 @@ export const invStockLowPayloadSchema = z.object({
   reorderPoint: z.string().nullable(),
   sourceType: z.string().min(1),
   sourceId: z.string().min(1),
-});
+}).strict();
 
 export type InvStockLowPayload = z.infer<typeof invStockLowPayloadSchema>;

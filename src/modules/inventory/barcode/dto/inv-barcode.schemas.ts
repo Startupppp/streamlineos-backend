@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const barcodeLookupSchema = z.object({
   code: z.string().trim().min(1).max(200),
-});
+}).strict();
 export type BarcodeLookupInput = z.infer<typeof barcodeLookupSchema>;
 
 export type BarcodeLookupResult =
