@@ -75,6 +75,23 @@ function seatCount(orgId: string): SQL<number> {
   )::int`;
 }
 
+class UncountableQuotaError extends Error {}
+
+/**
+ * A count is a number or it is nothing. `Number(row?.[col] ?? 0)` collapsed a missing
+ * row, a NULL column and a non-numeric value into `0`, and zero against any limit
+ * allows the write — so one database hiccup lifted every plan limit at once.
+ */
+function readCount(rows: Record<string, unknown>[], column: string): number {
+  const row = rows[0];
+  if (!row) throw new UncountableQuotaError(`no row returned for "${column}"`);
+  const raw = row[column];
+  if (raw === null || raw === undefined) throw new UncountableQuotaError(`"${column}" is missing or null`);
+  const value = Number(raw);
+  if (!Number.isFinite(value)) throw new UncountableQuotaError(`"${column}" is not a number: ${String(raw)}`);
+  return value;
+}
+
 const LIMIT_KEY_LABELS: Record<LimitKey, string> = {
   members: "team members",
   projects: "projects",
@@ -224,29 +241,10 @@ export class PlanLimitsService {
           (SELECT COUNT(*)::int FROM candidates WHERE org_id = ${orgId})                                                                  AS "hrCandidates",
           (SELECT COUNT(*)::int FROM job_postings WHERE org_id = ${orgId})                                                                AS "hrJobPostings"
       `);
-      const row = rows[0];
-      if (!row) {
-        this.logger.error(`Usage count query returned no rows`, { orgId });
-        throw new ServiceUnavailableException("Plan usage could not be determined. The write is refused until usage is verifiable.");
-      }
-      return {
-        members:        Number(row["members"] ?? 0),
-        projects:       Number(row["projects"] ?? 0),
-        kbPages:        Number(row["kbPages"] ?? 0),
-        chatChannels:   Number(row["chatChannels"] ?? 0),
-        crmLeads:       Number(row["crmLeads"] ?? 0),
-        crmContacts:    Number(row["crmContacts"] ?? 0),
-        crmDeals:       Number(row["crmDeals"] ?? 0),
-        supportTickets: Number(row["supportTickets"] ?? 0),
-        automations:    Number(row["automations"] ?? 0),
-        signEnvelopes:  Number(row["signEnvelopes"] ?? 0),
-        surveys:        Number(row["surveys"] ?? 0),
-        acctInvoices:   Number(row["acctInvoices"] ?? 0),
-        hrCandidates:   Number(row["hrCandidates"] ?? 0),
-        hrJobPostings:  Number(row["hrJobPostings"] ?? 0),
-      };
+      const counts = {} as Record<LimitKey, number>;
+      for (const key of Object.keys(LIMIT_KEY_LABELS) as LimitKey[]) counts[key] = readCount(rows, key);
+      return counts;
     } catch (err: unknown) {
-      if (err instanceof ServiceUnavailableException) throw err;
       this.logger.error(`Usage count query failed`, { orgId, cause: err instanceof Error ? err.message : String(err) });
       throw new ServiceUnavailableException("Plan usage could not be determined. The write is refused until usage is verifiable.");
     }
@@ -332,85 +330,85 @@ export class PlanLimitsService {
         const rows = await (executor ?? this.db).execute(sql`
           SELECT ${seatCount(orgId)} AS count
         `);
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
       case "projects": {
         const rows = await this.db.execute(
           sql`SELECT COUNT(*)::int AS count FROM build.projects WHERE org_id = ${orgId}`,
         );
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
       case "kbPages": {
         const rows = await this.db.execute(
           sql`SELECT COUNT(*)::int AS count FROM kb_pages WHERE org_id = ${orgId} AND deleted_at IS NULL`,
         );
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
       case "chatChannels": {
         const rows = await this.db.execute(
           sql`SELECT COUNT(*)::int AS count FROM chat_channels WHERE org_id = ${orgId}`,
         );
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
       case "crmLeads": {
         const rows = await this.db.execute(
           sql`SELECT (${liveCustomerCount(leadPartyMap.partyId, leadPartyMap.organizationId, orgId)}) AS count`,
         );
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
       case "crmContacts": {
         const rows = await this.db.execute(
           sql`SELECT (${liveCustomerCount(contactPartyMap.partyId, contactPartyMap.organizationId, orgId)}) AS count`,
         );
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
       case "crmDeals": {
         const rows = await this.db.execute(
           sql`SELECT COUNT(*)::int AS count FROM deals WHERE org_id = ${orgId}`,
         );
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
       case "supportTickets": {
         const rows = await this.db.execute(
           sql`SELECT COUNT(*)::int AS count FROM support_tickets WHERE org_id = ${orgId}`,
         );
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
       case "automations": {
         const rows = await this.db.execute(
           sql`SELECT COUNT(*)::int AS count FROM automation_rules WHERE org_id = ${orgId}`,
         );
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
       case "signEnvelopes": {
         const rows = await this.db.execute(
           sql`SELECT COUNT(*)::int AS count FROM sign_envelopes WHERE org_id = ${orgId}`,
         );
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
       case "surveys": {
         const rows = await this.db.execute(
           sql`SELECT COUNT(*)::int AS count FROM survey_forms WHERE org_id = ${orgId}`,
         );
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
       case "acctInvoices": {
         const rows = await this.db.execute(
           sql`SELECT COUNT(*)::int AS count FROM invoices WHERE org_id = ${orgId}`,
         );
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
       case "hrCandidates": {
         const rows = await this.db.execute(
           sql`SELECT COUNT(*)::int AS count FROM candidates WHERE org_id = ${orgId}`,
         );
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
       case "hrJobPostings": {
         const rows = await this.db.execute(
           sql`SELECT COUNT(*)::int AS count FROM job_postings WHERE org_id = ${orgId}`,
         );
-        return Number(rows[0]?.["count"] ?? 0);
+        return readCount(rows, "count");
       }
     }
   }

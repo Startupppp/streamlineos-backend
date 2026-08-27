@@ -1,4 +1,5 @@
-﻿import { PaymentRequiredException } from "../../../common/http/api-exceptions";
+﻿import { Logger, ServiceUnavailableException } from "@nestjs/common";
+import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -247,6 +248,177 @@ describe("PlanLimitsService", () => {
       });
       service = await build(mockDb);
       await expect(service.assertWithinLimit("org1", "members", 0)).rejects.toBeInstanceOf(PaymentRequiredException);
+    });
+  });
+
+  describe("assertWithinLimit — a count that cannot be computed refuses the write", () => {
+    const FREE_TIER = [{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }];
+
+    function countReturning(countRows: unknown) {
+      return makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce(FREE_TIER)
+          .mockImplementationOnce(() =>
+            countRows instanceof Error ? Promise.reject(countRows) : Promise.resolve(countRows),
+          ),
+      });
+    }
+
+    it("refuses when the count query throws", async () => {
+      service = await build(countReturning(new Error("connection terminated unexpectedly")));
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+    });
+
+    it("refuses when the count query returns no rows", async () => {
+      service = await build(countReturning([]));
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+    });
+
+    it("refuses when the count column is null", async () => {
+      service = await build(countReturning([{ count: null }]));
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+    });
+
+    it("refuses when the count column is absent from the row", async () => {
+      service = await build(countReturning([{ something_else: 3 }]));
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+    });
+
+    it("refuses when the count is not a number", async () => {
+      service = await build(countReturning([{ count: "not-a-number" }]));
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+    });
+
+    it("refuses every limited resource, not only members", async () => {
+      service = await build(countReturning([]));
+      await expect(service.assertWithinLimit("org1", "kbPages", 1)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+    });
+
+    it("says which count could not be determined", async () => {
+      service = await build(countReturning(new Error("57014 canceling statement due to statement timeout")));
+      await expect(service.assertWithinLimit("org1", "kbPages", 1)).rejects.toThrow(
+        /knowledge base pages count could not be determined/,
+      );
+    });
+
+    it("reports the failure rather than swallowing it", async () => {
+      const logged: unknown[] = [];
+      service = await build(countReturning(new Error("connection terminated unexpectedly")));
+      jest
+        .spyOn(Logger.prototype, "error")
+        .mockImplementation((...args: unknown[]) => void logged.push(args));
+
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+      expect(JSON.stringify(logged)).toContain("connection terminated unexpectedly");
+    });
+
+    it("still refuses when the count is unavailable but the tier resolves to a paid plan", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "STARTER", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([]),
+      });
+      service = await build(mockDb);
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+    });
+
+    it("does not consult the count at all when the plan limit is unlimited", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "PROFESSIONAL", status: "ACTIVE", trial_ends_at: null }])
+          .mockRejectedValueOnce(new Error("connection terminated unexpectedly")),
+      });
+      service = await build(mockDb);
+      await expect(service.assertWithinLimit("org1", "projects", 1)).resolves.toBeUndefined();
+    });
+  });
+
+  describe("getEntitlements — usage stays visible while it is computable", () => {
+    const USAGE_ROW = {
+      members: 3,
+      projects: 1,
+      kbPages: 4,
+      chatChannels: 1,
+      crmLeads: 0,
+      crmContacts: 0,
+      crmDeals: 0,
+      supportTickets: 0,
+      automations: 0,
+      signEnvelopes: 0,
+      surveys: 0,
+      acctInvoices: 0,
+      hrCandidates: 0,
+      hrJobPostings: 0,
+    };
+
+    it("reports what has been consumed against each limit", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([USAGE_ROW]),
+      });
+      service = await build(mockDb);
+      const entitlements = await service.getEntitlements("org1");
+
+      expect(entitlements.plan).toBe("FREE");
+      expect(entitlements.seatLimit).toBe(5);
+      expect(entitlements.limits.members).toEqual({ limit: 5, used: 3 });
+      expect(entitlements.limits.kbPages).toEqual({ limit: 10, used: 4 });
+      expect(entitlements.limits.projects).toEqual({ limit: 2, used: 1 });
+    });
+
+    it("refuses rather than reporting zero usage when the usage query throws", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockRejectedValueOnce(new Error("connection terminated unexpectedly")),
+      });
+      service = await build(mockDb);
+      await expect(service.getEntitlements("org1")).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it("refuses rather than reporting zero usage when a count column is missing", async () => {
+      const { kbPages: _dropped, ...withoutKbPages } = USAGE_ROW;
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([withoutKbPages]),
+      });
+      service = await build(mockDb);
+      await expect(service.getEntitlements("org1")).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it("refuses rather than reporting zero usage when the usage query returns no rows", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([]),
+      });
+      service = await build(mockDb);
+      await expect(service.getEntitlements("org1")).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
   });
 });
