@@ -21,9 +21,14 @@ import { CrmMetadataModule } from "../crm/metadata/crm-metadata.module";
 import { CrmAutomationStudioModule } from "../crm/automation-studio/crm-automation-studio.module";
 import { BillingModule } from "../billing/core/billing.module";
 import { ActivitiesModule } from "../activities/activities.module";
+import { LifecycleModule } from "../lifecycle/lifecycle.module";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, WebhooksModule, CrmMetadataModule, CrmAutomationStudioModule, BillingModule, ActivitiesModule],
+  // `LifecycleModule` is imported, not the other way round: a won deal opens a
+  // customer lifecycle, and nothing in the lifecycle book needs to move a deal.
+  // Reversing the edge would close a cycle Nest could only resolve with a
+  // forwardRef, which this codebase has paid for once already.
+  imports: [NotificationsModule, AutomationModule, WebhooksModule, CrmMetadataModule, CrmAutomationStudioModule, BillingModule, ActivitiesModule, LifecycleModule],
   controllers: [
     DealsAnalyticsController,
     DealsApprovalsController,

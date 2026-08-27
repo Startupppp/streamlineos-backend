@@ -32,3 +32,7 @@ export * from "./automation-studio";
 export * from "./attribution";
 export * from "./data-quality";
 export * from "./issue-records";
+export * from "./lifecycle";
+export * from "./commission";
+export * from "./call-analysis";
+export * from "./reporting";

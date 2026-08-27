@@ -10,6 +10,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
+import type { LifecycleService } from "../lifecycle/lifecycle.service";
 
 function makeMockDb(): Db {
   const updateReturning = jest.fn().mockResolvedValue([
@@ -67,9 +68,15 @@ describe("DealsService – blueprint transition enforcement", () => {
   let mockDb: Db;
   let mockBlueprints: jest.Mocked<Pick<CrmBlueprintsService, "assertTransitionAllowed">>;
   let mockCrmMetadata: jest.Mocked<Pick<CrmMetadataService, "getAggregate">>;
+  let mockLifecycle: jest.Mocked<Pick<LifecycleService, "recordClosedWon">>;
 
   beforeEach(() => {
     mockDb = makeMockDb();
+    mockLifecycle = {
+      recordClosedWon: jest
+        .fn()
+        .mockResolvedValue({ status: "opened", customerLifecycleId: "lc-1" }),
+    };
     mockBlueprints = { assertTransitionAllowed: jest.fn().mockResolvedValue({ allowed: true, requiresApproval: false, missingFields: [] }) };
     mockCrmMetadata = {
       getAggregate: jest.fn().mockResolvedValue({
@@ -97,6 +104,9 @@ describe("DealsService – blueprint transition enforcement", () => {
       {} as unknown as import("./deals-crud.service").DealsCrudService,
       {} as unknown as import("./deals-activities.service").DealsActivitiesService,
       {} as unknown as import("./deals-import-export.service").DealsImportExportService,
+      // The closed-won hook (P5-07). Stubbed rather than omitted so the win path
+      // runs the same code it runs in production, minus the write.
+      mockLifecycle as unknown as LifecycleService,
     );
   });
 
@@ -129,6 +139,73 @@ describe("DealsService – blueprint transition enforcement", () => {
       "PROPOSAL",
       expect.objectContaining({ stage: "PROPOSAL" }),
     );
+  });
+
+  /**
+   * P5-07's reachability, asserted rather than assumed.
+   *
+   * A lifecycle service nothing calls is the failure this repository keeps
+   * producing: written, registered, and reached by no code path. The stage
+   * transition is the only trigger, so this is where the wire has to be proven.
+   */
+  it("opens a customer lifecycle when a deal reaches a won stage", async () => {
+    (mockDb.query.deals.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: 1,
+      orgId: "org1",
+      stage: "PROPOSAL",
+      pipelineId: null,
+      version: null,
+      name: "Test Deal",
+      assignedToId: null,
+    });
+
+    await service.updateDeal("org1", "user1", 1, { stage: "WON" });
+
+    expect(mockLifecycle.recordClosedWon).toHaveBeenCalledTimes(1);
+    expect(mockLifecycle.recordClosedWon).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ organizationId: "org1", dealId: 1 }),
+    );
+  });
+
+  /**
+   * And it is handed the TRANSACTION, not the service's own connection. A
+   * lifecycle written outside the transaction that moved the deal survives that
+   * move being rolled back, which puts recurring revenue in the book for a sale
+   * that never closed.
+   */
+  it("hands the lifecycle the transaction rather than the outer connection", async () => {
+    (mockDb.query.deals.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: 1,
+      orgId: "org1",
+      stage: "PROPOSAL",
+      pipelineId: null,
+      version: null,
+      name: "Test Deal",
+      assignedToId: null,
+    });
+
+    await service.updateDeal("org1", "user1", 1, { stage: "WON" });
+
+    const [handed] = mockLifecycle.recordClosedWon.mock.calls[0]!;
+    expect(handed).not.toBe(mockDb);
+  });
+
+  /** A move that is not a win opens nothing. */
+  it("opens no lifecycle for a stage change that is not a win", async () => {
+    (mockDb.query.deals.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: 1,
+      orgId: "org1",
+      stage: "LEAD",
+      pipelineId: null,
+      version: null,
+      name: "Test Deal",
+      assignedToId: null,
+    });
+
+    await service.updateDeal("org1", "user1", 1, { stage: "PROPOSAL" });
+
+    expect(mockLifecycle.recordClosedWon).not.toHaveBeenCalled();
   });
 
   it("does NOT call assertTransitionAllowed when stage is unchanged", async () => {

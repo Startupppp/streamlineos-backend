@@ -48,6 +48,11 @@ export function buildOrgAdminPermissionKeys(dbCatalog: Set<string>): string[] {
  */
 const MODULE_MEMBER_KEY_SCOPE_OVERRIDE: Record<string, "own" | "team" | "all"> = {
   "sign:envelope:view": "own",
+  // A commission earning is somebody's pay. Without this entry a newly seeded
+  // CRM member would receive the key at "all" while migration 0545 backfills
+  // existing organisations at "own" — divergence by signup date, and in the
+  // direction where the new tenants are the ones leaking salaries.
+  "crm:commission-earnings:view": "own",
 };
 
 /**

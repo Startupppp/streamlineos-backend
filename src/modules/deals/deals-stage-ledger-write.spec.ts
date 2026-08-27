@@ -119,6 +119,9 @@ describe("DealsService — the stage ledger", () => {
       {} as unknown as import("./deals-crud.service").DealsCrudService,
       {} as unknown as import("./deals-activities.service").DealsActivitiesService,
       {} as unknown as import("./deals-import-export.service").DealsImportExportService,
+      // The closed-won hook. Stubbed rather than omitted so the win path in
+      // these cases runs the same code it runs in production, minus the write.
+      { recordClosedWon: jest.fn().mockResolvedValue({ status: "opened", customerLifecycleId: "lc-1" }) } as unknown as import("../lifecycle/lifecycle.service").LifecycleService,
     );
 
     (mockDb.query.deals.findFirst as jest.Mock).mockResolvedValue({
