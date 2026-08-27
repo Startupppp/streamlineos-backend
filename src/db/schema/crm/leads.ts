@@ -70,6 +70,14 @@ export const leadActivities = pgTable("lead_activities", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   leadId: integer("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
+  /**
+  * The party behind this row's legacy id. Ticket 08's expand.
+  *
+  * Beside the old column, not replacing it -- the contract migration removes
+  * the old one once nothing reads it. Kept in step by a trigger, so no writer
+  * has to remember.
+  */
+  leadPartyId: text("lead_party_id"),
   type: text("type").notNull(),
   date: timestamp("date").notNull(),
   duration: integer("duration"),
@@ -91,6 +99,14 @@ export const leadActivities = pgTable("lead_activities", {
 export const leadNotes = pgTable("lead_notes", {
   id: serial("id").primaryKey(),
   leadId: integer("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
+  /**
+  * The party behind this row's legacy id. Ticket 08's expand.
+  *
+  * Beside the old column, not replacing it -- the contract migration removes
+  * the old one once nothing reads it. Kept in step by a trigger, so no writer
+  * has to remember.
+  */
+  leadPartyId: text("lead_party_id"),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   authorId: text("author_id").references(() => users.id).notNull(),
   body: text("body").notNull(),
@@ -104,6 +120,14 @@ export const leadNotes = pgTable("lead_notes", {
 export const leadTasks = pgTable("lead_tasks", {
   id: serial("id").primaryKey(),
   leadId: integer("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
+  /**
+  * The party behind this row's legacy id. Ticket 08's expand.
+  *
+  * Beside the old column, not replacing it -- the contract migration removes
+  * the old one once nothing reads it. Kept in step by a trigger, so no writer
+  * has to remember.
+  */
+  leadPartyId: text("lead_party_id"),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   dueDate: date("due_date"),
@@ -119,6 +143,14 @@ export const leadTasks = pgTable("lead_tasks", {
 export const leadEmails = pgTable("lead_emails", {
   id: serial("id").primaryKey(),
   leadId: integer("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
+  /**
+  * The party behind this row's legacy id. Ticket 08's expand.
+  *
+  * Beside the old column, not replacing it -- the contract migration removes
+  * the old one once nothing reads it. Kept in step by a trigger, so no writer
+  * has to remember.
+  */
+  leadPartyId: text("lead_party_id"),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   direction: leadEmailDirectionEnum("direction").notNull(),
   subject: text("subject"),

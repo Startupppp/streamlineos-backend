@@ -42,3 +42,55 @@ export async function partyNamesFor(
 
   return new Map(rows.map((row) => [row.partyId, row.name]));
 }
+
+
+/**
+ * A party, in the shape callers of `client: true` were reading.
+ *
+ * Ticket 08. Two detail paths -- an invoice and a sales order -- pulled the
+ * whole `clients` row through a relational include. Measured against what is
+ * actually consumed, that is `name`, `status`, and in one place `leadId`.
+ *
+ * `leadId` is deliberately absent rather than mapped. Conversion **collapses a
+ * lead and a client onto one party** (`lead-conversion.service.ts`), so after
+ * the legacy tables go the question "which lead did this client come from" is
+ * answered by the party being the same party. A field that pointed at a dropped
+ * table would be a null that looks like an answer.
+ *
+ * Returned as a Map keyed by party id, for the same reason `partyNamesFor` is:
+ * every caller joins these onto rows it already holds.
+ */
+export interface ClientShapedParty {
+  readonly partyId: string;
+  readonly name: string;
+  readonly status: string | null;
+  readonly email: string | null;
+  readonly phone: string | null;
+}
+
+export async function clientShapedParties(
+  db: Db | TenantTx,
+  organizationId: string,
+  partyIds: readonly (string | null | undefined)[],
+): Promise<Map<string, ClientShapedParty>> {
+  const ids = [...new Set(partyIds.filter((id): id is string => Boolean(id)))];
+  if (ids.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      partyId: businessParties.partyId,
+      name: businessParties.name,
+      status: businessParties.status,
+      email: businessParties.email,
+      phone: businessParties.phone,
+    })
+    .from(businessParties)
+    .where(
+      and(
+        eq(businessParties.organizationId, organizationId),
+        inArray(businessParties.partyId, ids),
+      ),
+    );
+
+  return new Map(rows.map((row) => [row.partyId, row]));
+}

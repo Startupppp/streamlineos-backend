@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { partyNamesFor } from "../../party/party-names";
+import { clientShapedParties, partyNamesFor } from "../../party/party-names";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import {
@@ -134,7 +134,6 @@ export class SoCoreService {
     const so = await this.db.query.invSalesOrders.findFirst({
       where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
       with: {
-        client: true,
         warehouse: true,
         invoice: true,
         creator: { columns: { id: true, name: true } },
@@ -148,7 +147,21 @@ export class SoCoreService {
       },
     });
     if (!so) throw new NotFoundException("Sales order not found");
-    return so;
+
+    // Ticket 08: the customer from Party, in the shape `client: true` returned.
+    const parties = await clientShapedParties(this.db, orgId, [so.clientPartyId]);
+    const party = so.clientPartyId ? parties.get(so.clientPartyId) : undefined;
+    const client = so.clientId
+      ? {
+          id: so.clientId,
+          name: party?.name ?? null,
+          status: party?.status ?? null,
+          email: party?.email ?? null,
+          phone: party?.phone ?? null,
+        }
+      : null;
+
+    return { ...so, client };
   }
 
   async createSo(orgId: string, userId: string, data: CreateSoInput) {

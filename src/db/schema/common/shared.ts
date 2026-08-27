@@ -232,6 +232,14 @@ export const calendarEvents = pgTable("calendar_events", {
   postMeetingNotes: text("post_meeting_notes"),
   linkedDealId: integer("linked_deal_id"),
   linkedLeadId: integer("linked_lead_id"),
+  /**
+  * The party behind this row's legacy id. Ticket 08's expand.
+  *
+  * Beside the old column, not replacing it -- the contract migration removes
+  * the old one once nothing reads it. Kept in step by a trigger, so no writer
+  * has to remember.
+  */
+  linkedLeadPartyId: text("linked_lead_party_id"),
   rrule: text("rrule"),
   recurrenceEnd: timestamp("recurrence_end", { withTimezone: true }),
   reminder15MinSent: boolean("reminder_15min_sent").default(false).notNull(),

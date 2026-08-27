@@ -8,6 +8,14 @@ export const crmLeadTouchpoints = pgTable("crm_lead_touchpoints", {
   id: uuid("id").primaryKey().defaultRandom(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   leadId: integer("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
+  /**
+  * The party behind this row's legacy id. Ticket 08's expand.
+  *
+  * Beside the old column, not replacing it -- the contract migration removes
+  * the old one once nothing reads it. Kept in step by a trigger, so no writer
+  * has to remember.
+  */
+  leadPartyId: text("lead_party_id"),
   campaignId: integer("campaign_id").references(() => crmCampaigns.id, { onDelete: "set null" }),
   sourceKey: text("source_key").notNull(),
   medium: text("medium"),

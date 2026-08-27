@@ -43,6 +43,14 @@ export const clientAccounts = pgTable("client_accounts", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   branchId: text("branch_id").references(() => orgUnits.id, { onDelete: "set null" }),
   leadId: integer("lead_id").notNull().references(() => leads.id),
+  /**
+  * The party behind this row's legacy id. Ticket 08's expand.
+  *
+  * Beside the old column, not replacing it -- the contract migration removes
+  * the old one once nothing reads it. Kept in step by a trigger, so no writer
+  * has to remember.
+  */
+  leadPartyId: text("lead_party_id"),
   salesRepId: text("sales_rep_id").notNull().references(() => users.id),
   assignedCrmId: text("assigned_crm_id").references(() => users.id),
   clientName: text("client_name").notNull(),

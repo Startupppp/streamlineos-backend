@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { partyNamesFor } from "../party/party-names";
+import { clientShapedParties, partyNamesFor } from "../party/party-names";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { invoices, payments } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -91,11 +91,10 @@ export class InvoicesService {
     );
   }
 
-  getInvoice(orgId: string, invoiceId: number) {
-    return this.db.query.invoices.findFirst({
+  async getInvoice(orgId: string, invoiceId: number) {
+    const invoice = await this.db.query.invoices.findFirst({
       where: and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)),
       with: {
-        client: true,
         project: { columns: { id: true, name: true } },
         creator: { columns: { id: true, name: true } },
         payments: {
@@ -104,6 +103,31 @@ export class InvoicesService {
         },
       },
     });
+    if (!invoice) return invoice ?? null;
+
+    /**
+     * The customer from Party. Ticket 08.
+     *
+     * This read used to be `client: true` -- the whole legacy row. Measured
+     * against what callers consume, that is the name, the status and the
+     * contact details, all of which Party holds. `client.id` is still the
+     * legacy identifier, so nothing downstream has to change.
+     */
+    const parties = await clientShapedParties(this.db, orgId, [invoice.clientPartyId]);
+    const party = invoice.clientPartyId ? parties.get(invoice.clientPartyId) : undefined;
+
+    return {
+      ...invoice,
+      client: invoice.clientId
+        ? {
+            id: invoice.clientId,
+            name: party?.name ?? null,
+            status: party?.status ?? null,
+            email: party?.email ?? null,
+            phone: party?.phone ?? null,
+          }
+        : null,
+    };
   }
 
   getInvoicePayments(orgId: string, invoiceId: number) {
