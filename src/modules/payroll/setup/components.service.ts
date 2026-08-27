@@ -5,13 +5,14 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq, ilike, or, SQL } from "drizzle-orm";
+import { SQL, and, count, eq, getTableColumns, ilike, or } from "drizzle-orm";
 import { salaryComponents, employeeSalaryProfileComponents } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { validateFormula } from "./lib/template-preview";
 import type { ListComponentsInput, CreateComponentInput, UpdateComponentInput } from "./dto/setup.schemas";
+import { resolveWindowedTotal, totalOverWindow, withoutTotal } from "../../../common/pagination/window-count";
 
 type ComponentRow = typeof salaryComponents.$inferSelect;
 
@@ -40,20 +41,23 @@ export class PayrollComponentsService {
     const where = and(...filters);
     const offset = (input.page - 1) * input.pageSize;
 
-    const items = await this.db
-      .select()
+    const rows = await this.db
+      .select({ ...getTableColumns(salaryComponents), total: totalOverWindow })
       .from(salaryComponents)
       .where(where)
       .orderBy(salaryComponents.sortOrder, salaryComponents.name)
       .limit(input.pageSize)
       .offset(offset);
 
-    const [totalRow] = await this.db
-      .select({ total: count() })
-      .from(salaryComponents)
-      .where(where);
+    const total = await resolveWindowedTotal(rows, offset, async () => {
+      const [totalRow] = await this.db
+        .select({ total: count() })
+        .from(salaryComponents)
+        .where(where);
+      return Number(totalRow?.total ?? 0);
+    });
 
-    return { items, total: totalRow?.total ?? 0 };
+    return { items: withoutTotal(rows), total };
   }
 
   async create(u: CurrentUserContext, input: CreateComponentInput): Promise<ComponentRow> {

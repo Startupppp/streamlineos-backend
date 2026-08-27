@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, ilike, isNull, or, sql, SQL } from "drizzle-orm";
+import { SQL, and, eq, getTableColumns, ilike, isNull, or, sql } from "drizzle-orm";
 import { payrollTemplates } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -13,6 +13,7 @@ import { computeTemplatePreview } from "./lib/template-preview";
 import type { ListTemplatesInput, TemplatePreviewInput, DuplicateTemplateInput } from "./dto/setup.schemas";
 import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import type { TemplateComponentDef, PayrollToggles } from "../payroll.types";
+import { resolveWindowedTotal, totalOverWindow, withoutTotal } from "../../../common/pagination/window-count";
 
 type TemplateRow = typeof payrollTemplates.$inferSelect;
 
@@ -112,23 +113,26 @@ export class PayrollTemplatesService {
     const offset = (input.page - 1) * input.pageSize;
 
     const rows = await this.db
-      .select()
+      .select({ ...getTableColumns(payrollTemplates), total: totalOverWindow })
       .from(payrollTemplates)
       .where(where)
       .limit(input.pageSize)
       .offset(offset);
 
-    const [countRow] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(payrollTemplates)
-      .where(where);
+    const total = await resolveWindowedTotal(rows, offset, async () => {
+      const [countRow] = await this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(payrollTemplates)
+        .where(where);
+      return Number(countRow?.count ?? 0);
+    });
 
-    const items = rows.map((row) => ({
+    const items = withoutTotal(rows).map((row) => ({
       ...row,
       isRecommended: this.computeIsRecommended(row, input.country),
     }));
 
-    return { items, total: Number(countRow?.count ?? 0) };
+    return { items, total };
   }
 
   async getById(orgId: string, templateId: number): Promise<TemplateRow> {
