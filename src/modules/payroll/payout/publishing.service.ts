@@ -22,13 +22,13 @@ import {
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
-import { EmailService } from "../../email/email.service";
 import { AccessService } from "../../access/access.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { logger } from "../../../common/logger/logger.service";
 import { generatePayslipPdf } from "../hr-payroll/lib/payslip-pdf";
 import { buildPayslipPdfData } from "./lib/payslip-renderer";
 import { getPayslipEmailTemplate } from "../../email/templates/payroll";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import {
   filterPayeesByRunEmployeeIds,
   filterPayeesBySubjectKeys,
@@ -62,7 +62,7 @@ export class PublishingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly storage: StorageService,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly access: AccessService,
     private readonly notifications: PayrollNotificationsService,
   ) {}
@@ -243,13 +243,7 @@ export class PublishingService {
       const wasAlreadyPublished = priorStatusByRunEmployee.get(payee.runEmployeeId) === "PUBLISHED";
       if (pubStatus === "PUBLISHED") {
         published++;
-        if (upsertedPub && !wasAlreadyPublished && payee.subject.userId) {
-          await this.notifications
-            .notifyPayslipPublished(orgId, payee.subject.userId, upsertedPub.id, run.month)
-            .catch((e: unknown) => logger.error("notifyPayslipPublished failed", { error: e }));
-        }
-
-        if (!wasAlreadyPublished && emailPayslips && payee.email && renderedPdfBuffer) {
+        if (upsertedPub && !wasAlreadyPublished && payee.subject.userId && emailPayslips && payee.email && renderedPdfBuffer) {
           try {
             const monthLabel = fmtMonthYear(run.month);
             // SEC-007: the net figure stays in the attached PDF. It is no longer
@@ -259,17 +253,21 @@ export class PublishingService {
               month: monthLabel,
               orgName,
             });
-            void this.email.sendEmail({
-              to: payee.email,
-              subject: emailTemplate.subject,
-              html: emailTemplate.html,
-              attachments: [
-                {
-                  filename: `payslip-${monthLabel.replace(" ", "-")}.pdf`,
-                  content: renderedPdfBuffer,
-                  type: "application/pdf",
-                },
-              ],
+            await this.dispatch.emit({
+              orgId,
+              eventKey: "payroll.payslip.ready",
+              targetUserIds: [payee.subject.userId],
+              title: emailTemplate.subject,
+              message: `Your payslip for ${monthLabel} is ready to download.`,
+              link: "/payroll/me/payslips",
+              emailHtml: emailTemplate.html,
+              attachments: [{
+                filename: `payslip-${monthLabel.replace(" ", "-")}.pdf`,
+                contentBase64: renderedPdfBuffer.toString("base64"),
+                type: "application/pdf",
+              }],
+              dedupeKey: `payslip-publication:${upsertedPub.id}`,
+              metadata: { publicationId: upsertedPub.id, runId, month: run.month },
             });
           } catch (error) {
             logger.warn("Payslip publication email failed", {
@@ -279,6 +277,10 @@ export class PublishingService {
               error,
             });
           }
+        } else if (upsertedPub && !wasAlreadyPublished && payee.subject.userId) {
+          await this.notifications
+            .notifyPayslipPublished(orgId, payee.subject.userId, upsertedPub.id, run.month)
+            .catch((e: unknown) => logger.error("notifyPayslipPublished failed", { error: e }));
         }
       } else {
         logger.error("Payslip publication failed", {

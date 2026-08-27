@@ -23,6 +23,12 @@ import { IMPLEMENTED_VISIBILITY_RESOURCE_KINDS } from "./notification-visibility
 const FAN_OUT_ON_READ_EVENTS = new Set<string>(["notification.broadcast.published"]);
 
 describe("notification event catalog integrity", () => {
+  it("declares events used by migrated cron and payroll callers", () => {
+    expect(NOTIFICATION_EVENT_MAP.has("billing.trial.expiring")).toBe(true);
+    expect(NOTIFICATION_EVENT_MAP.has("system.weekly_recap")).toBe(true);
+    expect(NOTIFICATION_EVENT_MAP.has("payroll.payslip.ready")).toBe(true);
+  });
+
   it("declares every category as a member of the notification_category pgEnum", () => {
     const valid = new Set<string>(notificationCategoryEnum.enumValues);
     const offenders = NOTIFICATION_EVENT_CATALOG.filter((d) => !valid.has(d.category)).map(

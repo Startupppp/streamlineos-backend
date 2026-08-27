@@ -3,7 +3,7 @@ import { OrgSetupService } from "../org-setup.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { OnboardingSessionService } from "../../../hr/onboarding/flow/onboarding-session.service";
-import { EmailService } from "../../../email/email.service";
+import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { ModuleChecklistService } from "../../../hr/onboarding/flow/module-checklist.service";
@@ -128,7 +128,7 @@ async function buildService(db: unknown) {
         },
       },
       { provide: ModuleChecklistService, useValue: { ensureChecklistsForModules: jest.fn().mockResolvedValue(undefined) } },
-      { provide: EmailService, useValue: { sendWelcomeEmail: jest.fn().mockResolvedValue(undefined) } },
+      { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
     ],
   }).compile();
   return moduleRef.get(OrgSetupService);

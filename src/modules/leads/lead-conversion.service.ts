@@ -13,9 +13,6 @@ import type { TenantTx } from "../../db/drizzle.types";
 import { logger } from "../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { AccessService } from "../access/access.service";
-import { EmailService } from "../email/email.service";
-import { appUrl } from "../email/app-url";
-import { getLeadStatusChangeEmailTemplate } from "../email/templates/crm";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import type { TransitionLeadStatusInput } from "./dto/lead-mutations.schemas";
 import { updateMirroredLeads } from "../party/party-legacy-leads";
@@ -39,7 +36,6 @@ export class LeadConversionService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly dispatch: NotificationDispatchService,
-    private readonly email: EmailService,
     private readonly merges: PartyMergeService,
   ) {}
 
@@ -339,39 +335,6 @@ export class LeadConversionService {
           link: `/crm/clients`,
         });
 
-      const salesRepId = lead.assignedToId || userId;
-      const idsToFetch = [...new Set([salesRepId, ...(crmAssigneeId ? [crmAssigneeId] : [])])];
-      const userRows = await this.db
-        .select({ id: users.id, email: users.email, name: users.name })
-        .from(users)
-        .where(inArray(users.id, idsToFetch));
-      const userMap = new Map(userRows.map((u) => [u.id, u]));
-
-      const salesRep = userMap.get(salesRepId);
-      if (salesRep?.email) {
-        const { subject, html } = getLeadStatusChangeEmailTemplate({
-          recipientName: salesRep.name ?? "Team Member",
-          leadName: lead.name,
-          fromStatus: null,
-          toStatus: "Converted",
-          leadUrl: `${appUrl()}/crm/clients`,
-        });
-        await this.email.sendEmail({ to: salesRep.email, subject, html });
-      }
-
-      if (crmAssigneeId) {
-        const crmUser = userMap.get(crmAssigneeId);
-        if (crmUser?.email) {
-          const { subject, html } = getLeadStatusChangeEmailTemplate({
-            recipientName: crmUser.name ?? "Team Member",
-            leadName: lead.name,
-            fromStatus: null,
-            toStatus: "Converted",
-            leadUrl: `${appUrl()}/crm/clients`,
-          });
-          await this.email.sendEmail({ to: crmUser.email, subject, html });
-        }
-      }
     } catch (err) {
       logSideEffectFailure("conversion notification emails", { orgId, leadId: lead.id })(err);
       return;

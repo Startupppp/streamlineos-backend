@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import {
   helpdeskTickets,
   hrHelpdeskComments,
@@ -16,7 +16,7 @@ import {
 import { AccessService } from "../../access/access.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { EmailService } from "../../email/email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type {
   AddCommentInput,
   CreateInput,
@@ -30,7 +30,7 @@ import type {
 export class HrHelpdeskService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly access: AccessService,
   ) {}
 
@@ -327,26 +327,16 @@ export class HrHelpdeskService {
 
     if (hrMemberRows.length === 0) return;
 
-    const hrUsers = await this.db
-      .select({ email: users.email, name: users.name })
-      .from(users)
-      .where(inArray(users.id, hrMemberRows.map((m) => m.userId)));
-
     const creatorName = creator?.name ?? "Employee";
-
-    await Promise.all(
-      hrUsers
-        .filter((u): u is { email: string; name: string | null } => u.email !== null)
-        .map((u) =>
-          this.email.sendHelpdeskTicketEmail(
-            u.email,
-            u.name ?? "HR",
-            ticketTitle,
-            category,
-            priority,
-            creatorName,
-          ),
-        ),
-    );
+    await this.dispatch.emit({
+      eventKey: "hr.helpdesk.ticket_created",
+      orgId,
+      actorUserId: creatorId,
+      targetUserIds: hrMemberRows.map((m) => m.userId),
+      entityType: "helpdesk_ticket",
+      title: ticketTitle,
+      message: `${creatorName} created a ${priority} HR helpdesk ticket in ${category}.`,
+      variables: { ticketTitle, category, priority, creatorName },
+    });
   }
 }

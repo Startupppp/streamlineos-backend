@@ -4,14 +4,14 @@ import { holidays, organizationMembers, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
-import { EmailService } from "../../email/email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CreateHolidayInput, UpdateHolidayInput } from "./dto/holidays.schemas";
 
 @Injectable()
 export class HrHolidaysService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   listByYear(orgId: string, year: number) {
@@ -64,7 +64,7 @@ export class HrHolidaysService {
       isPublic: input.isPublic ?? false,
     });
 
-    void this.announceHoliday(orgId, input.name, input.date, input.message);
+    void this.announceHoliday(orgId, undefined, input.name, input.date, input.message);
 
     return { ok: true };
   }
@@ -85,6 +85,7 @@ export class HrHolidaysService {
 
   private async announceHoliday(
     orgId: string,
+    holidayId: number | undefined,
     name: string,
     date: string,
     message?: string,
@@ -97,7 +98,7 @@ export class HrHolidaysService {
       if (memberIds.length === 0) return;
 
       const activeUsers = await this.db
-        .select({ email: users.email })
+        .select({ id: users.id })
         .from(users)
         .where(
           and(
@@ -109,9 +110,17 @@ export class HrHolidaysService {
           ),
         );
 
-      const emails = activeUsers.map((u) => u.email).filter(Boolean);
-      if (emails.length > 0) {
-        await this.email.sendBulkHolidayAnnouncement(emails, name, date, message);
+      if (activeUsers.length > 0) {
+        await this.dispatch.emit({
+          eventKey: "hr.holiday.announced",
+          orgId,
+          targetUserIds: activeUsers.map((u) => u.id),
+          entityType: "holiday",
+          entityId: holidayId ? String(holidayId) : undefined,
+          title: name,
+          message: message ?? `Holiday on ${date}`,
+          variables: { holidayName: name, date, message: message ?? null },
+        });
       }
     } catch (error) {
       logger.error("Failed to send holiday announcement", { orgId, error });

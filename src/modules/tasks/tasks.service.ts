@@ -135,6 +135,7 @@ export class TasksService {
         : undefined;
       void this.notifications
         .notifyAssignee({
+          orgId,
           assigneeId: created.assigneeId,
           actorId: userId,
           title: created.title,
@@ -189,6 +190,7 @@ export class TasksService {
     ) {
       void this.notifications
         .notifyAssignee({
+          orgId,
           assigneeId: input.assigneeId,
           actorId: userId,
           title: updated.title,

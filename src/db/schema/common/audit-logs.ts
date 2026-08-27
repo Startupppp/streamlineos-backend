@@ -33,7 +33,7 @@ export const auditLogs = pgTable(
   (table) => [
     check(
       "chk_audit_logs_tenant_or_platform",
-      sql`${table.orgId} IS NOT NULL OR ${table.isPlatformEvent} = true`,
+      sql`(${table.orgId} IS NULL) = ${table.isPlatformEvent}`,
     ),
     index("idx_audit_logs_user_id").on(table.userId),
     index("idx_audit_logs_org_id").on(table.orgId),

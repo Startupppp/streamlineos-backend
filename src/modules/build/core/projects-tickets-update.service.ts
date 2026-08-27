@@ -16,7 +16,7 @@ import { logger } from "../../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ProjectsEmailService } from "./projects-email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { ProjectsActivityService } from "./projects-activity.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
@@ -32,7 +32,7 @@ import { computeNextRunAt } from "./projects-recurrence.util";
 export class ProjectsTicketsUpdateService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly projectsEmail: ProjectsEmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly activity: ProjectsActivityService,
     private readonly query: ProjectsTicketsQueryService,
     private readonly read: ProjectsTicketsReadService,
@@ -150,6 +150,7 @@ export class ProjectsTicketsUpdateService {
         sprintId: true,
         dueDate: true,
         projectId: true,
+        reporterId: true,
         updatedAt: true,
         points: true,
         type: true,
@@ -293,9 +294,23 @@ export class ProjectsTicketsUpdateService {
       );
 
     if (input.status === "IN_REVIEW" || input.status === "CHANGES_REQUESTED") {
-      void this.projectsEmail
-        .notifyStatusReview(ticketId, actingUserId, input.status)
-        .catch(logSideEffectFailure("review status email", { ticketId }));
+      const reviewTarget = input.status === "IN_REVIEW" ? before.reporterId : before.assigneeId;
+      if (reviewTarget) {
+        void this.dispatch.emit({
+          eventKey: input.status === "IN_REVIEW"
+            ? "build.ticket.review_requested"
+            : "build.ticket.changes_requested",
+          orgId,
+          actorUserId: actingUserId,
+          targetUserIds: [reviewTarget],
+          entityType: "ticket",
+          entityId: String(ticketId),
+          title: input.status === "IN_REVIEW" ? "Ticket ready for review" : "Changes requested on your ticket",
+          message: `Ticket "${before.title}" changed to ${input.status}.`,
+          link: `/projects/${before.projectId}/tickets/${ticketId}`,
+          variables: { ticketId, status: input.status, title: before.title },
+        }).catch(logSideEffectFailure("review notification", { ticketId }));
+      }
     }
 
     const ticketProjectId = before.projectId;

@@ -388,6 +388,7 @@ export class NotificationRoutingService {
     userIds: string[],
     definition: NotificationEventDefinition,
     priority: NotificationPriority,
+    channels?: NotificationChannel[],
   ): Promise<Map<string, RoutingResult>> {
     const results = new Map<string, RoutingResult>();
     if (userIds.length === 0) return results;
@@ -421,13 +422,16 @@ export class NotificationRoutingService {
       else rulesByUser.set(rule.userId, [rule]);
     }
     const tzByUser = new Map(tzRows.map((r) => [r.userId, r.timezone]));
-    const suppressionByUser = await this.loadSuppressionBatch(orgId, userIds, definition);
-    await this.applyRateLimitsBatch(orgId, userIds, definition, suppressionByUser);
+    const routingDefinition = channels
+      ? { ...definition, defaultChannels: channels, allowedChannels: channels }
+      : definition;
+    const suppressionByUser = await this.loadSuppressionBatch(orgId, userIds, routingDefinition);
+    await this.applyRateLimitsBatch(orgId, userIds, routingDefinition, suppressionByUser);
 
     const now = new Date();
     for (const userId of userIds) {
       const result = computeRouting({
-        definition,
+        definition: routingDefinition,
         priority,
         now,
         prefs: this.resolvePrefs(prefsByUser.get(userId), tzByUser.get(userId), rulesByUser.get(userId) ?? []),

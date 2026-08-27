@@ -181,6 +181,7 @@ export class SupportTicketMessagesService {
     if (!input.isInternal && userId) {
       void this.notifications
         .sendReplyEmail(
+          orgId,
           { title: ticket.title, createdBy: ticket.createdBy, assigneeId: ticket.assigneeId },
           ticketId,
           userId,

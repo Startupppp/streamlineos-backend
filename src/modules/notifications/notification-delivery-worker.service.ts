@@ -270,7 +270,13 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
 
     const { delivery, sandbox, attempt, provider } = preflight;
 
-    const meta = (delivery.metadata as { title?: string; message?: string; link?: string | null } | null) ?? {};
+    const meta = (delivery.metadata as {
+      title?: string;
+      message?: string;
+      link?: string | null;
+      emailHtml?: string;
+      attachments?: Array<{ filename: string; contentBase64: string; type: string }>;
+    } | null) ?? {};
     // COMP-002: resolved from the catalog rather than stored on the delivery row, so
     // it always reflects the event's current mandatory flag. An unknown key is treated
     // as mandatory — the conservative direction, since the cost of wrongly omitting an
@@ -310,6 +316,7 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
       link: meta.link ?? null,
       priority: delivery.priority,
       sandbox,
+      metadata: delivery.metadata ?? undefined,
     });
 
     if (sendResult.status === "SENT") this.breaker.recordSuccess(delivery.orgId, delivery.channel);

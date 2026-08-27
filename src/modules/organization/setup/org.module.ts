@@ -5,9 +5,10 @@ import { OrgSetupService } from "./org-setup.service";
 import { AnnouncementsController } from "./announcements.controller";
 import { AnnouncementsService } from "./announcements.service";
 import { OnboardingFlowModule } from "../../hr/onboarding/flow/onboarding-flow.module";
+import { NotificationsModule } from "../../notifications/notifications.module";
 
 @Module({
-  imports: [OnboardingFlowModule],
+  imports: [OnboardingFlowModule, NotificationsModule],
   controllers: [OrgController, AnnouncementsController],
   providers: [OrgMembersService, OrgSetupService, AnnouncementsService],
 })

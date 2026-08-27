@@ -10,7 +10,6 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { EmailService } from "../email/email.service";
 import { appUrl } from "../email/app-url";
 import { logger } from "../../common/logger/logger.service";
 import { AiCreditsService } from "../billing/core/ai-credits.service";
@@ -37,7 +36,6 @@ interface DunningMeta {
 export class CronBillingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly email: EmailService,
     private readonly aiCredits: AiCreditsService,
     private readonly planLimits: PlanLimitsService,
     private readonly revenue: RevenueAnalyticsService,
@@ -75,7 +73,7 @@ export class CronBillingService {
       }
 
       const ownerRows = await tx
-        .select({ email: users.email, orgName: organizations.name })
+        .select({ userId: users.id, email: users.email, orgName: organizations.name })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .innerJoin(organizations, eq(organizationMembers.orgId, organizations.id))
@@ -88,7 +86,7 @@ export class CronBillingService {
         )
         .limit(1);
       const owner = ownerRows[0];
-      if (!owner?.email) return;
+      if (!owner?.email || !owner.userId) return;
 
       for (const days of REMINDER_DAYS) {
         const windowStart = new Date(now);
@@ -112,8 +110,16 @@ export class CronBillingService {
 
         if (soonExpiring.length === 0) continue;
 
-        await this.email
-          .sendTrialReminderEmail(owner.email, owner.orgName ?? "Your Organization", days, `${appUrl()}/billing?tab=plan`)
+        await this.dispatch
+          .emit({
+            orgId,
+            eventKey: "billing.trial.expiring",
+            targetUserIds: [owner.userId],
+            title: `Your trial ends in ${days} day${days === 1 ? "" : "s"}`,
+            message: `Your ${owner.orgName ?? "organization"} trial is ending soon. Update your plan to keep access to your workspace.`,
+            link: `${appUrl()}/billing?tab=plan`,
+            dedupeKey: `trial-expiry:${now.toISOString().slice(0, 10)}:${days}`,
+          })
           .catch((err: unknown) => logger.warn("[billing-cron] email send failed", { err }));
         reminded++;
       }

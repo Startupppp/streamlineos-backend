@@ -16,6 +16,7 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { EmailService } from "../email/email.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { AutomationService } from "../automation/automation.service";
 import { AccessService } from "../access/access.service";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
@@ -65,6 +66,7 @@ export class ExpensesWriteService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly automation: AutomationService,
     private readonly access: AccessService,
   ) {}
@@ -417,25 +419,17 @@ export class ExpensesWriteService {
       const approvers = await this.access.membersWithPermission(orgId, "hr:expenses:approve");
       if (approvers.length === 0) return;
 
-      const hrUsers = await this.db.query.users.findMany({
-        where: (u, { inArray: inArr }) => inArr(u.id, approvers.map((m) => m.userId)),
-        columns: { email: true, name: true },
+      await this.dispatch.emit({
+        eventKey: "accounting.expense.submitted",
+        orgId,
+        actorUserId: userId,
+        targetUserIds: approvers.map((approver) => approver.userId),
+        entityType: "expense",
+        entityId: String(expenseId),
+        title: "Expense submitted for approval",
+        message: `${actorName ?? "An employee"} submitted ${body.category} for ${body.amount}.`,
+        variables: { employeeName: actorName ?? "Employee", amount: body.amount.toString(), category: body.category, description: body.description ?? "" },
       });
-
-      await Promise.all(
-        hrUsers
-          .filter((hr) => hr.email)
-          .map((hr) =>
-            this.email.sendExpenseSubmittedEmail(
-              hr.email,
-              hr.name ?? "HR",
-              actorName ?? "Employee",
-              body.category,
-              body.amount.toString(),
-              body.description ?? "",
-            ),
-          ),
-      );
     } catch (err: unknown) {
       logSideEffectFailure("expense submitted notification", { orgId, expenseId })(err);
       return;
@@ -455,42 +449,23 @@ export class ExpensesWriteService {
       });
       if (!expenseRow?.userId) return;
 
-      const [employee, approver] = await Promise.all([
-        this.db.query.users.findFirst({
-          where: eq(users.id, expenseRow.userId),
-          columns: { email: true, name: true },
-        }),
-        this.db.query.users.findFirst({
-          where: eq(users.id, u.userId),
-          columns: { name: true },
-        }),
-      ]);
-      if (!employee?.email) return;
-
-      const employeeName = employee.name ?? "Employee";
-      const approverName = approver?.name ?? "Admin";
       const { amount, category } = expenseRow;
-
-      if (status === "APPROVED") {
-        await this.email.sendExpenseApprovedEmail(
-          employee.email,
-          employeeName,
-          category,
-          amount,
-          approverName,
-        );
-      } else if (status === "REJECTED") {
-        await this.email.sendExpenseRejectedEmail(
-          employee.email,
-          employeeName,
-          category,
-          amount,
-          approverName,
-          rejectionReason ?? "No reason provided",
-        );
-      } else if (status === "PAID") {
-        await this.email.sendExpensePaidEmail(employee.email, employeeName, category, amount);
-      }
+      const eventKey = status === "APPROVED"
+        ? "accounting.expense.approved"
+        : status === "REJECTED"
+          ? "accounting.expense.rejected"
+          : "accounting.reimbursement.paid";
+      await this.dispatch.emit({
+        eventKey,
+        orgId: u.orgId,
+        actorUserId: u.userId,
+        targetUserIds: [expenseRow.userId],
+        entityType: "expense",
+        entityId: String(expenseId),
+        title: status === "PAID" ? "Expense reimbursement paid" : `Expense ${status.toLowerCase()}`,
+        message: status === "REJECTED" ? `Your ${category} expense was rejected: ${rejectionReason ?? "No reason provided"}` : `Your ${category} expense was ${status === "PAID" ? "paid" : status.toLowerCase()}.`,
+        variables: { amount, category, rejectionReason },
+      });
     } catch (err: unknown) {
       logSideEffectFailure("expense decision notification", { orgId: u.orgId, expenseId })(err);
       return;

@@ -13,11 +13,12 @@ import { businessParties, leadPartyMap } from "../../db/schema/party";
 import { PARTY_OF_LEAD, leadStatus } from "../crm/crm-party-reads";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { EmailService } from "../email/email.service";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { getWeeklyRecapEmailTemplate } from "../email/templates/reports";
+import { appUrl } from "../email/app-url";
 import { logger } from "../../common/logger/logger.service";
 import { forEachOrg } from "../../common/tenant";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
 interface RecapData {
   orgId: string;
@@ -37,7 +38,7 @@ interface RecapData {
 export class CronWeeklyRecapService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly gateway: AiGatewayService,
   ) {}
 
@@ -59,7 +60,7 @@ export class CronWeeklyRecapService {
         if (!orgRow) return;
 
         const owners = await tx
-          .select({ email: users.email, name: users.name })
+          .select({ userId: users.id, email: users.email, name: users.name })
           .from(organizationMembers)
           .innerJoin(users, eq(users.id, organizationMembers.userId))
           .where(
@@ -223,11 +224,16 @@ export class CronWeeklyRecapService {
         });
 
         for (const owner of owners) {
-          if (!owner.email) continue;
-          await this.email.sendEmail({
-            to: owner.email,
-            subject: `Your week at ${orgRow.name} — ${weekRange}`,
-            html,
+          if (!owner.email || !owner.userId) continue;
+          await this.dispatch.emit({
+            orgId,
+            eventKey: "system.weekly_recap",
+            targetUserIds: [owner.userId],
+            title: `Your week at ${orgRow.name} — ${weekRange}`,
+            message: aiNarrative || "Your weekly executive recap is ready.",
+            link: `${appUrl()}/dashboard`,
+            emailHtml: html,
+            dedupeKey: `weekly-recap:${weekStart.toISOString().slice(0, 10)}`,
           });
         }
 

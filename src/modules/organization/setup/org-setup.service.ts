@@ -13,7 +13,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type SetupInput } from "./dto/org.schemas";
 import { OnboardingSessionService } from "../../hr/onboarding/flow/onboarding-session.service";
-import { EmailService } from "../../email/email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { logger } from "../../../common/logger/logger.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -68,24 +68,29 @@ export class OrgSetupService {
     private readonly cache: CacheService,
     private readonly sessions: OnboardingSessionService,
     private readonly checklists: ModuleChecklistService,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
-  private async sendWelcome(userId: string): Promise<void> {
+  private async sendWelcome(orgId: string, userId: string): Promise<void> {
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, userId),
       columns: { email: true, name: true, firstName: true },
     });
     if (!user?.email) return;
     const name = user.name?.trim() || user.firstName?.trim() || user.email;
-    const base = (process.env.EMAIL_APP_URL ?? process.env.APP_URL ?? "")
-      .trim()
-      .replace(/\/$/, "");
-    void this.email
-      .sendWelcomeEmail(user.email, name, `${base}/dashboard`)
-      .catch((error: unknown) => {
-        logger.error("Welcome email send failed", { userId, error });
-      });
+    await this.dispatch.emit({
+      eventKey: "organization.setup.completed",
+      orgId,
+      actorUserId: userId,
+      notifySelf: true,
+      targetUserIds: [userId],
+      entityType: "organization",
+      entityId: orgId,
+      title: "Organization setup complete",
+      message: `Welcome to ${name}. Your organization is ready.`,
+      link: "/dashboard",
+      variables: { userName: name, email: user.email },
+    });
   }
 
   private schedulePostSetupWork(input: {
@@ -159,7 +164,7 @@ export class OrgSetupService {
       roleWork,
       checklistWork,
       sessionWork,
-      ...(input.sendWelcome ? [this.sendWelcome(input.userId)] : []),
+      ...(input.sendWelcome ? [this.sendWelcome(input.orgId, input.userId)] : []),
     ]);
 
     for (const result of work) {

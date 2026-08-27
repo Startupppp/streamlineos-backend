@@ -16,7 +16,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
-import { EmailService } from "../../email/email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { ReviewCyclesService } from "./review-cycles.service";
 import { OneOnOneMeetingsService } from "./one-on-one-meetings.service";
 import { PerformancePipsService } from "./performance-pips.service";
@@ -35,7 +35,7 @@ import type {
 export class PerformanceReviewsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly reviewCycles: ReviewCyclesService,
     private readonly oneOnOnes: OneOnOneMeetingsService,
     private readonly pips: PerformancePipsService,
@@ -107,6 +107,8 @@ export class PerformanceReviewsService {
       .returning();
 
     void this.notifyReviewAssigned(
+      orgId,
+      review?.id,
       input.userId,
       reviewerId,
       input.periodStart,
@@ -341,6 +343,8 @@ export class PerformanceReviewsService {
   }
 
   private async notifyReviewAssigned(
+    orgId: string,
+    reviewId: number | undefined,
     employeeId: string,
     reviewerId: string,
     periodStart: string,
@@ -350,22 +354,23 @@ export class PerformanceReviewsService {
       const [employee, reviewer] = await Promise.all([
         this.db.query.users.findFirst({
           where: eq(users.id, employeeId),
-          columns: { email: true, name: true },
+          columns: { id: true, name: true },
         }),
         this.db.query.users.findFirst({
           where: eq(users.id, reviewerId),
           columns: { name: true },
         }),
       ]);
-      if (employee?.email) {
-        await this.email.sendReviewAssignedEmail(
-          employee.email,
-          employee.name ?? "Employee",
-          reviewer?.name ?? "Manager",
-          periodStart,
-          periodEnd,
-        );
-      }
+      if (employee) await this.dispatch.emit({
+        eventKey: "hr.performance.review_assigned",
+        orgId,
+        actorUserId: reviewerId,
+        targetUserIds: [employee.id],
+        entityType: "performance_review",
+        entityId: reviewId ? String(reviewId) : undefined,
+        message: "A performance review has been assigned to you.",
+        variables: { employeeName: employee.name ?? "Employee", reviewerName: reviewer?.name ?? "Manager", periodStart, periodEnd },
+      });
     } catch (error) {
       logger.error("Failed to send review assigned email", {
         employeeId,
