@@ -61,6 +61,14 @@ jobs:
       - name: Permission key catalog check
         run: pnpm check:permission-keys
 
+      # The index half of the RLS invariant, which needs no database: the policy
+      # half is db:verify-rls in the tenant-isolation job below, and that job only
+      # runs on a schedule because it needs credentials. Without a leading tenant
+      # index the RLS qual cannot be answered from an index and the read becomes a
+      # sequential scan, so this is an isolation cost, not a tuning preference.
+      - name: Tenant index check
+        run: pnpm check:tenant-indexes
+
       - name: Dead-code report
         run: pnpm exec knip --no-progress
         continue-on-error: true

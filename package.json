@@ -40,7 +40,7 @@
     "alert:p95": "node src/scripts/alert-p95.mjs",
     "alert:p95:self-test": "node src/scripts/alert-p95.mjs --self-test",
     "verify:chat-mentions": "node --env-file=.env src/scripts/verify-chat-mention-delivery.mjs",
-    "verify:permissions": "node src/common/auth/verify-permission-catalog.mjs",
+    "verify:permissions": "node src/scripts/check-permission-keys.mjs",
     "seed:build-load": "node --env-file=.env src/scripts/seed-build-load.mjs",
     "baseline:build": "node --env-file=.env src/scripts/capture-build-baseline.mjs",
     "backfill:member-roles": "node src/scripts/backfill-member-role-assignments.mjs",
@@ -72,7 +72,11 @@
     "check:route-classification": "node src/scripts/route-classification-report.mjs",
     "check:route-classification:self-test": "node src/scripts/route-classification-report.mjs --self-test",
     "check:permission-keys": "node src/scripts/check-permission-keys.mjs",
-    "check:permission-keys:self-test": "node src/scripts/check-permission-keys.mjs --self-test"
+    "check:permission-keys:self-test": "node src/scripts/check-permission-keys.mjs --self-test",
+    "check:navigation-permissions": "node src/scripts/check-navigation-permissions.mjs",
+    "check:navigation-permissions:self-test": "node src/scripts/check-navigation-permissions.mjs --self-test",
+    "check:tenant-indexes": "node src/scripts/check-tenant-indexes.mjs",
+    "check:tenant-indexes:self-test": "node src/scripts/check-tenant-indexes.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

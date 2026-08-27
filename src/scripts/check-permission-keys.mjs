@@ -10,10 +10,9 @@
  * which broke CSV export for every non-owner. This script makes that class of
  * defect a build-breaking failure.
  *
- * TWO CHECKS (both fail exit 1):
+ * THREE CHECKS (all fail exit 1):
  *
- *   1. Key used on a route but absent from the BACKEND catalog
- *      (src/modules/rbac/permissions/).
+ *   1. Key used on a route but absent from the BACKEND catalog.
  *      The route can never be granted — authorize() returns NO_MODULE or FORBIDDEN
  *      for an unknown key, so the route 403s for every non-owner permanently.
  *
@@ -21,6 +20,12 @@
  *      (frontend/lib/rbac/permissions/permission-key-*.ts).
  *      useCan(key) silently returns false for any key TypeScript does not accept,
  *      hiding every control that calls it.
+ *
+ *   3. A decorator argument this scanner could not resolve to a key. 21 routes
+ *      pass a module-level constant rather than a literal, and the original
+ *      literal-only regex skipped them without saying so — a check that quietly
+ *      declines to check. An unresolvable argument now fails; it never counts as
+ *      "no finding".
  *
  * NON-FAILURE (intentional subset):
  *   Backend catalog keys that are NOT used on any route are fine — they may be
@@ -30,7 +35,9 @@
  *
  * SCOPE:
  *   Routes scanned: backend/src/modules/ (all .ts files, spec files excluded).
- *   Backend catalog: backend/src/modules/rbac/permissions/*.ts (excl. barrel files).
+ *   Backend catalog: loaded from the real module through ts-node, not greped —
+ *     `<module>:access:view` is a generated template literal and a text scan
+ *     misses all twelve of them.
  *   Frontend union:  frontend/lib/rbac/permissions/permission-key-{foundation,extended,business}.ts
  *
  * Usage (run from backend/ or anywhere — paths are resolved from this file):
@@ -39,13 +46,21 @@
  *
  * Exit codes:
  *   0  — every route key exists in both catalogs
- *   1  — at least one ghost key found (or self-test failed)
- *   2  — usage error (e.g. catalog directory unreachable)
+ *   1  — at least one ghost or unresolvable key found (or self-test failed)
+ *   2  — usage error (e.g. catalog unreadable)
  */
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  loadBackendCatalog,
+  parsePermissionConstants,
+  parseRouteRefs,
+  parseUnionKeys,
+} from "./permission-key-extractors.mjs";
+
+export { parsePermissionConstants, parseRouteRefs, parseUnionKeys };
 
 const args = process.argv.slice(2);
 
@@ -54,94 +69,35 @@ const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "../../..");
 const BACKEND_ROOT = resolve(REPO_ROOT, "backend");
 const BACKEND_MODULES_DIR = join(BACKEND_ROOT, "src", "modules");
-const BACKEND_PERMISSIONS_DIR = join(BACKEND_MODULES_DIR, "rbac", "permissions");
 const FRONTEND_UNION_FILES = [
   join(REPO_ROOT, "frontend", "lib", "rbac", "permissions", "permission-key-foundation.ts"),
   join(REPO_ROOT, "frontend", "lib", "rbac", "permissions", "permission-key-extended.ts"),
   join(REPO_ROOT, "frontend", "lib", "rbac", "permissions", "permission-key-business.ts"),
 ];
 
-// catalog.ts re-exports everything; index.ts is the barrel; role-defaults.ts and
-// types.ts hold role templates and the Permission type, not key declarations.
-const EXCLUDED_CATALOG_FILES = new Set(["index.ts", "catalog.ts", "role-defaults.ts", "types.ts"]);
+// The extractors live in ./permission-key-extractors.mjs so this check and
+// check-navigation-permissions read keys through one implementation.
 const SPEC_RE = /\.(spec|e2e-spec)\.ts$/;
-
-// ── pure parsing functions ──────────────────────────────────────────────────
-// These are the real extractors — the self-test calls them with fixture strings
-// so that a bug in the extractor fails the self-test, not just the real run.
-
-/**
- * Extract permission key names from backend catalog source files.
- * fileMap: Map<basename, source>
- */
-export function parseCatalogKeys(fileMap) {
-  const keys = new Set();
-  for (const [name, src] of fileMap) {
-    if (EXCLUDED_CATALOG_FILES.has(name)) continue;
-    for (const m of src.matchAll(/\bname:\s*["']([^"']+)["']/g)) {
-      if (m[1].includes(":")) keys.add(m[1]);
-    }
-  }
-  return keys;
-}
-
-/**
- * Extract PermissionKey union literal values from the frontend type files.
- * sources: iterable of source strings (one per file).
- */
-export function parseUnionKeys(sources) {
-  const keys = new Set();
-  for (const src of sources) {
-    for (const m of src.matchAll(/\|\s*["']([^"']+)["']/g)) {
-      if (m[1].includes(":")) keys.add(m[1]);
-    }
-  }
-  return keys;
-}
-
-/**
- * Extract @RequirePermission("key") usages from a single source file.
- * Returns { key, file, line }[].
- * Line numbers are 1-based.
- */
-export function parseRouteRefs(src, filePath) {
-  const refs = [];
-  const lines = src.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/@RequirePermission\(\s*["']([^"']+)["']\s*\)/);
-    if (m) refs.push({ key: m[1], file: filePath, line: i + 1 });
-  }
-  return refs;
-}
 
 // ── self-test ───────────────────────────────────────────────────────────────
 
 if (args.includes("--self-test")) {
-  // Synthetic backend catalog: two real keys declared in the standard object shape.
-  const syntheticCatalogMap = new Map([
-    [
-      "real.permissions.ts",
-      `import type { Permission } from "./types";
-export const REAL_PERMISSIONS: Permission[] = [
-  { name: "real:thing:view", resource: "real:thing", action: "view", description: "View things" },
-  { name: "real:thing:manage", resource: "real:thing", action: "manage", description: "Manage things" },
-];`,
-    ],
-    // Excluded barrel — the parser must ignore it even though it references names.
-    ["catalog.ts", `export const ALL = [...REAL_PERMISSIONS]; export const ALL_NAMES = ALL.map(p => p.name);`],
-  ]);
-
   // Synthetic frontend union: view key present, manage key absent (intentional subset).
   // A third key "real:other:read" is in the union but unused on any route — that is fine.
   const syntheticUnionSources = [
     `export type RealPermKey =\n  | "real:thing:view"\n  | "real:other:read";\n`,
   ];
 
-  // Synthetic route file: three @RequirePermission usages on separate lines.
-  //   Line 2 — good key (in both catalogs)
-  //   Line 5 — ghost key (absent from backend catalog entirely)
-  //   Line 8 — backend-only key (in backend, absent from frontend union)
+  // Synthetic route file. Line numbers matter — the report names file:line.
+  //   Line 2  — a constant declaration the resolver must pick up
+  //   Line 4  — good key (in both catalogs)
+  //   Line 7  — ghost key (absent from backend catalog entirely)
+  //   Line 10 — backend-only key (in backend, absent from frontend union)
+  //   Line 13 — constant argument, resolvable through line 2
+  //   Line 16 — constant argument nothing declares: unresolvable, must fail
   const syntheticRouteFile = [
+    "",
+    `const REVIEW_PERMISSION = "real:thing:view";`,
     "",
     `  @RequirePermission("real:thing:view")`,
     "  async viewThings() { return []; }",
@@ -151,36 +107,70 @@ export const REAL_PERMISSIONS: Permission[] = [
     "",
     `  @RequirePermission("real:thing:manage")`,
     "  async manageThings() { return null; }",
+    "",
+    `  @RequirePermission(REVIEW_PERMISSION)`,
+    "  async reviewThings() { return null; }",
+    "",
+    `  @RequirePermission(UNDECLARED_CONSTANT)`,
+    "  async mysteryThings() { return null; }",
   ].join("\n");
 
-  const backendKeys = parseCatalogKeys(syntheticCatalogMap);
-  const frontendKeys = parseUnionKeys(syntheticUnionSources);
-  const routeRefs = parseRouteRefs(syntheticRouteFile, "synthetic/route.controller.ts");
+  // The real catalog is loaded, not parsed, so the self-test asserts against it
+  // directly: a generated key must be present, which is exactly what the old
+  // grep-based catalog reader got wrong.
+  let realCatalog = null;
+  let catalogError = null;
+  try {
+    realCatalog = loadBackendCatalog();
+  } catch (err) {
+    catalogError = err.message;
+  }
 
-  const ghostsFromBackend = routeRefs.filter((r) => !backendKeys.has(r.key));
-  const ghostsFromFrontend = routeRefs.filter((r) => !frontendKeys.has(r.key));
+  const backendKeys = new Set(["real:thing:view", "real:thing:manage"]);
+  const frontendKeys = parseUnionKeys(syntheticUnionSources);
+  const constants = parsePermissionConstants(syntheticRouteFile);
+  const routeRefs = parseRouteRefs(syntheticRouteFile, "synthetic/route.controller.ts", constants);
+
+  const resolvedRefs = routeRefs.filter((r) => r.resolved);
+  const unresolvedRefs = routeRefs.filter((r) => !r.resolved);
+  const ghostsFromBackend = resolvedRefs.filter((r) => !backendKeys.has(r.key));
+  const ghostsFromFrontend = resolvedRefs.filter((r) => !frontendKeys.has(r.key));
   const backendOnlyGhost = ghostsFromBackend.find((r) => r.key === "ghost:key:missing");
 
   const checks = {
-    backendCatalogParsesViewKey: backendKeys.has("real:thing:view"),
-    backendCatalogParsesManageKey: backendKeys.has("real:thing:manage"),
-    backendCatalogIgnoresGhostKey: !backendKeys.has("ghost:key:missing"),
-    backendCatalogIgnoresExcludedFile: !backendKeys.has("ALL_NAMES"),
+    realCatalogLoads: realCatalog !== null,
+    // The twelve generated <module>:access:* keys are the reason this is loaded
+    // rather than greped. If this fails, every navigation gate on an access
+    // screen reads as a ghost key.
+    realCatalogContainsGeneratedAccessKey: realCatalog?.names.has("crm:access:view") === true,
+    realCatalogContainsLiteralKey: realCatalog?.names.has("hr:employees:view") === true,
+    realCatalogHasNoBareIdentifiers: realCatalog
+      ? [...realCatalog.names].every((k) => k.includes(":"))
+      : false,
     frontendUnionParsesViewKey: frontendKeys.has("real:thing:view"),
     frontendUnionOmitsManageKey: !frontendKeys.has("real:thing:manage"),
-    routeRefsFoundThreeKeys: routeRefs.length === 3,
-    ghostKeyDetectedOnLine5: backendOnlyGhost?.line === 5,
+    constantDeclarationIsPickedUp: constants.get("REVIEW_PERMISSION") === "real:thing:view",
+    routeRefsFoundFiveUsages: routeRefs.length === 5,
+    constantArgumentResolves: routeRefs.some(
+      (r) => r.line === 13 && r.resolved && r.key === "real:thing:view",
+    ),
+    undeclaredConstantIsReportedNotSkipped:
+      unresolvedRefs.length === 1 &&
+      unresolvedRefs[0].line === 16 &&
+      unresolvedRefs[0].identifier === "UNDECLARED_CONSTANT",
+    ghostKeyDetectedOnLine7: backendOnlyGhost?.line === 7,
     ghostKeyFiresBackendCheck: ghostsFromBackend.length === 1,
     ghostKeyFiresFrontendCheck: ghostsFromFrontend.length === 2,
     cleanKeyPassesBothChecks:
       !ghostsFromBackend.some((r) => r.key === "real:thing:view") &&
       !ghostsFromFrontend.some((r) => r.key === "real:thing:view"),
-    intentionalSubsetDoesNotFire:
-      !ghostsFromBackend.some((r) => r.key === "real:other:read"),
+    intentionalSubsetDoesNotFire: !ghostsFromBackend.some((r) => r.key === "real:other:read"),
   };
 
   const pass = Object.values(checks).every(Boolean);
-  process.stdout.write(JSON.stringify({ selfTest: true, pass, checks }, null, 2) + "\n");
+  process.stdout.write(
+    JSON.stringify({ selfTest: true, pass, checks, catalogError }, null, 2) + "\n",
+  );
   process.exit(pass ? 0 : 1);
 }
 
@@ -204,12 +194,9 @@ function walkTs(dir, skipSpecs) {
 
 let backendCatalog, frontendCatalog;
 try {
-  const catalogFileMap = new Map();
-  for (const f of readdirSync(BACKEND_PERMISSIONS_DIR).filter((n) => n.endsWith(".ts")))
-    catalogFileMap.set(f, readFileSync(join(BACKEND_PERMISSIONS_DIR, f), "utf8"));
-  backendCatalog = parseCatalogKeys(catalogFileMap);
+  backendCatalog = loadBackendCatalog().names;
 } catch (err) {
-  process.stderr.write(`Cannot read backend permissions dir: ${err.message}\n`);
+  process.stderr.write(`Cannot load the backend permission catalog: ${err.message}\n`);
   process.exit(2);
 }
 
@@ -223,37 +210,63 @@ try {
 
 // ── scan route files ────────────────────────────────────────────────────────
 
-const routeRefs = [];
-for (const file of walkTs(BACKEND_MODULES_DIR, true)) {
-  const src = readFileSync(file, "utf8");
-  routeRefs.push(...parseRouteRefs(src, file));
-}
+const files = walkTs(BACKEND_MODULES_DIR, true).map((file) => ({
+  file,
+  src: readFileSync(file, "utf8"),
+}));
+
+// Two passes: a constant may be declared in the file that exports it and used in
+// the controller that imports it, so the map has to be complete before any
+// decorator is resolved.
+const constants = new Map();
+for (const { src } of files)
+  for (const [name, key] of parsePermissionConstants(src)) constants.set(name, key);
+
+const routeRefs = files.flatMap(({ file, src }) => parseRouteRefs(src, file, constants));
 
 // ── collect offenders ───────────────────────────────────────────────────────
 
 // Group by key so each key shows all locations it is used.
 const missingBackend = new Map();
 const missingFrontend = new Map();
+const unresolved = new Map();
 
-for (const { key, file, line } of routeRefs) {
-  const rel = relative(REPO_ROOT, file);
-  if (!backendCatalog.has(key)) {
-    if (!missingBackend.has(key)) missingBackend.set(key, []);
-    missingBackend.get(key).push(`${rel}:${line}`);
+for (const ref of routeRefs) {
+  const rel = relative(REPO_ROOT, ref.file);
+  if (!ref.resolved) {
+    if (!unresolved.has(ref.identifier)) unresolved.set(ref.identifier, []);
+    unresolved.get(ref.identifier).push(`${rel}:${ref.line}`);
+    continue;
   }
-  if (!frontendCatalog.has(key)) {
-    if (!missingFrontend.has(key)) missingFrontend.set(key, []);
-    missingFrontend.get(key).push(`${rel}:${line}`);
+  if (!backendCatalog.has(ref.key)) {
+    if (!missingBackend.has(ref.key)) missingBackend.set(ref.key, []);
+    missingBackend.get(ref.key).push(`${rel}:${ref.line}`);
+  }
+  if (!frontendCatalog.has(ref.key)) {
+    if (!missingFrontend.has(ref.key)) missingFrontend.set(ref.key, []);
+    missingFrontend.get(ref.key).push(`${rel}:${ref.line}`);
   }
 }
 
 // ── report ──────────────────────────────────────────────────────────────────
 
-const uniqueKeys = new Set(routeRefs.map((r) => r.key)).size;
+const viaConstant = routeRefs.filter((r) => r.identifier !== null).length;
+const uniqueKeys = new Set(routeRefs.filter((r) => r.resolved).map((r) => r.key)).size;
 console.log(`Scanned  ${routeRefs.length} @RequirePermission usages  (${uniqueKeys} unique keys)`);
+console.log(`  of which ${viaConstant} pass a constant rather than a literal`);
 console.log(`Backend catalog   ${backendCatalog.size} keys`);
 console.log(`Frontend PermissionKey union  ${frontendCatalog.size} keys`);
 console.log("");
+
+if (unresolved.size > 0) {
+  console.error("UNRESOLVED ARGUMENTS — a decorator argument this check could not resolve to a key:");
+  console.error("  These routes are unverified. Declare the constant as `const NAME = \"module:resource:action\"`.");
+  for (const [identifier, locs] of [...unresolved].sort((a, b) => a[0].localeCompare(b[0]))) {
+    console.error(`  FAIL  ${identifier}`);
+    for (const loc of locs) console.error(`        ${loc}`);
+  }
+  console.error("");
+}
 
 if (missingBackend.size > 0) {
   console.error("GHOST KEYS — used on routes but absent from the backend catalog:");
@@ -275,13 +288,14 @@ if (missingFrontend.size > 0) {
   console.error("");
 }
 
-const totalFailures = missingBackend.size + missingFrontend.size;
+const totalFailures = missingBackend.size + missingFrontend.size + unresolved.size;
 if (totalFailures === 0) {
-  console.log("OK — every @RequirePermission key exists in the backend catalog and the frontend PermissionKey union.");
+  console.log("OK — every @RequirePermission key resolves and exists in the backend catalog and the frontend PermissionKey union.");
   process.exit(0);
 } else {
   console.error(
-    `FAIL — ${missingBackend.size} key(s) absent from backend catalog, ` +
+    `FAIL — ${unresolved.size} unresolvable argument(s), ` +
+      `${missingBackend.size} key(s) absent from backend catalog, ` +
       `${missingFrontend.size} key(s) absent from frontend PermissionKey union.`,
   );
   process.exit(1);
