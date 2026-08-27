@@ -16,7 +16,6 @@
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
     "db:migrate:regions": "node src/scripts/migrate-all-regions.mjs",
-    "db:migrate:regions:self-test": "node src/scripts/migrate-all-regions.mjs --self-test",
     "db:bootstrap": "node src/scripts/db-bootstrap.mjs",
     "db:bootstrap-role": "node src/scripts/db-bootstrap-app-role.mjs",
     "db:setup": "node src/scripts/db-setup.mjs",
