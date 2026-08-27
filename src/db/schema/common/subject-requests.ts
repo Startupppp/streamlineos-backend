@@ -33,9 +33,34 @@ export const subjectRequests = pgTable(
      * Stored verbatim rather than summarised: the summary is derivable from the
      * outcomes and the outcomes are not derivable from the summary, and it is
      * the per-region detail a regulator asks for.
+     *
+     * `tables` carries the same argument one level down, and is why an erasure
+     * record is worth reading. A table with no declared disposition is neither
+     * erased nor skipped in silence — it is listed here with its row count, so
+     * the record says how much of the subject's data was left behind and where.
+     * Nested under its region rather than held in its own column because a
+     * table's presence and contents differ per region; a flat list would state
+     * one region's answer as if it were the deployment's.
+     *
+     * Widened rather than replaced: `jsonb` is schemaless, so this needs no DDL
+     * and every row written before it stays readable, `tables` simply absent.
      */
     regionOutcomes: jsonb("region_outcomes").$type<
-      { region: string; status: string; recordsAffected: number; at: string; error?: string }[]
+      {
+        region: string;
+        status: string;
+        recordsAffected: number;
+        at: string;
+        error?: string;
+        tables?: {
+          table: string;
+          disposition: "erase" | "retain" | "undeclared";
+          status: "scanned" | "absent" | "not-identifiable";
+          rowsMatched: number;
+          rowsErased: number;
+          truncated?: boolean;
+        }[];
+      }[]
     >(),
 
     /** True only when every *configured* region was visited and succeeded. */

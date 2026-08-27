@@ -29,6 +29,13 @@ const NON_MODULE_NAMESPACES = [
   "ai",
   "audit-log",
   "branch",
+  /*
+    Phase 3, tickets 17 and 18. Nobody enables, delegates or is billed for
+    compliance, and a data subject request is cross-tenant by design -- it
+    reaches every organisation the person appears in -- so a module toggle would
+    be the wrong shape for it. It administers itself, like `settings:`.
+  */
+  "compliance",
   "dashboard",
   "feedbucket",
   "integrations",

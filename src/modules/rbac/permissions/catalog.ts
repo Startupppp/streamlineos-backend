@@ -44,6 +44,7 @@ import { AI_SUMMARIES_PERMISSIONS, EXECUTIVE_BRIEF_PERMISSIONS } from "./ai";
 import { DIRECTORY_PERMISSIONS } from "./directory";
 import { PARTY_PERMISSIONS } from "./party";
 import { MAIL_PERMISSIONS } from "./mail";
+import { COMPLIANCE_PERMISSIONS } from "./compliance";
 
 export const PERMISSIONS: Permission[] = [
   ...MODULE_ACCESS_PERMISSIONS,
@@ -89,6 +90,7 @@ export const PERMISSIONS: Permission[] = [
   ...DIRECTORY_PERMISSIONS,
   ...PARTY_PERMISSIONS,
   ...MAIL_PERMISSIONS,
+  ...COMPLIANCE_PERMISSIONS,
 ];
 
 export const ALL_PERMISSION_NAMES: string[] = PERMISSIONS.map((p) => p.name);

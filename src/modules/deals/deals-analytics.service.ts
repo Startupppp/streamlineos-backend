@@ -7,6 +7,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
+import { assessForecastHistory, type ForecastBasis } from "./forecast/forecast-cold-start";
 import type { CreateForecastSnapshotInput, CompareForecastSnapshotsInput, ForecastSnapshotsQueryInput } from "./dto/deals.schemas";
 
 export interface ForecastMonth {
@@ -29,6 +30,14 @@ export interface ForecastSummary {
     weightedValue: number;
     avgProbability: number;
   }>;
+  /**
+   * What the totals above actually are, so a surface can stop presenting a
+   * tenant's own stage percentages back to them as if the product had learned
+   * something. Added, never substituted: every field above still means what it
+   * meant, so a consumer that ignores `basis` is exactly as correct as before —
+   * it is only as honest as before, which is the point of the field.
+   */
+  basis: ForecastBasis;
 }
 
 @Injectable()
@@ -132,16 +141,28 @@ export class DealsAnalyticsService {
         .map((s) => [s.key, s.probability]),
     );
 
-    const allDeals = await this.db
-      .select({
-        value: deals.value,
-        stage: deals.stage,
-        probability: deals.probability,
-        expectedCloseDate: deals.expectedCloseDate,
-        createdAt: deals.createdAt,
-      })
-      .from(deals)
-      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys])));
+    // The closed count is read against the SAME terminal keys that exclude those
+    // deals from the open pipeline above. If getTerminalStageKeys falls back to
+    // ["WON"]/["LOST"] because the tenant has no active terminal stages, the two
+    // reads are wrong together rather than separately: a deal is never both
+    // absent from the pipeline and absent from the history that would explain it.
+    const [allDeals, closedByStage] = await Promise.all([
+      this.db
+        .select({
+          value: deals.value,
+          stage: deals.stage,
+          probability: deals.probability,
+          expectedCloseDate: deals.expectedCloseDate,
+          createdAt: deals.createdAt,
+        })
+        .from(deals)
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys]))),
+      this.db
+        .select({ stage: deals.stage, closed: count() })
+        .from(deals)
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, [...wonKeys, ...lostKeys])))
+        .groupBy(deals.stage),
+    ]);
 
     const monthMap = new Map<string, ForecastMonth>();
     const stageMap = new Map<string, { count: number; totalValue: number; weightedValue: number; probSum: number }>();
@@ -189,6 +210,52 @@ export class DealsAnalyticsService {
       totalDeals: allDeals.length,
       byMonth,
       byStage,
+      basis: this.forecastBasis(closedByStage, wonKeys),
+    };
+  }
+
+  /**
+   * The label for the arithmetic immediately above: value x probability, where
+   * probability is the tenant's own number, else the stage's, else a flat 20.
+   *
+   * This is always the naive arm today, and deliberately so — nothing in this
+   * repository fits or scores a model. fitLogisticModel and scoreWithModel have
+   * no callers outside their specs, crm_deal_forecast_models has no writer, and
+   * buildForecast reads neither. Returning a LearnedBasis would therefore label
+   * a number that no model produced, which is precisely the trust forecast-cold-
+   * start.ts exists to protect. The learned arm turns on when a trainer does,
+   * not before.
+   *
+   * The two reasons are not interchangeable. "insufficient-history" means the
+   * tenant cannot yet be given better and readiness says how much is missing;
+   * "not-trained-yet" means they could be and are not, which is our gap and not
+   * theirs, and a surface that renders both as "not enough data" is lying to the
+   * second tenant.
+   *
+   * Note for whoever writes that surface: the 20 above is a default nobody
+   * typed, so copy along the lines of "the probabilities you set yourself" is
+   * false for any deal left at 0 or sitting in a stage with no active metadata.
+   */
+  private forecastBasis(
+    closedByStage: Array<{ stage: string; closed: number }>,
+    wonKeys: string[],
+  ): ForecastBasis {
+    const wonKeySet = new Set(wonKeys);
+    let won = 0;
+    let lost = 0;
+    for (const row of closedByStage) {
+      // count() comes back as a number from drizzle, but a raw driver row can
+      // still hand over a bigint-as-string; Number() here rather than trusting it.
+      const closed = Number(row.closed ?? 0);
+      if (wonKeySet.has(row.stage)) won += closed;
+      else lost += closed;
+    }
+
+    const readiness = assessForecastHistory({ won, lost });
+    return {
+      kind: "naive-weighted",
+      reason: readiness.ready ? "not-trained-yet" : "insufficient-history",
+      readiness,
     };
   }
 

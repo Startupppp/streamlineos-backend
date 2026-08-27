@@ -46,6 +46,7 @@ export { AI_SUMMARIES_PERMISSIONS, EXECUTIVE_BRIEF_PERMISSIONS } from "./ai";
 export { DIRECTORY_PERMISSIONS } from "./directory";
 export { PARTY_PERMISSIONS } from "./party";
 export { MAIL_PERMISSIONS } from "./mail";
+export { COMPLIANCE_PERMISSIONS } from "./compliance";
 export {
   PERMISSIONS,
   ALL_PERMISSION_NAMES,

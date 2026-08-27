@@ -200,6 +200,19 @@ const baseSchema = z
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
     ),
+    /**
+     * User ids permitted to run a data subject erasure or export.
+     *
+     * Comma-separated, and UNSET AUTHORISES NOBODY. The permission key alone
+     * cannot express this: `access.service.ts` returns scope "all" for any
+     * organisation owner before a grant is consulted, so every tenant owner on
+     * the platform holds `compliance:subject-requests:execute` the moment it is
+     * catalogued -- and a subject request is cross-tenant by design.
+     */
+    COMPLIANCE_SUBJECT_REQUEST_OPERATORS: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
+    ),
     /** Override default STARTER trial length (days). Defaults to 14 when unset. */
     TRIAL_DAYS: z.preprocess(
       emptyToUndefined,

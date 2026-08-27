@@ -71,6 +71,17 @@ export const CROSS_REGION_OPERATIONS: readonly CrossRegionOperation[] = [
       "misconfiguration. Reads region names; opens no connection to one.",
   },
   {
+    file: "src/modules/compliance/subject-requests/subject-requests.service.ts",
+    why:
+      "A data subject's right runs across the whole deployment, not across one " +
+      "tenant — there is no org to resolve from, because the subject may appear " +
+      "in many and the request must reach the regions holding organisations " +
+      "nobody thought to name. `registry.keys` is also the list " +
+      "`mayReportComplete` is checked against, so a region added and left out " +
+      "of the enumeration makes the request refuse to report itself complete " +
+      "instead of quietly leaving that region's copy behind.",
+  },
+  {
     file: "src/modules/storage/storage.service.ts",
     why:
       "The public asset base URL belongs to the deployment, not to a tenant — " +

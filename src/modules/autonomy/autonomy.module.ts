@@ -9,11 +9,14 @@ import { AutonomyScoringService } from "./autonomy-scoring.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
 import { AutonomyHoldWorkflow } from "./autonomy-hold.workflow";
 import { AutonomyRepairService } from "./autonomy-repair.service";
+import { OutboundService } from "./outbound.service";
+import { OutboundWorkflow } from "./outbound.workflow";
 import { QuotesModule } from "../quotes/quotes.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { WorkflowModule } from "../../common/workflow/workflow.module";
 import { DataQualityModule } from "../data-quality/data-quality.module";
 import { AutonomyReviewController } from "./autonomy-review.controller";
+import { OutboundController } from "./outbound.controller";
 
 /**
  * The part of the product that acts without being asked.
@@ -45,7 +48,7 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
     WorkflowModule,
     DataQualityModule,
   ],
-  controllers: [AutonomyReviewController],
+  controllers: [AutonomyReviewController, OutboundController],
   providers: [
     AutonomyService,
     AutonomyActionsService,
@@ -54,6 +57,14 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
     AutonomyHoldService,
     AutonomyHoldWorkflow,
     AutonomyRepairService,
+    OutboundService,
+    /**
+     * A provider and not an export, like `AutonomyHoldWorkflow`. It exists to be
+     * constructed so its `onModuleInit` reaches `WorkflowRegistry` — a workflow
+     * class Nest never instantiates registers nothing, and its runs are
+     * dead-lettered on arrival for want of a handler rather than failing at boot.
+     */
+    OutboundWorkflow,
   ],
   exports: [
     AutonomyService,
@@ -61,6 +72,7 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
     AutonomyScoringService,
     AutonomyHoldService,
     AutonomyRepairService,
+    OutboundService,
   ],
 })
 export class AutonomyModule {}
