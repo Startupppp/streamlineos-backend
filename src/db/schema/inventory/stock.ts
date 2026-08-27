@@ -97,6 +97,7 @@ export const invStockAdjustmentLines = pgTable("inv_stock_adjustment_lines", {
   quantityChange: decimal("quantity_change", { precision: 18, scale: 4 }).notNull(),
   uomId: integer("uom_id").references(() => invUom.id, { onDelete: "set null" }),
   quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
+  uomFactor: decimal("uom_factor", { precision: 18, scale: 6 }),
   notes: text("notes"),
 }, (table) => [
   unique("uniq_inv_stock_adjustment_lines_org_id").on(table.orgId, table.id),
@@ -150,6 +151,7 @@ export const invStockTransferLines = pgTable("inv_stock_transfer_lines", {
   quantityReceived: decimal("quantity_received", { precision: 18, scale: 4 }).default("0").notNull(),
   uomId: integer("uom_id").references(() => invUom.id, { onDelete: "set null" }),
   quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
+  uomFactor: decimal("uom_factor", { precision: 18, scale: 6 }),
   dispatchedUnitCost: decimal("dispatched_unit_cost", { precision: 18, scale: 4 }),
   lotId: integer("lot_id").references(() => invLots.id, { onDelete: "restrict" }),
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "restrict" }),

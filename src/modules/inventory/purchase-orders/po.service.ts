@@ -5,6 +5,7 @@ import type { DataScope } from "../../access/access.types";
 import {
   invPurchaseOrders,
   invPoLines,
+  invProductVariants,
   invGrns,
   invLocations,
 } from "../../../db/schema";
@@ -14,6 +15,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
+import { UomConversionService } from "../stock-engine/uom-conversion.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { addDec, mulDec } from "../stock-engine/stock-engine.service";
 import type { ListPoInput, CreatePoInput, UpdatePoInput } from "./dto/inv-purchase-orders.schemas";
@@ -42,6 +44,7 @@ export class PoService {
     private readonly settingsService: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly uom: UomConversionService,
   ) {}
 
   async resolveLocationId(orgId: string, warehouseId: number | null | undefined): Promise<number> {
@@ -159,21 +162,51 @@ export class PoService {
       createdBy: userId,
     }).returning();
 
-    await this.db.insert(invPoLines).values(
-      data.lines.map((line) => ({
-        orgId,
-        poId: po.id,
-        productVariantId: line.productVariantId,
-        quantity: line.quantity.toString(),
-        unitCost: line.unitCost,
-        taxRate: line.taxRate,
-        amount: mulDec(String(line.quantity), line.unitCost),
-        lineOrder: line.lineOrder,
-      }))
-    );
+    await this.db.insert(invPoLines).values(await this.resolveLines(orgId, po.id, data.lines));
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
     return po;
+  }
+
+  /**
+   * Turns entered quantities into base quantities, carrying the factor.
+   *
+   * The line keeps what was typed, the unit it was typed in and the factor
+   * applied, so a later correction to the conversion cannot rewrite what this
+   * order meant. `quantity` is always base UOM, because that is the only unit
+   * the ledger can add up across products.
+   */
+  private async resolveLines(
+    orgId: string,
+    poId: number,
+    lines: CreatePoInput["lines"],
+  ) {
+    return Promise.all(
+      lines.map(async (line) => {
+        const variant = await this.db.query.invProductVariants.findFirst({
+          where: and(eq(invProductVariants.id, line.productVariantId), eq(invProductVariants.orgId, orgId)),
+          columns: { productId: true },
+        });
+        if (!variant) throw new BadRequestException("Product variant not found");
+
+        const converted = await this.uom.convert(orgId, variant.productId, line.uomId ?? null, String(line.quantity));
+        return {
+          orgId,
+          poId,
+          productVariantId: line.productVariantId,
+          quantity: converted.quantity,
+          quantityEntered: converted.quantityEntered,
+          uomId: converted.uomId,
+          uomFactor: converted.uomFactor,
+          unitCost: line.unitCost,
+          taxRate: line.taxRate,
+          // Priced per entered unit, so the amount follows the entered quantity,
+          // not the converted one — a case costs a case price.
+          amount: mulDec(String(line.quantity), line.unitCost),
+          lineOrder: line.lineOrder,
+        };
+      }),
+    );
   }
 
   async updatePo(orgId: string, poId: number, userId: string, data: UpdatePoInput) {
@@ -198,19 +231,10 @@ export class PoService {
       patch.taxAmount = taxAmount;
       patch.total = total;
 
-      await this.db.delete(invPoLines).where(eq(invPoLines.poId, poId));
-      await this.db.insert(invPoLines).values(
-        data.lines.map((line) => ({
-          orgId,
-          poId,
-          productVariantId: line.productVariantId,
-          quantity: line.quantity.toString(),
-          unitCost: line.unitCost,
-          taxRate: line.taxRate,
-          amount: mulDec(String(line.quantity), line.unitCost),
-          lineOrder: line.lineOrder,
-        }))
-      );
+      // Scoped by tenant as well as document: a delete keyed on poId alone leans
+      // entirely on RLS for tenant correctness, where an explicit predicate belongs.
+      await this.db.delete(invPoLines).where(and(eq(invPoLines.poId, poId), eq(invPoLines.orgId, orgId)));
+      await this.db.insert(invPoLines).values(await this.resolveLines(orgId, poId, data.lines));
     }
 
     if (Object.keys(patch).length > 0) {

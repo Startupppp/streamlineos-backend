@@ -54,6 +54,7 @@ export const invSoLines = pgTable("inv_so_lines", {
   unitPrice: decimal("unit_price", { precision: 18, scale: 4 }).notNull(),
   uomId: integer("uom_id").references(() => invUom.id, { onDelete: "set null" }),
   quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
+  uomFactor: decimal("uom_factor", { precision: 18, scale: 6 }),
   taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("0").notNull(),
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   costAtTime: decimal("cost_at_time", { precision: 18, scale: 4 }).default("0").notNull(),

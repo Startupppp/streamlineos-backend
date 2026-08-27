@@ -10,7 +10,14 @@ export type ListPoInput = z.infer<typeof listPoSchema>;
 
 const poLineSchema = z.object({
   productVariantId: z.number().int().positive(),
+  /** In `uomId` when one is given, otherwise in the product's base unit. */
   quantity: z.number().positive(),
+  /**
+   * The unit the buyer typed in. The server resolves the factor and computes the
+   * base quantity — a client-supplied factor would let the caller decide how
+   * many units a case holds.
+   */
+  uomId: z.number().int().positive().optional(),
   unitCost: z.string().regex(/^\d+(\.\d{1,4})?$/),
   taxRate: z.string().regex(/^\d+(\.\d{1,2})?$/).default("0"),
   lineOrder: z.number().int().min(0).default(0),

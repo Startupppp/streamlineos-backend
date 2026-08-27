@@ -77,6 +77,7 @@ export const invPoLines = pgTable("inv_po_lines", {
   unitCost: decimal("unit_cost", { precision: 18, scale: 4 }).notNull(),
   uomId: integer("uom_id").references(() => invUom.id, { onDelete: "set null" }),
   quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
+  uomFactor: decimal("uom_factor", { precision: 18, scale: 6 }),
   taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("0").notNull(),
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   lineOrder: integer("line_order").default(0).notNull(),
@@ -120,6 +121,7 @@ export const invGrnLines = pgTable("inv_grn_lines", {
   quantityReceived: decimal("quantity_received", { precision: 18, scale: 4 }).notNull(),
   uomId: integer("uom_id").references(() => invUom.id, { onDelete: "set null" }),
   quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
+  uomFactor: decimal("uom_factor", { precision: 18, scale: 6 }),
   qualityStatus: invGrnQualityEnum("quality_status").default("ACCEPTED").notNull(),
   rejectionReason: text("rejection_reason"),
 }, (table) => [

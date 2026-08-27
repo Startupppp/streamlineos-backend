@@ -2080,6 +2080,13 @@
       "when": 1787830369441,
       "tag": "0516_inventory_soft_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 298,
+      "version": "7",
+      "when": 1787830370441,
+      "tag": "0517_inventory_uom_factor_snapshot",
+      "breakpoints": true
     }
   ]
 }
