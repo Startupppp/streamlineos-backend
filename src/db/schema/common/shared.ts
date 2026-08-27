@@ -1,5 +1,5 @@
 
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, bigint, index, unique, uniqueIndex, numeric, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, bigint, index, unique, uniqueIndex, numeric, varchar, primaryKey, foreignKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   notificationTypeEnum,
@@ -17,7 +17,7 @@ import { organizations, users } from "./auth";
 export const notifications = pgTable("notifications", {
   // SCH-001: was serial (int4). int4 caps at 2.1bn, reachable by a fan-out-on-write
   // feed at the stated scale; widened while the table held 3 rows.
-  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+  id: bigint("id", { mode: "number" }).generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
   type: notificationTypeEnum("type").default("INFO").notNull(),
@@ -61,7 +61,8 @@ export const notifications = pgTable("notifications", {
   index("idx_notifications_org_user_active")
     .on(table.orgId, table.userId, table.id)
     .where(sql`deleted_at IS NULL`),
-  unique("uniq_notifications_org_id").on(table.orgId, table.id),
+  primaryKey({ name: "notifications_pkey", columns: [table.id, table.createdAt] }),
+  unique("uniq_notifications_org_id").on(table.orgId, table.id, table.createdAt),
 ]);
 
 export const notificationReadWatermarks = pgTable(
@@ -147,7 +148,8 @@ export const broadcasts = pgTable("broadcasts", {
 export const notificationAuditLogs = pgTable("notification_audit_logs", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  notificationId: bigint("notification_id", { mode: "number" }).references(() => notifications.id, { onDelete: "set null" }),
+  notificationId: bigint("notification_id", { mode: "number" }),
+  notificationCreatedAt: timestamp("notification_created_at", { withTimezone: true }),
   broadcastId: integer("broadcast_id"),
   actorId: text("actor_id").references(() => users.id),
   action: text("action").notNull(),
@@ -162,6 +164,11 @@ export const notificationAuditLogs = pgTable("notification_audit_logs", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
+  foreignKey({
+    name: "notification_audit_logs_notification_fk",
+    columns: [table.notificationId, table.notificationCreatedAt],
+    foreignColumns: [notifications.id, notifications.createdAt],
+  }).onDelete("set null"),
   index("idx_notif_audit_org_action").on(table.orgId, table.action),
   index("idx_notif_audit_org_created").on(table.orgId, table.createdAt),
   index("idx_notif_audit_notification").on(table.notificationId),

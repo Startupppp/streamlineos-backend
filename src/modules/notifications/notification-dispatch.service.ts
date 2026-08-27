@@ -381,6 +381,7 @@ export class NotificationDispatchService {
       }
 
       let notificationId: number | null = null;
+      let notificationCreatedAt: Date | null = null;
       if (createInApp) {
         const [notification] = await tx
           .insert(notifications)
@@ -402,10 +403,14 @@ export class NotificationDispatchService {
             channel: "IN_APP",
             metadata: input.metadata,
           })
-          .returning({ id: notifications.id });
+          .returning({ id: notifications.id, createdAt: notifications.createdAt });
         notificationId = notification?.id ?? null;
+        notificationCreatedAt = notification?.createdAt ?? null;
         if (notificationId) {
-          await tx.update(notificationDeliveries).set({ notificationId }).where(eq(notificationDeliveries.id, inAppDelivery.id));
+          await tx
+            .update(notificationDeliveries)
+            .set({ notificationId, notificationCreatedAt })
+            .where(eq(notificationDeliveries.id, inAppDelivery.id));
         }
       }
 
@@ -423,6 +428,7 @@ export class NotificationDispatchService {
           .insert(notificationDeliveries)
           .values({
             notificationId,
+            notificationCreatedAt,
             orgId: input.orgId,
             userId,
             eventKey: input.eventKey,

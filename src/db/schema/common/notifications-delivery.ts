@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, bigint, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, bigint, boolean, jsonb, timestamp, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   notificationTypeEnum,
@@ -53,7 +53,8 @@ export const notificationEvents = pgTable("notification_events", {
 export const notificationDeliveries = pgTable("notification_deliveries", {
   // SCH-001: was serial (int4) on one of the highest-fan-out tables in the product.
   id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-  notificationId: bigint("notification_id", { mode: "number" }).references(() => notifications.id, { onDelete: "cascade" }),
+  notificationId: bigint("notification_id", { mode: "number" }),
+  notificationCreatedAt: timestamp("notification_created_at", { withTimezone: true }),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   eventKey: text("event_key"),
@@ -88,6 +89,11 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({
+    name: "notification_deliveries_notification_fk",
+    columns: [table.notificationId, table.notificationCreatedAt],
+    foreignColumns: [notifications.id, notifications.createdAt],
+  }).onDelete("cascade"),
   index("idx_notification_deliveries_expiry")
     .on(table.orgId, table.expiresAt)
     .where(sql`expires_at is not null`),

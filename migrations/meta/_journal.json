@@ -2115,6 +2115,13 @@
       "when": 1787830374441,
       "tag": "0581_chat_messages_widen_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 303,
+      "version": "7",
+      "when": 1787830375441,
+      "tag": "0582_notifications_partition_by_created_at",
+      "breakpoints": true
     }
   ]
 }

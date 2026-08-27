@@ -1,7 +1,7 @@
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
 
-// Partitioning forces created_at into every PK/UNIQUE: inbound FKs must carry it, and uniqueness weakens.
+// notifications is partitioned (0582); chat_messages and the outbox are not, and this pins why.
 
 const PARTITION_CANDIDATES = ["notifications", "chat_messages", "notification_outbox"] as const;
 
@@ -32,7 +32,7 @@ describe("c21-04 partition preconditions", () => {
     for (const name of PARTITION_CANDIDATES) expect(tableByName(name)).toBeDefined();
   });
 
-  it("pins the inbound foreign keys each partition cutover would have to resolve", () => {
+  it("pins the five inbound foreign keys a chat_messages cutover would have to resolve", () => {
     expect(inboundForeignKeys("chat_messages")).toEqual([
       "chat_attachments.message_id",
       "chat_messages.reply_to_id",
@@ -40,12 +40,18 @@ describe("c21-04 partition preconditions", () => {
       "chat_reply_reminders.message_id",
       "chat_saved_messages.message_id",
     ]);
+  });
 
+  it("has both notifications children referencing the composite key, not the bare id", () => {
     expect(inboundForeignKeys("notifications")).toEqual([
+      "notification_audit_logs.notification_created_at",
       "notification_audit_logs.notification_id",
+      "notification_deliveries.notification_created_at",
       "notification_deliveries.notification_id",
     ]);
+  });
 
+  it("keeps the outbox free of inbound foreign keys", () => {
     expect(inboundForeignKeys("notification_outbox")).toEqual([]);
   });
 
@@ -61,6 +67,18 @@ describe("c21-04 partition preconditions", () => {
     const columns = (dedupe?.config.columns ?? []).map((c) => ("name" in c ? c.name : String(c)));
     expect(columns).toEqual(["org_id", "dedupe_key"]);
     expect(columns).not.toContain("created_at");
+  });
+
+  it("declares notifications' primary key as the partition-key pair", () => {
+    const config = getTableConfig(tableByName("notifications") as PgTable);
+    const pk = config.primaryKeys.find((k) => k.getName() === "notifications_pkey");
+    expect(pk).toBeDefined();
+    expect((pk?.columns ?? []).map((c) => c.name)).toEqual(["id", "created_at"]);
+
+    const orgUnique = config.uniqueConstraints.find(
+      (u) => u.name === "uniq_notifications_org_id",
+    );
+    expect((orgUnique?.columns ?? []).map((c) => c.name)).toEqual(["org_id", "id", "created_at"]);
   });
 
   it("keeps every candidate's identity at bigint, since a partition cutover cannot also widen", () => {
