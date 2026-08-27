@@ -31,10 +31,11 @@ describe("OrgHierarchyCostCentersService", () => {
       update,
       delete: hardDelete,
     } as unknown as Db;
+    const invalidate = jest.fn().mockResolvedValue(undefined);
     const cache = {
-      invalidate: jest.fn().mockResolvedValue(undefined),
-      invalidateForOrg: jest.fn().mockResolvedValue(undefined),
-      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+      invalidate,
+      invalidateForOrg: (o: string, k: string) => invalidate(`${o}:${k}`),
+      invalidateNamespaceForOrg: (o: string, n: string) => invalidate(`${o}:${n}`),
     } as unknown as CacheService;
     const audit = {
       logCritical: jest.fn().mockResolvedValue(undefined),
