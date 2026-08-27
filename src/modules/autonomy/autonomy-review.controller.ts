@@ -42,7 +42,6 @@ import {
 
 const REVIEW_PERMISSION = "crm:autonomy:view";
 /** Deciding what the system may change unattended, which is not the kill switch. */
-const REPAIR_PERMISSION = "crm:autonomy:repair";
 
 @Controller("crm/autonomy")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -211,7 +210,7 @@ export class AutonomyReviewController {
    */
   @Patch("repair-policies")
   @Idempotent("crm.autonomy.repair-policy")
-  @RequirePermission(REPAIR_PERMISSION)
+  @RequirePermission("crm:autonomy:repair")
   setRepairPolicy(
     @Body(new ZodValidationPipe(setRepairPolicySchema)) body: SetRepairPolicyInput,
     @CurrentUser() u: CurrentUserContext,
@@ -222,7 +221,7 @@ export class AutonomyReviewController {
   /** Run the loop now. Every class is still asked separately whether it may. */
   @Post("repairs/run")
   @Idempotent("crm.autonomy.repair-run")
-  @RequirePermission(REPAIR_PERMISSION)
+  @RequirePermission("crm:autonomy:repair")
   runRepairs(
     @Body(new ZodValidationPipe(runRepairsSchema)) body: RunRepairsInput,
     @CurrentUser() u: CurrentUserContext,
