@@ -18,6 +18,8 @@ import {
 } from "@nestjs/common";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { Universal } from "../../../common/auth/universal.decorator";
+import { AuthorizedInService } from "../../../common/auth/authorized-in-service.decorator";
 import { Public } from "../../../common/auth/public.decorator";
 import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
 import { NoTenantTransaction } from "../../../common/tenant";
@@ -103,6 +105,7 @@ export class OrganizationController {
   }
 
   @Get()
+  @Universal()
   @AllowNoOrg()
   @NoTenantTransaction()
   listOrganizations(@CurrentUser() u: CurrentUserContext) {
@@ -110,6 +113,7 @@ export class OrganizationController {
   }
 
   @Get("archived")
+  @Universal()
   @AllowNoOrg()
   @NoTenantTransaction()
   listArchivedOrganizations(@CurrentUser() u: CurrentUserContext) {
@@ -118,6 +122,7 @@ export class OrganizationController {
 
   @Post()
   @HttpCode(201)
+  @AuthorizedInService("createOrganization rejects a caller who is not an org owner, below")
   @Idempotent("organization.create")
   createOrganization(
     @Body(new ZodValidationPipe(createOrganizationSchema)) body: CreateOrganizationInput,
@@ -130,6 +135,7 @@ export class OrganizationController {
   }
 
   @Post("switch")
+  @Universal()
   @HttpCode(200)
   @AllowNoOrg()
   @NoTenantTransaction()
@@ -320,6 +326,7 @@ export class OrganizationController {
 
   @Post("restore")
   @HttpCode(200)
+  @AuthorizedInService("OrgLifecycleService.restoreOrg — an ACTIVE isOwner membership of the target org, 404 on a miss")
   @AllowNoOrg()
   @NoTenantTransaction()
   restoreOrg(
@@ -330,6 +337,7 @@ export class OrganizationController {
   }
 
   @Post("leave")
+  @Universal()
   @HttpCode(200)
   leaveOrg(@CurrentUser() u: CurrentUserContext) {
     return this.organization.leaveOrg(u.orgId, u.userId);

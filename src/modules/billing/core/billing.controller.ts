@@ -115,6 +115,14 @@ export class BillingController {
     return this.planLimits.getEntitlements(u.orgId);
   }
 
+  // Stuck provisioning is subscription state, so it reuses that key rather than adding an ungranted one.
+  @UseGuards(PermissionGuard)
+  @RequirePermission("billing:subscription:view")
+  @Get("provisioning-failures")
+  listProvisioningFailures(@CurrentUser() u: CurrentUserContext) {
+    return this.billing.listProvisioningFailures(u.orgId);
+  }
+
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
   @Get("coupons/validate")

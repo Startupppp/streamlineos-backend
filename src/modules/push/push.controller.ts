@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -32,6 +33,7 @@ export class PushController {
   }
 
   @Post("subscribe")
+  @Universal()
   subscribe(
     @Body(new ZodValidationPipe(subscribeSchema)) body: SubscribeInput,
     @CurrentUser() u: CurrentUserContext,
@@ -40,6 +42,7 @@ export class PushController {
   }
 
   @Delete("subscribe")
+  @Universal()
   unsubscribe(
     @Query(new ZodValidationPipe(unsubscribeSchema)) query: UnsubscribeInput,
   ) {

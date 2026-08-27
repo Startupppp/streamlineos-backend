@@ -2,15 +2,7 @@ import { RecurringJournalsService } from "./recurring-journals.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
 
-/**
- * `listTemplates` renders a total, and it used to pay for it with a second
- * sequential statement: the page query was awaited, then a bare `count(*)` was
- * awaited after it, so one screen cost two round trips in series. The window in
- * the page query answers the same question in one.
- *
- * The statement counter is the assertion that bites — the double will happily
- * serve a second read, so a regression shows up as a count, not as a type error.
- */
+// `listTemplates` awaited the page, then awaited a bare `count(*)` after it — two round trips in series for one screen.
 
 const ORG_ID = "org-1";
 

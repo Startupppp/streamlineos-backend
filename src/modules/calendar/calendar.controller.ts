@@ -17,6 +17,7 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -80,6 +81,7 @@ export class CalendarController {
   ) {}
 
   @Get("events")
+  @Universal()
   getEvents(
     @Query(new ZodValidationPipe(listEventsSchema)) query: ListEventsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -93,6 +95,7 @@ export class CalendarController {
   }
 
   @Get("external-events")
+  @Universal()
   getExternalEvents(
     @Query(new ZodValidationPipe(externalEventsQuerySchema))
     query: ExternalEventsQueryInput,
@@ -107,6 +110,7 @@ export class CalendarController {
   }
 
   @Post("events")
+  @Universal()
   @HttpCode(201)
   createEvent(
     @Body(new ZodValidationPipe(createEventSchema)) body: CreateEventInput,
@@ -116,6 +120,7 @@ export class CalendarController {
   }
 
   @Put("events/:eventId")
+  @Universal()
   async updateEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Body(new ZodValidationPipe(updateEventSchema)) body: UpdateEventInput,
@@ -133,6 +138,7 @@ export class CalendarController {
   }
 
   @Delete("events/:eventId")
+  @Universal()
   removeEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -141,6 +147,7 @@ export class CalendarController {
   }
 
   @Post("events/:eventId/rsvp")
+  @Universal()
   @HttpCode(200)
   async rsvp(
     @Param("eventId", ParseIntPipe) eventId: number,
@@ -153,6 +160,7 @@ export class CalendarController {
   }
 
   @Patch("events/:eventId/occurrences/:occurrenceStart")
+  @Universal()
   @HttpCode(200)
   async upsertOccurrenceException(
     @Param("eventId", ParseIntPipe) eventId: number,
@@ -173,6 +181,7 @@ export class CalendarController {
   }
 
   @Delete("events/:eventId/occurrences/:occurrenceStart")
+  @Universal()
   @HttpCode(200)
   async cancelOccurrence(
     @Param("eventId", ParseIntPipe) eventId: number,
@@ -251,6 +260,7 @@ export class CalendarController {
   }
 
   @Get("sources")
+  @Universal()
   getSources(@CurrentUser() u: CurrentUserContext) {
     const now = new Date();
     const ctx: CalendarSourceContext = {
@@ -264,6 +274,7 @@ export class CalendarController {
   }
 
   @Put("sources/:sourceKey")
+  @Universal()
   @HttpCode(200)
   async setSourcePreference(
     @Param("sourceKey") sourceKey: string,

@@ -7,6 +7,7 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import helmet from "helmet";
 import compression from "compression";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
+import { recordRouteClassification } from "./common/auth/record-route-classification";
 
 import { AppModule } from "./app.module";
 import { validateEnv } from "./config/env.validation";
@@ -102,6 +103,10 @@ async function bootstrap(): Promise<void> {
       .build();
 
     const document = SwaggerModule.createDocument(app, swaggerConfig);
+    const classification = recordRouteClassification(app, document);
+    logger.log(
+      `OpenAPI: exposure recorded on ${classification.stamped} operation(s), ${classification.undeclared} undeclared`,
+    );
     SwaggerModule.setup("api/docs", app, document);
   }
 

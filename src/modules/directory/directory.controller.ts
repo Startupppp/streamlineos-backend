@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -42,6 +43,7 @@ export class DirectoryController {
   constructor(private readonly svc: DirectoryService) {}
 
   @Get("people")
+  @Universal()
   listPeople(
     @Query(new ZodValidationPipe(listPeopleQuerySchema)) query: ListPeopleQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -50,6 +52,7 @@ export class DirectoryController {
   }
 
   @Get("people/:organizationPersonId")
+  @Universal()
   getPerson(
     @Param("organizationPersonId") organizationPersonId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -94,7 +97,8 @@ export class DirectoryController {
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:workers:view")
   listWorkers(
-    @Query(new ZodValidationPipe(listWorkersQuerySchema)) query: ListWorkersQuery,
+    @Query(new ZodValidationPipe(listWorkersQuerySchema))
+    query: ListWorkersQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listWorkers(u.orgId, query);
@@ -137,7 +141,8 @@ export class DirectoryController {
   @RequirePermission("directory:workers:manage")
   createEngagement(
     @Param("workerId") workerId: string,
-    @Body(new ZodValidationPipe(createEngagementSchema)) body: CreateEngagementInput,
+    @Body(new ZodValidationPipe(createEngagementSchema))
+    body: CreateEngagementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createEngagement(u.orgId, u.userId, { ...body, workerId });
@@ -148,10 +153,16 @@ export class DirectoryController {
   @RequirePermission("directory:workers:manage")
   updateEngagement(
     @Param("workerEngagementId") workerEngagementId: string,
-    @Body(new ZodValidationPipe(updateEngagementSchema)) body: UpdateEngagementInput,
+    @Body(new ZodValidationPipe(updateEngagementSchema))
+    body: UpdateEngagementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateEngagement(u.orgId, u.userId, workerEngagementId, body);
+    return this.svc.updateEngagement(
+      u.orgId,
+      u.userId,
+      workerEngagementId,
+      body,
+    );
   }
 
   @Post("engagements/:workerEngagementId/cancel")
@@ -162,11 +173,7 @@ export class DirectoryController {
     @Param("workerEngagementId") workerEngagementId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.cancelEngagement(
-      u.orgId,
-      u.userId,
-      workerEngagementId,
-    );
+    return this.svc.cancelEngagement(u.orgId, u.userId, workerEngagementId);
   }
 
   @Post("engagements/:workerEngagementId/terminate")
@@ -175,9 +182,15 @@ export class DirectoryController {
   @RequirePermission("directory:workers:terminate")
   terminateEngagement(
     @Param("workerEngagementId") workerEngagementId: string,
-    @Body(new ZodValidationPipe(terminateEngagementSchema)) body: TerminateEngagementInput,
+    @Body(new ZodValidationPipe(terminateEngagementSchema))
+    body: TerminateEngagementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.terminateEngagement(u.orgId, u.userId, workerEngagementId, body);
+    return this.svc.terminateEngagement(
+      u.orgId,
+      u.userId,
+      workerEngagementId,
+      body,
+    );
   }
 }

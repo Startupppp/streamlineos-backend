@@ -1,4 +1,5 @@
 import { Controller, Get, Inject } from "@nestjs/common";
+import { Universal } from "../../common/auth/universal.decorator";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 
@@ -16,6 +17,7 @@ export class RealtimeController {
   ) {}
 
   @Get("ice-servers")
+  @Universal()
   iceServers(): { iceServers: IceServer[] } {
     const servers: IceServer[] = [
       { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },

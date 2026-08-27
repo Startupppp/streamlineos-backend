@@ -6,7 +6,7 @@
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import {
   billingProfiles,
   coupons,
@@ -27,7 +27,18 @@ import { logger } from "../../../common/logger/logger.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
-import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
+import { classifyPlanChange, type RevenueEventInput } from "./revenue-events";
+import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
+import { PaymentWebhookHealthService } from "../payments/payment-webhook-health.service";
+import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
+import {
+  applyDiscount,
+  evaluateCoupon,
+  planBaseAmountPaise,
+  COUPON_NOT_FOUND,
+  type CouponEvaluation,
+} from "./coupon-pricing";
+import { forwardOnlyStatusGuard } from "./payment-status-order";
 import {
   webhookEventSchema,
   type BillingCycle,
@@ -57,6 +68,9 @@ interface WebhookResult {
   body: Record<string, unknown>;
 }
 
+// RETRY means recorded but never finished, so the work must run again; PROCESSED is the only no-op.
+type ProviderEventClaim = "RECORDED" | "RETRY" | "PROCESSED" | "FOREIGN" | "ERROR";
+
 @Injectable()
 export class BillingService {
   constructor(
@@ -67,6 +81,8 @@ export class BillingService {
     private readonly revenueAnalytics: RevenueAnalyticsService,
     private readonly providers: PaymentProviderResolver,
     private readonly externalEffectLedger: ExternalEffectLedger,
+    private readonly paymentWebhooks: PaymentWebhookHealthService,
+    private readonly paymentNotices: PaymentAnalyticsService,
   ) {}
 
   async getSubscription(orgId: string) {
@@ -94,25 +110,18 @@ export class BillingService {
       throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
     }
 
-    const monthlyPrice = PLAN_PRICES_PAISE[plan];
-    if (!monthlyPrice) throw new BadRequestException("Invalid plan");
+    if (!PLAN_PRICES_PAISE[plan]) throw new BadRequestException("Invalid plan");
 
-    let amount = billingCycle === "annual"
-      ? Math.round(monthlyPrice * 12 * (1 - ANNUAL_DISCOUNT_PCT))
-      : monthlyPrice;
-
+    const baseAmount = planBaseAmountPaise(plan, billingCycle, ANNUAL_DISCOUNT_PCT);
+    let amount = baseAmount;
     let couponDiscountAmount = 0;
+
     if (couponId) {
-      const coupon = await this.db.query.coupons.findFirst({
-        where: and(eq(coupons.id, couponId), eq(coupons.isActive, true)),
-      });
-      if (coupon) {
-        const couponValue = parseFloat(coupon.value);
-        couponDiscountAmount = coupon.type === "PERCENTAGE"
-          ? Math.round(amount * (couponValue / 100))
-          : Math.round(Math.min(couponValue * 100, amount));
-        amount = Math.max(100, amount - couponDiscountAmount);
-      }
+      // Pricing without these rules charged a discount redemption then refused, leaving a paid customer with no subscription.
+      const evaluation = await this.evaluateCouponForOrg(couponId, orgId, plan, baseAmount);
+      if (!evaluation.eligible) throw new BadRequestException(evaluation.reason);
+      couponDiscountAmount = evaluation.discountAmount;
+      amount = applyDiscount(baseAmount, couponDiscountAmount);
     }
 
     const { providerOrderId } = await adapter.createOrder({
@@ -158,6 +167,11 @@ export class BillingService {
         const existing = await tx.query.subscriptions.findFirst({
           where: eq(subscriptions.orgId, orgId),
         });
+
+        const revenue = classifyPlanChange(
+          existing ? { plan: existing.plan, status: existing.status } : null,
+          input.plan,
+        );
 
         let subscriptionId: number;
         if (existing) {
@@ -226,6 +240,19 @@ export class BillingService {
             });
           }
         }
+
+        // Inside the activating transaction, so the event and the state change commit together.
+        if (revenue) {
+          await this.revenueAnalytics.emit(tx, {
+            type: revenue.type,
+            orgId,
+            plan: input.plan,
+            previousPlan: revenue.previousPlan,
+            mrr: revenue.mrr,
+            amount: revenue.mrr,
+            metadata: { paymentId: input.razorpay_payment_id, source: "verify-and-activate" },
+          });
+        }
       });
     } catch (err: unknown) {
       const pgErr = err as { code?: string; constraint?: string };
@@ -268,18 +295,32 @@ export class BillingService {
       }
     }
 
-    void this.revenueAnalytics
-      .recordEvent({
-        type: "new_subscription",
-        orgId,
-        plan: input.plan,
-        mrr: PLAN_PRICES_PAISE[input.plan],
-        amount: PLAN_PRICES_PAISE[input.plan],
-        metadata: { paymentId: input.razorpay_payment_id, billingCycle: "monthly" },
-      })
-      .catch((err: unknown) => logger.warn("[billing] revenue event record failed", { orgId, err }));
-
     return { success: true, plan: input.plan, status: "ACTIVE" };
+  }
+
+  // Advisory only: the count and redemption row are written under FOR UPDATE in verifyAndActivate.
+  private async evaluateCouponForOrg(
+    couponId: number,
+    orgId: string,
+    plan: Plan,
+    baseAmountPaise: number,
+  ): Promise<CouponEvaluation> {
+    const coupon = await this.db.query.coupons.findFirst({
+      where: and(eq(coupons.id, couponId), eq(coupons.isActive, true)),
+    });
+    const alreadyRedeemed = coupon
+      ? await this.db.query.couponRedemptions.findFirst({
+          where: and(eq(couponRedemptions.couponId, coupon.id), eq(couponRedemptions.orgId, orgId)),
+        })
+      : undefined;
+
+    return evaluateCoupon({
+      coupon: coupon ?? undefined,
+      baseAmountPaise,
+      plan,
+      alreadyRedeemedByOrg: alreadyRedeemed !== undefined && alreadyRedeemed !== null,
+      now: new Date(),
+    });
   }
 
   async validateCoupon(code: string, orgId: string, plan: Plan): Promise<{
@@ -299,44 +340,23 @@ export class BillingService {
     });
 
     if (!coupon) {
-      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: "Invalid coupon code" };
+      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: COUPON_NOT_FOUND };
     }
 
-    if (coupon.expiresAt && coupon.expiresAt < new Date()) {
-      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: "This coupon has expired" };
+    const evaluation = await this.evaluateCouponForOrg(coupon.id, orgId, plan, PLAN_PRICES_PAISE[plan]);
+    if (!evaluation.eligible) {
+      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: evaluation.reason };
     }
-
-    if (coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses) {
-      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: "This coupon has reached its usage limit" };
-    }
-
-    if (coupon.applicablePlans && coupon.applicablePlans.length > 0 && !coupon.applicablePlans.includes(plan)) {
-      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: "This coupon is not applicable to the selected plan" };
-    }
-
-    const alreadyUsed = await this.db.query.couponRedemptions.findFirst({
-      where: and(eq(couponRedemptions.couponId, coupon.id), eq(couponRedemptions.orgId, orgId)),
-    });
-    if (alreadyUsed) {
-      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: "This coupon has already been used by your organization" };
-    }
-
-    const baseAmount = PLAN_PRICES_PAISE[plan];
-    const couponValue = parseFloat(coupon.value);
-    const discountAmount =
-      coupon.type === "PERCENTAGE"
-        ? Math.round(baseAmount * (couponValue / 100))
-        : Math.round(Math.min(couponValue * 100, baseAmount));
 
     return {
       valid: true,
-      couponId: coupon.id,
-      type: coupon.type as "PERCENTAGE" | "FIXED",
-      value: couponValue,
-      discountAmount,
-      message: coupon.type === "PERCENTAGE"
-        ? `${couponValue}% discount applied`
-        : `â‚¹${couponValue} discount applied`,
+      couponId: evaluation.couponId,
+      type: evaluation.type,
+      value: evaluation.value,
+      discountAmount: evaluation.discountAmount,
+      message: evaluation.type === "PERCENTAGE"
+        ? `${evaluation.value}% discount applied`
+        : `₹${evaluation.value} discount applied`,
     };
   }
 
@@ -356,7 +376,9 @@ export class BillingService {
       return { status: 503, body: { ok: false } };
     }
     if (!adapter.verifyWebhookSignature({ rawBody, signature })) {
+      // Reported through the same channel the primary receiver uses, not just a log line.
       logger.warn(`[billing:${providerKey}] invalid webhook signature`);
+      await this.paymentWebhooks.recordSignatureFailure(orgId, providerKey);
       return { status: 401, body: { ok: false } };
     }
 
@@ -383,35 +405,24 @@ export class BillingService {
     }
 
     const providerEventId = normalized.providerEventId ?? payment.id;
-    try {
-      // The tenant interceptor resolves an org from the portal header or the
-      // authenticated user, and this route is @Public() with neither — so no
-      // transaction is open and no GUC is set. Every table touched here has RLS,
-      // and app.current_org_id() raises 42501 rather than returning null, so a
-      // bare this.db write is denied outright. The URL orgId is this route's
-      // tenant selector, so it is what opens the transaction.
-      const inserted = await runInNewTenantTransaction(this.db, orgId, (tx) =>
-        tx
-          .insert(providerWebhookEvents)
-          .values({
-            orgId,
-            provider: providerKey,
-            providerEventId,
-            eventType: event.event,
-            rawPayload: JSON.parse(rawBody),
-          })
-          .onConflictDoNothing({
-            target: [providerWebhookEvents.provider, providerWebhookEvents.providerEventId],
-          })
-          .returning({ id: providerWebhookEvents.id }),
-      );
-      if (inserted.length === 0) {
-        logger.warn(`[billing:${providerKey}] duplicate event ignored`, { providerEventId });
-        return { status: 200, body: { ok: true, duplicate: true } };
-      }
-    } catch (error) {
-      logger.error(`[billing:${providerKey}] failed to record provider event`, { error });
-      return { status: 500, body: { ok: false } };
+    const claim = await this.claimProviderEvent({
+      orgId,
+      providerKey,
+      providerEventId,
+      eventType: event.event,
+      rawBody,
+    });
+    if (claim === "ERROR") return { status: 500, body: { ok: false } };
+    if (claim === "PROCESSED") {
+      logger.warn(`[billing:${providerKey}] duplicate event ignored`, { providerEventId });
+      return { status: 200, body: { ok: true, duplicate: true } };
+    }
+    if (claim === "FOREIGN") {
+      logger.error(`[billing:${providerKey}] provider event id is already recorded against another tenant`, {
+        providerEventId,
+        orgId,
+      });
+      return { status: 409, body: { ok: false, error: "event already recorded" } };
     }
 
     const org = await this.findOrgFromNotes(payment.notes);
@@ -427,6 +438,8 @@ export class BillingService {
       logger.error(`[billing:${providerKey}] failed to persist payment`, { error });
       return { status: 500, body: { ok: false } };
     }
+
+    const revenue: RevenueEventInput[] = [];
 
     if (
       event.event === "payment.captured" &&
@@ -447,10 +460,18 @@ export class BillingService {
             },
             () => this.aiCredits.grantAiPackCreditsFromWebhook(resolvedOrg.id, packId, payment.id),
           );
+          revenue.push({
+            type: "addon_purchase",
+            orgId: resolvedOrg.id,
+            mrr: 0,
+            amount: payment.amount,
+            metadata: { paymentId: payment.id, packId, source: "provider-webhook" },
+          });
         } catch (err: unknown) {
           if (err instanceof ExternalEffectLeaseBusyError)
             return { status: 503, body: { ok: false, error: "grant in-flight" } };
           logger.error(`[billing:${providerKey}] ai pack credit grant failed`, { orgId: resolvedOrg.id, packId, paymentId: payment.id, err });
+          await this.notifyProvisioningFailure(resolvedOrg.id, payment.id, "the AI credits you purchased could not be added");
           return { status: 500, body: { ok: false } };
         }
       }
@@ -465,20 +486,133 @@ export class BillingService {
       }
     }
 
-    await runInNewTenantTransaction(this.db, orgId, (tx) =>
-      tx
-        .update(providerWebhookEvents)
-        .set({ processedAt: new Date() })
-        .where(
-          and(
-            eq(providerWebhookEvents.orgId, orgId),
-            eq(providerWebhookEvents.provider, providerKey),
-            eq(providerWebhookEvents.providerEventId, providerEventId),
-          ),
-        ),
-    );
+    if (payment.status === "refunded") {
+      revenue.push({
+        type: "refund",
+        orgId: resolvedOrg.id,
+        mrr: 0,
+        amount: payment.amount,
+        metadata: { paymentId: payment.id, source: "provider-webhook" },
+      });
+    }
+
+    // Success is claimed only here: the revenue events and the processed_at stamp commit together.
+    try {
+      await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+        for (const entry of revenue) await this.revenueAnalytics.emit(tx, entry);
+        await tx
+          .update(providerWebhookEvents)
+          .set({ processedAt: new Date() })
+          .where(
+            and(
+              eq(providerWebhookEvents.orgId, orgId),
+              eq(providerWebhookEvents.provider, providerKey),
+              eq(providerWebhookEvents.providerEventId, providerEventId),
+            ),
+          );
+      });
+    } catch (error) {
+      logger.error(`[billing:${providerKey}] failed to acknowledge the provider event`, { error, providerEventId });
+      await this.notifyProvisioningFailure(orgId, payment.id, "your payment was received but its billing effects have not completed");
+      return { status: 500, body: { ok: false } };
+    }
 
     return { status: 200, body: { ok: true } };
+  }
+
+  // ON CONFLICT alone cannot tell a completed replay from a failed attempt, and answering "duplicate"
+  // to both is what let a failed grant be acknowledged; only processed_at distinguishes them. The
+  // route is @Public() with no ambient GUC, so the URL orgId opens the transaction RLS requires.
+  private async claimProviderEvent(input: {
+    orgId: string;
+    providerKey: string;
+    providerEventId: string;
+    eventType: string;
+    rawBody: string;
+  }): Promise<ProviderEventClaim> {
+    const { orgId, providerKey, providerEventId, eventType, rawBody } = input;
+    try {
+      return await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+        const inserted = await tx
+          .insert(providerWebhookEvents)
+          .values({
+            orgId,
+            provider: providerKey,
+            providerEventId,
+            eventType,
+            rawPayload: JSON.parse(rawBody),
+          })
+          .onConflictDoNothing({
+            target: [providerWebhookEvents.provider, providerWebhookEvents.providerEventId],
+          })
+          .returning({ id: providerWebhookEvents.id });
+        if (inserted.length > 0) return "RECORDED";
+
+        const [existing] = await tx
+          .select({ processedAt: providerWebhookEvents.processedAt })
+          .from(providerWebhookEvents)
+          .where(
+            and(
+              eq(providerWebhookEvents.orgId, orgId),
+              eq(providerWebhookEvents.provider, providerKey),
+              eq(providerWebhookEvents.providerEventId, providerEventId),
+            ),
+          )
+          .limit(1);
+        // The index is global but the read is tenant-scoped: no visible row means another tenant holds it.
+        if (!existing) return "FOREIGN";
+        return existing.processedAt === null ? "RETRY" : "PROCESSED";
+      });
+    } catch (error) {
+      logger.error(`[billing:${providerKey}] failed to record provider event`, { error, providerEventId });
+      return "ERROR";
+    }
+  }
+
+  // Through the effect ledger so a retrying provider produces one message, not a stream.
+  private async notifyProvisioningFailure(orgId: string, paymentId: string, detail: string): Promise<void> {
+    try {
+      await this.externalEffectLedger.execute(
+        {
+          organizationId: orgId,
+          producerEventId: paymentId,
+          effectKey: `${paymentId}:provisioning-failure-notice`,
+          effectType: "billing.provisioning-failure-notice",
+          providerIdempotency: "NONE",
+        },
+        () =>
+          runInNewTenantTransaction(this.db, orgId, () =>
+            this.paymentNotices.notifyOwner(orgId, {
+              title: "Payment received — provisioning is still pending",
+              message: `${detail}. We are retrying automatically; contact support if this does not clear shortly.`,
+              type: "WARNING",
+              priority: "HIGH",
+              link: "/settings/billing",
+            }),
+          ),
+      );
+    } catch (err: unknown) {
+      if (err instanceof ExternalEffectLeaseBusyError) return;
+      logger.error("[billing] could not tell the organisation about a provisioning failure", { orgId, paymentId, err });
+    }
+  }
+
+  // The stuck-provisioning queue; the raw payload is withheld because it carries payer detail.
+  async listProvisioningFailures(orgId: string) {
+    const rows = await this.db
+      .select({
+        id: providerWebhookEvents.id,
+        provider: providerWebhookEvents.provider,
+        providerEventId: providerWebhookEvents.providerEventId,
+        eventType: providerWebhookEvents.eventType,
+        receivedAt: providerWebhookEvents.createdAt,
+      })
+      .from(providerWebhookEvents)
+      .where(and(eq(providerWebhookEvents.orgId, orgId), isNull(providerWebhookEvents.processedAt)))
+      .orderBy(asc(providerWebhookEvents.createdAt))
+      .limit(100);
+
+    return { events: rows, total: rows.length };
   }
 
   /** Compatibility API for internal callers that still use the original method name. */
@@ -486,6 +620,7 @@ export class BillingService {
     return this.handlePaymentProviderWebhook(orgId, "razorpay", rawBody, signature);
   }
 
+  // Forward-only: without setWhere a redelivered `authorized` reverted a captured row and nulled its timestamp.
   private async persistPayment(payment: RazorpayPayment, orgId: string | null): Promise<void> {
     const fields = {
       razorpayPaymentId: payment.id,
@@ -502,18 +637,22 @@ export class BillingService {
       refundedAt: payment.status === "refunded" ? new Date() : null,
     };
 
+    const conflict = {
+      target: platformPayments.razorpayPaymentId,
+      set: {
+        ...fields,
+        capturedAt: payment.status === "captured" ? new Date() : sql`${platformPayments.capturedAt}`,
+        refundedAt: payment.status === "refunded" ? new Date() : sql`${platformPayments.refundedAt}`,
+      },
+      setWhere: forwardOnlyStatusGuard(platformPayments.status, payment.status),
+    };
+
     if (orgId !== null) {
       await runInTenantTransaction(this.db, async (tx) => {
-        await tx
-          .insert(platformPayments)
-          .values(fields)
-          .onConflictDoUpdate({ target: platformPayments.razorpayPaymentId, set: fields });
+        await tx.insert(platformPayments).values(fields).onConflictDoUpdate(conflict);
       }, { orgId });
     } else {
-      await this.db
-        .insert(platformPayments)
-        .values(fields)
-        .onConflictDoUpdate({ target: platformPayments.razorpayPaymentId, set: fields });
+      await this.db.insert(platformPayments).values(fields).onConflictDoUpdate(conflict);
     }
   }
 

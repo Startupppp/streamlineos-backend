@@ -283,13 +283,7 @@ interface SizeOnlyCaseConfig {
   base?: Record<string, unknown>;
 }
 
-/**
- * Cursor and size-only lists — no `page` field, so they are not in the table
- * above, but the page-size half of the vocabulary is the same shape and the
- * clamp-don't-reject rule applies to them identically. Each of these hand-rolled
- * `z.coerce.number().int().min(1).max(n)` before this, which answered an
- * over-large page with a 400.
- */
+// Cursor and size-only lists: no `page` field, but the same clamp-don't-reject rule on page size.
 const sizeOnlyCases: SizeOnlyCaseConfig[] = [
   { name: "searchTicketsQuerySchema", schema: searchTicketsQuerySchema as ParseableSchema, defaultSize: 10, ceiling: 20, base: { q: "bug" } },
   { name: "intakeListQuerySchema", schema: intakeListQuerySchema as ParseableSchema, defaultSize: 50 },

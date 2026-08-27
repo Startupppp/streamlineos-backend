@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Put, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -40,7 +41,9 @@ import { RecordLayoutsService } from "./record-layouts.service";
 export class RecordLayoutsController {
   constructor(private readonly layouts: RecordLayoutsService) {}
 
+  // Every rendered record reads this arrangement; gating it would blank the UI for anyone who cannot edit it.
   @Get(":layoutKey")
+  @Universal()
   get(
     @Param("layoutKey", new ZodValidationPipe(layoutKeySchema)) layoutKey: string,
     @CurrentUser() u: CurrentUserContext,

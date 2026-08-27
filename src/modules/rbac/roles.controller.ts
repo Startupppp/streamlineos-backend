@@ -14,6 +14,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -135,7 +136,9 @@ export class RolesController {
     return this.roles.materializeTemplate(u, body.templateId);
   }
 
+  // ROLE_TEMPLATES is a product constant, no actor and no tenant data; materializing one is the gated action.
   @Get("templates")
+  @Universal()
   templates() {
     return this.roles.listTemplates();
   }

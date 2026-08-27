@@ -3,16 +3,7 @@ import type { Db } from "../../../db/drizzle.module";
 import type { CrmAutomationRunnerService } from "../automation-studio/crm-automation-runner.service";
 import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
 
-/**
- * `getRuns` displays a total, so the total must come out of the page query.
- *
- * It used to come from a second statement — and not even a `count()`: it selected
- * `crmAutomationRuns.id` for *every* run of the rule and took the array's length,
- * so a rule with fifty thousand runs transferred fifty thousand ids to render one
- * page of twenty. The statement counter below is what pins that shut: the double
- * fails the test by *succeeding* at a second read, so the assertion cannot be
- * satisfied by a query that merely looks different.
- */
+// The total used to come from a second statement that selected one id per run and took the array's length.
 
 const ORG_ID = "org-1";
 const RULE_ID = 4;

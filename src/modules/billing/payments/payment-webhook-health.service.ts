@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { paymentProviders, paymentWebhookEndpoints, paymentWebhookEvents } from "../../../db/schema";
@@ -150,6 +150,52 @@ export class PaymentWebhookHealthService {
     });
   }
 
+  // The single way a rejected signature is reported; notifies once, on the healthy→failing edge.
+  async recordSignatureFailure(
+    orgId: string,
+    providerKey: string,
+    environment?: "test" | "live",
+  ): Promise<void> {
+    const endpoints = await runInTenantTransaction(this.db, async (tx) => {
+      const [provider] = await tx
+        .select({ id: paymentProviders.id })
+        .from(paymentProviders)
+        .where(and(eq(paymentProviders.orgId, orgId), eq(paymentProviders.providerKey, providerKey)))
+        .limit(1);
+      if (!provider) return [];
+      return tx
+        .select({ id: paymentWebhookEndpoints.id, status: paymentWebhookEndpoints.status })
+        .from(paymentWebhookEndpoints)
+        .where(
+          environment
+            ? and(
+                eq(paymentWebhookEndpoints.providerId, provider.id),
+                eq(paymentWebhookEndpoints.environment, environment),
+              )
+            : eq(paymentWebhookEndpoints.providerId, provider.id),
+        );
+    }, { orgId });
+
+    if (endpoints.length === 0) return;
+    const wasHealthy = endpoints.some((row) => row.status !== "failing");
+
+    await runInTenantTransaction(this.db, async (tx) => {
+      await tx
+        .update(paymentWebhookEndpoints)
+        .set({ status: "failing", lastFailureAt: new Date(), failureReason: "Invalid signature" })
+        .where(inArray(paymentWebhookEndpoints.id, endpoints.map((row) => row.id)));
+    }, { orgId });
+
+    if (!wasHealthy) return;
+    const scope = environment ? `${providerKey} (${environment})` : providerKey;
+    await this.paymentAnalytics.notifyOwner(orgId, {
+      title: "Payment webhook is failing",
+      message: `${scope} webhook signature verification is failing. Check the webhook secret in Settings > Payments.`,
+      type: "WARNING",
+      priority: "HIGH",
+    });
+  }
+
   /**
    * Public webhook receiver entry point. Verifies signature, enforces idempotency via the
    * unique(provider_id, environment, provider_event_id) constraint (insert-or-ignore, never
@@ -191,23 +237,7 @@ export class PaymentWebhookHealthService {
     }, { orgId: params.orgId });
 
     if (!signatureValid) {
-      if (endpoint) {
-        const wasHealthy = endpoint.status !== "failing";
-        await runInTenantTransaction(this.db, async (tx) => {
-          await tx
-            .update(paymentWebhookEndpoints)
-            .set({ status: "failing", lastFailureAt: new Date(), failureReason: "Invalid signature" })
-            .where(eq(paymentWebhookEndpoints.id, endpoint.id));
-        }, { orgId: params.orgId });
-        if (wasHealthy) {
-          await this.paymentAnalytics.notifyOwner(params.orgId, {
-            title: "Payment webhook is failing",
-            message: `${params.providerKey} (${params.environment}) webhook signature verification is failing. Check the webhook secret in Settings > Payments.`,
-            type: "WARNING",
-            priority: "HIGH",
-          });
-        }
-      }
+      await this.recordSignatureFailure(params.orgId, params.providerKey, params.environment);
       return { status: 401, body: { ok: false, error: "invalid signature" } };
     }
 

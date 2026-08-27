@@ -30,6 +30,13 @@ import { FinanceControlsModule } from "../../finance/controls/finance-controls.m
     PaymentManualMethodsService,
     PaymentAnalyticsService,
   ],
-  exports: [PaymentProviderSetupService, PaymentProviderResolver, PaymentAuditService, PaymentProviderAdapterRegistry],
+  exports: [
+    PaymentProviderSetupService,
+    PaymentProviderResolver,
+    PaymentAuditService,
+    PaymentProviderAdapterRegistry,
+    PaymentWebhookHealthService,
+    PaymentAnalyticsService,
+  ],
 })
 export class PaymentsModule {}
