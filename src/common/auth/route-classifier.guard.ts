@@ -26,17 +26,13 @@ import { REQUIRE_PERMISSION } from "../../modules/access/require-permission.deco
  * authenticated and module-gated but never permission-checked, and nothing
  * says so.
  *
- * ENFORCEMENT IS OPT-IN, and deliberately so. 93 controllers carry a
- * class-level JwtAuthGuard, and §8 designates some of those handlers as
- * platform core that is universal by design — own-calendar and people-directory
- * reads hold no key on purpose. Denying absence before those are marked
- * @Universal() would 403 exactly the surfaces every member is promised.
- *
- * So the boot report always runs and names the undeclared routes, and
- * REQUIRE_ROUTE_CLASSIFICATION=true turns absence into a hard failure — at
- * boot in CI, and at request time. Flip it once the report reaches zero.
+ * Enforcement is ON. It was opt-in while 107 routes were undeclared, because
+ * denying absence would have 403'd the platform-core surfaces §8 promises every
+ * member; that count reached zero on 2026-08-27, so absence now denies at boot
+ * and at request time. REQUIRE_ROUTE_CLASSIFICATION=false is the escape hatch,
+ * and turning it off is a deliberate line in a deployment config.
  */
-const ENFORCE = () => process.env.REQUIRE_ROUTE_CLASSIFICATION === "true";
+const ENFORCE = () => process.env.REQUIRE_ROUTE_CLASSIFICATION !== "false";
 
 @Injectable()
 export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap {
