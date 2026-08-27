@@ -173,6 +173,16 @@ export function planReversal(
       // branch so the exhaustiveness check below stays honest if that changes.
       return refuse("not-reversible", "A sent quote cannot be taken back.");
 
+    case "outbound.sent":
+    case "cold_outbound.sent":
+      /**
+       * The same shape and the same reason. While it is held, the hold's own
+       * cancel path stops it and this is never reached; once it has been
+       * delivered there is no reversing write, and offering one would tell a
+       * manager they can unsend a customer's mail.
+       */
+      return refuse("not-reversible", "A message that has already gone cannot be taken back.");
+
     default: {
       const exhaustive: never = decision.kind;
       return refuse("unsupported-kind", `Unknown action type: ${String(exhaustive)}`);

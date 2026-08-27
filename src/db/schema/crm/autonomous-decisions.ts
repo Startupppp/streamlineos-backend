@@ -23,6 +23,18 @@ export const DECISION_KINDS = [
   "party.created",
   "activity.logged",
   "quote.sent",
+  /**
+   * Ticket 07. A follow-up, nudge, check-in or meeting request the system wrote
+   * and decided to send, under the same hold window as a quote.
+   */
+  "outbound.sent",
+  /**
+   * Ticket 09. Cold outreach, as its own kind rather than a class of the one
+   * above — so an operator can stop every cold campaign on the platform without
+   * stopping the follow-ups, which are a different risk and a different
+   * argument. One kill switch per kind is what makes that possible.
+   */
+  "cold_outbound.sent",
 ] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 
