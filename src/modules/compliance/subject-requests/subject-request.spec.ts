@@ -3,7 +3,10 @@ import {
   mayReportComplete,
   runAcrossRegions,
   type RegionWork,
+  subjectRequestTables,
+  subjectRequestGlobalTables,
 } from "./subject-request";
+import { PERSONAL_DATA_TABLES } from "../personal-data-registry";
 
 const AT = () => new Date("2026-08-26T12:00:00.000Z");
 const THREE_REGIONS = ["india", "eu", "us"] as const;
@@ -97,24 +100,28 @@ describe("running across regions", () => {
 });
 
 describe("export is the same enumeration", () => {
-  it("visits exactly the regions erasure visits", async () => {
-    // Built separately, an export drifts from the erasure and only one of them
-    // is ever exercised in anger.
-    const erasure = await runAcrossRegions(
-      "erasure",
-      "s@example.com",
-      work({ india: 1, eu: 2, us: 3 }),
-      AT,
-    );
-    const exported = await runAcrossRegions(
-      "export",
-      "s@example.com",
-      work({ india: 1, eu: 2, us: 3 }),
-      AT,
-    );
+  it("enumerates from the registry, not from whatever the caller passed", () => {
+    /*
+      This replaced a test that handed `work({ india: 1, eu: 2, us: 3 })` to both
+      calls and then asserted the two visited the same regions. They did, because
+      it was the same array — the assertion could not fail, and would have gone on
+      passing while erasure and export were built against different table lists.
 
-    expect(exported.regions.map((r) => r.region)).toEqual(erasure.regions.map((r) => r.region));
-    expect(exported.totalRecordsAffected).toBe(erasure.totalRecordsAffected);
+      What ticket 18 actually asks is that the two share an ENUMERATION. So the
+      thing worth asserting is where that enumeration comes from.
+    */
+    expect(subjectRequestTables()).toEqual(PERSONAL_DATA_TABLES.map((entry) => entry.table));
+    expect(subjectRequestTables().length).toBeGreaterThan(100);
+  });
+
+  it("accounts for the tables no tenant predicate reaches", () => {
+    // An implementation written around organisations misses these, and misses
+    // them silently. `subject_requests` is on the list because the record of an
+    // erasure keeps the subject's own email address.
+    expect(subjectRequestGlobalTables()).toContain("subject_requests");
+    expect(subjectRequestTables()).toEqual(
+      expect.arrayContaining(subjectRequestGlobalTables()),
+    );
   });
 
   it("carries its own kind, so a record says which was performed", async () => {

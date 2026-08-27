@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, isNull, or, gt } from "drizzle-orm";
+import { and, asc, eq, isNull, or, gt, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { subprocessors, subprocessorSubscribers } from "../../db/schema";
@@ -119,10 +119,16 @@ export class SubprocessorsService {
         retiredAt: subprocessors.retiredAt,
       })
       .from(subprocessors)
-      .where(
-        or(gt(subprocessors.effectiveFrom, since), and(gt(subprocessors.retiredAt, since))),
-      )
-      .orderBy(asc(subprocessors.effectiveFrom));
+      /*
+        Added since, or retired since — a customer subscribed to changes needs
+        both. The `and(...)` around the second arm was a one-argument wrapper
+        doing nothing, which was harmless, and the ordering beneath it was not:
+        a retirement sorted by `effective_from` lands wherever the vendor STARTED,
+        so a processor retired yesterday and onboarded two years ago arrives at
+        the bottom of a change list. Ordered by when the change happened.
+      */
+      .where(or(gt(subprocessors.effectiveFrom, since), gt(subprocessors.retiredAt, since)))
+      .orderBy(asc(sql`COALESCE(${subprocessors.retiredAt}, ${subprocessors.effectiveFrom})`));
 
     return rows.map((row) => ({
       ...row,

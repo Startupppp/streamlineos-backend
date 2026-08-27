@@ -1,3 +1,4 @@
+import { PERSONAL_DATA_TABLES } from "../personal-data-registry";
 /**
  * A data subject's request, carried out across every region.
  *
@@ -115,6 +116,38 @@ export async function runAcrossRegions(
  * than are configured is not complete however many succeeded -- that is the
  * failure mode where a region was added and the enumeration was not updated.
  */
+/**
+ * The tables a subject request has to visit, for either kind.
+ *
+ * Ticket 18's criterion is that export uses the same enumeration as erasure. It
+ * did, in the sense that both took a caller-supplied array — which is not an
+ * enumeration, and meant the two could diverge the first time somebody built one
+ * of them for real. This is the enumeration: it comes from
+ * `PERSONAL_DATA_TABLES`, so neither kind can be given a different list without
+ * that being visible here.
+ *
+ * It deliberately returns the WHOLE registry rather than a filtered view. An
+ * export that skips a table is an incomplete answer to a subject; an erasure
+ * that skips one leaves their data behind. Where the two differ is what they DO
+ * with a row — read it or remove it — not which rows they are accountable for.
+ */
+export function subjectRequestTables(): readonly string[] {
+  return PERSONAL_DATA_TABLES.map((entry) => entry.table);
+}
+
+/**
+ * The tables no tenant predicate reaches.
+ *
+ * Separated because they are the ones an implementation written around
+ * organisations will silently miss, and a subject request that misses them is
+ * wrong in the direction nobody notices.
+ */
+export function subjectRequestGlobalTables(): readonly string[] {
+  return PERSONAL_DATA_TABLES.filter((entry) => entry.scope === "global").map(
+    (entry) => entry.table,
+  );
+}
+
 export function mayReportComplete(
   result: SubjectRequestResult,
   configuredRegions: readonly string[],
