@@ -9,7 +9,7 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
-import { calendarEvents } from "../common/shared";
+import { calendarEvents } from "../common/calendar-events";
 
 export const calendarEventExceptions = pgTable(
   "calendar_event_exceptions",

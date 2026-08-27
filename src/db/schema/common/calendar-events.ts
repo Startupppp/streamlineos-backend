@@ -1,0 +1,63 @@
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, primaryKey } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { organizations, users } from "./auth";
+
+export const calendarEvents = pgTable("calendar_events", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  location: text("location"),
+  meetingUrl: text("meeting_url"),
+  startDate: timestamp("start_date", { withTimezone: true }).notNull(),
+  endDate: timestamp("end_date", { withTimezone: true }).notNull(),
+  timezone: text("timezone").notNull().default("UTC"),
+  allDay: boolean("all_day").default(false).notNull(),
+  color: text("color"),
+  category: text("category").notNull(),
+  entityType: text("entity_type"),
+  entityId: text("entity_id"),
+  createdBy: text("created_by").references(() => users.id).notNull(),
+  attendeeIds: jsonb("attendee_ids").$type<string[]>().default([]).notNull(),
+  agenda: text("agenda"),
+  postMeetingNotes: text("post_meeting_notes"),
+  linkedDealId: integer("linked_deal_id"),
+  linkedLeadId: integer("linked_lead_id"),
+  rrule: text("rrule"),
+  recurrenceEnd: timestamp("recurrence_end", { withTimezone: true }),
+  reminder15MinSent: boolean("reminder_15min_sent").default(false).notNull(),
+  integrationConnectionId: integer("integration_connection_id"),
+  externalEventId: text("external_event_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  index("idx_calendar_events_org_date").on(table.orgId, table.startDate),
+  index("idx_calendar_events_category").on(table.category),
+  index("idx_calendar_events_created_by").on(table.createdBy),
+  index("idx_calendar_events_external").on(table.integrationConnectionId, table.externalEventId),
+  unique("uniq_calendar_events_org_id").on(table.orgId, table.id),
+]);
+
+export const eventAttendees = pgTable("event_attendees", {
+  id: serial("id").primaryKey(),
+  eventId: integer("event_id").references(() => calendarEvents.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  unique("event_attendees_event_user_unique").on(table.eventId, table.userId),
+  index("idx_event_attendees_event_id").on(table.eventId),
+  index("idx_event_attendees_user_id").on(table.userId),
+]);
+
+export const calendarEventsRelations = relations(calendarEvents, ({ one, many }) => ({
+  organization: one(organizations, { fields: [calendarEvents.orgId], references: [organizations.id] }),
+  creator: one(users, { fields: [calendarEvents.createdBy], references: [users.id] }),
+  attendees: many(eventAttendees),
+}));
+
+export const eventAttendeesRelations = relations(eventAttendees, ({ one }) => ({
+  event: one(calendarEvents, { fields: [eventAttendees.eventId], references: [calendarEvents.id] }),
+  user: one(users, { fields: [eventAttendees.userId], references: [users.id] }),
+}));

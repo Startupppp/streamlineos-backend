@@ -1,4 +1,4 @@
-import { calendarEvents } from "../../db/schema/common/shared";
+import { calendarEvents } from "../../db/schema/common/calendar-events";
 import {
   createEventSchema,
   updateEventSchema,

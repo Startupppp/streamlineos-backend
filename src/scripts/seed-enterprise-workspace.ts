@@ -15,7 +15,7 @@ import {
   accessVersions,
 } from "../db/schema/common/access";
 import { orgUnits } from "../db/schema/common/organization";
-import { subscriptions } from "../db/schema/common/shared";
+import { subscriptions } from "../db/schema/common/subscriptions";
 import { hrPeople, hrEmployments, hrReportingLines } from "../db/schema/hr/core-people";
 import { organizationPeople } from "../db/schema/directory/organization-people";
 import { leaveTypes, leaveRequests } from "../db/schema/hr/leaves";

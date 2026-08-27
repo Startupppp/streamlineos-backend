@@ -12,7 +12,8 @@ import {
   notificationSuppressionReasonEnum,
 } from "./enums";
 import { organizations, users } from "./auth";
-import { broadcasts, notifications } from "./shared";
+import { broadcasts } from "./broadcasts";
+import { notifications } from "./notifications";
 
 export const notificationEvents = pgTable("notification_events", {
   id: serial("id").primaryKey(),
