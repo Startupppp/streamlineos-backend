@@ -1,4 +1,5 @@
 import { businessParties } from "../../db/schema/party";
+import type { LegacyClientInsert, LegacyContactInsert, LegacyCrmOrgInsert, LegacyLeadInsert } from "./legacy-shapes";
 import { clients, contacts, crmOrganizations } from "../../db/schema/crm/contacts";
 import { leads } from "../../db/schema/crm/leads";
 import type { MappedLegacyKind } from "./party-legacy-seam";
@@ -34,10 +35,18 @@ import type { MappedLegacyKind } from "./party-legacy-seam";
 export type PartyRow = typeof businessParties.$inferSelect;
 export type PartyPatch = Partial<typeof businessParties.$inferInsert>;
 
-export type LeadInsert = typeof leads.$inferInsert;
-export type ClientInsert = typeof clients.$inferInsert;
-export type ContactInsert = typeof contacts.$inferInsert;
-export type CrmOrgInsert = typeof crmOrganizations.$inferInsert;
+/*
+  Pointed at the written shapes, not at the tables. Ticket 08's contract.
+
+  `legacy-shapes.spec.ts` proved these are structurally identical to what
+  `$inferSelect` produced, while the tables still existed. That proof is why this
+  swap changes nothing for any of the two dozen files that speak this
+  vocabulary — and why it could only be made in this order.
+*/
+export type LeadInsert = LegacyLeadInsert;
+export type ClientInsert = LegacyClientInsert;
+export type ContactInsert = LegacyContactInsert;
+export type CrmOrgInsert = LegacyCrmOrgInsert;
 
 /**
  * One Party column's contribution to one legacy table.

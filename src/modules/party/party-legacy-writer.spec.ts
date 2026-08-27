@@ -253,22 +253,27 @@ describe("party-legacy-writer — the party is written first, in one transaction
     expect(lead.dmLeadId).toBe(99);
   });
 
-  it("updates the party before the lead, both in one savepoint", async () => {
+  it("updates the party, and derives the lead it returns rather than writing one", async () => {
     const fake = new FakeDb(world());
 
-    await updateMirroredLeads(fake.db, "org-1", [7], { designation: "Rear Admiral" });
+    const [updated] = await updateMirroredLeads(fake.db, "org-1", [7], {
+      designation: "Rear Admiral",
+    });
 
-    expect(fake.trace()).toEqual([
-      "select:leadMap@1",
-      "select:party@1",
-      "update:party@1",
-      "update:leads@1",
-    ]);
+    // Ticket 08: the trailing `update:leads` is gone. The party write is the
+    // only write, because the lead is computed when somebody asks for it.
+    expect(fake.trace()).toEqual(["select:leadMap@1", "select:party@1", "update:party@1"]);
+
     // The party takes the merged model's name for the field.
     expect(fake.of("update", businessParties)[0]?.set).toEqual({ jobTitle: "Rear Admiral" });
-    // The lead takes the whole derivation, not just the field that changed, so a
-    // column that drifted for any other reason is corrected by the next write.
-    expect(fake.of("update", leads)[0]?.set).toEqual(LEAD_MIRROR.derive(PARTY));
+
+    /*
+      The returned lead is still the WHOLE derivation, not just the field that
+      changed — which is the property the old assertion was protecting when it
+      checked what the UPDATE `set`. It matters for the same reason: a caller
+      reading one field off this row must not find the rest stale.
+    */
+    expect(updated).toMatchObject(LEAD_MIRROR.derive(PARTY));
   });
 
   it("keeps a bulk update to a fixed number of statements", async () => {
@@ -284,34 +289,47 @@ describe("party-legacy-writer — the party is written first, in one transaction
 
     await updateMirroredLeads(fake.db, "org-1", [7, 8], { designation: "Rear Admiral" });
 
-    // Deriving per row is what keeps the mirror correct; grouping identical
-    // payloads is what stops a bulk operation from costing four statements per
-    // record. Two leads, two parties, one statement each way.
+    // Deriving per row is what keeps every returned lead correct; grouping
+    // identical payloads is what stops a bulk operation costing a statement per
+    // record. Two leads, two parties, one statement each way — and since ticket
+    // 08 there is no third statement, because there is no second copy to write.
     expect(fake.of("select", businessParties)).toHaveLength(1);
     expect(fake.of("update", businessParties)).toHaveLength(1);
-    expect(fake.of("update", leads)).toHaveLength(1);
   });
 
   it("checks a lead is live before deleting it, so a delete does not move the timestamp", async () => {
-    const fake = new FakeDb(world({ leads: [] }));
+    // Liveness is the party's `deleted_at` now, read through the map — ticket 08
+    // removed the last read of `leads`. The property under test is unchanged: a
+    // lead already deleted must not have its timestamp moved by a second delete.
+    const fake = new FakeDb(world({ leadMap: [] }));
 
     await softDeleteMirroredLeads(fake.db, "org-1", [7]);
 
-    // No live lead came back, so nothing was written at all.
-    expect(fake.trace()).toEqual(["select:leads@0"]);
+    // Nothing live came back, so nothing was written at all.
+    expect(fake.trace()).toEqual(["select:leadMap@0"]);
   });
 
-  it("soft-deletes the party and the lead together when the lead is live", async () => {
+  it("soft-deletes the party, which is the whole of deleting the lead", async () => {
     const fake = new FakeDb(world());
 
     await softDeleteMirroredLeads(fake.db, "org-1", [7]);
 
+    /*
+      Ticket 08: the liveness read is the map joined to the party, and the
+      trailing `update:leads` is gone.
+
+      The test's name changed with it, and the change is the point rather than
+      cosmetic: there is no longer a lead to delete *alongside* the party. The
+      lead is a view of the party, so stamping the party IS deleting it, and a
+      second write could only ever have disagreed.
+    */
     expect(fake.trace()).toEqual([
-      "select:leads@0",
+      // Depth 0: the liveness check, outside the transaction, exactly where the
+      // read of `leads` used to sit.
+      "select:leadMap@0",
       "select:leadMap@1",
       "select:party@1",
       "update:party@1",
-      "update:leads@1",
     ]);
     expect(fake.of("update", businessParties)[0]?.set?.deletedAt).toBeInstanceOf(Date);
   });

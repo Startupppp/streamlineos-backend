@@ -1,12 +1,11 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { leadPartyMap } from "../../db/schema/party";
+import { businessParties, leadPartyMap } from "../../db/schema/party";
 import { leads } from "../../db/schema/crm/leads";
 import { LEAD_MIRROR } from "./party-legacy-mirror";
 import type { PartyRow } from "./party-mirror-fields";
 import {
   applyPartyPatch,
   grantRole,
-  groupByPayload,
   insertBareParty,
   movePartiesFor,
   type LeadInsert,
@@ -193,24 +192,23 @@ export async function updateMirroredLeads(
       (party) => LEAD_MIRROR.split(patch, party).partyPatch,
     );
 
-    const derived: { id: number; payload: Partial<LeadInsert> }[] = [];
+    /**
+     * Assembled from the parties, not read back from an UPDATE. Ticket 08.
+     *
+     * The payload this used to write was `derive(party)` plus the pass-through
+     * half — exactly what `legacyLeadRow` assembles — so the values are the same
+     * ones, and the UPDATE was only ever a way of storing a second copy of them.
+     *
+     * `groupByPayload` goes with it. It existed to collapse rows sharing a
+     * payload into one UPDATE, and there is no UPDATE to collapse; the party
+     * writes are still grouped, inside `movePartiesFor`.
+     */
+    const updated: LeadRow[] = [];
     for (const [leadId, partyId] of partyByLead) {
       const party = moved.get(partyId);
       if (!party) continue;
-      // The pass-through half does not depend on the party, so it is the same
-      // for every row; the derivation is not, and is computed per party.
       const { legacyOwnedPatch } = LEAD_MIRROR.split(patch, party);
-      derived.push({ id: leadId, payload: { ...LEAD_MIRROR.derive(party), ...legacyOwnedPatch } });
-    }
-
-    const updated: LeadRow[] = [];
-    for (const group of groupByPayload(derived)) {
-      const rows = await tx
-        .update(leads)
-        .set(group.payload)
-        .where(and(eq(leads.orgId, organizationId), inArray(leads.id, group.ids)))
-        .returning();
-      updated.push(...rows);
+      updated.push(legacyLeadRow(leadId, organizationId, party, legacyOwnedPatch));
     }
     return updated;
   });
@@ -238,11 +236,33 @@ export async function softDeleteMirroredLeads(
 ): Promise<LeadRow[]> {
   const ids = [...new Set(leadIds)].filter((id) => Number.isInteger(id));
   if (ids.length === 0) return [];
+  /**
+   * Liveness comes from the party. Ticket 08.
+   *
+   * This used to ask `leads.deleted_at`, which was a mirror of
+   * `business_parties.deleted_at` — the party has always been the one that
+   * decides. Asking it directly removes the last read of the table and changes
+   * no answer: the map is what says which party a lead id means.
+   *
+   * The filter is still here rather than dropped. Its purpose is unchanged: a
+   * lead already deleted must not have its timestamp moved by a second delete.
+   */
   const live = await db
-    .select({ id: leads.id })
-    .from(leads)
+    .select({ id: leadPartyMap.leadId })
+    .from(leadPartyMap)
+    .innerJoin(
+      businessParties,
+      and(
+        eq(businessParties.organizationId, leadPartyMap.organizationId),
+        eq(businessParties.partyId, leadPartyMap.partyId),
+      ),
+    )
     .where(
-      and(eq(leads.orgId, organizationId), inArray(leads.id, ids), isNull(leads.deletedAt)),
+      and(
+        eq(leadPartyMap.organizationId, organizationId),
+        inArray(leadPartyMap.leadId, ids),
+        isNull(businessParties.deletedAt),
+      ),
     );
   return updateMirroredLeads(
     db,

@@ -1,4 +1,5 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
+import type { LegacyClientInsert, LegacyClientRow, LegacyContactInsert, LegacyContactRow, LegacyCrmOrgInsert, LegacyCrmOrgRow, LegacyLeadInsert, LegacyLeadRow } from "./legacy-shapes";
 import type { Db } from "../../db/drizzle.types";
 import {
   businessParties,
@@ -57,14 +58,22 @@ import { convertedFromColumnOf, parentColumnOf } from "./party-legacy-associatio
  */
 export type MirrorDb = Db;
 
-export type LeadRow = typeof leads.$inferSelect;
-export type ClientRow = typeof clients.$inferSelect;
-export type ContactRow = typeof contacts.$inferSelect;
-export type LeadInsert = typeof leads.$inferInsert;
-export type ClientInsert = typeof clients.$inferInsert;
-export type ContactInsert = typeof contacts.$inferInsert;
-export type CrmOrgRow = typeof crmOrganizations.$inferSelect;
-export type CrmOrgInsert = typeof crmOrganizations.$inferInsert;
+/*
+  Pointed at the written shapes, not at the tables. Ticket 08's contract.
+
+  `legacy-shapes.spec.ts` proved these are structurally identical to what
+  `$inferSelect` produced, while the tables still existed. That proof is why this
+  swap changes nothing for any of the two dozen files that speak this
+  vocabulary — and why it could only be made in this order.
+*/
+export type LeadRow = LegacyLeadRow;
+export type ClientRow = LegacyClientRow;
+export type ContactRow = LegacyContactRow;
+export type LeadInsert = LegacyLeadInsert;
+export type ClientInsert = LegacyClientInsert;
+export type ContactInsert = LegacyContactInsert;
+export type CrmOrgRow = LegacyCrmOrgRow;
+export type CrmOrgInsert = LegacyCrmOrgInsert;
 
 /**
  * What 0241 gave the backfilled rows; new rows get the same, for the same reason.
