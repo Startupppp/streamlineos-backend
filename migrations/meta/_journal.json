@@ -2150,6 +2150,76 @@
       "when": 1787830379441,
       "tag": "0575_ticket_list_sort_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 308,
+      "version": "7",
+      "when": 1787830380441,
+      "tag": "0234_business_parties_name_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 309,
+      "version": "7",
+      "when": 1787830381441,
+      "tag": "0262_party_company_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 312,
+      "version": "7",
+      "when": 1787830384441,
+      "tag": "0265_party_association_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 315,
+      "version": "7",
+      "when": 1787830387441,
+      "tag": "0268_backfill_record_layouts_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 316,
+      "version": "7",
+      "when": 1787830388441,
+      "tag": "0269_mailbox_push_secret",
+      "breakpoints": true
+    },
+    {
+      "idx": 317,
+      "version": "7",
+      "when": 1787830389441,
+      "tag": "0271_crm_suppression_hashes_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 318,
+      "version": "7",
+      "when": 1787830390441,
+      "tag": "0272_quote_document_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 319,
+      "version": "7",
+      "when": 1787830391441,
+      "tag": "0472_outbox_inbox_aggregate_fence",
+      "breakpoints": true
+    },
+    {
+      "idx": 320,
+      "version": "7",
+      "when": 1787830392441,
+      "tag": "0478_invoice_line_items_column_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 321,
+      "version": "7",
+      "when": 1787830393441,
+      "tag": "0482_candidate_resume_column_drop",
+      "breakpoints": true
     }
   ]
 }

@@ -77,13 +77,29 @@ ALTER TABLE "crm_import_rows" ADD COLUMN IF NOT EXISTS "matched_record_id" text;
 -- are exactly the new ones. Backfilled here rather than left to the reader,
 -- because `chk_crm_import_rows_outcome` is re-pointed at the new column below
 -- and would otherwise refuse every committed row this table already holds.
-UPDATE "crm_import_rows"
-  SET "created_record_id" = "created_party_id"
-  WHERE "created_party_id" IS NOT NULL AND "created_record_id" IS NULL;
+-- 0282 drops created_party_id. On a cold rebuild this runs first and the column is there; replayed
+-- afterwards it must be a no-op rather than a failure, so the guard is a catalog check.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'crm_import_rows' AND column_name = 'created_party_id'
+  ) THEN
+    EXECUTE 'UPDATE "crm_import_rows" SET "created_record_id" = "created_party_id" WHERE "created_party_id" IS NOT NULL AND "created_record_id" IS NULL';
+  END IF;
+END $$;
 --> statement-breakpoint
-UPDATE "crm_import_rows"
-  SET "matched_record_id" = "matched_party_id"
-  WHERE "matched_party_id" IS NOT NULL AND "matched_record_id" IS NULL;
+-- 0282 drops matched_party_id. On a cold rebuild this runs first and the column is there; replayed
+-- afterwards it must be a no-op rather than a failure, so the guard is a catalog check.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'crm_import_rows' AND column_name = 'matched_party_id'
+  ) THEN
+    EXECUTE 'UPDATE "crm_import_rows" SET "matched_record_id" = "matched_party_id" WHERE "matched_party_id" IS NOT NULL AND "matched_record_id" IS NULL';
+  END IF;
+END $$;
 
 --> statement-breakpoint
 -- The same invariant 0280 widened, now expressed over the renamed column: a
