@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const listStockLevelsSchema = z.object({
@@ -11,8 +12,8 @@ export const listStockLevelsSchema = z.object({
   lowStock: queryBoolean.optional(),
   negative: queryBoolean.optional(),
   search: z.string().max(200).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ListStockLevelsInput = z.infer<typeof listStockLevelsSchema>;
 
@@ -30,8 +31,8 @@ export const listTransactionsSchema = z.object({
   search: z.string().max(200).optional(),
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ListTransactionsInput = z.infer<typeof listTransactionsSchema>;
 
@@ -46,8 +47,8 @@ export const listReservationsSchema = z.object({
   status: z.enum(["ACTIVE", "CONSUMED", "RELEASED", "EXPIRED"]).optional(),
   variantId: z.coerce.number().int().positive().optional(),
   warehouseId: z.coerce.number().int().positive().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ListReservationsInput = z.infer<typeof listReservationsSchema>;
 
@@ -85,8 +86,8 @@ export type OpeningStockInput = z.infer<typeof openingStockSchema>;
 
 export const listAdjustmentsSchema = z.object({
   status: z.enum(["DRAFT", "PENDING_APPROVAL", "APPROVED", "PENDING_POST", "POSTED", "CANCELLED"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ListAdjustmentsInput = z.infer<typeof listAdjustmentsSchema>;
 
@@ -112,8 +113,8 @@ export const listTransfersSchema = z.object({
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
   search: z.string().max(200).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ListTransfersInput = z.infer<typeof listTransfersSchema>;
 

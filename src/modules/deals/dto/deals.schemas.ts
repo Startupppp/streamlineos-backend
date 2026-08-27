@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { optionalPageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const dealStageSchema = z.string().min(1);
 
 export const listDealsSchema = z.object({
   stage: dealStageSchema.optional(),
   assignedToId: z.string().optional(),
-  limit: z.coerce.number().min(1).max(100).optional(),
+  limit: optionalPageSizeField(),
   offset: z.coerce.number().min(0).optional(),
 });
 
@@ -104,7 +105,7 @@ export const createApprovalRuleSchema = z.object({
 
 export const approvalsListSchema = z.object({
   status: z.enum(["pending", "approved", "rejected"]).optional(),
-  limit: z.coerce.number().min(1).max(50).optional(),
+  limit: optionalPageSizeField(50),
 });
 
 export const createMeetingSchema = z.object({
@@ -149,7 +150,7 @@ export const compareForecastSnapshotsSchema = z.object({
 
 export const forecastSnapshotsQuerySchema = z.object({
   period: z.string().optional(),
-  limit: z.coerce.number().min(1).max(50).optional(),
+  limit: optionalPageSizeField(50),
   offset: z.coerce.number().min(0).optional(),
 });
 

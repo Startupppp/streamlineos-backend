@@ -274,6 +274,12 @@ function buildService(db: unknown): AccessService {
   const cache = {
     cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
     invalidate: jest.fn().mockResolvedValue(undefined),
+    cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+    invalidateForOrg(o: string, k: string) {
+      return this.invalidate(`${o}:${k}`);
+    },
   };
   const entitlements = {
     isModuleEnabled: jest.fn().mockResolvedValue(true),
@@ -550,6 +556,12 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
     const cache = {
       cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
       invalidate: jest.fn().mockResolvedValue(undefined),
+      cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+      invalidateForOrg(o: string, k: string) {
+      return this.invalidate(`${o}:${k}`);
+    },
       invalidatePattern: jest.fn().mockResolvedValue(undefined),
     };
     const entitlements = {
@@ -579,9 +591,9 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
 
     expect(svc["membershipAccessCache"].has("org-bump:user-bump")).toBe(false);
     expect(cache.invalidatePattern).not.toHaveBeenCalled();
-    expect(cache.invalidate).toHaveBeenCalledWith("rbac:members:org-bump");
+    expect(cache.invalidate).toHaveBeenCalledWith("org-bump:rbac:members");
     expect(cache.invalidate).toHaveBeenCalledWith(
-      "module-access:candidates:org-bump",
+      "org-bump:module-access:candidates",
     );
     await svc.resolveUserPermissions("org-bump", "user-bump");
     expect(db.query.accessVersions.findFirst).toHaveBeenCalledTimes(2);
@@ -700,6 +712,12 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     const cache = {
       cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
       invalidate: jest.fn().mockResolvedValue(undefined),
+      cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+      invalidateForOrg(o: string, k: string) {
+      return this.invalidate(`${o}:${k}`);
+    },
     };
     const entitlements = {
       isModuleEnabled: jest.fn().mockResolvedValue(true),
@@ -785,6 +803,12 @@ describe("AccessService.membersWithPermission", () => {
     const cache = {
       cached: jest.fn().mockImplementation(async (_k: string, fn: () => Promise<unknown>) => fn()),
       invalidate: jest.fn().mockResolvedValue(undefined),
+      cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+      invalidateForOrg(o: string, k: string) {
+      return this.invalidate(`${o}:${k}`);
+    },
     };
 
     const entitlements = {
@@ -979,6 +1003,12 @@ describe("AccessService.membersWithPermission — pagination", () => {
     const cache = {
       cached: cachedMock,
       invalidate: jest.fn().mockResolvedValue(undefined),
+      cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+      invalidateForOrg(o: string, k: string) {
+      return this.invalidate(`${o}:${k}`);
+    },
     };
 
     const entitlements = {

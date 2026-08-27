@@ -123,6 +123,22 @@ export const tickets = build.table(
     index("idx_tickets_org_project_rank")
       .on(t.orgId, t.projectId, t.rank)
       .where(sql`deleted_at IS NULL`),
+    // One per sortable column, carrying the whole ORDER BY tuple: a partial prefix left the list at 16,725 blocks.
+    index("idx_tickets_org_project_rank_sort")
+      .on(t.orgId, t.projectId, t.rank.asc(), t.createdAt.desc(), t.id.asc())
+      .where(sql`deleted_at IS NULL`),
+    index("idx_tickets_org_project_created")
+      .on(t.orgId, t.projectId, t.createdAt.desc(), t.id.asc())
+      .where(sql`deleted_at IS NULL`),
+    index("idx_tickets_org_project_updated")
+      .on(t.orgId, t.projectId, t.updatedAt.desc(), t.createdAt.desc(), t.id.asc())
+      .where(sql`deleted_at IS NULL`),
+    index("idx_tickets_org_project_priority")
+      .on(t.orgId, t.projectId, t.priority.asc(), t.createdAt.desc(), t.id.asc())
+      .where(sql`deleted_at IS NULL`),
+    index("idx_tickets_org_project_due_date")
+      .on(t.orgId, t.projectId, t.dueDate.asc(), t.createdAt.desc(), t.id.asc())
+      .where(sql`deleted_at IS NULL`),
     index("idx_tickets_cycle").on(t.cycleId),
     index("idx_tickets_parent").on(t.parentTicketId),
     index("idx_tickets_recurrence_next")

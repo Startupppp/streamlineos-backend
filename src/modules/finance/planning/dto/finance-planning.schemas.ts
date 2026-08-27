@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
 
 export const listBudgetsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20, 100),
   status: z.enum(["DRAFT", "PENDING_APPROVAL", "APPROVED", "ARCHIVED"]).optional(),
   fiscalYear: z.string().max(10).optional(),
 });

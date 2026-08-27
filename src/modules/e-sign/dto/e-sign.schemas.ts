@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const signFieldTypeSchema = z.enum([
   "signature",
@@ -73,8 +74,8 @@ export const listEnvelopesSchema = z.object({
   sourceModule: z.string().trim().optional(),
   sourceEntityType: z.string().trim().optional(),
   sourceEntityId: z.string().trim().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(25),
+  page: pageNumberField,
+  limit: pageSizeField(25, 100),
 });
 export type ListEnvelopesInput = z.infer<typeof listEnvelopesSchema>;
 

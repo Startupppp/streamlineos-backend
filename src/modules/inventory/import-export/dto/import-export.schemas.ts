@@ -1,3 +1,4 @@
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 ﻿import { z } from "zod";
 
 const IMPORT_TYPES = ["products", "vendors", "categories", "uom", "locations", "opening-stock", "reorder-rules"] as const;
@@ -18,8 +19,8 @@ export const createImportJobSchema = z.object({
 export type CreateImportJobInput = z.infer<typeof createImportJobSchema>;
 
 export const listJobsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 export type ListJobsQueryInput = z.infer<typeof listJobsQuerySchema>;
 

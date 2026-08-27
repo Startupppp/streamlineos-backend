@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const listOfferFulfillmentQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   crmOfferId: z.coerce.number().int().positive().optional(),
   invSkuId: z.coerce.number().int().positive().optional(),
   status: z.enum(["active", "inactive"]).optional(),

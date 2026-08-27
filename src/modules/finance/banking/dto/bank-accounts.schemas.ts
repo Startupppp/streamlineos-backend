@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const createBankAccountSchema = z.object({
@@ -24,15 +25,15 @@ export const updateBankAccountSchema = z.object({
 });
 
 export const bankAccountsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20, 100),
   isActive: queryBoolean.optional(),
   q: z.string().max(200).optional(),
 });
 
 export const bankTransactionsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  pageSize: pageSizeField(50, 100),
   status: z.enum(["UNMATCHED", "SUGGESTED", "MATCHED", "RECONCILED", "IGNORED"]).optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),

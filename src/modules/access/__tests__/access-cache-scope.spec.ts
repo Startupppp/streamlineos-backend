@@ -111,6 +111,10 @@ function buildService(
       async (_key: string, fn: () => Promise<unknown>) => fn(),
     ),
     invalidate: jest.fn().mockResolvedValue(undefined),
+    cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+    invalidateForOrg: jest.fn().mockResolvedValue(undefined),
   };
 
   const cache: CacheService = { ...defaultCache, ...cacheOverrides } as unknown as CacheService;
@@ -139,6 +143,10 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
         },
       ),
       invalidate: jest.fn().mockResolvedValue(undefined),
+      cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+      invalidateForOrg: jest.fn().mockResolvedValue(undefined),
     };
 
     const db = {
@@ -205,6 +213,10 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
         },
       ),
       invalidate: jest.fn().mockResolvedValue(undefined),
+      cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+      invalidateForOrg: jest.fn().mockResolvedValue(undefined),
     };
 
     const entitlements = {

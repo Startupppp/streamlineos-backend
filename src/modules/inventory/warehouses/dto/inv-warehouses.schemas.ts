@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 const WAREHOUSE_NAME_RE = /^[\p{L}\p{N}\s\-&.,()'/]+$/u;
@@ -75,8 +76,8 @@ export const updateLocationSchema = createLocationSchema.partial();
 export type UpdateLocationInput = z.infer<typeof updateLocationSchema>;
 
 export const listWarehouseStockSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ListWarehouseStockInput = z.infer<typeof listWarehouseStockSchema>;
 
@@ -86,7 +87,7 @@ export const listWarehousesSchema = z.object({
   isDefault: queryBoolean.optional(),
   country: z.string().trim().max(100).optional(),
   city: z.string().trim().max(100).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(100),
+  page: pageNumberField,
+  limit: pageSizeField(100, 100),
 });
 export type ListWarehousesInput = z.infer<typeof listWarehousesSchema>;

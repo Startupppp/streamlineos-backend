@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const nodeStatus = z.enum(["ACTIVE", "DISABLED", "ARCHIVED"]);
 const code = z
@@ -183,7 +184,7 @@ export type UpdateCostCenterInput = z.infer<typeof updateCostCenterSchema>;
 export const listQuerySchema = z
   .object({
     cursor: z.string().min(1).max(2048).optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    limit: pageSizeField(20),
     search: z.string().trim().optional(),
     status: z
       .enum(["ACTIVE", "DISABLED", "ARCHIVED", "CURRENT"])

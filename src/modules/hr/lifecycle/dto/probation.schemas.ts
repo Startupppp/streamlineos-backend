@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const businessDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export const listProbationReviewsSchema = z
   .object({
     cursor: z.string().min(1).max(2048).optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    limit: pageSizeField(20),
   })
   .strict();
 

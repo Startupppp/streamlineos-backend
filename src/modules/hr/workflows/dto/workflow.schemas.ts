@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const HR_WORKFLOW_OBJECT_TYPES = [
   "leave_request", "attendance_regularization", "overtime_request", "comp_off_request",
@@ -56,15 +57,15 @@ export const UpdateWorkflowDefinitionSchema = z.object({
 export const WorkflowDefinitionQuerySchema = z.object({
   objectType: z.enum(HR_WORKFLOW_OBJECT_TYPES).optional(),
   status: z.enum(["draft", "active", "archived"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 
 export const WorkflowInstanceQuerySchema = z.object({
   status: z.enum(["pending", "in_progress", "approved", "rejected", "cancelled", "reopened"]).optional(),
   objectType: z.enum(HR_WORKFLOW_OBJECT_TYPES).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 
 export const ActOnInstanceSchema = z.object({

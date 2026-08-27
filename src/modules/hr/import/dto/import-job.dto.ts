@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const hrImportEntityValues = [
   "employees",
@@ -18,14 +19,14 @@ export const createImportJobSchema = z.object({
 export type CreateImportJobInput = z.infer<typeof createImportJobSchema>;
 
 export const listImportJobsSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   entity: z.enum(hrImportEntityValues).optional(),
 });
 export type ListImportJobsInput = z.infer<typeof listImportJobsSchema>;
 
 export const exportQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(100),
+  page: pageNumberField,
+  limit: pageSizeField(100, 100),
 });
 export type ExportQueryInput = z.infer<typeof exportQuerySchema>;

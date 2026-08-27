@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 const goalStatusEnum = z.enum([
   "not_started",
@@ -20,8 +21,8 @@ export const listSchema = z.object({
   ownerId: z.string().optional(),
   projectId: z.coerce.number().int().optional(),
   search: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 
 const keyResultInputSchema = z.object({

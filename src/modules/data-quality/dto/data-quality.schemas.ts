@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import {
   DATA_QUALITY_PRODUCERS,
   FINDING_SEVERITIES,
@@ -103,7 +104,7 @@ export type HealthQuery = z.infer<typeof healthQuerySchema>;
 
 export const listResolutionsQuerySchema = z
   .object({
-    limit: z.coerce.number().int().min(1).max(100).default(25),
+    limit: pageSizeField(25),
     cursor: z.string().min(1).max(512).optional(),
   })
   .strict();

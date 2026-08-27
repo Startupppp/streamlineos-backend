@@ -29,10 +29,7 @@ describe("ScopedRead.resolve", () => {
     expect(read.denied).toBe(true);
   });
 
-  /**
-   * A typo in a permission key is the likeliest way to reach this code wrongly.
-   * It must end in an empty result set, never an unfiltered one.
-   */
+  // A typo in a permission key is the likeliest way to reach this code wrongly
   it("falls to none for a key that exists nowhere, so a typo denies", async () => {
     const read = await ScopedRead.resolve(
       accessHolding({ "hr:leaves:approve": "all" }),
@@ -61,11 +58,7 @@ describe("ScopedRead.predicate", () => {
 });
 
 describe("ScopedRead as a seam", () => {
-  /**
-   * The whole design: there is no way to read the scope out except as SQL or as
-   * a discriminator that is named for not being a filter. If a `.scope` getter
-   * ever appears, LeavesService.analytics becomes writable again.
-   */
+  // The whole design: there is no way to read the scope out except as SQL or as a discriminator that is named for not being a filter
   it("exposes no accessor that yields the bare scope", () => {
     const read = ScopedRead.of("org-1", "u-1", "own");
     const surface = [

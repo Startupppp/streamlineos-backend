@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
@@ -36,8 +37,8 @@ export const applyVendorCreditSchema = z.object({
 });
 
 export const listVendorCreditsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20, 100),
   vendorId: z.coerce.number().int().positive().optional(),
   status: z.enum(["DRAFT", "POSTED", "APPLIED", "VOID"]).optional(),
 });
@@ -82,8 +83,8 @@ export const createRecurringBillSchema = z.object({
 export const updateRecurringBillSchema = createRecurringBillSchema.partial();
 
 export const listRecurringBillsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20, 100),
   isActive: queryBoolean.optional(),
 });
 
@@ -106,8 +107,8 @@ export const updatePaymentRunItemSchema = z.object({
 });
 
 export const listPaymentRunsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20, 100),
   status: z.enum(["DRAFT", "APPROVED", "COMPLETED", "CANCELLED"]).optional(),
 });
 
@@ -135,8 +136,8 @@ export type CreatePaymentRunInput = z.infer<typeof createPaymentRunSchema>;
 export type UpdatePaymentRunItemInput = z.infer<typeof updatePaymentRunItemSchema>;
 export type ListPaymentRunsQuery = z.infer<typeof listPaymentRunsQuerySchema>;
 export const listVendorPaymentsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20, 100),
   vendorId: z.coerce.number().int().positive().optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),

@@ -1,46 +1,13 @@
 /**
- * check-tenant-indexes.mjs
+ * Every tenant table must declare an index LEADING with its tenant column.
  *
- * Every tenant table must declare an index that LEADS with its tenant column.
- * Fails (exit 1) naming each table that does not.
+ * Under RLS the policy's `org_id = app.current_org_id()` is not leakproof, so an
+ * index that does not supply org_id is refused outright and the read becomes a
+ * sequential scan -- an isolation cost, not a tuning preference. Reads the
+ * Drizzle schema, so it needs no database and can gate every commit.
  *
- * WHY LEADING, AND WHY THIS IS AN AUTHORIZATION CHECK RATHER THAN A PERF ONE:
- *   Where RLS is on, the policy adds `org_id = app.current_org_id()` to every
- *   query. That qual is not leakproof, so it is evaluated against the heap tuple
- *   and an index-only scan is impossible unless the index supplies `org_id`
- *   itself — the planner refuses the index outright and the read becomes a
- *   sequential scan of the whole table. A tenant table without a leading tenant
- *   index therefore does not merely read slowly: under load it is the mechanism
- *   by which one tenant's traffic degrades every other tenant's, and it is what
- *   makes turning RLS on look like a regression and get reverted.
- *
- * WHY IT READS THE DRIZZLE SCHEMA AND NOT THE DATABASE:
- *   db-verify-rls.mjs answers the policy half of this against a live database,
- *   and CI has none — c25-04 is blocked on exactly that. But the schema is the
- *   source of truth for every Drizzle-managed table (root CLAUDE.md section 5),
- *   and an index that exists only in a hand-written migration is dropped by the
- *   next `db:generate` anyway. Asserting the declaration is both checkable today
- *   and the stronger invariant.
- *
- * WHAT COUNTS AS A LEADING TENANT INDEX:
- *   index(...).on(table.orgId, ...) | uniqueIndex(...) | unique(...).on(...)
- *   | primaryKey({ columns: [table.orgId, ...] })
- *   — anything whose FIRST column is the table's own tenant column — and also
- *   a column-level `.primaryKey()` or `.unique()` on the tenant column itself,
- *   which Postgres backs with an index just the same. Missing that second form
- *   is not a small gap: it reported access_versions, autonomy_settings and
- *   timesheet_settings as defects when all three key the whole table on the
- *   tenant. A checker that cries wolf on correct code gets switched off.
- *
- * Usage:
- *   node src/scripts/check-tenant-indexes.mjs
- *   node src/scripts/check-tenant-indexes.mjs --self-test
- *
- * Exit codes:
- *   0  every tenant table leads an index with its tenant column
- *   1  at least one does not (or self-test failed)
- *   2  usage error (schema directory unreachable, or the parser found no tables,
- *      which means the parser is broken rather than the schema clean)
+ * Usage:  node src/scripts/check-tenant-indexes.mjs [--self-test]
+ * Exit:   0 clean · 1 a table has none · 2 the parser found implausibly few
  */
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
@@ -55,11 +22,7 @@ const SCHEMA_DIR = join(BACKEND_ROOT, "src", "db", "schema");
 
 const TENANT_COLUMNS = ["org_id", "organization_id"];
 
-/**
- * Tables that carry a tenant column but are not tenant-partitioned data, each
- * with the reason. Absence from this map is a failure, so an exception is a
- * deliberate line in a diff rather than a category.
- */
+// Tables that carry a tenant column but are not tenant-partitioned data, each with the reason
 export const NOT_TENANT_PARTITIONED = new Map([
   [
     "organizations",
@@ -69,10 +32,7 @@ export const NOT_TENANT_PARTITIONED = new Map([
 
 // -- parsing -----------------------------------------------------------------
 
-/**
- * Extract the full `pgTable(...)` call text starting at `from`, by balancing
- * brackets. Returns null if the call never closes (a truncated read).
- */
+// Extract the full `pgTable(...)` call text starting at `from`, by balancing brackets
 function callBody(src, from) {
   let depth = 0;
   for (let i = from; i < src.length; i++) {
@@ -86,10 +46,7 @@ function callBody(src, from) {
   return null;
 }
 
-/**
- * The text of one object property, from `from` to the comma that ends it,
- * ignoring commas nested inside the builder chain's own calls.
- */
+// The text of one object property, from `from` to the comma that ends it, ignoring commas nested inside the builder chain's own calls
 function propertyDefinition(src, from) {
   let depth = 0;
   for (let i = from; i < src.length; i++) {
@@ -103,16 +60,7 @@ function propertyDefinition(src, from) {
   return src.slice(from);
 }
 
-/**
- * Parse every pgTable declaration in one schema source file.
- * Returns { symbol, table, tenantProp, leadingColumns, file }[].
- *
- * `pgTable(` is matched case-sensitively with its capital T, and the table name
- * is read from the call body rather than the declaration line, because 324 of
- * the 788 declarations put the name on the line after the call. A pattern that
- * assumes either shape maps roughly half the schema to nothing and then reports
- * a clean result.
- */
+// Parse every pgTable declaration in one schema source file
 export function parseTables(src, filePath) {
   const tables = [];
   const decl = /export\s+const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*pgTable\(/g;
@@ -125,7 +73,7 @@ export function parseTables(src, filePath) {
     const name = body.match(/^\(\s*["']([^"']+)["']/s);
     if (!name) continue;
 
-    // The JS property whose column name is a tenant column: `orgId: text("org_id")`.
+    // The JS property whose column name is a tenant column
     let tenantProp = null;
     let tenantDefinition = "";
     for (const column of TENANT_COLUMNS) {
@@ -140,11 +88,10 @@ export function parseTables(src, filePath) {
     }
     if (tenantProp === null) continue;
 
-    // Every declared index/constraint's FIRST column.
+    // Every declared index/constraint's FIRST column
     const leading = new Set();
 
-    // A column-level `.primaryKey()` or `.unique()` on the tenant column keys
-    // the table on the tenant, which Postgres backs with an index leading on it.
+    // A column-level `.primaryKey()` or `.unique()` on the tenant column keys the table on the tenant, which Postgres backs with an index leading on it
     if (/\.(primaryKey|unique)\(/.test(tenantDefinition)) leading.add(tenantProp);
 
     for (const on of body.matchAll(/\.on\(\s*(?:\w+\.)?([A-Za-z_$][A-Za-z0-9_$]*)/g))
@@ -178,9 +125,7 @@ if (args.includes("--self-test")) {
     `  index("idx_good_org_status").on(table.orgId, table.status),`,
     `]);`,
     ``,
-    // 324 of 788 real declarations look like this: the name is NOT on the
-    // declaration line. A parser that reads the name from the decl line maps
-    // these to nothing and reports the schema clean.
+    // 324 of 788 real declarations look like this: the name is NOT on the declaration line
     `export const goodMultiLine = pgTable(`,
     `  "good_multi_line",`,
     `  {`,
@@ -200,8 +145,7 @@ if (args.includes("--self-test")) {
     `  primaryKey({ columns: [table.orgId, table.memberId] }),`,
     `]);`,
     ``,
-    // The defect: an index exists, but it leads with the wrong column, so the
-    // RLS qual cannot be satisfied from the index and the scan widens.
+    // The defect
     `export const trailingTenant = pgTable("trailing_tenant", {`,
     `  id: uuid("id").primaryKey(),`,
     `  orgId: text("org_id").notNull(),`,
@@ -215,9 +159,7 @@ if (args.includes("--self-test")) {
     `  orgId: text("org_id").notNull(),`,
     `});`,
     ``,
-    // access_versions and autonomy_settings: the tenant column IS the primary
-    // key, across a multi-line builder chain. Reported as defects until the
-    // parser learned the column-level form.
+    // access_versions and autonomy_settings: the tenant column IS the primary key, across a multi-line builder chain
     `export const tenantIsThePk = pgTable("tenant_is_the_pk", {`,
     `  orgId: text("org_id")`,
     `    .primaryKey()`,
@@ -225,7 +167,7 @@ if (args.includes("--self-test")) {
     `  version: integer("version").default(1).notNull(),`,
     `});`,
     ``,
-    // timesheet_settings: one row per tenant enforced by a column-level unique.
+    // timesheet_settings
     `export const tenantIsUnique = pgTable("tenant_is_unique", {`,
     `  id: serial("id").primaryKey(),`,
     `  orgId: text("org_id")`,
@@ -235,7 +177,7 @@ if (args.includes("--self-test")) {
     `  workWeekStart: integer("work_week_start").notNull().default(1),`,
     `});`,
     ``,
-    // Not a tenant table: must not appear at all, in either direction.
+    // Not a tenant table
     `export const globalCatalog = pgTable("global_catalog", {`,
     `  id: uuid("id").primaryKey(),`,
     `  code: text("code").notNull(),`,
@@ -254,7 +196,7 @@ if (args.includes("--self-test")) {
     ignoresNonTenantTable: !byName.has("global_catalog"),
     columnLevelPrimaryKeyCounts: leads("tenant_is_the_pk") === true,
     columnLevelUniqueCounts: leads("tenant_is_unique") === true,
-    // The id column's own .primaryKey() must not be mistaken for the tenant's.
+    // The id column's own .primaryKey() must not be mistaken for the tenant's
     rowIdPrimaryKeyIsNotATenantIndex: leads("no_index_at_all") === false,
     readsNameFromOneLineForm: byName.has("good_one_line"),
     readsNameFromMultiLineForm: byName.has("good_multi_line"),
@@ -293,8 +235,7 @@ function walkTs(dir) {
 const files = walkTs(SCHEMA_DIR);
 const tenantTables = files.flatMap((file) => parseTables(readFileSync(file, "utf8"), file));
 
-// A parser that matched nothing would otherwise report a clean schema. The real
-// schema has hundreds of tenant tables; anything near zero means this is broken.
+// A parser that matched nothing would otherwise report a clean schema
 if (tenantTables.length < 100) {
   process.stderr.write(
     `Parser found only ${tenantTables.length} tenant tables across ${files.length} schema files. ` +

@@ -107,6 +107,10 @@ function buildService(db: unknown): AccessService {
   const cache = {
     cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
     invalidate: jest.fn().mockResolvedValue(undefined),
+    cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+    invalidateForOrg: jest.fn().mockResolvedValue(undefined),
   };
   const allEnabled: Record<string, boolean> = {};
   for (const key of CATALOG_MODULES) allEnabled[key] = true;

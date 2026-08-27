@@ -1,15 +1,16 @@
 import { z } from "zod";
+import { optionalPageNumberField, optionalPageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const listAccountsSchema = z.object({
   status: z.enum(["ACCOUNT_OPENING", "QUERIES", "PLAN_SELECTED", "INVESTED"]).optional(),
   search: z.string().optional(),
-  page: z.coerce.number().min(1).optional(),
-  limit: z.coerce.number().min(1).max(100).optional(),
+  page: optionalPageNumberField(),
+  limit: optionalPageSizeField(),
 });
 
 export const healthQuerySchema = z.object({
   status: z.enum(["healthy", "at_risk", "critical"]).optional(),
-  limit: z.coerce.number().min(1).max(50).optional(),
+  limit: optionalPageSizeField(50),
 });
 
 export const createActivitySchema = z.object({

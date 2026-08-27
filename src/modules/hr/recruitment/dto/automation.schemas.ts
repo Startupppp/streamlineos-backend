@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const triggerEnum = z.enum([
   "STAGE_CHANGED",
@@ -79,7 +80,7 @@ export type EnrollSequenceInput = z.infer<typeof enrollSequenceSchema>;
 
 export const messageListSchema = z.object({
   candidateId: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: pageSizeField(50),
 });
 export type MessageListInput = z.infer<typeof messageListSchema>;
 

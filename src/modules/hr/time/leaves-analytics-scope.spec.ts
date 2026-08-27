@@ -6,10 +6,7 @@ import type { DataScope } from "../../access/access.types";
 const dialect = new PgDialect();
 const render = (predicate: SQL) => dialect.sqlToQuery(predicate).sql;
 
-/**
- * c25-02: analytics resolved the caller's scope, refused only "none", then
- * aggregated the whole organisation. These pin the predicate the fix threads in.
- */
+// c25-02: analytics resolved the caller's scope, refused only "none", then aggregated the whole organisation
 describe("leaveApprovalScope, the predicate leave analytics must apply", () => {
   const cases: DataScope[] = ["all", "team", "own", "none"];
 
@@ -37,10 +34,7 @@ describe("leaveApprovalScope, the predicate leave analytics must apply", () => {
     expect(rendered).not.toBe("true");
   });
 
-  /**
-   * The bug was not a missing predicate, it was a predicate that never reached
-   * the query. "own" and "all" must not render the same thing.
-   */
+  // The bug was not a missing predicate, it was a predicate that never reached the query
   it("distinguishes own from all, which is the whole defect", () => {
     expect(render(leaveApprovalScope("own", "org-1", "u-1"))).not.toBe(
       render(leaveApprovalScope("all", "org-1", "u-1")),

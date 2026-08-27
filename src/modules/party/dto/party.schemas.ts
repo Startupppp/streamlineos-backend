@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 const partyTypeValues = ["CUSTOMER", "VENDOR", "PARTNER", "BOTH"] as const;
 
@@ -10,8 +11,8 @@ const partyTypeValues = ["CUSTOMER", "VENDOR", "PARTNER", "BOTH"] as const;
 const partyKindValues = ["PERSON", "ORGANISATION"] as const;
 
 export const listPartiesQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   cursor: z.string().optional(),
   role: z.string().trim().min(1).optional(),
   partyType: z.enum(partyTypeValues).optional(),

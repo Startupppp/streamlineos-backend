@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   PAGE_SIZE_CAP,
   baseListQuerySchema,
+  optionalPageNumberField,
+  optionalPageSizeField,
   pageNumberField,
   pageSizeField,
   withSortField,
@@ -112,6 +114,48 @@ describe("pageSizeField", () => {
 
   it("rejects 0", () => {
     expect(() => pageSizeField().parse(0)).toThrow();
+  });
+});
+
+describe("optionalPageSizeField", () => {
+  const schema = z.object({ limit: optionalPageSizeField() });
+
+  it("stays undefined when absent, so a call site's own default still applies", () => {
+    expect(schema.parse({}).limit).toBeUndefined();
+  });
+
+  it("clamps an over-large size rather than rejecting it", () => {
+    expect(schema.parse({ limit: 999 }).limit).toBe(100);
+  });
+
+  it("honours a tighter ceiling", () => {
+    expect(z.object({ limit: optionalPageSizeField(50) }).parse({ limit: 999 }).limit).toBe(50);
+  });
+
+  it("coerces a string, as a query parameter always is", () => {
+    expect(schema.parse({ limit: "25" }).limit).toBe(25);
+  });
+
+  it("still refuses zero and negatives", () => {
+    expect(() => schema.parse({ limit: 0 })).toThrow();
+    expect(() => schema.parse({ limit: -1 })).toThrow();
+  });
+});
+
+describe("optionalPageNumberField", () => {
+  const schema = z.object({ page: optionalPageNumberField() });
+
+  it("stays undefined when absent", () => {
+    expect(schema.parse({}).page).toBeUndefined();
+  });
+
+  it("accepts a page number", () => {
+    expect(schema.parse({ page: 3 }).page).toBe(3);
+  });
+
+  it("refuses 0 and negatives", () => {
+    expect(() => schema.parse({ page: 0 })).toThrow();
+    expect(() => schema.parse({ page: -2 })).toThrow();
   });
 });
 

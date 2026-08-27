@@ -78,7 +78,9 @@
     "check:tenant-indexes": "node src/scripts/check-tenant-indexes.mjs",
     "check:tenant-indexes:self-test": "node src/scripts/check-tenant-indexes.mjs --self-test",
     "check:scope-application": "node src/scripts/check-scope-application.mjs",
-    "check:scope-application:self-test": "node src/scripts/check-scope-application.mjs --self-test"
+    "check:scope-application:self-test": "node src/scripts/check-scope-application.mjs --self-test",
+    "check:record-access": "node src/scripts/check-record-access.mjs",
+    "check:record-access:self-test": "node src/scripts/check-record-access.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

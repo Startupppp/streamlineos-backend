@@ -42,7 +42,7 @@ for (const name of [
   );
 }
 
-/** A class-level declaration must reach every handler that carries none itself. */
+// /** A class-level declaration must reach every handler that carries none itself
 @AuthorizedInService("PortalJwtAuthGuard")
 class PortalStyleController {
   inherits(): void {}
@@ -161,12 +161,7 @@ describe("recordRouteClassification", () => {
   });
 });
 
-/**
- * The stamping joins on `operationId`, which nothing in our code produces —
- * Nest's own operationIdFactory does. If that format is not
- * `Controller_method`, every lookup misses, `stamped` is 0 and the feature lands
- * inert while every unit test above still passes. So build a real document.
- */
+// The stamping joins on `operationId`, which nothing in our code produces — Nest's own operationIdFactory does
 describe("against a real Nest application and a real OpenAPI document", () => {
   it("stamps operations produced by SwaggerModule.createDocument", async () => {
     const { Controller, Get } = await import("@nestjs/common");

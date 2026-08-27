@@ -1,44 +1,12 @@
 /**
- * check-scope-application.mjs
- *
  * Finds handlers that resolve the caller's DataScope and then never spend it.
- * Fails (exit 1) naming each one.
  *
- * THE DEFECT, WHICH IS WORSE THAN A MISSING CHECK:
- *   LeavesService.analytics resolved `hr:leaves:approve` to a DataScope,
- *   refused only "none", and then called queryAnalytics(orgId, year) -- which
- *   takes no scope and aggregates the whole organisation. An own- or
- *   team-scoped approver received org-wide leave analytics broken down by
- *   department. A reviewer reading that method sees scope handling and stops
- *   looking, which is exactly why it survived: the resolve is decorative.
+ * Refusing "none" is not applying the scope: "own" and "all" then behave
+ * identically, which is the whole defect. A cache key is not a predicate
+ * either -- it makes the cache finer than its data and hides nothing.
  *
- *   PermissionGuard answers "may you call this at all" and stores the scope on
- *   req.rbacScope. Whether the query then honours it is decided somewhere else
- *   entirely, by hand, 132 times. This check is the seam that makes the second
- *   half observable, because a type cannot express "you must use this value".
- *
- * WHAT COUNTS AS SPENDING IT:
- *   Passing it to applyScope or any other function, returning it, storing it,
- *   or interpolating it into a SQL template. Anything that carries it toward
- *   the predicate.
- *
- * WHAT DOES NOT:
- *   - `if (scope === "none") throw` and nothing else. Refusing the empty scope
- *     is not applying the scope: "own" and "all" then behave identically, which
- *     is the whole bug.
- *   - A cache key. `${scope}:${year}` makes the cache FINER than the data it
- *     stores, so it hides nothing and fixes nothing -- and it is the detail that
- *     makes the method read as careful. Counting it as use would have cleared
- *     the one confirmed instance.
- *
- * Usage:
- *   node src/scripts/check-scope-application.mjs
- *   node src/scripts/check-scope-application.mjs --self-test
- *
- * Exit codes:
- *   0  every resolved scope is spent, or is a registered exception
- *   1  at least one resolved scope is never applied (or self-test failed)
- *   2  usage error, including the parser finding no resolutions at all
+ * Usage:  node src/scripts/check-scope-application.mjs [--self-test]
+ * Exit:   0 clean · 1 a scope never reaches a predicate · 2 broken pattern
  */
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
@@ -53,18 +21,11 @@ const MODULES_DIR = join(BACKEND_ROOT, "src", "modules");
 
 const SPEC_RE = /\.(spec|e2e-spec)\.ts$/;
 
-/**
- * `const x = await resolveSomethingScope(...)`, `= readRequestScope(req)`,
- * `= req.rbacScope`. These are the three ways a handler in this codebase gets a
- * DataScope; a new one must be added here or it is invisible.
- */
+// `const x = await resolveSomethingScope(...)`, `= readRequestScope(req)`, `= req.rbacScope`
 const RESOLUTION_RE =
   /(?:const|let)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*DataScope\s*)?=\s*(?:await\s+)?((?:this\.)?resolve[A-Za-z0-9_$]*Scope|readRequestScope|[A-Za-z0-9_$.]*\.rbacScope)/;
 
-/**
- * Sites where a resolved scope is deliberately not applied to a predicate, each
- * with the reason. Absence is a failure, so an exception is a line in a diff.
- */
+// Sites where a resolved scope is deliberately not applied to a predicate, each with the reason
 export const NOT_APPLIED_BY_DESIGN = new Map([
   // "file::variable" -> "why"
 ]);
@@ -73,13 +34,7 @@ export const NOT_APPLIED_BY_DESIGN = new Map([
 
 const indentOf = (line) => line.length - line.trimStart().length;
 
-/**
- * The lines from the resolution to the end of its enclosing block.
- *
- * Indentation, not brace matching: the source is prettier-formatted, so the
- * method's closing brace is the first line indented less than the statement,
- * and this stays right for nested blocks, which are indented more.
- */
+// The lines from the resolution to the end of its enclosing block
 export function enclosingBlock(lines, from) {
   const base = indentOf(lines[from]);
   const block = [lines[from]];
@@ -91,10 +46,7 @@ export function enclosingBlock(lines, from) {
   return block;
 }
 
-/**
- * How a resolved scope is used across the lines that follow it.
- * Returns { guardOnly, cacheOnly, spent, uses }.
- */
+// How a resolved scope is used across the lines that follow it
 export function classifyUse(block, name) {
   const word = new RegExp(`\\b${name}\\b`);
   let guards = 0;
@@ -110,26 +62,14 @@ export function classifyUse(block, name) {
     if (line.trim().startsWith("//") || line.trim().startsWith("*")) continue;
     uses++;
 
-    // A DataScope is one of four words. Interpolating it into a plain string
-    // produces a label -- a cache discriminator, a log line -- and a label
-    // filters nothing. Only a SQL template can turn it into a predicate.
-    //
-    // This is the rule, not a heuristic about the surrounding words: an earlier
-    // version asked whether the line mentioned "cache", and the one confirmed
-    // live instance writes `${scope}:${year}` on its own argument line, which
-    // mentions nothing. The check cleared the exact bug it exists to find.
+    // A DataScope is one of four words
     if (new RegExp(`\\$\\{${name}\\}`).test(line)) {
       if (/\bsql`/.test(line)) spends++;
       else cacheInterpolations++;
       continue;
     }
 
-    // Refusing the empty scope is not applying the scope -- but a line that
-    // refuses "none" AND still mentions the scope is doing both, and the second
-    // half is the one that counts. Three of the first five findings were
-    // `manageScope === "none" ? "own" : manageScope`, where the value survives
-    // in the else branch; reading only the comparison called all three
-    // decorative. Strip the refusals, then ask whether anything is left.
+    // Refusing the empty scope is not applying the scope -- but a line that refuses "none" AND still mentions the scope is doing both, and the second half is the one that counts
     const guardsHere = line.match(guardRe)?.length ?? 0;
     const residue = line.replace(guardRe, "");
     if (word.test(residue)) {
@@ -176,10 +116,7 @@ export function analyseSource(src, filePath) {
 // -- self-test ---------------------------------------------------------------
 
 if (args.includes("--self-test")) {
-  // The confirmed instance, copied from leaves.service.ts:211 rather than
-  // paraphrased. The discriminator sits on its own argument line, naming
-  // neither "cache" nor "key" -- which is precisely how the first version of
-  // this check cleared it.
+  // The confirmed instance, copied from leaves.service.ts:211 rather than paraphrased
   const decorativeResolve = [
     `  async analytics(u: CurrentUserContext, year: number) {`,
     `    const scope = await resolveLeavesViewScope(this.access, u);`,
@@ -194,7 +131,7 @@ if (args.includes("--self-test")) {
     `  }`,
   ].join("\n");
 
-  // A scope genuinely spent inside a SQL template, which a plain string is not.
+  // A scope genuinely spent inside a SQL template, which a plain string is not
   const spentInSqlTemplate = [
     `  async rollup(u: CurrentUserContext) {`,
     `    const scope = await resolveReportsScope(this.access, u);`,
@@ -228,8 +165,7 @@ if (args.includes("--self-test")) {
     `  }`,
   ].join("\n");
 
-  // The block must stop at the method's closing brace: a sibling method that
-  // happens to use the same variable name must not clear this one.
+  // The block must stop at the method's closing brace
   const twoMethods = [
     `  async a(u: CurrentUserContext) {`,
     `    const scope = await resolveGoalsScope(this.access, u);`,
@@ -242,9 +178,7 @@ if (args.includes("--self-test")) {
     `  }`,
   ].join("\n");
 
-  // The three shapes that made the first version report false positives: the
-  // scope survives in the else branch of the same line that refuses "none", or
-  // is compared against a different scope value.
+  // The three shapes that made the first version report false positives
   const ternaryReturn = [
     `export async function resolveAttendanceReadScope(access, u): Promise<DataScope> {`,
     `  const manageScope = await resolveAttendanceScope(access, u);`,
@@ -286,8 +220,7 @@ if (args.includes("--self-test")) {
   const checks = {
     findsTheDecorativeResolve: decorative.length === 1 && decorative[0].spent === false,
     decorativeIsNamedByLine: decorative[0]?.line === 2 && decorative[0]?.name === "scope",
-    // The nuance that decides the whole check: the cache key is discriminated,
-    // and counting that as use would clear the one confirmed live instance.
+    // The nuance that decides the whole check
     cacheKeyDoesNotCountAsApplication:
       decorative[0]?.cacheInterpolations === 1 && decorative[0]?.spent === false,
     guardAgainstNoneDoesNotCountAsApplication: decorative[0]?.guards === 1,
@@ -332,8 +265,7 @@ const all = walkTs(MODULES_DIR).flatMap((file) =>
   analyseSource(readFileSync(file, "utf8"), file),
 );
 
-// The vocabulary is 30 named resolvers across 132 call sites. Near zero means
-// RESOLUTION_RE stopped matching, not that the codebase changed.
+// The vocabulary is 30 named resolvers across 132 call sites
 if (all.length < 20) {
   process.stderr.write(
     `Found only ${all.length} scope resolutions. That is a broken pattern, not a clean codebase.\n`,

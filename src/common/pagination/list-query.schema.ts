@@ -27,6 +27,21 @@ export function pageSizeField(defaultSize = 50, maxSize = PAGE_SIZE_CAP) {
     .transform((v) => Math.min(v, ceiling));
 }
 
+// For an endpoint whose default lives at the call site: same clamp, same cap, but the absent case stays `undefined`.
+export function optionalPageSizeField(maxSize = PAGE_SIZE_CAP) {
+  const ceiling = Math.min(maxSize, PAGE_SIZE_CAP);
+  return z.coerce
+    .number()
+    .int()
+    .min(1)
+    .transform((v) => Math.min(v, ceiling))
+    .optional();
+}
+
+export function optionalPageNumberField() {
+  return z.coerce.number().int().min(1).optional();
+}
+
 export const baseListQuerySchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(50),

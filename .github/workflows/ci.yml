@@ -73,6 +73,9 @@ jobs:
       - name: Every resolved DataScope reaches a predicate
         run: pnpm check:scope-application
 
+      - name: No record read can return a deleted row
+        run: pnpm check:record-access
+
       # The index half of the RLS invariant, which needs no database: the policy
       # half is db:verify-rls in the tenant-isolation job below, and that job only
       # runs on a schedule because it needs credentials. Without a leading tenant

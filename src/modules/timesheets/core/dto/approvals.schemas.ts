@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -7,8 +8,8 @@ export const approvalsQuerySchema = z.object({
   userId: z.string().optional(),
   startDate: dateString.optional(),
   endDate: dateString.optional(),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ApprovalsQuery = z.infer<typeof approvalsQuerySchema>;
 

@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const auditQuerySchema = z.object({
   entityType: z.string().optional(),
   entityId: z.string().optional(),
   action: z.string().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type AuditQuery = z.infer<typeof auditQuerySchema>;

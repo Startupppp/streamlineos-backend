@@ -58,6 +58,10 @@ function buildService(roleGrants: { permissionKey: string; scope: string }[]) {
     cached: <T>(_key: string, fetcher: () => Promise<T>) => fetcher(),
     cachedVersioned: <T>(_ns: string, _key: string, fetcher: () => Promise<T>) => fetcher(),
     invalidate: () => Promise.resolve(),
+    cachedForOrg<T>(o: string, k: string, fetcher: () => Promise<T>) {
+      return this.cached(`${o}:${k}`, fetcher);
+    },
+    invalidateForOrg: jest.fn().mockResolvedValue(undefined),
     invalidateNamespace: () => Promise.resolve(),
   };
   const entitlements = { isModuleEnabled: () => Promise.resolve(true) };

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField, optionalPageNumberField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const JOB_STATUSES = ["DRAFT", "OPEN", "PAUSED", "CLOSED", "FILLED"] as const;
 const VALID_JOB_TYPES = [
@@ -27,10 +28,10 @@ export const screeningQuestionSchema = z.object({
 export const jobListSchema = z
   .object({
     status: z.enum(JOB_STATUSES).optional(),
-    page: z.coerce.number().int().min(1).optional(),
-    pageSize: z.coerce.number().int().min(1).max(100).optional(),
+    page: optionalPageNumberField(),
+    pageSize: optionalPageSizeField(),
     /** @deprecated prefer page/pageSize */
-    limit: z.coerce.number().int().min(1).max(100).optional(),
+    limit: optionalPageSizeField(),
     /** @deprecated prefer page/pageSize */
     offset: z.coerce.number().int().min(0).optional(),
   })
@@ -150,6 +151,6 @@ export type RecruiterActivityInput = z.infer<typeof recruiterActivitySchema>;
 
 export const recruiterActivityQuerySchema = z.object({
   recruiterId: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: pageSizeField(50),
 });
 export type RecruiterActivityQueryInput = z.infer<typeof recruiterActivityQuerySchema>;

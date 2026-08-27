@@ -13,11 +13,7 @@ export type RouteExposure =
   | { mode: "in-service"; by: string }
   | { mode: "undeclared" };
 
-/**
- * An OpenAPI operation as this file needs to see it: identified, describable and
- * open to the `x-` extensions the spec allows. Nest's own OperationObject types
- * the extensions as unknown, so a mutable view is the honest shape.
- */
+// Extensions are `unknown` in Nest's own types, so a mutable view is the honest shape.
 interface StampableOperation {
   operationId?: string;
   description?: string;
@@ -67,15 +63,7 @@ export function describeExposure(exposure: RouteExposure): string {
   }
 }
 
-/**
- * Stamps every operation with the exposure its handler declares, reading the
- * same four metadata keys RouteClassifierGuard reads.
- *
- * Derived from metadata rather than from a new per-operation decorator, so it
- * cannot drift from the guard and costs nothing across 3,500 handlers. Called
- * only inside main.ts's `isDevelopment` block, so no document is served in
- * production regardless.
- */
+// Read from the same four metadata keys the guard reads, so the document cannot drift.
 export function recordRouteClassification(
   app: INestApplication,
   document: { paths?: unknown },

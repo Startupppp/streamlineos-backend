@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalPageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const postCreateSchema = z.object({
   title: z.string().min(1).max(256),
@@ -39,7 +40,7 @@ export const categoryUpdateSchema = z.object({
 });
 
 export const feedSchema = z.object({
-  limit: z.coerce.number().int().min(1).max(50).optional(),
+  limit: optionalPageSizeField(50),
   cursor: z.string().optional(),
   category: z.string().optional(),
   tag: z.string().optional(),

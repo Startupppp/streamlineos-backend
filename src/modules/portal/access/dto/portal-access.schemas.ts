@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const membershipStatusValues = ["ACTIVE", "SUSPENDED", "REVOKED"] as const;
 const grantStatusValues = ["ACTIVE", "SUSPENDED", "REVOKED", "EXPIRED"] as const;
 
 export const listMembershipsQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   status: z.enum(["PENDING", "ACTIVE", "SUSPENDED", "REVOKED"]).optional(),
 });
 
@@ -19,8 +20,8 @@ export const updateMembershipStatusSchema = z.object({
 });
 
 export const listGrantsQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   projectId: z.coerce.number().int().positive().optional(),
 });
 

@@ -1,9 +1,10 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 import { ORG_MEMBER_ROLES, ORG_MEMBER_ROLE_VALUES} from "../../../common/rbac/org-roles";
 
 export const listUsersSchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   search: z.string().optional(),
   status: z.enum(["active", "suspended", "archived"]).optional(),
   role: z.string().optional(),
@@ -98,8 +99,8 @@ export const bulkActionSchema = z.object({
 export type BulkActionInput = z.infer<typeof bulkActionSchema>;
 
 export const listLoginHistorySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   success: z.enum(["true", "false"]).optional().transform((v) => (v === undefined ? undefined : v === "true")),
 });
 export type ListLoginHistoryInput = z.infer<typeof listLoginHistorySchema>;
@@ -138,8 +139,8 @@ export const createUserSchema = z.object({
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 export const listAuditSchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   actorUserId: z.string().optional(),
   action: z.string().optional(),
   from: z.string().optional(),
@@ -153,8 +154,8 @@ export const changeInviteRoleSchema = z.object({
 export type ChangeInviteRoleInput = z.infer<typeof changeInviteRoleSchema>;
 
 export const listInvitationsSchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   includeAccepted: z.enum(["true", "false"]).optional().transform((v) => v === "true"),
   status: z.enum(["pending", "accepted", "expired", "revoked"]).optional(),
   q: z.string().trim().max(200).optional(),

@@ -1,50 +1,13 @@
 /**
- * check-navigation-permissions.mjs
+ * Every non-universal navigation destination must name the permission its own
+ * route enforces. Walks navigation -> route, the opposite direction to
+ * check-permission-keys, and fails on a gate naming a key no route checks.
  *
- * Every non-universal navigation destination must name the exact permission its
- * route enforces. This check fails (exit 1) when a sidebar gate names a key that
- * no backend route actually checks.
+ * Does not re-check that every route carries a requirement; that lives in
+ * frontend sidebar-permission-coverage.test.ts with the section 8 allowlist.
  *
- * WHY THIS IS NOT THE SAME CHECK AS check-permission-keys:
- *   check-permission-keys walks route -> catalog: it catches a route gated on a
- *   key nobody can hold. This one walks navigation -> route, the other direction,
- *   and catches a destination whose gate and whose handler disagree. Both keys
- *   can exist in both catalogs and the pair still be wrong.
- *
- * THE TWO FAILURES IT NAMES:
- *
- *   1. UNKNOWN KEY — a nav gate names a key absent from the backend catalog.
- *      `useCan` can never return true for it, so the destination is invisible to
- *      everyone including the org owner. This is the navigation-side twin of the
- *      historical "hr:employees:export" ghost key.
- *
- *   2. UNENFORCED KEY — a nav gate names a catalog key that appears in no
- *      @RequirePermission on any route. The link is shown to whoever holds that
- *      key, but the page behind it is gated on something else (or on nothing),
- *      so holding the key neither guarantees the page loads nor is required for
- *      it to. The gate is decorative, which is worse than absent: a reviewer sees
- *      a permission and stops looking.
- *
- * WHAT IT DELIBERATELY DOES NOT CHECK:
- *   - That every nav route carries some requirement, and that universal surfaces
- *     carry none. That is already asserted, with the root CLAUDE.md section 8
- *     universal allowlist in it, by
- *     frontend/components/layout/sidebar/sidebar-permission-coverage.test.ts.
- *     Re-implementing that allowlist here would fork it.
- *   - href -> handler resolution. A frontend href maps to an App Router folder,
- *     not to one backend route, and a page calls several endpoints. The honest
- *     invariant is that the key a destination advertises is a key some route
- *     enforces, which is what fails when the two drift.
- *   - The frontend PERMISSIONS runtime array, a deliberate subset of the union.
- *
- * Usage:
- *   node src/scripts/check-navigation-permissions.mjs
- *   node src/scripts/check-navigation-permissions.mjs --self-test
- *
- * Exit codes:
- *   0  every navigation gate names a key some route enforces
- *   1  at least one unknown or unenforced gate (or self-test failed)
- *   2  usage error (a catalog or manifest directory is unreachable)
+ * Usage:  node src/scripts/check-navigation-permissions.mjs [--self-test]
+ * Exit:   0 clean · 1 unknown or unenforced gate · 2 catalog unreachable
  */
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
@@ -68,22 +31,7 @@ const NAV_DIR = join(REPO_ROOT, "frontend", "components", "layout", "sidebar");
 const SPEC_RE = /\.(spec|e2e-spec|test)\.ts$/;
 const NAV_FILE_RE = /^sidebar-(home-nav|nav-groups-.+|nav-routes-.+)\.ts$/;
 
-/**
- * The one class of key a navigation gate may name that no @RequirePermission
- * carries: the access screens.
- *
- * `<module>:access:view` and `:manage` are read by assertModuleAccessPolicy
- * (module-access.helpers.ts:100) rather than by the guard, because §5 makes a
- * delegated `access:manage` grant view-only and a permission key cannot express
- * management standing — which is why those routes carry
- * @AuthorizedInService("assertModuleAccessPolicy"). So the gate does name the
- * exact permission the destination enforces; the enforcement is one layer down.
- *
- * Derived from the same ACCESS_MANAGED_MODULES list the keys are generated from,
- * so this is the generator's own output rather than a hand-kept allowlist: a new
- * delegable module is covered on the day it exists, and a module leaving the
- * list starts failing again the same day. Every excused key is printed.
- */
+// The one class of key a navigation gate may name that no @RequirePermission carries: the access screens
 function inServiceEnforcedKeys(accessManaged) {
   const keys = new Map();
   for (const moduleKey of accessManaged) {
@@ -106,8 +54,7 @@ if (args.includes("--self-test")) {
     "real:orphan:view",
   ]);
 
-  // One route enforces the view key via a literal, one via a constant.
-  // Nothing enforces real:orphan:view.
+  // One route enforces the view key via a literal, one via a constant
   const syntheticRouteFile = [
     "",
     `const MANAGE = "real:thing:manage";`,
@@ -119,12 +66,7 @@ if (args.includes("--self-test")) {
     "  async manageThings() { return null; }",
   ].join("\n");
 
-  // Nav manifest exercising every shape the parser must survive:
-  //   - a group gate written as a multi-line array, before any href
-  //   - an inline single-key route gate
-  //   - a route naming a catalog key that no route enforces  (line 20)
-  //   - a route naming a key in no catalog at all            (line 26)
-  //   - a universal route with no gate at all (must produce nothing)
+  // Nav manifest exercising every shape the parser must survive
   const syntheticNav = [
     `export const X_NAV_GROUPS: NavGroup[] = [`, //          1
     `  {`, //                                                2
@@ -176,10 +118,7 @@ if (args.includes("--self-test")) {
   const ghostGate = gates.find((g) => g.key === "ghost:key:missing");
   const groupGates = gates.filter((g) => g.href === null);
 
-  // The real catalog is loaded, not parsed. Assert against it directly: the
-  // twelve generated <module>:access:view keys are exactly what a text scan of
-  // the catalog folder misses, and every access screen in the sidebar is gated
-  // on one of them.
+  // The real catalog is loaded, not parsed
   let realCatalog = null;
   let catalogError = null;
   try {
@@ -197,8 +136,7 @@ if (args.includes("--self-test")) {
     parsesInlineRouteGate: gates.some((g) => g.key === "real:thing:view" && g.href === "/things"),
     ungatedRouteProducesNothing: !gates.some((g) => g.href === "/me/profile"),
     hrefResetsOnLabelSoGroupIsNotMisattributed: !groupGates.some((g) => g.href !== null),
-    // A route enforcing its key through a constant still counts as enforced,
-    // or every gate pointing at one of those 21 routes reads as decorative.
+    // A route enforcing its key through a constant still counts as enforced, or every gate pointing at one of those 21 routes reads as decorative
     constantEnforcedKeyCountsAsEnforced: enforced.has("real:thing:manage"),
     unknownKeyDetected: unknown.length === 1 && unknown[0].key === "ghost:key:missing",
     unknownKeyNamesItsLine: ghostGate?.line === 26 && ghostGate?.href === "/things/ghost",

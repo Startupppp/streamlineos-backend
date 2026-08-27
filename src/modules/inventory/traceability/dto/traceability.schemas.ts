@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listLotsSchema = z.object({
   variantId: z.coerce.number().int().positive().optional(),
@@ -6,8 +7,8 @@ export const listLotsSchema = z.object({
   status: z.enum(["ACTIVE", "EXPIRED", "BLOCKED", "CONSUMED", "RECALLED"]).optional(),
   expiringWithinDays: z.coerce.number().int().min(1).optional(),
   search: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ListLotsInput = z.infer<typeof listLotsSchema>;
 
@@ -15,8 +16,8 @@ export const listSerialsSchema = z.object({
   variantId: z.coerce.number().int().positive().optional(),
   status: z.enum(["IN_STOCK", "RESERVED", "SHIPPED", "RETURNED", "SCRAPPED", "QUARANTINE"]).optional(),
   search: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ListSerialsInput = z.infer<typeof listSerialsSchema>;
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField } from "../../../common/pagination/list-query.schema";
 
 export const createDelegationSchema = z
   .object({
@@ -18,7 +19,7 @@ export const createDelegationSchema = z
 
 export const listDelegationsQuerySchema = z
   .object({
-    page: z.coerce.number().int().positive().default(1),
+    page: pageNumberField,
     limit: z.coerce
       .number()
       .int()

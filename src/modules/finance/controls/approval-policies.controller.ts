@@ -26,10 +26,11 @@ import {
   type UpdateApprovalPolicyInput,
 } from "./dto/finance-controls.schemas";
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 const listPoliciesSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20, 100),
 });
 
 @RequireModule("accounting")

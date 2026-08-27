@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const runTypeSchema = z.enum([
   "REGULAR",
@@ -34,16 +35,16 @@ export const createRunSchema = z
 export type CreateRunInput = z.infer<typeof createRunSchema>;
 
 export const listRunsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   /** Optional legal-entity filter for multi-entity orgs. */
   entityId: z.coerce.number().int().positive().optional(),
 });
 export type ListRunsQuery = z.infer<typeof listRunsQuerySchema>;
 
 export const listRunEmployeesQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   search: z.string().optional(),
   status: z.string().optional(),
   workerType: z.string().optional(),
@@ -98,8 +99,8 @@ export const commandCenterQuerySchema = z.object({
 export type CommandCenterQuery = z.infer<typeof commandCenterQuerySchema>;
 
 export const listProfilesQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   search: z.string().optional(),
   workerType: z.string().optional(),
   status: z.string().optional(),

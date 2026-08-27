@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const ticketStatusSchema = z.enum(["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"]);
 export const ticketPrioritySchema = z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]);
@@ -42,8 +43,8 @@ export const listTicketsSchema = z.object({
   queueId: z.coerce.number().int().positive().optional(),
   channel: z.string().trim().optional(),
   snoozed: z.enum(["true", "false"]).optional().transform((v) => (v === undefined ? undefined : v === "true")),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 
 export const createTicketSchema = z.object({
@@ -562,7 +563,7 @@ export type KbAskInput = z.infer<typeof kbAskSchema>;
 
 export const supportAiReportFiltersSchema = z.object({
   cursor: z.coerce.number().int().min(0).default(0),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: pageSizeField(50, 100),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
 });

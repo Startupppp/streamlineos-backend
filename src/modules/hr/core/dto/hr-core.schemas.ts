@@ -1,14 +1,15 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField, optionalPageNumberField } from "../../../../common/pagination/list-query.schema";
 
 export const paginationSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 
 const cursorListFields = {
   cursor: z.string().trim().min(1).max(2048).optional(),
-  page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: optionalPageNumberField(),
+  limit: pageSizeField(20),
 };
 
 export const listPeopleSchema = z
@@ -143,21 +144,21 @@ export const listEffectiveDateChangesSchema = z.object({
     "employment_type", "compensation", "work_schedule", "policy_assignment",
   ]).optional(),
   status: z.enum(["draft", "approved", "applied"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 
 export const applyDueChangesSchema = z
   .object({
     asOfDate: businessDateSchema.optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
+    limit: pageSizeField(50),
   })
   .strict();
 
 export const listTimelineSchema = z
   .object({
     cursor: z.string().trim().min(1).max(2048).optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    limit: pageSizeField(20),
   })
   .strict();
 
@@ -201,13 +202,13 @@ export const listAuditLogsSchema = z.object({
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
   cursor: z.string().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: pageSizeField(20, 100),
 });
 
 export const historyTypeSchema = z.object({
   type: z.enum(["manager", "department"]),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 
 export type CreatePersonInput = z.infer<typeof createPersonSchema>;

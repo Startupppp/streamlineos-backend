@@ -65,7 +65,13 @@ describe("InvitationsService state transitions", () => {
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
           provide: CacheService,
-          useValue: { invalidate, invalidatePattern, invalidateNamespace },
+          useValue: {
+            invalidate,
+            invalidatePattern,
+            invalidateNamespace,
+            invalidateForOrg: (o: string, k: string) => invalidate(`${o}:${k}`),
+            invalidateNamespaceForOrg: (o: string, n: string) => invalidateNamespace(`${o}:${n}`),
+          },
         },
         {
           provide: EmailService,

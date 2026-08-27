@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listCreditNotesSchema = z.object({
   status: z.enum(["DRAFT", "POSTED", "APPLIED", "VOID"]).optional(),
   clientId: z.coerce.number().int().positive().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  pageSize: pageSizeField(50, 100),
 });
 
 const cnItemSchema = z.object({
@@ -39,8 +40,8 @@ export const listRecurringTemplatesSchema = z.object({
     .string()
     .transform((v) => v === "true")
     .optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  pageSize: pageSizeField(50, 100),
 });
 
 export const createRecurringTemplateSchema = z.object({
@@ -57,8 +58,8 @@ export const updateRecurringTemplateSchema = createRecurringTemplateSchema.parti
 });
 
 export const listReminderPoliciesSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  pageSize: pageSizeField(50, 100),
 });
 
 export const createReminderPolicySchema = z.object({
@@ -74,8 +75,8 @@ export const updateReminderPolicySchema = createReminderPolicySchema.partial().e
 
 export const listReminderLogSchema = z.object({
   invoiceId: z.coerce.number().int().positive().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  pageSize: pageSizeField(50, 100),
 });
 
 export const customerStatementSchema = z.object({
@@ -86,8 +87,8 @@ export const customerStatementSchema = z.object({
 
 export const listCollectionActivitiesSchema = z.object({
   clientId: z.coerce.number().int().positive().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  pageSize: pageSizeField(50, 100),
 });
 
 export const createCollectionActivitySchema = z.object({
@@ -133,8 +134,8 @@ export const listArPaymentsSchema = z.object({
   clientId: z.coerce.number().int().positive().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  pageSize: pageSizeField(50, 100),
 });
 
 export type ListArPaymentsInput = z.infer<typeof listArPaymentsSchema>;

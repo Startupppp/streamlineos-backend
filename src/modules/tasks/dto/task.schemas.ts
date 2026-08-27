@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const listSchema = z.object({
   assigneeId: z.string().optional(),
@@ -6,8 +7,8 @@ export const listSchema = z.object({
   type: z.enum(["CALL", "EMAIL", "MEETING", "CUSTOM"]).optional(),
   entityType: z.enum(["LEAD", "DEAL", "CONTACT", "PROJECT"]).optional(),
   entityId: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  page: z.coerce.number().int().min(1).default(1),
+  limit: pageSizeField(50, 100),
+  page: pageNumberField,
 });
 
 export const createSchema = z.object({

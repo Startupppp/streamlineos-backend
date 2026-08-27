@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const KB_AUDIENCES = ["internal", "public", "mixed"] as const;
 export const KB_ARTICLE_STATUSES = ["draft", "in_review", "published", "archived"] as const;
@@ -39,8 +40,8 @@ export const listArticlesSchema = z.object({
   categoryId: z.coerce.number().int().positive().optional(),
   status: z.enum(KB_ARTICLE_STATUSES).optional(),
   search: z.string().trim().min(1).max(200).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20, 100),
 });
 export type ListArticlesInput = z.infer<typeof listArticlesSchema>;
 

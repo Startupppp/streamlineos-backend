@@ -46,6 +46,8 @@ describe("OrgMembershipService member status guards", () => {
           provide: CacheService,
           useValue: {
             invalidate: jest.fn(),
+            invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
             invalidateNamespace: jest.fn().mockResolvedValue(undefined),
           },
         },
@@ -172,6 +174,9 @@ describe("OrgMembershipService — module-ownership guards", () => {
           useValue: {
             invalidate: cacheInvalidate,
             invalidateNamespace: cacheInvalidateNamespace,
+            invalidateForOrg: (o: string, k: string) => cacheInvalidate(`${o}:${k}`),
+            invalidateNamespaceForOrg: (o: string, n: string) =>
+              cacheInvalidateNamespace(`${o}:${n}`),
           },
         },
         { provide: SessionsService, useValue: { revokeAllForUser } },

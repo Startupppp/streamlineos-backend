@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createCarrierSchema = z.object({
   name: z.string().min(1),
@@ -19,8 +20,8 @@ export type UpdateCarrierInput = z.infer<typeof updateCarrierSchema>;
 export const listPackagesQuerySchema = z.object({
   shipmentId: z.coerce.number().int().optional(),
   status: z.enum(["OPEN", "CLOSED", "SHIPPED"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 export type ListPackagesQueryInput = z.infer<typeof listPackagesQuerySchema>;
 
@@ -54,8 +55,8 @@ export const listShipmentsQuerySchema = z.object({
   carrierId: z.coerce.number().int().optional(),
   warehouseId: z.coerce.number().int().optional(),
   soId: z.coerce.number().int().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 export type ListShipmentsQueryInput = z.infer<typeof listShipmentsQuerySchema>;
 
@@ -92,8 +93,8 @@ export type ShipActionInput = z.infer<typeof shipActionSchema>;
 export const listLoadsQuerySchema = z.object({
   status: z.enum(["DRAFT", "DISPATCHED", "ARRIVED", "CLOSED", "CANCELLED"]).optional(),
   carrierId: z.coerce.number().int().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 export type ListLoadsQueryInput = z.infer<typeof listLoadsQuerySchema>;
 
