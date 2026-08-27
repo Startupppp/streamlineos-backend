@@ -89,6 +89,47 @@ describe("RazorpayAdapter", () => {
   });
 
   describe("normalizeWebhook", () => {
+    it("maps provider field names to the neutral billing payment contract", () => {
+      const result = adapter.normalizeWebhook(JSON.stringify({
+        id: "evt_456",
+        event: "payment.captured",
+        payload: {
+          payment: {
+            entity: {
+              id: "pay_456",
+              order_id: "order_456",
+              amount: 2500,
+              fee: 50,
+              currency: "INR",
+              status: "captured",
+              invoice_id: "inv_456",
+              created_at: 1_700_000_000,
+            },
+          },
+        },
+      }));
+
+      expect(result).toEqual({
+        ok: true,
+        eventType: "payment.captured",
+        providerEventId: "evt_456",
+        payload: {
+          payment: {
+            entity: {
+              id: "pay_456",
+              orderId: "order_456",
+              amount: 2500,
+              fee: 50,
+              currency: "INR",
+              status: "captured",
+              invoiceId: "inv_456",
+              createdAt: 1_700_000_000,
+            },
+          },
+        },
+      });
+    });
+
     it("returns a provider-neutral event without exposing credential fields", () => {
       const result = adapter.normalizeWebhook(JSON.stringify({
         id: "evt_123",

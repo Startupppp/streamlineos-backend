@@ -177,10 +177,34 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
 
     const providerEventId =
       typeof (raw as { id?: unknown }).id === "string" ? (raw as { id: string }).id : undefined;
+    const providerPayload = parsed.data.payload;
+    const payment = providerPayload.payment;
+    const entity = payment && typeof payment === "object" && "entity" in payment ? payment.entity : undefined;
+    const normalizedEntity = entity && typeof entity === "object"
+      ? Object.fromEntries(
+          Object.entries({
+            id: (entity as Record<string, unknown>).id,
+            orderId: (entity as Record<string, unknown>).order_id,
+            amount: (entity as Record<string, unknown>).amount,
+            fee: (entity as Record<string, unknown>).fee,
+            currency: (entity as Record<string, unknown>).currency,
+            status: (entity as Record<string, unknown>).status,
+            method: (entity as Record<string, unknown>).method,
+            email: (entity as Record<string, unknown>).email,
+            description: (entity as Record<string, unknown>).description,
+            notes: (entity as Record<string, unknown>).notes,
+            invoiceId: (entity as Record<string, unknown>).invoice_id,
+            createdAt: (entity as Record<string, unknown>).created_at,
+          }).filter(([, value]) => value !== undefined),
+        )
+      : undefined;
+    const normalizedPayload = normalizedEntity
+      ? { ...providerPayload, payment: { entity: normalizedEntity } }
+      : providerPayload;
     return {
       ok: true,
       eventType: parsed.data.event,
-      payload: parsed.data.payload,
+      payload: normalizedPayload,
       ...(providerEventId ? { providerEventId } : {}),
     };
       },

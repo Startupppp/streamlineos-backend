@@ -10,7 +10,7 @@ import { logger } from "../../../common/logger/logger.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { PlanLimitsService } from "./plan-limits.service";
 import { forwardOnlyStatusGuard } from "./payment-status-order";
-import { type RazorpayPayment } from "./dto/billing.schemas";
+import { type PaymentWebhookPayment } from "../payments/dto/webhook.schemas";
 
 export class BillingPaymentState {
   constructor(
@@ -19,10 +19,10 @@ export class BillingPaymentState {
   ) {}
 
   // Forward-only: without setWhere a redelivered `authorized` reverted a captured row.
-  async persistPayment(payment: RazorpayPayment, orgId: string): Promise<void> {
+  async persistPayment(payment: PaymentWebhookPayment, orgId: string): Promise<void> {
     const fields = {
       razorpayPaymentId: payment.id,
-      razorpayOrderId: payment.order_id ?? null,
+      razorpayOrderId: payment.orderId ?? null,
       orgId,
       customerEmail: payment.email ?? null,
       amount: payment.amount,

@@ -295,7 +295,7 @@ export class PaymentWebhookHealthService {
           grossAmount: String(paymentEntity.amount / 100),
           feeAmount: String(typeof paymentEntity.fee === "number" ? paymentEntity.fee / 100 : 0),
           currency: typeof paymentEntity.currency === "string" ? paymentEntity.currency.toUpperCase() : "INR",
-          occurredAt: typeof paymentEntity.created_at === "number" ? new Date(paymentEntity.created_at * 1000) : new Date(),
+          occurredAt: typeof paymentEntity.createdAt === "number" ? new Date(paymentEntity.createdAt * 1000) : new Date(),
         });
       }
     } catch (bridgeError) {

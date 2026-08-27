@@ -12,13 +12,9 @@ import { type RevenueEventInput } from "./revenue-events";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
 import { PaymentWebhookHealthService } from "../payments/payment-webhook-health.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
+import { normalizedPaymentWebhookEventSchema, type PaymentWebhookPayment, type NormalizedPaymentWebhookEvent } from "../payments/dto/webhook.schemas";
 import { ProviderEventLedger, type ProviderEventKey } from "./provider-event-ledger";
 import { BillingPaymentState } from "./billing-payment-state";
-import {
-  webhookEventSchema,
-  type RazorpayPayment,
-  type WebhookEvent,
-} from "./dto/billing.schemas";
 
 export interface WebhookResult {
   status: number;
@@ -70,7 +66,7 @@ export class BillingWebhookHandler {
       return { status: 400, body: { ok: false, error } };
     }
 
-    const parsed = webhookEventSchema.safeParse({
+    const parsed = normalizedPaymentWebhookEventSchema.safeParse({
       event: normalized.eventType,
       payload: normalized.payload,
     });
@@ -80,7 +76,7 @@ export class BillingWebhookHandler {
       });
       return { status: 400, body: { ok: false, error: "invalid payload" } };
     }
-    const event: WebhookEvent = parsed.data;
+    const event: NormalizedPaymentWebhookEvent = parsed.data;
 
     const payment = event.payload.payment?.entity;
     if (!payment) return { status: 200, body: { ok: true, ignored: event.event } };
@@ -142,8 +138,8 @@ export class BillingWebhookHandler {
   }
 
   private async applyEffects(
-    event: WebhookEvent,
-    payment: RazorpayPayment,
+    event: NormalizedPaymentWebhookEvent,
+    payment: PaymentWebhookPayment,
     orgId: string,
     providerKey: string,
   ): Promise<{ ok: true; revenue: RevenueEventInput[] } | { ok: false; result: WebhookResult }> {
@@ -250,7 +246,7 @@ export class BillingWebhookHandler {
   }
 }
 
-function packIdFor(event: WebhookEvent, payment: RazorpayPayment): number | null {
+function packIdFor(event: NormalizedPaymentWebhookEvent, payment: PaymentWebhookPayment): number | null {
   if (event.event !== "payment.captured" || payment.status !== "captured") return null;
   if (!payment.notes?.packId) return null;
   const packId = parseInt(String(payment.notes.packId), 10);
