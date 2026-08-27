@@ -548,6 +548,16 @@ export class BillingService {
     return this.handlePaymentProviderWebhook(orgId, "razorpay", rawBody, signature);
   }
 
+  /*
+    Upserts on (provider, provider_payment_ref), not on the Razorpay id.
+
+    A duplicate webhook delivery is the thing this has to survive, and it has to
+    survive it for every provider. Targeting `razorpay_payment_id` only worked
+    while Razorpay was the only one: since `0531` that column is nullable and its
+    unique index is partial, so a repeated Stripe delivery would miss this
+    conflict target entirely and hit `uniq_platform_payments_provider_ref` as an
+    unhandled 23505 instead of being absorbed.
+  */
   private async persistPayment(payment: RazorpayPayment, orgId: string | null): Promise<void> {
     const fields = {
       razorpayPaymentId: payment.id,
@@ -572,13 +582,19 @@ export class BillingService {
         await tx
           .insert(platformPayments)
           .values(fields)
-          .onConflictDoUpdate({ target: platformPayments.razorpayPaymentId, set: fields });
+          .onConflictDoUpdate({
+            target: [platformPayments.provider, platformPayments.providerPaymentRef],
+            set: fields,
+          });
       }, { orgId });
     } else {
       await this.db
         .insert(platformPayments)
         .values(fields)
-        .onConflictDoUpdate({ target: platformPayments.razorpayPaymentId, set: fields });
+        .onConflictDoUpdate({
+            target: [platformPayments.provider, platformPayments.providerPaymentRef],
+            set: fields,
+          });
     }
   }
 
