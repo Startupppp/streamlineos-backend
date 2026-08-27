@@ -26,6 +26,10 @@ export class CalendarSourceRegistry {
   ) {}
 
   register(source: CalendarEventSource): void {
+    const existing = [...this.sources].find((candidate) => candidate.key === source.key);
+    if (existing && existing !== source) {
+      throw new Error(`Calendar source key already registered: ${source.key}`);
+    }
     this.sources.add(source);
   }
 
