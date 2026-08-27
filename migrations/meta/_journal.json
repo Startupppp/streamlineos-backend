@@ -2052,6 +2052,13 @@
       "when": 1787830365441,
       "tag": "0277_party_maps_own_the_identifiers",
       "breakpoints": true
+    },
+    {
+      "idx": 294,
+      "version": "7",
+      "when": 1787830366441,
+      "tag": "0278_drop_legacy_identity_tables",
+      "breakpoints": true
     }
   ]
 }
