@@ -33,6 +33,7 @@ import { PaymentWebhookHealthService } from "../payments/payment-webhook-health.
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import {
   applyDiscount,
+  couponDiscountPaise,
   evaluateCoupon,
   planBaseAmountPaise,
   COUPON_NOT_FOUND,
@@ -242,10 +243,11 @@ export class BillingService {
       );
     }
 
-    const amount = PLAN_PRICES_PAISE[input.plan];
+    const billingCycle = input.billingCycle ?? "monthly";
+    const amount = planBaseAmountPaise(input.plan, billingCycle, ANNUAL_DISCOUNT_PCT);
     const now = new Date();
     const periodEnd = new Date(now);
-    periodEnd.setMonth(periodEnd.getMonth() + 1);
+    periodEnd.setMonth(periodEnd.getMonth() + (billingCycle === "annual" ? 12 : 1));
 
     try {
       await this.db.transaction(async (tx) => {
@@ -301,6 +303,8 @@ export class BillingService {
           const [lockedCoupon] = await tx
             .select({
               id: coupons.id,
+              type: coupons.type,
+              value: coupons.value,
               maxUses: coupons.maxUses,
               usedCount: coupons.usedCount,
             })
@@ -326,10 +330,24 @@ export class BillingService {
               .set({ usedCount: sql`${coupons.usedCount} + 1` })
               .where(eq(coupons.id, input.couponId));
 
+            const discountPaise = couponDiscountPaise(
+              {
+                id: lockedCoupon.id,
+                type: lockedCoupon.type,
+                value: lockedCoupon.value,
+                maxUses: lockedCoupon.maxUses,
+                usedCount: lockedCoupon.usedCount,
+                applicablePlans: null,
+                expiresAt: null,
+              },
+              amount,
+            );
+
             await tx.insert(couponRedemptions).values({
               couponId: input.couponId,
               orgId,
               userId,
+              amount: (discountPaise / 100).toFixed(2),
             });
           }
         }

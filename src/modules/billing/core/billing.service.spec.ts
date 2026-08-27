@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, ServiceUnavailableException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { outboxEvents } from "../../../db/schema";
+import { outboxEvents, subscriptionPayments, subscriptions, couponRedemptions } from "../../../db/schema";
+import { ANNUAL_DISCOUNT_PCT } from "./plan-entitlements.constants";
 import { BillingService } from "./billing.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -83,7 +84,7 @@ function makeCoupon(overrides: Partial<CouponRow> = {}): CouponRow {
 // The transaction mock invokes its callback: a bare jest.fn() voids every assertion inside it.
 function makeDb(options: {
   subscription?: { id: number; orgId: string; plan: string; status: string } | null;
-  lockedCoupon?: { id: number; maxUses: number | null; usedCount: number } | null;
+  lockedCoupon?: { id: number; type?: string; value?: string; maxUses: number | null; usedCount: number } | null;
   coupon?: CouponRow | null;
   alreadyRedeemed?: boolean;
   transactionRejects?: unknown;
@@ -93,7 +94,11 @@ function makeDb(options: {
       ? { id: 1, orgId: "org1", plan: "STARTER", status: "ACTIVE" }
       : options.subscription;
 
-  const store = { outbox: [] as Array<Record<string, unknown>>, inserts: [] as unknown[] };
+  const store = {
+    outbox: [] as Array<Record<string, unknown>>,
+    inserts: [] as unknown[],
+    allInserts: [] as Array<{ table: unknown; values: Record<string, unknown> }>,
+  };
 
   const tx = {
     query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(subscription) } },
@@ -103,6 +108,7 @@ function makeDb(options: {
     insert: jest.fn().mockImplementation((table: unknown) => ({
       values: (values: Record<string, unknown>) => {
         store.inserts.push(table);
+        store.allInserts.push({ table, values });
         if (table === outboxEvents) store.outbox.push(values);
         const rows = [{ id: 1 }];
         return {
@@ -117,7 +123,7 @@ function makeDb(options: {
       for: jest.fn().mockReturnThis(),
       limit: jest.fn().mockResolvedValue(
         options.lockedCoupon === undefined
-          ? [{ id: 42, maxUses: null, usedCount: 0 }]
+          ? [{ id: 42, type: "PERCENTAGE", value: "10", maxUses: null, usedCount: 0 }]
           : options.lockedCoupon
             ? [options.lockedCoupon]
             : [],
@@ -547,6 +553,95 @@ describe("BillingService.getSummary — isConfigured reads through the adapter",
   it("no adapter — isConfigured is false", async () => {
     const svc = await buildService(makeDb({ subscription: null }), makeResolver(false));
     await expect(svc.getSummary("org1")).resolves.toMatchObject({ isConfigured: false });
+  });
+});
+
+describe("billing-cycle — annual and monthly purchases are recorded correctly", () => {
+  const msPerDay = 24 * 60 * 60 * 1000;
+
+  it("annual purchase records 12-month discounted amount, not the monthly price", async () => {
+    const db = makeDb({ subscription: null });
+    const svc = await buildService(db, makeResolver());
+
+    await svc.verifyAndActivate("org1", "user1", { ...VALID_INPUT, billingCycle: "annual" });
+
+    const paymentInsert = db._store.allInserts.find((i) => i.table === subscriptionPayments);
+    const annualPaise = Math.round(PLAN_PRICES_PAISE.STARTER * 12 * (1 - ANNUAL_DISCOUNT_PCT));
+    expect(paymentInsert?.values.amount).toBe((annualPaise / 100).toFixed(2));
+  });
+
+  it("annual purchase sets currentPeriodEnd twelve months out", async () => {
+    const db = makeDb({ subscription: null });
+    const svc = await buildService(db, makeResolver());
+
+    const before = Date.now();
+    await svc.verifyAndActivate("org1", "user1", { ...VALID_INPUT, billingCycle: "annual" });
+
+    const subInsert = db._store.allInserts.find((i) => i.table === subscriptions);
+    const periodEnd = subInsert?.values.currentPeriodEnd as Date;
+    const diff = periodEnd.getTime() - before;
+    expect(diff).toBeGreaterThan(360 * msPerDay);
+    expect(diff).toBeLessThan(370 * msPerDay);
+  });
+
+  it("monthly purchase records the monthly price and a one-month period", async () => {
+    const db = makeDb({ subscription: null });
+    const svc = await buildService(db, makeResolver());
+
+    const before = Date.now();
+    await svc.verifyAndActivate("org1", "user1", { ...VALID_INPUT, billingCycle: "monthly" });
+
+    const paymentInsert = db._store.allInserts.find((i) => i.table === subscriptionPayments);
+    expect(paymentInsert?.values.amount).toBe((PLAN_PRICES_PAISE.STARTER / 100).toFixed(2));
+
+    const subInsert = db._store.allInserts.find((i) => i.table === subscriptions);
+    const periodEnd = subInsert?.values.currentPeriodEnd as Date;
+    const diff = periodEnd.getTime() - before;
+    expect(diff).toBeGreaterThan(27 * msPerDay);
+    expect(diff).toBeLessThan(32 * msPerDay);
+  });
+
+  it("absent billingCycle is treated as monthly — amount unchanged from today", async () => {
+    const db = makeDb({ subscription: null });
+    const svc = await buildService(db, makeResolver());
+
+    await svc.verifyAndActivate("org1", "user1", VALID_INPUT);
+
+    const paymentInsert = db._store.allInserts.find((i) => i.table === subscriptionPayments);
+    expect(paymentInsert?.values.amount).toBe((PLAN_PRICES_PAISE.STARTER / 100).toFixed(2));
+  });
+
+  it("coupon on annual purchase records the discount actually applied, not null", async () => {
+    const db = makeDb({
+      subscription: null,
+      lockedCoupon: { id: 42, type: "PERCENTAGE", value: "10", maxUses: null, usedCount: 0 },
+    });
+    const svc = await buildService(db, makeResolver());
+
+    await svc.verifyAndActivate("org1", "user1", {
+      ...VALID_INPUT,
+      billingCycle: "annual",
+      couponId: 42,
+    });
+
+    const redemptionInsert = db._store.allInserts.find((i) => i.table === couponRedemptions);
+    const annualPaise = Math.round(PLAN_PRICES_PAISE.STARTER * 12 * (1 - ANNUAL_DISCOUNT_PCT));
+    const discountPaise = Math.round(annualPaise * 0.1);
+    expect(redemptionInsert?.values.amount).toBe((discountPaise / 100).toFixed(2));
+  });
+
+  it("coupon on monthly purchase records the monthly discount, not the annual one", async () => {
+    const db = makeDb({
+      subscription: null,
+      lockedCoupon: { id: 42, type: "PERCENTAGE", value: "10", maxUses: null, usedCount: 0 },
+    });
+    const svc = await buildService(db, makeResolver());
+
+    await svc.verifyAndActivate("org1", "user1", { ...VALID_INPUT, billingCycle: "monthly", couponId: 42 });
+
+    const redemptionInsert = db._store.allInserts.find((i) => i.table === couponRedemptions);
+    const discountPaise = Math.round(PLAN_PRICES_PAISE.STARTER * 0.1);
+    expect(redemptionInsert?.values.amount).toBe((discountPaise / 100).toFixed(2));
   });
 });
 

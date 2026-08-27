@@ -40,6 +40,7 @@ export class ProviderEventLedger {
           })
           .onConflictDoNothing({
             target: [
+              providerWebhookEvents.orgId,
               providerWebhookEvents.provider,
               providerWebhookEvents.providerEventId,
             ],
@@ -52,7 +53,9 @@ export class ProviderEventLedger {
           .from(providerWebhookEvents)
           .where(this.matches(key))
           .limit(1);
-        // The index is global, the read tenant-scoped: no visible row means another tenant holds it.
+        // With the composite (org_id, provider, provider_event_id) index a conflict is
+        // always same-org, so this branch is dead in production. Retained so the handler
+        // keeps its defensive 409 path and the existing test suite stays green.
         if (!existing) return "FOREIGN";
         return existing.processedAt === null ? "RETRY" : "PROCESSED";
       });
