@@ -1,25 +1,7 @@
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
 
-/**
- * c21-04 preconditions. Partitioning a table by `created_at` forces the partition key into every
- * PK and UNIQUE on it, and Postgres will only let a foreign key reference a unique constraint that
- * therefore now includes it. That makes two things expensive, and both are invisible until someone
- * writes the cutover migration:
- *
- *   - every inbound foreign key must denormalise the parent's `created_at` and reference the pair,
- *     or be dropped;
- *   - every unique constraint gains `created_at`, which WEAKENS it -- two rows that used to
- *     collide can now coexist in different partitions.
- *
- * The second is not theoretical for the outbox. `uniq_notification_outbox_dedupe` on
- * `(org_id, dedupe_key)` is the guarantee that "a retried request must not enqueue the same intent
- * twice". Add `created_at` and a retry that lands either side of a boundary enqueues twice.
- *
- * These tests pin the current shape so the cost of partitioning stays visible and cannot be
- * silently paid. They are preconditions, not a prohibition -- when the cutover happens, they are
- * the list of decisions it has to have made.
- */
+// Partitioning forces created_at into every PK/UNIQUE: inbound FKs must carry it, and uniqueness weakens.
 
 const PARTITION_CANDIDATES = ["notifications", "chat_messages", "notification_outbox"] as const;
 
@@ -64,8 +46,6 @@ describe("c21-04 partition preconditions", () => {
       "notification_deliveries.notification_id",
     ]);
 
-    // The one candidate with nothing pointing at it, which is why it is the cheapest to partition
-    // on the foreign-key axis and the most expensive on the uniqueness axis.
     expect(inboundForeignKeys("notification_outbox")).toEqual([]);
   });
 

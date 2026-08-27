@@ -112,18 +112,7 @@ describe("MARKETING consent requirement", () => {
   });
 });
 
-/**
- * The inventory only means something if it is checked against the tree. Every other assertion here
- * reads the constant back and would keep passing while a new direct sender was added — which is
- * exactly the drift the criterion asks to prevent.
- *
- * The criterion says "never call an email, push or SMS **adapter** directly", so the pattern must
- * match every email adapter, not the literal `EmailService`. `\bEmailService\b` misses
- * `AutomationEmailService`, `ProjectsEmailService`, `ClientsEmailService` and
- * `CrmOutboundEmailService` — nine real senders, including the one place marketing consent is
- * enforced. A bare substring search is the opposite error: it self-matches every adapter's own
- * declaration file. `[A-Za-z]*EmailService` with word boundaries is the definition that holds.
- */
+// Checked against the tree, not against itself: the criterion is that the list cannot drift.
 function directEmailCallersOnDisk(): string[] {
   const srcRoot = join(__dirname, "..", "..");
   const moduleRoot = join(srcRoot, "modules");
@@ -181,9 +170,7 @@ describe("direct email caller inventory", () => {
     expect(offenders).toEqual([]);
   });
 
-  // MARKETING is exemptible only because the CRM outbound path already enforces consent through
-  // CrmConsentService.suppressedEmails. An earlier version of this rule allowed only OPERATOR_ALERT
-  // and USER_AUTHORED, on the premise that no consent-governed sender existed. One does.
+  // MARKETING is exemptible because the CRM outbound path already enforces consent.
   it("EXEMPT entries are a class that does not need the dispatch seam", () => {
     const exemptClasses = new Set<DeliveryClass>([
       DeliveryClass.OPERATOR_ALERT,

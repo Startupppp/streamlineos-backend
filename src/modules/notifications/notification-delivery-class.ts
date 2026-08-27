@@ -103,15 +103,7 @@ export const DELIVERY_CLASS_POLICIES: Readonly<Record<DeliveryClass, DeliveryCla
   },
 } as const;
 
-/**
- * The backoff step for a given attempt, clamped at the last step.
- *
- * This exists so the delivery worker stops carrying its own `BACKOFF_MINUTES` constant. Two copies
- * of a retry curve is one copy too many: the registry claimed to own retry rules while the only
- * code that retried anything read a private array, so changing the registry changed nothing.
- *
- * Attempts are 1-based, matching `notification_deliveries.attempt_count + 1` at the call site.
- */
+// Attempts are 1-based, matching notification_deliveries.attempt_count + 1 at the call site.
 export function backoffMinutesForAttempt(deliveryClass: DeliveryClass, attempt: number): number {
   const steps = DELIVERY_CLASS_POLICIES[deliveryClass].retryPolicy.backoffMinutes;
   const last = steps[steps.length - 1] ?? 60;
@@ -119,17 +111,7 @@ export function backoffMinutesForAttempt(deliveryClass: DeliveryClass, attempt: 
   return steps[Math.min(attempt - 1, steps.length - 1)] ?? last;
 }
 
-/**
- * Every event in the catalog is a product event by construction — the catalog *is* the
- * product-event pipeline, so this returns PRODUCT_EVENT for every key including unknown and absent
- * ones. The other four classes describe senders that never enter this pipeline, which is why they
- * appear in `notification-caller-inventory.ts` rather than here.
- *
- * It takes the key anyway, and deliberately: this is the seam a second class would arrive through,
- * and resolving it at the call site is what makes adding one a change to this function rather than
- * a change to the delivery worker. Falling back rather than throwing matters too — a delivery
- * already committed must not become unretryable because its event was renamed.
- */
+// The catalog IS the product-event pipeline; the other four classes never enter it.
 export function resolveDeliveryClassForEvent(_eventKey: string | undefined): DeliveryClass {
   return DeliveryClass.PRODUCT_EVENT;
 }

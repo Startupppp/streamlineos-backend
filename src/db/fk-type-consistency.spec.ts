@@ -1,22 +1,7 @@
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
 
-/**
- * A foreign key whose column is narrower than the key it references is a bug with a delivery date.
- *
- * SCH-001 widened `notifications.id` from int4 to bigint "while the table held 3 rows", because a
- * fan-out-on-write feed reaches 2,147,483,647 at the stated scale. Its dependent key was missed:
- * `notification_audit_logs.notification_id` stayed `integer`. Postgres accepts the constraint, so
- * nothing complains until the day an id exceeds int4 and every audit insert starts failing.
- *
- * c21-04 asks for exactly this class of widening ahead of volume, so the invariant is worth pinning
- * rather than fixing once.
- *
- * Types are resolved by name from each table's own config. Calling `getSQLType()` on the column
- * objects a foreign-key reference hands back overflows the stack — they are `ExtraConfigColumn`
- * proxies that delegate to themselves — which is the same Drizzle self-reference that makes
- * `JSON.stringify` throw on a captured condition.
- */
+// A column narrower than the key it references overflows on a date nobody has diaried.
 
 const INTEGER_WIDTH: Record<string, number> = {
   smallint: 2,
