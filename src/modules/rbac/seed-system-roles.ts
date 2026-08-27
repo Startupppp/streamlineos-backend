@@ -95,19 +95,23 @@ export function buildOrgMemberPermissionKeys(dbCatalog: Set<string>): string[] {
   return (ROLE_DEFAULT_PERMISSIONS["MEMBER"] ?? []).filter((key) => dbCatalog.has(key));
 }
 
-export async function seedSystemRolesForOrg(
-  db: Db,
-  orgId: string,
-): Promise<{ created: number }> {
-  const dbCatalog = await resolveDbPermissionSet(db);
+interface RoleSpec {
+  readonly slug: string;
+  readonly name: string;
+  readonly rank: number;
+  readonly moduleKey: string | null;
+  readonly permissionKeys: string[];
+}
 
-  const specs: Array<{
-    slug: string;
-    name: string;
-    rank: number;
-    moduleKey: string | null;
-    permissionKeys: string[];
-  }> = [
+/**
+ * Every system role a new organisation gets, decided without touching the
+ * database.
+ *
+ * Pure and exported so the shape of the ladder can be asserted directly, rather
+ * than inferred from how many times an insert mock was called.
+ */
+export function systemRoleSpecs(dbCatalog: Set<string>): RoleSpec[] {
+  const specs: RoleSpec[] = [
     {
       slug: "ORG_ADMIN",
       name: "Org Admin",
@@ -147,45 +151,101 @@ export async function seedSystemRolesForOrg(
     ]),
   ];
 
-  let created = 0;
-  for (const spec of specs) {
-    await db.transaction(async (tx) => {
-      const inserted = await tx
-        .insert(roles)
-        .values({
+  const bySlug = new Map(specs.map((spec) => [spec.slug, spec]));
+  return [...bySlug.values()];
+}
+
+export function scopeForGrant(slug: string, permissionKey: string): "own" | "team" | "all" {
+  if (!slug.endsWith("_MODULE_MEMBER")) return "all";
+  return MODULE_MEMBER_KEY_SCOPE_OVERRIDE[permissionKey] ?? "all";
+}
+
+/**
+ * How many grant rows go in one statement.
+ *
+ * Four columns per row, so this is nowhere near Postgres' 65535 bound; it is
+ * small enough that a chunk stays a comfortable packet and large enough that the
+ * ~1400 grants a fresh organisation needs cost two statements rather than
+ * fourteen hundred.
+ */
+const GRANT_CHUNK = 1000;
+
+/**
+ * Every system role and every one of its grants, in one transaction.
+ *
+ * This used to open **one transaction per role** -- 41 of them, each costing
+ * BEGIN, an insert, an insert, a version bump and COMMIT. Against Neon that is
+ * upwards of two hundred network round trips, which is where self-serve signup's
+ * minute-plus provisioning came from: the work is trivial, the latency is not.
+ * Batched it is a handful of statements, so a claim can finish inside the
+ * request rather than behind a gateway timeout.
+ *
+ * One transaction is also the stronger correctness story. Per-role transactions
+ * left a crash halfway through as an organisation with some of its ladder and no
+ * record of which part -- exactly the half-provisioned tenant the flow is
+ * supposed to make impossible. Now it is all of the roles or none of them.
+ *
+ * The invariant `seed-system-roles.spec.ts` pins is unchanged and is why grants
+ * are keyed off the insert's own `RETURNING`: only a role this call created gets
+ * grants, so re-seeding an organisation never restores a permission its owner
+ * deliberately revoked.
+ */
+export async function seedSystemRolesForOrg(
+  db: Db,
+  orgId: string,
+): Promise<{ created: number }> {
+  const dbCatalog = await resolveDbPermissionSet(db);
+  const specs = systemRoleSpecs(dbCatalog);
+
+  return db.transaction(async (tx) => {
+    /*
+     * Untargeted `DO NOTHING`, where this once named the slug index. `roles`
+     * carries a second unique index on (org, module, lower(name)), and a
+     * conflict there raised 23505 instead of being skipped -- survivable when
+     * each role had its own transaction, fatal to the whole ladder now that they
+     * share one. Skipping on any conflict is what idempotent was always meant to
+     * mean here.
+     */
+    const inserted = await tx
+      .insert(roles)
+      .values(
+        specs.map((spec) => ({
           name: spec.name,
           slug: spec.slug,
           orgId,
           isSystem: true,
           rank: spec.rank,
           moduleKey: spec.moduleKey,
-        })
-        .onConflictDoNothing({ target: [roles.slug, roles.orgId] })
-        .returning({ id: roles.id });
+        })),
+      )
+      .onConflictDoNothing()
+      .returning({ id: roles.id, slug: roles.slug });
 
-      if (inserted.length > 0) {
-        created += 1;
-        const row = inserted[0];
-        if (row && spec.permissionKeys.length > 0) {
-          const isMemberRole = spec.slug.endsWith("_MODULE_MEMBER");
-          await tx
-            .insert(rolePermissionGrants)
-            .values(
-              spec.permissionKeys.map((permissionKey) => ({
-                orgId,
-                roleId: row.id,
-                permissionKey,
-                scope: isMemberRole
-                  ? (MODULE_MEMBER_KEY_SCOPE_OVERRIDE[permissionKey] ?? ("all" as const))
-                  : ("all" as const),
-              })),
-            )
-            .onConflictDoNothing();
-        }
-        await bumpPermissionsVersion(tx, orgId);
-      }
+    if (inserted.length === 0) return { created: 0 };
+
+    const createdIdBySlug = new Map(inserted.map((row) => [row.slug, row.id]));
+    const grants = specs.flatMap((spec) => {
+      const roleId = createdIdBySlug.get(spec.slug);
+      if (roleId === undefined) return [];
+      return spec.permissionKeys.map((permissionKey) => ({
+        orgId,
+        roleId,
+        permissionKey,
+        scope: scopeForGrant(spec.slug, permissionKey),
+      }));
     });
-  }
 
-  return { created };
+    for (let at = 0; at < grants.length; at += GRANT_CHUNK) {
+      await tx
+        .insert(rolePermissionGrants)
+        .values(grants.slice(at, at + GRANT_CHUNK))
+        .onConflictDoNothing();
+    }
+
+    // Once, not once per role: the version is a cache epoch, and bumping it
+    // forty-one times invalidated the same caches forty-one times.
+    await bumpPermissionsVersion(tx, orgId);
+
+    return { created: inserted.length };
+  });
 }

@@ -175,13 +175,40 @@ export class WaitlistAdmissionService {
       throw new BadRequestException("That invitation has already been used.");
     }
 
-    await this.auth.register({
-      email: entry.email,
-      firstName: input.firstName,
-      lastName: input.lastName ?? "",
-      companyName: input.companyName,
-      ...(input.country ? { country: input.country } : {}),
-    });
+    try {
+      await this.auth.register({
+        email: entry.email,
+        firstName: input.firstName,
+        lastName: input.lastName ?? "",
+        companyName: input.companyName,
+        ...(input.country ? { country: input.country } : {}),
+      });
+    } catch (error) {
+      /*
+       * Hand the entry back, because the comment above promised it.
+       *
+       * It said a failed provisioning leaves the entry re-admittable, and it did
+       * not: `mayAdmit` refuses anything with a `claimed_at`, so a claim that
+       * died mid-provisioning left the person with no token, no account they
+       * could sign in to, and an operator whose only recovery was editing the
+       * database. Releasing it puts the entry back in the admitted-but-unclaimed
+       * state, which is the one an operator can act on.
+       *
+       * The token digest is already cleared, so releasing does not revive the
+       * dead link -- a fresh `admit` has to mint a new one, and that is the only
+       * way back in. And a second claim cannot double-provision: `register` now
+       * resumes an unfinished workspace rather than starting another.
+       */
+      await this.db
+        .update(platformWaitlist)
+        .set({ status: "INVITED", claimedAt: null })
+        .where(eq(platformWaitlist.id, entry.id));
+
+      logger.error(`waitlist: provisioning failed for ${entry.reference}, entry released`, {
+        error,
+      });
+      throw error;
+    }
 
     /**
      * Which organisation this claim produced, recorded after the fact.
