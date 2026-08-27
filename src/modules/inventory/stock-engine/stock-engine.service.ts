@@ -14,7 +14,7 @@ import { WarehouseScopeService } from "./warehouse-scope.service";
 import { claimIdempotencyKey, extractEngineResult } from "./idempotency";
 import { lockLevels, levelKey } from "./stock-level-locks";
 import { MovementCostingService } from "./movement-costing.service";
-import { PostingPeriodGuard } from "./posting-period.guard";
+import { InventoryAccountingBridge } from "./accounting-bridge";
 import { loadCostingContext } from "./costing-context";
 import {
   INV_ERRORS,
@@ -52,7 +52,7 @@ export class StockEngineService {
     private readonly cache: CacheService,
     private readonly valuation: ValuationService,
     private readonly warehouseScope: WarehouseScopeService,
-    private readonly periods: PostingPeriodGuard,
+    private readonly periods: InventoryAccountingBridge,
     private readonly movementCosting: MovementCostingService,
   ) {}
 

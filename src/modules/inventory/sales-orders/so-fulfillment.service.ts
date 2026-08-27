@@ -14,7 +14,7 @@ import { ReservationService } from "../stock-engine/reservation.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
-import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
+import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { SoCoreService } from "./so-core.service";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
@@ -30,7 +30,7 @@ export class SoFulfillmentService {
     private readonly reservationService: ReservationService,
     private readonly settingsService: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
-    private readonly journalPosting: JournalPostingService,
+    private readonly journalPosting: InventoryAccountingBridge,
     private readonly soCore: SoCoreService,
   ) {}
 
@@ -452,7 +452,7 @@ export class SoFulfillmentService {
     }, 0);
 
     if (cogsTotal > 0) {
-      await this.journalPosting.persistJournalEntry({
+      await this.journalPosting.postJournalEntry({
         orgId,
         entryDate: data.shipDate,
         description: `COGS: ${so.soNumber}`,

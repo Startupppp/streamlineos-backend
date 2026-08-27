@@ -12,6 +12,7 @@ import {
   invSalesOrders,
   invSoLines,
   invStockLevels,
+  businessParties,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -116,11 +117,20 @@ export class SoCoreService {
     );
   }
 
+  /**
+   * A sales order with everything the detail screen shows.
+   *
+   * The customer is resolved through Party, not by joining `clients`. That table
+   * was dropped by the identity migration during this work, so the eager join
+   * here failed outright with `42P01 relation "clients" does not exist` — every
+   * read of a sales order, including the one the fulfilment flow makes after
+   * shipping. `inv_sales_orders.client_party_id` is the Party-era column and
+   * carries the same customer.
+   */
   async getSo(orgId: string, soId: number) {
     const so = await this.db.query.invSalesOrders.findFirst({
       where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
       with: {
-        client: true,
         warehouse: true,
         invoice: true,
         creator: { columns: { id: true, name: true } },
@@ -134,7 +144,22 @@ export class SoCoreService {
       },
     });
     if (!so) throw new NotFoundException("Sales order not found");
-    return so;
+    return { ...so, client: await this.resolveCustomer(orgId, so.clientPartyId) };
+  }
+
+  /** Display identity only; anything sensitive stays behind its own gate. */
+  private async resolveCustomer(orgId: string, partyId: string | null) {
+    if (!partyId) return null;
+    const [party] = await this.db
+      .select({
+        partyId: businessParties.partyId,
+        displayName: businessParties.displayName,
+        companyName: businessParties.companyName,
+      })
+      .from(businessParties)
+      .where(and(eq(businessParties.organizationId, orgId), eq(businessParties.partyId, partyId)))
+      .limit(1);
+    return party ?? null;
   }
 
   async createSo(orgId: string, userId: string, data: CreateSoInput) {

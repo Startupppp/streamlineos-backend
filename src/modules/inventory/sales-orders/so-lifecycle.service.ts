@@ -22,7 +22,7 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { ReservationService } from "../stock-engine/reservation.service";
-import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
+import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 
 @Injectable()
@@ -35,7 +35,7 @@ export class SoLifecycleService {
     private readonly numSeq: NumberSequenceService,
     private readonly settingsService: InventorySettingsService,
     private readonly reservationService: ReservationService,
-    private readonly journalPosting: JournalPostingService,
+    private readonly journalPosting: InventoryAccountingBridge,
     private readonly planLimits: PlanLimitsService,
   ) {}
 
@@ -194,7 +194,7 @@ export class SoLifecycleService {
       .set({ status: "INVOICED", invoiceId: invoice.id, updatedAt: new Date() })
       .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
 
-    await this.journalPosting.persistJournalEntry({
+    await this.journalPosting.postJournalEntry({
       orgId,
       entryDate: today,
       description: `Invoice: ${invoiceNumber}`,

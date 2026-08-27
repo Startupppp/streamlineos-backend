@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AccountingGlModule } from "../../accounting/gl/accounting-gl.module";
+import { AccountingPostingModule } from "../../accounting/posting/accounting-posting.module";
 import { StockEngineService } from "./stock-engine.service";
 import { ReservationService } from "./reservation.service";
 import { NumberSequenceService } from "./number-sequence.service";
@@ -9,11 +10,11 @@ import { ValuationService } from "./valuation.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
 import { CostVisibilityService } from "./cost-visibility";
 import { MovementCostingService } from "./movement-costing.service";
-import { PostingPeriodGuard } from "./posting-period.guard";
+import { InventoryAccountingBridge } from "./accounting-bridge";
 import { UomConversionService } from "./uom-conversion.service";
 
 @Module({
-  imports: [AccountingGlModule],
+  imports: [AccountingGlModule, AccountingPostingModule],
   providers: [
     StockEngineService,
     ReservationService,
@@ -24,7 +25,7 @@ import { UomConversionService } from "./uom-conversion.service";
     WarehouseScopeService,
     CostVisibilityService,
     MovementCostingService,
-    PostingPeriodGuard,
+    InventoryAccountingBridge,
     UomConversionService,
   ],
   exports: [
@@ -37,7 +38,7 @@ import { UomConversionService } from "./uom-conversion.service";
     WarehouseScopeService,
     CostVisibilityService,
     MovementCostingService,
-    PostingPeriodGuard,
+    InventoryAccountingBridge,
     UomConversionService,
   ],
 })

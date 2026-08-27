@@ -23,10 +23,11 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { addDec, mulDec, isPositive } from "../stock-engine/decimal";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
-import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
+import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
 import type {
   CreateGrnInput,
   ListGrnInput,
@@ -43,7 +44,7 @@ export class GrnService {
     private readonly engine: StockEngineService,
     private readonly settingsService: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
-    private readonly journalPosting: JournalPostingService,
+    private readonly journalPosting: InventoryAccountingBridge,
     private readonly poService: PoService,
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
@@ -385,14 +386,18 @@ export class GrnService {
       (l) => l.qualityStatus === "ACCEPTED",
     );
 
-    let totalValue = 0;
+    // Exact, not float. `quantity * parseFloat(unitCost)` is the arithmetic the
+    // PRD forbids outright for money, and this figure is what lands on both
+    // sides of a journal entry — a rounding error here is an unbalanced ledger.
+    let totalValueDec = "0.0000";
     for (const line of acceptedLines) {
       const poLine = po.lines.find((l) => l.id === line.poLineId)!;
-      totalValue += line.quantityReceived * parseFloat(poLine.unitCost);
+      totalValueDec = addDec(totalValueDec, mulDec(String(line.quantityReceived), poLine.unitCost));
     }
+    const totalValue = Number(totalValueDec);
 
-    if (totalValue > 0) {
-      await this.journalPosting.persistJournalEntry({
+    if (isPositive(totalValueDec)) {
+      await this.journalPosting.postJournalEntry({
         orgId,
         entryDate: data.receivedDate,
         description: `Goods received: ${grnNumber}`,
