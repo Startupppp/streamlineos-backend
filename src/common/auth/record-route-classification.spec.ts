@@ -59,12 +59,17 @@ function appWith(instances: object[]): INestApplication {
   } as unknown as INestApplication;
 }
 
-const documentFor = (operationIds: string[]) => ({
+interface TestOperation {
+  operationId: string;
+  description?: string;
+  "x-exposure"?: string;
+}
+
+const documentFor = (
+  operationIds: string[],
+): { paths: Record<string, { get: TestOperation }> } => ({
   paths: Object.fromEntries(
-    operationIds.map((operationId, i) => [
-      `/p${i}`,
-      { get: { operationId, description: undefined } },
-    ]),
+    operationIds.map((operationId, i) => [`/p${i}`, { get: { operationId } }]),
   ),
 });
 
@@ -132,9 +137,7 @@ describe("recordRouteClassification", () => {
 
     expect(result).toEqual({ stamped: 1, undeclared: 1 });
     expect(document.paths["/p0"].get).toMatchObject({ "x-exposure": "undeclared" });
-    expect((document.paths["/p0"].get as { description: string }).description).toContain(
-      "UNDECLARED",
-    );
+    expect(document.paths["/p0"].get.description ?? "").toContain("UNDECLARED");
   });
 
   it("ignores a method that carries no route metadata", () => {
@@ -152,7 +155,7 @@ describe("recordRouteClassification", () => {
       description: "Returns the caller's own profile.",
     };
     recordRouteClassification(appWith([new MixedController()]), document);
-    const description = (document.paths["/p0"].get as { description: string }).description;
+    const description = document.paths["/p0"].get.description ?? "";
     expect(description).toContain("Returns the caller's own profile.");
     expect(description).toContain("universal");
   });

@@ -13,27 +13,41 @@ export type RouteExposure =
   | { mode: "in-service"; by: string }
   | { mode: "undeclared" };
 
-interface OpenApiOperation {
+/**
+ * An OpenAPI operation as this file needs to see it: identified, describable and
+ * open to the `x-` extensions the spec allows. Nest's own OperationObject types
+ * the extensions as unknown, so a mutable view is the honest shape.
+ */
+interface StampableOperation {
   operationId?: string;
   description?: string;
   [key: string]: unknown;
 }
 
-type OpenApiDocument = {
-  paths?: Record<string, Record<string, unknown>>;
-};
+function stampable(value: unknown): value is StampableOperation {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof Reflect.get(value, "operationId") === "string"
+  );
+}
 
-const read = <T>(key: string, handler: object, classRef: object): T | undefined => {
-  const own = Reflect.getMetadata(key, handler) as T | undefined;
-  return own === undefined ? (Reflect.getMetadata(key, classRef) as T | undefined) : own;
-};
+function read(key: string, handler: object, classRef: object): unknown {
+  const own: unknown = Reflect.getMetadata(key, handler);
+  return own === undefined ? Reflect.getMetadata(key, classRef) : own;
+}
+
+function readString(key: string, handler: object, classRef: object): string | undefined {
+  const value = read(key, handler, classRef);
+  return typeof value === "string" ? value : undefined;
+}
 
 export function classifyHandler(handler: object, classRef: object): RouteExposure {
-  if (read<boolean>(IS_PUBLIC, handler, classRef)) return { mode: "public" };
-  if (read<boolean>(IS_UNIVERSAL, handler, classRef)) return { mode: "universal" };
-  const by = read<string>(AUTHORIZED_IN_SERVICE, handler, classRef);
+  if (read(IS_PUBLIC, handler, classRef) === true) return { mode: "public" };
+  if (read(IS_UNIVERSAL, handler, classRef) === true) return { mode: "universal" };
+  const by = readString(AUTHORIZED_IN_SERVICE, handler, classRef);
   if (by !== undefined && by !== "") return { mode: "in-service", by };
-  const permission = read<string>(REQUIRE_PERMISSION, handler, classRef);
+  const permission = readString(REQUIRE_PERMISSION, handler, classRef);
   if (permission !== undefined) return { mode: "permissioned", permission };
   return { mode: "undeclared" };
 }
@@ -64,7 +78,7 @@ export function describeExposure(exposure: RouteExposure): string {
  */
 export function recordRouteClassification(
   app: INestApplication,
-  document: OpenApiDocument,
+  document: { paths?: unknown },
 ): { stamped: number; undeclared: number } {
   const discovery = app.get(DiscoveryService);
   const scanner = app.get(MetadataScanner);
@@ -74,14 +88,14 @@ export function recordRouteClassification(
     const { instance } = wrapper;
     if (!instance || typeof instance !== "object") continue;
     const proto: object = Object.getPrototypeOf(instance);
-    const classRef: object = proto.constructor;
+    const classRef = proto.constructor;
 
     for (const methodName of scanner.getAllMethodNames(proto)) {
       const handler: unknown = Reflect.get(proto, methodName);
       if (typeof handler !== "function") continue;
       if (Reflect.getMetadata(PATH_METADATA, handler) === undefined) continue;
       byOperationId.set(
-        `${(classRef as { name: string }).name}_${methodName}`,
+        `${classRef.name}_${methodName}`,
         classifyHandler(handler, classRef),
       );
     }
@@ -89,19 +103,23 @@ export function recordRouteClassification(
 
   let stamped = 0;
   let undeclared = 0;
-  for (const methods of Object.values(document.paths ?? {})) {
-    for (const operation of Object.values(methods)) {
-      if (typeof operation !== "object" || operation === null) continue;
-      const op = operation as OpenApiOperation;
-      if (typeof op.operationId !== "string") continue;
-      const exposure = byOperationId.get(op.operationId);
+  const paths: unknown = document.paths;
+  if (typeof paths !== "object" || paths === null) return { stamped, undeclared };
+
+  for (const pathItem of Object.values(paths)) {
+    if (typeof pathItem !== "object" || pathItem === null) continue;
+    for (const operation of Object.values(pathItem)) {
+      if (!stampable(operation)) continue;
+      const exposure = byOperationId.get(String(operation.operationId));
       if (!exposure) continue;
 
       const summary = describeExposure(exposure);
-      op["x-exposure"] = exposure.mode;
-      if (exposure.mode === "permissioned") op["x-permission"] = exposure.permission;
-      if (exposure.mode === "in-service") op["x-authorized-in-service"] = exposure.by;
-      op.description = op.description ? `${op.description}\n\nExposure: ${summary}` : `Exposure: ${summary}`;
+      operation["x-exposure"] = exposure.mode;
+      if (exposure.mode === "permissioned") operation["x-permission"] = exposure.permission;
+      if (exposure.mode === "in-service") operation["x-authorized-in-service"] = exposure.by;
+      operation.description = operation.description
+        ? `${operation.description}\n\nExposure: ${summary}`
+        : `Exposure: ${summary}`;
       stamped++;
       if (exposure.mode === "undeclared") undeclared++;
     }

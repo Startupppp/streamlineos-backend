@@ -69,8 +69,10 @@ const PUBLIC_RE = /@Public\s*\(\s*\)/;
 const UNIVERSAL_RE = /@Universal\s*\(\s*\)/;
 const PERMISSION_RE = /@RequirePermission\s*\(/;
 // Authorization that lives downstream of the guard and names what performs it —
-// module-access resolves standing, which no permission key can express.
-const IN_SERVICE_RE = /@AuthorizedInService\s*\(\s*["'`]/;
+// module-access resolves standing, which no permission key can express. The name
+// must be a non-empty string: an empty one is not a declaration, and the runtime
+// guard denies it, so this must agree.
+const IN_SERVICE_RE = /@AuthorizedInService\s*\(\s*["'`][^"'`]/;
 const HTTP_VERB_RE = /@(Get|Post|Put|Patch|Delete|Head|Options)\s*\(/;
 const CLASS_RE = /^(export\s+)?(abstract\s+)?class\s+\w+/;
 // A method/function name: optional async, identifier, then ( or < (generics).
@@ -126,7 +128,58 @@ function emptyDecorators() {
  * @param {string} content  File source text.
  * @returns {HandlerResult[]}
  */
-function parseControllerHandlers(content) {
+/**
+ * Join a decorator whose argument list spans lines back onto one line.
+ *
+ * Prettier wraps `@AuthorizedInService("…")` the moment the name is long, and
+ * every classification regex here needs the decorator and its argument on one
+ * line. Without this, reformatting a file silently moves its handlers into
+ * UNDECLARED — it moved five, and the report would then have handed the next
+ * reader five routes to "fix" that were already declared. The runtime guard
+ * reads metadata and never saw it, so the two disagreed with no failure.
+ *
+ * @param {string} content
+ * @returns {string}
+ */
+export function collapseMultilineDecorators(content) {
+  const lines = content.split("\n");
+  const out = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim().startsWith("@")) {
+      out.push(line);
+      continue;
+    }
+
+    let depth = 0;
+    for (const ch of line) {
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+    }
+    if (depth <= 0) {
+      out.push(line);
+      continue;
+    }
+
+    let joined = line.trimEnd();
+    while (depth > 0 && i + 1 < lines.length) {
+      i++;
+      const next = lines[i].trim();
+      joined += next;
+      for (const ch of next) {
+        if (ch === "(") depth++;
+        else if (ch === ")") depth--;
+      }
+    }
+    out.push(joined);
+  }
+
+  return out.join("\n");
+}
+
+function parseControllerHandlers(rawContent) {
+  const content = collapseMultilineDecorators(rawContent);
   const lines = content.split("\n");
   const handlers = [];
 
@@ -308,6 +361,59 @@ class AsyncController {
 `;
   const r6 = parseControllerHandlers(asyncHandler);
   checks.asyncHandlerClassifiedCorrectly = r6[0]?.classification === "permissioned";
+
+  // --- Fixture: prettier-wrapped decorators, handler and class level ---
+  // This is not hypothetical formatting: prettier wraps @AuthorizedInService as
+  // soon as the name is long, which is always, since the name is a sentence.
+  const wrapped = `
+@Controller("portal/v1")
+@UseGuards(PortalJwtAuthGuard)
+@AuthorizedInService(
+  "PortalJwtAuthGuard, then PortalClientService scopes every read",
+)
+class PortalController {
+  @Get("projects")
+  listProjects() {}
+}
+`;
+  const r7 = parseControllerHandlers(wrapped);
+  checks.wrappedClassDecoratorStillClassifies = r7[0]?.classification === "in-service";
+
+  const wrappedHandler = `
+@Controller("rbac")
+class RbacController {
+  @Get("discovery/permissions")
+  @AuthorizedInService(
+    "RbacService.getDiscoveryPermissions narrows the catalog",
+  )
+  getDiscoveryPermissions() {}
+
+  @Get("wide")
+  @RequirePermission(
+    "settings:rbac:manage",
+  )
+  wide() {}
+}
+`;
+  const r8 = parseControllerHandlers(wrappedHandler);
+  checks.wrappedHandlerDecoratorStillClassifies =
+    r8.find((h) => h.method === "getDiscoveryPermissions")?.classification === "in-service";
+  checks.wrappedPermissionStillClassifies =
+    r8.find((h) => h.method === "wide")?.classification === "permissioned";
+
+  // --- Fixture: an empty in-service name is not a declaration, wrapped or not ---
+  const emptyName = `
+@Controller("bad")
+class BadNameController {
+  @Get()
+  @AuthorizedInService(
+    "",
+  )
+  unnamed() {}
+}
+`;
+  const r9 = parseControllerHandlers(emptyName);
+  checks.emptyInServiceNameIsNotADeclaration = r9[0]?.classification === "UNDECLARED";
 
   const pass = Object.values(checks).every(Boolean);
   process.stdout.write(

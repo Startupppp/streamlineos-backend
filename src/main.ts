@@ -104,7 +104,7 @@ async function bootstrap(): Promise<void> {
 
     const document = SwaggerModule.createDocument(app, swaggerConfig);
     const classification = recordRouteClassification(app, document);
-    logger.log(
+    logger.info(
       `OpenAPI: exposure recorded on ${classification.stamped} operation(s), ${classification.undeclared} undeclared`,
     );
     SwaggerModule.setup("api/docs", app, document);
