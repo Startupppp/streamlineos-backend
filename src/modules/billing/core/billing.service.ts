@@ -91,17 +91,34 @@ export class BillingService {
       },
     });
 
+    /*
+      "Can this deployment take money at all", not "is Razorpay set up".
+
+      The frontend disables every upgrade button on this flag, so answering it
+      from Razorpay alone left a Stripe-only deployment unable to sell -- the
+      same unreachability as the precondition removed from `createOrder`, one
+      screen earlier. `razorpayKeyId` still means what its name says; the
+      per-order key comes back from `createOrder`, which knows the currency.
+    */
     return {
       subscription: subscription ?? null,
       razorpayKeyId: this.razorpay.getPublishableKey(),
-      isConfigured: this.razorpay.isConfigured(),
+      isConfigured: Object.values(this.paymentRegistry.available()).some(Boolean),
     };
   }
 
   async createOrder(orgId: string, userId: string, plan: Plan, billingCycle: BillingCycle = "monthly", couponId?: number) {
-    if (!this.razorpay.isConfigured()) {
-      throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
-    }
+    /*
+      No Razorpay precondition here.
+
+      This used to refuse every order unless RAZORPAY_KEY_ID was set, which made
+      the registry below unreachable on exactly the deployment ticket 02 exists
+      for: a Stripe-only one could not sell anything, and the error blamed a
+      gateway the buyer was never going to be charged through. `forCurrency`
+      already refuses -- naming the currency nothing can take -- when no
+      configured provider can charge, so a second, cruder gate in front of it
+      could only ever be wrong.
+    */
 
     /*
       What the customer is charged, in the currency they were quoted.
@@ -950,7 +967,9 @@ export class BillingService {
         failed: 0,
         voided: 0,
       },
-      isConfigured: this.razorpay.isConfigured(),
+      // Same question as `getSubscription`, same answer: can this deployment
+      // take money at all, not is Razorpay set up.
+      isConfigured: Object.values(this.paymentRegistry.available()).some(Boolean),
     };
   }
 }

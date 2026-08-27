@@ -140,3 +140,74 @@ export const updateCouponSchema = createCouponSchema.partial().extend({
   isActive: z.boolean().optional(),
 });
 export type UpdateCouponInput = z.infer<typeof updateCouponSchema>;
+
+/*
+  Stripe's webhook envelope, which is not the shape Razorpay sends.
+
+  Razorpay posts `{ event, payload.payment.entity }`; Stripe posts
+  `{ id, type, data.object }` where the object is whichever resource the event is
+  about. The two cannot share one schema, and pretending they can is how a
+  second provider ends up silently dropping every delivery.
+
+  `data.object` stays unknown here on purpose: the envelope is validated first so
+  a malformed body is refused before anything reads the resource, and the
+  resource schema is then chosen by `type`.
+*/
+export const stripeEventEnvelopeSchema = z.object({
+  id: z.string().min(1),
+  type: z.string().min(1),
+  created: z.number().int().optional(),
+  livemode: z.boolean().optional(),
+  data: z.object({ object: z.record(z.string(), z.unknown()) }),
+});
+export type StripeEventEnvelope = z.infer<typeof stripeEventEnvelopeSchema>;
+
+/*
+  A PaymentIntent as it arrives on `payment_intent.succeeded` and
+  `payment_intent.payment_failed`.
+
+  `latest_charge` is a string id unless the caller asked Stripe to expand it, and
+  webhook deliveries are never expanded -- so a nullable string is the honest
+  type rather than a union nothing here would use.
+*/
+export const stripeWebhookIntentSchema = z.object({
+  id: z.string().min(1),
+  object: z.literal("payment_intent"),
+  amount: z.number().int(),
+  amount_received: z.number().int().optional(),
+  currency: z.string().min(1),
+  status: z.string().min(1),
+  latest_charge: z.string().nullable().optional(),
+  receipt_email: z.string().nullable().optional(),
+  metadata: z.record(z.string(), z.string()).default({}),
+  last_payment_error: z
+    .object({ message: z.string().optional(), code: z.string().optional() })
+    .nullable()
+    .optional(),
+});
+export type StripeWebhookIntent = z.infer<typeof stripeWebhookIntentSchema>;
+
+/*
+  A Charge as it arrives on `charge.refunded`.
+
+  The trap here is `status`, which stays `"succeeded"` on a refunded charge --
+  the refund is carried by `refunded` and `amount_refunded`, not by the
+  lifecycle string. Reading `status` the way the Razorpay path does would record
+  every refund as a successful payment.
+*/
+export const stripeWebhookChargeSchema = z.object({
+  id: z.string().min(1),
+  object: z.literal("charge"),
+  amount: z.number().int(),
+  amount_refunded: z.number().int(),
+  currency: z.string().min(1),
+  payment_intent: z.string().nullable().optional(),
+  refunded: z.boolean(),
+  receipt_email: z.string().nullable().optional(),
+  billing_details: z
+    .object({ email: z.string().nullable().optional() })
+    .nullable()
+    .optional(),
+  metadata: z.record(z.string(), z.string()).default({}),
+});
+export type StripeWebhookCharge = z.infer<typeof stripeWebhookChargeSchema>;

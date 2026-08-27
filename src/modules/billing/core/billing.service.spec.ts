@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ServiceUnavailableException } from "@nestjs/common";
+import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { BillingService } from "./billing.service";
@@ -26,12 +27,32 @@ import { PlatformPaymentRegistry } from "./platform-payment-registry";
   registry too. The fake hands back whichever platform-provider double the case
   already built, so these tests keep asserting what they asserted before —
   provider SELECTION has its own coverage in `provider-selection.spec.ts`.
+
+  It answers `available` and `forCurrency` FROM that double rather than from
+  constants, which the first version did not. A registry that reported itself
+  available whatever the provider said made "no configured provider" cases pass
+  against a service that had already stopped asking — the assertion was true of
+  the double, not of the code. Reachability through the real registry is
+  covered in `platform-provider-reachability.spec.ts`.
 */
 function makeRegistry(provider: unknown) {
+  const isConfigured = () => {
+    const candidate = (provider as { isConfigured?: () => boolean }).isConfigured;
+    return typeof candidate === "function" ? candidate.call(provider) : true;
+  };
+
   return {
-    forCurrency: jest.fn().mockReturnValue({ provider, isPreferred: true }),
+    forCurrency: jest.fn().mockImplementation((currency: string) => {
+      if (!isConfigured())
+        throw new PaymentRequiredException({
+          code: "NO_PAYMENT_PROVIDER",
+          message: `No payment provider is configured that can charge ${currency}.`,
+          details: { currency },
+        });
+      return { provider, isPreferred: true };
+    }),
     byProviderKey: jest.fn().mockReturnValue(provider),
-    available: jest.fn().mockReturnValue({ razorpay: true, stripe: false }),
+    available: jest.fn().mockImplementation(() => ({ razorpay: isConfigured(), stripe: false })),
   } as unknown as PlatformPaymentRegistry;
 }
 
@@ -294,9 +315,18 @@ describe("BillingService.createOrder — goes through the registry", () => {
     expect(result.orderId).toBe(PLATFORM_ORDER_ID);
   });
 
-  it("no configured provider — throws ServiceUnavailableException", async () => {
+  /*
+    Refused by the registry, naming the currency, rather than by a Razorpay
+    precondition in front of it. That precondition is gone: it made the registry
+    unreachable on a Stripe-only deployment, and it blamed a gateway the buyer
+    was never going to be charged through.
+  */
+  it("no configured provider — refuses with PaymentRequiredException naming the currency", async () => {
     const svc = await buildService({}, makeResolver(), undefined, makeRazorpay(false));
-    await expect(svc.createOrder("org1", "user1", "STARTER")).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(svc.createOrder("org1", "user1", "STARTER")).rejects.toBeInstanceOf(PaymentRequiredException);
+    await expect(svc.createOrder("org1", "user1", "STARTER")).rejects.toMatchObject({
+      message: expect.stringContaining("INR"),
+    });
   });
 
   it("no configured provider — error message does not contain key or secret", async () => {

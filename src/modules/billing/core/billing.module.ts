@@ -16,18 +16,28 @@ import { EnterpriseQuotesService } from "./enterprise-quotes.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { StripeService } from "./stripe.service";
 import { PlatformPaymentRegistry } from "./platform-payment-registry";
+import { StripeWebhookController } from "./stripe-webhook.controller";
+import { StripePlatformWebhookService } from "./stripe-webhook.service";
+import { StripeWebhookLedger } from "./stripe-webhook-ledger";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { PaymentsModule } from "../payments/payments.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 
 @Module({
   imports: [NotificationsModule, PaymentsModule, OutboxModule],
-  controllers: [BillingController, RazorpayWebhookController],
+  controllers: [BillingController, RazorpayWebhookController, StripeWebhookController],
   providers: [
     BillingService,
     RazorpayService,
-    // The one implementation today. Ticket 02 adds a second and routes by the
-    // tenant's billing country; no call site changes when it does.
+    /*
+      Stripe has no client-side payment signature, so its webhook is not an
+      extra -- it is the only path by which a Stripe payment activates anything.
+      An unregistered controller compiles green and does not exist at runtime.
+    */
+    StripePlatformWebhookService,
+    StripeWebhookLedger,
+    // The second implementation, routed to by currency through the registry
+    // below. No billing call site branches on which provider is in use.
     StripeService,
     /**
      * Razorpay stays the default injection, and the registry is how a caller
