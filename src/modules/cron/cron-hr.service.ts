@@ -185,7 +185,7 @@ export class CronHrService {
         .limit(500);
 
       for (const doc of expiring) {
-        if (!doc.userEmail || !doc.expiryDate) continue;
+        if (!doc.userEmail || !doc.userId || !doc.expiryDate) continue;
 
         const daysRemaining = Math.ceil(
           (new Date(doc.expiryDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
@@ -219,7 +219,7 @@ export class CronHrService {
         try {
           await this.dispatch.emit({
             eventKey: "hr.document.expiring",
-            orgId: doc.orgId,
+            orgId,
             targetUserIds: [doc.userId],
             entityType: "document",
             entityId: String(doc.id),
