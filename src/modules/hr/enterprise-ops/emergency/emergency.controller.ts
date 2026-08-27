@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
+import { Universal } from "../../../../common/auth/universal.decorator";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
 import { RequireModule } from "../../../../common/rbac/require-module.decorator";
@@ -102,6 +103,7 @@ export class EmergencyController {
   }
 
   @Post("events/:eventId/respond")
+  @Universal()
   respond(
     @CurrentUser() user: CurrentUserContext,
     @Param("eventId") eventId: string,

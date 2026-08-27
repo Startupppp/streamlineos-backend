@@ -16,6 +16,7 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
+import { Universal } from "../../../../common/auth/universal.decorator";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
 import { AccessService } from "../../../access/access.service";
@@ -100,6 +101,7 @@ export class OnboardingController {
   }
 
   @Get("session")
+  @Universal()
   getOnboardingSession(@CurrentUser() u: CurrentUserContext) {
     return this.sessions.getOrCreateSession(
       u.orgId,
@@ -109,6 +111,7 @@ export class OnboardingController {
   }
 
   @Patch("session")
+  @Universal()
   patchOnboardingSession(
     @Body(new ZodValidationPipe(sessionPatchSchema)) body: SessionPatchInput,
     @CurrentUser() u: CurrentUserContext,
@@ -340,6 +343,7 @@ export class OnboardingController {
   }
 
   @Patch("personal-details")
+  @Universal()
   savePersonalDetails(
     @Body(new ZodValidationPipe(personalDetailsSchema))
     body: PersonalDetailsInput,
@@ -349,11 +353,13 @@ export class OnboardingController {
   }
 
   @Get("personal-details")
+  @Universal()
   getPersonalDetails(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getPersonalDetails(u.orgId, u.userId);
   }
 
   @Patch("bank-details")
+  @Universal()
   saveBankDetails(
     @Body(new ZodValidationPipe(bankDetailsSchema)) body: BankDetailsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -362,11 +368,13 @@ export class OnboardingController {
   }
 
   @Get("bank-details")
+  @Universal()
   getBankDetails(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getBankDetails(u.orgId, u.userId);
   }
 
   @Post("submit")
+  @Universal()
   submit(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.submit(u.orgId, u.userId);
   }
@@ -384,11 +392,13 @@ export class OnboardingController {
   }
 
   @Get("status")
+  @Universal()
   getStatus(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getStatus(u.userId, u.orgId);
   }
 
   @Get("requirements")
+  @Universal()
   getRequirements(
     @Query(new ZodValidationPipe(requirementsQuerySchema))
     query: RequirementsQueryInput,

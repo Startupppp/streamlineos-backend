@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -56,6 +57,7 @@ export class BroadcastsController {
    * active member reads their own inbox.
    */
   @Get("inbox")
+  @Universal()
   listInbox(
     @Query(new ZodValidationPipe(listBroadcastInboxSchema)) query: ListBroadcastInboxInput,
     @CurrentUser() u: CurrentUserContext,
@@ -102,6 +104,7 @@ export class BroadcastsController {
    * No permission gate — every authenticated member dismisses their own inbox.
    */
   @Post(":broadcastId/dismiss")
+  @Universal()
   @HttpCode(200)
   dismiss(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,

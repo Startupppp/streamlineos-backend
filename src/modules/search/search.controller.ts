@@ -1,5 +1,6 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -12,6 +13,7 @@ export class SearchController {
   constructor(private readonly search: SearchService) {}
 
   @Get()
+  @Universal()
   globalSearch(
     @Query(new ZodValidationPipe(searchQuerySchema)) query: SearchQueryInput,
     @CurrentUser() u: CurrentUserContext,

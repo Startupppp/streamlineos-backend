@@ -16,6 +16,7 @@ import {
 import type { MessageEvent } from "@nestjs/common";
 import type { Observable } from "rxjs";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -41,6 +42,7 @@ export class NotificationsController {
   ) {}
 
   @Get()
+  @Universal()
   list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -49,11 +51,13 @@ export class NotificationsController {
   }
 
   @Get("unread-count")
+  @Universal()
   unreadCount(@CurrentUser() u: CurrentUserContext) {
     return this.notifications.unreadCount(u.orgId, u.userId);
   }
 
   @Post("events/token")
+  @Universal()
   @HttpCode(200)
   generateStreamToken(@CurrentUser() u: CurrentUserContext) {
     const token = this.notifEvents.generateToken(u.userId, u.orgId);
@@ -71,16 +75,19 @@ export class NotificationsController {
   }
 
   @Patch("read-all")
+  @Universal()
   markAllRead(@CurrentUser() u: CurrentUserContext) {
     return this.notifications.markAllRead(u.orgId, u.userId);
   }
 
   @Delete("clear-all")
+  @Universal()
   clearAll(@CurrentUser() u: CurrentUserContext) {
     return this.notifications.clearAll(u.orgId, u.userId);
   }
 
   @Post("bulk/read")
+  @Universal()
   @HttpCode(200)
   bulkMarkRead(
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
@@ -90,6 +97,7 @@ export class NotificationsController {
   }
 
   @Post("bulk/archive")
+  @Universal()
   @HttpCode(200)
   bulkArchive(
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
@@ -99,6 +107,7 @@ export class NotificationsController {
   }
 
   @Post("bulk/delete")
+  @Universal()
   @HttpCode(200)
   bulkDelete(
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
@@ -108,6 +117,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/read")
+  @Universal()
   markRead(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -116,6 +126,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/archive")
+  @Universal()
   archive(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -124,6 +135,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/unarchive")
+  @Universal()
   unarchive(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -132,6 +144,7 @@ export class NotificationsController {
   }
 
   @Delete(":notificationId")
+  @Universal()
   softDelete(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -140,6 +153,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/pin")
+  @Universal()
   pin(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -148,6 +162,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/unpin")
+  @Universal()
   unpin(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -156,6 +171,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/snooze")
+  @Universal()
   snooze(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @Body(new ZodValidationPipe(snoozeSchema)) body: SnoozeInput,
@@ -165,6 +181,7 @@ export class NotificationsController {
   }
 
   @Post(":notificationId/approve")
+  @Universal()
   @HttpCode(200)
   approve(
     @Param("notificationId", ParseIntPipe) notificationId: number,
@@ -174,6 +191,7 @@ export class NotificationsController {
   }
 
   @Post(":notificationId/reject")
+  @Universal()
   @HttpCode(200)
   reject(
     @Param("notificationId", ParseIntPipe) notificationId: number,
