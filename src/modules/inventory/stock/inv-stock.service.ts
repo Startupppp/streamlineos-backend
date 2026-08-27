@@ -13,6 +13,17 @@ import type {
   ListStockLevelsInput, ListTransactionsInput, AvailabilityQueryInput,
 } from "./dto/inv-stock.schemas";
 
+/**
+ * Ceiling on matching variants a text search resolves.
+ *
+ * The search runs through a SECURITY DEFINER function so the trigram indexes are
+ * reachable at all — under RLS the planner will not use them, because the tenant
+ * qual is not leakproof and may not run second. An unbounded set-returning
+ * function is materialised in full, so it takes a limit: a query broad enough to
+ * exceed this is a filter that is not filtering.
+ */
+const SEARCH_MATCH_CAP = 500;
+
 @Injectable()
 export class InvStockService {
   constructor(
@@ -77,7 +88,7 @@ export class InvStockService {
             ${negative ? sql`AND sl.on_hand::numeric < 0` : sql``}
             ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})` : sql``}
             ${productId ? sql`AND sl.product_variant_id IN (SELECT id FROM inv_product_variants WHERE product_id = ${productId})` : sql``}
-            ${search ? sql`AND sl.product_variant_id IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"}))` : sql``}
+            ${search ? sql`AND sl.product_variant_id IN (SELECT app.search_inventory_variant_ids(${search}, ${SEARCH_MATCH_CAP}))` : sql``}
             ${lowStock ? sql`AND sl.on_hand::numeric <= COALESCE((SELECT p.reorder_point::numeric FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE v.id = sl.product_variant_id), 0)` : sql``}
           ORDER BY sl.updated_at DESC
           LIMIT ${limit} OFFSET ${offset}
@@ -93,7 +104,7 @@ export class InvStockService {
             ${negative ? sql`AND sl.on_hand::numeric < 0` : sql``}
             ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})` : sql``}
             ${productId ? sql`AND sl.product_variant_id IN (SELECT id FROM inv_product_variants WHERE product_id = ${productId})` : sql``}
-            ${search ? sql`AND sl.product_variant_id IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"}))` : sql``}
+            ${search ? sql`AND sl.product_variant_id IN (SELECT app.search_inventory_variant_ids(${search}, ${SEARCH_MATCH_CAP}))` : sql``}
             ${lowStock ? sql`AND sl.on_hand::numeric <= COALESCE((SELECT p.reorder_point::numeric FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE v.id = sl.product_variant_id), 0)` : sql``}
         `),
       ]);
@@ -125,7 +136,7 @@ export class InvStockService {
       sql`${invStockTransactions.locationId} IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})`,
     );
     if (search) conditions.push(
-      sql`${invStockTransactions.productVariantId} IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"} OR v.barcode ILIKE ${"%" + search + "%"}))`,
+      sql`${invStockTransactions.productVariantId} IN (SELECT app.search_inventory_variant_ids(${search}, ${SEARCH_MATCH_CAP}))`,
     );
 
     const showCost = await this.costVisibility.canSeeCost(orgId, userId);
