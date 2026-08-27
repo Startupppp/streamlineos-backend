@@ -30,16 +30,82 @@ export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
  */
 export const FALLBACK_CURRENCY: SupportedCurrency = "USD";
 
-const PRICES: Readonly<Record<SupportedCurrency, Readonly<Record<PaidPlan, number>>>> = {
-  // India is priced for its market, not discounted from the dollar price; the
-  // ratio between these columns is nothing like any exchange rate, which is the
-  // point. A test asserts that, so a later "tidy-up" cannot quietly make them
-  // conversions again.
-  INR: { STARTER: 99_900, PROFESSIONAL: 249_900, ENTERPRISE: 499_900 },
-  USD: { STARTER: 1_900, PROFESSIONAL: 4_900, ENTERPRISE: 9_900 },
-  EUR: { STARTER: 1_900, PROFESSIONAL: 4_500, ENTERPRISE: 8_900 },
-  GBP: { STARTER: 1_500, PROFESSIONAL: 3_900, ENTERPRISE: 7_900 },
-};
+type PriceTable = Readonly<Record<SupportedCurrency, Readonly<Record<PaidPlan, number>>>>;
+
+interface DatedPrices {
+  /**
+   * Inclusive, ISO 8601 date. The prices below are what a plan costs from this
+   * morning until the next entry's date.
+   */
+  readonly effectiveFrom: string;
+  readonly prices: PriceTable;
+}
+
+/**
+ * What each plan has cost, in order, oldest first.
+ *
+ * A dated series rather than one table, and that is the whole of ticket 03's
+ * fourth line: "a price change is dated, so an existing subscription reproduces
+ * the price in force when it was agreed". With a single table, editing a number
+ * silently restates what every existing customer agreed to — the invoice from
+ * eighteen months ago reprices itself, and nobody can say what was actually
+ * charged or why. It is the same failure a converted price has, arriving from
+ * the other direction: there, the number moves with the exchange rate; here, it
+ * moves with whoever last edited the constant.
+ *
+ * **Raising a price is appending an entry, never editing one.** An entry that
+ * has been agreed against is history and history does not get a new number. The
+ * spec asserts the series only ever grows at the end and that earlier entries
+ * are byte-identical to what they were, so an edit fails the build rather than
+ * quietly repricing the past.
+ *
+ * The first entry is dated at the platform's launch rather than at the date this
+ * dating was introduced: these ARE the prices every existing subscription
+ * agreed to, so backdating states the truth. Dating it today would claim we do
+ * not know what anyone agreed before today, which is false and would make every
+ * existing subscription unreproducible.
+ */
+const PRICE_HISTORY: readonly DatedPrices[] = [
+  {
+    effectiveFrom: "2000-01-01",
+    prices: {
+      // India is priced for its market, not discounted from the dollar price;
+      // the ratio between these columns is nothing like any exchange rate, which
+      // is the point. A test asserts that, so a later "tidy-up" cannot quietly
+      // make them conversions again.
+      INR: { STARTER: 99_900, PROFESSIONAL: 249_900, ENTERPRISE: 499_900 },
+      USD: { STARTER: 1_900, PROFESSIONAL: 4_900, ENTERPRISE: 9_900 },
+      EUR: { STARTER: 1_900, PROFESSIONAL: 4_500, ENTERPRISE: 8_900 },
+      GBP: { STARTER: 1_500, PROFESSIONAL: 3_900, ENTERPRISE: 7_900 },
+    },
+  },
+];
+
+/**
+ * The prices in force on a date.
+ *
+ * Walks from the end so the newest applicable entry wins. A date before the
+ * first entry gets the first entry rather than throwing: the only way to be
+ * asked about such a date is a clock skew or a backfilled record, and answering
+ * with the oldest stated price is both defensible and reproducible, where
+ * throwing would take down a billing read for a timestamp nobody can fix.
+ */
+function pricesAsOf(asOf: Date): DatedPrices {
+  const day = asOf.toISOString().slice(0, 10);
+  for (let i = PRICE_HISTORY.length - 1; i >= 0; i -= 1) {
+    const entry = PRICE_HISTORY[i]!;
+    if (entry.effectiveFrom <= day) return entry;
+  }
+  return PRICE_HISTORY[0]!;
+}
+
+/** The date whose prices a given quote reproduces. Stored on a subscription. */
+export function priceEffectiveFrom(asOf: Date = new Date()): string {
+  return pricesAsOf(asOf).effectiveFrom;
+}
+
+/** Exported for the spec that pins the series append-only. */
+export const PRICE_HISTORY_FOR_TESTS = PRICE_HISTORY;
 
 export interface PlanPrice {
   readonly plan: PaidPlan;
@@ -123,15 +189,28 @@ export function resolveCurrency(requested: string | null | undefined): {
  * result says so, so a caller that renders the amount without the currency is a
  * bug the type can point at rather than a number nobody questions.
  */
-export function priceFor(plan: PaidPlan, requested: string | null | undefined): PlanPrice {
+export function priceFor(
+  plan: PaidPlan,
+  requested: string | null | undefined,
+  /**
+   * Which day's prices to quote. Defaults to today, so every existing caller
+   * keeps the behaviour it had; a subscription renewing against the price it
+   * agreed passes its own `priceEffectiveFrom` instead.
+   */
+  asOf: Date = new Date(),
+): PlanPrice {
   const { currency, isRequestedCurrency } = resolveCurrency(requested);
-  return { plan, amountMinor: PRICES[currency][plan], currency, isRequestedCurrency };
+  const table = pricesAsOf(asOf).prices;
+  return { plan, amountMinor: table[currency][plan], currency, isRequestedCurrency };
 }
 
 /** Every plan in one currency, for a pricing page. */
-export function priceList(requested: string | null | undefined): PlanPrice[] {
+export function priceList(
+  requested: string | null | undefined,
+  asOf: Date = new Date(),
+): PlanPrice[] {
   const plans: PaidPlan[] = ["STARTER", "PROFESSIONAL", "ENTERPRISE"];
-  return plans.map((plan) => priceFor(plan, requested));
+  return plans.map((plan) => priceFor(plan, requested, asOf));
 }
 
 /**

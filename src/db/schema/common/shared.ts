@@ -392,6 +392,29 @@ export const subscriptions = pgTable("subscriptions", {
   currentPeriodEnd: timestamp("current_period_end"),
   trialEndsAt: timestamp("trial_ends_at"),
   cancelledAt: timestamp("cancelled_at"),
+  /**
+   * What this subscription actually agreed to pay, and when that price was set.
+   *
+   * Phase 3 ticket 03: "a price change is dated, so an existing subscription
+   * reproduces the price in force when it was agreed". `plan-pricing.ts` holds
+   * the dated series, and these three columns are how a subscription names its
+   * place in it.
+   *
+   * All three, not just the date, and the redundancy is deliberate. The date
+   * alone would reproduce the price only for as long as the series still holds
+   * that entry, and a series is a source file somebody can edit. The amount is
+   * what was agreed; the date is why. If they ever disagree, that disagreement
+   * is the bug report, which is worth more than either column alone.
+   *
+   * Nullable because every subscription that existed before this column did
+   * agreed to the first entry in the series, and writing a value into those rows
+   * would be asserting a fact nobody recorded. `priceEffectiveFrom` answers for
+   * them from the series instead, which is the same answer and is honest about
+   * where it came from.
+   */
+  agreedPriceMinor: integer("agreed_price_minor"),
+  agreedCurrency: text("agreed_currency"),
+  priceEffectiveFrom: text("price_effective_from"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
