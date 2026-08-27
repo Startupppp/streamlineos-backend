@@ -64,7 +64,11 @@ export class KbPagesService {
 
     if (input.spaceId != null) {
       const space = await this.db.query.kbSpaces.findFirst({
-        where: and(eq(kbSpaces.id, input.spaceId), eq(kbSpaces.orgId, orgId)),
+        where: and(
+          eq(kbSpaces.id, input.spaceId),
+          eq(kbSpaces.orgId, orgId),
+          isNull(kbSpaces.deletedAt),
+        ),
         columns: { id: true },
       });
       if (!space) throw new NotFoundException("Space not found");
@@ -153,7 +157,11 @@ export class KbPagesService {
     if (input.spaceId !== undefined) {
       if (input.spaceId != null) {
         const space = await this.db.query.kbSpaces.findFirst({
-          where: and(eq(kbSpaces.id, input.spaceId), eq(kbSpaces.orgId, orgId)),
+          where: and(
+          eq(kbSpaces.id, input.spaceId),
+          eq(kbSpaces.orgId, orgId),
+          isNull(kbSpaces.deletedAt),
+        ),
           columns: { id: true },
         });
         if (!space) throw new NotFoundException("Space not found");

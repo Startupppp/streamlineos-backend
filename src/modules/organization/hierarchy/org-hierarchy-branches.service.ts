@@ -275,6 +275,7 @@ export class OrgHierarchyBranchesService {
         eq(orgUnits.id, branchId),
         eq(orgUnits.orgId, orgId),
         eq(orgUnits.kind, "BRANCH"),
+        isNull(orgUnits.deletedAt),
       ),
     });
     if (!branch) throw new NotFoundException("Branch not found");

@@ -184,7 +184,11 @@ export class ContractsService {
     const contract = await this.getOne(orgId, contractId);
 
     const employment = await this.db.query.hrEmployments.findFirst({
-      where: and(eq(hrEmployments.id, contract.employmentId), eq(hrEmployments.orgId, orgId)),
+      where: and(
+        eq(hrEmployments.id, contract.employmentId),
+        eq(hrEmployments.orgId, orgId),
+        isNull(hrEmployments.deletedAt),
+      ),
     });
     if (!employment) throw new NotFoundException("Employment record not found");
 

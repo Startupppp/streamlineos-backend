@@ -100,6 +100,7 @@ export class LettersService {
       where: and(
         eq(hrTemplates.id, input.templateId),
         eq(hrTemplates.orgId, orgId),
+        isNull(hrTemplates.deletedAt),
       ),
     });
     if (!template) throw new NotFoundException("Template not found.");
@@ -140,6 +141,7 @@ export class LettersService {
       where: and(
         eq(hrTemplates.id, input.templateId),
         eq(hrTemplates.orgId, orgId),
+        isNull(hrTemplates.deletedAt),
       ),
       columns: { id: true },
     });

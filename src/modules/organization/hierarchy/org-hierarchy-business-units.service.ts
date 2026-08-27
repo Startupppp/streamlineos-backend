@@ -191,6 +191,7 @@ export class OrgHierarchyBusinessUnitsService {
         eq(orgUnits.id, buId),
         eq(orgUnits.orgId, orgId),
         eq(orgUnits.kind, "BUSINESS_UNIT"),
+        isNull(orgUnits.deletedAt),
       ),
     });
     if (!bu) throw new NotFoundException("Business unit not found");
