@@ -316,7 +316,20 @@ describe("party-legacy-writer — the party is written first, in one transaction
     expect(fake.of("update", businessParties)[0]?.set?.deletedAt).toBeInstanceOf(Date);
   });
 
-  it("pushes a party write out to every legacy row that mirrors it", async () => {
+  /**
+   * The inverse of what this used to assert, and the point of the contract.
+   *
+   * A party write used to fan out: read all four maps, then UPDATE every legacy
+   * row that mirrored the party — five statements to keep a second copy in step.
+   * There is no second copy now. A legacy shape is derived from the party at the
+   * moment somebody reads it, so writing the party IS writing them, and a fan-out
+   * would be writing to tables that no longer exist.
+   *
+   * Asserted as an exact trace rather than "does not touch leads", because the
+   * failure worth catching is a *reintroduced* write, and only an exact trace
+   * catches one that goes to a table this test did not think to name.
+   */
+  it("no longer fans a party write out, because there is nothing to fan out to", async () => {
     const fake = new FakeDb((statement) => {
       if (statement.table === businessParties) return [PARTY];
       if (statement.table === leadPartyMap) return [{ id: 7 }];
@@ -325,16 +338,7 @@ describe("party-legacy-writer — the party is written first, in one transaction
 
     await updatePartyWithMirror(fake.db, "org-1", "party-1", { jobTitle: "Commodore" });
 
-    expect(fake.trace()).toEqual([
-      "update:party@1",
-      // All four maps are asked, because a merge can leave one party answering
-      // for a lead, a client, a contact and a company at once.
-      "select:leadMap@1",
-      "select:other@1",
-      "select:other@1",
-      "select:other@1",
-      "update:leads@1",
-    ]);
+    expect(fake.trace()).toEqual(["update:party@1"]);
   });
 
   it("nests inside a transaction the caller already opened", async () => {

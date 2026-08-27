@@ -43,6 +43,18 @@ const CONSULTS_A_LIMIT = /assertWithinLimit|evaluateAutonomousWrite|limitFor\(/;
  */
 const EXEMPT: ReadonlyMap<string, string> = new Map([
   [
+    "onboarding-activation/seed-demo-dataset.ts",
+    // The sample workspace, seeded by us during provisioning rather than by the
+    // tenant. Counting it would start a FREE workspace at 12 of its 100 records
+    // for rows nobody asked for -- and it is the same reasoning that keeps this
+    // data out of the activation signal: ticket 14 defines activation as the
+    // workspace holding *the tenant's own* data, so a seeded party is
+    // deliberately not the tenant's. Exempt for the same reason
+    // `createOrganization` is exempt from the seat check: there is no plan to be
+    // over the limit of yet.
+    "the demo dataset, seeded during provisioning before the tenant has a plan",
+  ],
+  [
     "party/party-legacy-writer.ts",
     // `insertBareParty` is the seam, not a call site. It is what `contacts`,
     // `leads`, `clients` and `crm_organizations` all write *through*, and each of

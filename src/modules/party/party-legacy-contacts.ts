@@ -2,12 +2,13 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { contactPartyMap } from "../../db/schema/party";
 import { contacts } from "../../db/schema/crm/contacts";
 import { CONTACT_MIRROR } from "./party-legacy-mirror";
+import type { PartyRow } from "./party-mirror-fields";
 import {
   applyPartyPatch,
   employerColumnOf,
   grantRole,
-  groupByPayload,
   insertBareParty,
+  mintLegacyId,
   movePartiesFor,
   type ContactInsert,
   type ContactRow,
@@ -24,13 +25,28 @@ import {
 /**
  * The `contacts` entry points, Party-first.
  *
+ * Ticket 08's contract: none of these writes the `contacts` table any more. The
+ * row each of them used to insert or update was already **derived** from the
+ * Party -- `CONTACT_MIRROR.derive(party)` produced every mirrored column and the
+ * table only added the serial and its two timestamps. So the table contributed
+ * exactly one thing that mattered: the number. Migration 0277 moved the minting
+ * to `contact_party_map`, whose integer column defaults from the sequence
+ * `contacts` used to own, detached with `OWNED BY NONE` so `DROP TABLE` cannot
+ * take it. Numbering continues unbroken and a record keeps the name it had.
+ *
+ * The shape each function hands back is therefore assembled from the same
+ * derivation that would have been written, which is why this is not a behaviour
+ * change dressed as a refactor: the values are identical, and there is now only
+ * one copy of them.
+ *
  * Two columns here do not go through the field map, and for one reason.
  * `contacts.organization_id` is an integer `crm_organizations` id whose Party
  * counterpart `employer_party_id` is a party id; `contacts.lead_id` is an integer
  * `leads` id whose counterpart `converted_from_party_id` is a party id. Both
  * translations need a `*_party_map` table and therefore a query — which a
  * `MirrorCell` deliberately cannot do. They run through `party-legacy-employer.ts`
- * and `party-legacy-associations.ts` at the three points below, and nowhere else.
+ * and `party-legacy-associations.ts` on both sides of every write below, and
+ * nowhere else.
  *
  * `contacts.deal_id` is NOT one of them, despite looking like one: it and
  * `primary_deal_id` are the same integer `deals` id, so it is an ordinary cell in
@@ -90,6 +106,55 @@ async function adoptContact(
   return party.partyId;
 }
 
+/**
+ * A contact row, assembled from the Party it mirrors.
+ *
+ * The mirrored values come from `CONTACT_MIRROR.derive` and nowhere else -- the
+ * same derivation that used to be handed to `insert(contacts)`. The two
+ * association columns are added by the same translations the insert used, for
+ * the reason recorded at the top of this file: they cross an id space, so they
+ * need a query and cannot be cells.
+ *
+ * Asynchronous for exactly that reason, and the one way this differs from
+ * `legacyLeadRow` in `party-legacy-leads.ts`. A lead's legacy-owned columns are
+ * all pass-through; a contact's two are resolved.
+ *
+ * `merged_into_id` is the only contact column with no Party source at all, and
+ * it defaults to null rather than being left absent: `CONTACT_PARTY_COLUMNS`
+ * already projects it as a literal `null::integer` on every read, because the
+ * merge that sets it sets `deleted_at` in the same breath and the party scope
+ * excludes deleted parties. Answering null here is what the read surface says,
+ * and it keeps the returned shape total. A caller that names it explicitly --
+ * the contact merge does -- still has its value carried through.
+ *
+ * The `??` arm narrows `Partial<ContactInsert>` to the NOT NULL shape; it does
+ * not decide it. The derivation is total over every column it owns, which the
+ * mirror spec asserts separately.
+ */
+async function legacyContactRow(
+  db: MirrorDb,
+  contactId: number,
+  organizationId: string,
+  party: PartyRow,
+  legacyOwnedPatch: Partial<ContactInsert>,
+): Promise<ContactRow> {
+  const derived = CONTACT_MIRROR.derive(party);
+
+  return {
+    mergedIntoId: null,
+    ...derived,
+    ...(await employerColumnOf(db, organizationId, party)),
+    ...(await convertedFromColumnOf(db, organizationId, party.convertedFromPartyId)),
+    ...legacyOwnedPatch,
+    id: contactId,
+    orgId: organizationId,
+    name: derived.name ?? party.name,
+    createdAt: party.createdAt,
+    updatedAt: party.updatedAt,
+    deletedAt: party.deletedAt,
+  } as ContactRow;
+}
+
 export async function createMirroredContact(
   db: MirrorDb,
   organizationId: string,
@@ -113,25 +178,15 @@ export async function createMirroredContact(
       ),
     );
 
-    const [row] = await tx
-      .insert(contacts)
-      .values({
-        orgId: organizationId,
-        name: party.name,
-        ...CONTACT_MIRROR.derive(party),
-        ...(await employerColumnOf(tx, organizationId, party)),
-        ...(await convertedFromColumnOf(tx, organizationId, party.convertedFromPartyId)),
-        ...legacyOwnedPatch,
-      })
-      .returning();
-    if (!row) throw new Error("Failed to mirror the party into contacts");
-
-    await tx.insert(contactPartyMap).values({
+    // The identifier comes from the map now, not from a `contacts` insert; see
+    // `mintLegacyId` and the note at the top of this file.
+    const contactId = await mintLegacyId(
+      tx,
       organizationId,
-      contactId: row.id,
-      partyId: party.partyId,
-      linkedBy: options.linkedBy ?? "mirror:create",
-    });
+      party.partyId,
+      "CONTACT",
+      options.linkedBy ?? "mirror:create",
+    );
     await grantRole(
       tx,
       organizationId,
@@ -139,7 +194,8 @@ export async function createMirroredContact(
       "CONTACT",
       options.linkedBy ?? "mirror:create",
     );
-    return row;
+
+    return legacyContactRow(tx, contactId, organizationId, party, legacyOwnedPatch);
   });
 }
 
@@ -201,32 +257,24 @@ export async function updateMirroredContacts(
         ),
     );
 
-    const derived: { id: number; payload: Partial<ContactInsert> }[] = [];
+    /*
+     * The legacy UPDATE that used to close this out is gone with the table, and
+     * with it the reason to group identical payloads: there is no statement left
+     * whose count depends on how many of them agree. What replaces it is the
+     * assembly, which is per contact because the identifier is -- one party can
+     * legitimately answer for several after a merge re-points a map row, and each
+     * of those contacts is still called what it was called.
+     */
+    const updated: ContactRow[] = [];
     for (const [contactId, partyId] of partyByContact) {
       const party = moved.get(partyId);
       if (!party) continue;
       // The pass-through half does not depend on the party, so it is the same
       // for every row; the derivation is not, and is computed per party.
       const { legacyOwnedPatch } = CONTACT_MIRROR.split(patch, party);
-      derived.push({
-        id: contactId,
-        payload: {
-          ...CONTACT_MIRROR.derive(party),
-          ...(await employerColumnOf(tx, organizationId, party)),
-          ...(await convertedFromColumnOf(tx, organizationId, party.convertedFromPartyId)),
-          ...legacyOwnedPatch,
-        },
-      });
-    }
-
-    const updated: ContactRow[] = [];
-    for (const group of groupByPayload(derived)) {
-      const rows = await tx
-        .update(contacts)
-        .set(group.payload)
-        .where(and(eq(contacts.orgId, organizationId), inArray(contacts.id, group.ids)))
-        .returning();
-      updated.push(...rows);
+      updated.push(
+        await legacyContactRow(tx, contactId, organizationId, party, legacyOwnedPatch),
+      );
     }
     return updated;
   });
