@@ -1,10 +1,6 @@
 import { sql, type SQL } from "drizzle-orm";
 
-/**
- * One seat definition, read by plan enforcement, by the seat ledger and by the
- * entitlements display, so the three can never disagree about what a seat is:
- * accepted members plus non-expired pending invitations.
- */
+/** One definition — accepted members plus non-expired pending invitations — shared by enforcement, the ledger and display. */
 export function seatCount(orgId: string): SQL<number> {
   return sql<number>`(
     (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId}) +
@@ -37,12 +33,7 @@ export type SeatEventType =
   | "GUEST_ADDED"
   | "GUEST_REMOVED";
 
-/**
- * Billable seat inclusion rules. A pending invitation already holds a seat, so
- * accepting one is net zero; a suspended member stays in `organization_members`
- * and stays billed. `billing_seat_events.quantity_delta` is never chosen by a
- * caller — it is looked up here, so the rules cannot drift per call site.
- */
+/** `quantity_delta` is looked up here, never chosen by a caller, so the inclusion rules cannot drift per call site. */
 export const SEAT_EVENT_DELTAS: Record<SeatEventType, number> = {
   INVITE_SENT: 1,
   INVITE_ACCEPTED: 0,

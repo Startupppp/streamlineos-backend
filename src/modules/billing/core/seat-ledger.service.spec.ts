@@ -31,11 +31,7 @@ interface TxOptions {
   inserted?: { id: number }[];
 }
 
-/**
- * A transaction double that records the order of everything it is asked to do.
- * A bare `jest.fn()` for the executor would never run the statements inside it
- * and every ordering assertion here would silently prove nothing.
- */
+/** Records call order: a bare `jest.fn()` executor runs nothing, and every ordering assertion would prove nothing. */
 function makeTx(options: TxOptions = {}) {
   const calls: string[] = [];
   const executedSql: string[] = [];

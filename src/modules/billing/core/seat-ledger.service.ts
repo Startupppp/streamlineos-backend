@@ -49,15 +49,7 @@ export interface SeatReconciliation {
 export class SeatLedgerService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  /**
-   * Records one billable seat change. The advisory lock, the seat count and the
-   * insert are one transaction, so `billedQuantityAfter` is the count the quota
-   * gate would see at that instant and two concurrent membership writes cannot
-   * interleave into a ledger that disagrees with the members table.
-   *
-   * Pass the transaction that performed the membership write. Called without one
-   * it joins the ambient request transaction, or opens its own for a background job.
-   */
+  /** Lock, count and insert are one transaction, so `billedQuantityAfter` is what the quota gate saw at that instant. */
   async recordSeatEvent(input: SeatEventInput, executor?: TenantTx): Promise<SeatEventRecord> {
     if (executor) return this.write(executor, input);
     return runInTenantTransaction(this.db, (tx) => this.write(tx, input), { orgId: input.orgId });
@@ -142,11 +134,7 @@ export class SeatLedgerService {
     return { ...existing, eventType: existing.eventType as SeatEventType, replayed: true };
   }
 
-  /**
-   * Explains the billed seat quantity from ledger facts: what the events sum to,
-   * what the members table says now, and where the two diverge. A non-zero `drift`
-   * means a membership write happened without a seat event beside it.
-   */
+  /** A non-zero `drift` means a membership write happened with no seat event beside it. */
   async reconcileBilledQuantity(orgId: string): Promise<SeatReconciliation> {
     return runInTenantTransaction(
       this.db,

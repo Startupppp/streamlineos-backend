@@ -34,17 +34,13 @@ function assertInterval(interval: ProrationInterval): { elapsed: bigint; period:
   return { elapsed: BigInt(until - from), period: BigInt(periodEnd - periodStart) };
 }
 
-/** The share of the billing period the change applies to, for display and reconciliation only — never for money. */
+/** For display and reconciliation only — never for money. */
 export function prorationFraction(interval: ProrationInterval): number {
   const { elapsed, period } = assertInterval(interval);
   return Number(elapsed) / Number(period);
 }
 
-/**
- * Rounds an exact rational to an integer minor unit. Money never touches a float:
- * the numerator is a `bigint` because unit × quantity × milliseconds passes
- * `Number.MAX_SAFE_INTEGER` well inside ordinary enterprise numbers.
- */
+/** `bigint` because unit × quantity × milliseconds passes `Number.MAX_SAFE_INTEGER` inside ordinary numbers. */
 function divideRounded(numerator: bigint, denominator: bigint, rule: RoundingRule): bigint {
   const negative = numerator < 0n;
   const magnitude = negative ? -numerator : numerator;
@@ -76,13 +72,7 @@ function divideRounded(numerator: bigint, denominator: bigint, rule: RoundingRul
   return negative ? -rounded : rounded;
 }
 
-/**
- * The signed minor-unit adjustment for moving from one priced quantity to another
- * part way through a billing period. Both sides carry their own quantity, so a
- * seat-count change at an unchanged unit price prorates like a price change does.
- * Negative is a credit, and it stays a credit — the sign is the fact, never a
- * caller's convention.
- */
+/** Both sides carry a quantity, so a seat change at an unchanged unit price still prorates; negative stays a credit. */
 export function computeProrationMinor(input: ProrationInput): number {
   for (const quantity of [input.oldQuantity, input.newQuantity])
     if (!Number.isInteger(quantity) || quantity < 0)

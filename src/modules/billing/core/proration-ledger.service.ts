@@ -53,11 +53,7 @@ export interface ProrationReconciliation {
   reconciledAt: Date;
 }
 
-/**
- * A price change and a quantity change are the same fact seen from two sides, so
- * the line type is derived from the money rather than chosen by the caller —
- * a caller that mislabels a downgrade cannot make the ledger say "upgrade".
- */
+/** Derived from the money, so a caller that mislabels a downgrade cannot make the ledger say it was an upgrade. */
 function classify(input: {
   oldUnitAmountMinor: number;
   newUnitAmountMinor: number;
@@ -76,12 +72,7 @@ export class ProrationLedgerService {
     private readonly catalog: VersionedCatalogService,
   ) {}
 
-  /**
-   * Writes one immutable proration line for an upgrade, a downgrade or a
-   * seat-quantity change. The amount is computed here from the two price
-   * versions, never taken from the caller and never from the provider — a
-   * provider figure is stored beside it and reconciled, not trusted.
-   */
+  /** The amount is computed here from the two price versions, never taken from the caller or the provider. */
   async recordPlanChange(input: ProrationChangeInput, executor?: TenantTx): Promise<ProrationLineRecord> {
     if (executor) return this.write(executor, input);
     return runInTenantTransaction(this.db, (tx) => this.write(tx, input), { orgId: input.orgId });
@@ -208,11 +199,7 @@ export class ProrationLedgerService {
     };
   }
 
-  /**
-   * Records what the provider says it charged and reports the variance. The
-   * stored `amountMinor` is never overwritten: a provider figure that disagrees
-   * is a discrepancy to answer, not a correction to accept.
-   */
+  /** `amountMinor` is never overwritten: a provider figure that disagrees is a discrepancy, not a correction. */
   async reconcileProviderAmount(
     orgId: string,
     idempotencyKey: string,
@@ -287,7 +274,7 @@ export class ProrationLedgerService {
     );
   }
 
-  /** Every proration line for a subscription, newest first, with the credit total called out. */
+  /** Charges and credits are reported apart, so a credit is never netted away silently. */
   async listForSubscription(orgId: string, subscriptionId: number, limit = 100) {
     const capped = Math.min(Math.max(limit, 1), 100);
     return runInTenantTransaction(

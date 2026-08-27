@@ -1,10 +1,6 @@
 export class UncountableQuotaError extends Error {}
 
-/**
- * A count is a number or it is nothing. `Number(row?.[col] ?? 0)` collapsed a missing
- * row, a NULL column and a non-numeric value into `0`, and zero against any limit
- * allows the write — so one database hiccup lifted every plan limit at once.
- */
+/** `Number(row?.[col] ?? 0)` collapsed a missing row, a NULL and a non-number into `0`, and zero allows every write. */
 export function readCount(rows: Record<string, unknown>[], column: string): number {
   const row = rows[0];
   if (!row) throw new UncountableQuotaError(`no row returned for "${column}"`);
