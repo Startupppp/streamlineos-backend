@@ -5,6 +5,7 @@ import {
   boolean,
   jsonb,
   integer,
+  bigint,
   index,
   uniqueIndex,
   foreignKey,
@@ -91,7 +92,10 @@ export const chatChannelMembers = pgTable(
 export const chatMessages = pgTable(
   "chat_messages",
   {
-    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    // c21-04: was integer (int4). int4 caps at 2,147,483,647, which chat reaches well inside the
+    // stated two-year projection; widened while the table is still small, as SCH-001 did for
+    // notifications. Every referencing message_id and the reply_to_id self-key widen with it.
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -102,7 +106,7 @@ export const chatMessages = pgTable(
       .references(() => users.id)
       .notNull(),
     content: text("content"),
-    replyToId: integer("reply_to_id"),
+    replyToId: bigint("reply_to_id", { mode: "number" }),
     isEdited: boolean("is_edited").default(false).notNull(),
     isDeleted: boolean("is_deleted").default(false).notNull(),
     messageType: chatMessageTypeEnum("message_type").notNull().default("text"),
@@ -140,7 +144,7 @@ export const chatAttachments = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    messageId: integer("message_id")
+    messageId: bigint("message_id", { mode: "number" })
       .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
     fileName: text("file_name").notNull(),
@@ -188,7 +192,7 @@ export const chatPinnedMessages = pgTable(
     channelId: integer("channel_id")
       .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
-    messageId: integer("message_id")
+    messageId: bigint("message_id", { mode: "number" })
       .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
     pinnedBy: text("pinned_by")
@@ -214,7 +218,7 @@ export const chatSavedMessages = pgTable(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
-    messageId: integer("message_id")
+    messageId: bigint("message_id", { mode: "number" })
       .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
     savedAt: timestamp("saved_at").defaultNow().notNull(),
@@ -237,7 +241,7 @@ export const chatReplyReminders = pgTable(
     channelId: integer("channel_id")
       .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
-    messageId: integer("message_id")
+    messageId: bigint("message_id", { mode: "number" })
       .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
     recipientUserId: text("recipient_user_id")

@@ -147,7 +147,7 @@ export const broadcasts = pgTable("broadcasts", {
 export const notificationAuditLogs = pgTable("notification_audit_logs", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  notificationId: integer("notification_id").references(() => notifications.id, { onDelete: "set null" }),
+  notificationId: bigint("notification_id", { mode: "number" }).references(() => notifications.id, { onDelete: "set null" }),
   broadcastId: integer("broadcast_id"),
   actorId: text("actor_id").references(() => users.id),
   action: text("action").notNull(),

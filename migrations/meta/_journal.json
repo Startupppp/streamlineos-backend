@@ -2101,6 +2101,20 @@
       "when": 1787830372441,
       "tag": "0542_hr_employments_custom_field_gin_index",
       "breakpoints": true
+    },
+    {
+      "idx": 301,
+      "version": "7",
+      "when": 1787830373441,
+      "tag": "0580_notification_audit_logs_widen_notification_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 302,
+      "version": "7",
+      "when": 1787830374441,
+      "tag": "0581_chat_messages_widen_identity",
+      "breakpoints": true
     }
   ]
 }
