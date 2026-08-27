@@ -86,6 +86,7 @@ import { PartyModule } from "./modules/party/party.module";
 import { RendererModule } from "./modules/renderer/renderer.module";
 import { ComplianceModule } from "./modules/compliance/compliance.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
+import { RelationshipsModule } from "./modules/relationships/relationships.module";
 import { IngressModule } from "./modules/ingress/ingress.module";
 import { AutonomyModule } from "./modules/autonomy/autonomy.module";
 import { CrmImportModule } from "./modules/crm/import/crm-import.module";
@@ -158,6 +159,7 @@ import { IssuesModule } from "./modules/issues/issues.module";
     ComplianceModule,
     DataQualityModule,
     ActivitiesModule,
+    RelationshipsModule,
     IngressModule,
     AutonomyModule,
     CrmImportModule,

@@ -2178,6 +2178,13 @@
       "when": 1787830364441,
       "tag": "0282_crm_import_rows_drop_party_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 311,
+      "version": "7",
+      "when": 1787830365441,
+      "tag": "0520_relationship_state",
+      "breakpoints": true
     }
   ]
 }

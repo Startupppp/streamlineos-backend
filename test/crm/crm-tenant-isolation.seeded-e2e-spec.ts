@@ -130,6 +130,14 @@ const TENANT_TABLES = [
   // arrangements are per tenant, and an arrangement readable organisation-wide
   // would tell any tenant which fields another one has stopped using.
   "record_layout_adjustments",
+  // Phase 4 ticket 01. Derived from `activities`, and exactly as disclosive as
+  // the mail they were folded from — how quickly a tenant's customers answer and
+  // who is on their threads. Added to `CRM_TABLE_PATTERN` below as well, so the
+  // fourth relationship table somebody writes is caught by the guard rather than
+  // by whether they remembered this list.
+  "relationship_participants",
+  "relationship_states",
+  "relationship_threads",
   "subject_party_links",
   "subject_types",
   "subjects",
@@ -142,7 +150,7 @@ const TENANT_TABLES = [
  * drift in exactly the way the first one did.
  */
 const CRM_TABLE_PATTERN =
-  "^(business_parties|party_|subject|deal|activit|inbound_events|crm_|autonom)|_party_map$";
+  "^(business_parties|party_|subject|deal|activit|inbound_events|crm_|autonom|relationship_)|_party_map$";
 
 /**
  * A short-lived password for `streamline_app`, set through the owner connection.

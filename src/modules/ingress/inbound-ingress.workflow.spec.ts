@@ -406,6 +406,11 @@ describe("inbound ingress, end to end from a fixture", () => {
       "resolve-party",
       "log-activity",
       "record-participants",
+      // Phase 4 ticket 01's relationship state, updated after the participants
+      // it is derived from exist. Its own step for the same reason as the two
+      // below: a state that failed to materialise is repaired by the next
+      // message, whereas failing the delivery would lose a customer's message.
+      "materialise-relationship",
       // Ticket 12's inference is its own step so a provider failure retries the
       // reasoning without re-creating the party and activity beneath it.
       "extract-and-act",

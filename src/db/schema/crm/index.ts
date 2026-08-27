@@ -1,4 +1,5 @@
 export * from "./activities";
+export * from "./relationships";
 export * from "./inbound-events";
 export * from "./autonomous-decisions";
 export * from "./autonomy-switches";
