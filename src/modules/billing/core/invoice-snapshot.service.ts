@@ -15,13 +15,9 @@ import {
   billingInvoiceSnapshots,
 } from "../../../db/schema";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { readCount } from "./quota-counts";
-import {
-  applyRateBps,
-  multiplyMinor,
-  sumMinor,
-  type RoundingRule,
-} from "./money-rounding";
+import { type RoundingRule } from "./money-rounding";
+import { allocateDocumentNumber } from "./invoice-numbering";
+import { priceDocument, type InvoiceLineInput } from "./invoice-pricing";
 
 export const INVOICE_STATUSES = ["DRAFT", "ISSUED", "PAID", "VOID"] as const;
 
@@ -31,15 +27,7 @@ export const TAX_BEHAVIORS = ["INCLUSIVE", "EXCLUSIVE"] as const;
 
 export type TaxBehavior = (typeof TAX_BEHAVIORS)[number];
 
-export interface InvoiceLineInput {
-  lineType: string;
-  description: string;
-  quantity: number;
-  unitAmountMinor: number;
-  taxRateBps?: number;
-  prorationLineId?: number | null;
-  usageRollupId?: number | null;
-}
+export { type InvoiceLineInput } from "./invoice-pricing";
 
 export interface IssueInvoiceInput {
   orgId: string;
@@ -90,38 +78,6 @@ export interface CreditNoteInput {
   issuedAt?: Date;
 }
 
-interface PricedLine {
-  subtotalMinor: number;
-  taxAmountMinor: number;
-  totalMinor: number;
-}
-
-/** Serializes number allocation for one organisation, prefix and year, transaction-scoped. */
-function lockInvoiceNumbering(orgId: string, prefix: string, year: number) {
-  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`invoice:${orgId}:${prefix}:${year}`}, 0))`;
-}
-
-function priceLine(
-  line: InvoiceLineInput,
-  roundingRule: RoundingRule,
-): PricedLine {
-  const subtotalMinor = multiplyMinor(
-    line.unitAmountMinor,
-    line.quantity,
-    "Line subtotal",
-  );
-  const taxAmountMinor = applyRateBps(
-    subtotalMinor,
-    line.taxRateBps ?? 0,
-    roundingRule,
-  );
-  return {
-    subtotalMinor,
-    taxAmountMinor,
-    totalMinor: subtotalMinor + taxAmountMinor,
-  };
-}
-
 @Injectable()
 export class InvoiceSnapshotService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -135,24 +91,15 @@ export class InvoiceSnapshotService {
 
     const roundingRule: RoundingRule = input.roundingRule ?? "HALF_UP";
     const issuedAt = input.issuedAt ?? new Date();
-    const priced = input.lines.map((line) => priceLine(line, roundingRule));
-    const subtotalMinor = sumMinor(
-      priced.map((line) => line.subtotalMinor),
-      "Invoice subtotal",
-    );
-    const taxAmountMinor = sumMinor(
-      priced.map((line) => line.taxAmountMinor),
-      "Invoice tax",
-    );
-    const totalMinor = sumMinor(
-      priced.map((line) => line.totalMinor),
-      "Invoice total",
+    const { lines: priced, subtotalMinor, taxAmountMinor, totalMinor } = priceDocument(
+      input.lines,
+      roundingRule,
     );
 
     return runInTenantTransaction(
       this.db,
       async (tx) => {
-        const invoiceNumber = await this.allocateNumber(
+        const invoiceNumber = await allocateDocumentNumber(
           tx,
           input.orgId,
           input.numberPrefix ?? "INV",
@@ -230,30 +177,6 @@ export class InvoiceSnapshotService {
     );
   }
 
-  /** The number comes from a row incremented under a lock, so it is gapless per prefix and year and auditable. */
-  private async allocateNumber(
-    tx: TenantTx,
-    orgId: string,
-    prefix: string,
-    year: number,
-  ): Promise<string> {
-    if (!/^[A-Z0-9-]{1,20}$/.test(prefix))
-      throw new BadRequestException("Invoice prefix must be A-Z, 0-9 or -");
-
-    await tx.execute(lockInvoiceNumbering(orgId, prefix, year));
-
-    const rows = await tx.execute(sql`
-      INSERT INTO billing_invoice_number_sequences (org_id, prefix, year, last_number, updated_at)
-      VALUES (${orgId}, ${prefix}, ${year}, 1, NOW())
-      ON CONFLICT (org_id, prefix, year)
-      DO UPDATE SET last_number = billing_invoice_number_sequences.last_number + 1, updated_at = NOW()
-      RETURNING last_number
-    `);
-
-    const next = readCount(rows, "last_number");
-    return `${prefix}-${year}-${String(next).padStart(6, "0")}`;
-  }
-
   /** Payment and voiding move status and stamp a time; no path here touches an amount, a rate or a currency. */
   async markPaid(
     orgId: string,
@@ -326,10 +249,9 @@ export class InvoiceSnapshotService {
 
     const roundingRule: RoundingRule = input.roundingRule ?? "HALF_UP";
     const issuedAt = input.issuedAt ?? new Date();
-    const priced = input.lines.map((line) => priceLine(line, roundingRule));
-    const totalMinor = sumMinor(
-      priced.map((line) => line.totalMinor),
-      "Credit note total",
+    const { lines: priced, totalMinor } = priceDocument(
+      input.lines,
+      roundingRule,
     );
 
     return runInTenantTransaction(
@@ -347,7 +269,7 @@ export class InvoiceSnapshotService {
             "A draft invoice has nothing to credit; issue it first",
           );
 
-        const noteNumber = await this.allocateNumber(
+        const noteNumber = await allocateDocumentNumber(
           tx,
           input.orgId,
           input.numberPrefix ?? "CN",
