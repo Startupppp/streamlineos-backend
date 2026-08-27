@@ -57,8 +57,8 @@ async function withContext<T>(step: string, work: () => Promise<T>): Promise<T> 
     try {
       return await work();
     } catch (second) {
-      const detail = second instanceof Error ? second.message : String(second);
-      throw new Error(`${step} failed twice: ${detail}`, { cause: first });
+      const firstDetail = first instanceof Error ? first.message : String(first);
+      throw new Error(`${step} failed twice; first attempt: ${firstDetail}`, { cause: second });
     }
   }
 }
