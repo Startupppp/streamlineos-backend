@@ -264,6 +264,58 @@ describe("InvoiceSnapshotService — amounts are integer minor units and totals 
     }
   });
 
+  it("adds tax on top when the behaviour is EXCLUSIVE", async () => {
+    const { tx, insertedValues } = makeTx();
+    ambientTx = tx;
+    const service = await buildService();
+
+    const result = await service.issueInvoice(
+      issueInput({
+        taxBehavior: "EXCLUSIVE",
+        lines: [{ lineType: "SUBSCRIPTION", description: "a", quantity: 1, unitAmountMinor: 10_000, taxRateBps: 1800 }],
+      }),
+    );
+
+    expect(result.subtotalMinor).toBe(10_000);
+    expect(result.taxAmountMinor).toBe(1_800);
+    expect(result.totalMinor).toBe(11_800);
+    expect((insertedValues[1] as Record<string, number>[])[0]).toMatchObject({ totalMinor: 11_800 });
+  });
+
+  it("extracts tax from the unit amount when the behaviour is INCLUSIVE, leaving the total unchanged", async () => {
+    const { tx } = makeTx();
+    ambientTx = tx;
+    const service = await buildService();
+
+    const result = await service.issueInvoice(
+      issueInput({
+        taxBehavior: "INCLUSIVE",
+        lines: [{ lineType: "SUBSCRIPTION", description: "a", quantity: 1, unitAmountMinor: 11_800, taxRateBps: 1800 }],
+      }),
+    );
+
+    expect(result.totalMinor).toBe(11_800);
+    expect(result.taxAmountMinor).toBe(1_800);
+    expect(result.subtotalMinor).toBe(10_000);
+  });
+
+  it("charges an INCLUSIVE line less tax than an EXCLUSIVE one at the same unit amount", async () => {
+    const lines = [{ lineType: "SUBSCRIPTION", description: "a", quantity: 3, unitAmountMinor: 49_999, taxRateBps: 500 }];
+
+    ambientTx = makeTx().tx;
+    const exclusive = await (await buildService()).issueInvoice(
+      issueInput({ taxBehavior: "EXCLUSIVE", lines }),
+    );
+    ambientTx = makeTx().tx;
+    const inclusive = await (await buildService()).issueInvoice(
+      issueInput({ taxBehavior: "INCLUSIVE", lines }),
+    );
+
+    expect(inclusive.taxAmountMinor).toBeLessThan(exclusive.taxAmountMinor);
+    expect(inclusive.totalMinor).toBe(inclusive.subtotalMinor + inclusive.taxAmountMinor);
+    expect(exclusive.totalMinor).toBe(exclusive.subtotalMinor + exclusive.taxAmountMinor);
+  });
+
   it("stores the rounding rule it used, so the document can be recomputed identically", async () => {
     const { tx, insertedValues } = makeTx();
     ambientTx = tx;

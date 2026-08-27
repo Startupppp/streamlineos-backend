@@ -73,6 +73,22 @@ export function applyRateBps(
   );
 }
 
+/** The tax already inside a gross amount: `gross × bps / (10000 + bps)`, so net + tax is exactly gross. */
+export function extractRateBps(
+  grossMinor: number,
+  rateBps: number,
+  rule: RoundingRule,
+): number {
+  if (!Number.isInteger(grossMinor))
+    throw new RangeError("Amount must be an integer minor unit");
+  if (!Number.isInteger(rateBps) || rateBps < 0)
+    throw new RangeError("Tax rate must be non-negative basis points");
+  return assertMinorUnitRange(
+    roundQuotient(BigInt(grossMinor) * BigInt(rateBps), 10_000n + BigInt(rateBps), rule),
+    "Tax amount",
+  );
+}
+
 export function multiplyMinor(
   unitAmountMinor: number,
   quantity: number,

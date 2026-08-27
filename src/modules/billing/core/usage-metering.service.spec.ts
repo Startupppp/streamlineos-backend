@@ -12,7 +12,8 @@ let ambientTx: unknown = null;
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(ambientTx),
-  runInNewTenantTransaction: (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(ambientTx),
+  runInNewTenantTransaction: (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) =>
+    fn(ambientTx),
 }));
 
 const dialect = new PgDialect();
@@ -24,31 +25,19 @@ function renderSql(value: unknown): string {
 const PERIOD_START = new Date("2026-08-01T00:00:00Z");
 const PERIOD_END = new Date("2026-09-01T00:00:00Z");
 
-interface TxOptions {
-  settled?: number;
-  reserved?: number;
-  inserted?: { id: number }[];
-}
-
-function makeTx(options: TxOptions = {}) {
+function makeTx(options: { inserted?: { id: number }[] } = {}) {
   const calls: string[] = [];
   const executedSql: string[] = [];
+  const predicates: string[] = [];
   const insertedValues: Record<string, unknown>[] = [];
   const updatedValues: Record<string, unknown>[] = [];
   const selectResults: Record<string, unknown>[][] = [];
-  const executeResults: Record<string, unknown>[][] = [];
 
   const execute = jest.fn().mockImplementation((statement: unknown) => {
     const rendered = renderSql(statement);
     executedSql.push(rendered);
-    if (rendered.includes("pg_advisory_xact_lock")) {
-      calls.push("lock");
-      return Promise.resolve([]);
-    }
-    calls.push("usage");
-    const queued = executeResults.shift();
-    if (queued) return Promise.resolve(queued);
-    return Promise.resolve([{ settled: options.settled ?? 0, reserved: options.reserved ?? 0 }]);
+    calls.push(rendered.includes("pg_advisory_xact_lock") ? "lock" : "execute");
+    return Promise.resolve([]);
   });
 
   function nextRows(): Record<string, unknown>[] {
@@ -59,7 +48,10 @@ function makeTx(options: TxOptions = {}) {
     const chain: Record<string, unknown> = {};
     const passthrough = () => chain;
     chain["from"] = passthrough;
-    chain["where"] = passthrough;
+    chain["where"] = (condition: unknown) => {
+      if (condition) predicates.push(renderSql(condition));
+      return chain;
+    };
     chain["orderBy"] = passthrough;
     chain["limit"] = () => Promise.resolve(nextRows());
     chain["then"] = (onFulfilled: (rows: Record<string, unknown>[]) => unknown) => onFulfilled(nextRows());
@@ -86,17 +78,29 @@ function makeTx(options: TxOptions = {}) {
       values: (values: Record<string, unknown>) => {
         insertedValues.push(values);
         calls.push("insert");
-        const result = {
-          onConflictDoNothing: () => ({ returning: () => Promise.resolve(options.inserted ?? [{ id: 1 }]) }),
+        return {
+          onConflictDoNothing: () => ({
+            returning: () => Promise.resolve(options.inserted ?? [{ id: 1 }]),
+          }),
           onConflictDoUpdate: () => Promise.resolve([]),
           returning: () => Promise.resolve(options.inserted ?? [{ id: 1 }]),
         };
-        return result;
       },
     })),
   };
 
-  return { tx, calls, executedSql, insertedValues, updatedValues, selectResults, executeResults };
+  return { tx, calls, executedSql, predicates, insertedValues, updatedValues, selectResults };
+}
+
+/** The reads `acquireReservation` makes, in order: the replay lookup, then settled and reserved usage. */
+function queueAcquire(
+  selectResults: Record<string, unknown>[][],
+  usage: { settled?: number; reserved?: number; replay?: Record<string, unknown> } = {},
+) {
+  selectResults.push(usage.replay ? [usage.replay] : []);
+  if (usage.replay) return;
+  selectResults.push([{ settled: usage.settled ?? 0 }]);
+  selectResults.push([{ reserved: usage.reserved ?? 0 }]);
 }
 
 async function buildService(db: unknown = {}): Promise<UsageMeteringService> {
@@ -149,19 +153,21 @@ describe("UsageMeteringService — registration", () => {
 
 describe("UsageMeteringService — the reservation is atomic, never check-then-spend", () => {
   it("locks the meter, reads usage and inserts inside one transaction, in that order", async () => {
-    const { tx, calls } = makeTx({ settled: 20, reserved: 5 });
+    const { tx, calls, selectResults } = makeTx();
+    queueAcquire(selectResults, { settled: 20, reserved: 5 });
     ambientTx = tx;
     const service = await buildService();
 
     await service.acquireReservation(reservationInput());
 
     expect(calls[0]).toBe("lock");
-    expect(calls.indexOf("usage")).toBeGreaterThan(calls.indexOf("lock"));
-    expect(calls.indexOf("insert")).toBeGreaterThan(calls.indexOf("usage"));
+    expect(calls.indexOf("select")).toBeGreaterThan(calls.indexOf("lock"));
+    expect(calls.indexOf("insert")).toBeGreaterThan(calls.lastIndexOf("select"));
   });
 
   it("serializes on a key scoped to the organisation and the meter", async () => {
-    const { tx, executedSql } = makeTx();
+    const { tx, executedSql, selectResults } = makeTx();
+    queueAcquire(selectResults);
     ambientTx = tx;
     const service = await buildService();
 
@@ -172,7 +178,8 @@ describe("UsageMeteringService — the reservation is atomic, never check-then-s
   });
 
   it("counts active reservations against the limit, so two callers cannot both take the last unit", async () => {
-    const { tx } = makeTx({ settled: 80, reserved: 15 });
+    const { tx, selectResults } = makeTx();
+    queueAcquire(selectResults, { settled: 80, reserved: 15 });
     ambientTx = tx;
     const service = await buildService();
 
@@ -182,7 +189,8 @@ describe("UsageMeteringService — the reservation is atomic, never check-then-s
   });
 
   it("does not insert a reservation it refused", async () => {
-    const { tx } = makeTx({ settled: 100, reserved: 0 });
+    const { tx, selectResults } = makeTx();
+    queueAcquire(selectResults, { settled: 100 });
     ambientTx = tx;
     const service = await buildService();
 
@@ -193,7 +201,8 @@ describe("UsageMeteringService — the reservation is atomic, never check-then-s
   });
 
   it("allows the reservation that exactly fills the limit", async () => {
-    const { tx } = makeTx({ settled: 85, reserved: 5 });
+    const { tx, selectResults } = makeTx();
+    queueAcquire(selectResults, { settled: 85, reserved: 5 });
     ambientTx = tx;
     const service = await buildService();
 
@@ -204,7 +213,8 @@ describe("UsageMeteringService — the reservation is atomic, never check-then-s
   });
 
   it("reserves without a ceiling when the meter is unlimited, so the ledger stays complete", async () => {
-    const { tx, insertedValues } = makeTx({ settled: 999_999, reserved: 0 });
+    const { tx, selectResults, insertedValues } = makeTx();
+    queueAcquire(selectResults, { settled: 999_999 });
     ambientTx = tx;
     const service = await buildService();
 
@@ -214,21 +224,37 @@ describe("UsageMeteringService — the reservation is atomic, never check-then-s
     expect(insertedValues[0]).toMatchObject({ reservedQuantity: 10 });
   });
 
-  it("only counts reservations that have not expired", async () => {
-    const { tx, executedSql } = makeTx();
+  it("only counts reservations that are active and have not expired", async () => {
+    const { tx, predicates, selectResults } = makeTx();
+    queueAcquire(selectResults);
     ambientTx = tx;
     const service = await buildService();
 
     await service.acquireReservation(reservationInput());
 
-    const usageSql = executedSql.find((statement) => statement.includes("billing_usage_reservations"));
-    expect(usageSql).toContain("status = 'ACTIVE'");
-    expect(usageSql).toContain("expires_at > NOW()");
+    const reservedPredicate = predicates.find((predicate) => predicate.includes("expires_at"));
+    expect(reservedPredicate).toBeDefined();
+    expect(reservedPredicate).toContain('"status" =');
+    expect(reservedPredicate).toContain('"expires_at" >');
+  });
+
+  it("bounds settled usage to the billing period rather than counting all history", async () => {
+    const { tx, predicates, selectResults } = makeTx();
+    queueAcquire(selectResults);
+    ambientTx = tx;
+    const service = await buildService();
+
+    await service.acquireReservation(reservationInput());
+
+    const settledPredicate = predicates.find((predicate) => predicate.includes("occurred_at"));
+    expect(settledPredicate).toContain('"occurred_at" >=');
+    expect(settledPredicate).toContain('"occurred_at" <');
   });
 
   it("refuses rather than reserving against a usage figure it could not read", async () => {
-    const { tx, executeResults } = makeTx();
-    executeResults.push([]);
+    const { tx, selectResults } = makeTx();
+    selectResults.push([]);
+    selectResults.push([]);
     ambientTx = tx;
     const service = await buildService();
 
@@ -251,7 +277,8 @@ describe("UsageMeteringService — the reservation is atomic, never check-then-s
   });
 
   it("stamps an expiry so an abandoned reservation stops holding quota", async () => {
-    const { tx, insertedValues } = makeTx();
+    const { tx, selectResults, insertedValues } = makeTx();
+    queueAcquire(selectResults);
     ambientTx = tx;
     const service = await buildService();
 
@@ -265,7 +292,7 @@ describe("UsageMeteringService — the reservation is atomic, never check-then-s
 
   it("returns the existing reservation for a repeated idempotency key rather than reserving twice", async () => {
     const { tx, selectResults } = makeTx();
-    selectResults.push([activeReservation()]);
+    queueAcquire(selectResults, { replay: activeReservation() });
     ambientTx = tx;
     const service = await buildService();
 
@@ -423,8 +450,8 @@ describe("UsageMeteringService — duplicate and out-of-order events do not doub
 
 describe("UsageMeteringService — rollups are rebuildable projections", () => {
   it("recomputes the period from the raw events and upserts the rollup", async () => {
-    const { tx, executeResults, insertedValues } = makeTx();
-    executeResults.push([{ total: 4200, events: 130 }]);
+    const { tx, selectResults, insertedValues } = makeTx();
+    selectResults.push([{ total: 4200, events: 130 }]);
     ambientTx = tx;
     const service = await buildService();
 
@@ -440,8 +467,8 @@ describe("UsageMeteringService — rollups are rebuildable projections", () => {
   });
 
   it("refuses rather than writing a zero rollup it could not compute", async () => {
-    const { tx, executeResults } = makeTx();
-    executeResults.push([]);
+    const { tx, selectResults } = makeTx();
+    selectResults.push([]);
     ambientTx = tx;
     const service = await buildService();
 
@@ -453,20 +480,16 @@ describe("UsageMeteringService — rollups are rebuildable projections", () => {
 });
 
 describe("UsageMeteringService — readMeterUsage", () => {
+  const meter = { orgId: "org1", meterKey: "api.calls", periodStart: PERIOD_START, periodEnd: PERIOD_END };
+
   it("reports settled, reserved, committed and remaining against the limit", async () => {
-    const { tx } = makeTx({ settled: 60, reserved: 15 });
+    const { tx, selectResults } = makeTx();
+    selectResults.push([{ settled: 60 }]);
+    selectResults.push([{ reserved: 15 }]);
     ambientTx = tx;
     const service = await buildService();
 
-    await expect(
-      service.readMeterUsage({
-        orgId: "org1",
-        meterKey: "api.calls",
-        limit: 100,
-        periodStart: PERIOD_START,
-        periodEnd: PERIOD_END,
-      }),
-    ).resolves.toEqual({
+    await expect(service.readMeterUsage({ ...meter, limit: 100 })).resolves.toEqual({
       settledQuantity: 60,
       reservedQuantity: 15,
       committedQuantity: 75,
@@ -476,18 +499,31 @@ describe("UsageMeteringService — readMeterUsage", () => {
   });
 
   it("reports no remaining figure for an unlimited meter rather than a misleading number", async () => {
-    const { tx } = makeTx({ settled: 60, reserved: 15 });
+    const { tx, selectResults } = makeTx();
+    selectResults.push([{ settled: 60 }]);
+    selectResults.push([{ reserved: 15 }]);
     ambientTx = tx;
     const service = await buildService();
 
-    await expect(
-      service.readMeterUsage({
-        orgId: "org1",
-        meterKey: "api.calls",
-        limit: null,
-        periodStart: PERIOD_START,
-        periodEnd: PERIOD_END,
-      }),
-    ).resolves.toMatchObject({ limit: null, remaining: null });
+    await expect(service.readMeterUsage({ ...meter, limit: null })).resolves.toMatchObject({
+      limit: null,
+      remaining: null,
+    });
+  });
+});
+
+describe("UsageMeteringService — no JS Date reaches a raw SQL template", () => {
+  it("executes no raw statement but the advisory lock, so no period bound is interpolated", async () => {
+    const { tx, executedSql, selectResults } = makeTx();
+    queueAcquire(selectResults);
+    selectResults.push([{ total: 1, events: 1 }]);
+    ambientTx = tx;
+    const service = await buildService();
+
+    await service.acquireReservation(reservationInput());
+    await service.rebuildRollup("org1", "api.calls", "DAY", PERIOD_START, PERIOD_END);
+
+    expect(executedSql.length).toBeGreaterThan(0);
+    for (const statement of executedSql) expect(statement).toContain("pg_advisory_xact_lock");
   });
 });

@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, isNotNull, lt, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../../db/drizzle.types";
 import { billingProrationLines } from "../../../db/schema";
@@ -325,8 +325,8 @@ export class ProrationLedgerService {
             and(
               eq(billingProrationLines.orgId, orgId),
               eq(billingProrationLines.subscriptionId, subscriptionId),
-              sql`${billingProrationLines.effectiveFrom} >= ${periodStart}`,
-              sql`${billingProrationLines.effectiveFrom} < ${periodEnd}`,
+              gte(billingProrationLines.effectiveFrom, periodStart),
+              lt(billingProrationLines.effectiveFrom, periodEnd),
             ),
           );
         return { netMinor: Number(row?.netMinor ?? 0), lineCount: Number(row?.lineCount ?? 0) };

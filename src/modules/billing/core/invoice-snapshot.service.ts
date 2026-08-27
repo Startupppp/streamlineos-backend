@@ -17,15 +17,17 @@ import {
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { type RoundingRule } from "./money-rounding";
 import { allocateDocumentNumber } from "./invoice-numbering";
-import { priceDocument, type InvoiceLineInput } from "./invoice-pricing";
+import {
+  priceDocument,
+  type InvoiceLineInput,
+  type TaxBehavior,
+} from "./invoice-pricing";
 
 export const INVOICE_STATUSES = ["DRAFT", "ISSUED", "PAID", "VOID"] as const;
 
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
-export const TAX_BEHAVIORS = ["INCLUSIVE", "EXCLUSIVE"] as const;
-
-export type TaxBehavior = (typeof TAX_BEHAVIORS)[number];
+export { TAX_BEHAVIORS, type TaxBehavior } from "./invoice-pricing";
 
 export { type InvoiceLineInput } from "./invoice-pricing";
 
@@ -94,6 +96,7 @@ export class InvoiceSnapshotService {
     const { lines: priced, subtotalMinor, taxAmountMinor, totalMinor } = priceDocument(
       input.lines,
       roundingRule,
+      input.taxBehavior,
     );
 
     return runInTenantTransaction(
@@ -249,10 +252,6 @@ export class InvoiceSnapshotService {
 
     const roundingRule: RoundingRule = input.roundingRule ?? "HALF_UP";
     const issuedAt = input.issuedAt ?? new Date();
-    const { lines: priced, totalMinor } = priceDocument(
-      input.lines,
-      roundingRule,
-    );
 
     return runInTenantTransaction(
       this.db,
@@ -268,6 +267,12 @@ export class InvoiceSnapshotService {
           throw new ConflictException(
             "A draft invoice has nothing to credit; issue it first",
           );
+
+        const { lines: priced, totalMinor } = priceDocument(
+          input.lines,
+          roundingRule,
+          original.taxBehavior as TaxBehavior,
+        );
 
         const noteNumber = await allocateDocumentNumber(
           tx,

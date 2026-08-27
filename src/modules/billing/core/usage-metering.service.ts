@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq, lte, sql } from "drizzle-orm";
+import { and, eq, gt, gte, lt, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../../db/drizzle.types";
 import {
@@ -237,18 +237,34 @@ export class UsageMeteringService {
     tx: TenantTx,
     input: Pick<ReservationInput, "orgId" | "meterKey" | "limit" | "periodStart" | "periodEnd">,
   ): Promise<MeterUsage> {
-    const rows = await tx.execute(sql`
-      SELECT
-        (SELECT COALESCE(SUM(quantity), 0)::bigint FROM billing_usage_events
-          WHERE org_id = ${input.orgId} AND meter_key = ${input.meterKey}
-            AND occurred_at >= ${input.periodStart} AND occurred_at < ${input.periodEnd})           AS settled,
-        (SELECT COALESCE(SUM(reserved_quantity), 0)::bigint FROM billing_usage_reservations
-          WHERE org_id = ${input.orgId} AND meter_key = ${input.meterKey}
-            AND status = 'ACTIVE' AND expires_at > NOW())                                           AS reserved
-    `);
+    const [settled] = await tx
+      .select({ settled: sql<number>`COALESCE(SUM(${billingUsageEvents.quantity}), 0)::bigint` })
+      .from(billingUsageEvents)
+      .where(
+        and(
+          eq(billingUsageEvents.orgId, input.orgId),
+          eq(billingUsageEvents.meterKey, input.meterKey),
+          gte(billingUsageEvents.occurredAt, input.periodStart),
+          lt(billingUsageEvents.occurredAt, input.periodEnd),
+        ),
+      );
 
-    const settledQuantity = readCount(rows, "settled");
-    const reservedQuantity = readCount(rows, "reserved");
+    const [reserved] = await tx
+      .select({
+        reserved: sql<number>`COALESCE(SUM(${billingUsageReservations.reservedQuantity}), 0)::bigint`,
+      })
+      .from(billingUsageReservations)
+      .where(
+        and(
+          eq(billingUsageReservations.orgId, input.orgId),
+          eq(billingUsageReservations.meterKey, input.meterKey),
+          eq(billingUsageReservations.status, "ACTIVE"),
+          gt(billingUsageReservations.expiresAt, new Date()),
+        ),
+      );
+
+    const settledQuantity = readCount(settled ? [settled] : [], "settled");
+    const reservedQuantity = readCount(reserved ? [reserved] : [], "reserved");
     const committedQuantity = settledQuantity + reservedQuantity;
 
     return {
@@ -299,12 +315,22 @@ export class UsageMeteringService {
     return runInTenantTransaction(
       this.db,
       async (tx) => {
-        const rows = await tx.execute(sql`
-          SELECT COALESCE(SUM(quantity), 0)::bigint AS total, COUNT(*)::int AS events
-          FROM billing_usage_events
-          WHERE org_id = ${orgId} AND meter_key = ${meterKey}
-            AND occurred_at >= ${periodStart} AND occurred_at < ${periodEnd}
-        `);
+        const [aggregate] = await tx
+          .select({
+            total: sql<number>`COALESCE(SUM(${billingUsageEvents.quantity}), 0)::bigint`,
+            events: sql<number>`COUNT(*)::int`,
+          })
+          .from(billingUsageEvents)
+          .where(
+            and(
+              eq(billingUsageEvents.orgId, orgId),
+              eq(billingUsageEvents.meterKey, meterKey),
+              gte(billingUsageEvents.occurredAt, periodStart),
+              lt(billingUsageEvents.occurredAt, periodEnd),
+            ),
+          );
+
+        const rows = aggregate ? [aggregate] : [];
         const totalQuantity = readCount(rows, "total");
         const eventCount = readCount(rows, "events");
 
