@@ -26,7 +26,11 @@ import {
   type QueryRegistry,
   type SourceSpec,
 } from "./registry";
-import { compileScopePredicate, type RequesterScope } from "./scope";
+import {
+  assertRequesterScope,
+  compileScopePredicate,
+  type RequesterScope,
+} from "./scope";
 import type { DataScope } from "../../access/access.types";
 
 /**
@@ -86,6 +90,16 @@ export interface CompiledQuery {
   readonly columns: readonly CompiledColumn[];
   /** Which registry source this reads, for the audit trail and the permission check. */
   readonly source: string;
+  /**
+   * The scope this statement was compiled under.
+   *
+   * Reported back rather than left for the caller to remember, so the audit row
+   * records the scope that is *in the statement* rather than a variable that was
+   * in scope at the call site. Those are the same value today; they stop being
+   * the same value the first time somebody adds a branch, and an audit trail
+   * that disagrees with the statement beside it is worse than no column.
+   */
+  readonly scope: DataScope;
 }
 
 const OPERATOR_SET = new Set<string>(COMPARISON_OPERATORS);
@@ -189,6 +203,13 @@ interface ResolvedField {
 
 export interface CompileContext {
   readonly organizationId: string;
+  /**
+   * Who is asking, and how much they may see. Required, and deliberately not
+   * optional-with-a-default: an optional `requester` defaulting to `all` is the
+   * same thing as a description that can omit its scope, one indirection later.
+   * Every call site has to state the answer, and `none` is a statable answer.
+   */
+  readonly requester: RequesterScope;
   readonly registry?: QueryRegistry;
 }
 
@@ -210,6 +231,14 @@ export function compileQuery(
       "compileQuery requires a non-empty organizationId",
       "organizationId",
     );
+
+  /**
+   * Validated before the description is even looked at, for the same reason the
+   * organisation id is: these two arguments are the statement's whole safety
+   * story, and a compiler that checks them somewhere in the middle has a middle
+   * where they are unchecked.
+   */
+  const requester = assertRequesterScope(ctx.requester);
 
   if (description === null || typeof description !== "object")
     throw new QueryCompilationError("malformed_description", "description must be an object");
@@ -242,12 +271,28 @@ export function compileQuery(
     emitJoin(join, orgParam),
   );
 
+  /**
+   * Compiled last, and appended after the description's own filter.
+   *
+   * "After" is the whole design and not an implementation detail. The
+   * description has already had its say by this point — its filter is a finished
+   * string in `where` — and these two terms are added to it by conjunction,
+   * which no filter can undo: there is no `OR` a caller can write at the top of
+   * their own tree that reaches outside the `AND` this line puts it inside.
+   * Compare the alternative, where the tenant and scope terms are *defaults* the
+   * description may override; that design is one careless merge away from a
+   * report that reads another organisation, and no spec can prove the absence of
+   * an override that the type system permits.
+   */
+  const scopePredicate = compileScopePredicate(source, requester, params, orgParam);
+
   const predicates = [
     `${qualified(BASE_ALIAS, source.organizationColumn)} = ${orgParam}`,
     ...(source.softDeleteColumn
       ? [`${qualified(BASE_ALIAS, source.softDeleteColumn)} IS NULL`]
       : []),
     ...where,
+    scopePredicate,
   ];
 
   const text = [
@@ -261,7 +306,13 @@ export function compileQuery(
     `OFFSET ${offset}`,
   ].join(" ");
 
-  return { text, params: params.snapshot(), columns, source: description.source };
+  return {
+    text,
+    params: params.snapshot(),
+    columns,
+    source: description.source,
+    scope: requester.scope,
+  };
 }
 
 // ── Resolution ───────────────────────────────────────────────────────────────

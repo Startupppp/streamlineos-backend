@@ -141,3 +141,36 @@ export function calendarDateOf(instant: Date): CalendarDate {
     day: instant.getUTCDate(),
   };
 }
+
+/**
+ * A calendar date shifted by whole days, forwards or backwards.
+ *
+ * Here rather than in the caller that needed it, and built on the same
+ * `toEpochDay` the rest of this file uses. The alternative — a caller doing
+ * `new Date(iso); d.setDate(d.getDate() - 90)` — is the timezone bug this whole
+ * module exists to avoid: it parses an ISO date as UTC midnight, shifts it in
+ * the host's local zone, and lands on the previous day for every server west of
+ * Greenwich. A renewal window that opens a day early on some hosts and not
+ * others is the kind of defect nobody reproduces.
+ */
+export function addDays(start: CalendarDate, days: number): CalendarDate {
+  return civilFromDays(toEpochDay(start) + Math.trunc(days));
+}
+
+/** Howard Hinnant's civil-from-days, forwards. The inverse of `toEpochDay`. */
+function civilFromDays(epochDay: number): CalendarDate {
+  const shifted = epochDay + 719468;
+  const era = Math.floor(shifted / 146097);
+  const dayOfEra = shifted - era * 146097;
+  const yearOfEra = Math.floor(
+    (dayOfEra - Math.floor(dayOfEra / 1460) + Math.floor(dayOfEra / 36524) - Math.floor(dayOfEra / 146096)) / 365,
+  );
+  const year = yearOfEra + era * 400;
+  const dayOfYear =
+    dayOfEra - (365 * yearOfEra + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100));
+  const monthPrime = Math.floor((5 * dayOfYear + 2) / 153);
+  const day = dayOfYear - Math.floor((153 * monthPrime + 2) / 5) + 1;
+  const month = monthPrime + (monthPrime < 10 ? 3 : -9);
+
+  return { year: month <= 2 ? year + 1 : year, month, day };
+}

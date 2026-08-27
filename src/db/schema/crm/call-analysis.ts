@@ -258,3 +258,188 @@ export const callAnalysisReleases = pgTable(
     ),
   ],
 );
+
+/**
+ * Where a call happened, and who agreed to it being recorded.
+ *
+ * Phase 5 ticket 03. Two-party consent jurisdictions are a criminal-law
+ * constraint, so the evidence they require has to be a record somebody made
+ * rather than something the system infers. Two things could have been inferred
+ * and deliberately are not.
+ *
+ * `jurisdiction` is not derived from the counterparty's phone number. An area
+ * code says where a number was issued, not where its holder was sitting when
+ * they answered it, and a mobile number carries its issuing region across
+ * borders for life. Nor is it read from `activities.metadata` — that column's
+ * own docblock says it is never read for a lifecycle decision, and whether a
+ * call may lawfully be analysed is the most lifecycle-shaped decision in this
+ * module.
+ *
+ * The counterparty's agreement is not stored here when it is a standing PHONE
+ * opt-in. That already lives in `crm_contact_channel_consent` with its own
+ * append-only event history, and copying it would create a second answer to
+ * "has this person opted out?" that drifts the moment somebody unsubscribes.
+ * `CallRecordingConsentService` reads the standing record and this table
+ * together. What this table holds about the counterparty is the per-call form of
+ * consent that has nowhere else to live: the recording notice played at the top
+ * of the call and acknowledged, or a signed clause.
+ *
+ * One row per call, not per party. A call in this model has two sides — the
+ * organisation and the customer — and one row keyed on the activity is what
+ * makes "is there evidence for this call" a single lookup rather than a fold
+ * over rows whose absence is indistinguishable from a missing join.
+ */
+export const callRecordingConsent = pgTable(
+  "crm_call_recording_consent",
+  {
+    callRecordingConsentId: text("call_recording_consent_id")
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    organizationId: text("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+
+    /**
+     * The call. Deliberately not a foreign key to `activities`, the same choice
+     * `crm_call_analyses.activity_id` and `crm_call_analysis_releases.activity_id`
+     * make: a timeline delete must not erase the evidence that a recording was
+     * lawful. That evidence is the organisation's defence, and it has to outlive
+     * the row that prompted it.
+     */
+    activityId: text("activity_id").notNull(),
+
+    /**
+     * ISO 3166-1 alpha-2, optionally with an ISO 3166-2 subdivision — `DE`,
+     * `US-CA`. Normalised by `normaliseJurisdiction` before it is written, and
+     * constrained by a CHECK, because an unconstrained string that matches no
+     * register entry silently resolves to all-party: the right answer arrived at
+     * by accident, which stops being right the day somebody adds a fuzzy lookup.
+     */
+    jurisdiction: text("jurisdiction").notNull(),
+
+    /**
+     * When our side agreed. Usually the rep's own act of recording, which is why
+     * `own-recording` is a method — but it is written rather than assumed, so an
+     * adapter-delivered call with nobody attributed has no row here and is
+     * refused rather than waved through.
+     */
+    orgPartyConsentedAt: timestamp("org_party_consented_at"),
+    orgPartyMethod: text("org_party_method"),
+
+    /**
+     * The per-call form of the customer's agreement — the notice acknowledged on
+     * the call, or a signed clause. Null when the only evidence is the standing
+     * PHONE opt-in, which is read from `crm_contact_channel_consent` instead.
+     */
+    counterpartyConsentedAt: timestamp("counterparty_consented_at"),
+    counterpartyMethod: text("counterparty_method"),
+
+    /**
+     * They asked, on this call, that it not be processed. Distinct from a
+     * channel-wide opt-out: somebody can be happy to be phoned and unhappy to be
+     * recorded, and collapsing the two would either over-block every future call
+     * or lose this one.
+     */
+    counterpartyWithdrawnAt: timestamp("counterparty_withdrawn_at"),
+
+    /** What the attester wants a later reviewer to know. Bounded to a sentence. */
+    note: text("note"),
+
+    /**
+     * Who attested. No foreign key to `users`, the house rule on every actor
+     * column in this schema (see `activities.actorUserId`): offboarding somebody
+     * must not delete the compliance record they signed.
+     */
+    attestedByUserId: text("attested_by_user_id").notNull(),
+
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    /**
+     * One attestation per call. Two rows would make "where did this happen" a
+     * question with two answers, and the rule would then be deciding which
+     * evidence to believe — a question no correct answer exists for and which
+     * only exists because the table allowed it to be asked. The service upserts
+     * onto exactly this pair.
+     */
+    uniqueIndex("uniq_crm_call_recording_consent").on(t.organizationId, t.activityId),
+  ],
+);
+
+/**
+ * Every call the consent rule refused, so the gap is visible.
+ *
+ * Without this table a refusal is indistinguishable from a call nobody thought
+ * to analyse. Both render as an empty analysis panel, and a team whose
+ * jurisdiction field is never filled in would conclude the feature does not work
+ * rather than that they are missing a compliance record. The ledger is how "we
+ * are refusing 340 calls a month for want of a jurisdiction" becomes something
+ * somebody can see and fix.
+ *
+ * It carries no transcript, no quote, and no analysis — the refusal exists
+ * precisely because none of that may be produced. What it holds is the activity
+ * id, the jurisdiction if one was recorded, and which clause of the rule
+ * refused. A ledger that quoted the call to explain why the call could not be
+ * quoted would be the same disclosure the refusal prevented.
+ *
+ * Upserted rather than appended, keyed on the call and the rule version. A
+ * timeline that re-renders refuses again, and an append-only ledger would grow a
+ * row per page load: the signal a compliance officer needs is "which calls",
+ * not "how many times somebody scrolled past one". `attempts` keeps the volume
+ * without keeping the rows.
+ */
+export const callAnalysisRefusals = pgTable(
+  "crm_call_analysis_refusals",
+  {
+    callAnalysisRefusalId: text("call_analysis_refusal_id")
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    organizationId: text("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+
+    /** No foreign key to `activities`, for the reason stated on every other
+     * `activity_id` in this file: a delete must not quietly empty the ledger
+     * that says a call was refused. */
+    activityId: text("activity_id").notNull(),
+
+    /** Null exactly when the reason is `jurisdiction-unrecorded`. */
+    jurisdiction: text("jurisdiction"),
+
+    /** A `CallConsentRefusal`. Text rather than an enum because adding a clause
+     * to the rule must not require a migration to record it — a refusal the
+     * ledger could not name would be recorded as something else or not at all. */
+    reason: text("reason").notNull(),
+
+    /** `RECORDING_CONSENT_RULE_VERSION` at the time. In the unique key, so a
+     * rule change starts a fresh ledger row rather than overwriting the count of
+     * what the previous rule refused. */
+    ruleVersion: integer("rule_version").notNull(),
+
+    /** The rule's own sentence, stored so the ledger reads the same a year later
+     * even after the wording in the source has been improved. */
+    note: text("note").notNull(),
+
+    firstRefusedAt: timestamp("first_refused_at").defaultNow().notNull(),
+    lastRefusedAt: timestamp("last_refused_at").defaultNow().notNull(),
+    attempts: integer("attempts").default(1).notNull(),
+
+    /** Who last asked. No foreign key to `users` — see above. */
+    lastRequestedByUserId: text("last_requested_by_user_id"),
+
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uniq_crm_call_analysis_refusals").on(
+      t.organizationId,
+      t.activityId,
+      t.ruleVersion,
+    ),
+    /** The ledger read: this organisation, most recently refused first. */
+    index("idx_crm_call_analysis_refusals_org").on(t.organizationId, t.lastRefusedAt),
+  ],
+);

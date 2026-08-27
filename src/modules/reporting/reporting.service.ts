@@ -12,10 +12,11 @@ import { crmReportDefinitions, crmReportRuns } from "../../db/schema";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { AccessService } from "../access/access.service";
 import { compileQuery, type CompiledQuery } from "./compiler/compile";
+import type { RequesterScope } from "./compiler/scope";
 import { QueryCompilationError } from "./compiler/errors";
 import { REPORTING_REGISTRY } from "./compiler/registry";
 import { toDrizzleSql } from "./compiler/to-drizzle-sql";
-import { decideSourceAccess, type HeldPermissions } from "./reporting-source-access";
+import { decideSourceAccess, REPORTING_RUN, type HeldPermissions } from "./reporting-source-access";
 import type { QueryDescription } from "./compiler/query-description";
 import type {
   CreateDefinitionInput,
@@ -149,7 +150,7 @@ export class ReportingService {
   ) {
     const query = input.query as QueryDescription;
     await this.assertMayRunSource(orgId, userId, query.source);
-    this.compileOrThrow(query, orgId);
+    this.compileOrThrow(query, orgId, await this.requesterScope(orgId, userId));
 
     const [row] = await this.db
       .insert(crmReportDefinitions)
@@ -177,7 +178,7 @@ export class ReportingService {
     const query = (input.query ?? existing.queryDescription) as QueryDescription;
     if (input.query) {
       await this.assertMayRunSource(orgId, userId, query.source);
-      this.compileOrThrow(query, orgId);
+      this.compileOrThrow(query, orgId, await this.requesterScope(orgId, userId));
     }
 
     const [row] = await this.db
@@ -232,7 +233,7 @@ export class ReportingService {
    */
   async explain(orgId: string, userId: string, query: QueryDescription) {
     await this.assertMayRunSource(orgId, userId, query.source);
-    const compiled = this.compileOrThrow(query, orgId);
+    const compiled = this.compileOrThrow(query, orgId, await this.requesterScope(orgId, userId));
 
     return {
       source: compiled.source,
@@ -304,7 +305,7 @@ export class ReportingService {
     reportDefinitionId: string | null,
   ): Promise<ReportResult> {
     await this.assertMayRunSource(orgId, userId, query.source);
-    const compiled = this.compileOrThrow(query, orgId);
+    const compiled = this.compileOrThrow(query, orgId, await this.requesterScope(orgId, userId));
 
     const startedAt = Date.now();
     const rows = await runInTenantTransaction(
@@ -363,9 +364,13 @@ export class ReportingService {
     });
   }
 
-  private compileOrThrow(query: QueryDescription, orgId: string): CompiledQuery {
+  private compileOrThrow(
+    query: QueryDescription,
+    orgId: string,
+    requester: RequesterScope,
+  ): CompiledQuery {
     try {
-      return compileQuery(query, { organizationId: orgId });
+      return compileQuery(query, { organizationId: orgId, requester });
     } catch (error) {
       if (error instanceof QueryCompilationError)
         /**
@@ -402,12 +407,32 @@ export class ReportingService {
   }
 
   private async heldPermissions(orgId: string, userId: string): Promise<HeldPermissions> {
-    /**
-     * `resolveUserPermissions` returns key → scope. The scope is dropped here,
-     * knowingly — see `REPORTING_SCOPE_GAP` in `reporting-source-access.ts` for
-     * what that costs and why it is not silently papered over.
-     */
     const resolved = await this.access.resolveUserPermissions(orgId, userId);
     return new Set(resolved.keys());
+  }
+
+  /**
+   * The scope the compiler applies, resolved from the grant that admits the run.
+   *
+   * This closes `REPORTING_SCOPE_GAP`. Ticket 10 kept the keys and dropped the
+   * scope, and recorded that a narrowed grant was being treated as a full one.
+   * Ticket 11 is the ticket that stops that being true, and the shape of the fix
+   * is the whole point: the scope is resolved HERE and handed to the compiler,
+   * which applies it on the way out. A description cannot opt out of a predicate
+   * it never supplies.
+   *
+   * `REPORTING_RUN` is the grant consulted, not the narrowest of everything the
+   * user holds. Scope is per key, and the key that admits this operation is the
+   * one whose scope governs it — taking a minimum across unrelated keys would
+   * let an unrelated narrow grant silently restrict reporting, which is a
+   * different rule nobody stated.
+   *
+   * Absent means `none`, not `all`. A user whose grant has gone while their
+   * session lives sees nothing rather than everything, which is the direction a
+   * scope resolution has to fail in.
+   */
+  private async requesterScope(orgId: string, userId: string): Promise<RequesterScope> {
+    const resolved = await this.access.resolveUserPermissions(orgId, userId);
+    return { userId, scope: resolved.get(REPORTING_RUN) ?? "none" };
   }
 }

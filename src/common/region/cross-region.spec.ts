@@ -22,8 +22,26 @@ describe("cross-region operations are enumerated", () => {
    * `storageForOrg` and `regionForOrg` take a tenant and can only reach that
    * tenant's own region, which is the whole point of the seam.
    */
+  /**
+   * `registry.keys` without a call, and the missing parentheses are the whole
+   * discriminator.
+   *
+   * `RegionRegistry.keys` is a `string[]` PROPERTY — `this.registry.keys.length`
+   * is how `region.module.ts` reads it. A `Map`'s `keys` is a METHOD, so any
+   * other registry in the codebase spells it `registry.keys()`. The bare pattern
+   * matched both, and `reporting-source-access.ts` — a map of queryable report
+   * sources, nothing to do with regions — was reported as reaching across
+   * regions for `[...registry.keys()]`.
+   *
+   * Loosening the detector was not an option and neither was listing the file:
+   * `CROSS_REGION_OPERATIONS` is a list of operations that genuinely name a
+   * region, each carrying an argument for why, and an entry that names no region
+   * would make the next reader distrust the ones that do. Excluding the call
+   * form keeps `region.module.ts` detected — it matches on nothing else, so a
+   * cruder tightening would have lost a real one.
+   */
   const NAMES_A_REGION =
-    /\.bindingFor\(|withNewOrgInRegion|runInNewOrgTransaction|registry\.keys|getRegionRegistry\(\)\.keys/;
+    /\.bindingFor\(|withNewOrgInRegion|runInNewOrgTransaction|registry\.keys(?!\()|getRegionRegistry\(\)\.keys/;
 
   /** Comments describe these operations constantly; only code performs one. */
   const executable = (source: string): string =>

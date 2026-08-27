@@ -7,6 +7,7 @@ import { callAnalyses } from "../../db/schema/crm/call-analysis";
 import { CALL_ANALYSIS_ANALYZER_VERSION } from "./call-analysis.contract";
 import { callAnalysisVisibility } from "./call-analysis-visibility";
 import { CallAnalysisVisibilityService } from "./call-analysis-visibility.service";
+import { CallRecordingConsentService } from "./call-recording-consent.service";
 import { coachingDigest, type CoachingCandidate, type CoachingDigest } from "./call-coaching";
 
 /**
@@ -26,6 +27,16 @@ import { coachingDigest, type CoachingCandidate, type CoachingDigest } from "./c
  * and decides in process, which is why it is capped at `COACHING_MAX_ROWS` and
  * why the response says when it truncated. A SQL-side version of this rule would
  * be faster and would be a second copy of the rule.
+ *
+ * The consent rule is applied the same way and for the same reason. Phase 5
+ * ticket 03 stops a call in a two-party jurisdiction from being analysed at all,
+ * so in the ordinary case there is no row here to filter — but rows written
+ * before that rule shipped are still in the table, and so is any call whose
+ * counterparty has withdrawn consent since. An aggregate that counted those
+ * would be the ticket's failure arriving through the back door: the numbers a
+ * manager quotes would be built partly from conversations the organisation is
+ * not allowed to have processed. `decideMany` is the batched form, so this costs
+ * three queries for the whole page rather than three per call.
  */
 
 /**
@@ -52,6 +63,7 @@ export class CallCoachingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly visibility: CallAnalysisVisibilityService,
+    private readonly consent: CallRecordingConsentService,
   ) {}
 
   async digest(user: CurrentUserContext, sinceDays: number): Promise<CoachingDigestResult> {
@@ -108,6 +120,11 @@ export class CallCoachingService {
       CALL_ANALYSIS_ANALYZER_VERSION,
     );
 
+    const consented = await this.consent.decideMany(
+      user.orgId,
+      page.map((row) => row.activityId),
+    );
+
     const now = new Date();
     const candidates: CoachingCandidate[] = [];
 
@@ -122,6 +139,17 @@ export class CallCoachingService {
        * being withheld, it is gone.
        */
       if (!subject) continue;
+
+      /**
+       * Dropped, not counted as embargoed. An embargoed call is one a manager
+       * will be able to read tomorrow; a consent-refused one is a call nobody
+       * may ever read, and reporting it in the embargoed count would promise a
+       * disclosure that is never going to arrive. Missing from the map means the
+       * call is not a live `call` activity, which the branch above already
+       * dropped, so a missing entry here is treated as a refusal rather than as
+       * permission.
+       */
+      if (!consented.get(row.activityId)?.verdict.allowed) continue;
 
       candidates.push({
         visibility: callAnalysisVisibility(

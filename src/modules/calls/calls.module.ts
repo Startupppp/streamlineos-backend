@@ -5,6 +5,8 @@ import { CallAnalysisVisibilityService } from "./call-analysis-visibility.servic
 import { CallAnalysisService } from "./call-analysis.service";
 import { CallCoachingController } from "./call-coaching.controller";
 import { CallCoachingService } from "./call-coaching.service";
+import { CallRecordingConsentController } from "./call-recording-consent.controller";
+import { CallRecordingConsentService } from "./call-recording-consent.service";
 
 /**
  * Per-call analysis.
@@ -22,14 +24,29 @@ import { CallCoachingService } from "./call-coaching.service";
  * it: a reader that takes `CallAnalysisService` alone and renders what it gets
  * has silently opted out of the rule that a rep sees their own analysis first.
  *
+ * `CallRecordingConsentService` is a constructor dependency of both
+ * `CallAnalysisService` and `CallCoachingService` rather than a thing a route
+ * remembers to call, which is phase 5 ticket 03's enforcement. In a two-party
+ * consent jurisdiction, analysing a recording nobody agreed to is a criminal
+ * matter, so there must be no way to obtain an analysis out of this module
+ * without passing the rule — and there is no provider anywhere that can turn it
+ * off. It is exported for the same reason the visibility service is: the next
+ * surface that wants call data has to be able to ask, and asking is cheaper than
+ * a second copy of the rule.
+ *
  * `AccessService` is not imported here and is not missing — `AccessModule` is
  * `@Global()`, so `CallAnalysisVisibilityService` resolves it without an import
  * edge. Adding one would be a cycle waiting to happen.
  */
 @Module({
   imports: [AiGatewayModule],
-  controllers: [CallAnalysisController, CallCoachingController],
-  providers: [CallAnalysisService, CallAnalysisVisibilityService, CallCoachingService],
-  exports: [CallAnalysisService, CallAnalysisVisibilityService],
+  controllers: [CallAnalysisController, CallCoachingController, CallRecordingConsentController],
+  providers: [
+    CallAnalysisService,
+    CallAnalysisVisibilityService,
+    CallCoachingService,
+    CallRecordingConsentService,
+  ],
+  exports: [CallAnalysisService, CallAnalysisVisibilityService, CallRecordingConsentService],
 })
 export class CallsModule {}

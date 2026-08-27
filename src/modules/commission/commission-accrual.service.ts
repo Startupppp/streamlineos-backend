@@ -223,6 +223,54 @@ async function refreshSnapshot(
     });
 }
 
+/**
+ * How many part rows one response will itemise.
+ *
+ * Both reads are bounded, because a rep with a thousand deals in a period would
+ * otherwise stream an unbounded result into a JSON body. The bound is the reason
+ * `truncated` exists: see `exactTotals`.
+ */
+const PERIOD_PART_PAGE = 5_000;
+const DEAL_PART_PAGE = 500;
+
+/**
+ * The exact totals over *every* part matching a predicate, ignoring the page.
+ *
+ * Only called when the page overflowed, and that restraint is the point. When
+ * the page holds every row, summing the rows in hand is the same number and
+ * computing it a second way in SQL would create a second authority that could
+ * one day disagree with the first.
+ *
+ * When the page did *not* hold every row, summing the rows in hand is a wrong
+ * number, and wrong in the direction that matters: it understates what somebody
+ * is owed, silently, with a `reconciles: true` beside it because the truncated
+ * parts agree perfectly with their own truncated total. That is the specific
+ * failure this function prevents — a headline that is short by however many
+ * deals fell off the end, wearing a proof that it adds up.
+ */
+async function exactTotals(
+  // Either a tenant transaction or the pooled handle: the reads that need this
+  // are split across both, and widening to the one method used is cheaper than
+  // making `byDeal` open a transaction it has no other reason to want.
+  tx: Pick<TenantTx, "select"> | Pick<Db, "select">,
+  predicate: ReturnType<typeof and>,
+): Promise<{ amountMinor: number; basisMinor: number; partCount: number }> {
+  const [totals] = await tx
+    .select({
+      accrued: sql<string>`coalesce(sum(${crmCommissionAccrualParts.amountMinor}), 0)`,
+      basis: sql<string>`coalesce(sum(${crmCommissionAccrualParts.basisMinor}), 0)`,
+      parts: sql<string>`count(*)`,
+    })
+    .from(crmCommissionAccrualParts)
+    .where(predicate);
+
+  return {
+    amountMinor: toMinor(totals?.accrued),
+    basisMinor: toMinor(totals?.basis),
+    partCount: Number(totals?.parts ?? 0),
+  };
+}
+
 /** One deal's contribution to an accrual, and the rules behind it. */
 export interface DealContribution {
   sourceType: string;
@@ -248,6 +296,12 @@ export class CommissionAccrualService {
    * `deals` and `rules` itemise, so the three agree by construction rather than
    * by care. `reconciles` states that in the payload: a client that shows a
    * total beside a breakdown can assert it rather than trusting this docblock.
+   *
+   * The single exception is a period too large to itemise in one response, and
+   * it is reported rather than hidden: `amountMinor` still covers the whole
+   * period, `truncated` is true, and `reconciles` is consequently false. The
+   * alternative — letting the page's own total stand as the headline — would
+   * have shipped an understated figure carrying a proof that it added up.
    */
   async periodAccrual(
     orgId: string,
@@ -262,32 +316,48 @@ export class CommissionAccrualService {
       async (tx) => {
         const window = await this.resolvePeriod(tx, orgId, userId, query.planId, on);
 
-        const parts = await tx
+        const periodPredicate = and(
+          eq(crmCommissionAccrualParts.orgId, orgId),
+          eq(crmCommissionAccrualParts.userId, userId),
+          eq(crmCommissionAccrualParts.planId, window.planId),
+          eq(crmCommissionAccrualParts.periodStart, window.start),
+        );
+
+        const page = await tx
           .select()
           .from(crmCommissionAccrualParts)
-          .where(
-            and(
-              eq(crmCommissionAccrualParts.orgId, orgId),
-              eq(crmCommissionAccrualParts.userId, userId),
-              eq(crmCommissionAccrualParts.planId, window.planId),
-              eq(crmCommissionAccrualParts.periodStart, window.start),
-            ),
-          )
+          .where(periodPredicate)
           .orderBy(
             asc(crmCommissionAccrualParts.earnedOn),
             asc(crmCommissionAccrualParts.earningId),
             asc(crmCommissionAccrualParts.partIndex),
           )
-          // Bounded: a rep with thousands of deals in one period would otherwise
-          // stream an unbounded result into a JSON response. Twenty bands per
-          // earning is already extravagant, so this is ~250 deals.
-          .limit(5000);
+          // One past the page, which is how the overflow is *detected* rather
+          // than assumed absent. Twenty bands per earning is already
+          // extravagant, so the page is ~250 deals.
+          .limit(PERIOD_PART_PAGE + 1);
+
+        const truncated = page.length > PERIOD_PART_PAGE;
+        const parts = truncated ? page.slice(0, PERIOD_PART_PAGE) : page;
 
         const dealNames = await this.dealNames(tx, orgId, parts);
         const contributions = this.groupByDeal(parts, dealNames);
         const rules = summariseByRule(parts.map(toAccrualPart));
-        const amountMinor = parts.reduce((sum, part) => sum + part.amountMinor, 0);
-        const basisMinor = parts.reduce((sum, part) => sum + part.basisMinor, 0);
+
+        // The headline is the whole period even when the itemisation is not, so
+        // a truncated response is short of *explanations* and never short of
+        // money. `reconciles` below then goes false on its own — the roll-ups
+        // are over the page and the total is over the period — which is the
+        // honest report: here is the figure, here is as much of it as fits, and
+        // no, this page does not account for all of it.
+        const totals = truncated
+          ? await exactTotals(tx, periodPredicate)
+          : {
+              amountMinor: parts.reduce((sum, part) => sum + part.amountMinor, 0),
+              basisMinor: parts.reduce((sum, part) => sum + part.basisMinor, 0),
+              partCount: parts.length,
+            };
+        const { amountMinor, basisMinor } = totals;
 
         const [latest] = await tx
           .select({ attainmentBps: crmCommissionEarnings.attainmentBps })
@@ -319,14 +389,21 @@ export class CommissionAccrualService {
           currency: parts[0]?.currency ?? window.currency,
           attainmentBps: latest?.attainmentBps ?? null,
           dealCount: contributions.length,
-          partCount: parts.length,
+          partCount: totals.partCount,
+          itemisedPartCount: parts.length,
+          /**
+           * True means `deals` and `rules` are a page of the period rather than
+           * the period. A client must not present the itemisation as complete
+           * when this is set — narrow by plan or ask per deal instead.
+           */
+          truncated,
           deals: contributions,
           rules,
           /**
            * The acceptance test, asserted in the payload rather than described.
            * Both roll-ups are integer sums of the same rows as the headline, so
-           * these can only be false if something upstream persisted a
-           * decomposition that does not add up.
+           * these can only be false if the itemisation was truncated, or if
+           * something upstream persisted a decomposition that does not add up.
            */
           reconciles: {
             byDeal:
@@ -418,23 +495,45 @@ export class CommissionAccrualService {
     if (!viewer.viewAll)
       predicates.push(eq(crmCommissionAccrualParts.userId, viewer.userId));
 
-    const parts = await this.db
+    const predicate = and(...predicates);
+
+    const page = await this.db
       .select()
       .from(crmCommissionAccrualParts)
-      .where(and(...predicates))
+      .where(predicate)
       .orderBy(
         asc(crmCommissionAccrualParts.userId),
         asc(crmCommissionAccrualParts.partIndex),
       )
-      .limit(500);
+      .limit(DEAL_PART_PAGE + 1);
+
+    const truncated = page.length > DEAL_PART_PAGE;
+    const parts = truncated ? page.slice(0, DEAL_PART_PAGE) : page;
+
+    // Same rule as the period read: the deal's total is the deal's total. A
+    // split across enough people to overflow the page is pathological, but "we
+    // showed you a smaller number because the list was long" is not a failure
+    // mode worth leaving open on a compensation figure.
+    const totals = truncated
+      ? await exactTotals(this.db, predicate)
+      : {
+          amountMinor: parts.reduce((sum, part) => sum + part.amountMinor, 0),
+          basisMinor: parts.reduce((sum, part) => sum + part.basisMinor, 0),
+          partCount: parts.length,
+        };
 
     return {
       sourceType: "deal",
       sourceId: String(dealId),
-      amountMinor: parts.reduce((sum, part) => sum + part.amountMinor, 0),
-      basisMinor: parts.reduce((sum, part) => sum + part.basisMinor, 0),
+      amountMinor: totals.amountMinor,
+      basisMinor: totals.basisMinor,
+      partCount: totals.partCount,
+      truncated,
       parts,
       rules: summariseByRule(parts.map(toAccrualPart)),
+      /** The parts listed account for the whole figure. False when truncated. */
+      reconciles:
+        parts.reduce((sum, part) => sum + part.amountMinor, 0) === totals.amountMinor,
     };
   }
 

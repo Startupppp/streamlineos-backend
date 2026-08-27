@@ -123,6 +123,33 @@ export const CRM_PERMISSIONS: Permission[] = [
       "Read call analyses for calls you were not on, once the rep has shared one or their private window has elapsed, and see the team's coaching digest",
   },
   {
+    // Asserting, for the record, that a call was lawfully recorded: where it
+    // happened, and who agreed to it.
+    //
+    // Deliberately NOT ending in `:view` or `:read`, and here that is a
+    // decision rather than a naming habit.
+    // `buildModuleMemberPermissionKeys` hands every key with those suffixes to
+    // `CRM_MODULE_MEMBER`, so a key called `crm:call-recording-consent:view`
+    // would let every rep attest. A rep is the person who knows whether the
+    // recording notice was played -- and also the person with a reason to say
+    // it was when it was not, because the attestation is what unlocks the
+    // analysis of their own call. A compliance assertion signed by the person
+    // it benefits is not evidence of anything, so this stops at the two admin
+    // rungs.
+    //
+    // Holding it does not let anybody skip the rule. There is no `:override`,
+    // `:waive` or `:disable` key anywhere in this catalogue and there must
+    // never be one: a permission that let an administrator bypass a two-party
+    // consent jurisdiction would make a criminal-law constraint advisory. What
+    // this key grants is the right to record evidence, which the rule then
+    // reads -- see `call-recording-consent.ts`.
+    name: "crm:call-recording-consent:attest",
+    resource: "crm:call-recording-consent",
+    action: "attest",
+    description:
+      "Record where a call took place and who consented to it being recorded, and read the ledger of calls the consent rule refused to analyse",
+  },
+  {
     name: "crm:clients:read",
     resource: "crm:clients",
     action: "read",
@@ -506,6 +533,41 @@ export const CRM_PERMISSIONS: Permission[] = [
     action: "manage",
     description:
       "File a lifecycle signal, renew a customer contract into its next term, or close it as churned or cancelled",
+  },
+  {
+    /*
+      Reading the trigger log: which renewals opened a conversation, why, and
+      what the outbound loop answered. Grouped with the book's own read rather
+      than with the autonomy feed, because the question it answers is "is my
+      renewal being worked" — a renewals question — and the feed's key governs a
+      surface spanning every autonomous action the product takes.
+    */
+    name: "crm:lifecycle-triggers:view",
+    resource: "crm:lifecycle-triggers",
+    action: "view",
+    description:
+      "Read the renewal and churn trigger log: which contracts opened a renewal conversation, why, and what the outbound loop answered",
+    // Scopable for the same reason `crm:lifecycle:view` is: the trigger is
+    // anchored to a contract, which is anchored to a deal.
+    scopable: true,
+  },
+  {
+    /*
+      Running a sweep, and deliberately NOT folded into `crm:lifecycle:manage`.
+
+      What this key permits is not a record edit. A sweep opens opportunities in
+      the pipeline, spends the tenant's AI credits drafting, and starts hold
+      windows that end in mail leaving the building unless a human cancels them
+      inside the window. A renewals administrator plainly needs to file signals
+      and close terms; handing them the ability to start autonomous outbound as
+      a side effect of that is how an organisation discovers the feature by
+      receiving a complaint.
+    */
+    name: "crm:lifecycle-triggers:run",
+    resource: "crm:lifecycle-triggers",
+    action: "run",
+    description:
+      "Run a renewal sweep: open renewal opportunities for contracts that are due or at risk, and offer them to the autonomous outbound loop",
   },
   {
     // Reading a customer's health score AND the four inputs it decomposes into.

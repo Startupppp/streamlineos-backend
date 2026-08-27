@@ -109,7 +109,22 @@ export function readableSources(
  * `crm:deals:read` at `own` — and for that role the narrowing is ignored. That
  * case is not prevented, only stated.
  */
+/**
+ * What this function still does not decide, now that ticket 11 has landed.
+ *
+ * The first sentence was true when ticket 10 wrote it and is true now:
+ * `decideSourceAccess` answers "may you run this source at all" from the key,
+ * and never looks at the scope on the grant.
+ *
+ * The second sentence is no longer true and has been removed rather than left
+ * to age. It said that for a narrowly-granted custom role "a report reads the
+ * whole organisation". `ReportingService.requesterScope` now resolves the scope
+ * on `crm:reporting:run` and hands it to the compiler, which applies it on the
+ * way out — so a narrowed grant narrows the rows. Admission and narrowing are
+ * two decisions, and this constant now records only the one this function
+ * declines to make.
+ */
 export const REPORTING_SCOPE_GAP =
   "decideSourceAccess requires the source's permission key but ignores its data scope. " +
-  "No seeded role pairs crm:reporting:run with a narrowed source grant; a custom role can, " +
-  "and for that role a report reads the whole organisation.";
+  "Admission is decided here; narrowing is applied by the compiler from the scope on " +
+  "crm:reporting:run — see ReportingService.requesterScope and compiler/scope.ts.";

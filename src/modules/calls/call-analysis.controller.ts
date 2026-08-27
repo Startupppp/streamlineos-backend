@@ -23,6 +23,7 @@ import {
   type CallAnalysisVisibility,
 } from "./call-analysis-visibility";
 import { CallAnalysisVisibilityService } from "./call-analysis-visibility.service";
+import { CallRecordingConsentService } from "./call-recording-consent.service";
 import {
   CallAnalysisService,
   type CallAnalysis,
@@ -50,6 +51,15 @@ import {
  * idempotency key and it never expires, so a POST repeated tomorrow is as free
  * as one repeated in the same second.
  *
+ * A third service sits behind both routes and behind the release: the consent
+ * gate. `CallAnalysisService` refuses and returns nothing for a call the
+ * jurisdiction rule blocks, so this controller cannot serve one however it asks
+ * — but a bare 404 would tell a team "nobody has analysed this", which is false
+ * and invites them to spend a credit re-running something that will never
+ * succeed. `CallRecordingConsentService` is taken here to turn that silence into
+ * the actual reason, and for nothing else: it is not consulted before the
+ * analysis service, and no answer it gives can unblock a call.
+ *
  * Both routes now answer through `CallAnalysisVisibilityService`, and the POST
  * as much as the GET. `crm:call-analysis:run` is held by every CRM admin, and
  * the analysis of an already-analysed transcript comes back from cache — so a
@@ -64,6 +74,7 @@ export class CallAnalysisController {
   constructor(
     private readonly analysis: CallAnalysisService,
     private readonly visibility: CallAnalysisVisibilityService,
+    private readonly consent: CallRecordingConsentService,
   ) {}
 
   /** Never spends a credit. Absent means nobody has run it, not that it failed. */
@@ -76,8 +87,7 @@ export class CallAnalysisController {
     @Param("activityId") activityId: string,
   ) {
     const analysis = await this.analysis.find(user.orgId, activityId);
-    if (!analysis)
-      throw new NotFoundException("That call has not been analysed.");
+    if (!analysis) throw await this.explainMissing(user, activityId, "That call has not been analysed.");
 
     return this.withVisibility(user, activityId, analysis, true);
   }
@@ -141,7 +151,11 @@ export class CallAnalysisController {
      */
     const analysis = await this.analysis.find(user.orgId, activityId);
     if (!analysis)
-      throw new NotFoundException("That call has not been analysed, so there is nothing to share.");
+      throw await this.explainMissing(
+        user,
+        activityId,
+        "That call has not been analysed, so there is nothing to share.",
+      );
 
     const outcome = await this.visibility.release(
       user,
@@ -163,6 +177,28 @@ export class CallAnalysisController {
         alreadyReleased: outcome.alreadyReleased,
       },
     };
+  }
+
+  /**
+   * Why there is nothing to return: never analysed, or refused by the consent
+   * rule.
+   *
+   * The distinction is worth a second query on a path that was going to throw
+   * anyway. `422` says this call will not become analysable by retrying — the
+   * jurisdiction rule refused it, and what would change that is a compliance
+   * record, not another request. `404` keeps its usual meaning. Collapsing the
+   * two would have a team spending credits re-running a call that can never be
+   * analysed, and never learning why.
+   */
+  private async explainMissing(
+    user: CurrentUserContext,
+    activityId: string,
+    notFoundNote: string,
+  ): Promise<Error> {
+    const consent = await this.consent.decide(user.orgId, activityId);
+    return consent.verdict.allowed
+      ? new NotFoundException(notFoundNote)
+      : new UnprocessableEntityException(consent.verdict.note);
   }
 
   /**
@@ -225,6 +261,12 @@ function refusalToHttp(outcome: Extract<CallAnalysisOutcome, { ok: false }>) {
     "not-a-call": () => new NotFoundException(outcome.note),
     "not-completed": () => new UnprocessableEntityException(outcome.note),
     "no-transcript": () => new UnprocessableEntityException(outcome.note),
+    /**
+     * `422`, and never `503`. A consent refusal is not a transient failure and
+     * a client that retried it would spend nothing but noise: what changes it is
+     * a compliance record somebody has to enter, not the passage of time.
+     */
+    "consent-refused": () => new UnprocessableEntityException(outcome.note),
     "analysis-unavailable": () => new ServiceUnavailableException(outcome.note),
   };
   return byReason[outcome.reason]();

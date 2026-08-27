@@ -12,8 +12,9 @@ import { BASE_ALIAS, type SourceSpec } from "./registry";
  * product honours that through `applyScope`. Until this file existed, reporting
  * did not: the module checked that the key was *held* and dropped the scope on
  * the floor, so the one surface that can total an entire pipeline was also the
- * one surface that ignored the narrowing. That is recorded in
- * `REPORTING_SCOPE_GAP`; this closes it.
+ * one surface that ignored the narrowing. That widening was recorded in code as
+ * `REPORTING_SCOPE_GAP` rather than left to be discovered; this file is what
+ * closed it, and `REPORTING_SCOPE_RULE` is what replaced the note.
  *
  * ## Why the compiler and not the description
  *
@@ -53,6 +54,77 @@ export interface RequesterScope {
   readonly userId: string;
   /** Resolved from the source's own permission grant — see `reporting-scope.ts`. */
   readonly scope: DataScope;
+}
+
+/**
+ * Every `DataScope`, as a value the runtime can check against.
+ *
+ * A `Record<DataScope, true>` rather than an array, for one reason that is worth
+ * the odd shape: the record is exhaustive by construction. Adding a fifth member
+ * to `DataScope` in `access.types.ts` makes this object a type error here, so the
+ * new member cannot arrive in this module as a string nothing recognises. An
+ * array typed `readonly DataScope[]` would accept three of the four and compile.
+ *
+ * It is checked at all because `TypeScript is not present at runtime` applies to
+ * the scope exactly as it applies to the description: a `DataScope` reaches this
+ * compiler from `AccessService`, which reads it from a `scope` column that an
+ * administrator's SQL, a migration, or a future grant editor could put anything
+ * into. A scope this compiler does not recognise must be a refusal, never a
+ * fall-through — and `compileScopePredicate`'s `never` arm is a *type*
+ * exhaustiveness check, which is precisely the thing that does not run.
+ */
+const DATA_SCOPE_MEMBERS: Record<DataScope, true> = {
+  all: true,
+  team: true,
+  own: true,
+  none: true,
+};
+
+/**
+ * `hasOwnProperty`, not `in` and not a truthy index.
+ *
+ * `DATA_SCOPE_MEMBERS["constructor"]` is a function and therefore truthy, so a
+ * grant whose scope column said `constructor` would pass a naive check and reach
+ * the `switch` — which would fall to the `never` arm and, in a version of this
+ * file written slightly less carefully, to whatever it returned last. The
+ * registry avoids the same prototype hit by being a `Map`; this object is small
+ * and fixed, so an own-property check is the cheaper equivalent.
+ */
+export function isDataScope(value: unknown): value is DataScope {
+  return (
+    typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(DATA_SCOPE_MEMBERS, value)
+  );
+}
+
+/**
+ * The requester, validated, or a refusal.
+ *
+ * Called by `compileQuery` before anything is emitted, so that "every compiled
+ * statement carries a scope term this compiler understands" is true of the
+ * output rather than of the happy path. The refusal is a
+ * `QueryCompilationError` like every other, because the caller of the compiler
+ * is the service and it already turns those into a 400 — an unrecognised scope
+ * is a misconfiguration and the person running the report should be told the
+ * report was refused, not handed rows compiled under a scope nobody defined.
+ */
+export function assertRequesterScope(value: unknown): RequesterScope {
+  if (value === null || typeof value !== "object")
+    throw new QueryCompilationError(
+      "malformed_description",
+      "compileQuery requires a requester",
+      "requester",
+    );
+
+  const scope = (value as { scope?: unknown }).scope;
+  if (!isDataScope(scope))
+    throw new QueryCompilationError(
+      "malformed_description",
+      `unknown data scope ${JSON.stringify(scope)}`,
+      "requester.scope",
+    );
+
+  return value as RequesterScope;
 }
 
 /**

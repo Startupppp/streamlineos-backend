@@ -17,7 +17,14 @@ import { QUERY_LIMITS, type QueryDescription } from "./query-description";
  */
 
 const ORG = "org_11111111";
-const ctx = { organizationId: ORG };
+/**
+ * `all`, stated rather than omitted.
+ *
+ * Ticket 11 made `requester` required precisely so a call site cannot leave the
+ * scope to a default. These tests are about compilation, not narrowing, so they
+ * say `all` out loud — and `scope.spec.ts` is where the narrowing is proved.
+ */
+const ctx = { organizationId: ORG, requester: { userId: "user_1", scope: "all" as const } };
 
 const compile = (description: QueryDescription) => compileQuery(description, ctx);
 
@@ -398,7 +405,7 @@ describe("compiling a query description", () => {
       codeOf(() =>
         compileQuery(
           { source: "deals", select: [{ kind: "field", field: "stage" }], limit: 10 },
-          { organizationId: "" },
+          { organizationId: "", requester: { userId: "user_1", scope: "all" as const } },
         ),
       ),
     ).toBe("malformed_description");

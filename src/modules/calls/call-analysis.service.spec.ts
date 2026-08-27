@@ -4,6 +4,7 @@ import {
   CALL_ANALYSIS_ANALYZER_VERSION,
   type CallAnalysisJudgement,
 } from "./call-analysis.contract";
+import type { CallRecordingConsentService } from "./call-recording-consent.service";
 import { CallAnalysisService } from "./call-analysis.service";
 import { transcriptHash } from "./transcript-hash";
 
@@ -22,6 +23,26 @@ import { transcriptHash } from "./transcript-hash";
  * to one; if a raw SDK were ever introduced, `invocations` would stay at zero
  * while an analysis appeared, and the first test here would fail.
  */
+
+/**
+ * A consent service that allows everything, so this file keeps testing the cache.
+ *
+ * The consent gate is real and is a constructor dependency of the service under
+ * test (phase 5 ticket 03) — every path through `analyse` and `find` passes it.
+ * Stubbing it to "allowed" here is not a loophole: what this file is on trial
+ * for is that the same transcript costs one model call and reads the same twice,
+ * and a refusal would make every case below vacuous. The gate itself is driven
+ * from both sides in `call-analysis-consent-gate.spec.ts`, which asserts that a
+ * refused call reaches neither the model nor the store — including from cache.
+ */
+const ALLOWED = {
+  decide: async () => ({
+    activityId: ACTIVITY,
+    verdict: { allowed: true as const, regime: "one-party" as const, jurisdiction: "US-NY", ruleVersion: 1 },
+    basis: null,
+  }),
+  recordRefusal: async () => {},
+} as unknown as CallRecordingConsentService;
 
 const ORG = "org-1";
 const OTHER_ORG = "org-2";
@@ -201,7 +222,7 @@ describe("analysing a completed call", () => {
     const store: AnalysisRow[] = [];
     const { db } = makeDb([call()], store);
     const stub = makeGateway();
-    const service = new CallAnalysisService(db, stub.gateway);
+    const service = new CallAnalysisService(db, stub.gateway, ALLOWED);
 
     const first = await service.analyse(ORG, USER, ACTIVITY);
     const second = await service.analyse(ORG, USER, ACTIVITY);
@@ -215,7 +236,7 @@ describe("analysing a completed call", () => {
     const store: AnalysisRow[] = [];
     const { db } = makeDb([call()], store);
     // A gateway that would answer differently if asked again. It is not asked.
-    const service = new CallAnalysisService(db, makeGateway().gateway);
+    const service = new CallAnalysisService(db, makeGateway().gateway, ALLOWED);
 
     const first = await service.analyse(ORG, USER, ACTIVITY);
     const second = await service.analyse(ORG, USER, ACTIVITY);
@@ -232,11 +253,11 @@ describe("analysing a completed call", () => {
     const copy = call({ activityId: "act-2" });
     const { db } = makeDb([call()], store);
     const stub = makeGateway();
-    const service = new CallAnalysisService(db, stub.gateway);
+    const service = new CallAnalysisService(db, stub.gateway, ALLOWED);
 
     await service.analyse(ORG, USER, ACTIVITY);
     const { db: db2 } = makeDb([copy], store);
-    const again = await new CallAnalysisService(db2, stub.gateway).analyse(
+    const again = await new CallAnalysisService(db2, stub.gateway, ALLOWED).analyse(
       ORG,
       USER,
       "act-2",
@@ -254,10 +275,10 @@ describe("analysing a completed call", () => {
     const store: AnalysisRow[] = [];
     const stub = makeGateway();
     const { db } = makeDb([call()], store);
-    await new CallAnalysisService(db, stub.gateway).analyse(ORG, USER, ACTIVITY);
+    await new CallAnalysisService(db, stub.gateway, ALLOWED).analyse(ORG, USER, ACTIVITY);
 
     const { db: db2 } = makeDb([call({ body: `${TRANSCRIPT}\nCustomer: One more thing.` })], store);
-    await new CallAnalysisService(db2, stub.gateway).analyse(ORG, USER, ACTIVITY);
+    await new CallAnalysisService(db2, stub.gateway, ALLOWED).analyse(ORG, USER, ACTIVITY);
 
     expect(stub.invocations()).toBe(2);
     expect(store).toHaveLength(2);
@@ -266,7 +287,7 @@ describe("analysing a completed call", () => {
   it("records the counted metrics rather than anything the model said about them", async () => {
     const store: AnalysisRow[] = [];
     const { db, inserted } = makeDb([call()], store);
-    const outcome = await new CallAnalysisService(db, makeGateway().gateway).analyse(
+    const outcome = await new CallAnalysisService(db, makeGateway().gateway, ALLOWED).analyse(
       ORG,
       USER,
       ACTIVITY,
@@ -291,7 +312,7 @@ describe("analysing a completed call", () => {
     const { db } = makeDb([call({ body: prose })], store);
     const stub = makeGateway({ ok: true, data: { ...JUDGEMENT, repSpeakers: [] } });
 
-    const outcome = await new CallAnalysisService(db, stub.gateway).analyse(ORG, USER, ACTIVITY);
+    const outcome = await new CallAnalysisService(db, stub.gateway, ALLOWED).analyse(ORG, USER, ACTIVITY);
 
     if (!outcome.ok) throw new Error("expected an analysis");
     expect(outcome.analysis.talkRatioBps).toBeNull();
@@ -312,7 +333,7 @@ describe("analysing a completed call", () => {
       data: { ...JUDGEMENT, nextStepCommitted: true, nextStep: "   " },
     });
 
-    const outcome = await new CallAnalysisService(db, stub.gateway).analyse(ORG, USER, ACTIVITY);
+    const outcome = await new CallAnalysisService(db, stub.gateway, ALLOWED).analyse(ORG, USER, ACTIVITY);
 
     if (!outcome.ok) throw new Error("expected an analysis");
     expect(outcome.analysis.nextStepCommitted).toBe(false);
@@ -332,7 +353,7 @@ describe("analysing a completed call", () => {
       },
     });
 
-    const outcome = await new CallAnalysisService(db, stub.gateway).analyse(ORG, USER, ACTIVITY);
+    const outcome = await new CallAnalysisService(db, stub.gateway, ALLOWED).analyse(ORG, USER, ACTIVITY);
 
     if (!outcome.ok) throw new Error("expected an analysis");
     expect(outcome.analysis.objections[0]?.response).toBeNull();
@@ -343,7 +364,7 @@ describe("refusing to analyse", () => {
   const service = (rows: ActivityRow[], stub = makeGateway()) => {
     const store: AnalysisRow[] = [];
     const { db } = makeDb(rows, store);
-    return { service: new CallAnalysisService(db, stub.gateway), stub, store };
+    return { service: new CallAnalysisService(db, stub.gateway, ALLOWED), stub, store };
   };
 
   it("refuses an activity that is not a call", async () => {
@@ -408,7 +429,7 @@ describe("reading an analysis without producing one", () => {
     const { db } = makeDb([call()], store);
     const stub = makeGateway();
 
-    expect(await new CallAnalysisService(db, stub.gateway).find(ORG, ACTIVITY)).toBeNull();
+    expect(await new CallAnalysisService(db, stub.gateway, ALLOWED).find(ORG, ACTIVITY)).toBeNull();
     expect(stub.invocations()).toBe(0);
   });
 
@@ -416,7 +437,7 @@ describe("reading an analysis without producing one", () => {
     const store: AnalysisRow[] = [];
     const { db, whereClauses } = makeDb([call()], store);
     const stub = makeGateway();
-    const service = new CallAnalysisService(db, stub.gateway);
+    const service = new CallAnalysisService(db, stub.gateway, ALLOWED);
 
     await service.analyse(ORG, USER, ACTIVITY);
     const found = await service.find(ORG, ACTIVITY);

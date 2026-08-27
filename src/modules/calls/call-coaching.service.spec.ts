@@ -10,6 +10,7 @@ import type { AccessService } from "../access/access.service";
 import { CallAnalysisVisibilityService } from "./call-analysis-visibility.service";
 import { COACHING_MIN_COHORT } from "./call-coaching";
 import { CallCoachingService } from "./call-coaching.service";
+import type { CallRecordingConsentService } from "./call-recording-consent.service";
 
 /**
  * `call-coaching.spec.ts` proves the digest function excludes what it is handed
@@ -169,6 +170,35 @@ const analysis = (
   return { ...row, analysedAt: row.analysedAt ?? row.createdAt };
 };
 
+/**
+ * A consent service that allows every call, so this file keeps testing the
+ * embargo.
+ *
+ * The consent gate is real and is a constructor dependency of the digest (phase
+ * 5 ticket 03), so nothing here can bypass it — but a refusal would drop every
+ * row before the visibility rule ever saw it and make each case below vacuous.
+ * The gate's own behaviour in the digest is asserted in
+ * `call-recording-consent-gate.spec.ts`.
+ */
+const CONSENTING = {
+  decideMany: async (_org: string, ids: readonly string[]) =>
+    new Map(
+      ids.map((id) => [
+        id,
+        {
+          activityId: id,
+          verdict: {
+            allowed: true as const,
+            regime: "one-party" as const,
+            jurisdiction: "US-NY",
+            ruleVersion: 1,
+          },
+          basis: null,
+        },
+      ]),
+    ),
+} as unknown as CallRecordingConsentService;
+
 function build(analyses: AnalysisRow[], calls: ActivityRow[]) {
   const { db, orgsAsked } = makeDb(analyses, calls);
   const access = { holds: jest.fn().mockResolvedValue(true) };
@@ -176,7 +206,7 @@ function build(analyses: AnalysisRow[], calls: ActivityRow[]) {
     db,
     access as unknown as AccessService,
   );
-  return { orgsAsked, service: new CallCoachingService(db, visibility) };
+  return { orgsAsked, service: new CallCoachingService(db, visibility, CONSENTING) };
 }
 
 describe("the coaching digest", () => {

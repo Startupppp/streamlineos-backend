@@ -20,6 +20,7 @@ import {
   MAX_TRANSCRIPT_CHARS,
   type CallAnalysisJudgement,
 } from "./call-analysis.contract";
+import { CallRecordingConsentService } from "./call-recording-consent.service";
 import { normaliseTranscript, transcriptHash } from "./transcript-hash";
 import {
   parseDiarisedTranscript,
@@ -62,6 +63,23 @@ import {
  * provider outage, must not write a row — a cached failure would make the
  * transcript permanently unanalysable, because the cache is keyed on the
  * transcript and nothing would ever ask again.
+ *
+ * THE CONSENT GATE IS IN THIS FILE, not in the controller, and that placement is
+ * the whole of phase 5 ticket 03's enforcement. In a two-party consent
+ * jurisdiction, recording a conversation without every participant's agreement
+ * is a criminal offence and running a model over the recording compounds it. A
+ * gate on the route would hold for the route and for nothing else — the digest,
+ * a deal-health panel, an export, a workflow step would each have to remember.
+ * Here, `CallRecordingConsentService` is a constructor dependency, so there is
+ * no way to obtain an analysis out of this service without passing the rule, and
+ * `consent-is-not-a-setting.spec.ts` pins that no tenant flag reaches it.
+ *
+ * Both paths are gated, and both had to be. `analyse` is the obvious one: a
+ * refused call must not become a paid model call or a stored row of verbatim
+ * customer quotes. `find` is the one that is easy to miss — an analysis produced
+ * before this rule shipped, or before somebody recorded a withdrawal, is already
+ * in the table, and a read path that served it would make the gate a rule about
+ * new calls only.
  */
 
 export interface CallAnalysis {
@@ -95,6 +113,15 @@ export type CallAnalysisRefusal =
   | "not-a-call"
   | "not-completed"
   | "no-transcript"
+  /**
+   * The consent rule refused. Distinct from every reason above because it is the
+   * only one that is not about this call's data being unusable — the transcript
+   * is right there and analysing it would be unlawful. Collapsing it into
+   * `no-transcript` would tell a team to go and find a recording they already
+   * have, and collapsing it into `analysis-unavailable` would tell them to
+   * retry something that will never succeed.
+   */
+  | "consent-refused"
   | "analysis-unavailable";
 
 export type CallAnalysisOutcome =
@@ -122,6 +149,12 @@ export class CallAnalysisService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
+    /**
+     * Not optional, and not resolved inside a method. A collaborator the
+     * constructor demands cannot be forgotten by a future caller the way a
+     * `checkConsent()` call at the top of one method can.
+     */
+    private readonly consent: CallRecordingConsentService,
   ) {}
 
   /**
@@ -137,7 +170,23 @@ export class CallAnalysisService {
     if (!transcript) return null;
 
     const row = await this.cached(organizationId, transcriptHash(transcript));
-    return row ? toAnalysis(row) : null;
+    if (!row) return null;
+
+    /**
+     * Checked only once a row exists, which is a deliberate ordering rather than
+     * an optimisation. A call nobody has analysed is not being withheld from
+     * anybody, so refusing it would put a row in the ledger for every timeline
+     * that scrolled past an unanalysed call and drown the signal a compliance
+     * officer is looking for. A stored analysis that the rule now refuses IS a
+     * withholding, and that is worth recording every time somebody hits it.
+     */
+    const consent = await this.consent.decide(organizationId, activityId);
+    if (!consent.verdict.allowed) {
+      await this.consent.recordRefusal(organizationId, activityId, consent.verdict, null);
+      return null;
+    }
+
+    return toAnalysis(row);
   }
 
   /**
@@ -170,6 +219,24 @@ export class CallAnalysisService {
         "no-transcript",
         "That call has no transcript. Nothing is inferred from a call's duration or its participants.",
       );
+
+    /**
+     * After the transcript check and before the cache, and both edges matter.
+     *
+     * After, so the ledger records the calls that could have been analysed and
+     * were not — a refusal logged for a call with no recording at all would tell
+     * a compliance officer to chase consent for a conversation nobody taped.
+     *
+     * Before the cache, because a cached answer is the same disclosure as a
+     * fresh one. `crm:call-analysis:run` is held by every CRM admin, and a POST
+     * that returned the cached row for a refused call would be a way to read
+     * exactly the quotes the rule exists to keep unread.
+     */
+    const consent = await this.consent.decide(organizationId, activityId);
+    if (!consent.verdict.allowed) {
+      await this.consent.recordRefusal(organizationId, activityId, consent.verdict, actorUserId);
+      return refuse("consent-refused", consent.verdict.note);
+    }
 
     const hash = transcriptHash(transcript);
     const existing = await this.cached(organizationId, hash);

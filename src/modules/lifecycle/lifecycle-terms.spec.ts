@@ -1,5 +1,6 @@
 import {
   DEFAULT_TERM_MONTHS,
+  addDays,
   addMonths,
   calendarDateOf,
   daysBetween,
@@ -186,5 +187,46 @@ describe("calendarDateOf", () => {
     expect(formatIsoDate(calendarDateOf(new Date("2026-08-28T00:30:00.000Z")))).toBe(
       "2026-08-28",
     );
+  });
+});
+
+describe("addDays", () => {
+  /**
+   * The renewal trigger dates a conversation by subtracting a lead window from
+   * a renewal date, so every one of these is a date somebody is written to on.
+   */
+  const shift = (iso: string, days: number): string =>
+    formatIsoDate(addDays(parseIsoDate(iso)!, days));
+
+  it("is the exact inverse of itself", () => {
+    // The property, not a table of examples: a round trip that drifted would
+    // move a renewal conversation by a day for a subset of dates nobody
+    // enumerated.
+    for (const iso of ["2026-01-01", "2026-02-28", "2026-12-31", "2024-02-29", "1999-11-05"])
+      for (const days of [1, 7, 90, 365, 1461])
+        expect(shift(shift(iso, -days), days)).toBe(iso);
+  });
+
+  it("crosses a leap day, a year boundary and a month of 31 correctly", () => {
+    expect(shift("2024-03-01", -1)).toBe("2024-02-29");
+    expect(shift("2023-03-01", -1)).toBe("2023-02-28");
+    expect(shift("2027-01-01", -1)).toBe("2026-12-31");
+    expect(shift("2026-09-30", -90)).toBe("2026-07-02");
+  });
+
+  it("agrees with daysBetween in both directions", () => {
+    /**
+     * These two are the only day arithmetic in the module and they must be
+     * built on the same epoch. If they were not, a window computed with one and
+     * measured with the other would be off by a day near a century boundary —
+     * the classic civil-calendar bug, and one no ordinary date reproduces.
+     */
+    const start = parseIsoDate("2100-02-28")!;
+    for (const days of [-400, -90, -1, 0, 1, 90, 400])
+      expect(daysBetween(start, addDays(start, days))).toBe(days);
+  });
+
+  it("truncates a fractional shift rather than producing an invalid date", () => {
+    expect(shift("2026-08-27", 1.9)).toBe("2026-08-28");
   });
 });

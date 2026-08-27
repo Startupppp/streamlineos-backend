@@ -92,7 +92,7 @@ const baseline: QueryDescription = {
 };
 
 const compile = (description: QueryDescription) =>
-  compileQuery(description, { organizationId: ORG });
+  compileQuery(description, { organizationId: ORG, requester: { userId: "user_1", scope: "all" as const } });
 
 const refusal = (fn: () => unknown): QueryCompilationError => {
   try {
