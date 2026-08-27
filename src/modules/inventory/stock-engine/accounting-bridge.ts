@@ -1,7 +1,8 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { ledgerAccounts } from "../../../db/schema";
 import { PeriodsService } from "../../accounting/gl/periods.service";
 import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
 
@@ -68,12 +69,23 @@ export class InventoryAccountingBridge {
   }
 
   /**
-   * Posts the accounting entry for a stock event, where the ledger exists.
+   * Posts the accounting entry for a stock event, where there is a ledger to
+   * post it to.
    *
    * Receiving goods, shipping and invoicing each write a journal entry, and each
    * died on `42P01 relation "journal_entries" does not exist` — the same defect
-   * that killed the stock engine, in three more places. A warehouse must be able
-   * to receive goods whether or not the tenant has bought accounting.
+   * that killed the stock engine, in three more places.
+   *
+   * Two conditions, not one. The module being installed is not the same
+   * question as this tenant having configured it: with the tables present but no
+   * chart of accounts, `persistJournalEntry` throws "Seed COA first" and the
+   * goods receipt fails with it. A receipt is a physical fact that already
+   * happened — refusing to record it because nobody has set up account 1300 puts
+   * the warehouse's records further from the truth, not closer.
+   *
+   * So it is skipped and said out loud rather than swallowed. The gap between
+   * stock and the general ledger is exactly what INV-408's reconciliation is for;
+   * a silent skip is what would make that reconciliation lie.
    */
   async postJournalEntry(
     draft: Parameters<JournalPostingService["persistJournalEntry"]>[0],
@@ -83,6 +95,25 @@ export class InventoryAccountingBridge {
       "inventory movements will not produce accounting entries until the accounting module is migrated",
     );
     if (!has) return;
+
+    const codes = [...new Set(draft.lines.map((line) => line.accountCode))];
+    const found = await this.db
+      .select({ code: ledgerAccounts.code })
+      .from(ledgerAccounts)
+      .where(and(eq(ledgerAccounts.orgId, draft.orgId), inArray(ledgerAccounts.code, codes)));
+    const missing = codes.filter((code) => !found.some((row) => row.code === code));
+    if (missing.length > 0) {
+      // Checked rather than caught: `persistJournalEntry` raises a plain Error
+      // here, but the accounts lookup is a real query, and letting it fail inside
+      // the caller's transaction is a habit that breaks the moment the thrown
+      // thing is a Postgres error instead.
+      this.logger.warn(
+        `no chart-of-accounts entry for ${missing.join(", ")} in org ${draft.orgId}; ` +
+          `"${draft.description}" moved stock but produced no accounting entry`,
+      );
+      return;
+    }
+
     await this.journals.persistJournalEntry(draft);
   }
 }

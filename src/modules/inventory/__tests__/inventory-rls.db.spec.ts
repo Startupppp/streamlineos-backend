@@ -42,6 +42,27 @@ const TENANT_TABLES = [
   "inv_webhook_event_subscriptions",
 ] as const;
 
+/**
+ * Runs setup work, retrying once, and names the step when it still fails.
+ *
+ * A throw in beforeAll fails every test in the file with jest's own message, so
+ * the cause is invisible — seventeen assertions "failing" when one GRANT was
+ * blocked by connections another suite had not finished draining.
+ */
+async function withContext<T>(step: string, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (first) {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    try {
+      return await work();
+    } catch (second) {
+      const detail = second instanceof Error ? second.message : String(second);
+      throw new Error(`${step} failed twice: ${detail}`, { cause: first });
+    }
+  }
+}
+
 describeDb("inventory row-level security", () => {
   let owner: ReturnType<typeof postgres>;
   let usingDeployedRole = false;
@@ -63,22 +84,29 @@ describeDb("inventory row-level security", () => {
 
     usingDeployedRole = Boolean(process.env.APP_DATABASE_URL);
     if (!usingDeployedRole) {
-      await owner.unsafe(`
-        DO $$ BEGIN
-          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${PROBE_ROLE}')
-          THEN CREATE ROLE ${PROBE_ROLE} NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
-        END $$;`);
-      await owner.unsafe(`GRANT USAGE ON SCHEMA public, app TO ${PROBE_ROLE}`);
+      // Setup failures used to surface as seventeen unexplained assertion
+      // failures, because a beforeAll that throws fails every test in the file
+      // with its own message rather than the cause. Run straight after the
+      // seeded e2e suites, the GRANT below contends with connections still
+      // draining — so it says which statement failed, and retries once.
+      await withContext("probe role setup", async () => {
+        await owner.unsafe(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${PROBE_ROLE}')
+            THEN CREATE ROLE ${PROBE_ROLE} NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
+          END $$;`);
+        await owner.unsafe(`GRANT USAGE ON SCHEMA public, app TO ${PROBE_ROLE}`);
       // Only the tables under test. `ON ALL TABLES IN SCHEMA public` takes a
       // lock on all 735 of them, which collided with the other database suites
       // and failed this whole file roughly one run in three — as a beforeAll
       // failure, so it read as seventeen broken assertions rather than one
       // contended GRANT.
-      await owner.unsafe(
-        `GRANT SELECT, INSERT ON ${TENANT_TABLES.join(", ")} TO ${PROBE_ROLE}`,
-      );
-      await owner.unsafe(`GRANT EXECUTE ON FUNCTION app.current_org_id() TO ${PROBE_ROLE}`);
-      await owner.unsafe(`GRANT ${PROBE_ROLE} TO CURRENT_USER`);
+        await owner.unsafe(
+          `GRANT SELECT, INSERT ON ${TENANT_TABLES.join(", ")} TO ${PROBE_ROLE}`,
+        );
+        await owner.unsafe(`GRANT EXECUTE ON FUNCTION app.current_org_id() TO ${PROBE_ROLE}`);
+        await owner.unsafe(`GRANT ${PROBE_ROLE} TO CURRENT_USER`);
+      });
     }
 
     const orgs = await owner<{ id: string }[]>`SELECT id FROM organizations ORDER BY created_at LIMIT 2`;
