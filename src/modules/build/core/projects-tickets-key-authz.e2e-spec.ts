@@ -55,8 +55,9 @@ describe("ticket by key — allows and denies exactly as ticket by id (e2e)", ()
       token: () => signToken({ permissions: ["build:tickets:create"], enabledModules: ALL_MODULES }),
     },
     {
+      // ModuleGuard answers 402 for an unentitled module, before any permission is read.
       name: "a member whose organisation does not have Build enabled",
-      status: 403,
+      status: 402,
       reachesHandler: false,
       token: () => signToken({ permissions: ["build:tickets:view"], enabledModules: [] }),
     },
