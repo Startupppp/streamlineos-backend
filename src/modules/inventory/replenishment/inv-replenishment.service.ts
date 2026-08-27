@@ -312,6 +312,7 @@ export class InvReplenishmentService {
       if (body.suggestions.length > 0) {
         await tx.insert(invPoLines).values(
           body.suggestions.map((s, i) => ({
+            orgId,
             poId: po.id,
             productVariantId: s.productVariantId,
             quantity: String(s.suggestedQty),

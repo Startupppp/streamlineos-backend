@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, date, decimal, integer, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, date, decimal, integer, jsonb, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum, invAdjustmentStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
@@ -87,6 +87,7 @@ export const invStockAdjustments = pgTable("inv_stock_adjustments", {
 
 export const invStockAdjustmentLines = pgTable("inv_stock_adjustment_lines", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   adjustmentId: integer("adjustment_id").references(() => invStockAdjustments.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "cascade" }).notNull(),
   locationId: integer("location_id").references(() => invLocations.id, { onDelete: "cascade" }).notNull(),
@@ -95,6 +96,22 @@ export const invStockAdjustmentLines = pgTable("inv_stock_adjustment_lines", {
   quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
   notes: text("notes"),
 }, (table) => [
+  unique("uniq_inv_stock_adjustment_lines_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.adjustmentId],
+    foreignColumns: [invStockAdjustments.orgId, invStockAdjustments.id],
+    name: "fk_inv_stock_adjustment_lines_adjustment_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.productVariantId],
+    foreignColumns: [invProductVariants.orgId, invProductVariants.id],
+    name: "fk_inv_stock_adjustment_lines_product_variant_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.locationId],
+    foreignColumns: [invLocations.orgId, invLocations.id],
+    name: "fk_inv_stock_adjustment_lines_location_id_org",
+  }),
   index("idx_inv_adj_lines_adj").on(table.adjustmentId),
   index("idx_inv_stock_adjustment_lines_variant").on(table.productVariantId),
 ]);
@@ -123,6 +140,7 @@ export const invStockTransfers = pgTable("inv_stock_transfers", {
 
 export const invStockTransferLines = pgTable("inv_stock_transfer_lines", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   transferId: integer("transfer_id").references(() => invStockTransfers.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "cascade" }).notNull(),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
@@ -134,6 +152,17 @@ export const invStockTransferLines = pgTable("inv_stock_transfer_lines", {
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "restrict" }),
   notes: text("notes"),
 }, (table) => [
+  unique("uniq_inv_stock_transfer_lines_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.transferId],
+    foreignColumns: [invStockTransfers.orgId, invStockTransfers.id],
+    name: "fk_inv_stock_transfer_lines_transfer_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.productVariantId],
+    foreignColumns: [invProductVariants.orgId, invProductVariants.id],
+    name: "fk_inv_stock_transfer_lines_product_variant_id_org",
+  }),
   index("idx_inv_transfer_lines_transfer").on(table.transferId),
   index("idx_inv_stock_transfer_lines_variant").on(table.productVariantId),
 ]);

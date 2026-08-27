@@ -273,6 +273,7 @@ export class GrnService {
         }
 
         await tx.insert(invGrnLines).values({
+          orgId,
           grnId: grn.id,
           poLineId: line.poLineId,
           quantityReceived: line.quantityReceived.toString(),

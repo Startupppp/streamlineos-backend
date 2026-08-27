@@ -1,8 +1,9 @@
-import { pgTable, text, serial, timestamp, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, date, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invSoStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { clients } from "../crm/contacts";
+import { businessParties } from "../party/business-parties";
 import { invoices } from "../crm/invoicing";
 import { invProductVariants, invUom } from "./core";
 import { invWarehouses } from "./warehouses";
@@ -11,6 +12,7 @@ export const invSalesOrders = pgTable("inv_sales_orders", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  clientPartyId: text("client_party_id"),
   soNumber: text("so_number").notNull(),
   status: invSoStatusEnum("status").default("DRAFT").notNull(),
   orderDate: date("order_date").notNull(),
@@ -30,6 +32,11 @@ export const invSalesOrders = pgTable("inv_sales_orders", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({
+    columns: [table.orgId, table.clientPartyId],
+    foreignColumns: [businessParties.organizationId, businessParties.partyId],
+    name: "fk_inv_sales_orders_client_party_id",
+  }).onDelete("set null"),
   uniqueIndex("uniq_inv_so_org_number").on(table.orgId, table.soNumber),
   unique("uniq_inv_sales_orders_org_id").on(table.orgId, table.id),
   index("idx_inv_so_org_status").on(table.orgId, table.status),
@@ -39,6 +46,7 @@ export const invSalesOrders = pgTable("inv_sales_orders", {
 
 export const invSoLines = pgTable("inv_so_lines", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   soId: integer("so_id").references(() => invSalesOrders.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "restrict" }).notNull(),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
@@ -51,6 +59,17 @@ export const invSoLines = pgTable("inv_so_lines", {
   costAtTime: decimal("cost_at_time", { precision: 18, scale: 4 }).default("0").notNull(),
   lineOrder: integer("line_order").default(0).notNull(),
 }, (table) => [
+  unique("uniq_inv_so_lines_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.soId],
+    foreignColumns: [invSalesOrders.orgId, invSalesOrders.id],
+    name: "fk_inv_so_lines_so_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.productVariantId],
+    foreignColumns: [invProductVariants.orgId, invProductVariants.id],
+    name: "fk_inv_so_lines_product_variant_id_org",
+  }),
   index("idx_inv_so_lines_so").on(table.soId),
   index("idx_inv_so_lines_variant").on(table.productVariantId),
 ]);

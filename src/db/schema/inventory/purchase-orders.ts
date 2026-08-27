@@ -1,8 +1,9 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invPoStatusEnum, invGrnQualityEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { clients } from "../crm/contacts";
+import { businessParties } from "../party/business-parties";
 import { invProductVariants, invUom } from "./core";
 import { invLocations, invWarehouses } from "./warehouses";
 
@@ -10,6 +11,7 @@ export const invVendors = pgTable("inv_vendors", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  clientPartyId: text("client_party_id"),
   name: text("name").notNull(),
   code: text("code").notNull(),
   email: text("email"),
@@ -25,6 +27,11 @@ export const invVendors = pgTable("inv_vendors", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({
+    columns: [table.orgId, table.clientPartyId],
+    foreignColumns: [businessParties.organizationId, businessParties.partyId],
+    name: "fk_inv_vendors_client_party_id",
+  }).onDelete("set null"),
   uniqueIndex("uniq_inv_vendors_org_code").on(table.orgId, table.code),
   unique("uniq_inv_vendors_org_id").on(table.orgId, table.id),
   index("idx_inv_vendors_org").on(table.orgId),
@@ -62,6 +69,7 @@ export const invPurchaseOrders = pgTable("inv_purchase_orders", {
 
 export const invPoLines = pgTable("inv_po_lines", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   poId: integer("po_id").references(() => invPurchaseOrders.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "restrict" }).notNull(),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
@@ -73,6 +81,17 @@ export const invPoLines = pgTable("inv_po_lines", {
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   lineOrder: integer("line_order").default(0).notNull(),
 }, (table) => [
+  unique("uniq_inv_po_lines_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.poId],
+    foreignColumns: [invPurchaseOrders.orgId, invPurchaseOrders.id],
+    name: "fk_inv_po_lines_po_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.productVariantId],
+    foreignColumns: [invProductVariants.orgId, invProductVariants.id],
+    name: "fk_inv_po_lines_product_variant_id_org",
+  }),
   index("idx_inv_po_lines_po").on(table.poId),
   index("idx_inv_po_lines_variant").on(table.productVariantId),
 ]);
@@ -95,6 +114,7 @@ export const invGrns = pgTable("inv_grns", {
 
 export const invGrnLines = pgTable("inv_grn_lines", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   grnId: integer("grn_id").references(() => invGrns.id, { onDelete: "cascade" }).notNull(),
   poLineId: integer("po_line_id").references(() => invPoLines.id, { onDelete: "restrict" }).notNull(),
   quantityReceived: decimal("quantity_received", { precision: 18, scale: 4 }).notNull(),
@@ -103,6 +123,17 @@ export const invGrnLines = pgTable("inv_grn_lines", {
   qualityStatus: invGrnQualityEnum("quality_status").default("ACCEPTED").notNull(),
   rejectionReason: text("rejection_reason"),
 }, (table) => [
+  unique("uniq_inv_grn_lines_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.grnId],
+    foreignColumns: [invGrns.orgId, invGrns.id],
+    name: "fk_inv_grn_lines_grn_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.poLineId],
+    foreignColumns: [invPoLines.orgId, invPoLines.id],
+    name: "fk_inv_grn_lines_po_line_id_org",
+  }),
   index("idx_inv_grn_lines_grn").on(table.grnId),
 ]);
 

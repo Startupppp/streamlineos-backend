@@ -81,6 +81,7 @@ export class ShipmentsService {
       if (input.lines && input.lines.length > 0) {
         await tx.insert(invShipmentLines).values(
           input.lines.map((l) => ({
+            orgId,
             shipmentId: row!.id,
             soLineId: l.soLineId ?? null,
             productVariantId: l.productVariantId,

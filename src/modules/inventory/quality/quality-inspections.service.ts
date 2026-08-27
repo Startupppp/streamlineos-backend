@@ -91,6 +91,7 @@ export class InspectionsService {
       if (!ins) throw new BadRequestException("Insert failed");
       const lines = await tx.insert(invQualityInspectionLines).values(
         input.lines.map(l => ({
+          orgId,
           inspectionId: ins.id,
           productVariantId: l.productVariantId,
           lotId: l.lotId ?? null,
@@ -240,6 +241,7 @@ export class InspectionsService {
           if (!ret) throw new Error("Insert vendor return failed");
           await tx.insert(invVendorReturnLines).values(
             entries.map(e => ({
+              orgId,
               returnId: ret.id,
               productVariantId: e.productVariantId,
               lotId: e.lotId,

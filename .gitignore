@@ -5,3 +5,6 @@ coverage
 .env.*
 !.env.example
 *.log
+
+# agent scratch space
+.scratch/

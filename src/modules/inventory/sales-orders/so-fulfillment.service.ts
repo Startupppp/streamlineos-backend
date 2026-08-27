@@ -161,6 +161,7 @@ export class SoFulfillmentService {
         const soLine = so.lines.find((l) => l.id === line.soLineId);
         if (!soLine) throw new BadRequestException(`SO line ${line.soLineId} not found`);
         return {
+          orgId,
           pickListId: pickList.id,
           soLineId: line.soLineId,
           productVariantId: soLine.productVariantId,
@@ -225,6 +226,7 @@ export class SoFulfillmentService {
 
       const packageLinesValues = pickLists.flatMap((pl) =>
         pl.lines.map((line) => ({
+          orgId,
           packageId: pkg.id,
           productVariantId: line.productVariantId,
           lotId: line.lotId,
@@ -407,6 +409,7 @@ export class SoFulfillmentService {
 
       await (tx as Db).insert(invShipmentLines).values(
         movements.map((m) => ({
+          orgId,
           shipmentId: ship.id,
           soLineId: m.soLineId,
           productVariantId: m.productVariantId,

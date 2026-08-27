@@ -97,6 +97,7 @@ export class InvCycleCountsService {
     if (stockLevels.length > 0) {
       await this.db.insert(invCycleCountLines).values(
         stockLevels.map((row) => ({
+          orgId,
           cycleCountId: cc.id,
           productVariantId: row.product_variant_id,
           locationId: row.location_id,

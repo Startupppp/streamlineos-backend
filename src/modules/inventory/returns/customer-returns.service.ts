@@ -122,6 +122,7 @@ export class CustomerReturnsService {
 
     await this.db.insert(invCustomerReturnLines).values(
       data.lines.map((line) => ({
+        orgId,
         returnId: ret.id,
         productVariantId: line.productVariantId,
         lotId: line.lotId,

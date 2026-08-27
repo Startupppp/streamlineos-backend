@@ -70,6 +70,7 @@ export class PackagesService {
       if (input.lines && input.lines.length > 0) {
         await tx.insert(invPackageLines).values(
           input.lines.map((l) => ({
+            orgId,
             packageId: row!.id,
             productVariantId: l.productVariantId,
             lotId: l.lotId ?? null,
@@ -100,6 +101,7 @@ export class PackagesService {
       await tx.delete(invPackageLines).where(eq(invPackageLines.packageId, packageId));
       await tx.insert(invPackageLines).values(
         input.lines.map((l) => ({
+          orgId,
           packageId,
           productVariantId: l.productVariantId,
           lotId: l.lotId ?? null,

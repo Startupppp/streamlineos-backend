@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, date, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, boolean, date, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invShipmentStatusEnum, invPackageStatusEnum, invLoadStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
@@ -46,6 +46,7 @@ export const invShipments = pgTable("inv_shipments", {
 
 export const invShipmentLines = pgTable("inv_shipment_lines", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   shipmentId: integer("shipment_id").references(() => invShipments.id, { onDelete: "cascade" }).notNull(),
   soLineId: integer("so_line_id").references(() => invSoLines.id, { onDelete: "set null" }),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
@@ -53,6 +54,17 @@ export const invShipmentLines = pgTable("inv_shipment_lines", {
   lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
 }, (table) => [
+  unique("uniq_inv_shipment_lines_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.shipmentId],
+    foreignColumns: [invShipments.orgId, invShipments.id],
+    name: "fk_inv_shipment_lines_shipment_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.productVariantId],
+    foreignColumns: [invProductVariants.orgId, invProductVariants.id],
+    name: "fk_inv_shipment_lines_product_variant_id_org",
+  }),
   index("idx_inv_ship_lines_ship").on(table.shipmentId),
   index("idx_inv_shipment_lines_variant").on(table.productVariantId),
 ]);
@@ -78,12 +90,24 @@ export const invPackages = pgTable("inv_packages", {
 
 export const invPackageLines = pgTable("inv_package_lines", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   packageId: integer("package_id").references(() => invPackages.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
   lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
 }, (table) => [
+  unique("uniq_inv_package_lines_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.packageId],
+    foreignColumns: [invPackages.orgId, invPackages.id],
+    name: "fk_inv_package_lines_package_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.productVariantId],
+    foreignColumns: [invProductVariants.orgId, invProductVariants.id],
+    name: "fk_inv_package_lines_product_variant_id_org",
+  }),
   index("idx_inv_pkg_lines_pkg").on(table.packageId),
   index("idx_inv_package_lines_variant").on(table.productVariantId),
 ]);
@@ -111,10 +135,22 @@ export const invLoads = pgTable("inv_loads", {
 
 export const invLoadLines = pgTable("inv_load_lines", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   loadId: integer("load_id").references(() => invLoads.id, { onDelete: "cascade" }).notNull(),
   shipmentId: integer("shipment_id").references(() => invShipments.id, { onDelete: "set null" }),
   transferId: integer("transfer_id").references(() => invStockTransfers.id, { onDelete: "set null" }),
 }, (table) => [
+  unique("uniq_inv_load_lines_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.loadId],
+    foreignColumns: [invLoads.orgId, invLoads.id],
+    name: "fk_inv_load_lines_load_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.shipmentId],
+    foreignColumns: [invShipments.orgId, invShipments.id],
+    name: "fk_inv_load_lines_shipment_id_org",
+  }),
   index("idx_inv_load_lines_load").on(table.loadId),
 ]);
 

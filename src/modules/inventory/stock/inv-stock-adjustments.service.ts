@@ -111,6 +111,7 @@ export class InvStockAdjustmentsService {
 
       await tx.insert(invStockAdjustmentLines).values(
         data.lines.map((line) => ({
+          orgId,
           adjustmentId: adj!.id,
           productVariantId: line.productVariantId,
           locationId: line.locationId,

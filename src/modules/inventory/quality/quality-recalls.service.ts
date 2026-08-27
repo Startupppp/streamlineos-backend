@@ -98,6 +98,7 @@ export class RecallsService {
       if (!recall) throw new Error("Insert recall failed");
       const lines = await tx.insert(invRecallLines).values(
         input.lines.map(l => ({
+          orgId,
           recallId: recall.id,
           productVariantId: l.productVariantId ?? null,
           lotId: l.lotId ?? null,

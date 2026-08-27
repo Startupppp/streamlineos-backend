@@ -167,6 +167,7 @@ export class SoCoreService {
 
       await (tx as Db).insert(invSoLines).values(
         data.lines.map((line) => ({
+          orgId,
           soId: header.id,
           productVariantId: line.productVariantId,
           quantity: line.quantity.toString(),
@@ -224,6 +225,7 @@ export class SoCoreService {
 
         await (tx as Db).insert(invSoLines).values(
           (data.lines ?? []).map((line) => ({
+            orgId,
             soId,
             productVariantId: line.productVariantId,
             quantity: line.quantity.toString(),

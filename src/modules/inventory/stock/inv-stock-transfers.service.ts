@@ -134,6 +134,7 @@ export class InvStockTransfersService {
 
       await tx.insert(invStockTransferLines).values(
         data.lines.map((line) => ({
+          orgId,
           transferId: created!.id,
           productVariantId: line.productVariantId,
           quantity: line.quantity.toString(),

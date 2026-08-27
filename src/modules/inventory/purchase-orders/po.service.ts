@@ -145,6 +145,7 @@ export class PoService {
 
     await this.db.insert(invPoLines).values(
       data.lines.map((line) => ({
+        orgId,
         poId: po.id,
         productVariantId: line.productVariantId,
         quantity: line.quantity.toString(),
@@ -183,6 +184,7 @@ export class PoService {
       await this.db.delete(invPoLines).where(eq(invPoLines.poId, poId));
       await this.db.insert(invPoLines).values(
         data.lines.map((line) => ({
+          orgId,
           poId,
           productVariantId: line.productVariantId,
           quantity: line.quantity.toString(),

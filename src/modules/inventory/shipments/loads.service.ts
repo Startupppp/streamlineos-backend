@@ -65,12 +65,12 @@ export class LoadsService {
         createdBy: userId,
       }).returning();
 
-      const lineValues: Array<{ loadId: number; shipmentId: number | null; transferId: number | null }> = [];
+      const lineValues: Array<{ orgId: string; loadId: number; shipmentId: number | null; transferId: number | null }> = [];
       for (const sid of input.shipmentIds ?? []) {
-        lineValues.push({ loadId: row!.id, shipmentId: sid, transferId: null });
+        lineValues.push({ orgId, loadId: row!.id, shipmentId: sid, transferId: null });
       }
       for (const tid of input.transferIds ?? []) {
-        lineValues.push({ loadId: row!.id, shipmentId: null, transferId: tid });
+        lineValues.push({ orgId, loadId: row!.id, shipmentId: null, transferId: tid });
       }
       if (lineValues.length > 0) {
         await tx.insert(invLoadLines).values(lineValues);

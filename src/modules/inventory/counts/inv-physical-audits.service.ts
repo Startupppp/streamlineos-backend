@@ -88,6 +88,7 @@ export class InvPhysicalAuditsService {
     if (stockLevels.length > 0) {
       await this.db.insert(invPhysicalAuditLines).values(
         stockLevels.map((row) => ({
+          orgId,
           auditId: audit.id,
           productVariantId: row.product_variant_id,
           locationId: row.location_id,

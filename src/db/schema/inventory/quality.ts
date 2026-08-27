@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   invQualityInspectionStatusEnum, invQualityHoldStatusEnum,
@@ -32,6 +32,7 @@ export const invQualityInspections = pgTable("inv_quality_inspections", {
 
 export const invQualityInspectionLines = pgTable("inv_quality_inspection_lines", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   inspectionId: integer("inspection_id").references(() => invQualityInspections.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
   lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
@@ -41,6 +42,17 @@ export const invQualityInspectionLines = pgTable("inv_quality_inspection_lines",
   notes: text("notes"),
   disposition: invQualityDispositionEnum("disposition"),
 }, (table) => [
+  unique("uniq_inv_quality_inspection_lines_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.inspectionId],
+    foreignColumns: [invQualityInspections.orgId, invQualityInspections.id],
+    name: "fk_inv_quality_inspection_lines_inspection_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.productVariantId],
+    foreignColumns: [invProductVariants.orgId, invProductVariants.id],
+    name: "fk_inv_quality_inspection_lines_product_variant_id_org",
+  }),
   index("idx_inv_qi_lines_insp").on(table.inspectionId),
   index("idx_inv_quality_inspection_lines_variant").on(table.productVariantId),
 ]);
@@ -85,12 +97,24 @@ export const invRecallEvents = pgTable("inv_recall_events", {
 
 export const invRecallLines = pgTable("inv_recall_lines", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   recallId: integer("recall_id").references(() => invRecallEvents.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id),
   lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   status: text("status").default("OPEN").notNull(),
 }, (table) => [
+  unique("uniq_inv_recall_lines_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.recallId],
+    foreignColumns: [invRecallEvents.orgId, invRecallEvents.id],
+    name: "fk_inv_recall_lines_recall_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.productVariantId],
+    foreignColumns: [invProductVariants.orgId, invProductVariants.id],
+    name: "fk_inv_recall_lines_product_variant_id_org",
+  }),
   index("idx_inv_recall_lines_recall").on(table.recallId),
   index("idx_inv_recall_lines_variant").on(table.productVariantId),
 ]);
