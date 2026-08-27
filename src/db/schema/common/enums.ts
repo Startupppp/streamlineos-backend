@@ -372,6 +372,9 @@ export const invChannelPubStatusEnum = pgEnum("inv_channel_pub_status", ["PENDIN
 export const inv3plStatusEnum = pgEnum("inv_3pl_status", ["DISCONNECTED", "CONNECTED", "ERROR"]);
 export const invIdempotencyStatusEnum = pgEnum("inv_idempotency_status", ["IN_FLIGHT", "COMPLETED", "FAILED"]);
 export const invJobStatusEnum = pgEnum("inv_job_status", ["PENDING", "VALIDATING", "RUNNING", "COMPLETED", "FAILED"]);
+
+/** Per-row outcome, so a resumed import skips what already applied. */
+export const invImportRowStatusEnum = pgEnum("inv_import_row_status", ["PENDING", "APPLIED", "FAILED", "SKIPPED"]);
 export const invWebhookEventStatusEnum = pgEnum("inv_webhook_event_status", ["PENDING", "DELIVERED", "FAILED"]);
 export const invReservationStrategyEnum = pgEnum("inv_reservation_strategy", ["MANUAL", "AUTO_ON_CONFIRM", "FEFO", "FIFO"]);
 export const invExpiryPolicyEnum = pgEnum("inv_expiry_policy", ["BLOCK", "WARN", "ALLOW"]);

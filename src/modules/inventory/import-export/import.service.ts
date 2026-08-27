@@ -8,6 +8,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { invImportJobs, invProducts, invProductVariants, invLocations } from "../../../db/schema";
 import { parseCsv } from "./csv.util";
 import type { ImportType, CreateImportJobInput, ListJobsQueryInput } from "./dto/import-export.schemas";
+import { StagedImportService } from "./staged-import.service";
 
 export interface RowError {
   row: number;
@@ -31,7 +32,35 @@ export class ImportService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly stockEngine: StockEngineService,
+    private readonly staged: StagedImportService,
   ) {}
+
+  /**
+   * Applies the next chunk of a staged job — INV-108.
+   *
+   * The per-row validation and the opening-stock applier are the same ones the
+   * in-request importer uses; what changed is where the rows come from and that
+   * each one's outcome is durable. A row that fails is recorded and skipped, so
+   * one bad line in a hundred thousand does not discard the rest.
+   */
+  async processStagedChunk(orgId: string, userId: string, jobId: number) {
+    const job = await this.staged.progress(orgId, jobId);
+    const importType = job.importType as ImportType;
+
+    return this.staged.processChunk(orgId, userId, jobId, async (org, user, id, rowNumber, payload) => {
+      const errors = this.validateRow(importType, payload, rowNumber);
+      const first = errors[0];
+      if (first)
+        return { status: "FAILED", code: "VALIDATION_FAILED", field: first.field, message: first.message };
+
+      if (importType === "opening-stock") {
+        const failure = await this.processOpeningStockRow(org, user, id, payload, rowNumber - 1);
+        if (failure)
+          return { status: "FAILED", code: "OPENING_STOCK_FAILED", field: failure.field, message: failure.message };
+      }
+      return null;
+    });
+  }
 
   async previewImport(orgId: string, file: Express.Multer.File, importType: ImportType) {
     const text = file.buffer.toString("utf-8");

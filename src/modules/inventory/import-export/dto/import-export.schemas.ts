@@ -28,3 +28,30 @@ export const createExportJobSchema = z.object({
   filters: z.record(z.string(), z.unknown()).optional().default({}),
 }).strict();
 export type CreateExportJobInput = z.infer<typeof createExportJobSchema>;
+
+/** INV-108 staged import: a job is opened, rows are staged, then processed. */
+export const openImportJobSchema = z.object({
+  importType: z.enum(IMPORT_TYPES),
+  fileName: z.string().max(255).optional(),
+  /** Rows in the whole file, so progress can be reported before staging finishes. */
+  totalRows: z.number().int().min(1).max(1_000_000),
+  /** Of the file's bytes. A key reused with a different checksum is refused. */
+  checksum: z.string().min(8).max(128),
+  chunkSize: z.number().int().min(1).max(1000).optional(),
+}).strict();
+export type OpenImportJobInput = z.infer<typeof openImportJobSchema>;
+
+export const stageImportRowsSchema = z.object({
+  rows: z.array(z.object({
+    /** Position in the file, 1-based, so an error cites the line a human sees. */
+    rowNumber: z.number().int().min(1),
+    payload: z.record(z.string(), z.string()),
+  }).strict()).min(1).max(5000),
+}).strict();
+export type StageImportRowsInput = z.infer<typeof stageImportRowsSchema>;
+
+export const importErrorsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+}).strict();
+export type ImportErrorsQueryInput = z.infer<typeof importErrorsQuerySchema>;

@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Param, Body, Query, ParseIntPipe, UseGuards,
+  Controller, Get, Post, Param, Body, Query, ParseIntPipe, UseGuards, Headers,
   BadRequestException, UseInterceptors, UploadedFile,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
@@ -12,6 +12,8 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { ImportService } from "./import.service";
+import { StagedImportService } from "./staged-import.service";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   previewImportSchema,
   createImportJobSchema,
@@ -19,13 +21,92 @@ import {
   type PreviewImportInput,
   type CreateImportJobInput,
   type ListJobsQueryInput,
+  openImportJobSchema,
+  stageImportRowsSchema,
+  importErrorsQuerySchema,
+  type OpenImportJobInput,
+  type StageImportRowsInput,
+  type ImportErrorsQueryInput,
 } from "./dto/import-export.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/import")
 @UseGuards(JwtAuthGuard, ModuleGuard)
 export class ImportController {
-  constructor(private readonly svc: ImportService) {}
+  constructor(
+    private readonly svc: ImportService,
+    private readonly staged: StagedImportService,
+  ) {}
+
+  /**
+   * INV-108. A hundred thousand rows do not fit in a request body, so the file
+   * is uploaded as a job, staged in chunks, then processed against a cursor.
+   * Each call is small enough to retry and the job survives every one of them.
+   */
+  @Post("staged")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:import")
+  @Idempotent("inventory.import.open")
+  openStaged(
+    @Body(new ZodValidationPipe(openImportJobSchema)) body: OpenImportJobInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Headers("idempotency-key") idempotencyKey: string,
+  ) {
+    return this.staged.createJob(u.orgId, u.userId, { ...body, idempotencyKey });
+  }
+
+  @Post("staged/:jobId/rows")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:import")
+  stageRows(
+    @Param("jobId", ParseIntPipe) jobId: number,
+    @Body(new ZodValidationPipe(stageImportRowsSchema)) body: StageImportRowsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.staged.stageRows(u.orgId, jobId, body.rows);
+  }
+
+  /** Applies the next chunk. Call until `finished` — that is the resume loop. */
+  @Post("staged/:jobId/process")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:import")
+  processChunk(
+    @Param("jobId", ParseIntPipe) jobId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.processStagedChunk(u.orgId, u.userId, jobId);
+  }
+
+  @Post("staged/:jobId/cancel")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:import")
+  cancelStaged(
+    @Param("jobId", ParseIntPipe) jobId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.staged.cancel(u.orgId, u.userId, jobId);
+  }
+
+  @Get("staged/:jobId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:import")
+  stagedProgress(
+    @Param("jobId", ParseIntPipe) jobId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.staged.progress(u.orgId, jobId);
+  }
+
+  @Get("staged/:jobId/errors")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:import")
+  stagedErrors(
+    @Param("jobId", ParseIntPipe) jobId: number,
+    @Query(new ZodValidationPipe(importErrorsQuerySchema)) query: ImportErrorsQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.staged.errors(u.orgId, jobId, query.page, query.limit);
+  }
 
   @Post("preview")
   @UseGuards(PermissionGuard)

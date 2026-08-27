@@ -1,9 +1,9 @@
 import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   invReservationStrategyEnum, invCostingMethodEnum, invExpiryPolicyEnum,
   invIdempotencyStatusEnum, invJobStatusEnum, invWebhookEventStatusEnum,
-  invReasonCategoryEnum,
+  invReasonCategoryEnum, invImportRowStatusEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
 
@@ -94,12 +94,55 @@ export const invImportJobs = pgTable("inv_import_jobs", {
   errorRows: integer("error_rows").default(0).notNull(),
   errors: jsonb("errors"),
   resultUrl: text("result_url"),
+  /** Of the uploaded file, so the same file finds the job it already made. */
+  checksum: text("checksum"),
+  idempotencyKey: text("idempotency_key"),
+  chunkSize: integer("chunk_size").default(500).notNull(),
+  /** The resume point: rows below it have an outcome, rows at or above do not. */
+  nextRow: integer("next_row").default(0).notNull(),
+  stagedRows: integer("staged_rows").default(0).notNull(),
+  cancelledAt: timestamp("cancelled_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_inv_import_jobs_org_id").on(table.orgId, table.id),
   index("idx_inv_import_org_status").on(table.orgId, table.status),
+  uniqueIndex("uniq_inv_import_jobs_org_idempotency").on(table.orgId, table.idempotencyKey).where(sql`${table.idempotencyKey} IS NOT NULL`),
+]);
+
+/**
+ * Staged import rows.
+ *
+ * The importer used to take rows in the request body and apply them inside the
+ * request transaction, so a 100,000-row file could not be expressed and a
+ * failure at row 9,000 lost everything before it. Rows land here first; the
+ * processor walks them in chunks, and per-row status is what lets a re-run skip
+ * what already applied instead of posting it twice.
+ */
+export const invImportRows = pgTable("inv_import_rows", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  jobId: integer("job_id").notNull(),
+  rowNumber: integer("row_number").notNull(),
+  payload: jsonb("payload").$type<Record<string, string>>().notNull(),
+  status: invImportRowStatusEnum("status").default("PENDING").notNull(),
+  errorCode: text("error_code"),
+  errorField: text("error_field"),
+  errorMessage: text("error_message"),
+  appliedAt: timestamp("applied_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("uniq_inv_import_rows_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.jobId],
+    foreignColumns: [invImportJobs.orgId, invImportJobs.id],
+    name: "fk_inv_import_rows_job_id_org",
+  }).onDelete("cascade"),
+  uniqueIndex("uniq_inv_import_rows_job_row").on(table.orgId, table.jobId, table.rowNumber),
+  index("idx_inv_import_rows_job_status_row").on(table.orgId, table.jobId, table.status, table.rowNumber),
 ]);
 
 export const invExportJobs = pgTable("inv_export_jobs", {

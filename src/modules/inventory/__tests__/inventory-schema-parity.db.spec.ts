@@ -150,6 +150,13 @@ describeDb("inventory schema parity with the live catalogue", () => {
       "inv_lots.chk_inv_lots_expiry_after_manufacture",
       "inv_barcodes.chk_inv_barcodes_exclusive_arc",
       "inv_product_uom_conversions.chk_inv_product_uom_conversions_factor",
+      // INV-106: a zero or negative factor turns a receipt into nothing or into
+      // its opposite.
+      "inv_po_lines.chk_inv_po_lines_uom_factor",
+      "inv_so_lines.chk_inv_so_lines_uom_factor",
+      "inv_grn_lines.chk_inv_grn_lines_uom_factor",
+      "inv_stock_adjustment_lines.chk_inv_stock_adjustment_lines_uom_factor",
+      "inv_stock_transfer_lines.chk_inv_stock_transfer_lines_uom_factor",
     ];
     const rows = await sql<{ tbl: string; conname: string; convalidated: boolean }[]>`
       SELECT rel.relname AS tbl, con.conname, con.convalidated

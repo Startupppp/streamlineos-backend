@@ -2094,6 +2094,13 @@
       "when": 1787830371441,
       "tag": "0518_inventory_variant_search",
       "breakpoints": true
+    },
+    {
+      "idx": 300,
+      "version": "7",
+      "when": 1787830372441,
+      "tag": "0519_inventory_resumable_import",
+      "breakpoints": true
     }
   ]
 }
