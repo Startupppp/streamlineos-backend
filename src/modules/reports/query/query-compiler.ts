@@ -6,6 +6,11 @@ import {
   type QueryDescription,
   type QueryFilter,
 } from "./query-description";
+import { assertWithinBounds } from "./query-bounds";
+import { QueryDescriptionError } from "./query-errors";
+
+export { QueryDescriptionError } from "./query-errors";
+export { QueryBoundError, QUERY_BOUNDS } from "./query-bounds";
 
 /**
  * Compiling a description into parameterised SQL.
@@ -35,14 +40,6 @@ export interface Requester {
 export interface CompiledQuery {
   readonly text: string;
   readonly params: readonly unknown[];
-}
-
-/** A description that cannot compile. Never a database error — see criterion 5. */
-export class QueryDescriptionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "QueryDescriptionError";
-  }
 }
 
 const IDENTIFIER = /^[a-z_][a-z0-9_]*$/i;
@@ -191,6 +188,20 @@ function tenancyPredicate(root: EntityDefinition, alias: string, who: Requester,
   const a = safeIdentifier(alias, "alias");
   const clauses = [`${a}.${safeIdentifier(root.tenantColumn, "tenant column")} = ${c.bind(who.orgId)}`];
 
+  /*
+    Deleted rows, excluded here rather than left to the description.
+
+    Not a security predicate — a deleted deal belongs to the tenant that deleted
+    it — but the one that decides whether anybody trusts the tool. Somebody
+    removes a duplicate deal, the pipeline total does not move, and every figure
+    the reporting surface produces is checked by hand from then on. Placed with
+    tenancy for the same reason tenancy is here: there is no field on a
+    description in which to ask for deleted rows, so it cannot be turned off by
+    accident or on purpose.
+  */
+  if (root.softDeleteColumn)
+    clauses.push(`${a}.${safeIdentifier(root.softDeleteColumn, "soft delete column")} IS NULL`);
+
   switch (who.scope) {
     case "all":
       break;
@@ -230,8 +241,26 @@ function tenancyPredicate(root: EntityDefinition, alias: string, who: Requester,
 }
 
 export function compileQuery(description: QueryDescription, who: Requester): CompiledQuery {
+  /*
+    Ticket 14's fifth criterion, and the reason it is the first line of the
+    compiler rather than a check the caller performs: a bound the caller has to
+    remember is a bound that is eventually bypassed by the one caller who does
+    not. There is no compiled statement without this having run.
+  */
+  assertWithinBounds(description);
+
   const root = entityDefinition(description.entity);
   if (!root) throw new QueryDescriptionError(`"${description.entity}" is not a reportable entity`);
+  /*
+    Global entities are reachable, but only from a row that already passed the
+    tenancy predicate. See `rootable` in the graph: naming one as the root would
+    apply an organisation predicate to a column that does not carry an
+    organisation.
+  */
+  if (!root.rootable)
+    throw new QueryDescriptionError(
+      `"${description.entity}" can only be reported through a related record, not on its own`,
+    );
 
   const alias = "t0";
   const c = new Compilation(root, alias, description.entity);
@@ -247,10 +276,19 @@ export function compileQuery(description: QueryDescription, who: Requester): Com
     if (!target) throw new QueryDescriptionError(`join "${key}" points at an unknown entity`);
 
     c.addJoin(key, target);
+    /*
+      The soft-delete predicate on a joined entity belongs in the ON clause, not
+      the WHERE. In the WHERE it would turn the LEFT JOIN into an inner one and
+      silently drop every root row whose related record had been deleted — so
+      deleting one company would remove its deals from a report about deals.
+    */
+    const alive = target.softDeleteColumn
+      ? ` AND ${safeIdentifier(key, "alias")}.${safeIdentifier(target.softDeleteColumn, "soft delete column")} IS NULL`
+      : "";
     joinClauses.push(
       `LEFT JOIN ${safeIdentifier(target.table, "table")} AS ${safeIdentifier(key, "alias")}` +
         ` ON ${safeIdentifier(alias, "alias")}.${safeIdentifier(join.from, "column")}` +
-        ` = ${safeIdentifier(key, "alias")}.${safeIdentifier(join.toColumn, "column")}`,
+        ` = ${safeIdentifier(key, "alias")}.${safeIdentifier(join.toColumn, "column")}${alive}`,
     );
   }
 
@@ -287,9 +325,13 @@ export function compileQuery(description: QueryDescription, who: Requester): Com
     return `${c.resolveField(order.field).sql} ${direction}`;
   });
 
+  /*
+    Already validated by `assertWithinBounds`; the default is applied here
+    because an absent limit is not a bound violation, it is a description that
+    did not say — and the honest reading of "did not say" is a page, not the
+    maximum.
+  */
   const limit = description.limit ?? 100;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
-    throw new QueryDescriptionError("limit must be a whole number between 1 and 1000");
 
   const text = [
     `SELECT ${selected.join(", ")}`,

@@ -5,6 +5,7 @@ import { CrmConsentModule } from "../consent/crm-consent.module";
 import { CrmAutomationBusService } from "./crm-automation-bus.service";
 import { CrmAutomationRunnerService } from "./crm-automation-runner.service";
 import { CrmSequencesRunnerService } from "./crm-sequences-runner.service";
+import { SequenceOutboundService } from "./sequence-outbound.service";
 import { CrmSequencesService } from "./crm-sequences.service";
 import { CrmAutomationStudioController } from "./crm-automation-studio.controller";
 
@@ -16,6 +17,7 @@ import { CrmAutomationStudioController } from "./crm-automation-studio.controlle
     CrmAutomationRunnerService,
     CrmSequencesRunnerService,
     CrmSequencesService,
+    SequenceOutboundService,
     {
       provide: "CrmAutomationBusService",
       useExisting: CrmAutomationBusService,

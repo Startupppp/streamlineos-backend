@@ -57,9 +57,29 @@ describe("hostile input is a value, never syntax", () => {
   });
 
   it("refuses an enum value the field cannot take", () => {
+    /*
+      `parties.partyKind` rather than `deals.stage`, and the swap is the point of
+      a later fix rather than a convenience. A deal's stage is a key into
+      `crm_pipeline_stages`, which every tenant configures — so it is plain text
+      here and a hostile value in it is a search that matches nothing.
+      `party_kind` is a real database enum, which is the case where refusing an
+      unlisted value is both possible and worth doing.
+    */
     expect(() =>
-      compile({ entity: "deals", filters: [{ field: "stage", operator: "eq", value: "WON' OR '1'='1" }] }),
+      compile({
+        entity: "parties",
+        filters: [{ field: "partyKind", operator: "eq", value: "PERSON' OR '1'='1" }],
+      }),
     ).toThrow(/is not one of the values/);
+  });
+
+  it("still parameterises a value on a field whose vocabulary is the tenant's", () => {
+    // The other half of that decision: `stage` accepts anything, so the safety
+    // has to come from binding rather than from a list.
+    const hostile = "WON' OR '1'='1";
+    const q = compile({ entity: "deals", filters: [{ field: "stage", operator: "eq", value: hostile }] });
+    expect(q.text).not.toContain("OR '1'='1");
+    expect(q.params).toContain(hostile);
   });
 
   it("keeps ILIKE wildcards in the parameter, so a % widens only its own search", () => {
@@ -146,6 +166,49 @@ describe("tenancy is applied by the compiler and cannot be opted out of", () => 
   });
 });
 
+/*
+  Not a security property — a deleted deal belongs to the tenant that deleted it
+  — but the one that decides whether the reporting surface is trusted at all.
+*/
+describe("deleted records are excluded, and cannot be asked for", () => {
+  it("excludes soft-deleted rows from every report", () => {
+    const q = compile({ entity: "deals" });
+    expect(q.text).toContain('"t0"."deleted_at" IS NULL');
+  });
+
+  it("has no field in which a description could ask for them back", () => {
+    const smuggled = {
+      entity: "deals",
+      includeDeleted: true,
+      withDeleted: true,
+    } as unknown as QueryDescription;
+    expect(compile(smuggled).text).toContain('"t0"."deleted_at" IS NULL');
+  });
+
+  it("excludes a deleted related record without dropping the row that points at it", () => {
+    /*
+      The mistake this is pinned against: putting the predicate in the WHERE
+      turns the LEFT JOIN into an inner one, so deleting one company would
+      remove its deals from a report about deals — a far larger error than the
+      one being fixed, and one that looks like a data loss rather than a bug.
+    */
+    const q = compile({ entity: "deals", joins: ["party"], select: ["name", "party.name"] });
+    const onClause = q.text.split("LEFT JOIN")[1]!.split("WHERE")[0]!;
+    expect(onClause).toContain('"party"."deleted_at" IS NULL');
+    expect(q.text.split("WHERE")[1]).not.toContain('"party"."deleted_at"');
+  });
+
+  it("still counts aggregates over live rows only", () => {
+    const q = compile({
+      entity: "deals",
+      groupBy: ["stage"],
+      aggregations: [{ of: "sum", field: "value", as: "total" }],
+    });
+    // In the WHERE, so it filters before aggregation rather than after.
+    expect(q.text.indexOf('"deleted_at" IS NULL')).toBeLessThan(q.text.indexOf("GROUP BY"));
+  });
+});
+
 describe("the requester's scope is applied, not declared", () => {
   it("narrows to the requester's own rows at own scope", () => {
     const q = compile({ entity: "deals" }, { ...ACME, scope: "own" });
@@ -173,8 +236,11 @@ describe("limits", () => {
     expect(q.params[q.params.length - 1]).toBe(100);
   });
 
-  it("refuses a limit outside what a report may ask for", () => {
-    expect(() => compile({ entity: "deals", limit: 100_000 })).toThrow(/between 1 and 1000/);
-    expect(() => compile({ entity: "deals", limit: 0 })).toThrow(/between 1 and 1000/);
+  it("refuses a limit outside what a report may ask for, naming the bound", () => {
+    // Ticket 14 raised the bar on this refusal: it must say which bound and how
+    // to get under it, so a person can fix their own report.
+    expect(() => compile({ entity: "deals", limit: 100_000 })).toThrow(/maxRowsReturned/);
+    expect(() => compile({ entity: "deals", limit: 100_000 })).toThrow(/Narrow the report/);
+    expect(() => compile({ entity: "deals", limit: 0 })).toThrow(/at least 1/);
   });
 });

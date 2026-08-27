@@ -50,7 +50,21 @@ export function trackFor(outboundClass: OutboundClass): OutboundTrack {
  * platform without also stopping the follow-ups, which are a different risk and
  * a different argument.
  */
-export function decisionKindFor(outboundClass: OutboundClass): DecisionKind {
+/**
+ * Narrower than `DecisionKind` on purpose.
+ *
+ * `autonomy_holds.kind` accepts only the three kinds that can actually wait —
+ * a task extraction has nothing to hold — so a caller placing a hold for an
+ * outbound message needs to know it has one of those, not one of eight. The
+ * wider return type forced every such caller into a cast, which is the shape
+ * that eventually casts the wrong thing.
+ */
+export type OutboundDecisionKind = Extract<
+  DecisionKind,
+  "outbound.sent" | "cold_outbound.sent"
+>;
+
+export function decisionKindFor(outboundClass: OutboundClass): OutboundDecisionKind {
   return trackFor(outboundClass) === "cold" ? "cold_outbound.sent" : "outbound.sent";
 }
 
