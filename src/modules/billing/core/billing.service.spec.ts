@@ -15,9 +15,26 @@ import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import {
+
   FakeProviderAdapter,
   FAKE_VALID_PAYMENT_SIG,
 } from "../payments/testing/fake-provider-adapter";
+import { PlatformPaymentRegistry } from "./platform-payment-registry";
+
+/*
+  `createOrder` picks its provider by currency now, so the service needs the
+  registry too. The fake hands back whichever platform-provider double the case
+  already built, so these tests keep asserting what they asserted before —
+  provider SELECTION has its own coverage in `provider-selection.spec.ts`.
+*/
+function makeRegistry(provider: unknown) {
+  return {
+    forCurrency: jest.fn().mockReturnValue({ provider, isPreferred: true }),
+    byProviderKey: jest.fn().mockReturnValue(provider),
+    available: jest.fn().mockReturnValue({ razorpay: true, stripe: false }),
+  } as unknown as PlatformPaymentRegistry;
+}
+
 
 const VALID_INPUT = {
   razorpay_order_id: "order_test_1",
@@ -116,6 +133,10 @@ function makePlanLimits() {
 function makeSuccessDb() {
   const txMock = {
     query: {
+      // `createOrder` reads the billing profile for the country that decides
+      // currency and tax jurisdiction. Absent here, so these cases price in the
+      // stated fallback rather than depending on a fixture country.
+      billingProfiles: { findFirst: jest.fn().mockResolvedValue(undefined) },
       subscriptions: {
         findFirst: jest.fn().mockResolvedValue({
           id: 1,
@@ -155,11 +176,24 @@ async function buildService(
   aiCredits?: ReturnType<typeof makeAiCredits>,
   razorpay: jest.Mocked<PlatformPaymentProvider> = makeRazorpay(),
 ): Promise<BillingService> {
+  /*
+    `createOrder` reads the billing profile for the country that decides currency
+    and tax jurisdiction, and several cases here pass a bare `{}` as the db. The
+    stub is merged in rather than required of every caller, so those cases keep
+    testing what they were written to test — and, with no profile, price in the
+    INR the charge path falls back to.
+  */
+  const dbWithProfile = {
+    query: { billingProfiles: { findFirst: jest.fn().mockResolvedValue(undefined) } },
+    ...(db as Record<string, unknown>),
+  };
+
   const module = await Test.createTestingModule({
     providers: [
       BillingService,
-      { provide: DRIZZLE, useValue: db },
+      { provide: DRIZZLE, useValue: dbWithProfile },
       { provide: PLATFORM_PAYMENT_PROVIDER, useValue: razorpay },
+      { provide: PlatformPaymentRegistry, useValue: makeRegistry(razorpay) },
       { provide: AiCreditsService, useValue: aiCredits ?? makeAiCredits() },
       { provide: AuditService, useValue: makeAudit() },
       { provide: PlanLimitsService, useValue: makePlanLimits() },
@@ -300,6 +334,10 @@ describe("BillingService.getSummary — isConfigured reads through the platform 
   function makeSummaryDb() {
     return {
       query: {
+      // `createOrder` reads the billing profile for the country that decides
+      // currency and tax jurisdiction. Absent here, so these cases price in the
+      // stated fallback rather than depending on a fixture country.
+      billingProfiles: { findFirst: jest.fn().mockResolvedValue(undefined) },
         subscriptions: { findFirst: jest.fn().mockResolvedValue(null) },
       },
       select: jest.fn().mockReturnValue({
@@ -341,6 +379,10 @@ describe("BillingService.verifyAndActivate — coupon redemption enforcement", (
     };
     return {
       query: {
+      // `createOrder` reads the billing profile for the country that decides
+      // currency and tax jurisdiction. Absent here, so these cases price in the
+      // stated fallback rather than depending on a fixture country.
+      billingProfiles: { findFirst: jest.fn().mockResolvedValue(undefined) },
         subscriptions: {
           findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: "org1", plan: "STARTER", status: "ACTIVE" }),
         },
@@ -411,6 +453,10 @@ describe("BillingService.verifyAndActivate — coupon redemption enforcement", (
     };
     const txMock = {
       query: {
+      // `createOrder` reads the billing profile for the country that decides
+      // currency and tax jurisdiction. Absent here, so these cases price in the
+      // stated fallback rather than depending on a fixture country.
+      billingProfiles: { findFirst: jest.fn().mockResolvedValue(undefined) },
         subscriptions: {
           findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: "org1", plan: "STARTER", status: "ACTIVE" }),
         },
@@ -474,6 +520,7 @@ describe("BillingService.verifyAndActivate — the buyer does not state what the
         BillingService,
         { provide: DRIZZLE, useValue: db },
         { provide: PLATFORM_PAYMENT_PROVIDER, useValue: razorpay },
+      { provide: PlatformPaymentRegistry, useValue: makeRegistry(razorpay) },
         { provide: AiCreditsService, useValue: makeAiCredits() },
         { provide: AuditService, useValue: makeAudit() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },
@@ -567,5 +614,82 @@ describe("BillingService.verifyAndActivate — the buyer does not state what the
       (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
     expect(months).toBe(1);
     expect(written.find((row) => "providerPaymentRef" in row)!.amount).toBe("999.00");
+  });
+});
+
+
+/*
+  Tickets 03 and 04, asserted as consequences rather than as calls.
+
+  Both were "done" with the mechanism built and never reached: the four-currency
+  table had one consumer (the marketing page) while the charge path read an
+  INR-only constant, and `determineTax` was called by nothing at all. These
+  assert what a customer is actually charged, so wiring either back out fails
+  here rather than at a chargeback.
+*/
+describe("BillingService.createOrder — charges the quoted currency, with tax", () => {
+  function dbWithProfile(profile: Record<string, unknown> | undefined) {
+    return { query: { billingProfiles: { findFirst: jest.fn().mockResolvedValue(profile) } } };
+  }
+
+  it("charges a UK customer in GBP, at the GBP price and not a conversion", async () => {
+    const razorpay = makeRazorpay();
+    const svc = await buildService(dbWithProfile({ country: "GB" }), undefined, undefined, razorpay);
+
+    const result = await svc.createOrder("org1", "user1", "STARTER");
+
+    expect(result.currency).toBe("GBP");
+    // 1_500 minor units is the GBP column. The INR column is 99_900; a
+    // conversion of either would land nowhere near.
+    const sent = razorpay.createOrder.mock.calls[0]?.[0] as {
+      amount: number;
+      currency: string;
+      notes: Record<string, string>;
+    };
+    expect(sent.currency).toBe("GBP");
+    // The NET is the GBP column, 1_500 minor units. The INR column is 99_900 and
+    // a conversion of either would land nowhere near, which is the point of
+    // pricing per market rather than converting.
+    expect(sent.notes.netMinor).toBe("1500");
+    // The charge is the gross: 1_500 + 20% UK VAT.
+    expect(sent.amount).toBe(1_800);
+  });
+
+  it("keeps a tenant with no billing profile on INR", async () => {
+    const razorpay = makeRazorpay();
+    const svc = await buildService(dbWithProfile(undefined), undefined, undefined, razorpay);
+
+    const result = await svc.createOrder("org1", "user1", "STARTER");
+
+    // Not the pricing page's USD fallback: an existing customer is not
+    // re-denominated for never having filled in a profile.
+    expect(result.currency).toBe("INR");
+  });
+
+  it("adds Indian GST to what an Indian customer is charged", async () => {
+    const razorpay = makeRazorpay();
+    const svc = await buildService(
+      dbWithProfile({ country: "IN", state: "KA" }), undefined, undefined, razorpay,
+    );
+
+    await svc.createOrder("org1", "user1", "STARTER");
+
+    // 99_900 net + 18% GST = 117_882 gross. The charge is the gross.
+    const sent = razorpay.createOrder.mock.calls[0]?.[0] as { amount: number };
+    expect(sent.amount).toBe(117_882);
+  });
+
+  it("carries the tax it applied onto the order, so activation stores it", async () => {
+    const razorpay = makeRazorpay();
+    const svc = await buildService(
+      dbWithProfile({ country: "IN", state: "KA" }), undefined, undefined, razorpay,
+    );
+
+    await svc.createOrder("org1", "user1", "STARTER");
+
+    const sent = razorpay.createOrder.mock.calls[0]?.[0] as { notes: Record<string, string> };
+    expect(sent.notes.netMinor).toBe("99900");
+    expect(sent.notes.taxMinor).toBe("17982");
+    expect(sent.notes.ratesVersion).toBeTruthy();
   });
 });

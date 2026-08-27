@@ -55,6 +55,49 @@ export interface PlanPrice {
   readonly isRequestedCurrency: boolean;
 }
 
+/**
+ * What we quote and charge a customer in, from the country they bill from.
+ *
+ * Deliberately its own list, and NOT the residency sets in
+ * `common/region/region-placement.ts`. Those decide where data lives; this
+ * decides what somebody pays in, and the two answer to different authorities —
+ * Norway is in the EEA for residency and is not in the euro. Sharing one list
+ * would mean a currency change moved somebody's data, or a data-residency change
+ * silently re-priced them. `region-placement.ts` makes the same argument from
+ * the other side, and `common/` may not import from `modules/` in any case.
+ *
+ * A country that maps to nothing gets `FALLBACK_CURRENCY`, stated rather than
+ * assumed — see the note there.
+ */
+const EUROZONE: ReadonlySet<string> = new Set([
+  "IE", "DE", "FR", "NL", "ES", "IT", "BE", "AT", "PT", "FI", "GR", "SK", "SI", "LT", "LV", "EE",
+  "LU", "CY", "MT", "HR",
+]);
+
+export function currencyForCountry(
+  country: string | null | undefined,
+  /**
+   * What an unknown country means, which differs by caller and so is not
+   * defaulted here.
+   *
+   * A pricing page is talking to a stranger, and `FALLBACK_CURRENCY` (USD) is
+   * the honest guess to show them. A charge is talking to an existing customer,
+   * and the honest answer there is the currency they are already billed in —
+   * INR, since that is where the platform is established. Silently applying the
+   * stranger's fallback to a charge would re-denominate every tenant who has
+   * not filled in a billing profile, none of whom asked to be.
+   */
+  whenUnknown: SupportedCurrency,
+): SupportedCurrency {
+  if (!country) return whenUnknown;
+  const code = country.trim().toUpperCase();
+  if (code === "IN") return "INR";
+  if (code === "GB") return "GBP";
+  if (code === "US") return "USD";
+  if (EUROZONE.has(code)) return "EUR";
+  return FALLBACK_CURRENCY;
+}
+
 export function isSupportedCurrency(value: string | null | undefined): value is SupportedCurrency {
   return (
     typeof value === "string" &&

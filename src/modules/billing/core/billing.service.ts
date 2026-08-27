@@ -28,6 +28,9 @@ import {
   PLATFORM_PAYMENT_PROVIDER,
   type PlatformPaymentProvider,
 } from "./platform-payment-provider";
+import { PlatformPaymentRegistry } from "./platform-payment-registry";
+import { currencyForCountry, priceFor, annualPrice } from "./plan-pricing";
+import { determineTax } from "./tax/tax-determination";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
@@ -68,6 +71,7 @@ export class BillingService {
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(PLATFORM_PAYMENT_PROVIDER)
     private readonly razorpay: PlatformPaymentProvider,
+    private readonly paymentRegistry: PlatformPaymentRegistry,
     private readonly audit: AuditService,
     private readonly aiCredits: AiCreditsService,
     private readonly planLimits: PlanLimitsService,
@@ -99,12 +103,29 @@ export class BillingService {
       throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
     }
 
-    const monthlyPrice = PLAN_PRICES_PAISE[plan];
-    if (!monthlyPrice) throw new BadRequestException("Invalid plan");
+    /*
+      What the customer is charged, in the currency they were quoted.
 
-    let amount = billingCycle === "annual"
-      ? Math.round(monthlyPrice * 12 * (1 - ANNUAL_DISCOUNT_PCT))
-      : monthlyPrice;
+      This read the INR-only `PLAN_PRICES_PAISE` and then charged `currency:
+      "INR"` regardless, while `/pricing` quoted from the four-currency table and
+      told a visitor "you will be charged in USD". The two disagreed, and the
+      page was the one telling the truth about what the customer expected.
+
+      The billing profile's country decides it. A tenant with no profile is still
+      charged INR — the currency they are billed in today — rather than the
+      pricing page's stranger-fallback, so nobody is re-denominated without
+      having said where they bill from.
+    */
+    const profile = await this.db.query.billingProfiles.findFirst({
+      where: eq(billingProfiles.orgId, orgId),
+    });
+    const currency = currencyForCountry(profile?.country, "INR");
+    const monthly = priceFor(plan, currency);
+    const priced = billingCycle === "annual"
+      ? annualPrice(monthly, ANNUAL_DISCOUNT_PCT)
+      : monthly;
+
+    let amount = priced.amountMinor;
 
     let couponDiscountAmount = 0;
     if (couponId) {
@@ -120,26 +141,59 @@ export class BillingService {
       }
     }
 
-    const order = await this.razorpay.createOrder({
-      amount,
-      // Stated rather than defaulted. The plan catalogue prices in four
-      // currencies now, but the charge is still INR because Razorpay is the only
-      // provider configured; this is one of exactly two places that becomes
-      // tenant-aware when a second provider lands, and it is visible here rather
-      // than hidden behind a `??` in the adapter.
-      currency: "INR",
+    /*
+      Tax determined before the charge, from the buyer's own jurisdiction, and
+      carried on the order so activation stores what was actually applied rather
+      than recomputing it against whatever the rates say later.
+
+      `determineTax` was written, tested and then called by nothing; this is the
+      call site ticket 04 was missing. An unconfigured jurisdiction throws, which
+      is the right failure: charging a number we cannot defend is worse than
+      refusing to charge.
+    */
+    const tax = determineTax(amount, {
+      country: profile?.country ?? "IN",
+      state: profile?.state,
+      taxId: profile?.gstin,
+      isExempt: profile?.isTaxExempt ?? false,
+    });
+
+    /*
+      The provider is chosen by the currency, not assumed. `forCurrency` refuses
+      with PaymentRequiredException when nothing configured can take that
+      currency, which is why there is no fallback branch here.
+    */
+    const { provider, isPreferred } = this.paymentRegistry.forCurrency(currency);
+
+    const order = await provider.createOrder({
+      amount: tax.grossMinor,
+      currency,
       receipt: `sub_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
-      notes: { orgId, plan, userId, billingCycle },
+      notes: {
+        orgId,
+        plan,
+        userId,
+        billingCycle,
+        netMinor: String(tax.netMinor),
+        taxMinor: String(tax.taxMinor),
+        taxTreatment: tax.treatment,
+        ratesVersion: tax.inputs.ratesVersion,
+      },
     });
 
     return {
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
-      keyId: this.razorpay.getPublishableKey(),
+      keyId: provider.getPublishableKey(),
+      provider: provider.providerKey,
+      /** False means their statement will show a conversion; the UI must say so. */
+      isPreferredProvider: isPreferred,
       plan,
       billingCycle,
       discountAmount: couponDiscountAmount,
+      netMinor: tax.netMinor,
+      taxMinor: tax.taxMinor,
     };
   }
 

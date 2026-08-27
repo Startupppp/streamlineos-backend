@@ -25,10 +25,27 @@ import { PlanLimitsService } from "./plan-limits.service";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import { ExternalEffectLedger, ExternalEffectLeaseBusyError } from "../../../common/outbox/external-effect-ledger";
 import {
+
   FakeProviderAdapter,
   FAKE_WEBHOOK_SECRET,
   FAKE_VALID_WEBHOOK_SIG,
 } from "../payments/testing/fake-provider-adapter";
+import { PlatformPaymentRegistry } from "./platform-payment-registry";
+
+/*
+  `createOrder` picks its provider by currency now, so the service needs the
+  registry too. The fake hands back whichever platform-provider double the case
+  already built, so these tests keep asserting what they asserted before —
+  provider SELECTION has its own coverage in `provider-selection.spec.ts`.
+*/
+function makeRegistry(provider: unknown) {
+  return {
+    forCurrency: jest.fn().mockReturnValue({ provider, isPreferred: true }),
+    byProviderKey: jest.fn().mockReturnValue(provider),
+    available: jest.fn().mockReturnValue({ razorpay: true, stripe: false }),
+  } as unknown as PlatformPaymentRegistry;
+}
+
 
 const VALID_PAYMENT_BODY = JSON.stringify({
   event: "payment.authorized",
@@ -128,6 +145,10 @@ function makeWebhookDb(firstDelivery = true) {
   const update = jest.fn().mockReturnValue({ set });
   return {
     query: {
+      // `createOrder` reads the billing profile for the country that decides
+      // currency and tax jurisdiction. Absent here, so these cases price in the
+      // stated fallback rather than depending on a fixture country.
+      billingProfiles: { findFirst: jest.fn().mockResolvedValue(undefined) },
       organizations: { findFirst: jest.fn().mockResolvedValue(null) },
     },
     insert,
@@ -152,6 +173,19 @@ async function buildService(
       { provide: PaymentProviderResolver, useValue: providers },
       { provide: ExternalEffectLedger, useValue: effectLedger },
       { provide: RevenueAnalyticsService, useValue: { recordEvent: jest.fn() } },
+      /*
+        The platform registry, which `createOrder` now uses to pick a provider by
+        currency. These cases exercise the TENANT webhook path and never reach it,
+        so it is faked minimally rather than driven.
+      */
+      {
+        provide: PlatformPaymentRegistry,
+        useValue: {
+          forCurrency: jest.fn(),
+          byProviderKey: jest.fn(),
+          available: jest.fn().mockReturnValue({ razorpay: true, stripe: false }),
+        },
+      },
       /*
         The platform's own payment provider, which this spec predates. Webhooks
         here are the TENANT's, resolved through the registry above -- but

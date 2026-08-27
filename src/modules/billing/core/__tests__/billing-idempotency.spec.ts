@@ -18,6 +18,23 @@ import { PaymentProviderResolver } from "../../payments/payment-provider-resolve
 import { FakeProviderAdapter, FAKE_VALID_PAYMENT_SIG } from "../../payments/testing/fake-provider-adapter";
 import { creditsToMilli, milliToCredits } from "../../../ai/core/billing/ai-model-pricing.constants";
 import { planGrantMilli } from "../ai-credit-units";
+import { PlatformPaymentRegistry } from "../platform-payment-registry";
+
+/*
+  `createOrder` picks its provider by currency now, so the service needs the
+  registry too. The fake hands back whichever platform-provider double the case
+  already built, so these tests keep asserting what they asserted before —
+  provider SELECTION has its own coverage in `provider-selection.spec.ts`.
+*/
+function makePlatformRegistry(provider: unknown) {
+  return {
+    forCurrency: jest.fn().mockReturnValue({ provider, isPreferred: true }),
+    byProviderKey: jest.fn().mockReturnValue(provider),
+    available: jest.fn().mockReturnValue({ razorpay: true, stripe: false }),
+  } as unknown as PlatformPaymentRegistry;
+}
+
+
 
 describe("planGrantMilli — exact milli-credit values (1 credit = 1,000 milli)", () => {
   it("STARTER grants 500,000 milli (500 credits)", () => {
@@ -130,6 +147,7 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
         BillingService,
         { provide: DRIZZLE, useValue: db },
         { provide: PLATFORM_PAYMENT_PROVIDER, useValue: razorpay },
+      { provide: PlatformPaymentRegistry, useValue: makePlatformRegistry(razorpay) },
         { provide: AiCreditsService, useValue: makeMockAiCreditsForBilling() },
         { provide: AuditService, useValue: makeAuditService() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },
@@ -159,6 +177,10 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
 
     const txMock = {
       query: {
+      // `createOrder` reads the billing profile for the country that decides
+      // currency and tax jurisdiction. Absent here, so these cases price in the
+      // stated fallback rather than depending on a fixture country.
+      billingProfiles: { findFirst: jest.fn().mockResolvedValue(undefined) },
         subscriptions: { findFirst: jest.fn().mockResolvedValue(null) },
       },
       insert: jest.fn().mockImplementation(() => {
