@@ -6,6 +6,8 @@ import { AiCreditsReservationService } from "../ai-credits-reservation.service";
 import { AiCreditsPacksService } from "../ai-credits-packs.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { PlanLimitsService } from "../plan-limits.service";
+import { ProrationLedgerService } from "../proration-ledger.service";
+import { VersionedCatalogService } from "../versioned-catalog.service";
 import { APP_CONFIG } from "../../../../config/config.module";
 import { PaymentProviderAdapterRegistry } from "../../payments/payment-provider-adapter.interface";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../../payments/payment-provider-resolver.service";
@@ -111,6 +113,10 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
         { provide: AiCreditsService, useValue: makeMockAiCreditsForBilling() },
         { provide: AuditService, useValue: makeAuditService() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },
+
+        { provide: ProrationLedgerService, useValue: { recordPlanChange: jest.fn().mockResolvedValue(undefined) } },
+
+        { provide: VersionedCatalogService, useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } },
         { provide: RevenueAnalyticsService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
         { provide: PaymentProviderResolver, useValue: makeResolver() },
         { provide: PaymentProviderAdapterRegistry, useValue: registry },

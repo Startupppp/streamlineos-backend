@@ -13,6 +13,8 @@ import { RazorpayWebhookController } from "./razorpay-webhook.controller";
 import { AiCreditsService } from "./ai-credits.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "./plan-limits.service";
+import { ProrationLedgerService } from "./proration-ledger.service";
+import { VersionedCatalogService } from "./versioned-catalog.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { OutboxConsumerRegistry } from "../../../common/outbox/outbox-consumer.registry";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
@@ -208,6 +210,10 @@ async function buildHarness(options: {
       { provide: AiCreditsService, useValue: aiCredits },
       { provide: AuditService, useValue: { log: jest.fn(), logCritical: jest.fn() } },
       { provide: PlanLimitsService, useValue: { bust: jest.fn(), resolveTier: jest.fn().mockResolvedValue({ plan: "STARTER" }) } },
+
+      { provide: ProrationLedgerService, useValue: { recordPlanChange: jest.fn().mockResolvedValue(undefined) } },
+
+      { provide: VersionedCatalogService, useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } },
       { provide: PaymentProviderResolver, useValue: options.providers ?? makeResolver(new FakeProviderAdapter()) },
       { provide: ExternalEffectLedger, useValue: ledger },
       { provide: PaymentWebhookHealthService, useValue: webhookHealth },

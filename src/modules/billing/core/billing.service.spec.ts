@@ -6,6 +6,8 @@ import { BillingService } from "./billing.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "./plan-limits.service";
+import { ProrationLedgerService } from "./proration-ledger.service";
+import { VersionedCatalogService } from "./versioned-catalog.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { OutboxConsumerRegistry } from "../../../common/outbox/outbox-consumer.registry";
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
@@ -168,6 +170,10 @@ async function buildService(
       },
       { provide: AuditService, useValue: { log: jest.fn(), logCritical: jest.fn() } },
       { provide: PlanLimitsService, useValue: { bust: jest.fn(), resolveTier: jest.fn().mockResolvedValue({ plan: "STARTER" }) } },
+
+      { provide: ProrationLedgerService, useValue: { recordPlanChange: jest.fn().mockResolvedValue(undefined) } },
+
+      { provide: VersionedCatalogService, useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } },
       { provide: PaymentProviderResolver, useValue: providers },
       {
         provide: ExternalEffectLedger,

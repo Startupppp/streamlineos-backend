@@ -3,6 +3,7 @@
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
@@ -22,6 +23,9 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { logger } from "../../../common/logger/logger.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
+import { ProrationLedgerService } from "./proration-ledger.service";
+import { VersionedCatalogService } from "./versioned-catalog.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { classifyPlanChange } from "./revenue-events";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
@@ -66,6 +70,8 @@ export class BillingService {
     private readonly audit: AuditService,
     private readonly aiCredits: AiCreditsService,
     private readonly planLimits: PlanLimitsService,
+    private readonly prorationLedger: ProrationLedgerService,
+    private readonly catalog: VersionedCatalogService,
     private readonly revenueAnalytics: RevenueAnalyticsService,
     private readonly providers: PaymentProviderResolver,
     private readonly externalEffectLedger: ExternalEffectLedger,
@@ -87,6 +93,54 @@ export class BillingService {
 
   private readonly webhooks: BillingWebhookHandler;
   private readonly couponAdmin: BillingCoupons;
+  private readonly logger = new Logger(BillingService.name);
+
+  /** A missing price version is reported, never thrown: the payment already captured and must not roll back. */
+  private async recordProrationForPlanChange(
+    tx: DbOrTx,
+    orgId: string,
+    existing: { id: number; plan: Plan; currentPeriodStart: Date | null; currentPeriodEnd: Date | null },
+    newPlan: Plan,
+    effectiveFrom: Date,
+  ): Promise<void> {
+    if (existing.plan === newPlan) return;
+
+    const { currentPeriodStart, currentPeriodEnd } = existing;
+    if (!currentPeriodStart || !currentPeriodEnd) return;
+    if (effectiveFrom < currentPeriodStart || effectiveFrom > currentPeriodEnd) return;
+
+    const [oldPrice, newPrice] = await Promise.all([
+      this.catalog.getActivePriceForPlanTier(existing.plan),
+      this.catalog.getActivePriceForPlanTier(newPlan),
+    ]);
+
+    if (!oldPrice || !newPrice) {
+      this.logger.error("Plan change recorded no proration line: no active price version for this tier", {
+        orgId,
+        subscriptionId: existing.id,
+        from: existing.plan,
+        to: newPlan,
+        missing: !oldPrice ? existing.plan : newPlan,
+      });
+      return;
+    }
+
+    await this.prorationLedger.recordPlanChange(
+      {
+        orgId,
+        subscriptionId: existing.id,
+        idempotencyKey: `sub:${existing.id}:${newPrice.id}:${effectiveFrom.toISOString()}`,
+        oldPriceVersionId: oldPrice.id,
+        newPriceVersionId: newPrice.id,
+        oldQuantity: 1,
+        newQuantity: 1,
+        periodStart: currentPeriodStart,
+        periodEnd: currentPeriodEnd,
+        effectiveFrom,
+      },
+      tx,
+    );
+  }
 
   async getSubscription(orgId: string) {
     const subscription = await this.db.query.subscriptions.findFirst({
@@ -206,6 +260,7 @@ export class BillingService {
 
         let subscriptionId: number;
         if (existing) {
+          await this.recordProrationForPlanChange(tx, orgId, existing, input.plan, now);
           await tx
             .update(subscriptions)
             .set({
