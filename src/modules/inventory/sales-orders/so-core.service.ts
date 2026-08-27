@@ -373,7 +373,8 @@ export class SoCoreService {
     orgId: string,
     variantId: number,
     warehouseId: number | null | undefined,
-    qty: number,
+    /** Base UOM, as a decimal string — never a float. */
+    qty: string,
     strategy: string,
     expiryPolicy: string,
   ) {

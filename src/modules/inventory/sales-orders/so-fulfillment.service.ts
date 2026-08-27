@@ -84,7 +84,7 @@ export class SoFulfillmentService {
         } else {
           const available = await this.soCore.findAvailableLotForLine(
             orgId, line.productVariantId, data.warehouseId ?? so.warehouseId ?? undefined,
-            parseFloat(line.quantity), settings.reservationStrategy, settings.expiryReservationPolicy,
+            line.quantity, settings.reservationStrategy, settings.expiryReservationPolicy,
           );
 
           if (!available) { allReserved = false; continue; }

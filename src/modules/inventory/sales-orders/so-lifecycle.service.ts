@@ -20,6 +20,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
+import { subDec, cmpDec } from "../stock-engine/decimal";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
@@ -224,24 +225,34 @@ export class SoLifecycleService {
     return invoice;
   }
 
+  /**
+   * Picks a stock row that can satisfy a line — INV-402.
+   *
+   * Lot eligibility used to live inside `if (strategy === "FEFO")`, so with any
+   * other strategy control fell straight through to `filtered[0]` and returned
+   * the first row it found. The default strategy is AUTO_ON_CONFIRM, which means
+   * expired, blocked and recalled lots were allocatable and shippable in the
+   * default configuration whatever `expiryReservationPolicy` said. The PRD calls
+   * for a hard block on expired, recalled and quarantined stock; there was none.
+   *
+   * Eligibility is now a filter over every candidate, and the strategy only
+   * decides the order of what is already eligible. Those are different
+   * questions, and collapsing them is what let the block be skipped.
+   */
   async findAvailableLotForLine(
     orgId: string,
     variantId: number,
     warehouseId: number | null | undefined,
-    qty: number,
+    qty: string,
     strategy: string,
     expiryPolicy: string,
   ): Promise<{ locationId: number; lotId?: number } | null> {
-    const conditions = [
-      eq(invStockLevels.orgId, orgId),
-      eq(invStockLevels.productVariantId, variantId),
-    ];
-
     const levels = await this.db.query.invStockLevels.findMany({
-      where: and(...conditions),
-      with: {
-        location: { columns: { id: true, warehouseId: true } },
-      },
+      where: and(
+        eq(invStockLevels.orgId, orgId),
+        eq(invStockLevels.productVariantId, variantId),
+      ),
+      with: { location: { columns: { id: true, warehouseId: true } } },
       columns: {
         id: true,
         locationId: true,
@@ -253,58 +264,59 @@ export class SoLifecycleService {
       },
     });
 
-    const filtered = levels.filter((l) => {
-      if (warehouseId && l.location?.warehouseId !== warehouseId) return false;
-      const available =
-        parseFloat(l.onHand) -
-        parseFloat(l.committed) -
-        parseFloat(l.blockedQty ?? "0") -
-        parseFloat(l.qualityHoldQty ?? "0");
-      return available >= qty;
+    const lots = await this.db.query.invLots.findMany({
+      where: and(eq(invLots.orgId, orgId), eq(invLots.productVariantId, variantId)),
+      columns: { id: true, expiryDate: true, status: true },
+    });
+    const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+    const today = new Date().toISOString().slice(0, 10);
+
+    /** Whether this lot may be given to a customer at all. */
+    const eligible = (lotId: number | null): boolean => {
+      if (lotId === null) return true;
+      const lot = lotById.get(lotId);
+      if (!lot) return false;
+      // CONSUMED, BLOCKED, RECALLED and EXPIRED are refused whatever the expiry
+      // policy says. A recall is not a warning.
+      if (lot.status !== "ACTIVE") return false;
+      if (expiryPolicy === "BLOCK" && lot.expiryDate !== null && lot.expiryDate <= today) return false;
+      return true;
+    };
+
+    const candidates = levels.filter((level) => {
+      if (warehouseId && level.location?.warehouseId !== warehouseId) return false;
+      if (!eligible(level.lotId)) return false;
+      // Exact: availability decides whether stock is promised, and
+      // `parseFloat` on an 18,4 numeric is the arithmetic the PRD forbids.
+      const available = subDec(
+        subDec(subDec(level.onHand, level.committed), level.blockedQty ?? "0"),
+        level.qualityHoldQty ?? "0",
+      );
+      return cmpDec(available, qty) >= 0;
     });
 
-    if (filtered.length === 0) return null;
+    if (candidates.length === 0) return null;
 
-    if (strategy === "FEFO" && filtered.some((l) => l.lotId !== null)) {
-      const lotsWithExpiry = await this.db.query.invLots.findMany({
-        where: and(
-          eq(invLots.orgId, orgId),
-          eq(invLots.productVariantId, variantId),
-        ),
-        columns: { id: true, expiryDate: true, status: true },
-        orderBy: (t, { asc }) => [asc(t.expiryDate)],
-      });
-      if (lotsWithExpiry) {
-        for (const lot of lotsWithExpiry) {
-          if (lot.status !== "ACTIVE") continue;
-          if (expiryPolicy === "BLOCK" && lot.expiryDate) {
-            const today = new Date().toISOString().slice(0, 10);
-            if (lot.expiryDate <= today) continue;
-          }
-          const match = filtered.find((l) => l.lotId === lot.id);
-          if (match) return { locationId: match.locationId, lotId: lot.id };
+    /** The strategy orders what is already eligible; it never widens it. */
+    const ordered = [...candidates].sort((a, b) => {
+      if (strategy === "FEFO") {
+        const aExpiry = a.lotId === null ? null : (lotById.get(a.lotId)?.expiryDate ?? null);
+        const bExpiry = b.lotId === null ? null : (lotById.get(b.lotId)?.expiryDate ?? null);
+        // A lot with no expiry date cannot expire first, so it sorts last —
+        // NULLS LAST, the same answer Postgres gives an ascending order by.
+        if (aExpiry !== bExpiry) {
+          if (aExpiry === null) return 1;
+          if (bExpiry === null) return -1;
+          return aExpiry < bExpiry ? -1 : 1;
         }
       }
-      if (expiryPolicy === "BLOCK") return null;
-    }
+      if (strategy === "FIFO" || strategy === "FEFO") return (a.lotId ?? 0) - (b.lotId ?? 0);
+      return 0;
+    });
 
-    if (strategy === "FIFO" && filtered.some((l) => l.lotId !== null)) {
-      const match = filtered
-        .sort((a, b) => (a.lotId ?? 0) - (b.lotId ?? 0))
-        .find((l) => l.lotId !== null);
-      if (match)
-        return {
-          locationId: match.locationId,
-          lotId: match.lotId ?? undefined,
-        };
-    }
-
-    const anyMatch = filtered[0];
-    if (!anyMatch) return null;
-    return {
-      locationId: anyMatch.locationId,
-      lotId: anyMatch.lotId ?? undefined,
-    };
+    const chosen = ordered[0];
+    if (!chosen) return null;
+    return { locationId: chosen.locationId, lotId: chosen.lotId ?? undefined };
   }
 
   private async autoReserve(
@@ -323,7 +335,7 @@ export class SoLifecycleService {
           orgId,
           line.productVariantId,
           warehouseId,
-          parseFloat(line.quantity),
+          line.quantity,
           settings.reservationStrategy,
           settings.expiryReservationPolicy,
         ),
