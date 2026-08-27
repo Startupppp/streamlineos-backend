@@ -4,6 +4,7 @@ import {
   type PlatformPaymentProvider,
 } from "./platform-payment-provider";
 import type { AppConfig } from "../../../config/env.validation";
+import { createHmac } from "node:crypto";
 
 function serviceWith(config: Partial<AppConfig>): RazorpayService {
   return new RazorpayService(config as AppConfig);
@@ -50,20 +51,17 @@ describe("RazorpayService as a PlatformPaymentProvider", () => {
     });
 
     it("accepts a correctly computed payment signature", () => {
-      const { createHmac } = require("node:crypto") as typeof import("node:crypto");
       const expected = createHmac("sha256", "secret").update("order_1|pay_1").digest("hex");
       expect(serviceWith(CONFIGURED).verifyPaymentSignature("order_1", "pay_1", expected)).toBe(true);
     });
 
     it("accepts a correctly computed webhook signature", () => {
-      const { createHmac } = require("node:crypto") as typeof import("node:crypto");
       const body = '{"event":"payment.captured"}';
       const expected = createHmac("sha256", "hook").update(body).digest("hex");
       expect(serviceWith(CONFIGURED).verifyWebhookSignature(body, expected)).toBe(true);
     });
 
     it("rejects a signature computed with the wrong secret", () => {
-      const { createHmac } = require("node:crypto") as typeof import("node:crypto");
       const forged = createHmac("sha256", "wrong").update("order_1|pay_1").digest("hex");
       expect(serviceWith(CONFIGURED).verifyPaymentSignature("order_1", "pay_1", forged)).toBe(false);
     });
