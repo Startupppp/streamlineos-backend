@@ -19,6 +19,8 @@ import { canUseFeature, minPlanFor, type Feature } from "../../ai/core/billing/f
 import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { NotificationsService } from "../../notifications/notifications.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
+import { readCount } from "./quota-counts";
+import { seatCount } from "./seat-definition";
 
 export interface EntitlementsDto {
   tier: PlanTier;
@@ -61,35 +63,6 @@ function liveCustomerCount(partyIdColumn: Column, orgColumn: Column, orgId: stri
       AND ${orgColumn} = ${businessParties.organizationId}
     WHERE ${businessParties.organizationId} = ${orgId}
       AND ${businessParties.deletedAt} IS NULL`;
-}
-
-/** Seats used = accepted members + non-expired pending invitations (shared by enforcement and display so they agree). */
-function seatCount(orgId: string): SQL<number> {
-  return sql<number>`(
-    (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId}) +
-    (SELECT COUNT(*)::int FROM invitations
-     WHERE org_id = ${orgId}
-       AND status = 'PENDING'
-       AND accepted_at IS NULL
-       AND expires_at > NOW())
-  )::int`;
-}
-
-class UncountableQuotaError extends Error {}
-
-/**
- * A count is a number or it is nothing. `Number(row?.[col] ?? 0)` collapsed a missing
- * row, a NULL column and a non-numeric value into `0`, and zero against any limit
- * allows the write — so one database hiccup lifted every plan limit at once.
- */
-function readCount(rows: Record<string, unknown>[], column: string): number {
-  const row = rows[0];
-  if (!row) throw new UncountableQuotaError(`no row returned for "${column}"`);
-  const raw = row[column];
-  if (raw === null || raw === undefined) throw new UncountableQuotaError(`"${column}" is missing or null`);
-  const value = Number(raw);
-  if (!Number.isFinite(value)) throw new UncountableQuotaError(`"${column}" is not a number: ${String(raw)}`);
-  return value;
 }
 
 const LIMIT_KEY_LABELS: Record<LimitKey, string> = {
@@ -327,9 +300,7 @@ export class PlanLimitsService {
   ): Promise<number> {
     switch (key) {
       case "members": {
-        const rows = await (executor ?? this.db).execute(sql`
-          SELECT ${seatCount(orgId)} AS count
-        `);
+        const rows = await (executor ?? this.db).execute(sql`SELECT ${seatCount(orgId)} AS count`);
         return readCount(rows, "count");
       }
       case "projects": {
