@@ -17,6 +17,7 @@ import { type DashboardForbidden } from "./dashboard.errors";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
 import { resolveLeavesDashboardScope } from "./dashboard-scope";
+import { leaveApprovalScope } from "../hr/time/leaves-scope";
 
 @Injectable()
 export class DashboardLeaveService {
@@ -84,7 +85,10 @@ export class DashboardLeaveService {
     }
 
     const isApprover = await this.access.holds(u, "hr:leaves:approve");
-    const key = `dashboard:pending-approvals:${orgId}:${isApprover ? "approver" : "self"}`;
+    // Below "all" the count is per-approver, so the key carries the actor too.
+    const audience = scope === "all" ? "org" : u.userId;
+    const key = `dashboard:pending-approvals:${orgId}:${scope}:${audience}:${isApprover ? "approver" : "self"}`;
+    const visible = leaveApprovalScope(scope, orgId, u.userId);
 
     return this.cache.cached(
       key,
@@ -92,7 +96,9 @@ export class DashboardLeaveService {
         const [leaveCount] = await this.db
           .select({ count: sql<number>`count(*)::int` })
           .from(leaveRequests)
-          .where(and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "PENDING")));
+          .where(
+            and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "PENDING"), visible),
+          );
 
         const resignationStatuses = isApprover ? ["SUBMITTED", "PENDING_HR"] : ["HR_APPROVED"];
 

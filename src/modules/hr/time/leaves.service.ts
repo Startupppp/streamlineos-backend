@@ -15,7 +15,8 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { resolveLeavesViewScope } from "./leaves-scope";
+import { leaveApprovalScope, resolveLeavesViewScope } from "./leaves-scope";
+import type { DataScope } from "../../access/access.types";
 import { LeaveLedgerService } from "./leave-ledger.service";
 
 const TEAM_LEAVES_CAP = 500;
@@ -215,14 +216,20 @@ export class LeavesService {
     return this.cache.cachedVersioned(
       CACHE_KEYS.leaveAnalyticsNamespace(u.orgId),
       `${scope}:${year}`,
-      () => this.queryAnalytics(u.orgId, year),
+      () => this.queryAnalytics(u.orgId, u.userId, scope, year),
       CACHE_TTL.MEDIUM,
     );
   }
 
-  private async queryAnalytics(orgId: string, year: number) {
+  private async queryAnalytics(
+    orgId: string,
+    actorUserId: string,
+    scope: DataScope,
+    year: number,
+  ) {
     const yearStart = `${year}-01-01`;
     const yearEnd = `${year}-12-31`;
+    const visible = leaveApprovalScope(scope, orgId, actorUserId);
 
     const [byDept, monthly, byType, deptAvgDays] = await Promise.all([
       this.db
@@ -239,6 +246,7 @@ export class LeavesService {
         .where(
           and(
             eq(leaveRequests.orgId, orgId),
+            visible,
             gte(leaveRequests.startDate, yearStart),
             lte(leaveRequests.startDate, yearEnd),
             eq(orgUnits.kind, "DEPARTMENT"),
@@ -256,6 +264,7 @@ export class LeavesService {
         .where(
           and(
             eq(leaveRequests.orgId, orgId),
+            visible,
             eq(leaveRequests.status, "APPROVED"),
             gte(leaveRequests.startDate, yearStart),
             lte(leaveRequests.startDate, yearEnd),
@@ -277,6 +286,7 @@ export class LeavesService {
         .where(
           and(
             eq(leaveRequests.orgId, orgId),
+            visible,
             eq(leaveRequests.status, "APPROVED"),
             gte(leaveRequests.startDate, yearStart),
             lte(leaveRequests.startDate, yearEnd),
@@ -297,6 +307,7 @@ export class LeavesService {
         .where(
           and(
             eq(leaveRequests.orgId, orgId),
+            visible,
             eq(leaveRequests.status, "APPROVED"),
             gte(leaveRequests.startDate, yearStart),
             lte(leaveRequests.startDate, yearEnd),
