@@ -31,8 +31,12 @@ export async function moduleAvailability(
   resolver: ModuleAvailabilityResolver,
   orgId: string,
   userId: string,
-  moduleKey: string,
+  rawModuleKey: string,
 ): Promise<ModuleAvailabilityResult> {
+  // Entitlement rows are normalized at the persistence seam. Normalize here
+  // as well so guards, snapshots, and authorization share one key space even
+  // when a caller supplies a stored-style key such as `HR`.
+  const moduleKey = rawModuleKey.toLowerCase();
   if (resolver.isCoreModule(moduleKey)) return { available: true };
 
   const [denied, map] = await Promise.all([
@@ -40,7 +44,8 @@ export async function moduleAvailability(
     resolver.getModuleMap(orgId),
   ]);
 
-  if (denied.has(moduleKey)) return { available: false, reason: "user-denied" };
+  if (denied.has(moduleKey) || denied.has(rawModuleKey))
+    return { available: false, reason: "user-denied" };
 
   const orgEnabled = map[moduleKey];
   if (orgEnabled === true) return { available: true };

@@ -4,7 +4,8 @@ import { kbArticles, kbPages, kbImportJobs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { forEachOrg } from "../../../common/tenant/for-each-org";
-import type { TenantTx } from "../../../common/tenant/with-tenant";
+import { withTenant, type TenantTx } from "../../../common/tenant/with-tenant";
+import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { mapArticleToPage } from "./kb-article-migration.util";
 import type {
@@ -55,7 +56,11 @@ export class KbArticleMigrationService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async preview(orgId: string): Promise<ArticleMigrationPreview> {
-    return this.previewOn(this.db, orgId);
+    return withTenant(this.db, { orgId, audience: "INTERNAL" }, (tx) =>
+      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, () =>
+        this.previewOn(tx, orgId),
+      ),
+    );
   }
 
   /**
@@ -116,10 +121,23 @@ export class KbArticleMigrationService {
   }
 
   async run(user: CurrentUserContext, input: RunArticleMigrationInput): Promise<MigrationResult> {
+    return withTenant(this.db, { orgId: user.orgId, audience: "INTERNAL" }, (tx) =>
+      runWithTenantContext({ orgId: user.orgId, audience: "INTERNAL", tx }, () =>
+        this.runOn(tx, user, input),
+      ),
+    );
+  }
+
+  /** Keep conversion reads and writes on the tenant-scoped transaction. */
+  private async runOn(
+    db: Db | TenantTx,
+    user: CurrentUserContext,
+    input: RunArticleMigrationInput,
+  ): Promise<MigrationResult> {
     const { orgId } = user;
     const { dryRun } = input;
 
-    const migratedRows = await this.db
+    const migratedRows = await db
       .select({ sourceArticleId: kbPages.sourceArticleId })
       .from(kbPages)
       .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.sourceArticleId)));
@@ -128,7 +146,7 @@ export class KbArticleMigrationService {
       migratedRows.map((r) => r.sourceArticleId).filter((v): v is number => v !== null),
     );
 
-    const articles = await this.db
+    const articles = await db
       .select()
       .from(kbArticles)
       .where(and(eq(kbArticles.orgId, orgId), eq(kbArticles.status, "published")));
@@ -141,7 +159,7 @@ export class KbArticleMigrationService {
       return { migrated: toMigrate.length, skipped, total, failed: 0, dryRun: true };
     }
 
-    const [maxRow] = await this.db
+    const [maxRow] = await db
       .select({ maxSort: max(kbPages.sortOrder) })
       .from(kbPages)
       .where(and(eq(kbPages.orgId, orgId), isNull(kbPages.parentPageId), isNull(kbPages.deletedAt)));
@@ -155,7 +173,7 @@ export class KbArticleMigrationService {
       }));
 
       try {
-        await this.db.transaction(async (tx) => {
+        await db.transaction(async (tx) => {
           await tx
             .insert(kbPages)
             .values(values)
@@ -166,7 +184,7 @@ export class KbArticleMigrationService {
         for (const article of batch) {
           try {
             const idx = toMigrate.indexOf(article);
-            await this.db
+            await db
               .insert(kbPages)
               .values({ orgId, ...mapArticleToPage(article, baseSort + idx * 100) })
               .onConflictDoNothing()
@@ -181,7 +199,7 @@ export class KbArticleMigrationService {
     // Reconcile against durable state. A concurrent conversion may make an
     // ON CONFLICT insert return no row even though the article is converted;
     // conversely, caught row errors must remain visible if no page exists.
-    const convertedRows = await this.db
+    const convertedRows = await db
       .select({ sourceArticleId: kbPages.sourceArticleId })
       .from(kbPages)
       .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.sourceArticleId)));
@@ -196,7 +214,7 @@ export class KbArticleMigrationService {
     );
     const succeeded = toMigrate.length - failedArticleIds.length;
 
-    const [job] = await this.db
+    const [job] = await db
       .insert(kbImportJobs)
       .values({
         orgId,
