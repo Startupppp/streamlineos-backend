@@ -1,6 +1,6 @@
-import { pgTable, text, serial, timestamp, date, decimal, integer, jsonb, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, date, decimal, integer, jsonb, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum, invAdjustmentStatusEnum } from "../common/enums";
+import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum, invAdjustmentStatusEnum, invQuantityBucketEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { invProductVariants, invUom } from "./core";
 import { invLocations, invWarehouses } from "./warehouses";
@@ -37,6 +37,7 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "cascade" }).notNull(),
   locationId: integer("location_id").references(() => invLocations.id, { onDelete: "set null" }),
   transactionType: invTxnTypeEnum("transaction_type").notNull(),
+  quantityBucket: invQuantityBucketEnum("quantity_bucket").default("ON_HAND").notNull(),
   quantityChange: decimal("quantity_change", { precision: 18, scale: 4 }).notNull(),
   quantityBefore: decimal("quantity_before", { precision: 18, scale: 4 }).notNull(),
   quantityAfter: decimal("quantity_after", { precision: 18, scale: 4 }).notNull(),
@@ -63,6 +64,8 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   index("idx_inv_txn_org_variant_type_created").on(table.orgId, table.productVariantId, table.transactionType, table.createdAt),
   index("idx_inv_txn_org_posting_date").on(table.orgId, table.postingDate),
   unique("uniq_inv_stock_transactions_org_id").on(table.orgId, table.id),
+  check("chk_inv_stock_transactions_arithmetic", sql`${table.quantityAfter} = ${table.quantityBefore} + ${table.quantityChange}`),
+  check("chk_inv_stock_transactions_nonzero", sql`${table.quantityChange} <> 0`),
 ]);
 
 export const invStockAdjustments = pgTable("inv_stock_adjustments", {

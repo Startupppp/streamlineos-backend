@@ -127,6 +127,39 @@ describeDb("inventory schema parity with the live catalogue", () => {
     expect(rows.filter((r) => r.policies === 0).map((r) => r.table_name)).toEqual([]);
   });
 
+  /**
+   * INV-104. These are the invariants that stop being true the moment a second
+   * writer appears, and a CHECK is the only place they cannot be forgotten. The
+   * list is asserted by name so removing one is a failing test rather than a
+   * quiet loosening.
+   */
+  it("keeps the quantity invariants in the database, not only in the services", async () => {
+    const required = [
+      "inv_stock_transactions.chk_inv_stock_transactions_arithmetic",
+      "inv_stock_transactions.chk_inv_stock_transactions_nonzero",
+      "inv_stock_levels.chk_inv_stock_levels_buckets_non_negative",
+      "inv_stock_transfers.chk_inv_stock_transfers_distinct_endpoints",
+      "inv_po_lines.chk_inv_po_lines_quantities",
+      "inv_so_lines.chk_inv_so_lines_quantities",
+      "inv_grn_lines.chk_inv_grn_lines_quantities",
+      "inv_stock_transfer_lines.chk_inv_stock_transfer_lines_quantities",
+      "inv_lots.chk_inv_lots_expiry_after_manufacture",
+      "inv_barcodes.chk_inv_barcodes_exclusive_arc",
+      "inv_product_uom_conversions.chk_inv_product_uom_conversions_factor",
+    ];
+    const rows = await sql<{ tbl: string; conname: string; convalidated: boolean }[]>`
+      SELECT rel.relname AS tbl, con.conname, con.convalidated
+      FROM pg_constraint con
+      JOIN pg_class rel ON rel.oid = con.conrelid
+      JOIN pg_namespace n ON n.oid = rel.relnamespace
+      WHERE n.nspname = 'public' AND rel.relname LIKE 'inv\\_%' AND con.contype = 'c'`;
+    const present = new Map(rows.map((r) => [`${r.tbl}.${r.conname}`, r.convalidated]));
+    expect(required.filter((name) => !present.has(name))).toEqual([]);
+    // NOT VALID leaves existing rows unchecked, which is not the same thing as
+    // an enforced invariant.
+    expect(required.filter((name) => present.get(name) === false)).toEqual([]);
+  });
+
   it("keeps a composite tenant key on every line table that carries one live", async () => {
     const rows = await sql<{ tbl: string; conname: string }[]>`
       SELECT rel.relname AS tbl, con.conname

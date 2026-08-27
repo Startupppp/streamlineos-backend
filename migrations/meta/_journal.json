@@ -2066,6 +2066,13 @@
       "when": 1787830367441,
       "tag": "0514_inv_webhook_event_subscriptions_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 296,
+      "version": "7",
+      "when": 1787830368441,
+      "tag": "0515_inventory_ledger_invariants",
+      "breakpoints": true
     }
   ]
 }

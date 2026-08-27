@@ -33,6 +33,18 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 export { addDec, subDec, mulDec, divDec, cmpDec } from "./decimal";
 
+type QuantityBucket = "ON_HAND" | "BLOCKED" | "QUALITY_HOLD";
+
+/** The quantity the named bucket holds, for the ledger's before/after pair. */
+function bucketQuantities(
+  bucket: QuantityBucket,
+  level: { onHand: string; blockedQty: string; qualityHoldQty: string },
+): string {
+  if (bucket === "BLOCKED") return level.blockedQty;
+  if (bucket === "QUALITY_HOLD") return level.qualityHoldQty;
+  return level.onHand;
+}
+
 function resolvePostingDate(cmd: StockEngineCommand): string {
   return cmd.postingDate ?? new Date().toISOString().slice(0, 10);
 }
@@ -136,6 +148,16 @@ export class StockEngineService {
         throw new BadRequestException({ code: INV_ERRORS.INSUFFICIENT_STOCK });
       }
 
+      // before/after describe the bucket this movement actually moved. Recording
+      // on-hand for a hold or block movement made after = before + change false
+      // for those rows, so the ledger's own arithmetic could not be a constraint.
+      const bucketBefore = bucketQuantities(bucket, level);
+      const bucketAfter = bucketQuantities(bucket, {
+        onHand: newOnHand,
+        blockedQty: newBlocked,
+        qualityHoldQty: newQualityHold,
+      });
+
       const unitCost = movement.unitCost ?? null;
       const totalCost = unitCost && positive ? mulDec(unitCost, delta) : null;
 
@@ -149,9 +171,10 @@ export class StockEngineService {
           serialId: movement.serialId ?? null,
           transactionType:
             movement.transactionType as (typeof invStockTransactions.$inferInsert)["transactionType"],
+          quantityBucket: bucket,
           quantityChange: delta,
-          quantityBefore: level.onHand,
-          quantityAfter: newOnHand,
+          quantityBefore: bucketBefore,
+          quantityAfter: bucketAfter,
           unitCost,
           totalCost,
           idempotencyKey: cmd.idempotencyKey,
@@ -439,6 +462,13 @@ export class StockEngineService {
             });
           }
 
+          const bucketBefore = bucketQuantities(bucket, state);
+          const bucketAfter = bucketQuantities(bucket, {
+            onHand: newOnHand,
+            blockedQty: newBlocked,
+            qualityHoldQty: newQualityHold,
+          });
+
           const unitCost = movement.unitCost ?? null;
           const totalCost =
             unitCost && positive ? mulDec(unitCost, delta) : null;
@@ -453,9 +483,10 @@ export class StockEngineService {
               serialId: movement.serialId ?? null,
               transactionType:
                 movement.transactionType as (typeof invStockTransactions.$inferInsert)["transactionType"],
+              quantityBucket: bucket,
               quantityChange: delta,
-              quantityBefore: state.onHand,
-              quantityAfter: newOnHand,
+              quantityBefore: bucketBefore,
+              quantityAfter: bucketAfter,
               unitCost,
               totalCost,
               idempotencyKey: cmd.idempotencyKey,

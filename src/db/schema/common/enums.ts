@@ -134,6 +134,15 @@ export const journalEntryStatusEnum = pgEnum("journal_entry_status", ["DRAFT", "
 
 export const invProductStatusEnum = pgEnum("inv_product_status", ["ACTIVE", "INACTIVE", "DISCONTINUED"]);
 export const invAdjReasonEnum = pgEnum("inv_adj_reason", ["PURCHASE", "SALE", "RETURN", "DAMAGE", "EXPIRY", "THEFT", "RECOUNT", "OTHER"]);
+/**
+ * Which quantity a movement moved.
+ *
+ * Without it the ledger cannot say whether a row changed on-hand or moved
+ * goods into a block or a quality hold, and quantity_before/quantity_after
+ * describe a bucket the reader has to infer from transaction_type.
+ */
+export const invQuantityBucketEnum = pgEnum("inv_quantity_bucket", ["ON_HAND", "BLOCKED", "QUALITY_HOLD"]);
+
 export const invTxnTypeEnum = pgEnum("inv_txn_type", ["PURCHASE", "SALE", "ADJUSTMENT_IN", "ADJUSTMENT_OUT", "TRANSFER_IN", "TRANSFER_OUT", "RETURN_IN", "RETURN_OUT", "GRN", "OPENING_BALANCE", "VENDOR_RETURN", "CUSTOMER_RETURN", "CYCLE_COUNT_GAIN", "CYCLE_COUNT_LOSS", "SCRAP", "QUARANTINE_IN", "QUARANTINE_OUT", "RESERVATION_CREATE", "RESERVATION_RELEASE", "RESERVATION_CONSUME"]);
 export const invPoStatusEnum = pgEnum("inv_po_status", ["DRAFT", "SENT", "PARTIAL", "RECEIVED", "CLOSED", "CANCELLED"]);
 export const invSoStatusEnum = pgEnum("inv_so_status", ["DRAFT", "CONFIRMED", "PARTIALLY_RESERVED", "RESERVED", "PICKED", "PACKED", "SHIPPED", "PARTIALLY_SHIPPED", "INVOICED", "CANCELLED", "CLOSED"]);
