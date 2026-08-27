@@ -9,6 +9,7 @@ import { ValuationService } from "./valuation.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
 import { CostVisibilityService } from "./cost-visibility";
 import { MovementCostingService } from "./movement-costing.service";
+import { PostingPeriodGuard } from "./posting-period.guard";
 
 @Module({
   imports: [AccountingGlModule],
@@ -22,6 +23,7 @@ import { MovementCostingService } from "./movement-costing.service";
     WarehouseScopeService,
     CostVisibilityService,
     MovementCostingService,
+    PostingPeriodGuard,
   ],
   exports: [
     StockEngineService,
@@ -33,6 +35,7 @@ import { MovementCostingService } from "./movement-costing.service";
     WarehouseScopeService,
     CostVisibilityService,
     MovementCostingService,
+    PostingPeriodGuard,
   ],
 })
 export class InvStockEngineModule {}

@@ -14,7 +14,7 @@ import { WarehouseScopeService } from "./warehouse-scope.service";
 import { claimIdempotencyKey, extractEngineResult } from "./idempotency";
 import { lockLevels, levelKey } from "./stock-level-locks";
 import { MovementCostingService } from "./movement-costing.service";
-import { PeriodsService } from "../../accounting/gl/periods.service";
+import { PostingPeriodGuard } from "./posting-period.guard";
 import { loadCostingContext } from "./costing-context";
 import {
   INV_ERRORS,
@@ -52,7 +52,7 @@ export class StockEngineService {
     private readonly cache: CacheService,
     private readonly valuation: ValuationService,
     private readonly warehouseScope: WarehouseScopeService,
-    private readonly periods: PeriodsService,
+    private readonly periods: PostingPeriodGuard,
     private readonly movementCosting: MovementCostingService,
   ) {}
 
@@ -85,7 +85,7 @@ export class StockEngineService {
     // called them, so backdated stock could silently restate a reported month.
     const settings = await this.settingsService.get(orgId);
     const postingDate = resolvePostingDate(cmd);
-    await this.periods.assertPeriodOpen(orgId, new Date(postingDate));
+    await this.periods.assertOpen(orgId, postingDate);
     const costing = await loadCostingContext(
       tx,
       orgId,
@@ -305,7 +305,7 @@ export class StockEngineService {
       );
 
       const settings = await this.settingsService.get(orgId);
-      await this.periods.assertPeriodOpen(orgId, new Date(resolvePostingDate(commands[0]!)));
+      await this.periods.assertOpen(orgId, resolvePostingDate(commands[0]!));
       const costing = await loadCostingContext(
         tx,
         orgId,

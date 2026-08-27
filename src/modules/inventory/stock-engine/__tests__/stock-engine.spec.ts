@@ -112,8 +112,13 @@ function defaultMovementCosting() {
   };
 }
 
+/**
+ * The engine now talks to PostingPeriodGuard, not PeriodsService directly — the
+ * guard skips the check entirely when accounting_periods is absent, which is why
+ * every command against this database used to die on 42P01.
+ */
 function defaultPeriods() {
-  return { assertPeriodOpen: jest.fn(async () => undefined) };
+  return { assertOpen: jest.fn(async () => undefined) };
 }
 
 function defaultWarehouseScope() {
