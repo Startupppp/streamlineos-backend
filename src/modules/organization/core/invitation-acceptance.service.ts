@@ -19,6 +19,7 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import {
   invitationEvents,
@@ -40,6 +41,7 @@ export class InvitationAcceptanceService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly planLimits: PlanLimitsService,
+    private readonly seatLedger: SeatLedgerService,
     private readonly dispatch: NotificationDispatchService,
   ) {}
 
@@ -88,6 +90,16 @@ export class InvitationAcceptanceService {
       event: "ACCEPTED",
       actorMembershipId: membershipId,
     });
+    await this.seatLedger.recordSeatEvent(
+      {
+        orgId,
+        eventType: "INVITE_ACCEPTED",
+        subjectId: invitationId,
+        reason: "invitation accepted",
+        idempotencyKey: `invite-accepted:${invitationId}`,
+      },
+      tx,
+    );
   }
 
   private issueMagicLink(

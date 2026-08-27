@@ -3,6 +3,7 @@ import { Test } from "@nestjs/testing";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 
@@ -56,6 +57,7 @@ describe("InvitationAcceptanceService.decline", () => {
         InvitationAcceptanceService,
         { provide: DRIZZLE, useValue: db },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
+        { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: CacheService,
           useValue: {

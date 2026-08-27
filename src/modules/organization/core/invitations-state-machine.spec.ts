@@ -6,6 +6,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { AccessService } from "../../access/access.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -74,6 +75,7 @@ describe("InvitationsService state transitions", () => {
           },
         },
         { provide: PlanLimitsService, useValue: {} },
+        { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: AccessService,
           useValue: { canManageOrganizationMembership },

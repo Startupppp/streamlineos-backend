@@ -35,6 +35,7 @@ import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { syncCanonicalEmploymentFields } from "../../common/hr/sync-canonical-employment-fields";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { SeatLedgerService } from "../billing/core/seat-ledger.service";
 import { OrganizationUsersReader } from "./organization-users.reader";
 
 @Injectable()
@@ -47,6 +48,7 @@ export class UsersService {
     private readonly cache: CacheService,
     private readonly access: AccessService,
     private readonly planLimits: PlanLimitsService,
+    private readonly seatLedger: SeatLedgerService,
     private readonly invitationsSvc: InvitationsService,
     private readonly orgMembership: OrgMembershipService,
   ) {
@@ -122,6 +124,18 @@ export class UsersService {
             DEPARTMENT: departmentId ?? null,
             BRANCH: branchId ?? null,
           });
+
+          await this.seatLedger.recordSeatEvent(
+            {
+              orgId,
+              eventType: "INVITE_ACCEPTED",
+              subjectId: existing.id,
+              actorId: actorUserId,
+              reason: "existing user added to organisation",
+              idempotencyKey: `member-added:${orgId}:${existing.id}`,
+            },
+            tx,
+          );
         },
         { orgId },
       );
@@ -173,6 +187,18 @@ export class UsersService {
           DEPARTMENT: departmentId ?? null,
           BRANCH: branchId ?? null,
         });
+
+        await this.seatLedger.recordSeatEvent(
+          {
+            orgId,
+            eventType: "INVITE_ACCEPTED",
+            subjectId: userId,
+            actorId: actorUserId,
+            reason: "user created directly",
+            idempotencyKey: `member-added:${orgId}:${userId}`,
+          },
+          tx,
+        );
       },
       { orgId },
     );

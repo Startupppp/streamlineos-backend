@@ -23,6 +23,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { EmailService } from "../../email/email.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import {
   invitationEvents,
   invitations,
@@ -57,6 +58,7 @@ export class InvitationsService {
     private readonly cache: CacheService,
     private readonly email: EmailService,
     private readonly planLimits: PlanLimitsService,
+    private readonly seatLedger: SeatLedgerService,
     private readonly access: AccessService,
   ) {}
 
@@ -262,6 +264,18 @@ export class InvitationsService {
             event: "CREATED",
             actorMembershipId: null,
           });
+
+          await this.seatLedger.recordSeatEvent(
+            {
+              orgId,
+              eventType: "INVITE_SENT",
+              subjectId: invitationId,
+              actorId: actorUserId,
+              reason: "invitation sent",
+              idempotencyKey: `invite-sent:${invitationId}`,
+            },
+            tx,
+          );
         },
         { orgId },
       );
@@ -536,6 +550,18 @@ export class InvitationsService {
           event: "REVOKED",
           actorMembershipId: actorMembership?.id ?? null,
         });
+
+        await this.seatLedger.recordSeatEvent(
+          {
+            orgId,
+            eventType: "INVITE_CANCELLED",
+            subjectId: invitationId,
+            actorId: actorUserId,
+            reason: "invitation cancelled",
+            idempotencyKey: `invite-cancelled:${invitationId}`,
+          },
+          tx,
+        );
       },
       { orgId },
     );

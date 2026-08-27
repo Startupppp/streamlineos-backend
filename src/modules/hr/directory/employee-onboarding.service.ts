@@ -35,6 +35,7 @@ import { AccessService } from "../../access/access.service";
 import { syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 
@@ -76,6 +77,7 @@ export class EmployeeOnboardingService {
     private readonly personEmploymentSync: PersonEmploymentSyncService,
     private readonly access: AccessService,
     private readonly planLimits: PlanLimitsService,
+    private readonly seatLedger: SeatLedgerService,
   ) {}
 
   private async reserveMemberSeat(
@@ -155,6 +157,18 @@ export class EmployeeOnboardingService {
         if (insertedMembership[0]) {
           await syncStructuralRoleAssignment(tx, actor.orgId, insertedMembership[0].id, role);
         }
+
+        await this.seatLedger.recordSeatEvent(
+          {
+            orgId: actor.orgId,
+            eventType: "INVITE_ACCEPTED",
+            subjectId: existingUser.id,
+            actorId: actor.userId,
+            reason: "employee onboarded",
+            idempotencyKey: `member-added:${actor.orgId}:${existingUser.id}`,
+          },
+          tx,
+        );
 
         if (body.monthlySalary && body.monthlySalary > 0) {
           const effectiveFrom = body.joiningDate
@@ -262,6 +276,18 @@ export class EmployeeOnboardingService {
         .returning({ id: organizationMembers.id });
       if (createdMembership[0]) 
         await syncStructuralRoleAssignment(tx, actor.orgId, createdMembership[0].id, role);
+
+      await this.seatLedger.recordSeatEvent(
+        {
+          orgId: actor.orgId,
+          eventType: "INVITE_ACCEPTED",
+          subjectId: created.id,
+          actorId: actor.userId,
+          reason: "employee onboarded",
+          idempotencyKey: `member-added:${actor.orgId}:${created.id}`,
+        },
+        tx,
+      );
       
 
       if (body.monthlySalary && body.monthlySalary > 0) {

@@ -1,7 +1,8 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, gte, isNull, isNotNull, lt, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import type { Db, TenantTx } from "../../../db/drizzle.types";
+import type { Db } from "../../../db/drizzle.types";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { billingProrationLines } from "../../../db/schema";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { computeProrationMinor, type RoundingRule } from "./proration-math";
@@ -71,12 +72,12 @@ export class ProrationLedgerService {
     private readonly catalog: VersionedCatalogService,
   ) {}
 
-  async recordPlanChange(input: ProrationChangeInput, executor?: TenantTx): Promise<ProrationLineRecord> {
+  async recordPlanChange(input: ProrationChangeInput, executor?: DbOrTx): Promise<ProrationLineRecord> {
     if (executor) return this.write(executor, input);
     return runInTenantTransaction(this.db, (tx) => this.write(tx, input), { orgId: input.orgId });
   }
 
-  private async write(tx: TenantTx, input: ProrationChangeInput): Promise<ProrationLineRecord> {
+  private async write(tx: DbOrTx, input: ProrationChangeInput): Promise<ProrationLineRecord> {
     const { orgId, idempotencyKey } = input;
 
     const replay = await this.findByIdempotencyKey(tx, orgId, idempotencyKey);
@@ -161,7 +162,7 @@ export class ProrationLedgerService {
   }
 
   private async findByIdempotencyKey(
-    tx: TenantTx,
+    tx: DbOrTx,
     orgId: string,
     idempotencyKey: string,
   ): Promise<ProrationLineRecord | null> {

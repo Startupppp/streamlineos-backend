@@ -1,7 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import type { Db, TenantTx } from "../../../db/drizzle.types";
+import type { Db } from "../../../db/drizzle.types";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { billingSeatEvents } from "../../../db/schema";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { readCount } from "./quota-counts";
@@ -50,12 +51,12 @@ export class SeatLedgerService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   /** Lock, count and insert are one transaction, so `billedQuantityAfter` is what the quota gate saw at that instant. */
-  async recordSeatEvent(input: SeatEventInput, executor?: TenantTx): Promise<SeatEventRecord> {
+  async recordSeatEvent(input: SeatEventInput, executor?: DbOrTx): Promise<SeatEventRecord> {
     if (executor) return this.write(executor, input);
     return runInTenantTransaction(this.db, (tx) => this.write(tx, input), { orgId: input.orgId });
   }
 
-  private async write(tx: TenantTx, input: SeatEventInput): Promise<SeatEventRecord> {
+  private async write(tx: DbOrTx, input: SeatEventInput): Promise<SeatEventRecord> {
     const { orgId, eventType, subjectId } = input;
     const idempotencyKey = input.idempotencyKey ?? null;
 
@@ -108,7 +109,7 @@ export class SeatLedgerService {
   }
 
   private async findByIdempotencyKey(
-    tx: TenantTx,
+    tx: DbOrTx,
     orgId: string,
     idempotencyKey: string,
   ): Promise<SeatEventRecord | null> {
