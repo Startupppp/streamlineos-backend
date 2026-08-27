@@ -171,6 +171,66 @@ export async function insertBareParty(
   return row;
 }
 
+/**
+ * The identifier a legacy record is known by, minted without the legacy table.
+ *
+ * Ticket 08's contract. `leads.id` and its siblings are serial integers, and
+ * they are the CRM's **public** identifiers -- they sit in `GET /leads/:leadId`
+ * behind a `ParseIntPipe` and in `/crm/leads/[leadId]` in the address bar.
+ * Party's identifier is a UUID, so dropping the tables naively would rename
+ * every record in the product and break every link anybody has saved.
+ *
+ * Migration 0277 moved the minting to the map: each `*_party_map` now defaults
+ * its integer column from the sequence the legacy table used to own, detached
+ * with `OWNED BY NONE` so `DROP TABLE` cannot take it. Numbering continues
+ * unbroken, and a record keeps the name it already had.
+ *
+ * So this inserts the map row and lets the database hand back the number, rather
+ * than inserting a legacy row to find out what the number would have been.
+ */
+export async function mintLegacyId(
+  db: MirrorDb,
+  organizationId: string,
+  partyId: string,
+  kind: MappedLegacyKind,
+  linkedBy: string,
+): Promise<number> {
+  switch (kind) {
+    case "LEAD": {
+      const [row] = await db
+        .insert(leadPartyMap)
+        .values({ organizationId, partyId, linkedBy })
+        .returning({ id: leadPartyMap.leadId });
+      if (!row) throw new Error("Failed to mint a lead identifier");
+      return row.id;
+    }
+    case "CLIENT": {
+      const [row] = await db
+        .insert(clientPartyMap)
+        .values({ organizationId, partyId, linkedBy })
+        .returning({ id: clientPartyMap.clientId });
+      if (!row) throw new Error("Failed to mint a client identifier");
+      return row.id;
+    }
+    case "CONTACT": {
+      const [row] = await db
+        .insert(contactPartyMap)
+        .values({ organizationId, partyId, linkedBy })
+        .returning({ id: contactPartyMap.contactId });
+      if (!row) throw new Error("Failed to mint a contact identifier");
+      return row.id;
+    }
+    case "ORGANISATION": {
+      const [row] = await db
+        .insert(crmOrgPartyMap)
+        .values({ organizationId, partyId, linkedBy })
+        .returning({ id: crmOrgPartyMap.crmOrganizationId });
+      if (!row) throw new Error("Failed to mint an organisation identifier");
+      return row.id;
+    }
+  }
+}
+
 export async function grantRole(
   db: MirrorDb,
   organizationId: string,

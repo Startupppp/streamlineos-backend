@@ -174,6 +174,15 @@ function world(overrides: Partial<Record<string, unknown[]>> = {}): Answer {
     if (statement.table === businessParties) return overrides.parties ?? [PARTY];
     if (statement.table === leadPartyMap && statement.kind === "select")
       return overrides.leadMap ?? [{ leadId: 7, partyId: "party-1", id: 7 }];
+    /**
+     * The map mints the identifier now.
+     *
+     * Ticket 08: `lead_party_map.lead_id` defaults from the sequence `leads`
+     * used to own, so an insert that omits it gets one back. The fake has to
+     * answer the same way or the writer cannot tell what the record is called.
+     */
+    if (statement.table === leadPartyMap && statement.kind === "insert")
+      return overrides.leadMapInsert ?? [{ id: 7, leadId: 7 }];
     if (statement.table === leads)
       return overrides.leads ?? [{ id: 7, orgId: "org-1", name: "Ada Lovelace" }];
     if (statement.kind === "select") return [];
@@ -189,10 +198,15 @@ describe("party-legacy-writer — the party is written first, in one transaction
 
     expect(fake.trace()).toEqual([
       // The bare party, then the values it takes, then everything that is a
-      // function of it. Nothing touches `leads` before `business_parties`.
+      // function of it.
+      //
+      // Ticket 08's contract removed the `insert:leads` that used to sit third.
+      // The row it wrote was already derived from the party -- the table's only
+      // unique contribution was the serial, and the map mints that now. So the
+      // trace is what it always was, minus a write that produced nothing the
+      // derivation did not already know.
       "insert:party@1",
       "update:party@1",
-      "insert:leads@1",
       "insert:leadMap@1",
       "insert:roles@1",
     ]);
@@ -201,31 +215,42 @@ describe("party-legacy-writer — the party is written first, in one transaction
   it("writes the lead from the derivation, not from the caller's values", async () => {
     const fake = new FakeDb(world());
 
-    await createMirroredLead(fake.db, "org-1", {
+    const lead = await createMirroredLead(fake.db, "org-1", {
       orgId: "org-1",
       name: "Ada Lovelace",
       // The party the fake returns says QUALIFIED/HOT regardless. If the writer
-      // echoed the caller instead of deriving, these would land on the row.
+      // echoed the caller instead of deriving, these would come back.
       status: "NEW",
       priority: "COLD",
     });
 
-    const [inserted] = fake.of("insert", leads);
-    expect(inserted?.values[0]).toMatchObject(LEAD_MIRROR.derive(PARTY));
-    expect(inserted?.values[0]?.status).toBe("QUALIFIED");
-    expect(inserted?.values[0]?.priority).toBe("HOT");
+    /**
+     * Asserted on what the writer *returns* now, not on what it inserted.
+     *
+     * Ticket 08's contract: there is no `leads` insert to inspect. That is not a
+     * weaker test -- it is a stronger one. Inspecting the insert checked what
+     * was written; this checks what the caller is handed, which is the thing
+     * every consumer actually depends on and is where an echoed value would
+     * show up.
+     */
+    expect(lead).toMatchObject(LEAD_MIRROR.derive(PARTY));
+    expect(lead.status).toBe("QUALIFIED");
+    expect(lead.priority).toBe("HOT");
   });
 
   it("carries a column the party does not own straight onto the legacy row", async () => {
     const fake = new FakeDb(world());
 
-    await createMirroredLead(fake.db, "org-1", {
+    const lead = await createMirroredLead(fake.db, "org-1", {
       orgId: "org-1",
       name: "Ada",
       dmLeadId: 99,
     });
 
-    expect(fake.of("insert", leads)[0]?.values[0]?.dmLeadId).toBe(99);
+    // A legacy-owned column has no Party home, so it can only survive by being
+    // carried through the assembly. `dm_lead_id` is the one lead column in that
+    // position -- everything else the table owned maps somewhere.
+    expect(lead.dmLeadId).toBe(99);
   });
 
   it("updates the party before the lead, both in one savepoint", async () => {
