@@ -102,14 +102,48 @@ describe("authorize", () => {
 
   it("fails closed on a completely unknown key that appears in no module catalog", async () => {
     const resolver = makeResolver(new Map(), ["hr"]);
-    const result = await authorize(resolver, makeCtx({ isOrgOwner: true }), "nonexistent:ghost:action");
+    const result = await authorize(resolver, makeCtx(), "nonexistent:ghost:action");
     expect(result.allow).toBe(false);
-    expect(result.reason).toBe("NO_MODULE");
+    expect(result.reason).toBe("FORBIDDEN");
   });
 
   it("fails closed on a malformed key with no module segment", async () => {
     const resolver = makeResolver(new Map(), ["hr"]);
-    const result = await authorize(resolver, makeCtx({ isOrgOwner: true }), "bare-key");
+    const result = await authorize(resolver, makeCtx(), "bare-key");
+    expect(result.allow).toBe(false);
+  });
+
+  /**
+   * These two asked an org owner and expected NO_MODULE, and had never passed:
+   * `isCoreModuleKey` treats an unknown module as core, so availability answers
+   * yes and the deny comes from `scopeFor` instead — and an org owner's
+   * `scopeFor` returns "all" for every key by design (access.service.ts:655).
+   * Unknown-module-is-core is deliberate too: the registry lists what is *plan
+   * gated*, not what exists, so treating an absent entry as gated would 402
+   * `settings`, `tasks` and every other ungated namespace.
+   *
+   * So the guarantee is real but it is FORBIDDEN from `scopeFor`, not NO_MODULE
+   * from availability, and it holds for everyone who is not an org owner. These
+   * two pin that, and the owner case is pinned below so the wrong assertion is
+   * not reintroduced as a bug report.
+   */
+  it("allows an org owner an unknown key, because owner bypass is the design", async () => {
+    const resolver = makeResolver(new Map(), ["hr"]);
+    const result = await authorize(
+      resolver,
+      makeCtx({ isOrgOwner: true }),
+      "nonexistent:ghost:action",
+    );
+    expect(result).toEqual({ allow: true, scope: "all" });
+  });
+
+  it("still denies an org owner a key their token scopes exclude", async () => {
+    const resolver = makeResolver(new Map(), ["hr"]);
+    const result = await authorize(
+      resolver,
+      makeCtx({ isOrgOwner: true, tokenScopes: ["hr:employees:view"] }),
+      "nonexistent:ghost:action",
+    );
     expect(result.allow).toBe(false);
   });
 

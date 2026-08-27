@@ -406,6 +406,76 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
 
     expect(result).toEqual({ success: true });
   });
+
+  /**
+   * The schema allows 50 groups, so a per-row insert is up to 50 sequential
+   * round trips holding a pooled connection inside one transaction — and
+   * updateMemberGroups, three methods down the same file, already writes the
+   * set in one statement.
+   */
+  it("writes every group assignment in one statement, not one per group", async () => {
+    const groupIds = [9, 10, 11];
+    const ownerChain = makeFlexChain([{ userId: "u-other" }]);
+    const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
+    const values = jest.fn().mockReturnValue({ onConflictDoNothing });
+    const txMock = {
+      execute: jest.fn().mockResolvedValue([]),
+      insert: jest.fn().mockReturnValue({ values }),
+      delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+    };
+
+    let selectCallCount = 0;
+    const mockDb = {
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        return selectCallCount === 1
+          ? ownerChain
+          : makeFlexChain(groupIds.map((id) => ({ id })));
+      }),
+      transaction: jest
+        .fn()
+        .mockImplementation(async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock)),
+      query: {
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ id: 12, status: "ACTIVE" }),
+        },
+      },
+    };
+
+    const m = await Test.createTestingModule({
+      providers: [
+        ModuleAccessGroupsService,
+        { provide: DRIZZLE, useValue: mockDb },
+        {
+          provide: AccessService,
+          useValue: {
+            resolveUserPermissions: jest.fn().mockResolvedValue(new Map<string, string>()),
+            isModuleEnabled: jest.fn().mockResolvedValue(true),
+          },
+        },
+        { provide: CacheService, useValue: { invalidate: jest.fn() } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+      ],
+    }).compile();
+
+    await m.get(ModuleAccessGroupsService).addMember(
+      makeActor({ userId: "u-actor", isOrgOwner: true }),
+      "hr",
+      { userId: "u-target", groupIds },
+    );
+
+    expect(txMock.insert).toHaveBeenCalledTimes(1);
+    expect(values).toHaveBeenCalledTimes(1);
+    expect(values).toHaveBeenCalledWith(
+      groupIds.map((roleId) => ({
+        orgId: "org-1",
+        organizationMembershipId: 12,
+        roleId,
+        assignedByMembershipId: null,
+      })),
+    );
+    expect(onConflictDoNothing).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("ModuleAccessGroupsService ownership authority", () => {

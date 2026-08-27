@@ -1278,17 +1278,17 @@ export class ModuleAccessGroupsService {
     await runInTenantTransaction(
       this.db,
       async (tx): Promise<void> => {
-        for (const groupId of input.groupIds) {
-          await tx
-            .insert(roleAssignments)
-            .values({
+        await tx
+          .insert(roleAssignments)
+          .values(
+            input.groupIds.map((groupId) => ({
               orgId: actor.orgId,
               organizationMembershipId: member.id,
               roleId: groupId,
               assignedByMembershipId: null,
-            })
-            .onConflictDoNothing();
-        }
+            })),
+          )
+          .onConflictDoNothing();
         await bumpPermissionsVersion(tx, actor.orgId);
       },
       { orgId: actor.orgId },
