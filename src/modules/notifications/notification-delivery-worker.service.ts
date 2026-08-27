@@ -12,9 +12,12 @@ import { isTransientDbError } from "../../common/db/transient-error";
 import { forEachOrg, withTenant, runWithTenantContext } from "../../common/tenant";
 import { filterOrgMemberIds } from "../../common/tenant/org-membership";
 import { NotificationCircuitBreaker } from "./notification-circuit-breaker";
+import {
+  backoffMinutesForAttempt,
+  resolveDeliveryClassForEvent,
+} from "./notification-delivery-class";
 
 const BATCH_SIZE = 50;
-const BACKOFF_MINUTES = [1, 5, 15, 60, 360];
 
 /**
  * PIPE-010. Backoff was exact, so every delivery that failed against the same
@@ -158,7 +161,12 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
               .update(notificationQueue)
               .set({
                 status: "PENDING",
-                runAt: new Date(Date.now() + backoffMsWithJitter(BACKOFF_MINUTES[0] ?? 1)),
+                runAt: new Date(
+                  Date.now() +
+                    backoffMsWithJitter(
+                      backoffMinutesForAttempt(resolveDeliveryClassForEvent(undefined), 1),
+                    ),
+                ),
                 lastError: "worker exception",
               })
               .where(eq(notificationQueue.id, job.id)),
@@ -340,7 +348,10 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
 
       const retryable = sendResult.retryable ?? false;
       if (retryable && attempt < delivery.maxAttempts) {
-        const backoff = BACKOFF_MINUTES[Math.min(attempt - 1, BACKOFF_MINUTES.length - 1)] ?? 60;
+        const backoff = backoffMinutesForAttempt(
+          resolveDeliveryClassForEvent(delivery.eventKey ?? undefined),
+          attempt,
+        );
         const nextAttemptAt = new Date(now.getTime() + backoffMsWithJitter(backoff));
         await this.db
           .update(notificationDeliveries)

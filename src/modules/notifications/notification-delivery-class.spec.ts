@@ -5,6 +5,8 @@ import {
   DELIVERY_CLASS_POLICIES,
   createMarketingConsentProof,
   requireConsentProofForMarketing,
+  backoffMinutesForAttempt,
+  resolveDeliveryClassForEvent,
   type DeliveryClassPolicy,
   type MarketingConsentProof,
 } from "./notification-delivery-class";
@@ -245,5 +247,41 @@ describe("MARKETING delivery class enforcement at the seam", () => {
     expect(() => requireConsentProofForMarketing(DeliveryClass.MARKETING, proof)).toThrow(
       /MARKETING delivery requires recorded per-recipient consent/,
     );
+  });
+});
+
+describe("retry policy is the registry's, not a worker constant", () => {
+  it("exposes the backoff step for an attempt, clamped at the last step", () => {
+    const product = DELIVERY_CLASS_POLICIES[DeliveryClass.PRODUCT_EVENT].retryPolicy.backoffMinutes;
+
+    expect(backoffMinutesForAttempt(DeliveryClass.PRODUCT_EVENT, 1)).toBe(product[0]);
+    expect(backoffMinutesForAttempt(DeliveryClass.PRODUCT_EVENT, 3)).toBe(product[2]);
+    expect(backoffMinutesForAttempt(DeliveryClass.PRODUCT_EVENT, product.length)).toBe(
+      product[product.length - 1],
+    );
+  });
+
+  it("clamps past the end rather than returning undefined", () => {
+    const product = DELIVERY_CLASS_POLICIES[DeliveryClass.PRODUCT_EVENT].retryPolicy.backoffMinutes;
+    expect(backoffMinutesForAttempt(DeliveryClass.PRODUCT_EVENT, 99)).toBe(
+      product[product.length - 1],
+    );
+  });
+
+  it("treats a zero or negative attempt as the first step", () => {
+    const product = DELIVERY_CLASS_POLICIES[DeliveryClass.PRODUCT_EVENT].retryPolicy.backoffMinutes;
+    expect(backoffMinutesForAttempt(DeliveryClass.PRODUCT_EVENT, 0)).toBe(product[0]);
+    expect(backoffMinutesForAttempt(DeliveryClass.PRODUCT_EVENT, -5)).toBe(product[0]);
+  });
+
+  it("gives each class its own curve, so the seam is not decorative", () => {
+    const product = backoffMinutesForAttempt(DeliveryClass.PRODUCT_EVENT, 2);
+    const alert = backoffMinutesForAttempt(DeliveryClass.OPERATOR_ALERT, 2);
+    expect(alert).not.toBe(product);
+  });
+
+  it("resolves the product-event class for any catalog-driven delivery", () => {
+    expect(resolveDeliveryClassForEvent("billing.payment.failed")).toBe(DeliveryClass.PRODUCT_EVENT);
+    expect(resolveDeliveryClassForEvent(undefined)).toBe(DeliveryClass.PRODUCT_EVENT);
   });
 });

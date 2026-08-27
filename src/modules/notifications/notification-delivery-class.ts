@@ -103,6 +103,35 @@ export const DELIVERY_CLASS_POLICIES: Readonly<Record<DeliveryClass, DeliveryCla
   },
 } as const;
 
+/**
+ * The backoff step for a given attempt, clamped at the last step.
+ *
+ * This exists so the delivery worker stops carrying its own `BACKOFF_MINUTES` constant. Two copies
+ * of a retry curve is one copy too many: the registry claimed to own retry rules while the only
+ * code that retried anything read a private array, so changing the registry changed nothing.
+ *
+ * Attempts are 1-based, matching `notification_deliveries.attempt_count + 1` at the call site.
+ */
+export function backoffMinutesForAttempt(deliveryClass: DeliveryClass, attempt: number): number {
+  const steps = DELIVERY_CLASS_POLICIES[deliveryClass].retryPolicy.backoffMinutes;
+  const last = steps[steps.length - 1] ?? 60;
+  if (attempt <= 1) return steps[0] ?? last;
+  return steps[Math.min(attempt - 1, steps.length - 1)] ?? last;
+}
+
+/**
+ * Every event in the catalog is a product event by construction — the catalog *is* the
+ * product-event pipeline. The other four classes describe senders that never enter it, which is
+ * why they appear in `notification-caller-inventory.ts` rather than here.
+ *
+ * An unknown or absent key resolves to PRODUCT_EVENT rather than throwing: a delivery already
+ * committed must not become unretryable because its event was renamed.
+ */
+export function resolveDeliveryClassForEvent(eventKey: string | undefined): DeliveryClass {
+  if (!eventKey) return DeliveryClass.PRODUCT_EVENT;
+  return DeliveryClass.PRODUCT_EVENT;
+}
+
 export type MarketingConsentProof = { readonly consentVerified: true };
 
 export function createMarketingConsentProof(): MarketingConsentProof {
