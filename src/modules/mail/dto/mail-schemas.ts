@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
+
 export const mailFolderSchema = z.enum(["inbox", "sent", "archive", "trash", "starred"]);
 export type MailFolder = z.infer<typeof mailFolderSchema>;
 
@@ -13,7 +15,7 @@ export const listMessagesQuerySchema = z.object({
   accountId: z.string().default("all"),
   q: z.string().max(500).optional(),
   cursor: z.string().max(2000).optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(25),
+  limit: pageSizeField(25, 50),
 });
 export type ListMessagesQuery = z.infer<typeof listMessagesQuerySchema>;
 

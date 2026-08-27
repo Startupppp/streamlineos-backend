@@ -4,7 +4,10 @@ import {
   projectPrioritySchema,
   refineDueOnOrAfterStart,
 } from "./project-core.schemas";
-import { baseListQuerySchema } from "../../../../common/pagination/list-query.schema";
+import {
+  baseListQuerySchema,
+  pageSizeField,
+} from "../../../../common/pagination/list-query.schema";
 
 const csvToStringArray = z
   .string()
@@ -124,7 +127,7 @@ export const allWorkQuerySchema = baseListQuerySchema
 
 export const searchTicketsQuerySchema = z.object({
   q: z.string().default(""),
-  limit: z.coerce.number().int().min(1).max(20).default(10),
+  limit: pageSizeField(10, 20),
 });
 export type SearchTicketsQuery = z.infer<typeof searchTicketsQuerySchema>;
 

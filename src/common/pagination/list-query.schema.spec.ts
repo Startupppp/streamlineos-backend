@@ -42,6 +42,15 @@ import {
   organizationListSchema,
   orgDuplicatesQuerySchema,
 } from "../../modules/crm/core/dto/organizations.schemas";
+import { searchTicketsQuerySchema } from "../../modules/build/core/dto/ticket.schemas";
+import { intakeListQuerySchema } from "../../modules/build/execution/dto/workspace.schemas";
+import { territoryListSchema } from "../../modules/crm/core/dto/territories.schemas";
+import {
+  listMessagesQuerySchema as chatListMessagesQuerySchema,
+  searchQuerySchema as chatSearchQuerySchema,
+} from "../../modules/chat/dto/chat.schemas";
+import { listMessagesQuerySchema as mailListMessagesQuerySchema } from "../../modules/mail/dto/mail-schemas";
+import { searchQuerySchema as globalSearchQuerySchema } from "../../modules/search/dto/search.schemas";
 
 describe("PAGE_SIZE_CAP", () => {
   it("is 100", () => {
@@ -261,5 +270,70 @@ describe("migrated schemas — clamp at their ceiling and preserve their own def
         }),
       ).toThrow();
     });
+  });
+});
+
+interface SizeOnlyCaseConfig {
+  name: string;
+  schema: ParseableSchema;
+  defaultSize: number;
+  /** Only where the endpoint keeps a ceiling tighter than the platform cap. */
+  ceiling?: number;
+  /** Other required fields, so the size field is what the case is testing. */
+  base?: Record<string, unknown>;
+}
+
+/**
+ * Cursor and size-only lists — no `page` field, so they are not in the table
+ * above, but the page-size half of the vocabulary is the same shape and the
+ * clamp-don't-reject rule applies to them identically. Each of these hand-rolled
+ * `z.coerce.number().int().min(1).max(n)` before this, which answered an
+ * over-large page with a 400.
+ */
+const sizeOnlyCases: SizeOnlyCaseConfig[] = [
+  { name: "searchTicketsQuerySchema", schema: searchTicketsQuerySchema as ParseableSchema, defaultSize: 10, ceiling: 20, base: { q: "bug" } },
+  { name: "intakeListQuerySchema", schema: intakeListQuerySchema as ParseableSchema, defaultSize: 50 },
+  { name: "territoryListSchema", schema: territoryListSchema as ParseableSchema, defaultSize: 50 },
+  { name: "chat listMessagesQuerySchema", schema: chatListMessagesQuerySchema as ParseableSchema, defaultSize: 50 },
+  { name: "chat searchQuerySchema", schema: chatSearchQuerySchema as ParseableSchema, defaultSize: 20 },
+  { name: "mail listMessagesQuerySchema", schema: mailListMessagesQuerySchema as ParseableSchema, defaultSize: 25, ceiling: 50 },
+  { name: "global searchQuerySchema", schema: globalSearchQuerySchema as ParseableSchema, defaultSize: 5, ceiling: 10, base: { q: "acme" } },
+];
+
+describe("size-only schemas — clamp at their ceiling and preserve their own defaults", () => {
+  for (const { name, schema, defaultSize, ceiling, base } of sizeOnlyCases) {
+    const cap = ceiling ?? PAGE_SIZE_CAP;
+    const required = base ?? {};
+    describe(name, () => {
+      it(`clamps an over-large page size to exactly ${cap}`, () => {
+        expect(schema.parse({ ...required, limit: 999 })["limit"]).toBe(cap);
+      });
+
+      it("clamps rather than rejecting, so an over-large page never 400s", () => {
+        expect(() => schema.parse({ ...required, limit: 999 })).not.toThrow();
+      });
+
+      it(`defaults page size to ${defaultSize} when absent`, () => {
+        expect(schema.parse({ ...required })["limit"]).toBe(defaultSize);
+      });
+
+      it("honours a size below the ceiling", () => {
+        expect(schema.parse({ ...required, limit: 3 })["limit"]).toBe(3);
+      });
+
+      it("still refuses a zero page size", () => {
+        expect(() => schema.parse({ ...required, limit: 0 })).toThrow();
+      });
+    });
+  }
+});
+
+describe("intakeListQuerySchema keeps its own offset field", () => {
+  it("defaults offset to 0", () => {
+    expect(intakeListQuerySchema.parse({}).offset).toBe(0);
+  });
+
+  it("accepts an explicit offset", () => {
+    expect(intakeListQuerySchema.parse({ offset: 40 }).offset).toBe(40);
   });
 });
