@@ -11,6 +11,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
@@ -23,15 +24,21 @@ export class PackagesService {
     private readonly cache: CacheService,
     private readonly numSeq: NumberSequenceService,
     private readonly audit: InventoryAuditService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async list(orgId: string, query: ListPackagesQueryInput) {
+  async list(orgId: string, userId: string, query: ListPackagesQueryInput) {
     const { shipmentId, status, page, limit } = query;
     const offset = (page - 1) * limit;
-    const hash = `${shipmentId ?? ""}:${status ?? ""}:${limit}:${offset}`;
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const hash = `${scope.key}:${shipmentId ?? ""}:${status ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(CACHE_KEYS.invPackagesNamespace(orgId), `list:${hash}`, async () => {
-      const conditions = [eq(invPackages.orgId, orgId)];
+      // A package carries no warehouse of its own; its shipment does.
+      const conditions = [
+        eq(invPackages.orgId, orgId),
+        scope.anyOf(sql`${invPackages.shipmentId} IN (SELECT id FROM inv_shipments WHERE org_id = ${orgId} AND ${scope.warehouse(sql.raw("warehouse_id"))})`),
+      ];
       if (shipmentId) conditions.push(eq(invPackages.shipmentId, shipmentId));
       if (status) conditions.push(eq(invPackages.status, status));
       const where = and(...conditions);

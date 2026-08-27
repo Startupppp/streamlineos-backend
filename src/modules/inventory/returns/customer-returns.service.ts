@@ -9,6 +9,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import type { ListReturnsInput, CreateCustomerReturnInput, PostCustomerReturnInput } from "./dto/inv-returns.schemas";
@@ -20,15 +21,26 @@ export class CustomerReturnsService {
     private readonly cache: CacheService,
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async list(orgId: string, filters: ListReturnsInput) {
+  async list(orgId: string, userId: string, filters: ListReturnsInput) {
     const { status, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const hash = `${status ?? ""}:${limit}:${offset}`;
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const hash = `${scope.key}:${status ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(CACHE_KEYS.invCustomerReturnsNamespace(orgId), hash, async () => {
-      const conditions = [eq(invCustomerReturns.orgId, orgId)];
+      // A return carries no warehouse of its own. It is attributable through
+      // whichever source document it came back against — the order or the
+      // shipment — and a return with neither belongs to no warehouse.
+      const conditions = [
+        eq(invCustomerReturns.orgId, orgId),
+        scope.anyOf(
+          sql`${invCustomerReturns.soId} IN (SELECT id FROM inv_sales_orders WHERE org_id = ${orgId} AND ${scope.warehouse(sql.raw("warehouse_id"))})`,
+          sql`${invCustomerReturns.shipmentId} IN (SELECT id FROM inv_shipments WHERE org_id = ${orgId} AND ${scope.warehouse(sql.raw("warehouse_id"))})`,
+        ),
+      ];
       if (status) conditions.push(eq(invCustomerReturns.status, status));
       const where = and(...conditions);
 

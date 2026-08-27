@@ -30,7 +30,7 @@ export class PackagesController {
     @Query(new ZodValidationPipe(listPackagesQuerySchema)) query: ListPackagesQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.list(u.orgId, query);
+    return this.svc.list(u.orgId, u.userId, query);
   }
 
   @Get(":packageId")

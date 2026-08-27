@@ -69,7 +69,7 @@ export class InvTraceabilityController {
     @Query(new ZodValidationPipe(listSerialsSchema)) filters: ListSerialsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.traceability.listSerials(u.orgId, filters);
+    return this.traceability.listSerials(u.orgId, u.userId, filters);
   }
 
   @Get("serials/:serialId")

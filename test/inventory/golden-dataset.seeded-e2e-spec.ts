@@ -4,6 +4,10 @@ import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { InvStockService } from "src/modules/inventory/stock/inv-stock.service";
 import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
+import { InvTraceabilityService } from "src/modules/inventory/traceability/inv-traceability.service";
+import { PackagesService } from "src/modules/inventory/shipments/packages.service";
+import { CustomerReturnsService } from "src/modules/inventory/returns/customer-returns.service";
+import { VendorReturnsService } from "src/modules/inventory/returns/vendor-returns.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 import { buildInventoryFixture, type InventoryFixture } from "test/helpers/inventory-fixture";
@@ -171,6 +175,29 @@ describe("[seeded-e2e] the golden inventory dataset", () => {
             UPDATE inv_stock_levels SET on_hand = on_hand - 7
             WHERE org_id = ${fixture.orgId} AND product_variant_id = ${fixture.variants.widget.variantId}`);
         });
+      }
+    });
+  });
+
+  describe("warehouse scope", () => {
+    /**
+     * These four lists were unscoped until INV-109's second pass, and each is
+     * now filtered through the document that carries the warehouse — a serial
+     * by its location, a package by its shipment, a customer return by its
+     * order or shipment, a vendor return by its receipt. Scope predicates are
+     * raw SQL fragments, so a malformed one only fails when it runs. Calling
+     * each once is what proves the fragment is valid.
+     */
+    it("every newly scoped list executes and stays inside the tenant", async () => {
+      const lists = [
+        () => seededApp.app.get(InvTraceabilityService).listSerials(fixture.orgId, fixture.userId, { page: 1, limit: 50 }),
+        () => seededApp.app.get(PackagesService).list(fixture.orgId, fixture.userId, { page: 1, limit: 50 }),
+        () => seededApp.app.get(CustomerReturnsService).list(fixture.orgId, fixture.userId, { page: 1, limit: 50 }),
+        () => seededApp.app.get(VendorReturnsService).list(fixture.orgId, fixture.userId, { page: 1, limit: 50 }),
+      ];
+      for (const read of lists) {
+        const result = await asTenant(fixture.orgId, read);
+        expect(Array.isArray(result.items)).toBe(true);
       }
     });
   });

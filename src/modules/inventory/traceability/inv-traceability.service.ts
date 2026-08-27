@@ -11,6 +11,7 @@ import {
   invWarehouses,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { ListLotsInput, ListSerialsInput, UpdateLotStatusInput } from "./dto/traceability.schemas";
@@ -20,6 +21,7 @@ export class InvTraceabilityService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
   async listLots(orgId: string, filters: ListLotsInput) {
@@ -139,10 +141,16 @@ export class InvTraceabilityService {
     return updated;
   }
 
-  async listSerials(orgId: string, filters: ListSerialsInput) {
+  async listSerials(orgId: string, userId: string, filters: ListSerialsInput) {
     const { variantId, status, search, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const conditions = [eq(invSerialNumbers.orgId, orgId)];
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    // A serial sits at a location, so it is scopeable directly. A serial with no
+    // location is attributable to no warehouse and stays out of a scoped list.
+    const conditions = [
+      eq(invSerialNumbers.orgId, orgId),
+      scope.location(sql`${invSerialNumbers.currentLocationId}`),
+    ];
 
     if (variantId != null) conditions.push(eq(invSerialNumbers.productVariantId, variantId));
     if (status) conditions.push(eq(invSerialNumbers.status, status));

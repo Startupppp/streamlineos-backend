@@ -29,7 +29,7 @@ export class CustomerReturnsController {
     @Query(new ZodValidationPipe(listReturnsSchema)) filters: ListReturnsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.list(u.orgId, filters);
+    return this.service.list(u.orgId, u.userId, filters);
   }
 
   @Get(":returnId")

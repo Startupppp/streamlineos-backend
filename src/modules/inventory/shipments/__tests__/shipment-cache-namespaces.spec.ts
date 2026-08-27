@@ -35,8 +35,8 @@ describe("shipment versioned cache contracts", () => {
     ],
     [
       CACHE_KEYS.invPackagesNamespace("org-1"),
-      () => new PackagesService({} as never, cache as never, {} as never, {} as never)
-        .list("org-1", { page: 1, limit: 25 }),
+      () => new PackagesService({} as never, cache as never, {} as never, {} as never, scope as never)
+        .list("org-1", "user-1", { page: 1, limit: 25 }),
     ],
     [
       CACHE_KEYS.invShipmentsNamespace("org-1"),
