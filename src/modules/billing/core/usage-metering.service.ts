@@ -60,7 +60,6 @@ export interface MeterUsage {
   remaining: number | null;
 }
 
-/** Serializes every reservation for one meter in one organisation, transaction-scoped. */
 function lockMeter(orgId: string, meterKey: string) {
   return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`usage:${orgId}:${meterKey}`}, 0))`;
 }
@@ -71,7 +70,6 @@ export class UsageMeteringService {
 
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  /** A repeated `sourceKey` is a no-op, not a second charge; a correction arrives as a new fact under a new key. */
   async ingestEvent(input: UsageEventInput, executor?: TenantTx): Promise<{ id: number | null; duplicate: boolean }> {
     if (!Number.isInteger(input.quantity))
       throw new BadRequestException("Usage quantity must be an integer");
@@ -155,7 +153,6 @@ export class UsageMeteringService {
     );
   }
 
-  /** The event carries the reservation's own source key, which makes a second settle a no-op. */
   async settleReservation(
     orgId: string,
     meterKey: string,
@@ -205,7 +202,6 @@ export class UsageMeteringService {
     );
   }
 
-  /** Gives the reserved quota back without recording usage — the action did not happen. */
   async releaseReservation(orgId: string, meterKey: string, idempotencyKey: string, reason: string): Promise<void> {
     await runInTenantTransaction(
       this.db,
@@ -228,7 +224,6 @@ export class UsageMeteringService {
     );
   }
 
-  /** What the meter has committed against its limit right now, reservations included. */
   async readMeterUsage(input: Omit<ReservationInput, "idempotencyKey" | "quantity">): Promise<MeterUsage> {
     return runInTenantTransaction(this.db, (tx) => this.readUsage(tx, input), { orgId: input.orgId });
   }
@@ -304,7 +299,6 @@ export class UsageMeteringService {
     return { ...existing, status: existing.status as ReservationStatus };
   }
 
-  /** A projection: rebuilding is idempotent and never touches the events, so raw detail can be pruned later. */
   async rebuildRollup(
     orgId: string,
     meterKey: string,
@@ -353,7 +347,6 @@ export class UsageMeteringService {
     );
   }
 
-  /** Expires abandoned reservations so their quota stops being held. Has no ambient tenant context. */
   async sweepExpiredReservations(limit = 500): Promise<number> {
     const expired = await this.db
       .select({

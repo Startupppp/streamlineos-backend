@@ -63,7 +63,6 @@ function priceLine(
   };
 }
 
-/** Document totals are the sum of priced lines, never a separately rounded figure, so the two can never disagree. */
 export function priceDocument(
   lines: InvoiceLineInput[],
   roundingRule: RoundingRule,

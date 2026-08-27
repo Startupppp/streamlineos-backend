@@ -53,7 +53,6 @@ export interface ProrationReconciliation {
   reconciledAt: Date;
 }
 
-/** Derived from the money, so a caller that mislabels a downgrade cannot make the ledger say it was an upgrade. */
 function classify(input: {
   oldUnitAmountMinor: number;
   newUnitAmountMinor: number;
@@ -72,7 +71,6 @@ export class ProrationLedgerService {
     private readonly catalog: VersionedCatalogService,
   ) {}
 
-  /** The amount is computed here from the two price versions, never taken from the caller or the provider. */
   async recordPlanChange(input: ProrationChangeInput, executor?: TenantTx): Promise<ProrationLineRecord> {
     if (executor) return this.write(executor, input);
     return runInTenantTransaction(this.db, (tx) => this.write(tx, input), { orgId: input.orgId });
@@ -244,7 +242,6 @@ export class ProrationLedgerService {
     );
   }
 
-  /** Lines the provider has reported on but nobody has reconciled — served by the partial index. */
   async listUnreconciled(orgId: string, limit = 100) {
     const capped = Math.min(Math.max(limit, 1), 100);
     return runInTenantTransaction(
@@ -274,7 +271,6 @@ export class ProrationLedgerService {
     );
   }
 
-  /** Charges and credits are reported apart, so a credit is never netted away silently. */
   async listForSubscription(orgId: string, subscriptionId: number, limit = 100) {
     const capped = Math.min(Math.max(limit, 1), 100);
     return runInTenantTransaction(
@@ -310,7 +306,6 @@ export class ProrationLedgerService {
     );
   }
 
-  /** Proration totals for a billing period, as the invoice snapshot consumes them. */
   async sumForPeriod(orgId: string, subscriptionId: number, periodStart: Date, periodEnd: Date) {
     return runInTenantTransaction(
       this.db,

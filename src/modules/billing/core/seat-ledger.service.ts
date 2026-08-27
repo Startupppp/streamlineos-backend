@@ -134,7 +134,6 @@ export class SeatLedgerService {
     return { ...existing, eventType: existing.eventType as SeatEventType, replayed: true };
   }
 
-  /** A non-zero `drift` means a membership write happened with no seat event beside it. */
   async reconcileBilledQuantity(orgId: string): Promise<SeatReconciliation> {
     return runInTenantTransaction(
       this.db,
@@ -190,7 +189,6 @@ export class SeatLedgerService {
     );
   }
 
-  /** The seat events behind a reconciliation, newest first, for an operator explaining a bill. */
   async listSeatEvents(orgId: string, limit = 100): Promise<SeatEventRecord[]> {
     const capped = Math.min(Math.max(limit, 1), 100);
     return runInTenantTransaction(

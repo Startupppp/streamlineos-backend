@@ -84,7 +84,6 @@ export interface CreditNoteInput {
 export class InvoiceSnapshotService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  /** Everything a bill is made of is frozen here; after this the row is read-only except for status and payment. */
   async issueInvoice(input: IssueInvoiceInput): Promise<IssuedInvoice> {
     if (input.lines.length === 0)
       throw new BadRequestException("An invoice needs at least one line");
@@ -243,7 +242,6 @@ export class InvoiceSnapshotService {
     );
   }
 
-  /** A correction never edits the original: it is a new numbered note pointing at a snapshot that stays as issued. */
   async createCreditNote(
     input: CreditNoteInput,
   ): Promise<{ id: number; noteNumber: string; totalMinor: number }> {

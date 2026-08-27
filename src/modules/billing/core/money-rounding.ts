@@ -10,7 +10,6 @@ export type RoundingRule = (typeof ROUNDING_RULES)[number];
 export const INT32_MIN = -2_147_483_648;
 export const INT32_MAX = 2_147_483_647;
 
-/** `bigint` because unit × quantity × milliseconds passes `Number.MAX_SAFE_INTEGER` inside ordinary numbers. */
 export function roundQuotient(
   numerator: bigint,
   denominator: bigint,
@@ -57,7 +56,6 @@ export function assertMinorUnitRange(amount: bigint, what: string): number {
   return Number(amount);
 }
 
-/** Tax is a rate in basis points applied to an exact minor-unit amount, so line and document agree by construction. */
 export function applyRateBps(
   amountMinor: number,
   rateBps: number,

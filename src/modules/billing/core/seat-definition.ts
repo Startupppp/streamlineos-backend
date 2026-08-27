@@ -1,6 +1,5 @@
 import { sql, type SQL } from "drizzle-orm";
 
-/** One definition — accepted members plus non-expired pending invitations — shared by enforcement, the ledger and display. */
 export function seatCount(orgId: string): SQL<number> {
   return sql<number>`(
     (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId}) +
@@ -12,12 +11,10 @@ export function seatCount(orgId: string): SQL<number> {
   )::int`;
 }
 
-/** The per-organisation key every seat change and every seat quota check serializes under. */
 export function membersQuotaLockKey(orgId: string): string {
   return `quota:${orgId}:members`;
 }
 
-/** Transaction-scoped, so it releases on commit or rollback and never leaks a held lock. */
 export function lockMembersQuota(orgId: string): SQL {
   return sql`SELECT pg_advisory_xact_lock(hashtextextended(${membersQuotaLockKey(orgId)}, 0))`;
 }

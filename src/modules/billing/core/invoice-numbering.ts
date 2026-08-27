@@ -3,7 +3,6 @@ import { sql } from "drizzle-orm";
 import type { TenantTx } from "../../../db/drizzle.types";
 import { readCount } from "./quota-counts";
 
-/** Serializes number allocation for one organisation, prefix and year, transaction-scoped. */
 function lockNumbering(orgId: string, prefix: string, year: number) {
   return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`invoice:${orgId}:${prefix}:${year}`}, 0))`;
 }

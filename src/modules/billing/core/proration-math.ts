@@ -43,7 +43,6 @@ function assertInterval(interval: ProrationInterval): {
   };
 }
 
-/** For display and reconciliation only — never for money. */
 export function prorationFraction(interval: ProrationInterval): number {
   const { elapsed, period } = assertInterval(interval);
   return Number(elapsed) / Number(period);
