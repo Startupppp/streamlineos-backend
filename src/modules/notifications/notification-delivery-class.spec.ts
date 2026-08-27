@@ -5,6 +5,7 @@ import {
   DELIVERY_CLASS_POLICIES,
   createMarketingConsentProof,
   requireConsentProofForMarketing,
+  assertMarketingRecipientAllowed,
   backoffMinutesForAttempt,
   resolveDeliveryClassForEvent,
   type DeliveryClassPolicy,
@@ -224,6 +225,29 @@ describe("direct email caller inventory", () => {
       const entry = lookupCallerEntry(file);
       expect(entry?.deliveryClass).toBe(DeliveryClass.WORKFLOW_EXTERNAL);
     }
+  });
+});
+
+describe("member marketing is unrepresentable", () => {
+  it("refuses a member recipient outright, whatever proof is offered", () => {
+    expect(() => assertMarketingRecipientAllowed({ kind: "org-member" }, createMarketingConsentProof())).toThrow(
+      /no consent record exists for organisation members/,
+    );
+    expect(() => assertMarketingRecipientAllowed({ kind: "org-member" }, undefined)).toThrow();
+  });
+
+  it("allows a CRM contact only when the consent seam has already filtered it", () => {
+    expect(() =>
+      assertMarketingRecipientAllowed({ kind: "crm-contact" }, createMarketingConsentProof()),
+    ).not.toThrow();
+    expect(() => assertMarketingRecipientAllowed({ kind: "crm-contact" }, undefined)).toThrow(
+      /recorded per-recipient consent/,
+    );
+  });
+
+  it("leaves non-marketing classes alone", () => {
+    for (const cls of ALL_CLASSES.filter((c) => c !== DeliveryClass.MARKETING))
+      expect(() => requireConsentProofForMarketing(cls, undefined)).not.toThrow();
   });
 });
 

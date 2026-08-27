@@ -116,6 +116,21 @@ export function resolveDeliveryClassForEvent(_eventKey: string | undefined): Del
   return DeliveryClass.PRODUCT_EVENT;
 }
 
+export type MarketingRecipient = { readonly kind: "crm-contact" | "org-member" };
+
+// Member marketing has no consent record and no unsubscribe path, so it is refused rather than documented.
+export function assertMarketingRecipientAllowed(
+  recipient: MarketingRecipient,
+  proof: MarketingConsentProof | undefined,
+): void {
+  if (recipient.kind === "org-member") {
+    throw new Error(
+      "MARKETING delivery to an organisation member is not available: no consent record exists for organisation members, and no unsubscribe path exists to honour. Marketing is CRM-contact only.",
+    );
+  }
+  requireConsentProofForMarketing(DeliveryClass.MARKETING, proof);
+}
+
 export type MarketingConsentProof = { readonly consentVerified: true };
 
 export function createMarketingConsentProof(): MarketingConsentProof {
