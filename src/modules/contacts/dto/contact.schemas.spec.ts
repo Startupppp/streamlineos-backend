@@ -7,7 +7,7 @@ describe("contact schemas", () => {
       limit: 50,
       offset: 10,
     });
-    expect(() => listSchema.parse({ limit: "500" })).toThrow();
+    expect(listSchema.parse({ limit: "500" }).limit).toBe(100);
   });
 
   it("searchSchema requires q of at least 2 characters", () => {

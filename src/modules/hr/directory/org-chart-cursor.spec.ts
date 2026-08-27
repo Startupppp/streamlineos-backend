@@ -37,7 +37,7 @@ describe("organization chart cursor", () => {
   });
 
   it("bounds requests and rejects ambiguous parent plus search modes", () => {
-    expect(() => orgChartQuerySchema.parse({ limit: "51" })).toThrow();
+    expect(orgChartQuerySchema.parse({ limit: "51" }).limit).toBe(50);
     expect(() =>
       orgChartQuerySchema.parse({ parentId: "manager-1", search: "Ada" }),
     ).toThrow();

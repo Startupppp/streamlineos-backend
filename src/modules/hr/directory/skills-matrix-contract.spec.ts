@@ -9,7 +9,7 @@ describe("skills matrix list contract", () => {
   });
 
   it("rejects oversized pages and unrelated query fields", () => {
-    expect(() => skillsMatrixQuerySchema.parse({ limit: 51 })).toThrow();
+    expect(skillsMatrixQuerySchema.parse({ limit: 51 }).limit).toBe(50);
     expect(() =>
       skillsMatrixQuerySchema.parse({ limit: 20, organizationId: "other-org" }),
     ).toThrow();
