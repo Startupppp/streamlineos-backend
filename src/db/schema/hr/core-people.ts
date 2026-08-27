@@ -73,28 +73,6 @@ export const hrPeople = pgTable("hr_people", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   organizationPersonId: text("organization_person_id"),
-  firstName: text("first_name").notNull(),
-  lastName: text("last_name").notNull(),
-  workEmail: text("work_email").notNull(),
-  personalEmail: text("personal_email"),
-  phone: text("phone"),
-  dateOfBirth: date("date_of_birth"),
-  gender: text("gender"),
-  nationality: text("nationality"),
-  address: jsonb("address").$type<{
-    line1?: string;
-    line2?: string;
-    city?: string;
-    state?: string;
-    country?: string;
-    postalCode?: string;
-  }>(),
-  emergencyContact: jsonb("emergency_contact").$type<{
-    name?: string;
-    relationship?: string;
-    phone?: string;
-  }>(),
-  avatarUrl: text("avatar_url"),
   rowVersion: integer("row_version").default(1).notNull(),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   archivedByMembershipId: integer("archived_by_membership_id"),
@@ -104,7 +82,6 @@ export const hrPeople = pgTable("hr_people", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_hr_people_org_id").on(table.orgId, table.id),
-  uniqueIndex("uniq_hr_people_org_work_email").on(table.orgId, table.workEmail),
   uniqueIndex("uniq_hr_people_org_person_link")
     .on(table.orgId, table.organizationPersonId)
     .where(sql`${table.organizationPersonId} IS NOT NULL`),

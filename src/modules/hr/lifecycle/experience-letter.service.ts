@@ -36,8 +36,6 @@ export class ExperienceLetterService {
         userName: users.name,
         directoryFirstName: organizationPeople.firstName,
         directoryLastName: organizationPeople.lastName,
-        legacyFirstName: hrPeople.firstName,
-        legacyLastName: hrPeople.lastName,
         workforceEmploymentId: workerEngagements.workerEngagementId,
         legacyEmploymentId: hrEmployments.id,
         workforceJoiningDate: workerEngagements.startsOn,
@@ -116,7 +114,7 @@ export class ExperienceLetterService {
     }
 
     const name =
-      `${employee.directoryFirstName ?? employee.legacyFirstName ?? employee.userFirstName ?? ""} ${employee.directoryLastName ?? employee.legacyLastName ?? employee.userLastName ?? ""}`.trim() ||
+      `${employee.directoryFirstName ?? employee.userFirstName ?? ""} ${employee.directoryLastName ?? employee.userLastName ?? ""}`.trim() ||
       employee.userName ||
       "Employee";
     const employmentJoiningDate =

@@ -52,7 +52,15 @@ export class HrImportCommitService {
     return null;
   }
 
-  private async resolveImportOrgPersonId(tx: Tx, orgId: string, workEmail: string, firstName: string, lastName: string): Promise<string> {
+  private async resolveImportOrgPersonId(
+    tx: Tx,
+    orgId: string,
+    workEmail: string,
+    firstName: string,
+    lastName: string,
+    phone: string | null = null,
+    gender: string | null = null,
+  ): Promise<string> {
     const byEmail = await tx.query.organizationPeople.findFirst({
       where: and(
         eq(organizationPeople.organizationId, orgId),
@@ -65,7 +73,7 @@ export class HrImportCommitService {
 
     const [created] = await tx
       .insert(organizationPeople)
-      .values({ organizationId: orgId, firstName, lastName, workEmail })
+      .values({ organizationId: orgId, firstName, lastName, workEmail, phone, gender })
       .returning({ organizationPersonId: organizationPeople.organizationPersonId });
     if (!created) throw new Error("Failed to create canonical person record");
     return created.organizationPersonId;
@@ -73,18 +81,21 @@ export class HrImportCommitService {
 
   private async commitEmployee(tx: Tx, orgId: string, row: EmployeeRow): Promise<CommitRef> {
     const workEmail = row.email.toLowerCase().trim();
-    const organizationPersonId = await this.resolveImportOrgPersonId(tx, orgId, workEmail, row.firstName, row.lastName);
+    const organizationPersonId = await this.resolveImportOrgPersonId(
+      tx,
+      orgId,
+      workEmail,
+      row.firstName,
+      row.lastName,
+      row.phone ?? null,
+      row.gender ?? null,
+    );
 
     const [person] = await tx
       .insert(hrPeople)
       .values({
         orgId,
         organizationPersonId,
-        firstName: row.firstName,
-        lastName: row.lastName,
-        workEmail,
-        phone: row.phone ?? null,
-        gender: row.gender ?? null,
       })
       .onConflictDoNothing()
       .returning({ id: hrPeople.id });
@@ -108,7 +119,14 @@ export class HrImportCommitService {
     const existing = await tx
       .select({ id: hrPeople.id, organizationPersonId: hrPeople.organizationPersonId })
       .from(hrPeople)
-      .where(and(eq(hrPeople.orgId, orgId), eq(hrPeople.workEmail, workEmail), isNull(hrPeople.deletedAt)))
+      .innerJoin(
+        organizationPeople,
+        and(
+          eq(organizationPeople.organizationId, hrPeople.orgId),
+          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+        ),
+      )
+      .where(and(eq(hrPeople.orgId, orgId), eq(organizationPeople.workEmail, workEmail), isNull(hrPeople.deletedAt)))
       .limit(1);
 
     const existingRow = existing[0];
@@ -133,7 +151,14 @@ export class HrImportCommitService {
     const person = await tx
       .select({ userId: hrPeople.userId })
       .from(hrPeople)
-      .where(and(eq(hrPeople.orgId, orgId), eq(hrPeople.workEmail, row.employeeEmail)))
+      .innerJoin(
+        organizationPeople,
+        and(
+          eq(organizationPeople.organizationId, hrPeople.orgId),
+          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+        ),
+      )
+      .where(and(eq(hrPeople.orgId, orgId), eq(organizationPeople.workEmail, row.employeeEmail)))
       .limit(1);
 
     const userId = person[0]?.userId;
@@ -168,7 +193,14 @@ export class HrImportCommitService {
     const person = await tx
       .select({ userId: hrPeople.userId })
       .from(hrPeople)
-      .where(and(eq(hrPeople.orgId, orgId), eq(hrPeople.workEmail, row.employeeEmail)))
+      .innerJoin(
+        organizationPeople,
+        and(
+          eq(organizationPeople.organizationId, hrPeople.orgId),
+          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+        ),
+      )
+      .where(and(eq(hrPeople.orgId, orgId), eq(organizationPeople.workEmail, row.employeeEmail)))
       .limit(1);
 
     const userId = person[0]?.userId;
@@ -201,7 +233,14 @@ export class HrImportCommitService {
       const person = await tx
         .select({ userId: hrPeople.userId })
         .from(hrPeople)
-        .where(and(eq(hrPeople.orgId, orgId), eq(hrPeople.workEmail, row.assignedToEmail)))
+        .innerJoin(
+          organizationPeople,
+          and(
+            eq(organizationPeople.organizationId, hrPeople.orgId),
+            eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+          ),
+        )
+        .where(and(eq(hrPeople.orgId, orgId), eq(organizationPeople.workEmail, row.assignedToEmail)))
         .limit(1);
       assignedTo = person[0]?.userId ?? null;
     }
@@ -230,7 +269,14 @@ export class HrImportCommitService {
     const person = await tx
       .select({ userId: hrPeople.userId })
       .from(hrPeople)
-      .where(and(eq(hrPeople.orgId, orgId), eq(hrPeople.workEmail, row.employeeEmail)))
+      .innerJoin(
+        organizationPeople,
+        and(
+          eq(organizationPeople.organizationId, hrPeople.orgId),
+          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+        ),
+      )
+      .where(and(eq(hrPeople.orgId, orgId), eq(organizationPeople.workEmail, row.employeeEmail)))
       .limit(1);
 
     const userId = person[0]?.userId ?? null;

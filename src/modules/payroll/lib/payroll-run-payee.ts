@@ -127,22 +127,30 @@ export async function loadRunEmployeePayees(
   if (workerOnlyEmails.length > 0) {
     const sensitiveRows = await db
       .select({
-        workEmail: hrPeople.workEmail,
+        workEmail: organizationPeople.workEmail,
         panNumber: hrEmployeeSensitiveFields.panNumber,
         bankDetails: hrEmployeeSensitiveFields.bankDetails,
       })
       .from(hrEmployeeSensitiveFields)
       .innerJoin(hrEmployments, eq(hrEmployments.id, hrEmployeeSensitiveFields.employmentId))
       .innerJoin(hrPeople, eq(hrPeople.id, hrEmployments.personId))
+      .innerJoin(
+        organizationPeople,
+        and(
+          eq(organizationPeople.organizationId, hrPeople.orgId),
+          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+        ),
+      )
       .where(
         and(
           eq(hrEmployeeSensitiveFields.orgId, orgId),
           eq(hrEmployments.isPrimary, true),
-          inArray(hrPeople.workEmail, workerOnlyEmails),
+          inArray(organizationPeople.workEmail, workerOnlyEmails),
         ),
       );
 
     for (const row of sensitiveRows) {
+      if (!row.workEmail) continue;
       sensitiveByEmail.set(row.workEmail, { bankDetails: row.bankDetails });
     }
   }

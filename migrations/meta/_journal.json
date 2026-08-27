@@ -2220,6 +2220,34 @@
       "when": 1787830393441,
       "tag": "0482_candidate_resume_column_drop",
       "breakpoints": true
+    },
+    {
+      "idx": 322,
+      "version": "7",
+      "when": 1787830394441,
+      "tag": "0590_reconcile_baseline_shape_drift",
+      "breakpoints": true
+    },
+    {
+      "idx": 323,
+      "version": "7",
+      "when": 1787830395441,
+      "tag": "0591_tenant_isolation_for_unprotected_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 324,
+      "version": "7",
+      "when": 1787830396441,
+      "tag": "0592_notifications_tenant_isolation",
+      "breakpoints": true
+    },
+    {
+      "idx": 325,
+      "version": "7",
+      "when": 1787830397441,
+      "tag": "0488_hr_people_drop_identity_cols",
+      "breakpoints": true
     }
   ]
 }

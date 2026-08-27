@@ -202,9 +202,6 @@ export class PersonEmploymentSyncService {
             orgId,
             userId: input.userId,
             organizationPersonId,
-            firstName: input.firstName,
-            lastName: input.lastName,
-            workEmail: email,
           })
           .returning({ id: hrPeople.id });
         if (!created) throw new Error("Failed to create person record");

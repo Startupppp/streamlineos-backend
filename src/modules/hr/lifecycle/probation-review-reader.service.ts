@@ -3,6 +3,7 @@ import { and, asc, eq, gt, gte, inArray, isNull, lte, or, sql, type SQL } from "
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
+import { organizationPeople } from "../../../db/schema/directory/organization-people";
 import { hrProbationReviews } from "../../../db/schema/hr/probation";
 import type { ProbationCoverage } from "./probation-coverage";
 import type { ListProbationReviewsInput } from "./dto/probation.schemas";
@@ -48,9 +49,9 @@ export class ProbationReviewReaderService {
         extendedUntil: hrProbationReviews.extendedUntil,
         confirmedAt: hrProbationReviews.confirmedAt,
         createdAt: hrProbationReviews.createdAt,
-        firstName: hrPeople.firstName,
-        lastName: hrPeople.lastName,
-        workEmail: hrPeople.workEmail,
+        firstName: organizationPeople.firstName,
+        lastName: organizationPeople.lastName,
+        workEmail: organizationPeople.workEmail,
         effectiveEndDate,
       })
       .from(hrProbationReviews)
@@ -59,6 +60,13 @@ export class ProbationReviewReaderService {
         and(
           eq(hrPeople.orgId, hrProbationReviews.orgId),
           eq(hrPeople.id, hrProbationReviews.personId),
+        ),
+      )
+      .innerJoin(
+        organizationPeople,
+        and(
+          eq(organizationPeople.organizationId, hrPeople.orgId),
+          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
         ),
       )
       .where(
