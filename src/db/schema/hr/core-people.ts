@@ -157,6 +157,10 @@ export const hrEmployments = pgTable("hr_employments", {
   lastWorkingDay: date("last_working_day"),
   exitDate: date("exit_date"),
   exitReason: text("exit_reason"),
+  customFieldValues: jsonb("custom_field_values")
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default(sql`'{}'::jsonb`),
   isPrimary: boolean("is_primary").default(true).notNull(),
   rowVersion: integer("row_version").default(1).notNull(),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
