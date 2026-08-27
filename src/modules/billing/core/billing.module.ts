@@ -14,6 +14,7 @@ import { EnterpriseQuotesService } from "./enterprise-quotes.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { VersionedCatalogService } from "./versioned-catalog.service";
 import { SeatLedgerService } from "./seat-ledger.service";
+import { ProrationLedgerService } from "./proration-ledger.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { PaymentsModule } from "../payments/payments.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
@@ -21,7 +22,7 @@ import { OutboxModule } from "../../../common/outbox/outbox.module";
 @Module({
   imports: [NotificationsModule, PaymentsModule, OutboxModule],
   controllers: [BillingController, RazorpayWebhookController],
-  providers: [BillingService, MarketplaceService, AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService, VersionedCatalogService, SeatLedgerService],
-  exports: [AiCreditsService, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService, VersionedCatalogService, SeatLedgerService],
+  providers: [BillingService, MarketplaceService, AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService],
+  exports: [AiCreditsService, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService],
 })
 export class BillingModule {}
