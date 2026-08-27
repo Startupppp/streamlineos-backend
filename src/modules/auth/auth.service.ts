@@ -13,11 +13,12 @@ import {
 } from "../../common/org/provision-org-modules";
 import { EntitlementsService } from "../access/entitlements.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   organizationMembers,
   organizations,
+  roles,
   subscriptions,
   users,
 } from "../../db/schema";
@@ -38,6 +39,7 @@ import {
   TRIAL_PLAN,
 } from "../billing/core/plan-entitlements.constants";
 import { regionForNewOrg } from "../../common/region/region-registry";
+import { seedDemoDataset } from "../onboarding-activation/seed-demo-dataset";
 
 function slugify(name: string): string {
   return (
@@ -68,10 +70,13 @@ export class AuthService {
 
     const existing = await this.db.query.users.findFirst({
       where: sql`lower(${users.email}) = ${normalizedEmail}`,
-      columns: { id: true },
+      columns: { id: true, isActive: true, lastActiveOrgId: true },
     });
 
-    if (existing) return { success: true };
+    if (existing) {
+      await this.resumeProvisioning(existing);
+      return { success: true };
+    }
 
     const userId = randomUUID();
     const orgId = randomUUID();
@@ -113,7 +118,15 @@ export class AuthService {
 
       await tx.insert(users).values({
         id: userId,
-        isActive: true,
+        /*
+         * Closed until the workspace is furnished. `isActive` is what every
+         * sign-in path checks -- magic link, email OTP and Google all refuse an
+         * inactive user -- so between here and the end of provisioning there is
+         * no door into a workspace that has no roles in it yet. If provisioning
+         * throws, the door simply never opens, which is a state somebody can
+         * retry out of rather than a workspace that renders nothing.
+         */
+        isActive: false,
         email: normalizedEmail,
         lastActiveOrgId: orgId,
         emailVerified: new Date(),
@@ -143,13 +156,7 @@ export class AuthService {
       });
     });
 
-    // The organisation exists and is placed by now, so ordinary lookup works.
-    await runInNewTenantTransaction(this.db, orgId, async (tx) =>
-      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, async () => {
-        await seedSystemRolesForOrg(this.db, orgId);
-        await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
-      }),
-    );
+    await this.provisionWorkspace(orgId, userId);
 
     this.audit.log({
       action: "user.registered",
@@ -159,6 +166,73 @@ export class AuthService {
     });
 
     return { success: true };
+  }
+
+  /**
+   * Everything a workspace needs before somebody can work in it, and the moment
+   * the door opens.
+   *
+   * One tenant transaction for the roles, the module set and the demo dataset,
+   * then -- and only then -- the owner is activated. The ordering is the whole
+   * design: activation is the last write, so there is no interval in which a
+   * person can sign in and find a workspace with no permissions to render.
+   *
+   * This deliberately stays inside the request rather than being handed to a
+   * background worker. The claim is supposed to return when the tenant is
+   * usable, and a job queue would mean either returning before that is true or
+   * polling until it is. What made this slow was never the work -- it was
+   * `seedSystemRolesForOrg` spending one transaction per role, forty-one round
+   * trips to Neon where one would do. Batched, the whole of provisioning is a
+   * handful of statements and fits comfortably inside a request.
+   */
+  private async provisionWorkspace(orgId: string, userId: string): Promise<void> {
+    await runInNewTenantTransaction(this.db, orgId, async (tx) =>
+      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, async () => {
+        await seedSystemRolesForOrg(this.db, orgId);
+        await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
+        await seedDemoDataset(tx, orgId, userId);
+      }),
+    );
+
+    await this.db.update(users).set({ isActive: true }).where(eq(users.id, userId));
+    await this.cache.del(CACHE_KEYS.userSession(userId));
+  }
+
+  /**
+   * Finish a registration that did not finish, without ever starting a second
+   * one.
+   *
+   * `register` used to return success for an existing email and stop, which is
+   * right for somebody who already has a workspace and wrong for somebody whose
+   * provisioning died halfway: they were left with an organisation, an account
+   * that cannot sign in, and no way forward but a database edit. Retrying is
+   * what a claim link does naturally, so retrying is what has to work.
+   *
+   * The guard is narrow on purpose. Inactive alone would mean an administrator's
+   * deliberate deactivation could be undone by anyone who knew the address and
+   * posted it at the public register route. An organisation with no system roles
+   * has never been provisioned, so pairing the two conditions makes this reach
+   * exactly the case it is for.
+   */
+  private async resumeProvisioning(existing: {
+    id: string;
+    isActive: boolean;
+    lastActiveOrgId: string | null;
+  }): Promise<void> {
+    if (existing.isActive) return;
+
+    const orgId = existing.lastActiveOrgId;
+    if (!orgId) return;
+
+    const [ladder] = await this.db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(and(eq(roles.orgId, orgId), eq(roles.isSystem, true)))
+      .limit(1);
+
+    if (ladder) return;
+
+    await this.provisionWorkspace(orgId, existing.id);
   }
 
   async logout(sessionId: string, userId: string): Promise<void> {
