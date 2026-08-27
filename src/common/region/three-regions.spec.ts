@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { resolveRegionTopology } from "./region.config";
 import {
   RegionRegistry,
@@ -5,6 +7,7 @@ import {
   setRegionRegistry,
   type RegionBinding,
 } from "./region-registry";
+import { withTenant } from "../tenant/with-tenant";
 import type { Db } from "../../db/drizzle.types";
 
 /**
@@ -16,12 +19,15 @@ import type { Db } from "../../db/drizzle.types";
  * **no change to `withTenant`, to `resolveRegionalDb`, or to any caller.**
  *
  * This is where that is cashed. Everything below configures three regions the
- * way a deployment would -- environment variables and nothing else -- and
- * asserts each tenant reaches its own database. Not one line of the tenant
- * transaction path is touched, imported or stubbed to make it pass.
+ * way a deployment would -- environment variables and nothing else -- and then
+ * drives the **real** `withTenant` across them.
  *
- * If this file ever needs a change below the seam to keep passing, that is a
- * finding about Phase 1's placement and is worth more than the workaround.
+ * The first version of this file did not do that. It asserted against
+ * `RegionRegistry` directly and left the claim about `withTenant` in a comment,
+ * which meant it passed with `resolveRegionalDb` reduced to `return db` -- every
+ * tenant served from the primary, which is the single failure the seam exists to
+ * prevent. A guard that cannot fail is not evidence. Both breaks below were run
+ * against these tests and both are now caught.
  */
 
 const THREE_REGIONS: NodeJS.ProcessEnv = {
@@ -35,20 +41,33 @@ const THREE_REGIONS: NodeJS.ProcessEnv = {
   REGION_US_R2_BUCKET_NAME: "us-bucket",
 };
 
-/** A stand-in for a live handle; identity is all these assertions need. */
-function handleFor(region: string): Db {
-  return { __region: region } as unknown as Db;
+/**
+ * A stand-in for a live handle that records every transaction opened on it.
+ *
+ * Identity alone was enough while these tests only asked the registry which
+ * handle it would hand back; driving `withTenant` needs a handle that can
+ * actually be opened, and recording which one was opened is the assertion.
+ */
+function handleFor(region: string, opened: string[]): Db {
+  return {
+    __region: region,
+    transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
+      opened.push(region);
+      return fn({ execute: async () => [] });
+    },
+  } as unknown as Db;
 }
 
 function registryFor(
   env: NodeJS.ProcessEnv,
   placements: Record<string, string | null>,
+  opened: string[] = [],
 ): RegionRegistry {
   const topology = resolveRegionTopology(env);
   const bindings = new Map<string, RegionBinding>();
 
   for (const [key, definition] of Object.entries(topology.regions))
-    bindings.set(key, { definition, db: handleFor(key) });
+    bindings.set(key, { definition, db: handleFor(key, opened) });
 
   return new RegionRegistry(topology, bindings, async (orgId) => placements[orgId] ?? null);
 }
@@ -123,30 +142,75 @@ describe("a tenant reaches its own region", () => {
   });
 });
 
-describe("the seam claim", () => {
+describe("the seam claim, driven through withTenant", () => {
+  const placements = { "org-in-eu": "eu", "org-in-us": "us", "org-in-india": "india" };
+
   afterEach(() => clearRegionRegistry());
 
-  it("resolves without any caller naming a region", async () => {
+  it("serves three tenants from three databases, with no caller naming a region", async () => {
     /*
-      The whole claim in one assertion. `withTenant`'s signature is
-      (db, {orgId, audience}, fn) -- there is no region parameter, and adding a
-      second region did not introduce one. Resolution happens inside the seam,
-      from the organisation alone, which is why three regions cost no call site.
+      The whole claim in one assertion, and the one that fails if the seam is
+      cut. `withTenant`'s signature is (db, {orgId, audience}, fn): no caller
+      below says "eu". Resolution happens inside the seam, from the organisation
+      alone, which is why three regions cost no call site.
+
+      Reducing `resolveRegionalDb` to `return db` makes this fail with
+      ["caller", "caller", "caller"] -- every tenant served from one database.
     */
-    const registry = registryFor(THREE_REGIONS, { "org-in-eu": "eu" });
-    setRegionRegistry(registry);
+    const opened: string[] = [];
+    setRegionRegistry(registryFor(THREE_REGIONS, placements, opened));
+    const caller = handleFor("caller", opened);
 
-    const { getRegionRegistry } = await import("./region-registry");
-    const resolved = await getRegionRegistry().dbForOrg("org-in-eu");
+    await withTenant(caller, { orgId: "org-in-eu", audience: "INTERNAL" }, async () => "ok");
+    await withTenant(caller, { orgId: "org-in-us", audience: "INTERNAL" }, async () => "ok");
+    await withTenant(caller, { orgId: "org-in-india", audience: "INTERNAL" }, async () => "ok");
 
-    expect(resolved).toMatchObject({ __region: "eu" });
+    expect(opened).toEqual(["eu", "us", "india"]);
+  });
+
+  it("ignores the handle the caller passed, so a stale one cannot leak across regions", async () => {
+    // The interceptor and the cron sweep both hand in the primary's connection.
+    // Honouring it would serve all three regions from the primary.
+    const opened: string[] = [];
+    setRegionRegistry(registryFor(THREE_REGIONS, placements, opened));
+
+    await withTenant(
+      handleFor("caller", opened),
+      { orgId: "org-in-eu", audience: "INTERNAL" },
+      async () => "ok",
+    );
+
+    expect(opened).not.toContain("caller");
+  });
+
+  it("opens nothing at all for an organisation placed in an unserved region", async () => {
+    const opened: string[] = [];
+    setRegionRegistry(registryFor(THREE_REGIONS, { "org-in-apac": "apac" }, opened));
+
+    await expect(
+      withTenant(
+        handleFor("caller", opened),
+        { orgId: "org-in-apac", audience: "INTERNAL" },
+        async () => "ok",
+      ),
+    ).rejects.toThrow(/does not serve/);
+
+    expect(opened).toEqual([]);
   });
 
   it("degrades to the passed handle when no registry is configured", async () => {
     // Unit tests, seeds and scripts run with no registry. That path must keep
     // working, or every one of them becomes region-aware for no reason.
-    const { hasRegionRegistry } = await import("./region-registry");
-    expect(hasRegionRegistry()).toBe(false);
+    const opened: string[] = [];
+    clearRegionRegistry();
+
+    await withTenant(
+      handleFor("caller", opened),
+      { orgId: "org-1", audience: "INTERNAL" },
+      async () => "ok",
+    );
+
+    expect(opened).toEqual(["caller"]);
   });
 
   it("still serves a single-region deployment with no configuration at all", () => {
@@ -156,5 +220,39 @@ describe("the seam claim", () => {
 
     expect(topology.primary).toBe("primary");
     expect(Object.keys(topology.regions)).toEqual(["primary"]);
+  });
+});
+
+describe("the seam claim, as a signature", () => {
+  /**
+   * The half no runtime assertion can reach.
+   *
+   * "Standing up region two requires no change to any caller" is a claim about
+   * `withTenant`'s *type*, and ts-jest runs with `isolatedModules: true` -- it
+   * transpiles and never type-checks, so adding a required `region` to the
+   * context passes every test in this repo. `tsc --noEmit` does catch it (31
+   * errors across 14 files, measured), but a typecheck failing somewhere else
+   * is not this ticket's evidence. So the signature is read here.
+   */
+  const source = fs.readFileSync(
+    path.join(__dirname, "..", "tenant", "with-tenant.ts"),
+    "utf8",
+  );
+
+  it("reads a real file, so a silent miss is not a pass", () => {
+    expect(source).toContain("export async function withTenant");
+  });
+
+  it("takes an organisation and an audience, and no region", () => {
+    const parameters = /export async function withTenant<T>\(([\s\S]*?)\): Promise<T>/.exec(
+      source,
+    )?.[1];
+
+    expect(parameters).toBeDefined();
+    expect(parameters).toContain("orgId");
+    // `withNewOrgInRegion` is the one operation permitted to state a region, and
+    // it is a different function for exactly that reason. If `withTenant` grows
+    // a region, every one of its callers has to learn one.
+    expect(parameters).not.toMatch(/\bregion\b/i);
   });
 });
