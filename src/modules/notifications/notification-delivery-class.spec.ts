@@ -172,11 +172,14 @@ describe("direct email caller inventory", () => {
   });
 
   // MARKETING is exemptible because the CRM outbound path already enforces consent.
+  // WORKFLOW_EXTERNAL is exemptible because recipients are external (candidates, clients, vendors)
+  // who are not org members and cannot have org-member notification preferences.
   it("EXEMPT entries are a class that does not need the dispatch seam", () => {
     const exemptClasses = new Set<DeliveryClass>([
       DeliveryClass.OPERATOR_ALERT,
       DeliveryClass.USER_AUTHORED,
       DeliveryClass.MARKETING,
+      DeliveryClass.WORKFLOW_EXTERNAL,
     ]);
     const offenders = DIRECT_EMAIL_CALLER_INVENTORY.filter(
       (e) => e.migrationStatus === MigrationStatus.EXEMPT && !exemptClasses.has(e.deliveryClass),

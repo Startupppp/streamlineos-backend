@@ -14,8 +14,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateEventInput, RsvpInput, UpdateEventInput } from "./dto/calendar.schemas";
 import type { UpsertOccurrenceExceptionInput } from "./dto/occurrence-exception.schemas";
-import { EmailService } from "../email/email.service";
-import { getCalendarInviteEmail } from "../email/templates/calendar";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { CalendarEventsAggregateService } from "./calendar-events-aggregate.service";
 import { CalendarConflictService } from "./calendar-conflict.service";
 import type { CalendarEventItem, CalendarEventsResult, OooConflict } from "./calendar.types";
@@ -29,7 +28,7 @@ export class CalendarService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly sync: ExternalCalendarSyncService,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly eventsAggregate: CalendarEventsAggregateService,
     private readonly conflict: CalendarConflictService,
   ) {}
@@ -185,62 +184,24 @@ export class CalendarService {
     );
     if (recipientIds.length === 0) return;
 
-    const [recipients, organizerRows] = await Promise.all([
-      this.db
-        .select({
-          email: users.email,
-          name: users.name,
-          firstName: users.firstName,
-          lastName: users.lastName,
-        })
-        .from(users)
-        .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
-        .where(
-          and(
-            inArray(users.id, recipientIds),
-            eq(organizationMembers.orgId, params.orgId),
-            eq(organizationMembers.status, "ACTIVE"),
-          ),
-        ),
-      this.db
-        .select({
-          name: users.name,
-          firstName: users.firstName,
-          lastName: users.lastName,
-        })
-        .from(users)
-        .where(eq(users.id, params.organizerId))
-        .limit(1),
-    ]);
-
-    const org = organizerRows[0];
-    const organizerName = org
-      ? org.firstName
-        ? `${org.firstName} ${org.lastName ?? ""}`.trim()
-        : (org.name ?? "A colleague")
-      : "A colleague";
-
-    await Promise.allSettled(
-      recipients
-        .filter((r) => r.email)
-        .map((r) => {
-          const recipientName = r.firstName
-            ? `${r.firstName} ${r.lastName ?? ""}`.trim()
-            : (r.name ?? r.email);
-          const { subject, html } = getCalendarInviteEmail({
-            recipientName,
-            organizerName,
-            title: params.title,
-            start: params.start,
-            end: params.end,
-            allDay: params.allDay,
-            location: params.location,
-            meetingUrl: params.meetingUrl,
-            description: params.description,
-          });
-          return this.email.sendEmail({ to: r.email, subject, html });
-        }),
-    );
+    await this.dispatch.emit({
+      orgId: params.orgId,
+      eventKey: "calendar.event.invited",
+      actorUserId: params.organizerId,
+      targetUserIds: recipientIds,
+      title: `Calendar invite: ${params.title}`,
+      message: `You have been invited to "${params.title}" on ${params.start.toDateString()}`,
+      link: "/calendar",
+      variables: {
+        eventTitle: params.title,
+        startIso: params.start.toISOString(),
+        endIso: params.end.toISOString(),
+        allDay: params.allDay,
+        location: params.location,
+        meetingUrl: params.meetingUrl,
+        description: params.description,
+      },
+    });
   }
 
   async updateEvent(orgId: string, userId: string, id: number, input: UpdateEventInput) {
