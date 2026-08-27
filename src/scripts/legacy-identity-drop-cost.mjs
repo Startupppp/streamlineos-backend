@@ -59,6 +59,32 @@ for (const [referenced, referencing] of byTable) {
   for (const table of outside) console.log(`    ${table}`);
 }
 
+/**
+ * How much of the expand has landed.
+ *
+ * A blocking column is *ready* once a party column sits beside it and is
+ * populated -- at that point migrating its readers is the only thing between it
+ * and the contract. Reported separately from the blocker count because the two
+ * move independently: the foreign keys do not go away until the contract
+ * migration, so a bare blocker count shows no progress at all while the
+ * expensive half is being done.
+ */
+const ready = await sql`
+  SELECT c.table_name, c.column_name,
+         (SELECT count(*)::int FROM information_schema.columns p
+           WHERE p.table_schema = c.table_schema AND p.table_name = c.table_name
+             AND p.column_name IN ('client_party_id','vendor_party_id','customer_party_id','party_id'))
+           AS has_party
+    FROM information_schema.columns c
+   WHERE c.column_name IN ('client_id','vendor_id','customer_id')
+     AND c.table_name = ANY(${[...new Set(rows.map((r) => r.referencing.replace(/^\w+\./, "")))]})
+   ORDER BY 1`;
+
+const withParty = ready.filter((r) => r.has_party > 0).length;
+console.log(
+  `\nExpand: ${withParty} of ${ready.length} blocking columns now carry a party beside them.`,
+);
+
 console.log(`\nTotal foreign keys: ${rows.length}`);
 console.log(`Tables that must migrate before any drop: ${blocking}`);
 console.log(

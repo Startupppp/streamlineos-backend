@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { partyNamesFor } from "../../party/party-names";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import {
@@ -92,7 +93,6 @@ export class SoCoreService {
             limit,
             offset,
             with: {
-              client: { columns: { id: true, name: true } },
               creator: { columns: { id: true, name: true } },
             },
           }),
@@ -102,8 +102,25 @@ export class SoCoreService {
             .where(where),
         ]);
 
+        /**
+         * The client's name from Party, not from `clients`. Ticket 08.
+         *
+         * `client_id` is still what the order is filed under and is still
+         * returned as `client.id`; only the name moved.
+         */
+        const names = await partyNamesFor(this.db, orgId, items.map((o) => o.clientPartyId));
+        const withClient = items.map((order) => ({
+          ...order,
+          client: order.clientId
+            ? {
+                id: order.clientId,
+                name: order.clientPartyId ? (names.get(order.clientPartyId) ?? null) : null,
+              }
+            : null,
+        }));
+
         return {
-          items,
+          items: withClient,
           total: countResult[0]?.count ?? 0,
           page,
           totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),

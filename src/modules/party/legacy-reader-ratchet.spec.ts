@@ -68,10 +68,8 @@ describe("the legacy identity tables gain no new readers", () => {
   // mirror while the party id sits on the same row -- `deals.party_id` is
   // already written, so most of these are a projection change, not a migration.
   // They are the real remaining cost of ticket 08's DROP.
-  "src/modules/csat/csat.service.ts",
   "src/modules/inventory/sales-orders/so-core.service.ts",
   "src/modules/invoices/invoices.service.ts",
-  "src/modules/support/core/support-tickets.service.ts",
   // Two tests: a mocked db shaped like the old query, and a seam test that
   // names the tables it backfills. The latter counts rows in each legacy table
   // to prove none lacks a Party, which is the one claim that cannot be made
