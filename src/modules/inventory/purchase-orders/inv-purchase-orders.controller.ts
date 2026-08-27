@@ -53,7 +53,7 @@ export class InvPurchaseOrdersController {
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pos.getPo(u.orgId, poId);
+    return this.pos.getPo(u.orgId, poId, u.userId);
   }
 
   @Post()
@@ -75,7 +75,7 @@ export class InvPurchaseOrdersController {
     @Body(new ZodValidationPipe(updatePoSchema)) body: UpdatePoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pos.updatePo(u.orgId, poId, body);
+    return this.pos.updatePo(u.orgId, poId, u.userId, body);
   }
 
   @Post(":poId/approve")
@@ -98,7 +98,7 @@ export class InvPurchaseOrdersController {
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pos.sendPo(u.orgId, poId);
+    return this.pos.sendPo(u.orgId, poId, u.userId);
   }
 
   @Post(":poId/close")
@@ -109,7 +109,7 @@ export class InvPurchaseOrdersController {
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pos.closePo(u.orgId, poId);
+    return this.pos.closePo(u.orgId, poId, u.userId);
   }
 
   @Post(":poId/cancel")
@@ -120,7 +120,7 @@ export class InvPurchaseOrdersController {
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pos.cancelPo(u.orgId, poId);
+    return this.pos.cancelPo(u.orgId, poId, u.userId);
   }
 
   @Post(":poId/receive")

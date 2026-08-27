@@ -6,6 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { ReservationService } from "../stock-engine/reservation.service";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import type { ListReservationsInput, CreateReservationInput, ReleaseReservationInput, OpeningStockInput } from "./dto/inv-stock.schemas";
 
@@ -16,15 +17,26 @@ export class InvStockReservationsService {
     private readonly cache: CacheService,
     private readonly reservationService: ReservationService,
     private readonly engine: StockEngineService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async listReservations(orgId: string, filters: ListReservationsInput) {
+  async listReservations(orgId: string, userId: string, filters: ListReservationsInput) {
     const { sourceType, status, variantId, warehouseId, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const hash = `${sourceType ?? ""}:${status ?? ""}:${variantId ?? ""}:${warehouseId ?? ""}:${limit}:${offset}`;
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const hash = `${scope.key}:${sourceType ?? ""}:${status ?? ""}:${variantId ?? ""}:${warehouseId ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(`inv:reservations:list:${orgId}`, hash, async () => {
-      const conditions: SQL[] = [eq(invStockReservations.orgId, orgId)];
+      const conditions: SQL[] = [
+        eq(invStockReservations.orgId, orgId),
+        // Both columns are nullable, so a reservation may be attributed by
+        // either. A row attributed by neither names no warehouse at all and
+        // stays invisible to a warehouse-scoped caller.
+        scope.anyOf(
+          scope.warehouse(sql`${invStockReservations.warehouseId}`),
+          scope.location(sql`${invStockReservations.locationId}`),
+        ),
+      ];
       if (sourceType) conditions.push(eq(invStockReservations.sourceType, sourceType));
       if (status) conditions.push(eq(invStockReservations.status, status));
       if (variantId) conditions.push(eq(invStockReservations.productVariantId, variantId));

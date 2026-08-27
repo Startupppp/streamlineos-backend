@@ -17,6 +17,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { SoLifecycleService } from "./so-lifecycle.service";
 import { addDec, mulDec } from "../stock-engine/stock-engine.service";
@@ -53,6 +54,7 @@ export class SoCoreService {
     private readonly cache: CacheService,
     private readonly numSeq: NumberSequenceService,
     private readonly lifecycle: SoLifecycleService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
   async listSos(
@@ -66,13 +68,15 @@ export class SoCoreService {
     const { status, clientId, page, limit } = filters;
     const offset = (page - 1) * limit;
     const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
-    const hash = `${status ?? ""}:${clientId ?? ""}:${limit}:${offset}${scopeSuffix}`;
+    const warehouses = userId ? await this.warehouseScope.forUser(orgId, userId) : null;
+    const hash = `${warehouses?.key ?? "all"}:${status ?? ""}:${clientId ?? ""}:${limit}:${offset}${scopeSuffix}`;
 
     return this.cache.cachedVersioned(
       CACHE_KEYS.invSoNamespace(orgId),
       hash,
       async () => {
         const conditions = [eq(invSalesOrders.orgId, orgId)];
+        if (warehouses) conditions.push(warehouses.warehouse(sql`${invSalesOrders.warehouseId}`));
         if (status) conditions.push(eq(invSalesOrders.status, status));
         if (clientId) conditions.push(eq(invSalesOrders.clientId, clientId));
         if (scope !== "all" && userId) {

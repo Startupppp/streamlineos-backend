@@ -26,7 +26,7 @@ export class InvPhysicalAuditsController {
     @Query(new ZodValidationPipe(listCountsSchema)) filters: ListCountsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audits.listAudits(u.orgId, filters);
+    return this.audits.listAudits(u.orgId, u.userId, filters);
   }
 
   @Get(":auditId")

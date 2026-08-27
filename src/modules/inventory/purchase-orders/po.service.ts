@@ -14,6 +14,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { addDec, mulDec } from "../stock-engine/stock-engine.service";
 import type { ListPoInput, CreatePoInput, UpdatePoInput } from "./dto/inv-purchase-orders.schemas";
 
@@ -40,6 +41,7 @@ export class PoService {
     private readonly cache: CacheService,
     private readonly settingsService: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
   async resolveLocationId(orgId: string, warehouseId: number | null | undefined): Promise<number> {
@@ -63,7 +65,13 @@ export class PoService {
     const { status, vendorId, page, limit } = filters;
     const offset = (page - 1) * limit;
     const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
-    const hash = `${status ?? ""}:${vendorId ?? ""}:${limit}:${offset}${scopeSuffix}`;
+    // RBAC DataScope answers "whose records", warehouse scope answers "which
+    // sites" — separate checks, and both belong in the cache key or one
+    // caller's warehouses are served to the next.
+    const warehouses = userId
+      ? await this.warehouseScope.forUser(orgId, userId)
+      : null;
+    const hash = `${warehouses?.key ?? "all"}:${status ?? ""}:${vendorId ?? ""}:${limit}:${offset}${scopeSuffix}`;
 
     return this.cache.cachedVersioned(CACHE_KEYS.invPoNamespace(orgId), hash, async () => {
       const conditions = [eq(invPurchaseOrders.orgId, orgId)];
@@ -72,6 +80,7 @@ export class PoService {
       if (scope !== "all" && userId) {
         conditions.push(applyScope(scope, orgId, userId, { ownerColumn: invPurchaseOrders.createdBy }));
       }
+      if (warehouses) conditions.push(warehouses.warehouse(sql`${invPurchaseOrders.warehouseId}`));
       const where = and(...conditions);
 
       const [items, countResult] = await Promise.all([
@@ -97,9 +106,16 @@ export class PoService {
     }, CACHE_TTL.SHORT);
   }
 
-  async getPo(orgId: string, poId: number) {
+  async getPo(orgId: string, poId: number, userId?: string) {
+    const warehouses = userId ? await this.warehouseScope.forUser(orgId, userId) : null;
     const po = await this.db.query.invPurchaseOrders.findFirst({
-      where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
+      where: and(
+        eq(invPurchaseOrders.id, poId),
+        eq(invPurchaseOrders.orgId, orgId),
+        // Out of scope reads as absent, never as forbidden: a 403 on an id the
+        // caller may not see confirms the record exists.
+        ...(warehouses ? [warehouses.warehouse(sql`${invPurchaseOrders.warehouseId}`)] : []),
+      ),
       with: {
         vendor: true,
         warehouse: true,
@@ -160,11 +176,12 @@ export class PoService {
     return po;
   }
 
-  async updatePo(orgId: string, poId: number, data: UpdatePoInput) {
+  async updatePo(orgId: string, poId: number, userId: string, data: UpdatePoInput) {
     const po = await this.db.query.invPurchaseOrders.findFirst({
       where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
     });
     if (!po) throw new NotFoundException("Purchase order not found");
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, po.warehouseId);
     if (po.status !== "DRAFT") throw new BadRequestException("Only DRAFT purchase orders can be updated");
 
     const patch: Partial<typeof invPurchaseOrders.$inferInsert> = {};
@@ -213,6 +230,7 @@ export class PoService {
       where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
     });
     if (!po) throw new NotFoundException("Purchase order not found");
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, po.warehouseId);
     if (po.status !== "DRAFT") throw new BadRequestException("Only DRAFT purchase orders can be approved");
 
     if (!settings.requirePoApproval) {
@@ -237,12 +255,13 @@ export class PoService {
     return updated;
   }
 
-  async sendPo(orgId: string, poId: number) {
+  async sendPo(orgId: string, poId: number, userId: string) {
     const settings = await this.settingsService.get(orgId);
     const po = await this.db.query.invPurchaseOrders.findFirst({
       where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
     });
     if (!po) throw new NotFoundException("Purchase order not found");
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, po.warehouseId);
     if (po.status !== "DRAFT") throw new BadRequestException("Only DRAFT purchase orders can be sent");
 
     if (settings.requirePoApproval && !po.approvedBy) {
@@ -259,11 +278,12 @@ export class PoService {
     return sent;
   }
 
-  async closePo(orgId: string, poId: number) {
+  async closePo(orgId: string, poId: number, userId: string) {
     const po = await this.db.query.invPurchaseOrders.findFirst({
       where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
     });
     if (!po) throw new NotFoundException("Purchase order not found");
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, po.warehouseId);
     if (po.status !== "RECEIVED" && po.status !== "PARTIAL") {
       throw new BadRequestException("Only RECEIVED or PARTIAL purchase orders can be closed");
     }
@@ -278,11 +298,12 @@ export class PoService {
     return closed;
   }
 
-  async cancelPo(orgId: string, poId: number) {
+  async cancelPo(orgId: string, poId: number, userId: string) {
     const po = await this.db.query.invPurchaseOrders.findFirst({
       where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
     });
     if (!po) throw new NotFoundException("Purchase order not found");
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, po.warehouseId);
     if (po.status !== "DRAFT" && po.status !== "SENT") {
       throw new BadRequestException("Only DRAFT or SENT purchase orders can be cancelled");
     }

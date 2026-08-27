@@ -32,7 +32,7 @@ export class ShipmentsController {
     @Query(new ZodValidationPipe(listShipmentsQuerySchema)) query: ListShipmentsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.list(u.orgId, query);
+    return this.svc.list(u.orgId, u.userId, query);
   }
 
   @Get(":shipmentId")

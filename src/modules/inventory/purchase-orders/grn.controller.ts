@@ -30,7 +30,7 @@ export class GrnController {
     @Query(new ZodValidationPipe(listGrnSchema)) filters: ListGrnInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.grns.listGrns(u.orgId, filters);
+    return this.grns.listGrns(u.orgId, u.userId, filters);
   }
 
   @Get(":grnId")

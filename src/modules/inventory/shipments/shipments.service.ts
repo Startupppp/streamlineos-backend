@@ -11,6 +11,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
@@ -30,15 +31,17 @@ export class ShipmentsService {
     private readonly numSeq: NumberSequenceService,
     private readonly audit: InventoryAuditService,
     private readonly settings: InventorySettingsService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async list(orgId: string, query: ListShipmentsQueryInput) {
+  async list(orgId: string, userId: string, query: ListShipmentsQueryInput) {
     const { status, carrierId, warehouseId, soId, page, limit } = query;
     const offset = (page - 1) * limit;
-    const hash = `${status ?? ""}:${carrierId ?? ""}:${warehouseId ?? ""}:${soId ?? ""}:${limit}:${offset}`;
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const hash = `${scope.key}:${status ?? ""}:${carrierId ?? ""}:${warehouseId ?? ""}:${soId ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(CACHE_KEYS.invShipmentsNamespace(orgId), `list:${hash}`, async () => {
-      const conditions = [eq(invShipments.orgId, orgId)];
+      const conditions = [eq(invShipments.orgId, orgId), scope.warehouse(sql`${invShipments.warehouseId}`)];
       if (status) conditions.push(eq(invShipments.status, status));
       if (carrierId) conditions.push(eq(invShipments.carrierId, carrierId));
       if (warehouseId) conditions.push(eq(invShipments.warehouseId, warehouseId));

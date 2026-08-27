@@ -63,7 +63,7 @@ export class InvStockController {
     @Query(new ZodValidationPipe(listReservationsSchema)) filters: ListReservationsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reservations.listReservations(u.orgId, filters);
+    return this.reservations.listReservations(u.orgId, u.userId, filters);
   }
 
   @Post("reserve")

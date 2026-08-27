@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import type { ListCountsInput, CreateAuditInput, UpdateCountLinesInput } from "./dto/inv-counts.schemas";
@@ -19,15 +20,17 @@ export class InvPhysicalAuditsService {
     private readonly cache: CacheService,
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async listAudits(orgId: string, filters: ListCountsInput) {
+  async listAudits(orgId: string, userId: string, filters: ListCountsInput) {
     const { status, warehouseId, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const hash = `${status ?? ""}:${warehouseId ?? ""}:${limit}:${offset}`;
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const hash = `${scope.key}:${status ?? ""}:${warehouseId ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(PA_LIST_NAMESPACE(orgId), hash, async () => {
-      const conditions = [eq(invPhysicalAudits.orgId, orgId)];
+      const conditions = [eq(invPhysicalAudits.orgId, orgId), scope.warehouse(sql`${invPhysicalAudits.warehouseId}`)];
       if (status) conditions.push(eq(invPhysicalAudits.status, status));
       if (warehouseId) conditions.push(eq(invPhysicalAudits.warehouseId, warehouseId));
       const where = and(...conditions);

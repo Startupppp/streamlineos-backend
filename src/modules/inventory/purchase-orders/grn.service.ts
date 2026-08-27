@@ -21,6 +21,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
@@ -44,6 +45,7 @@ export class GrnService {
     private readonly numSeq: NumberSequenceService,
     private readonly journalPosting: JournalPostingService,
     private readonly poService: PoService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
   async receiveGoods(
@@ -440,16 +442,17 @@ export class GrnService {
     });
   }
 
-  async listGrns(orgId: string, filters: ListGrnInput) {
+  async listGrns(orgId: string, userId: string, filters: ListGrnInput) {
     const { poId, vendorId, dateFrom, dateTo, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const hash = `${poId ?? ""}:${vendorId ?? ""}:${dateFrom ?? ""}:${dateTo ?? ""}:${limit}:${offset}`;
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const hash = `${scope.key}:${poId ?? ""}:${vendorId ?? ""}:${dateFrom ?? ""}:${dateTo ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(
       CACHE_KEYS.invGrnNamespace(orgId),
       hash,
       async () => {
-        const conditions = [eq(invGrns.orgId, orgId)];
+        const conditions = [eq(invGrns.orgId, orgId), scope.location(sql`${invGrns.locationId}`)];
         if (poId) conditions.push(eq(invGrns.poId, poId));
         if (dateFrom) conditions.push(gte(invGrns.receivedDate, dateFrom));
         if (dateTo) conditions.push(lte(invGrns.receivedDate, dateTo));

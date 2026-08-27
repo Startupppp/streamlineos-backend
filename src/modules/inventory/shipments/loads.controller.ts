@@ -32,7 +32,7 @@ export class LoadsController {
     @Query(new ZodValidationPipe(listLoadsQuerySchema)) query: ListLoadsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.list(u.orgId, query);
+    return this.svc.list(u.orgId, u.userId, query);
   }
 
   @Get(":loadId")

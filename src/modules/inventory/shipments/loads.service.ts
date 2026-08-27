@@ -10,6 +10,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { ListLoadsQueryInput, CreateLoadInput, DispatchLoadInput, CloseLoadInput } from "./dto/shipments.schemas";
@@ -21,15 +22,17 @@ export class LoadsService {
     private readonly cache: CacheService,
     private readonly numSeq: NumberSequenceService,
     private readonly audit: InventoryAuditService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async list(orgId: string, query: ListLoadsQueryInput) {
+  async list(orgId: string, userId: string, query: ListLoadsQueryInput) {
     const { status, carrierId, page, limit } = query;
     const offset = (page - 1) * limit;
-    const hash = `${status ?? ""}:${carrierId ?? ""}:${limit}:${offset}`;
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const hash = `${scope.key}:${status ?? ""}:${carrierId ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(CACHE_KEYS.invLoadsNamespace(orgId), `list:${hash}`, async () => {
-      const conditions = [eq(invLoads.orgId, orgId)];
+      const conditions = [eq(invLoads.orgId, orgId), scope.warehouse(sql`${invLoads.sourceWarehouseId}`)];
       if (status) conditions.push(eq(invLoads.status, status));
       if (carrierId) conditions.push(eq(invLoads.carrierId, carrierId));
       const where = and(...conditions);
