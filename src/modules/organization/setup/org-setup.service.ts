@@ -23,7 +23,7 @@ import { randomUUID, randomBytes, createHash } from "node:crypto";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
 import {
-  runInNewTenantTransaction,
+  runInNewOrgTransaction,
   runInTenantTransaction,
 } from "../../../common/tenant/run-in-tenant-transaction";
 import type { TenantTx } from "../../../common/tenant/with-tenant";
@@ -334,7 +334,20 @@ export class OrgSetupService {
     const orgId = randomUUID();
     const orgName = input.companyName?.trim() || "My Organization";
 
-    await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+    /**
+     * Placement declared, not looked up — see `runInNewOrgTransaction`. This is
+     * the transaction that writes the organisation's row, so it is the one
+     * transaction in the platform whose region cannot be resolved by reading
+     * that row.
+     *
+     * No country here on purpose: onboarding collects it a step later, in
+     * `completeSetup`, and by then the organisation is placed. Reading it back
+     * to re-place a live tenant would be a region *move*, which is a data
+     * migration rather than a column update.
+     */
+    const region = regionForNewOrg();
+
+    await runInNewOrgTransaction(this.db, { orgId, region }, async (tx) => {
       const seqRows = await tx.execute(
         sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
       );
@@ -344,7 +357,7 @@ export class OrgSetupService {
       }
       await tx.insert(organizations).values({
         id: orgId,
-        region: regionForNewOrg(),
+        region,
         name: orgName,
         slug: this.slugify(orgName),
         ownerMembershipId,

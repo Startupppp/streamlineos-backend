@@ -15,7 +15,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { seedSystemRolesForOrg } from "../../rbac/seed-system-roles";
-import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { runInNewOrgTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -167,7 +167,18 @@ export class OrgProfileService {
       billingEmail = actor?.email ?? null;
     }
 
-    await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+    /**
+     * Placement declared, not looked up.
+     *
+     * This transaction writes the organisation's own row, so there is nothing
+     * for `withTenant` to resolve a region from — `runInNewTenantTransaction`
+     * would raise "has no region" the moment a registry is live. The region was
+     * never unknown: `regionForNewOrg` decides it right here, one line below
+     * where it used to be. `runInNewOrgTransaction` is how that gets said.
+     */
+    const region = regionForNewOrg();
+
+    await runInNewOrgTransaction(this.db, { orgId, region }, async (tx) => {
       const seqRows = await tx.execute(
         sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
       );
@@ -177,7 +188,7 @@ export class OrgProfileService {
       }
       await tx.insert(organizations).values({
         id: orgId,
-        region: regionForNewOrg(),
+        region,
         name: input.name,
         slug: input.slug,
         billingEmail,
