@@ -54,10 +54,21 @@ type MockTx = {
   };
 };
 
+/**
+ * The engine locks every grain in one ordered statement and matches the rows
+ * back by natural key, so the fixture has to carry the grain columns the real
+ * SELECT returns — without them every lookup misses and the engine reports the
+ * location as missing.
+ */
+const LEVEL_GRAIN = { product_variant_id: 1, location_id: 1, lot_id: null, serial_id: null };
+
 function buildTx(levelRow?: Record<string, unknown>): MockTx {
-  const level = levelRow ?? {
-    id: 1, on_hand: "0.0000", committed: "0.0000",
-    blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null,
+  const level = {
+    ...LEVEL_GRAIN,
+    ...(levelRow ?? {
+      id: 1, on_hand: "0.0000", committed: "0.0000",
+      blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null,
+    }),
   };
   return {
     insert: jest.fn(),
@@ -217,6 +228,60 @@ describe("StockEngineService", () => {
     });
   });
 
+  describe("execute — repeated grain in one command", () => {
+    it("carries the first movement's result into the second rather than reading a stale before-quantity", async () => {
+      const tx = buildTx({ id: 1, on_hand: "5.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null });
+      // Locking is a snapshot taken once per command, so a second movement over
+      // the same grain has to see the first one's write. Reading the snapshot
+      // twice would post before=5 twice and lose one of the deltas.
+      // chain 0 claims the idempotency key, chain 1 creates the stock row,
+      // chains 2 and 3 are the two ledger movements
+      let txnId = 400;
+      let call = 0;
+      tx.insert = jest.fn().mockImplementation(() =>
+        call++ < 2 ? makeInsertChain() : makeInsertChain(++txnId),
+      );
+      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
+
+      const cmd: StockEngineCommand = {
+        ...baseCmd,
+        idempotencyKey: "same-grain",
+        movements: [
+          { transactionType: "ADJUSTMENT_IN", productVariantId: 1, locationId: 1, quantityDelta: "10.0000" },
+          { transactionType: "ADJUSTMENT_IN", productVariantId: 1, locationId: 1, quantityDelta: "3.0000" },
+        ],
+      };
+
+      const result = await service.execute("org1", "u1", cmd);
+
+      expect(result.levels.map((l) => l.onHand)).toEqual(["15.0000", "18.0000"]);
+    });
+
+    it("locks the grain once however many movements reference it", async () => {
+      const tx = buildTx();
+      let ledgerId = 500;
+      let insertCall = 0;
+      tx.insert = jest.fn().mockImplementation(() =>
+        insertCall++ < 2 ? makeInsertChain() : makeInsertChain(++ledgerId),
+      );
+      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
+
+      await service.execute("org1", "u1", {
+        ...baseCmd,
+        idempotencyKey: "one-lock",
+        movements: [
+          { transactionType: "ADJUSTMENT_IN", productVariantId: 1, locationId: 1, quantityDelta: "1.0000" },
+          { transactionType: "ADJUSTMENT_IN", productVariantId: 1, locationId: 1, quantityDelta: "1.0000" },
+        ],
+      });
+
+      const lockingCalls = tx.execute.mock.calls.filter((call) =>
+        JSON.stringify(call[0]).includes("FOR UPDATE"),
+      );
+      expect(lockingCalls).toHaveLength(1);
+    });
+  });
+
   describe("execute — negative stock policy", () => {
     it("throws BadRequestException when allowNegativeStock=false and result is negative", async () => {
       const tx = buildTx({ id: 1, on_hand: "3.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null });
@@ -232,7 +297,7 @@ describe("StockEngineService", () => {
     it("succeeds when allowNegativeStock=true even if result is negative", async () => {
       const tx = buildTx({ id: 1, on_hand: "3.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null });
       tx.execute = jest.fn()
-        .mockResolvedValue([{ id: 1, on_hand: "3.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null }]);
+        .mockResolvedValue([{ ...LEVEL_GRAIN, id: 1, on_hand: "3.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null }]);
       setupInserts(tx, 301);
       const settings = defaultSettings({ allowNegativeStock: true });
       const service = new StockEngineService(buildDb(tx) as never, settings as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);

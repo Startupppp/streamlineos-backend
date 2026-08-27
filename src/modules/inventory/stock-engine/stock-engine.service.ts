@@ -18,6 +18,7 @@ import { addDec, mulDec, isPositive, isNegative } from "./decimal";
 import { ValuationService } from "./valuation.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
 import { claimIdempotencyKey, extractEngineResult } from "./idempotency";
+import { lockLevels, levelKey, type LockedLevel } from "./stock-level-locks";
 import { MovementCostingService } from "./movement-costing.service";
 import { PeriodsService } from "../../accounting/gl/periods.service";
 import { loadCostingContext } from "./costing-context";
@@ -89,41 +90,29 @@ export class StockEngineService {
     const levels: StockEngineResult["levels"] = [];
     const decreasedVariantIds = new Set<number>();
 
+    // Every grain this command touches is locked in one ordered statement before
+    // any of it is read, so two concurrent commands cannot take the same rows in
+    // opposite order.
+    const locked = await lockLevels(
+      tx,
+      orgId,
+      cmd.movements.map((m) => ({
+        productVariantId: m.productVariantId,
+        locationId: m.locationId,
+        lotId: m.lotId ?? null,
+        serialId: m.serialId ?? null,
+      })),
+    );
+
     for (const movement of cmd.movements) {
-      await tx
-        .insert(invStockLevels)
-        .values({
-          orgId,
+      const level = locked.get(
+        levelKey({
           productVariantId: movement.productVariantId,
           locationId: movement.locationId,
           lotId: movement.lotId ?? null,
           serialId: movement.serialId ?? null,
-          onHand: "0",
-          committed: "0",
-          onOrder: "0",
-          blockedQty: "0",
-          qualityHoldQty: "0",
-          outgoingQty: "0",
-        })
-        .onConflictDoNothing();
-
-      const [level] = await tx.execute<{
-        id: number;
-        on_hand: string;
-        committed: string;
-        blocked_qty: string;
-        quality_hold_qty: string;
-        average_cost: string | null;
-      }>(sql`
-        SELECT id, on_hand, committed, blocked_qty, quality_hold_qty, average_cost
-        FROM inv_stock_levels
-        WHERE org_id = ${orgId}
-          AND product_variant_id = ${movement.productVariantId}
-          AND location_id = ${movement.locationId}
-          AND (lot_id IS NOT DISTINCT FROM ${movement.lotId ?? null})
-          AND (serial_id IS NOT DISTINCT FROM ${movement.serialId ?? null})
-        FOR UPDATE
-      `);
+        }),
+      );
 
       if (!level)
         throw new BadRequestException({ code: INV_ERRORS.LOCATION_NOT_FOUND });
@@ -133,15 +122,15 @@ export class StockEngineService {
       const positive = isPositive(delta);
 
       const newOnHand =
-        bucket === "ON_HAND" ? addDec(level.on_hand, delta) : level.on_hand;
+        bucket === "ON_HAND" ? addDec(level.onHand, delta) : level.onHand;
       const newBlocked =
         bucket === "BLOCKED"
-          ? addDec(level.blocked_qty ?? "0", delta)
-          : (level.blocked_qty ?? "0");
+          ? addDec(level.blockedQty, delta)
+          : level.blockedQty;
       const newQualityHold =
         bucket === "QUALITY_HOLD"
-          ? addDec(level.quality_hold_qty ?? "0", delta)
-          : (level.quality_hold_qty ?? "0");
+          ? addDec(level.qualityHoldQty, delta)
+          : level.qualityHoldQty;
 
       if (!settings.allowNegativeStock && isNegative(newOnHand)) {
         throw new BadRequestException({ code: INV_ERRORS.INSUFFICIENT_STOCK });
@@ -161,7 +150,7 @@ export class StockEngineService {
           transactionType:
             movement.transactionType as (typeof invStockTransactions.$inferInsert)["transactionType"],
           quantityChange: delta,
-          quantityBefore: level.on_hand,
+          quantityBefore: level.onHand,
           quantityAfter: newOnHand,
           unitCost,
           totalCost,
@@ -179,7 +168,7 @@ export class StockEngineService {
       if (!txnRow) throw new Error("Failed to insert stock transaction");
       txnIds.push(txnRow.id);
 
-      let newAvgCost = level.average_cost;
+      let newAvgCost = level.averageCost;
       if (bucket === "ON_HAND") {
         newAvgCost = await this.movementCosting.applyCosting(
           tx,
@@ -189,8 +178,8 @@ export class StockEngineService {
           txnRow.id,
           delta,
           unitCost,
-          level.on_hand,
-          level.average_cost,
+          level.onHand,
+          level.averageCost,
           settings.allowNegativeStock,
           cmd.sourceType ?? null,
           cmd.sourceId,
@@ -206,6 +195,17 @@ export class StockEngineService {
           averageCost: newAvgCost,
         })
         .where(eq(invStockLevels.id, level.id));
+
+      // The snapshot is taken once, so a command with two movements over the
+      // same grain must carry the first one's result forward or the second
+      // reads a stale before-quantity and overwrites it.
+      locked.set(levelKey(level), {
+        ...level,
+        onHand: newOnHand,
+        blockedQty: newBlocked,
+        qualityHoldQty: newQualityHold,
+        averageCost: newAvgCost,
+      });
 
       if (!positive && bucket === "ON_HAND") {
         decreasedVariantIds.add(movement.productVariantId);

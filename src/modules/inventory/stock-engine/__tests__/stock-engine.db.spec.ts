@@ -31,6 +31,24 @@ function connect() {
   return postgres(url.toString(), { prepare: false, max: 10, ssl: "require", connect_timeout: 30 });
 }
 
+/**
+ * A session-mode connection, for the probes that need one.
+ *
+ * DATABASE_URL points at the transaction-mode pooler, which hands out a
+ * different backend per transaction. A TEMP TABLE created on one is invisible to
+ * the next and outlives the test in some pooler backend's pg_temp, so a rerun
+ * collides with a table it cannot see: both probes failed that way, and the
+ * failure looked like a defect in the thing being probed. Neon encodes session
+ * mode in the host, the same substitution db-verify-rls.mjs makes.
+ */
+function connectSession() {
+  const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
+  if (!raw) throw new Error("DATABASE_URL required for INV_DB_TESTS");
+  const url = new URL(raw.replace("-pooler.", "."));
+  url.searchParams.delete("channel_binding");
+  return postgres(url.toString(), { prepare: false, max: 1, ssl: "require", connect_timeout: 30 });
+}
+
 describeDb("stock engine — real database", () => {
   let sql: ReturnType<typeof postgres>;
 
@@ -43,55 +61,68 @@ describeDb("stock engine — real database", () => {
   });
 
   describe("idempotency claim semantics", () => {
+    // A TEMP TABLE belongs to one session, and this pool holds ten. Created on
+    // one connection and used from another, it simply does not exist -- which is
+    // how both of these read as failures while proving nothing about the engine.
+    // Reserving a connection makes the whole probe run in one session.
     it("ON CONFLICT DO NOTHING RETURNING lets the claim branch without aborting the transaction", async () => {
       const key = `probe-${randomUUID()}`;
-      await sql`CREATE TEMP TABLE inv_test_idem (id serial PRIMARY KEY, k text NOT NULL)`;
-      await sql`CREATE UNIQUE INDEX inv_test_idem_k ON inv_test_idem (k)`;
-      await sql`INSERT INTO inv_test_idem (k) VALUES (${key})`;
+      const table = `inv_test_idem_${randomUUID().replace(/-/g, "")}`;
+      const session = connectSession();
+      try {
+        await session.unsafe(`CREATE TEMP TABLE ${table} (id serial PRIMARY KEY, k text NOT NULL)`);
+        await session.unsafe(`CREATE UNIQUE INDEX ${table}_k ON ${table} (k)`);
+        await session.unsafe(`INSERT INTO ${table} (k) VALUES ($1)`, [key]);
 
-      const outcome = await sql.begin(async (tx) => {
-        const claimed = await tx`
-          INSERT INTO inv_test_idem (k) VALUES (${key})
-          ON CONFLICT DO NOTHING
-          RETURNING id
-        `;
-        // The transaction must still be usable — this is the read the engine
-        // performs to decide between replay and reclaim.
-        const existing = await tx`SELECT id FROM inv_test_idem WHERE k = ${key}`;
-        return { claimedRows: claimed.length, existingRows: existing.length };
-      });
+        const outcome = await session.begin(async (tx) => {
+          const claimed = await tx.unsafe(
+            `INSERT INTO ${table} (k) VALUES ($1) ON CONFLICT DO NOTHING RETURNING id`,
+            [key],
+          );
+          // The transaction must still be usable — this is the read the engine
+          // performs to decide between replay and reclaim.
+          const existing = await tx.unsafe(`SELECT id FROM ${table} WHERE k = $1`, [key]);
+          return { claimedRows: claimed.length, existingRows: existing.length };
+        });
 
-      expect(outcome.claimedRows).toBe(0);
-      expect(outcome.existingRows).toBe(1);
-      await sql`DROP TABLE inv_test_idem`;
+        expect(outcome.claimedRows).toBe(0);
+        expect(outcome.existingRows).toBe(1);
+      } finally {
+        await session.end({ timeout: 5 });
+      }
     });
 
     it("a caught duplicate-key error DOES poison the transaction — the shape the engine must not use", async () => {
       const key = `probe-${randomUUID()}`;
-      await sql`CREATE TEMP TABLE inv_test_poison (id serial PRIMARY KEY, k text NOT NULL)`;
-      await sql`CREATE UNIQUE INDEX inv_test_poison_k ON inv_test_poison (k)`;
-      await sql`INSERT INTO inv_test_poison (k) VALUES (${key})`;
-
-      let followUpFailed = false;
+      const table = `inv_test_poison_${randomUUID().replace(/-/g, "")}`;
+      const session = connectSession();
       try {
-        await sql.begin(async (tx) => {
-          try {
-            await tx`INSERT INTO inv_test_poison (k) VALUES (${key})`;
-          } catch {
-            // swallowed, exactly like the pre-fix claimIdempotencyKey
-          }
-          try {
-            await tx`SELECT id FROM inv_test_poison WHERE k = ${key}`;
-          } catch {
-            followUpFailed = true;
-          }
-        });
-      } catch {
-        followUpFailed = true;
-      }
+        await session.unsafe(`CREATE TEMP TABLE ${table} (id serial PRIMARY KEY, k text NOT NULL)`);
+        await session.unsafe(`CREATE UNIQUE INDEX ${table}_k ON ${table} (k)`);
+        await session.unsafe(`INSERT INTO ${table} (k) VALUES ($1)`, [key]);
 
-      expect(followUpFailed).toBe(true);
-      await sql`DROP TABLE inv_test_poison`;
+        let followUpFailed = false;
+        try {
+          await session.begin(async (tx) => {
+            try {
+              await tx.unsafe(`INSERT INTO ${table} (k) VALUES ($1)`, [key]);
+            } catch {
+              // swallowed, exactly like the pre-fix claimIdempotencyKey
+            }
+            try {
+              await tx.unsafe(`SELECT id FROM ${table} WHERE k = $1`, [key]);
+            } catch {
+              followUpFailed = true;
+            }
+          });
+        } catch {
+          followUpFailed = true;
+        }
+
+        expect(followUpFailed).toBe(true);
+      } finally {
+        await session.end({ timeout: 5 });
+      }
     });
   });
 
