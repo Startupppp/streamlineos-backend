@@ -33,24 +33,63 @@ function snapshotFor(overrides: Partial<InvoiceSnapshot> = {}): InvoiceSnapshot 
   };
 }
 
+/**
+ * The bytes this fixture must render to, and its fingerprint.
+ *
+ * Committed rather than computed, and that is the whole point. The three cases
+ * this replaced compared `renderInvoice(s)` to `renderInvoice(s)` and
+ * `invoiceFingerprint(s)` to itself — same function, same process, same tick, so
+ * they held however the renderer changed and could not fail. An invoice that
+ * reproduces is a claim about a document issued in the past, which nothing
+ * computed inside this run can stand in for.
+ *
+ * If a change to `renderInvoice` fails these, that is the test working. Do not
+ * re-derive the constants to make it pass: an invoice already sent to a customer
+ * renders to the bytes below, and a deliberate format change means the old ones
+ * must still reproduce from their stored fingerprint. Add a case for the new
+ * shape instead.
+ */
+const GOLDEN_DOCUMENT = [
+  "INVOICE INV-2026-000042",
+  "Issued: 2026-08-26T10:00:00.000Z",
+  "Currency: INR",
+  "",
+  "From: StreamlineOS (IN)",
+  "      29ABCDE1234F1Z5",
+  "",
+  "To:   Acme Pvt Ltd (IN)",
+  "      4th Floor",
+  "      Bengaluru 560001",
+  "      29ZYXWV9876G1Z2",
+  "",
+  "Professional plan (monthly) \u00d7 1 @ 1000.00 = 1000.00",
+  "",
+  "Net:   1000.00",
+  "CGST (9.00%): 90.00",
+  "SGST (9.00%): 90.00",
+  "Tax:   180.00",
+  "Total: 1180.00",
+  "",
+  "Supply within the seller's state.",
+  "Rates version: 2026-08-26",
+].join("\n");
+
+const GOLDEN_FINGERPRINT =
+  "dfc86986d786950ae929f5b029223dd5c8655f3c3acacd6637a7e96726ffcfeb";
+
 describe("reproducibility", () => {
-  it("renders identically every time from the same snapshot", () => {
-    const snapshot = snapshotFor();
-    expect(renderInvoice(snapshot)).toBe(renderInvoice(snapshot));
+  it("renders the bytes it rendered when the invoice was issued", () => {
+    expect(renderInvoice(snapshotFor())).toBe(GOLDEN_DOCUMENT);
   });
 
-  it("fingerprints to the same value across renders", () => {
-    const snapshot = snapshotFor();
-    expect(invoiceFingerprint(snapshot)).toBe(invoiceFingerprint(snapshot));
+  it("fingerprints to the value stored against the issued invoice", () => {
+    expect(invoiceFingerprint(snapshotFor())).toBe(GOLDEN_FINGERPRINT);
   });
 
-  it("proves an invoice still reproduces, rather than assuming it", () => {
-    // Comparing hashes is how a silent divergence -- a changed formatter, a new
-    // runtime -- is caught the first time rather than during a dispute.
-    const snapshot = snapshotFor();
-    const issued = invoiceFingerprint(snapshot);
-
-    expect(reproduces(snapshot, issued)).toBe(true);
+  it("proves an invoice still reproduces, against a fingerprint from before this run", () => {
+    // The fingerprint is the committed one, not one computed a line earlier --
+    // otherwise both sides move together and the check cannot fail.
+    expect(reproduces(snapshotFor(), GOLDEN_FINGERPRINT)).toBe(true);
   });
 
   it("detects a snapshot that has been altered since issue", () => {
