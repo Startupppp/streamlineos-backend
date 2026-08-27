@@ -1,11 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  UnprocessableEntityException,
-} from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import { invStockLevels, invStockTransactions, invIdempotencyKeys } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -18,7 +12,7 @@ import { addDec, mulDec, isPositive, isNegative } from "./decimal";
 import { ValuationService } from "./valuation.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
 import { claimIdempotencyKey, extractEngineResult } from "./idempotency";
-import { lockLevels, levelKey, type LockedLevel } from "./stock-level-locks";
+import { lockLevels, levelKey } from "./stock-level-locks";
 import { MovementCostingService } from "./movement-costing.service";
 import { PeriodsService } from "../../accounting/gl/periods.service";
 import { loadCostingContext } from "./costing-context";

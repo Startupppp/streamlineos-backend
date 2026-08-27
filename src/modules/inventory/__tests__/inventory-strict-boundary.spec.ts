@@ -39,10 +39,10 @@ function isZodObject(value: unknown): value is z.ZodObject {
   return value instanceof z.ZodObject;
 }
 
-function exportedObjectSchemas(): ExportedSchema[] {
+async function exportedObjectSchemas(): Promise<ExportedSchema[]> {
   const out: ExportedSchema[] = [];
   for (const path of dtoModulePaths()) {
-    const loaded: unknown = require(path);
+    const loaded: unknown = await import(path);
     if (typeof loaded !== "object" || loaded === null) continue;
     for (const [name, value] of Object.entries(loaded as Record<string, unknown>))
       if (isZodObject(value)) out.push({ module: path.replace(DTO_ROOT + "/", ""), name, schema: value });
@@ -69,18 +69,22 @@ const PROTECTED_FIELDS = [
 ] as const;
 
 describe("inventory boundary schemas", () => {
-  const schemas = exportedObjectSchemas();
+  let schemas: ExportedSchema[] = [];
+
+  beforeAll(async () => {
+    schemas = await exportedObjectSchemas();
+  });
 
   it("finds the whole DTO surface", () => {
     expect(schemas.length).toBeGreaterThanOrEqual(60);
   });
 
-  it.each(schemas.map((s) => [`${s.module}#${s.name}`, s.schema] as const))(
-    "%s rejects unknown keys",
-    (_label, schema) => {
-      expect(schema._zod.def.catchall?._zod.def.type).toBe("never");
-    },
-  );
+  it("rejects unknown keys in every schema", () => {
+    const permissive = schemas
+      .filter((s) => s.schema._zod.def.catchall?._zod.def.type !== "never")
+      .map((s) => `${s.module}#${s.name}`);
+    expect(permissive).toEqual([]);
+  });
 
   it("rejects every protected field a schema does not itself declare", () => {
     const accepted: string[] = [];

@@ -14,6 +14,10 @@
 import dotenv from "dotenv";
 import postgres from "postgres";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
+// The whole inventory barrel is the subject: this spec exists to compare every
+// declared table against the catalogue, so it cannot name them one by one. It
+// touches no legacy identity table.
+// eslint-disable-next-line no-restricted-imports
 import * as inventorySchema from "../../../db/schema/inventory";
 
 const ENABLED = process.env.INV_DB_TESTS === "1";
