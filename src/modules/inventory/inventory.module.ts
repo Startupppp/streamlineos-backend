@@ -21,6 +21,7 @@ import { InvImportExportModule } from "./import-export/inv-import-export.module"
 import { InvWebhooksModule } from "./webhooks/inv-webhooks.module";
 import { InvSettingsModule } from "./settings/inv-settings.module";
 import { InvPickingModule } from "./picking/inv-picking.module";
+import { InvSyncModule } from "./sync/inv-sync.module";
 
 const INVENTORY_MODULES = [
   InvProductsModule,
@@ -45,6 +46,7 @@ const INVENTORY_MODULES = [
   InvWebhooksModule,
   InvSettingsModule,
   InvPickingModule,
+  InvSyncModule,
 ];
 
 @Module({
