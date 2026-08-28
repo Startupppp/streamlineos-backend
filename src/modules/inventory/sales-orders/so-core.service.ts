@@ -22,6 +22,7 @@ import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { SoLifecycleService } from "./so-lifecycle.service";
 import { addDec, mulDec } from "../stock-engine/stock-engine.service";
+import { loadOrderableVariants } from "../products/lib/orderable-variants";
 import type {
   CreateSoInput,
   ListSoInput,
@@ -166,12 +167,14 @@ export class SoCoreService {
     const soNumber = await this.numSeq.next(orgId, "SO");
     const { subtotal, taxAmount, total } = computeSoTotals(data.lines);
 
+    // INV-107. This looked variants up by id alone -- no tenant predicate and
+    // no lifecycle check -- so another organisation's variant resolved to a row
+    // and a discontinued SKU was as orderable as a live one.
     const variantIds = data.lines.map((l) => l.productVariantId);
-    const variants = await this.db.query.invProductVariants.findMany({
-      where: inArray(invProductVariants.id, variantIds),
-      columns: { id: true, costPrice: true },
-    });
-    const variantCostMap = new Map(variants.map((v) => [v.id, v.costPrice]));
+    const orderable = await loadOrderableVariants(this.db, orgId, variantIds);
+    const variantCostMap = new Map(
+      [...orderable.values()].map((v) => [v.id, v.costPrice]),
+    );
 
     const so = await this.db.transaction(async (tx) => {
       const [header] = await (tx as Db)
