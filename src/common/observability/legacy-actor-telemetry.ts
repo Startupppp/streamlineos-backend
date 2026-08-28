@@ -33,7 +33,9 @@ export function snapshotLegacyActorTelemetry(): LegacyActorSnapshot {
     reads,
     writes,
     total: reads + writes,
-    byColumn: { ...byColumn },
+    byColumn: Object.fromEntries(
+      Object.entries(byColumn).map(([key, counts]) => [key, { ...counts }]),
+    ),
     capturedAt: new Date().toISOString(),
   };
 }

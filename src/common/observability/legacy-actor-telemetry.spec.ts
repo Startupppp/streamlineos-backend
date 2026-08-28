@@ -47,15 +47,22 @@ describe("legacy-actor-telemetry", () => {
     expect(snap.total).toBe(3);
   });
 
-  it("snapshot is a value — mutating it does not affect subsequent reads", () => {
+  it("snapshot is a point-in-time value, not a live view of the counters", () => {
     recordLegacyActorRead("hr_effective_dated_changes", "approved_by");
     const snap1 = snapshotLegacyActorTelemetry();
-    snap1.byColumn["hr_effective_dated_changes.approved_by"] = { reads: 999, writes: 999 };
+
+    recordLegacyActorRead("hr_effective_dated_changes", "approved_by");
     const snap2 = snapshotLegacyActorTelemetry();
-    expect(snap2.byColumn["hr_effective_dated_changes.approved_by"]).toEqual({
+
+    expect(snap1.byColumn["hr_effective_dated_changes.approved_by"]).toEqual({
       reads: 1,
       writes: 0,
     });
+    expect(snap2.byColumn["hr_effective_dated_changes.approved_by"]).toEqual({
+      reads: 2,
+      writes: 0,
+    });
+    expect(snap2.byColumn).not.toBe(snap1.byColumn);
   });
 
   it("reset clears all counters and per-column state", () => {

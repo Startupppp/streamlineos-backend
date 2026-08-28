@@ -163,6 +163,7 @@ export function installFixtureRegionRegistry(db: Db): void {
       searchCluster: DEFAULT_SEARCH_CLUSTER,
       acceptedTenantClasses: ["SHARED"],
       complianceZones: [],
+      cache: {},
     },
     storage: {
       region: "auto",

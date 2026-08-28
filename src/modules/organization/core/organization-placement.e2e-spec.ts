@@ -51,6 +51,7 @@ function buildRegistry(db: Db, lookup: OrgRegionLookup): RegionRegistry {
       searchCluster: DEFAULT_SEARCH_CLUSTER,
       acceptedTenantClasses: ["SHARED"],
       complianceZones: [],
+      cache: {},
     },
     storage: { region: "auto", bucket: "fixture" },
   };
