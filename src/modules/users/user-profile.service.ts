@@ -28,6 +28,11 @@ import { withClientInfo } from "../../common/http/parse-user-agent";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import { SessionsService } from "../sessions/sessions.service";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
+import {
+  syncCanonicalEmploymentFields,
+  type CanonicalEmploymentPatch,
+} from "../../common/hr/sync-canonical-employment-fields";
+import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
 
 /** Caps the history arrays so one export cannot pull an unbounded audit trail. */
 const EXPORT_HISTORY_LIMIT = 500;
@@ -334,19 +339,22 @@ export class UserProfileService {
     }
 
     await this.db.transaction(async (tx) => {
-      const scalarPlacement: Partial<{
-        reportingTo: string | null;
-        branchId: string | null;
-        orgDepartmentId: string | null;
-      }> = {};
-      if (data.managerUserId !== undefined)
-        scalarPlacement.reportingTo = data.managerUserId;
-      if (data.branchId !== undefined) scalarPlacement.branchId = data.branchId;
-      if (data.departmentId !== undefined)
-        scalarPlacement.orgDepartmentId = data.departmentId;
+      const employmentPatch: CanonicalEmploymentPatch = {};
+      if (data.branchId !== undefined) employmentPatch.locationId = data.branchId;
+      if (data.departmentId !== undefined) employmentPatch.departmentId = data.departmentId;
 
-      if (Object.keys(scalarPlacement).length > 0)
-        await tx.update(users).set(scalarPlacement).where(eq(users.id, userId));
+      if (Object.keys(employmentPatch).length > 0)
+        await syncCanonicalEmploymentFields(tx, orgId, userId, employmentPatch);
+
+      if (data.managerUserId !== undefined)
+        await syncCanonicalReportingLine(
+          tx,
+          orgId,
+          userId,
+          data.managerUserId,
+          new Date().toISOString().slice(0, 10),
+          actorUserId,
+        );
 
       await syncOrgUnitPlacement(tx, orgId, userId, {
         BUSINESS_UNIT: data.businessUnitId,

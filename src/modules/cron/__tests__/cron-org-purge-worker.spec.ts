@@ -4,6 +4,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { OrgMembershipService } from "../../organization/core/org-membership.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { logger } from "../../../common/logger/logger.service";
 import { PURGE_ADAPTERS } from "../../../db/schema/common/organization-purge";
 import { PURGE_ADAPTER_REGISTRY } from "../../organization/core/lifecycle/organization-purge-adapters";
 
@@ -92,7 +93,6 @@ describe("CronOrgPurgeWorkerService", () => {
 
     mockDb.select
       .mockReturnValueOnce(selectReturning([{ id: ORG_ID }]))
-      .mockReturnValueOnce(selectReturning([]))
       .mockReturnValueOnce(
         selectReturning([{ id: ORG_ID, name: "Purge Corp", purgeJobId: null }]),
       )
@@ -100,6 +100,8 @@ describe("CronOrgPurgeWorkerService", () => {
 
     mockDb.transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
+        // no unreleased hold; the read is inside the transaction so RLS is satisfied
+        select: jest.fn().mockReturnValue(selectReturning([])),
         execute: jest.fn().mockResolvedValue([{ id: ORG_ID }]),
         insert: jest.fn().mockReturnValue({
           values: jest.fn().mockReturnValue({
@@ -150,11 +152,17 @@ describe("CronOrgPurgeWorkerService", () => {
 
   it("refuses to purge an organization under an active legal hold", async () => {
     restoreAdapters = setAdapterStates("CONFIRMED");
-    mockDb.select
-      .mockReturnValueOnce(selectReturning([{ id: ORG_ID }]))
-      .mockReturnValueOnce(selectReturning([{ holdId: "hold-1" }]));
-    mockDb.transaction.mockImplementation(() => {
-      throw new Error("a held organization must not reach any purge transaction");
+    mockDb.select.mockReturnValueOnce(selectReturning([{ id: ORG_ID }]));
+
+    let transactions = 0;
+    mockDb.transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) => {
+      transactions += 1;
+      if (transactions > 1)
+        throw new Error("a held organization must not reach any purge transaction");
+      return fn({
+        execute: jest.fn().mockResolvedValue([]),
+        select: jest.fn().mockReturnValue(selectReturning([{ holdId: "hold-1" }])),
+      });
     });
 
     const result = await svc.run();
@@ -163,18 +171,129 @@ describe("CronOrgPurgeWorkerService", () => {
     expect(result.skipped).toBe(1);
   });
 
-  it("skips purge and reports skipped=1 when the row is already claimed (SKIP LOCKED returns nothing)", async () => {
+  it("reads the legal hold inside a tenant transaction, because a pool read dies 42501 under RLS", async () => {
+    restoreAdapters = setAdapterStates("CONFIRMED");
+    mockDb.select.mockImplementation(() => {
+      throw new Error(
+        "organization_legal_holds read on the pool: no tenant GUC, dies 42501",
+      );
+    });
+    mockDb.select.mockReturnValueOnce(selectReturning([{ id: ORG_ID }]));
+
+    let sawHoldRead = false;
+    mockDb.transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) => {
+      sawHoldRead = true;
+      return fn({
+        execute: jest.fn().mockResolvedValue([]),
+        select: jest.fn().mockReturnValue(selectReturning([{ holdId: "hold-1" }])),
+      });
+    });
+
+    const result = await svc.run();
+
+    expect(sawHoldRead).toBe(true);
+    expect(result.processed).toBe(0);
+  });
+
+  it("skips an org that is no longer purge-scheduled", async () => {
     restoreAdapters = setAdapterStates("CONFIRMED");
     mockDb.select
       .mockReturnValueOnce(selectReturning([{ id: ORG_ID }]))
-      .mockReturnValueOnce(selectReturning([]))
       .mockReturnValueOnce(selectReturning([]));
+    mockDb.transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        execute: jest.fn().mockResolvedValue([]),
+        select: jest.fn().mockReturnValue(selectReturning([])),
+      }),
+    );
+    const info = jest.spyOn(logger, "info").mockImplementation(() => undefined);
 
     const result = await svc.run();
 
     expect(result.processed).toBe(0);
     expect(result.skipped).toBe(1);
+    expect(info.mock.calls.map((c) => String(c[0])).join(" | ")).toContain(
+      "no longer purge-scheduled",
+    );
+    info.mockRestore();
+  });
+
+  it("skips when another instance already claimed the row (SKIP LOCKED returns nothing)", async () => {
+    restoreAdapters = setAdapterStates("CONFIRMED");
+    mockDb.select
+      .mockReturnValueOnce(selectReturning([{ id: ORG_ID }]))
+      .mockReturnValueOnce(
+        selectReturning([{ id: ORG_ID, name: "Purge Corp", purgeJobId: null }]),
+      );
+
+    // The final claim transaction is the one that must come back empty; the
+    // earlier tenant transactions still have to work or we never reach it.
+    let txCount = 0;
+    mockDb.transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) => {
+      txCount += 1;
+      return fn({
+        execute: jest.fn().mockResolvedValue([]),
+        select: jest.fn().mockReturnValue(selectReturning([])),
+        insert: jest.fn().mockReturnValue({
+          values: jest.fn().mockReturnValue({
+            onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+          }),
+        }),
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue(undefined),
+          }),
+        }),
+      });
+    });
+    const info = jest.spyOn(logger, "info").mockImplementation(() => undefined);
+
+    const result = await svc.run();
+
+    expect(txCount).toBeGreaterThan(2);
+    expect(result.processed).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(info.mock.calls.map((c) => String(c[0])).join(" | ")).toContain(
+      "claimed by another instance",
+    );
     expect(mockOrgMembership.revokeOrgScopedAccess).not.toHaveBeenCalled();
+    info.mockRestore();
+  });
+
+  it("names the real reason for a skip rather than blaming another instance", async () => {
+    restoreAdapters = setAdapterStates("FAILED");
+    stubHappyPath();
+    const warn = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const info = jest.spyOn(logger, "info").mockImplementation(() => undefined);
+
+    await svc.run();
+
+    const warned = warn.mock.calls.map((c) => String(c[0])).join(" | ");
+    const informed = info.mock.calls.map((c) => String(c[0])).join(" | ");
+    expect(warned).toContain("adapter confirmations incomplete");
+    expect(informed).not.toContain("claimed by another instance");
+
+    warn.mockRestore();
+    info.mockRestore();
+  });
+
+  it("warns, rather than merely informs, when a legal hold blocks a purge", async () => {
+    restoreAdapters = setAdapterStates("CONFIRMED");
+    mockDb.select.mockReturnValueOnce(selectReturning([{ id: ORG_ID }]));
+    mockDb.transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        execute: jest.fn().mockResolvedValue([]),
+        select: jest.fn().mockReturnValue(selectReturning([{ holdId: "hold-1" }])),
+      }),
+    );
+    const warn = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+
+    await svc.run();
+
+    expect(warn.mock.calls.map((c) => String(c[0])).join(" | ")).toContain(
+      "blocked by an active legal hold",
+    );
+    warn.mockRestore();
   });
 
   it("returns processed=0 skipped=0 when there are no purge-scheduled candidates", async () => {

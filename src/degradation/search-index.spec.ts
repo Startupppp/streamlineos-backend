@@ -1,3 +1,5 @@
+import "dotenv/config";
+import postgres from "postgres";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { applyScope } from "../modules/access/apply-scope";
 import { tickets, projects } from "../db/schema";
@@ -7,6 +9,9 @@ import type { AccessResolver } from "../modules/access/authorize";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
 
 const dialect = new PgDialect();
+const ROLLBACK_MARKER = "rollback-explain-probe";
+const ownerDatabaseUrl = process.env.DATABASE_URL;
+const describeAgainstOwner = ownerDatabaseUrl ? describe : describe.skip;
 
 function render(condition: Parameters<PgDialect["sqlToQuery"]>[0]): { sql: string; params: unknown[] } {
   return dialect.sqlToQuery(condition);
@@ -151,13 +156,97 @@ describe("resolveSearchAccess — ACL gate runs before search, not after", () =>
     expect(access.build).not.toBeNull();
   });
 
-  it.skip(
-    "integration: when the SECURITY DEFINER probe is missing (42883), search still returns results via ILIKE fallback — needs real Postgres with the function dropped",
-    () => {},
-  );
+  describeAgainstOwner("integration — real Postgres, read-only", () => {
+    let sqlOwner: ReturnType<typeof postgres>;
 
-  it.skip(
-    "integration: the ILIKE fallback query contains org_id in the WHERE clause, not a post-fetch filter — verified via EXPLAIN in a real Postgres session",
-    () => {},
-  );
+    beforeAll(() => {
+      sqlOwner = postgres(ownerDatabaseUrl ?? "", { prepare: false });
+    });
+
+    afterAll(async () => {
+      await sqlOwner.end();
+    });
+
+    it("integration: calling a non-existent probe function raises Postgres code 42883 — the isUndefinedFunction guard fires on real DB behavior, activating the ILIKE fallback without dropping the production probe", async () => {
+      let caught: unknown;
+      try {
+        await sqlOwner`SELECT app.nonexistent_search_probe_degradation_xyz('test', 10) AS id`;
+      } catch (e) {
+        caught = e;
+      }
+
+      expect(caught).toBeDefined();
+      const code = (caught as Record<string, unknown>)["code"];
+      expect(code).toBe("42883");
+
+      const [org] = await sqlOwner`SELECT id FROM organizations WHERE deleted_at IS NULL LIMIT 1`;
+      const realOrgId = String(org["id"]);
+
+      const rows = await sqlOwner`
+        SELECT id FROM build.tickets
+        WHERE org_id = ${realOrgId} AND deleted_at IS NULL
+        LIMIT 1
+      `;
+
+      expect(Array.isArray(rows)).toBe(true);
+    });
+  });
 });
+
+const appDatabaseUrl = process.env.APP_DATABASE_URL;
+const describeAgainstAppRole = appDatabaseUrl ? describe : describe.skip;
+
+describeAgainstAppRole(
+  "the degraded ILIKE fallback filters by tenant inside the query, proved by EXPLAIN as streamline_app",
+  () => {
+    let sql: ReturnType<typeof postgres>;
+
+    beforeAll(() => {
+      sql = postgres(appDatabaseUrl ?? "", { prepare: false, ssl: "require", max: 1 });
+    });
+
+    afterAll(async () => {
+      await sql.end();
+    });
+
+    it("runs as a non-owner role, because the owner bypasses RLS and would prove nothing", async () => {
+      const [row] = await sql<{ role: string; bypass: boolean }[]>`
+        SELECT current_user AS role,
+               (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass`;
+
+      expect(row?.bypass).toBe(false);
+    });
+
+    it("puts the tenant predicate in the plan rather than filtering after the fetch", async () => {
+      const plan = await captureFallbackPlan(sql);
+
+      expect(plan).toMatch(/org_id/);
+      expect(plan).not.toMatch(/Seq Scan[^}]*"Relation Name":"tickets"/);
+    });
+
+    it("fails closed when the tenant GUC is absent", async () => {
+      await expect(
+        sql.begin(async (tx) => tx`SELECT count(*) FROM build.tickets WHERE org_id = current_org_id()`),
+      ).rejects.toThrow();
+    });
+  },
+);
+
+async function captureFallbackPlan(client: ReturnType<typeof postgres>): Promise<string> {
+  let plan = "";
+  try {
+    await client.begin(async (tx) => {
+      await tx`SELECT set_config('app.organization_id', ${"org-explain-probe"}, true)`;
+      const rows = await tx`
+        EXPLAIN (FORMAT JSON)
+        SELECT id, title FROM build.tickets
+        WHERE org_id = current_org_id() AND title ILIKE ${"%probe%"}
+        LIMIT 10`;
+      plan = JSON.stringify(rows);
+      throw new Error(ROLLBACK_MARKER);
+    });
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== ROLLBACK_MARKER) throw error;
+  }
+  return plan;
+}

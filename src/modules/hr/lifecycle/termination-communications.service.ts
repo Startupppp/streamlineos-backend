@@ -17,6 +17,7 @@ import { organizations, terminations, users } from "../../../db/schema";
 import { EmailService } from "../../email/email.service";
 import { getTerminationEmailTemplate } from "../../email/templates/hr";
 import { loadTerminationRelationalCollections } from "./termination-relational-compat";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 @Injectable()
 export class TerminationCommunicationsService {
@@ -26,14 +27,19 @@ export class TerminationCommunicationsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly email: EmailService,
+    private readonly employmentFacts: EmploymentFactsService,
   ) {}
 
   async getLetter(orgId: string, terminationId: number) {
     const termination = await this.db.query.terminations.findFirst({
       where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
-      with: { user: { columns: { id: true, name: true, designation: true } } },
+      with: { user: { columns: { id: true, name: true } } },
     });
     if (!termination) throw new NotFoundException("Termination not found.");
+
+    const designation = termination.user
+      ? (await this.employmentFacts.getFacts(orgId, termination.user.id)).designation
+      : null;
 
     const [org] = await this.db
       .select({ name: organizations.name, supportEmail: organizations.supportEmail })
@@ -62,7 +68,7 @@ export class TerminationCommunicationsService {
     <p style="margin:5px 0 0;font-size:12px;color:#666">CONFIDENTIAL</p>
   </div>
   <p style="text-align:right">Date: ${formatDdMmmYyyy(new Date())}</p>
-  <p>To,<br/><strong>${employeeName}</strong><br/>${employee?.designation ?? "N/A"}<br/>${companyName}</p>
+  <p>To,<br/><strong>${employeeName}</strong><br/>${designation ?? "N/A"}<br/>${companyName}</p>
   <p><strong>Subject: Termination of Employment</strong></p>
   <p>Dear ${employeeName},</p>
   <p>This letter is to formally notify you that your employment with <strong>${companyName}</strong> is being terminated, effective <strong>${effectiveDate}</strong>.</p>
@@ -83,7 +89,7 @@ export class TerminationCommunicationsService {
   async sendEmail(orgId: string, actorUserId: string, terminationId: number) {
     const existing = await this.db.query.terminations.findFirst({
       where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
-      with: { user: { columns: { id: true, name: true, email: true, designation: true } } },
+      with: { user: { columns: { id: true, name: true, email: true } } },
     });
     if (!existing) throw new NotFoundException("Termination not found.");
     if (existing.status !== "APPROVED") {
@@ -95,6 +101,8 @@ export class TerminationCommunicationsService {
 
     const employee = existing.user;
     if (!employee?.email) throw new BadRequestException("Employee email not found.");
+    const employeeDesignation = (await this.employmentFacts.getFacts(orgId, employee.id))
+      .designation;
 
     const [org] = await this.db
       .select({ supportEmail: organizations.supportEmail })
@@ -120,7 +128,7 @@ export class TerminationCommunicationsService {
         subject: "Notice of employment termination",
         html: getTerminationEmailTemplate(
           employee.name ?? "Employee",
-          employee.designation ?? "N/A",
+          employeeDesignation ?? "N/A",
           effectiveDate,
           actor?.name ?? "HR",
           reasons.join(", "),

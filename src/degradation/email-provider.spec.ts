@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { randomUUID } from "node:crypto";
 import {
   nextRetryDelayMs,
@@ -10,6 +11,10 @@ import { OutboxWriter } from "../common/outbox/outbox-writer";
 import { outboxEvents } from "../db/schema/common/outbox";
 import type { OutboxEventInput } from "../common/outbox/outbox-event-schema";
 import type { DbOrTx } from "../common/rbac/access-invalidate";
+import postgres from "postgres";
+
+const databaseUrl = process.env.DATABASE_URL;
+const describeWithDb = databaseUrl ? describe : describe.skip;
 
 function makeValidEvent(): OutboxEventInput {
   return {
@@ -103,19 +108,19 @@ describe("Retry state machine — outbox retries and dead-letters on provider fa
   });
 });
 
-describe("Email provider degraded — outbox contract", () => {
+describe("Email provider degraded — outbox retry state machine", () => {
   it.skip(
-    "integration: when the email provider returns 503 (fault server in error mode), the outbox event transitions to PENDING with incremented retryCount — needs real Postgres + OutboxPublisherService with a failing email consumer",
+    "integration: a 503 from the provider increments retryCount and returns the event to PENDING — needs OutboxPublisherService / AiCreditsReservationService driven end to end; those services open their own transactions via runInNewTenantTransaction, so their writes cannot be rolled back on a database shared with concurrent sessions — asserting hand-written SQL state instead proves only that Postgres stores what was written",
     () => {},
   );
 
   it.skip(
-    "integration: after OUTBOX_MAX_RETRIES failures, the event is dead-lettered and the original request row (e.g. invitation) remains PENDING — needs real Postgres",
+    "integration: reaching OUTBOX_MAX_RETRIES dead-letters the event while the request row stays committed — same blocker as above",
     () => {},
   );
 
   it.skip(
-    "integration: the request transaction commits before any delivery attempt — the invitation row exists even when the outbox publisher never runs — needs real Postgres",
+    "integration: the request transaction commits before any delivery attempt — same blocker as above",
     () => {},
   );
 });

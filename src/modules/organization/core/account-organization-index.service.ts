@@ -8,6 +8,7 @@ import {
   organizations,
 } from "../../../db/schema";
 import { withIdentity } from "../../../common/tenant/with-identity";
+import { logger } from "../../../common/logger/logger.service";
 import { forEachOrg, type ForEachOrgResult } from "../../../common/tenant/for-each-org";
 import { LEGACY_CELL_ID } from "../../../common/region/placement";
 import {
@@ -19,7 +20,11 @@ function resolveCellId(region: string | null): string {
   if (!region || !hasRegionRegistry()) return LEGACY_CELL_ID;
   try {
     return getRegionRegistry().cellFor(region);
-  } catch {
+  } catch (error) {
+    logger.error("[account-org-index] unknown region; projecting the legacy cell", {
+      region,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return LEGACY_CELL_ID;
   }
 }
@@ -28,13 +33,6 @@ function resolveCellId(region: string | null): string {
 export class AccountOrganizationIndexService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  /**
-   * Every read and write here runs under `withIdentity`, because the projection
-   * is RLS-protected by `org_id = app.current_org_id_or_null() OR user_id =
-   * app.current_user_id_or_null()` and this path has no organisation context —
-   * it is how the organisation is chosen. Without the identity GUC a write dies
-   * 42501 and a read silently returns nothing, which is worse.
-   */
   async listForUser(userId: string) {
     return withIdentity(this.db, userId, (tx) =>
       tx

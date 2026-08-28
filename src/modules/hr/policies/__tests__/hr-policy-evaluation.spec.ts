@@ -2,6 +2,13 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { HrPolicyEvaluationService } from "../hr-policy-evaluation.service";
+import { EmploymentFactsService } from "../../../directory/employment-facts.service";
+import { emptyEmploymentFacts } from "../../../directory/employment-facts.types";
+
+const employmentFacts = {
+  getFacts: jest.fn(),
+  getFactsBatch: jest.fn(),
+};
 
 type Rows = Record<string, unknown>[];
 
@@ -87,12 +94,19 @@ describe("HrPolicyEvaluationService", () => {
     jest.clearAllMocks();
 
     setAttributes({});
+    employmentFacts.getFacts.mockImplementation((_orgId: string, userId: string) =>
+      Promise.resolve(emptyEmploymentFacts(userId)),
+    );
+    employmentFacts.getFactsBatch.mockResolvedValue(new Map());
     mockDb.query.organizationMembers.findFirst.mockResolvedValue({ orgId: "org1", userId: "u1" });
-    mockDb.query.users.findFirst.mockResolvedValue({ id: "u1", designation: null, branchId: null });
     mockDb.query.hrPolicies.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [HrPolicyEvaluationService, { provide: DRIZZLE, useValue: mockDb }],
+      providers: [
+        HrPolicyEvaluationService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: EmploymentFactsService, useValue: employmentFacts },
+      ],
     }).compile();
 
     service = module.get(HrPolicyEvaluationService);

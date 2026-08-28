@@ -10,22 +10,42 @@ import { teamEventParticipants, teamEvents } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateTeamEventInput } from "./dto/hr-directory.schemas";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 @Injectable()
 export class TeamEventsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly employmentFacts: EmploymentFactsService,
+  ) {}
 
-  list(orgId: string) {
-    return this.db.query.teamEvents.findMany({
+  async list(orgId: string) {
+    const rows = await this.db.query.teamEvents.findMany({
       where: eq(teamEvents.orgId, orgId),
       with: {
         participants: true,
         organizer: {
-          columns: { id: true, name: true, email: true, image: true, designation: true },
+          columns: { id: true, name: true, email: true, image: true },
         },
       },
       orderBy: [desc(teamEvents.date)],
       limit: 500,
+    });
+
+    const facts = await this.employmentFacts.getFactsBatch(
+      orgId,
+      rows.map((row) => row.organizer?.id).filter((id): id is string => Boolean(id)),
+    );
+
+    return rows.map((row) => {
+      if (!row.organizer) return row;
+      return {
+        ...row,
+        organizer: {
+          ...row.organizer,
+          designation: facts.get(row.organizer.id)?.designation ?? null,
+        },
+      };
     });
   }
 

@@ -13,6 +13,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
 import { logger } from "../../common/logger/logger.service";
+import { EmploymentFactsService } from "../directory/employment-facts.service";
 
 function toDateStr(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -26,7 +27,10 @@ const ACCRUAL_BATCH_SIZE = 500;
 
 @Injectable()
 export class CronLeaveService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly employmentFacts: EmploymentFactsService,
+  ) {}
 
   async runMonthlyLeaveReset(): Promise<{
     monthlyAccrual: { accruedCount: number };
@@ -391,11 +395,16 @@ export class CronLeaveService {
     const members = await this.db.query.organizationMembers.findMany({
       where: eq(organizationMembers.orgId, orgId),
       columns: { userId: true },
-      with: { user: { columns: { id: true, joiningDate: true, isActive: true } } },
+      with: { user: { columns: { id: true, isActive: true } } },
     });
 
     const activeMembers = members.filter((m) => m.user?.isActive);
     if (activeMembers.length === 0) return { resetCount: 0 };
+
+    const joiningFacts = await this.employmentFacts.getFactsBatch(
+      orgId,
+      activeMembers.map((m) => m.userId),
+    );
 
     const prevYear = newYear - 1;
     const prevYearBalances = await this.db.query.leaveBalances.findMany({
@@ -418,7 +427,8 @@ export class CronLeaveService {
     const yearStartDate = `${newYear}-01-01`;
 
     for (const member of activeMembers) {
-      const joiningDate = member.user?.joiningDate ? new Date(member.user.joiningDate) : new Date();
+      const memberJoiningDate = joiningFacts.get(member.userId)?.joiningDate;
+      const joiningDate = memberJoiningDate ? new Date(memberJoiningDate) : new Date();
       for (const policy of annualPolicies) {
         if (existingSet.has(`${member.userId}:${policy.leaveTypeId}`)) continue;
 

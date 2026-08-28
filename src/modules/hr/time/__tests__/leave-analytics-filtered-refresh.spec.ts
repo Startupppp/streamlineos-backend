@@ -142,6 +142,7 @@ describe("leave analytics filtered read-after-write", () => {
       { membersWithPermission: jest.fn().mockResolvedValue([]) } as never,
       {} as never,
       {} as never,
+      {} as never,
     );
   }
 

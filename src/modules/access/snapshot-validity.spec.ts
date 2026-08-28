@@ -2,7 +2,6 @@ import {
   earliestTransition,
   type GrantTransitions,
   NO_TRANSITIONS,
-  remainingSeconds,
   snapshotValidUntil,
 } from "./snapshot-validity";
 
@@ -107,23 +106,5 @@ describe("earliestTransition", () => {
       delegationEnd: new Date(NOW.getTime() - 1),
     };
     expect(earliestTransition(NOW, transitions)).toBeNull();
-  });
-});
-
-describe("remainingSeconds", () => {
-  it("returns 1 when validUntil equals now", () => {
-    expect(remainingSeconds(NOW, NOW.getTime())).toBe(1);
-  });
-
-  it("returns 1 when validUntil is in the past", () => {
-    expect(remainingSeconds(NOW, NOW.getTime() - 5_000)).toBe(1);
-  });
-
-  it("rounds a fractional second up", () => {
-    expect(remainingSeconds(NOW, NOW.getTime() + 1_500)).toBe(2);
-  });
-
-  it("returns an exact integer for a whole-second gap", () => {
-    expect(remainingSeconds(NOW, NOW.getTime() + 10_000)).toBe(10);
   });
 });

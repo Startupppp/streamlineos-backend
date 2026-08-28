@@ -208,8 +208,6 @@ export const MEMBERSHIP_ARTIFACTS = [
   },
 ] as const satisfies readonly MembershipArtifact[];
 
-export type MembershipArtifactId = (typeof MEMBERSHIP_ARTIFACTS)[number]["id"];
-
 export const MEMBERSHIP_ARTIFACT_IDS = MEMBERSHIP_ARTIFACTS.map(
   (artifact) => artifact.id,
 );

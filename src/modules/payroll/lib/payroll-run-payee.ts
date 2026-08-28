@@ -29,6 +29,7 @@ export type PayrollPayeeDetails = {
   joiningDate: string | null;
   bankDetails: DecryptedBankDetails;
   taxId: string | null;
+  panNumber: string | null;
   workerNumber: string | null;
 };
 
@@ -135,6 +136,7 @@ export async function loadRunEmployeePayees(
       joiningDate: facts?.joiningDate ?? null,
       bankDetails: sensitive?.bankDetails ?? null,
       taxId: sensitive?.taxId ?? null,
+      panNumber: sensitive?.panNumber ?? null,
       workerNumber: row.workerNumber ?? null,
     };
   });

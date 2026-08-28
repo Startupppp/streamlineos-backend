@@ -45,7 +45,3 @@ export function snapshotValidUntil(
   if (transition === null) return ceiling;
   return Math.min(ceiling, transition.getTime());
 }
-
-export function remainingSeconds(now: Date, validUntil: number): number {
-  return Math.max(1, Math.ceil((validUntil - now.getTime()) / 1000));
-}

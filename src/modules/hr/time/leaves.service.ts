@@ -161,7 +161,7 @@ export class LeavesService {
     return [...base, ...extra];
   }
 
-  thisWeek(orgId: string) {
+  async thisWeek(orgId: string) {
     const now = new Date();
     const dayOfWeek = now.getDay();
     const weekStart = new Date(now);
@@ -172,7 +172,7 @@ export class LeavesService {
     weekEnd.setDate(weekStart.getDate() + 6);
     weekEnd.setHours(23, 59, 59, 999);
 
-    return this.db.query.leaveRequests.findMany({
+    const rows = await this.db.query.leaveRequests.findMany({
       where: and(
         eq(leaveRequests.orgId, orgId),
         eq(leaveRequests.status, "APPROVED"),
@@ -188,13 +188,28 @@ export class LeavesService {
             lastName: true,
             email: true,
             image: true,
-            designation: true,
           },
         },
         leaveType: { columns: { id: true, name: true } },
       },
       orderBy: [desc(leaveRequests.startDate)],
       limit: 100,
+    });
+
+    const facts = await this.employment.getFactsBatch(
+      orgId,
+      rows.map((row) => row.user?.id).filter((id): id is string => Boolean(id)),
+    );
+
+    return rows.map((row) => {
+      if (!row.user) return row;
+      return {
+        ...row,
+        user: {
+          ...row.user,
+          designation: facts.get(row.user.id)?.designation ?? null,
+        },
+      };
     });
   }
 

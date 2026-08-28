@@ -179,12 +179,6 @@ export class RegionRegistry {
     this.cache.delete(orgId);
   }
 
-  /**
-   * Separates "the control plane says this organisation is unplaced" from "the
-   * control plane did not answer". The first is a permanent refusal; the second
-   * is a retryable one, and conflating them would make an outage look like a
-   * deletion.
-   */
   private async lookup(
     orgId: string,
   ): Promise<OrganizationPlacement | string | null> {
@@ -201,10 +195,6 @@ export class RegionRegistry {
       this.cache.delete(orgId);
   }
 
-  /**
-   * Hands out the signed placement a session carries, so a cell can verify it
-   * for itself rather than trusting the cache it arrived in.
-   */
   async signedPlacementFor(
     orgId: string,
   ): Promise<{ placement: OrganizationPlacement; token: string | null }> {
@@ -232,7 +222,6 @@ export class RegionRegistry {
       this.cache.delete(orgId);
       return null;
     }
-    // An unverifiable entry is treated as absent, not as merely suspicious.
     if (this.keyring && cached.token !== null) {
       const verdict = verifyPlacement(cached.token, this.keyring, this.now());
       if (!verdict.ok) {

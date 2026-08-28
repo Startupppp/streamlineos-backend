@@ -298,13 +298,6 @@ export const BUDGETS = [
   },
   {
     id: "employee-record-list-canonical",
-    // The employee-record list after the users-table split. Employment facts used to
-    // be columns on `users`; they now come from hr_people -> hr_employments, so this
-    // list gained two joins. The ceiling exists to catch that join falling off an
-    // index, which is the regression the split could introduce even while correct.
-    // minRows is deliberately above dev-seed scale: on 33 employments Postgres
-    // correctly picks a Seq Scan, so forbid-seq-scan would assert a falsehood and a
-    // pass would mean nothing. This reports "seed too small" until seeded to scale.
     ceiling: 8_000,
     minRows: 5_000,
     rowCountSql: `SELECT count(*)::int FROM hr_employments WHERE org_id = $1 AND deleted_at IS NULL`,
@@ -327,11 +320,6 @@ export const BUDGETS = [
   },
   {
     id: "employee-reporting-line-lookup",
-    // The org chart's manager edge. It used to be users.reporting_to; it is now an
-    // effective-dated hr_reporting_lines row, so the open-line predicate has to stay
-    // indexed or every org-chart render degrades to a scan. Same reason as above for
-    // minRows: hr_reporting_lines is empty on the dev seed, and a budget that passes
-    // over an empty table is a vacuous pass.
     ceiling: 5_000,
     minRows: 1_000,
     rowCountSql: `SELECT count(*)::int FROM hr_employments WHERE org_id = $1 AND deleted_at IS NULL`,
@@ -341,7 +329,8 @@ export const BUDGETS = [
       FROM hr_reporting_lines rl
       WHERE rl.org_id = $1
         AND rl.line_type = 'primary'
-        AND rl.effective_to = 'infinity'::date
+        AND rl.effective_from <= CURRENT_DATE
+        AND rl.effective_to >= CURRENT_DATE
       ORDER BY rl.employment_id ASC
       LIMIT 100`,
     planAssertions: [

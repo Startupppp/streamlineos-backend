@@ -1,32 +1,19 @@
-import { encrypt } from "../../hr/onboarding/core/crypto.helpers";
 import { resolveStatutoryTaxId } from "./filings.service";
 
 describe("resolveStatutoryTaxId", () => {
-  const previousKey = process.env.ENCRYPTION_KEY;
-
-  beforeAll(() => {
-    process.env.ENCRYPTION_KEY = "filings-tax-id-test-key";
+  it("prefers the canonical tax identifier", () => {
+    expect(resolveStatutoryTaxId("CANONICAL-TAX", "CANONICAL-PAN")).toBe("CANONICAL-TAX");
   });
 
-  afterAll(() => {
-    if (previousKey === undefined) delete process.env.ENCRYPTION_KEY;
-    else process.env.ENCRYPTION_KEY = previousKey;
+  it("falls back to the canonical PAN when no tax identifier is stored", () => {
+    expect(resolveStatutoryTaxId(null, "CANONICAL-PAN")).toBe("CANONICAL-PAN");
   });
 
-  it("prefers the decrypted canonical tax identifier", () => {
-    expect(resolveStatutoryTaxId("CANONICAL-TAX", "CANONICAL-PAN", encrypt("LEGACY"))).toBe(
-      "CANONICAL-TAX",
-    );
+  it("treats a blank tax identifier as absent rather than as a value", () => {
+    expect(resolveStatutoryTaxId("   ", "CANONICAL-PAN")).toBe("CANONICAL-PAN");
   });
 
-  it("uses canonical PAN before the migration fallback", () => {
-    expect(resolveStatutoryTaxId(null, "CANONICAL-PAN", encrypt("LEGACY"))).toBe(
-      "CANONICAL-PAN",
-    );
-  });
-
-  it("decrypts legacy fallback and never emits ciphertext", () => {
-    const encrypted = encrypt("LEGACY-TAX");
-    expect(resolveStatutoryTaxId(null, null, encrypted)).toBe("LEGACY-TAX");
+  it("returns null when neither identifier is stored", () => {
+    expect(resolveStatutoryTaxId(null, null)).toBeNull();
   });
 });

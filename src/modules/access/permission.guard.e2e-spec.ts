@@ -73,6 +73,18 @@ describe("PermissionGuard routes (e2e)", () => {
           useValue: {
             resolveUserPermissions,
             isModuleEnabled: jest.fn().mockResolvedValue(true),
+            getModuleState: jest.fn().mockResolvedValue(true),
+            scopeFor: jest.fn(async (user: CurrentUserContext, key: string) => {
+              if (user.isOrgOwner) return "all";
+              const resolved = await resolveUserPermissions(user.orgId, user.userId);
+              return resolved.get(key) ?? "none";
+            }),
+            buildModuleAvailabilityResolver: () => ({
+              isCoreModule: () => true,
+              getModuleMap: async () => ({}),
+              getUserDeniedModules: async () => new Set<string>(),
+              getPlanLockedModules: async () => [],
+            }),
           },
         },
       ],

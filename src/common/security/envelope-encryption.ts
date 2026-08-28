@@ -97,10 +97,13 @@ export function keyReferenceOf(value: string): string | null {
 
 export function encryptEnvelope(plaintext: string): string {
   const dek = randomBytes(DEK_LENGTH);
-  const { keyId, wrapped } = getKeyProvider().wrap(dek);
-  const body = sealWith(dek, Buffer.from(plaintext, "utf8"));
-  dek.fill(0);
-  return `${ENVELOPE_PREFIX}${keyId.slice("kek:".length)}:${wrapped}:${body}`;
+  try {
+    const { keyId, wrapped } = getKeyProvider().wrap(dek);
+    const body = sealWith(dek, Buffer.from(plaintext, "utf8"));
+    return `${ENVELOPE_PREFIX}${keyId.slice("kek:".length)}:${wrapped}:${body}`;
+  } finally {
+    dek.fill(0);
+  }
 }
 
 export function decryptEnvelope(value: string): string {

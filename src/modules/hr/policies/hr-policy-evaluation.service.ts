@@ -14,6 +14,7 @@ import {
   roleAssignments,
 } from "../../../db/schema";
 import type { PolicyType } from "./hr-policy-types";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 const SCOPE_SPECIFICITY: Record<string, number> = {
   employee: 100,
@@ -68,7 +69,10 @@ interface EmployeeAttributes {
 
 @Injectable()
 export class HrPolicyEvaluationService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly employmentFacts: EmploymentFactsService,
+  ) {}
 
   async evaluatePolicy(
     orgId: string,
@@ -257,7 +261,7 @@ export class HrPolicyEvaluationService {
 
     if (!member) throw new NotFoundException("Employee not found in organisation");
 
-    const [deptMemberships, teamMemberships, roleRows, u] = await Promise.all([
+    const [deptMemberships, teamMemberships, roleRows, facts] = await Promise.all([
       this.db
         .select({ orgUnitId: orgUnitMembers.orgUnitId })
         .from(orgUnitMembers)
@@ -298,9 +302,7 @@ export class HrPolicyEvaluationService {
             eq(organizationMembers.orgId, orgId),
           ),
         ),
-      this.db.query.users.findFirst({
-        where: eq(users.id, employeeId),
-      }),
+      this.employmentFacts.getFacts(orgId, employeeId),
     ]);
 
     return {
@@ -308,9 +310,9 @@ export class HrPolicyEvaluationService {
       departmentId: deptMemberships[0]?.orgUnitId ?? null,
       teamIds: teamMemberships.map((m) => m.orgUnitId),
       roleSlugs: roleRows.map((r) => r.slug),
-      designation: u?.designation ?? null,
+      designation: facts.designation,
       employmentType: null,
-      locationId: u?.branchId ?? null,
+      locationId: facts.locationId,
       countryCode: null,
       stateCode: null,
       jobLevel: null,

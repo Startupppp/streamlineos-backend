@@ -83,6 +83,41 @@ describe("a signed placement", () => {
     });
   });
 
+  it("is rejected when an absent fence is swapped for an empty-string fence", () => {
+    const unfenced: OrganizationPlacement = {
+      ...placement,
+      writeFenceToken: null,
+      leaseExpiresAt: null,
+    };
+    const token = signPlacement(unfenced, EXPIRES, keyring.current);
+    const parts = token.split(".");
+    const body = JSON.parse(
+      Buffer.from(parts[2] ?? "", "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    body["f"] = "";
+    parts[2] = Buffer.from(JSON.stringify(body), "utf8").toString("base64url");
+
+    expect(verifyPlacement(parts.join("."), keyring, NOW)).toEqual({
+      ok: false,
+      reason: "BAD_SIGNATURE",
+    });
+  });
+
+  it("distinguishes an absent lease from a zero lease", () => {
+    const absent = signPlacement(
+      { ...placement, leaseExpiresAt: null },
+      EXPIRES,
+      keyring.current,
+    );
+    const zero = signPlacement(
+      { ...placement, leaseExpiresAt: 0 },
+      EXPIRES,
+      keyring.current,
+    );
+
+    expect(absent).not.toEqual(zero);
+  });
+
   it("is rejected when signed by a key this deployment does not know", () => {
     const foreign = { keyId: "cp-9", secret: "c".repeat(44) };
     const token = signPlacement(placement, EXPIRES, foreign);

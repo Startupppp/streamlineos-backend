@@ -1,13 +1,19 @@
-import { CanActivate, ExecutionContext, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import {
+  CanActivate,
+  ExecutionContext,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { createHash } from "node:crypto";
-import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { and, eq, gt, isNull, or } from "drizzle-orm";
 import type { Request } from "express";
-import { agentTokens, organizationMembers, organizations, users } from "../../db/schema";
+import { agentTokens } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
-import { EntitlementsService } from "../access/entitlements.service";
+import { MembershipStateService } from "../../common/auth/membership-state.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { agentTokenPrincipal } from "../../common/auth/principal";
 
@@ -15,13 +21,16 @@ import { agentTokenPrincipal } from "../../common/auth/principal";
 export class AgentTokenGuard implements CanActivate {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly entitlements: EntitlementsService,
+    private readonly membership: MembershipStateService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest<Request & { user?: CurrentUserContext }>();
+    const req = context
+      .switchToHttp()
+      .getRequest<Request & { user?: CurrentUserContext }>();
     const header = req.headers.authorization;
-    if (!header?.startsWith("Bearer slos_")) throw new UnauthorizedException("Unauthorized");
+    if (!header?.startsWith("Bearer slos_"))
+      throw new UnauthorizedException("Unauthorized");
     const raw = header.slice("Bearer ".length).trim();
     const userCtx = await this.resolveToken(raw);
     if (!userCtx) throw new UnauthorizedException("Unauthorized");
@@ -55,59 +64,33 @@ export class AgentTokenGuard implements CanActivate {
     );
     if (!row) return null;
 
-    return runInTenantTransaction(
+    const state = await this.membership.resolve(row.userId, row.orgId);
+    if (!state.active || state.membershipId === null) return null;
+    if (state.membershipId !== row.issuerMembershipId) return null;
+
+    await runInTenantTransaction(
       this.db,
-      async (tx) => {
-        void tx
+      (tx) =>
+        tx
           .update(agentTokens)
           .set({ lastUsedAt: now })
           .where(eq(agentTokens.id, row.id))
-          .catch(() => undefined);
-
-        const [user, memberRows] = await Promise.all([
-          tx.query.users.findFirst({
-            where: eq(users.id, row.userId),
-            columns: { id: true, isActive: true, deletedAt: true },
-          }),
-          tx
-            .select({
-              membershipId: organizationMembers.id,
-              orgId: organizationMembers.orgId,
-              role: organizationMembers.role,
-              isOwner: organizationMembers.isOwner,
-            })
-            .from(organizationMembers)
-            .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-            .where(
-              and(
-                eq(organizationMembers.userId, row.userId),
-                eq(organizationMembers.orgId, row.orgId),
-                eq(organizationMembers.status, "ACTIVE"),
-              ),
-            )
-            .orderBy(desc(organizationMembers.joinedAt)),
-        ]);
-
-        if (!user || !user.isActive || user.deletedAt !== null) return null;
-
-        const member = memberRows[0];
-        if (!member) return null;
-
-        return {
-          userId: row.userId,
-          orgId: row.orgId,
-          role: member.role,
-          isOrgOwner: member.isOwner,
-          sessionId: `agent-token:${row.id}`,
-          tokenScopes: [...row.scopes],
-          principal: agentTokenPrincipal(
-            row.issuerMembershipId,
-            row.id,
-            row.scopes,
-          ),
-        };
-      },
+          .catch(() => undefined),
       { orgId: row.orgId },
     );
+
+    return {
+      userId: row.userId,
+      orgId: row.orgId,
+      role: state.role,
+      isOrgOwner: state.isOwner,
+      sessionId: `agent-token:${row.id}`,
+      tokenScopes: [...row.scopes],
+      principal: agentTokenPrincipal(
+        row.issuerMembershipId,
+        row.id,
+        row.scopes,
+      ),
+    };
   }
 }

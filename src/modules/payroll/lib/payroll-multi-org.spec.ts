@@ -81,6 +81,7 @@ function makeEfService(orgBankMap: Record<string, BankDetails | null>): Employme
           salaryAmountCents: orgId === ORG1 ? 100_000 : 200_000,
           bankDetails: bank,
           taxId: orgId === ORG1 ? "ABCDE1234F" : "XYZAB9876P",
+          panNumber: null,
         });
       }
       return Promise.resolve(map);
@@ -97,6 +98,7 @@ function makeEfService(orgBankMap: Record<string, BankDetails | null>): Employme
             salaryAmountCents: orgId === ORG1 ? 100_000 : 200_000,
             bankDetails: bank,
             taxId: orgId === ORG1 ? "ABCDE1234F" : "XYZAB9876P",
+            panNumber: null,
           });
         }
         return Promise.resolve(map);

@@ -53,6 +53,7 @@ describe("TerminationCommunicationsService", () => {
       db as never,
       audit as never,
       email as never,
+      { getFacts: jest.fn().mockResolvedValue({ userId: "u", employmentId: null, employeeNumber: null, designation: null, joiningDate: null, departmentId: null, locationId: null, managerUserId: null }), getFactsBatch: jest.fn().mockResolvedValue(new Map()) } as never,
     );
 
     const result = service.sendEmail("org-1", "actor-1", 7);

@@ -22,9 +22,64 @@ const NOT_AN_ORG_MEMBERSHIP_GRANT: ReadonlyMap<string, string> = new Map([
   ],
 ]);
 
+const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
+  "hr_audit_logs.actor_membership_id",
+  "hr_employments.archived_by_membership_id",
+  "hr_employments.updated_by_membership_id",
+  "hr_people.archived_by_membership_id",
+  "hr_people.updated_by_membership_id",
+  "invitation_events.actor_membership_id",
+  "invitations.accepted_membership_id",
+  "invitations.inviter_membership_id",
+  "invitations.revoked_by_membership_id",
+  "leave_requests.created_by_membership_id",
+  "leave_requests.updated_by_membership_id",
+  "onboarding_documents.updated_by_membership_id",
+  "onboarding_tasks.created_by_membership_id",
+  "onboarding_tasks.updated_by_membership_id",
+  "org_units.archived_by_membership_id",
+  "org_units.updated_by_membership_id",
+  "organization_people.archived_by_membership_id",
+  "organization_people.updated_by_membership_id",
+  "organizations.owner_membership_id",
+  "outbox_events.actor_membership_id",
+  "ownership_transfers.initiated_by_membership_id",
+  "portal_invitations.accepted_portal_membership_id",
+  "portal_invitations.inviter_membership_id",
+  "portal_memberships.portal_membership_id",
+  "project_client_grants.portal_membership_id",
+  "role_assignments.assigned_by_membership_id",
+  "user_permission_grants.granted_by_membership_id",
+  "worker_engagements.archived_by_membership_id",
+  "worker_engagements.created_by_membership_id",
+  "worker_engagements.updated_by_membership_id",
+  "workers.archived_by_membership_id",
+  "workers.created_by_membership_id",
+  "workers.updated_by_membership_id",
+];
+
 interface DiscoveredTable {
   table: string;
   columns: string[];
+}
+
+function discoverExcludedColumns(): string[] {
+  const excluded: string[] = [];
+  for (const exported of Object.values(schema)) {
+    if (!(exported instanceof PgTable)) continue;
+    const config = getTableConfig(exported);
+    for (const column of config.columns) {
+      if (!MEMBERSHIP_COLUMN.test(column.name)) continue;
+      if (
+        ATTRIBUTION_COLUMN.test(column.name) ||
+        PORTAL_COLUMN.test(column.name) ||
+        NOT_AN_ORG_MEMBERSHIP_GRANT.has(`${config.name}.${column.name}`)
+      ) {
+        excluded.push(`${config.name}.${column.name}`);
+      }
+    }
+  }
+  return excluded.sort();
 }
 
 function discoverMembershipKeyedTables(): DiscoveredTable[] {
@@ -69,6 +124,10 @@ describe("the membership artifact inventory is derived from the schema", () => {
       .filter((table) => !inventoried.has(table));
 
     expect(missing).toEqual([]);
+  });
+
+  it("pins every column the scan excludes, so a new one must be acknowledged", () => {
+    expect(discoverExcludedColumns()).toEqual(KNOWN_EXCLUDED_COLUMNS);
   });
 
   it("does not inventory a table that no longer exists in the schema", () => {

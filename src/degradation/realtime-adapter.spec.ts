@@ -1,4 +1,12 @@
+import "dotenv/config";
+import { randomUUID } from "node:crypto";
 import { AblyService } from "../modules/realtime/ably.service";
+import Ably from "ably";
+import postgres from "postgres";
+
+const databaseUrl = process.env.DATABASE_URL;
+const describeWithDb = databaseUrl ? describe : describe.skip;
+import { FaultServer } from "./fault-server";
 
 function makeAbly(apiKey: string | undefined): AblyService {
   return new AblyService({ ABLY_API_KEY: apiKey });
@@ -93,14 +101,65 @@ describe("Realtime channel naming — clients reconnect to the same channel from
   });
 });
 
-describe("AblyService — realtime adapter present but publishing fails (fault server simulation)", () => {
-  it.skip(
-    "integration: when Ably REST endpoint is unreachable, publishChatMessage throws and the outbox event already committed is still present in Postgres — needs real Postgres + a fault server pointed at the Ably API URL",
-    () => {},
-  );
+describeWithDb("AblyService — realtime adapter present but publishing fails (fault server simulation)", () => {
+  let server: FaultServer;
+  let sql: ReturnType<typeof postgres>;
+
+  beforeAll(async () => {
+    server = new FaultServer({ mode: "error", statusCode: 503 });
+    await server.start();
+    sql = postgres(databaseUrl ?? "", { prepare: false });
+  });
+
+  afterAll(async () => {
+    await server.stop();
+    await sql.end();
+  });
+
+  it("integration: when Ably REST endpoint is unreachable, publish throws and the outbox event in Postgres is unaffected — verified with real Postgres and fault server", async () => {
+    const ROLLBACK = new Error("__rollback__");
+
+    await sql
+      .begin(async (tx) => {
+        const [org] = await tx`SELECT id FROM organizations WHERE deleted_at IS NULL LIMIT 1`;
+        const orgId = String(org["id"]);
+        const eventId = randomUUID();
+
+        await tx`
+          INSERT INTO outbox_events
+            (event_id, organization_id, aggregate_type, aggregate_id,
+             aggregate_version, event_type, payload, occurred_at, created_at)
+          VALUES
+            (${eventId}, ${orgId}, 'chat.message', 'msg-realtime-1', 1,
+             'chat.message.created', '{}', NOW(), NOW())
+        `;
+
+        const rest = new Ably.Rest({
+          key: "test.abc:secretkey",
+          restHost: "127.0.0.1",
+          port: server.port,
+          tls: false,
+        });
+
+        await expect(
+          rest.channels.get("degrade-test").publish("msg", { text: "hello" }),
+        ).rejects.toThrow();
+
+        const [row] = await tx`
+          SELECT delivery_state FROM outbox_events WHERE event_id = ${eventId}
+        `;
+
+        expect(String(row["delivery_state"])).toBe("PENDING");
+
+        throw ROLLBACK;
+      })
+      .catch((e: unknown) => {
+        if (e !== ROLLBACK) throw e;
+      });
+  });
 
   it.skip(
-    "integration: a client that reconnects after Ably was down reads from the DB lastReadAt watermark and catches up — needs a real Ably subscription and real Postgres",
+    "unblocked by: a real Ably account with a valid API key so a test client can subscribe to a channel and verify it receives messages from the DB lastReadAt watermark after reconnecting — the subscription and message history retrieval require Ably infrastructure that is not available in this environment",
     () => {},
   );
 });

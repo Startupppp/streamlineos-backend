@@ -12,9 +12,11 @@ import { PayrollJobsService } from "./jobs/payroll-jobs.service";
 import { PayrollJobsController } from "./jobs/jobs.controller";
 import { PayrollJobsWorkerService } from "./jobs/payroll-jobs-worker.service";
 import { DirectoryModule } from "../directory/directory.module";
+import { EmploymentFactsModule } from "../directory/employment-facts.module";
 
 @Module({
   imports: [
+    EmploymentFactsModule,
     PayrollSetupModule,
     PayrollRunsModule,
     PayrollPayoutModule,

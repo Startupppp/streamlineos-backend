@@ -14,6 +14,7 @@ import { readBankDetails } from "../../common/hr/canonical-bank-details";
 import { readSensitive } from "../../common/security/sensitive-field";
 import {
   emptyEmploymentFacts,
+  emptySensitiveEmploymentFacts,
   type EmploymentFactName,
   type EmploymentFacts,
   type SensitiveEmploymentFacts,
@@ -39,7 +40,16 @@ type SensitiveRow = {
   salaryAmountCents: number | null;
   bankDetails: string | null;
   taxId: string | null;
+  panNumber: string | null;
 };
+
+function currentPrimaryReportingLine() {
+  return and(
+    eq(hrReportingLines.lineType, "primary"),
+    sql`${hrReportingLines.effectiveFrom} <= CURRENT_DATE`,
+    sql`${hrReportingLines.effectiveTo} >= CURRENT_DATE`,
+  );
+}
 
 
 @Injectable()
@@ -93,8 +103,7 @@ export class EmploymentFactsService {
         and(
           eq(hrReportingLines.orgId, orgId),
           eq(hrReportingLines.employmentId, hrEmployments.id),
-          eq(hrReportingLines.lineType, "primary"),
-          sql`${hrReportingLines.effectiveTo} = 'infinity'::date`,
+          currentPrimaryReportingLine(),
         ),
       )
       .leftJoin(
@@ -102,13 +111,19 @@ export class EmploymentFactsService {
         and(
           eq(managerEmployment.orgId, orgId),
           eq(managerEmployment.id, hrReportingLines.managerEmploymentId),
+          isNull(managerEmployment.deletedAt),
         ),
       )
       .leftJoin(
         managerPerson,
-        and(eq(managerPerson.orgId, orgId), eq(managerPerson.id, managerEmployment.personId)),
+        and(
+          eq(managerPerson.orgId, orgId),
+          eq(managerPerson.id, managerEmployment.personId),
+          isNull(managerPerson.deletedAt),
+        ),
       )
-      .where(inArray(users.id, wanted));
+      .where(inArray(users.id, wanted))
+      .orderBy(hrEmployments.id);
 
     for (const row of rows) {
       resolved.set(row.userId, {
@@ -134,15 +149,7 @@ export class EmploymentFactsService {
     userId: string,
   ): Promise<SensitiveEmploymentFacts> {
     const facts = await this.getSensitiveFactsBatch(orgId, [userId]);
-    return (
-      facts.get(userId) ?? {
-        userId,
-        employmentId: null,
-        salaryAmountCents: null,
-        bankDetails: null,
-        taxId: null,
-      }
-    );
+    return facts.get(userId) ?? emptySensitiveEmploymentFacts(userId);
   }
 
   async getDirectReportUserIds(orgId: string, managerUserId: string): Promise<string[]> {
@@ -157,11 +164,16 @@ export class EmploymentFactsService {
         and(
           eq(managerEmployment.orgId, orgId),
           eq(managerEmployment.id, hrReportingLines.managerEmploymentId),
+          isNull(managerEmployment.deletedAt),
         ),
       )
       .innerJoin(
         managerPerson,
-        and(eq(managerPerson.orgId, orgId), eq(managerPerson.id, managerEmployment.personId)),
+        and(
+          eq(managerPerson.orgId, orgId),
+          eq(managerPerson.id, managerEmployment.personId),
+          isNull(managerPerson.deletedAt),
+        ),
       )
       .innerJoin(
         reportEmployment,
@@ -182,8 +194,7 @@ export class EmploymentFactsService {
       .where(
         and(
           eq(hrReportingLines.orgId, orgId),
-          eq(hrReportingLines.lineType, "primary"),
-          sql`${hrReportingLines.effectiveTo} = 'infinity'::date`,
+          currentPrimaryReportingLine(),
           eq(managerPerson.userId, managerUserId),
         ),
       );
@@ -207,6 +218,7 @@ export class EmploymentFactsService {
         salaryAmountCents: hrEmployeeSensitiveFields.salaryAmountCents,
         bankDetails: hrEmployeeSensitiveFields.bankDetails,
         taxId: hrEmployeeSensitiveFields.taxId,
+        panNumber: hrEmployeeSensitiveFields.panNumber,
       })
       .from(hrPeople)
       .innerJoin(
@@ -241,6 +253,7 @@ export class EmploymentFactsService {
         salaryAmountCents: row.salaryAmountCents,
         bankDetails: row.bankDetails ? readBankDetails(row.bankDetails) : null,
         taxId: row.taxId ? readSensitive(row.taxId) : null,
+        panNumber: row.panNumber ? readSensitive(row.panNumber) : null,
       });
     }
 
@@ -262,6 +275,7 @@ export class EmploymentFactsService {
         salaryAmountCents: hrEmployeeSensitiveFields.salaryAmountCents,
         bankDetails: hrEmployeeSensitiveFields.bankDetails,
         taxId: hrEmployeeSensitiveFields.taxId,
+        panNumber: hrEmployeeSensitiveFields.panNumber,
       })
       .from(users)
       .leftJoin(
@@ -288,29 +302,22 @@ export class EmploymentFactsService {
           eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id),
         ),
       )
-      .where(inArray(users.id, wanted));
+      .where(inArray(users.id, wanted))
+      .orderBy(hrEmployments.id);
 
     for (const row of rows) {
-      const canonicalBank = row.bankDetails ? readBankDetails(row.bankDetails) : null;
-      const canonicalTax = row.taxId ? readSensitive(row.taxId) : null;
       resolved.set(row.userId, {
         userId: row.userId,
         employmentId: row.employmentId,
         salaryAmountCents: row.salaryAmountCents,
-        bankDetails: canonicalBank,
-        taxId: canonicalTax,
+        bankDetails: row.bankDetails ? readBankDetails(row.bankDetails) : null,
+        taxId: row.taxId ? readSensitive(row.taxId) : null,
+        panNumber: row.panNumber ? readSensitive(row.panNumber) : null,
       });
     }
 
     for (const userId of wanted)
-      if (!resolved.has(userId))
-        resolved.set(userId, {
-          userId,
-          employmentId: null,
-          salaryAmountCents: null,
-          bankDetails: null,
-          taxId: null,
-        });
+      if (!resolved.has(userId)) resolved.set(userId, emptySensitiveEmploymentFacts(userId));
 
     return resolved;
   }

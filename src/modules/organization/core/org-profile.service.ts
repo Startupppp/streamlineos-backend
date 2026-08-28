@@ -188,9 +188,6 @@ export class OrgProfileService {
     }
 
     this.audit.log({ action: "org.switched", userId, orgId: targetOrgId });
-
-    // The projection is allowed to be stale, so a failure here must not fail the
-    // switch — but it must not be invisible either, or the next outage is too.
     void this.indexService.refreshForUser(userId).catch((error: unknown) => {
       logger.error("[account-org-index] opportunistic refresh failed", {
         userId,
@@ -212,11 +209,6 @@ export class OrgProfileService {
         .limit(1);
       billingEmail = actor?.email ?? null;
     }
-
-    // Scoped to the actor as well as the slug: keyed on the slug alone, a second
-    // person attempting a taken slug would resume the first person's saga and
-    // bootstrap their organisation. The slug's global uniqueness is the
-    // reservation's job, not the request key's.
     const requestKey = `create:${userId}:${input.slug}`;
     const { saga, steps } = await this.saga.begin(
       "CREATE",
@@ -244,14 +236,19 @@ export class OrgProfileService {
           if (!idReserved)
             throw new ConflictException("Organization id is already reserved");
 
-          const slugReserved = await this.saga.reserve(
-            "SLUG",
-            input.slug,
-            orgId,
-            saga.sagaId,
-          );
-          if (!slugReserved)
-            throw new ConflictException("Organization slug already exists");
+          try {
+            const slugReserved = await this.saga.reserve(
+              "SLUG",
+              input.slug,
+              orgId,
+              saga.sagaId,
+            );
+            if (!slugReserved)
+              throw new ConflictException("Organization slug already exists");
+          } catch (error) {
+            await this.saga.release("ORGANIZATION_ID", orgId);
+            throw error;
+          }
         });
 
       if (!done.has("reserve-placement"))
@@ -292,6 +289,8 @@ export class OrgProfileService {
         );
 
       await this.saga.complete(saga.sagaId);
+      await this.saga.claim("ORGANIZATION_ID", orgId);
+      await this.saga.claim("SLUG", input.slug);
     } catch (error) {
       await this.saga.compensate(saga.sagaId, {
         "reserve-identity": async () => {

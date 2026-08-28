@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, notInArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.types";
 import {
@@ -136,14 +136,12 @@ export class OrganizationSagaService {
     await this.db
       .update(organizationLifecycleSagas)
       .set({ state: "COMPLETED", completedAt: new Date() })
-      .where(eq(organizationLifecycleSagas.sagaId, sagaId));
-  }
-
-  async fail(sagaId: string, error: string): Promise<void> {
-    await this.db
-      .update(organizationLifecycleSagas)
-      .set({ state: "FAILED", lastError: error })
-      .where(eq(organizationLifecycleSagas.sagaId, sagaId));
+      .where(
+        and(
+          eq(organizationLifecycleSagas.sagaId, sagaId),
+          notInArray(organizationLifecycleSagas.state, ["COMPLETED", "COMPENSATED"]),
+        ),
+      );
   }
 
   async compensate(

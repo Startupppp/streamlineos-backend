@@ -15,8 +15,16 @@ import {
   type PurgeAdapterResult,
 } from "../organization/core/lifecycle/organization-purge-adapters";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { assertNever } from "../../common/auth/principal";
 
 const BATCH_SIZE = 20;
+
+type PurgeOutcome =
+  | { kind: "purged" }
+  | { kind: "legal-hold" }
+  | { kind: "not-scheduled" }
+  | { kind: "adapters-incomplete"; adapters: Record<string, string> }
+  | { kind: "claimed-elsewhere" };
 
 @Injectable()
 export class CronOrgPurgeWorkerService {
@@ -50,15 +58,13 @@ export class CronOrgPurgeWorkerService {
     for (const candidate of candidates) {
       logger.info("[cron-org-purge] attempting purge", { orgId: candidate.id });
       try {
-        const purged = await this.purgeSingle(candidate.id);
-        if (purged) {
+        const outcome = await this.purgeSingle(candidate.id);
+        if (outcome.kind === "purged") {
           processed++;
           logger.info("[cron-org-purge] purge succeeded", { orgId: candidate.id });
         } else {
           skipped++;
-          logger.info("[cron-org-purge] purge skipped (claimed by another instance or state changed)", {
-            orgId: candidate.id,
-          });
+          this.logSkip(candidate.id, outcome);
         }
       } catch (err) {
         skipped++;
@@ -67,6 +73,30 @@ export class CronOrgPurgeWorkerService {
     }
 
     return { processed, skipped };
+  }
+
+  private logSkip(orgId: string, outcome: Exclude<PurgeOutcome, { kind: "purged" }>): void {
+    switch (outcome.kind) {
+      case "legal-hold":
+        logger.warn("[cron-org-purge] purge blocked by an active legal hold", { orgId });
+        return;
+      case "adapters-incomplete":
+        logger.warn(
+          "[cron-org-purge] adapter confirmations incomplete; org remains in PURGE_SCHEDULED",
+          { orgId, adapters: outcome.adapters },
+        );
+        return;
+      case "not-scheduled":
+        logger.info("[cron-org-purge] purge skipped; org is no longer purge-scheduled", {
+          orgId,
+        });
+        return;
+      case "claimed-elsewhere":
+        logger.info("[cron-org-purge] purge skipped; claimed by another instance", { orgId });
+        return;
+      default:
+        return assertNever(outcome);
+    }
   }
 
   private async listMemberUserIds(orgId: string): Promise<string[]> {
@@ -91,22 +121,22 @@ export class CronOrgPurgeWorkerService {
     );
   }
 
-  private async purgeSingle(orgId: string): Promise<boolean> {
-    const [legalHold] = await this.db
-      .select({ holdId: organizationLegalHolds.holdId })
-      .from(organizationLegalHolds)
-      .where(
-        and(
-          eq(organizationLegalHolds.orgId, orgId),
-          isNull(organizationLegalHolds.releasedAt),
-        ),
-      )
-      .limit(1);
+  private async purgeSingle(orgId: string): Promise<PurgeOutcome> {
+    const legalHold = await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+      const [row] = await tx
+        .select({ holdId: organizationLegalHolds.holdId })
+        .from(organizationLegalHolds)
+        .where(
+          and(
+            eq(organizationLegalHolds.orgId, orgId),
+            isNull(organizationLegalHolds.releasedAt),
+          ),
+        )
+        .limit(1);
+      return row;
+    });
 
-    if (legalHold) {
-      logger.info("[cron-org-purge] purge blocked by active legal hold", { orgId });
-      return false;
-    }
+    if (legalHold) return { kind: "legal-hold" };
 
     const now = new Date();
     const [org] = await this.db
@@ -126,7 +156,7 @@ export class CronOrgPurgeWorkerService {
       )
       .limit(1);
 
-    if (!org) return false;
+    if (!org) return { kind: "not-scheduled" };
 
     const purgeJobId = org.purgeJobId ?? orgId;
     const orgName = org.name;
@@ -178,17 +208,11 @@ export class CronOrgPurgeWorkerService {
       return state === "CONFIRMED" || state === "NOT_APPLICABLE";
     });
 
-    if (!allConfirmed) {
-      // A warning, not info: until the unimplemented adapters land this fires for
-      // every scheduled purge, and a purge that never completes must be visible.
-      logger.warn("[cron-org-purge] adapter confirmations incomplete; org remains in PURGE_SCHEDULED", {
-        orgId,
-        adapters: Object.fromEntries(
-          Object.entries(adapterResults).map(([k, v]) => [k, v.state]),
-        ),
-      });
-      return false;
-    }
+    const adapterStates = Object.fromEntries(
+      Object.entries(adapterResults).map(([name, result]) => [name, result.state]),
+    );
+
+    if (!allConfirmed) return { kind: "adapters-incomplete", adapters: adapterStates };
 
     const purged = await this.db.transaction(async (tx) => {
       const rows = await tx.execute(sql`
@@ -224,11 +248,10 @@ export class CronOrgPurgeWorkerService {
       return true;
     });
 
-    if (purged) {
-      const memberUserIds = await this.listMemberUserIds(orgId);
-      await this.revokeAndBustMembers(orgId, memberUserIds);
-    }
+    if (!purged) return { kind: "claimed-elsewhere" };
 
-    return purged;
+    const memberUserIds = await this.listMemberUserIds(orgId);
+    await this.revokeAndBustMembers(orgId, memberUserIds);
+    return { kind: "purged" };
   }
 }

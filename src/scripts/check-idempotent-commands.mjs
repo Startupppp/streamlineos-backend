@@ -1,14 +1,3 @@
-/**
- * Finds mutating handlers in money / stock / invitation / outbound-send paths that
- * carry no @Idempotent fence.
- *
- * A retry after a network timeout on any of these routes double-charges, double-posts,
- * double-moves stock, double-invites or double-sends without the fence.
- *
- * Usage:  node src/scripts/check-idempotent-commands.mjs [--self-test]
- * Exit:   0 clean · 1 unfenced handler · 2 broken scanner
- */
-
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,7 +22,7 @@ const CRITICAL_ROUTE_RE =
 const CRITICAL_METHOD_RE =
   /\b(?:checkout|purchaseAddon|purchaseCredits|createOrder|installApp|startTrial|registerAffiliate|requestAffiliatePayoutRequest|createReferral|submitEnterpriseQuote|approveEnterpriseQuote|rejectEnterpriseQuote|sendEnterpriseQuote|acceptEnterpriseQuote|initiateOrgTransfer|initiateModuleTransfer|acceptTransfer|declineTransfer|cancelTransfer|inviteUser|bulkInvite|resendInvite|sendSigninLink|invite|remind|testSend|allocate|runNow|submitForApproval|approveJournal|rejectJournal|publish|ship|postAdjustment|postTransfer|createAdjustment)\b/;
 
-export const FILE_EXCLUSIONS = [
+const FILE_EXCLUSIONS = [
   { fragment: "modules/portal/", reason: "portal-client" },
   { fragment: "modules/cron/", reason: "cron-endpoint" },
   { fragment: "razorpay-webhook", reason: "external-webhook" },
@@ -43,7 +32,7 @@ export const FILE_EXCLUSIONS = [
   { fragment: "modules/public/", reason: "public-route" },
 ];
 
-export const HANDLER_EXCLUSIONS = new Map([
+const HANDLER_EXCLUSIONS = new Map([
   ["src/modules/organization/core/organization.controller.ts::acceptInvitation", "public-route"],
   ["src/modules/organization/core/organization.controller.ts::declineInvitation", "public-route"],
   ["src/modules/organization/core/organization.controller.ts::validateInvitation", "public-route"],
@@ -71,7 +60,7 @@ function isFileExcluded(relPath) {
   return FILE_EXCLUSIONS.some(({ fragment }) => normalized.includes(fragment));
 }
 
-export function parseHandlers(src, relPath) {
+function parseHandlers(src, relPath) {
   if (CLASS_PUBLIC_RE.test(src)) return [];
 
   const lines = src.split("\n");

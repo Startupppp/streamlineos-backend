@@ -102,9 +102,11 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
 import { DataQualityModule } from "./modules/data-quality/data-quality.module";
 import { IssuesModule } from "./modules/issues/issues.module";
 import { RecordLayoutsModule } from "./modules/record-layouts/record-layouts.module";
+import { EmploymentFactsModule } from "./modules/directory/employment-facts.module";
 
 @Module({
   imports: [
+    EmploymentFactsModule,
     DiscoveryModule,
     RegionModule,
     WorkflowModule,

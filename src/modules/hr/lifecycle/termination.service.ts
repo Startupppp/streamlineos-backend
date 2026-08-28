@@ -40,6 +40,7 @@ import {
   syncTerminationReasons,
 } from "./termination-relational-compat";
 import { transitionTermination } from "./lifecycle-transition";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 @Injectable()
 export class TerminationService {
@@ -51,6 +52,7 @@ export class TerminationService {
     private readonly automation: AutomationService,
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly memberships: OrgMembershipService,
+    private readonly employmentFacts: EmploymentFactsService,
   ) {}
   async list(orgId: string, params: ListTerminationsQueryInput) {
     const limit = Math.min(params.limit, 100);
@@ -261,7 +263,7 @@ export class TerminationService {
     const data = await this.db.query.terminations.findFirst({
       where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
       with: {
-        user: { columns: { id: true, name: true, email: true, image: true, designation: true, joiningDate: true } },
+        user: { columns: { id: true, name: true, email: true, image: true } },
         initiator: { columns: { id: true, name: true } },
         finalReviewer: { columns: { id: true, name: true } },
       },
@@ -272,8 +274,18 @@ export class TerminationService {
       orgId,
       [data.id],
     );
+    const facts = data.user
+      ? await this.employmentFacts.getFacts(orgId, data.user.id)
+      : null;
     return {
       ...data,
+      user: data.user
+        ? {
+            ...data.user,
+            designation: facts?.designation ?? null,
+            joiningDate: facts?.joiningDate ?? null,
+          }
+        : data.user,
       reasons: resolveCompatibleList(
         data.reasons,
         relationalCollections.reasonsByTerminationId.get(data.id),

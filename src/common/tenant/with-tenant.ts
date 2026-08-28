@@ -94,8 +94,7 @@ function fenceIsHeld(rows: unknown): boolean {
  * is therefore also where a pooled connection is borrowed for a request's
  * lifetime — so both the borrow and the timeouts bounding it belong here. Neon's
  * pooler drops those timeouts when sent as startup parameters, and `is_local`
- * reverts them at COMMIT before the connection serves the next tenant. The
- * placement version rides the same mechanism for the same reason.
+ * reverts them at COMMIT before the connection serves the next tenant.
  */
 export async function withTenant<T>(
   db: Db,

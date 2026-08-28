@@ -45,7 +45,7 @@ export class MeController {
   @Get("profile")
   @Universal()
   getProfile(@CurrentUser() user: CurrentUserContext): ReturnType<MeService["getProfile"]> {
-    return this.meService.getProfile(user.userId);
+    return this.meService.getProfile(user.userId, user.orgId ?? null);
   }
 
   @Patch("profile")
@@ -54,7 +54,7 @@ export class MeController {
     @Body(new ZodValidationPipe(updateProfileSchema)) body: UpdateProfileInput,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<{ success: true }> {
-    return this.meService.updateProfile(user.userId, body);
+    return this.meService.updateProfile(user.userId, user.orgId ?? null, body);
   }
 
   @Get("login-history")

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { AiGatewayRunnerHelper } from "../modules/ai/core/gateway/ai-gateway-runner.helper";
 import { AiGatewayCreditHelper } from "../modules/ai/core/gateway/ai-gateway-credit.helper";
 import type { AiCreditLedger } from "../modules/ai/core/gateway/credit-ledger.interface";
@@ -5,6 +6,10 @@ import type { LlmService } from "../modules/ai/core/providers/llm.service";
 import type { AiUsageService } from "../modules/ai/core/services/ai-usage.service";
 import type { AuditService } from "../common/audit/audit.service";
 import type { InvokeStructuredOpts } from "../modules/ai/core/gateway/ai-gateway.types";
+import postgres from "postgres";
+
+const databaseUrl = process.env.DATABASE_URL;
+const describeWithDb = databaseUrl ? describe : describe.skip;
 import { z } from "zod";
 
 const actor = { orgId: "org-ai-test", userId: "user-1" };
@@ -161,12 +166,12 @@ describe("AiCreditsReservationService — idempotent release on provider failure
   });
 
   it.skip(
-    "integration: when the AI provider is unreachable (fault server in blackhole mode pointed at the LLM endpoint), the reservation is released and the org wallet balance is restored — needs a real AiCreditsReservationService + Postgres",
+    "integration: releasing a RESERVED reservation restores the org wallet balance — needs OutboxPublisherService / AiCreditsReservationService driven end to end; those services open their own transactions via runInNewTenantTransaction, so their writes cannot be rolled back on a database shared with concurrent sessions — asserting hand-written SQL state instead proves only that Postgres stores what was written",
     () => {},
   );
 
   it.skip(
-    "integration: a sweep of expired reservations restores credits to all wallets atomically — needs real Postgres",
+    "integration: a sweep of expired reservations restores credits to all wallets atomically — same blocker as above",
     () => {},
   );
 });

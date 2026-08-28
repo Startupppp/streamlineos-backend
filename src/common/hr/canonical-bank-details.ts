@@ -13,13 +13,7 @@ export function sealBankDetails(details: BankDetails): string {
 export function readBankDetails(stored: string | null | undefined): BankDetails | null {
   if (!stored) return null;
   const parsed = bankDetailsDecodeSchema.safeParse(JSON.parse(readSensitive(stored)));
-  return parsed.success ? parsed.data : null;
-}
-
-export function bankDetailsEqual(
-  left: BankDetails | null,
-  right: BankDetails | null,
-): boolean {
-  if (left === null || right === null) return left === right;
-  return JSON.stringify(left) === JSON.stringify(right);
+  if (!parsed.success)
+    throw new Error("Stored bank details do not match the expected shape");
+  return parsed.data;
 }

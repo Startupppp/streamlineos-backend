@@ -167,7 +167,6 @@ export class AuthService {
     image: string | null;
     role: string | null;
     isActive: boolean;
-    branchId: string | null;
     orgId: string | null;
     isOrgOwner: boolean;
     enabledModules: string[];
@@ -191,7 +190,6 @@ export class AuthService {
               name: true,
               image: true,
               isActive: true,
-              branchId: true,
               onboardingCompletedAt: true,
               lastActiveOrgId: true,
             },
@@ -262,7 +260,6 @@ export class AuthService {
           image: user.image ?? null,
           role: membership?.role ?? null,
           isActive: user.isActive,
-          branchId: user.branchId ?? null,
           orgId: resolvedOrgId,
           isOrgOwner,
           enabledModules,

@@ -54,6 +54,7 @@ describe("filterPayeesBySubjectKeys", () => {
         joiningDate: null,
         bankDetails: null,
         taxId: null,
+        panNumber: null,
         workerNumber: null,
       },
       {
@@ -67,6 +68,7 @@ describe("filterPayeesBySubjectKeys", () => {
         joiningDate: null,
         bankDetails: null,
         taxId: null,
+        panNumber: null,
         workerNumber: null,
       },
     ];

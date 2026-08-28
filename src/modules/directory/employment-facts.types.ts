@@ -33,7 +33,21 @@ export type SensitiveEmploymentFacts = {
   salaryAmountCents: number | null;
   bankDetails: BankDetails | null;
   taxId: string | null;
+  panNumber: string | null;
 };
+
+export function emptySensitiveEmploymentFacts(
+  userId: string,
+): SensitiveEmploymentFacts {
+  return {
+    userId,
+    employmentId: null,
+    salaryAmountCents: null,
+    bankDetails: null,
+    taxId: null,
+    panNumber: null,
+  };
+}
 
 export function emptyEmploymentFacts(userId: string): EmploymentFacts {
   return {

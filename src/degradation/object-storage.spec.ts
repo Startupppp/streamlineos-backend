@@ -114,12 +114,12 @@ describe("Object storage degraded — isConfigured and key validation do not tou
   });
 
   it.skip(
-    "integration: when object storage is unavailable, an upload that was pre-keyed can be re-driven from the stored key without data loss — needs a real storage endpoint and a real Postgres row with the pre-generated key",
+    "unblocked by: a real S3/R2 storage endpoint configured in the test environment — once available, verify that an upload re-driven from the stored pre-generated key reaches the endpoint and the stored metadata row reflects completion without data loss",
     () => {},
   );
 
   it.skip(
-    "integration: scan results are never marked CLEAN until the scan actually completes — needs real storage + virus scanner seam",
+    "unblocked by: a real storage endpoint and a virus-scanner seam (e.g. ClamAV sidecar) — verify the scan PENDING→CLEAN state machine under real conditions so that CLEAN is never set before the scanner confirms the result",
     () => {},
   );
 });

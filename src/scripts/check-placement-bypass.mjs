@@ -114,6 +114,31 @@ export const CRON_BYPASS_ALLOWLIST = new Map([
     "src/modules/cron/cron-org-purge-worker.service.ts",
     "purge worker selects from the global organizations table (no RLS policy) using FOR UPDATE SKIP LOCKED; the only cron service that must run without a per-org tenant GUC",
   ],
+  // The five below were INVISIBLE until 2026-08-28: the cron rule matched whole
+  // files, so one forEachOrg anywhere excused every bare this.db in the file.
+  // Each of these mixes guarded sweeps with unguarded this.db.transaction blocks.
+  // They are NOT asserted safe — they are pre-existing sweeps their owning session
+  // must migrate to forEachOrg or justify per site. Tracked in CROSS-SESSION.md.
+  [
+    "src/modules/cron/cron-leave.service.ts",
+    "PRE-EXISTING, UNAUDITED (16 sites): mixes forEachOrg sweeps with bare this.db.transaction blocks; hidden by the old file-level rule; owner must migrate or justify each site",
+  ],
+  [
+    "src/modules/cron/cron-hr-engines.service.ts",
+    "PRE-EXISTING, UNAUDITED (4 sites): same mixed shape as cron-leave; owner must migrate or justify each site",
+  ],
+  [
+    "src/modules/cron/cron-recruitment.service.ts",
+    "PRE-EXISTING, UNAUDITED (3 sites): same mixed shape as cron-leave; owner must migrate or justify each site",
+  ],
+  [
+    "src/modules/cron/cron-notification-retention.service.ts",
+    "PRE-EXISTING, UNAUDITED (2 sites): retention sweep addresses partitions by name outside a tenant context; owner must confirm the tables carry no RLS policy",
+  ],
+  [
+    "src/modules/cron/cron-billing.service.ts",
+    "PRE-EXISTING, UNAUDITED (2 sites): same mixed shape as cron-leave; owner must migrate or justify each site",
+  ],
 ]);
 
 export const AFTER_COMMIT_DB_ALLOWLIST = new Map([]);
@@ -221,8 +246,40 @@ export function findIdentitySites(src, filePath) {
   return results;
 }
 
+// Whole-file matching went blind the moment a cron file guarded ANY of its work:
+// one runInNewTenantTransaction anywhere excused every other `this.db` in the file.
+// Sites are located individually and each is judged by the block it sits in.
+export function findCronBypassSites(src, filePath) {
+  const guarded = [];
+  for (const guard of ["forEachOrg(", "runInNewTenantTransaction(", "runInTenantTransaction("]) {
+    let at = 0;
+    while (true) {
+      const pos = src.indexOf(guard, at);
+      if (pos === -1) break;
+      const body = balanced(src, pos + guard.length - 1);
+      if (body) guarded.push([pos, pos + body.length]);
+      at = pos + guard.length;
+    }
+  }
+
+  const results = [];
+  const site = /\bthis\.db\s*\.\s*(select|insert|update|delete|execute|transaction|query)\b/g;
+  let match;
+  while ((match = site.exec(src)) !== null) {
+    const pos = match.index;
+    if (guarded.some(([from, to]) => pos > from && pos < to)) continue;
+    results.push({
+      file: filePath,
+      line: src.slice(0, pos).split("\n").length,
+      kind: "cron-bypass",
+    });
+  }
+
+  return results;
+}
+
 export function isCronBypass(src) {
-  return /\bthis\.db\b/.test(src) && !/forEachOrg|runIn(?:New)?TenantTransaction/.test(src);
+  return findCronBypassSites(src, "x").length > 0;
 }
 
 export function findAfterCommitDbSites(src, filePath) {
@@ -261,6 +318,13 @@ if (SELF_TEST) {
   const cronBypassSrc = "async run() {\n  const rows = await this.db.select().from(organizations);\n}";
   const cronSafeSrc =
     "async run() {\n  await forEachOrg(this.db, 'sweep', async (tx) => { await this.db.select().from(orgs); });\n}";
+  // Guards SOME work and leaves one bare site: the shape whole-file matching missed.
+  const cronPartlyGuardedSrc = [
+    "async run() {",
+    "  await forEachOrg(this.db, 'sweep', async (tx) => { await this.db.select().from(a); });",
+    "  await this.db.transaction(async (tx) => { await tx.update(organizations).set({}); });",
+    "}",
+  ].join("\n");
 
   const nakedHookSrc = [
     "registerAfterCommit(async () => {",
@@ -306,6 +370,8 @@ if (SELF_TEST) {
     withIdentityInUnknownIsFlagged: withIdentityInUnknown.length === 1,
     cronBypassDetectedWhenNoGuard: isCronBypass(cronBypassSrc),
     cronBypassNotFlaggedWhenGuardPresent: !isCronBypass(cronSafeSrc),
+    cronBypassFoundWhenOnlySomeWorkIsGuarded:
+      findCronBypassSites(cronPartlyGuardedSrc, "x").length === 1,
     afterCommitDbFlaggedWhenNaked: nakedSites.length === 1,
     afterCommitDbCleanWhenGuarded: guardedSites.length === 0,
     emptyReasonInAllowlistIsDetected: emptyReasonDetected,
@@ -347,8 +413,7 @@ for (const file of walkTs(SCAN_ROOT)) {
   for (const f of findIdentitySites(src, rel)) findings.push(f);
   for (const f of findAfterCommitDbSites(src, rel)) findings.push(f);
 
-  if (isCron && isCronBypass(src))
-    findings.push({ file: rel, line: 1, kind: "cron-bypass" });
+  if (isCron) for (const f of findCronBypassSites(src, rel)) findings.push(f);
 }
 
 if (!EXTERNAL_ROOT && findings.length < MIN_BYPASS_SITES) {

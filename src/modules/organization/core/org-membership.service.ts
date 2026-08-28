@@ -686,12 +686,10 @@ export class OrgMembershipService {
           const removalNow = new Date();
 
           await tx
-            .update(ownershipTransfers)
-            .set({ status: "CANCELLED" })
+            .delete(ownershipTransfers)
             .where(
               and(
                 eq(ownershipTransfers.orgId, orgId),
-                eq(ownershipTransfers.status, "PENDING"),
                 or(
                   eq(ownershipTransfers.fromMembershipId, member.id),
                   eq(ownershipTransfers.toMembershipId, member.id),
@@ -1104,12 +1102,10 @@ export class OrgMembershipService {
           const leaveNow = new Date();
 
           await tx
-            .update(ownershipTransfers)
-            .set({ status: "CANCELLED" })
+            .delete(ownershipTransfers)
             .where(
               and(
                 eq(ownershipTransfers.orgId, orgId),
-                eq(ownershipTransfers.status, "PENDING"),
                 or(
                   eq(ownershipTransfers.fromMembershipId, membership.id),
                   eq(ownershipTransfers.toMembershipId, membership.id),

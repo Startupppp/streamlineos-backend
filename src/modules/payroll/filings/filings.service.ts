@@ -26,19 +26,12 @@ import { PayrollEntitiesService } from "../entities/entities.service";
 import { payrollSubjectKeyFromRunEmployee } from "../lib/payroll-subject";
 import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
-import { decrypt } from "../hr-payroll/lib/encryption";
 
 export function resolveStatutoryTaxId(
   canonicalTaxId: string | null | undefined,
   canonicalPan: string | null | undefined,
-  legacyTaxId: string | null | undefined,
 ): string | null {
-  return (
-    canonicalTaxId?.trim() ||
-    canonicalPan?.trim() ||
-    (legacyTaxId ? decrypt(legacyTaxId).trim() : "") ||
-    null
-  );
+  return canonicalTaxId?.trim() || canonicalPan?.trim() || null;
 }
 import { generateForm16SummaryPdf } from "./form16-pdf";
 
@@ -473,7 +466,7 @@ export class PayrollFilingsService {
 
       const uan = bank?.pfUanNumber?.trim() || null;
       const esiIpNumber = bank?.esiIpNumber?.trim() || null;
-      const pan = payee?.taxId ?? null;
+      const pan = resolveStatutoryTaxId(payee?.taxId, payee?.panNumber);
 
       return {
         subjectKey: payrollSubjectKeyFromRunEmployee(e),

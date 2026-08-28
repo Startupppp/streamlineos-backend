@@ -4,13 +4,17 @@ import { backgroundVerifications } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateBgvInput, UpdateBgvInput } from "./dto/hr-directory.schemas";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 @Injectable()
 export class BackgroundVerificationService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly employmentFacts: EmploymentFactsService,
+  ) {}
 
-  list(orgId: string) {
-    return this.db.query.backgroundVerifications.findMany({
+  async list(orgId: string) {
+    const rows = await this.db.query.backgroundVerifications.findMany({
       where: eq(backgroundVerifications.orgId, orgId),
       with: {
         user: {
@@ -21,13 +25,29 @@ export class BackgroundVerificationService {
             lastName: true,
             email: true,
             image: true,
-            designation: true,
-            employeeId: true,
           },
         },
       },
       orderBy: [desc(backgroundVerifications.createdAt)],
       limit: 500,
+    });
+
+    const facts = await this.employmentFacts.getFactsBatch(
+      orgId,
+      rows.map((row) => row.user?.id).filter((id): id is string => Boolean(id)),
+    );
+
+    return rows.map((row) => {
+      if (!row.user) return { ...row, user: row.user };
+      const fact = facts.get(row.user.id);
+      return {
+        ...row,
+        user: {
+          ...row.user,
+          designation: fact?.designation ?? null,
+          employeeId: fact?.employeeNumber ?? null,
+        },
+      };
     });
   }
 

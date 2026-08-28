@@ -27,15 +27,15 @@ export const UNENFORCED_EXEMPT = new Map([
 ]);
 
 const CATALOG_FILE = "src/common/rbac/owner-only-operations.ts";
-const CATALOG_ID = /^\s{2}"([a-z0-9.-]+)":\s*\{/gm;
-const CATALOG_CALL = /(?:assertOwnerOnly|holdsOwnerOnly)\s*\(\s*[^,]+,\s*"([a-z0-9.-]+)"/g;
+const CATALOG_ID_RE = String.raw`^\s{2}"([a-z0-9.-]+)":\s*\{`;
+const CATALOG_CALL_RE = String.raw`(?:assertOwnerOnly|holdsOwnerOnly)\s*\(\s*[^,]+,\s*"([a-z0-9.-]+)"`;
 
 export function catalogIds(source) {
-  return [...source.matchAll(CATALOG_ID)].map((m) => m[1]);
+  return [...source.matchAll(new RegExp(CATALOG_ID_RE, "gm"))].map((m) => m[1]);
 }
 
 export function calledIds(source) {
-  return [...source.matchAll(CATALOG_CALL)].map((m) => m[1]);
+  return [...source.matchAll(new RegExp(CATALOG_CALL_RE, "g"))].map((m) => m[1]);
 }
 
 function walkTs(dir) {

@@ -26,6 +26,7 @@ import { SupportKbGapModule } from "../support/kb-gap";
 import { TimesheetsCoreModule } from "../timesheets/core/timesheets-core.module";
 import { OrganizationModule } from "../organization/core/organization.module";
 import { CronBillingController } from "./cron-billing.controller";
+import { CronInvitationExpiryController } from "./cron-invitation-expiry.controller";
 import { CronHrController } from "./cron-hr.controller";
 import { CronPlatformController } from "./cron-platform.controller";
 import { CronOutboxController } from "./cron-outbox.controller";
@@ -36,6 +37,7 @@ import { CronNotificationRetentionService } from "./cron-notification-retention.
 import { NotificationRetentionService } from "../notifications/notification-retention.service";
 import { CronAttendanceService } from "./cron-attendance.service";
 import { CronBillingService } from "./cron-billing.service";
+import { CronInvitationExpiryService } from "./cron-invitation-expiry.service";
 import { CronWorkflowService } from "./cron-workflow.service";
 import { CronHolidayService } from "./cron-holiday.service";
 import { CronHrService } from "./cron-hr.service";
@@ -61,9 +63,11 @@ import { ProjectsModule } from "../build/core/projects.module";
 import { CrmModule } from "../crm/core/crm.module";
 import { OutboxModule } from "../../common/outbox/outbox.module";
 import { SessionsModule } from "../sessions/sessions.module";
+import { EmploymentFactsModule } from "../directory/employment-facts.module";
 
 @Module({
   imports: [
+    EmploymentFactsModule,
     AutomationModule,
     AiModule,
     AiJobsModule,
@@ -102,10 +106,12 @@ import { SessionsModule } from "../sessions/sessions.module";
     CronOutboxController,
     CronSupportController,
     CronBuildController,
+    CronInvitationExpiryController,
   ],
   providers: [
     CronAttendanceService,
     CronBillingService,
+    CronInvitationExpiryService,
     CronWorkflowService,
     CronLeaveService,
     CronNotificationsService,
