@@ -56,7 +56,7 @@ export class KbArticleMigrationService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async preview(orgId: string): Promise<ArticleMigrationPreview> {
-    return withTenant(this.db, { orgId, audience: "INTERNAL" }, (tx) =>
+    return withTenant(this.db, { orgId, audience: "INTERNAL", intent: "read" }, (tx) =>
       runWithTenantContext({ orgId, audience: "INTERNAL", tx }, () =>
         this.previewOn(tx, orgId),
       ),
@@ -70,9 +70,14 @@ export class KbArticleMigrationService {
    */
   async reportAll(): Promise<ArticleMigrationReport> {
     const organizations: ArticleMigrationReport["organizations"] = [];
-    const sweep = await forEachOrg(this.db, "kb-article-migration-report", async (tx, orgId) => {
-      organizations.push({ orgId, ...(await this.previewOn(tx, orgId)) });
-    });
+    const sweep = await forEachOrg(
+      this.db,
+      "kb-article-migration-report",
+      async (tx, orgId) => {
+        organizations.push({ orgId, ...(await this.previewOn(tx, orgId)) });
+      },
+      "read",
+    );
 
     return {
       organizations,

@@ -1,4 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { dirname, resolve } from "node:path";
 import postgres from "postgres";
 import { loadEnv, parseCellArgs, redact } from "./cell-topology.mjs";
@@ -160,12 +162,13 @@ async function copyOut(sql, t) {
   return Buffer.concat(chunks);
 }
 
-// The query promise is the completion signal, not the stream's "finish" event. Waiting on
-// "finish" hung indefinitely against a COPY that the server had already completed.
+// pipeline() is the only form that both finalises the copy and leaves the connection usable.
+// Awaiting the query after writable.end(payload) resolves BEFORE the copy completes: the next
+// statement fails with COPY_IN_PROGRESS, and nothing was written.
 async function copyIn(sql, t, payload) {
   const query = sql.unsafe(`COPY ${qualify(t.schema, t.table)} FROM STDIN`);
   const writable = await query.writable();
-  writable.end(payload);
+  await pipeline(Readable.from([payload]), writable);
   await query;
 }
 

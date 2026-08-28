@@ -65,6 +65,7 @@ const ORG = flag("org", null);
 const TARGET_REGION = flag("to", "cell-2") ?? "cell-2";
 const SELF_TEST = argv.includes("--self-test");
 const LIMIT = Number(flag("limit", "0") ?? "0");
+const MAX_STAGED_BYTES = Number(flag("max-bytes", "268435456") ?? "268435456");
 
 const started = Date.now();
 const log = (msg: string): void =>
@@ -330,7 +331,7 @@ async function rebuildConstraints(
 async function copy(orgId: string): Promise<void> {
   const { sourceUrl, targetUrl } = endpoints();
   const source = connect(sourceUrl);
-  const target = connect(targetUrl);
+  let target: Sql | null = null;
   try {
     const row = await activeRelocation(source, orgId);
     if (row === null) {
@@ -354,14 +355,6 @@ async function copy(orgId: string): Promise<void> {
     if (row.current_state === "ACTIVE_SOURCE")
       await moveTo(source, row, "SNAPSHOT");
 
-    const breakers = await readCycleBreakers(target, cyclic);
-    for (const b of breakers) {
-      await target.unsafe(
-        `ALTER TABLE ${qualify(b.schema, b.table)} DROP CONSTRAINT "${b.name}"`,
-      );
-      log(`target: dropped cycle-breaking constraint ${b.table}.${b.name}`);
-    }
-
     const resumeAfter = row.last_copied_table;
     let skipping = resumeAfter !== null;
     let copiedTables = row.tables_copied;
@@ -372,46 +365,78 @@ async function copy(orgId: string): Promise<void> {
     const failed: string[] = [];
     const pending: { name: string; digest: string; rows: number }[] = [];
 
-    try {
-      await target.begin(async (tx) => {
-        await tx.unsafe("SET CONSTRAINTS ALL DEFERRED");
-        for (const entry of order) {
-          const name = qualifiedName(entry.schema, entry.table);
-          if (skipping) {
-            if (name === resumeAfter) skipping = false;
-            continue;
-          }
-          if (LIMIT > 0 && processed >= LIMIT) break;
+    const staged: { entry: TablePlanEntry; payload: Buffer }[] = [];
+    let stagedBytes = 0;
 
-          const pk = primaryKeys.get(name) ?? [];
-          const slice = await readSlice(source, entry, orgId, pk);
-          if (slice.rows > 0) {
-            await writeSlice(tx, entry, slice.payload);
-            log(
-              `${name}: ${slice.rows} rows, digest ${slice.digest.slice(0, 12)}`,
-            );
-          }
-          pending.push({ name, digest: slice.digest, rows: slice.rows });
-          copiedTables += 1;
-          copiedRows += slice.rows;
-          processed += 1;
-        }
-      });
-    } finally {
-      await rebuildConstraints(target, breakers, rebuilt, failed);
+    for (const entry of order) {
+      const name = qualifiedName(entry.schema, entry.table);
+      if (skipping) {
+        if (name === resumeAfter) skipping = false;
+        continue;
+      }
+      if (LIMIT > 0 && processed >= LIMIT) break;
+
+      const pk = primaryKeys.get(name) ?? [];
+      const slice = await readSlice(source, entry, orgId, pk);
+      if (slice.rows > 0) {
+        staged.push({ entry, payload: slice.payload });
+        stagedBytes += slice.payload.length;
+        log(`read ${name}: ${slice.rows} rows, digest ${slice.digest.slice(0, 12)}`);
+      }
+      pending.push({ name, digest: slice.digest, rows: slice.rows });
+      copiedTables += 1;
+      copiedRows += slice.rows;
+      processed += 1;
+
+      if (stagedBytes > MAX_STAGED_BYTES) {
+        console.error(
+          `REFUSED: the organization's slice exceeds ${MAX_STAGED_BYTES} bytes staged in memory` +
+            ` (${stagedBytes} so far). Raise --max-bytes only if this machine can hold it, or` +
+            ` split the move; silently streaming it would put the target transaction back over` +
+            ` the 300s idle limit that killed three earlier attempts.`,
+        );
+        process.exitCode = 1;
+        return;
+      }
     }
 
-    for (const p of pending)
-      await source`
-        INSERT INTO organization_relocation_checksums
-          (relocation_id, scope_kind, scope_name, source_digest, target_digest, matched)
-        VALUES (${row.relocation_id}, 'table', ${p.name}, ${p.digest}, '', false)`;
+    log(`staged ${staged.length} non-empty table(s), ${stagedBytes} bytes; writing target`);
 
-    await source`
-      UPDATE organization_relocations
-      SET tables_copied = ${copiedTables}, rows_copied = ${copiedRows},
-          last_copied_table = ${pending[pending.length - 1]?.name ?? null}, updated_at = now()
-      WHERE relocation_id = ${row.relocation_id}`;
+    target = connect(targetUrl);
+    const breakers = await readCycleBreakers(target, cyclic);
+    for (const b of breakers) {
+      await target.unsafe(
+        `ALTER TABLE ${qualify(b.schema, b.table)} DROP CONSTRAINT "${b.name}"`,
+      );
+      log(`target: dropped cycle-breaking constraint ${b.table}.${b.name}`);
+    }
+
+    const targetSql = target;
+    try {
+      await targetSql.begin(async (tx) => {
+        await tx.unsafe("SET CONSTRAINTS ALL DEFERRED");
+        for (const item of staged) await writeSlice(tx, item.entry, item.payload);
+      });
+    } finally {
+      await rebuildConstraints(targetSql, breakers, rebuilt, failed);
+    }
+
+    const bookkeeping = connect(sourceUrl);
+    try {
+      for (const p of pending)
+        await bookkeeping`
+          INSERT INTO organization_relocation_checksums
+            (relocation_id, scope_kind, scope_name, source_digest, target_digest, matched)
+          VALUES (${row.relocation_id}, 'table', ${p.name}, ${p.digest}, '', false)`;
+
+      await bookkeeping`
+        UPDATE organization_relocations
+        SET tables_copied = ${copiedTables}, rows_copied = ${copiedRows},
+            last_copied_table = ${pending[pending.length - 1]?.name ?? null}, updated_at = now()
+        WHERE relocation_id = ${row.relocation_id}`;
+    } finally {
+      await bookkeeping.end();
+    }
 
     if (failed.length > 0) {
       console.error(
@@ -427,7 +452,8 @@ async function copy(orgId: string): Promise<void> {
         ` rows=${copiedRows} constraints_rebuilt=${rebuilt.length}`,
     );
   } finally {
-    await Promise.all([source.end(), target.end()]);
+    await source.end();
+    if (target !== null) await target.end();
   }
 }
 

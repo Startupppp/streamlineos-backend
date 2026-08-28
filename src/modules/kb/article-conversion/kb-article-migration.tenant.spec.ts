@@ -57,7 +57,7 @@ describe("KbArticleMigrationService tenant boundary", () => {
     const { withTenant, runWithTenantContext } = tenantMocks();
     expect(withTenant).toHaveBeenCalledWith(
       {},
-      { orgId: "org-1", audience: "INTERNAL" },
+      { orgId: "org-1", audience: "INTERNAL", intent: "read" },
       expect.any(Function),
     );
     expect(runWithTenantContext).toHaveBeenCalledWith(

@@ -4,6 +4,7 @@ import { organizations } from "../../db/schema";
 import { logger } from "../logger/logger.service";
 import { runWithTenantContext } from "./tenant-context";
 import { withTenant, type TenantTx } from "./with-tenant";
+import type { PlacementIntent } from "../region/placement";
 
 export interface ForEachOrgResult {
   organizations: number;
@@ -27,6 +28,7 @@ export async function forEachOrg(
   db: Db,
   sweep: string,
   fn: (tx: TenantTx, orgId: string) => Promise<void>,
+  intent: PlacementIntent = "write",
 ): Promise<ForEachOrgResult> {
   // status, not just deletedAt: the purge worker parks an org in PURGE_SCHEDULED/PURGED without soft-deleting it
   const orgs = await db
@@ -41,7 +43,7 @@ export async function forEachOrg(
   for (const org of orgs) {
     try {
       // The context, not just the transaction: nested services hold the proxied db, not this tx
-      await withTenant(db, { orgId: org.id, audience: "INTERNAL" }, (tx) =>
+      await withTenant(db, { orgId: org.id, audience: "INTERNAL", intent }, (tx) =>
         runWithTenantContext({ orgId: org.id, audience: "INTERNAL", tx }, () => fn(tx, org.id)),
       );
       succeeded += 1;
