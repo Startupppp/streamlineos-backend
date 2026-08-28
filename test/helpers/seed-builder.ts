@@ -16,6 +16,33 @@ import { bumpPermissionsVersion } from "src/common/rbac/access-invalidate";
 import { ORG_MEMBER_ROLES, type OrgMemberRole } from "src/common/rbac/org-roles";
 import { regionForNewOrg } from "src/common/region/region-registry";
 
+/**
+ * `users` rows are inserted through raw SQL naming only the two columns a
+ * seeded tenant actually needs.
+ *
+ * Drizzle's insert emits *every* declared column, defaulting the ones the
+ * caller omitted — so a fixture that sets nothing but id and email still fails
+ * the moment an unrelated module moves a user column. That is not
+ * hypothetical: the HR employment refactor moved `joining_date`, `employee_id`,
+ * `designation`, `monthly_salary`, `tax_id`, `bank_details`,
+ * `org_department_id`, `reporting_to` and `branch_id` out to `hr_employments`
+ * and migrated the shared database ahead of this branch, whose `users`
+ * declaration still lists all nine. Every seeded e2e suite in the repo died on
+ * `column "joining_date" of relation "users" does not exist`, in a fixture that
+ * had never heard of the column.
+ *
+ * Naming the columns explicitly is also what the repo asks of production reads.
+ * The declaration drift is real and still wants fixing where it lives; a test
+ * fixture is not the place to be sensitive to it.
+ */
+async function insertSeedUser(
+  tx: { execute: (q: ReturnType<typeof sql>) => Promise<unknown> },
+  id: string,
+  email: string,
+): Promise<void> {
+  await tx.execute(sql`INSERT INTO users (id, email) VALUES (${id}, ${email})`);
+}
+
 export interface SeededMember {
   userId: string;
   membershipId: number;
@@ -140,7 +167,7 @@ export class SeedBuilder {
         const [alias, spec] = ownerAliasEntry;
         const userId = crypto.randomUUID();
         allUserIds.push(userId);
-        await tx.insert(users).values({ id: userId, email: spec.email });
+        await insertSeedUser(tx, userId, spec.email);
         await tx.insert(organizationMembers).values({
           id: ownerMembershipId,
           userId,
@@ -153,7 +180,7 @@ export class SeedBuilder {
       } else {
         const ownerUserId = crypto.randomUUID();
         allUserIds.push(ownerUserId);
-        await tx.insert(users).values({ id: ownerUserId, email: `owner-${orgId}@test.invalid` });
+        await insertSeedUser(tx, ownerUserId, `owner-${orgId}@test.invalid`);
         await tx.insert(organizationMembers).values({
           id: ownerMembershipId,
           userId: ownerUserId,
@@ -168,7 +195,7 @@ export class SeedBuilder {
         if (ownerAliasEntry && alias === ownerAliasEntry[0]) continue;
         const userId = crypto.randomUUID();
         allUserIds.push(userId);
-        await tx.insert(users).values({ id: userId, email: spec.email });
+        await insertSeedUser(tx, userId, spec.email);
         const [memberRow] = await tx
           .insert(organizationMembers)
           .values({ userId, orgId, role: spec.standing, isOwner: false, status: "ACTIVE" })

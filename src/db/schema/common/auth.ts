@@ -459,8 +459,14 @@ export const userApiTokensRelations = relations(userApiTokens, ({ one }) => ({
 export const userDelegations = pgTable("user_delegations", {
   id: text("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  delegatorId: text("delegator_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  delegateeId: text("delegatee_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  /**
+   * Acting-for hangs off the membership, not the login — the same reason the
+   * rest of the RBAC tables key that way. A delegation keyed on the user id
+   * outlived the person's membership and could not carry the composite tenant
+   * FK, so a delegatee from another organisation was representable.
+   */
+  delegatorMembershipId: integer("delegator_membership_id").notNull(),
+  delegateeMembershipId: integer("delegatee_membership_id").notNull(),
   startsAt: timestamp("starts_at").defaultNow().notNull(),
   endsAt: timestamp("ends_at").notNull(),
   reason: text("reason"),
@@ -470,8 +476,22 @@ export const userDelegations = pgTable("user_delegations", {
   revokedBy: text("revoked_by").references(() => users.id),
 }, (table) => [
   unique("uniq_user_delegations_org_delegation").on(table.orgId, table.id),
-  index("idx_user_delegations_delegatee_status").on(table.delegateeId, table.status),
+  index("idx_user_delegations_delegatee_status").on(
+    table.orgId,
+    table.delegateeMembershipId,
+    table.status,
+  ),
   index("idx_user_delegations_org_ends").on(table.orgId, table.endsAt),
+  foreignKey({
+    name: "fk_user_delegations_delegator_membership",
+    columns: [table.orgId, table.delegatorMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("cascade"),
+  foreignKey({
+    name: "fk_user_delegations_delegatee_membership",
+    columns: [table.orgId, table.delegateeMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("cascade"),
 ]);
 
 export const userDelegationPermissions = pgTable("user_delegation_permissions", {
@@ -500,8 +520,16 @@ export const userDelegationPermissions = pgTable("user_delegation_permissions", 
 
 export const userDelegationsRelations = relations(userDelegations, ({ one, many }) => ({
   org: one(organizations, { fields: [userDelegations.orgId], references: [organizations.id] }),
-  delegator: one(users, { fields: [userDelegations.delegatorId], references: [users.id] }),
-  delegatee: one(users, { fields: [userDelegations.delegateeId], references: [users.id] }),
+  delegator: one(organizationMembers, {
+    fields: [userDelegations.delegatorMembershipId],
+    references: [organizationMembers.id],
+    relationName: "delegator_membership",
+  }),
+  delegatee: one(organizationMembers, {
+    fields: [userDelegations.delegateeMembershipId],
+    references: [organizationMembers.id],
+    relationName: "delegatee_membership",
+  }),
   permissionGrants: many(userDelegationPermissions),
 }));
 

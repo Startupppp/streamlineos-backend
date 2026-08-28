@@ -119,6 +119,8 @@ describe("DelegationsService normalized permission grants", () => {
     const row = {
       id: "delegation-1",
       orgId: actor.orgId,
+      delegatorMembershipId: 11,
+      delegateeMembershipId: 12,
       delegatorId: actor.userId,
       delegateeId: "delegatee-1",
       startsAt: new Date("2026-08-01T00:00:00.000Z"),
@@ -134,16 +136,20 @@ describe("DelegationsService normalized permission grants", () => {
     const orderBy = jest.fn().mockReturnValue({ limit });
     const pageWhere = jest.fn().mockReturnValue({ orderBy });
     const countWhere = jest.fn().mockResolvedValue([{ total: 21 }]);
+    // A delegation is stored against the two memberships and read back through
+    // them, so both page and count queries now join organization_members twice.
+    const joinedTo = (where: jest.Mock) => ({
+      innerJoin: () => ({ innerJoin: () => ({ where }) }),
+    });
     const select = jest.fn((selection?: Record<string, unknown>) => {
-      if (!selection) {
-        return {
-          from: () => ({ where: pageWhere }),
-        };
+      if (selection && "total" in selection) {
+        return { from: () => joinedTo(countWhere) };
       }
-      if ("total" in selection) {
-        return {
-          from: () => ({ where: countWhere }),
-        };
+      if (selection && "delegatorMembershipId" in selection) {
+        return { from: () => joinedTo(pageWhere) };
+      }
+      if (!selection) {
+        return { from: () => ({ where: pageWhere }) };
       }
       if ("delegationId" in selection) {
         return {

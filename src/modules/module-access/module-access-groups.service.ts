@@ -815,7 +815,7 @@ export class ModuleAccessGroupsService {
     );
     const baseJoin = and(
       eq(userModuleAccess.orgId, organizationMembers.orgId),
-      eq(userModuleAccess.userId, organizationMembers.userId),
+      eq(userModuleAccess.organizationMembershipId, organizationMembers.id),
       eq(userModuleAccess.moduleKey, moduleKey),
       eq(userModuleAccess.enabled, false),
     );

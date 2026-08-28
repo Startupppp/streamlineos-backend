@@ -6,7 +6,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   accessVersions,
   organizationMembers,
@@ -15,6 +15,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { getTenantContext } from "../../common/tenant/tenant-context";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
@@ -89,6 +90,13 @@ const VERSION_CACHE_TTL_MS = 1_000;
 const SHARED_VERSION_TTL_SECONDS = 300;
 const PERMS_CACHE_TTL_MS = 30_000;
 
+function undefinedColumn(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  if ("code" in error && error.code === "42703") return true;
+  if ("cause" in error) return undefinedColumn(error.cause);
+  return false;
+}
+
 function isMissingRelationError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   if ("code" in error && error.code === "42P01") return true;
@@ -105,7 +113,12 @@ function isMissingRelationError(error: unknown): boolean {
 
 @Injectable()
 export class AccessService implements OnModuleInit, OnModuleDestroy {
-  private missingAccessTablesLogged = false;
+  private static savepointSeq = 0;
+  private static readonly savepointChains = new WeakMap<
+    object,
+    Promise<unknown>
+  >();
+  private readonly missingAccessTablesLogged = new Set<string>();
   private readonly versionCache = new Map<string, VersionEntry>();
   private readonly permsCache = new Map<string, PermsEntry>();
   private readonly deniedModulesCache = new Map<
@@ -199,23 +212,102 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     }
   }
   private noteMissingAccessTables(error: unknown): void {
-    if (this.missingAccessTablesLogged) return;
-    this.missingAccessTablesLogged = true;
-    logger.warn("access: rbac tables missing, returning empty permission set", {
-      error: error instanceof Error ? error.message : String(error),
+    const message = error instanceof Error ? error.message : String(error);
+    // Keyed rather than latched. The old single boolean logged the first
+    // degradation ever seen and silenced every later one, so a second,
+    // unrelated drift left no trace at all.
+    const key = message.slice(0, 200);
+    if (this.missingAccessTablesLogged.has(key)) return;
+    this.missingAccessTablesLogged.add(key);
+    logger.warn("access: rbac read degraded, returning empty permission set", {
+      // A missing table means the module was never installed here; a missing
+      // column means the declaration and the database disagree, which is a
+      // bug rather than a configuration. Both degrade, but they are not the
+      // same event and the log should not call them the same thing.
+      kind: undefinedColumn(error) ? "column-drift" : "table-absent",
+      error: message,
     });
   }
+  /**
+   * A degradable read of an RBAC table.
+   *
+   * `try { read() } catch (missing) { fallback }` is safe only outside a
+   * transaction. Inside one it is not: Postgres aborts the entire transaction
+   * on the failing statement, so swallowing the error and returning a fallback
+   * hands the caller a transaction in which every later statement fails with
+   * 25P02 — naming, of course, some entirely innocent table.
+   *
+   * That is what was happening. `user_delegations.delegatee_id` does not exist
+   * on the live database — the membership refactor renamed it to
+   * `delegatee_membership_id` — and every stock command resolves warehouse
+   * scope, and therefore permissions, inside its own transaction. The engine
+   * died one statement later on `user_module_access`, a table that is present
+   * and entirely fine.
+   *
+   * A savepoint makes the attempt genuinely optional: the failed statement
+   * rolls back to the savepoint and the caller's transaction survives. This is
+   * the same lesson as the accounting bridge — do not catch a Postgres error
+   * inside someone else's transaction and pretend it did not happen.
+   */
   private async safeAccessTableRead<T>(
     read: () => PromiseLike<T>,
     fallback: T,
   ): Promise<T> {
-    try {
-      return await read();
-    } catch (error: unknown) {
-      if (!isMissingRelationError(error)) throw error;
-      this.noteMissingAccessTables(error);
-      return fallback;
+    const ambient = getTenantContext();
+    if (!ambient) {
+      // No enclosing transaction: a failed statement costs only itself.
+      try {
+        return await read();
+      } catch (error: unknown) {
+        if (!isMissingRelationError(error)) throw error;
+        this.noteMissingAccessTables(error);
+        return fallback;
+      }
     }
+
+    const tx = ambient.tx;
+    return this.inSavepoint(tx, async () => {
+      // Generated from a counter and never from input, so `sql.raw` is the
+      // right tool — a savepoint name cannot be a bind parameter.
+      const savepoint = `access_read_${(AccessService.savepointSeq += 1)}`;
+      await tx.execute(sql.raw(`SAVEPOINT ${savepoint}`));
+      try {
+        const value = await read();
+        await tx.execute(sql.raw(`RELEASE SAVEPOINT ${savepoint}`));
+        return value;
+      } catch (error: unknown) {
+        await tx.execute(sql.raw(`ROLLBACK TO SAVEPOINT ${savepoint}`));
+        if (!isMissingRelationError(error)) throw error;
+        this.noteMissingAccessTables(error);
+        return fallback;
+      }
+    });
+  }
+  /**
+   * Savepoints are a stack, not a set: `RELEASE SAVEPOINT b` also discards
+   * every savepoint established after it. `computeUserPermissions` issues its
+   * reads through `Promise.all`, so two of them interleaved and the second
+   * tried to roll back to a name the first had already released — "savepoint
+   * access_read_3 does not exist", from code whose only job was to survive
+   * failure.
+   *
+   * Serializing them restores the nesting the stack requires. It costs
+   * nothing: these reads share one connection and were already serialized on
+   * the wire — only the savepoint bookkeeping was ever concurrent.
+   */
+  private inSavepoint<T>(tx: object, run: () => Promise<T>): Promise<T> {
+    const previous = AccessService.savepointChains.get(tx) ?? Promise.resolve();
+    const result = previous.then(run, run);
+    // The chain tracks completion, never outcome — one read's failure must not
+    // reject the next one's turn.
+    AccessService.savepointChains.set(
+      tx,
+      result.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return result;
   }
   private async loadDurablePermissionsVersion(orgId: string): Promise<number> {
     const row = await runInTenantTransaction(
@@ -425,10 +517,23 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
             this.db
               .select({ moduleKey: userModuleAccess.moduleKey })
               .from(userModuleAccess)
+              // The deny-override keys on the membership; the caller still
+              // speaks user ids, so the membership is resolved here rather
+              // than pushed onto every caller.
+              .innerJoin(
+                organizationMembers,
+                and(
+                  eq(organizationMembers.orgId, userModuleAccess.orgId),
+                  eq(
+                    organizationMembers.id,
+                    userModuleAccess.organizationMembershipId,
+                  ),
+                ),
+              )
               .where(
                 and(
                   eq(userModuleAccess.orgId, orgId),
-                  eq(userModuleAccess.userId, userId),
+                  eq(organizationMembers.userId, userId),
                   eq(userModuleAccess.enabled, false),
                 ),
               ),
@@ -516,7 +621,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
             eq(organizationMembers.orgId, orgId),
             eq(organizationMembers.userId, userId),
           ),
-          columns: { userId: true, status: true },
+          columns: { id: true, userId: true, status: true },
         });
         if (!member)
           throw new NotFoundException(
@@ -529,11 +634,17 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         }
         await tx
           .insert(userModuleAccess)
-          .values({ orgId, userId, moduleKey, enabled, updatedBy })
+          .values({
+            orgId,
+            organizationMembershipId: member.id,
+            moduleKey,
+            enabled,
+            updatedBy,
+          })
           .onConflictDoUpdate({
             target: [
               userModuleAccess.orgId,
-              userModuleAccess.userId,
+              userModuleAccess.organizationMembershipId,
               userModuleAccess.moduleKey,
             ],
             set: { enabled, updatedBy },

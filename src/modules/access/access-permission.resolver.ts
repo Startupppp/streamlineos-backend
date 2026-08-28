@@ -306,7 +306,7 @@ export class AccessPermissionResolver {
           .where(
             and(
               eq(userDelegations.orgId, orgId),
-              eq(userDelegations.delegateeId, userId),
+              eq(userDelegations.delegateeMembershipId, membershipId),
               eq(userDelegations.status, "ACTIVE"),
               lte(userDelegations.startsAt, now),
               gt(userDelegations.endsAt, now),

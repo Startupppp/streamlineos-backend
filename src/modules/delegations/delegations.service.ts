@@ -17,6 +17,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import {
   organizationMembers,
@@ -43,7 +44,44 @@ import {
   assertDelegationTarget,
 } from "./delegation-policy";
 
-type DelegationRow = typeof userDelegations.$inferSelect;
+/**
+ * Storage keys a delegation on the two memberships; the API has always spoken
+ * user ids, and callers, audit metadata and the frontend all still do. The two
+ * joins below are the whole translation, so the shape crossing this service's
+ * boundary is unchanged by the move.
+ */
+const delegatorMember = alias(organizationMembers, "delegator_member");
+const delegateeMember = alias(organizationMembers, "delegatee_member");
+
+const delegationSelection = {
+  id: userDelegations.id,
+  orgId: userDelegations.orgId,
+  delegatorMembershipId: userDelegations.delegatorMembershipId,
+  delegateeMembershipId: userDelegations.delegateeMembershipId,
+  delegatorId: delegatorMember.userId,
+  delegateeId: delegateeMember.userId,
+  startsAt: userDelegations.startsAt,
+  endsAt: userDelegations.endsAt,
+  reason: userDelegations.reason,
+  status: userDelegations.status,
+  createdAt: userDelegations.createdAt,
+  revokedAt: userDelegations.revokedAt,
+  revokedBy: userDelegations.revokedBy,
+} as const;
+
+const joinDelegatorMember = and(
+  eq(delegatorMember.orgId, userDelegations.orgId),
+  eq(delegatorMember.id, userDelegations.delegatorMembershipId),
+);
+const joinDelegateeMember = and(
+  eq(delegateeMember.orgId, userDelegations.orgId),
+  eq(delegateeMember.id, userDelegations.delegateeMembershipId),
+);
+
+type DelegationRow = typeof userDelegations.$inferSelect & {
+  delegatorId: string;
+  delegateeId: string;
+};
 type DelegationDirection = "received" | "given";
 type DelegationLifecycle = "ACTIVE" | "SCHEDULED" | "EXPIRED" | "REVOKED";
 
@@ -147,12 +185,12 @@ export class DelegationsService {
     const now = new Date();
     const participantColumn =
       direction === "received"
-        ? userDelegations.delegatorId
-        : userDelegations.delegateeId;
+        ? delegatorMember.userId
+        : delegateeMember.userId;
     const actorColumn =
       direction === "received"
-        ? userDelegations.delegateeId
-        : userDelegations.delegatorId;
+        ? delegateeMember.userId
+        : delegatorMember.userId;
     const search = query.search?.trim();
     const searchPattern = search ? `%${escapeLike(search)}%` : null;
     const participantSearch = searchPattern
@@ -186,8 +224,10 @@ export class DelegationsService {
 
     const [rows, [totalRow]] = await Promise.all([
       this.db
-        .select()
+        .select(delegationSelection)
         .from(userDelegations)
+        .innerJoin(delegatorMember, joinDelegatorMember)
+        .innerJoin(delegateeMember, joinDelegateeMember)
         .where(conditions)
         .orderBy(desc(userDelegations.createdAt), desc(userDelegations.id))
         .limit(query.limit)
@@ -195,6 +235,8 @@ export class DelegationsService {
       this.db
         .select({ total: count() })
         .from(userDelegations)
+        .innerJoin(delegatorMember, joinDelegatorMember)
+        .innerJoin(delegateeMember, joinDelegateeMember)
         .where(conditions),
     ]);
     const total = Number(totalRow?.total ?? 0);
@@ -258,13 +300,24 @@ export class DelegationsService {
         if (!delegatee) {
           throw new NotFoundException("Active delegatee not found");
         }
+        const delegator = await tx.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.orgId, actor.orgId),
+            eq(organizationMembers.userId, actor.userId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+          columns: { id: true },
+        });
+        if (!delegator) {
+          throw new NotFoundException("Active delegator not found");
+        }
         const [created] = await tx
           .insert(userDelegations)
           .values({
             id: randomUUID(),
             orgId: actor.orgId,
-            delegatorId: actor.userId,
-            delegateeId: body.delegateeId,
+            delegatorMembershipId: delegator.id,
+            delegateeMembershipId: delegatee.id,
             startsAt,
             endsAt,
             reason: body.reason ?? null,
@@ -294,7 +347,12 @@ export class DelegationsService {
             reason: body.reason ?? null,
           },
         });
-        return { ...created, permissions: body.permissions };
+        return {
+          ...created,
+          delegatorId: actor.userId,
+          delegateeId: body.delegateeId,
+          permissions: body.permissions,
+        };
       },
       { orgId: actor.orgId },
     );
@@ -307,8 +365,10 @@ export class DelegationsService {
       this.db,
       async (tx) => {
         const [delegation] = await tx
-          .select()
+          .select(delegationSelection)
           .from(userDelegations)
+          .innerJoin(delegatorMember, joinDelegatorMember)
+          .innerJoin(delegateeMember, joinDelegateeMember)
           .where(
             and(
               eq(userDelegations.id, id),
@@ -363,6 +423,8 @@ export class DelegationsService {
         return {
           updated: {
             ...updated,
+            delegatorId: delegation.delegatorId,
+            delegateeId: delegation.delegateeId,
             permissions: permissionRows.map((row) => row.permissionKey),
           },
           delegateeId: delegation.delegateeId,

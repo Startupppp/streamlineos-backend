@@ -21,12 +21,14 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { logger } from "../../../common/logger/logger.service";
 import { type Db } from "../../../db/drizzle.module";
 import {
+  organizationMembers,
   timesheetPeriods,
   timesheets,
   timesheetSettings,
   userDelegations,
   users,
 } from "../../../db/schema";
+import { alias } from "drizzle-orm/pg-core";
 import { AccessService } from "../../access/access.service";
 import { applyScope } from "../../access/apply-scope";
 import { resolveApprovalScope } from "./timesheets-core-scope";
@@ -74,14 +76,33 @@ export class ApprovalsService {
     approverId: string,
     actorUserId: string,
   ): Promise<boolean> {
+    // A delegation names memberships, not logins. Both sides are joined back
+    // to the membership so this stays a question about user ids, which is
+    // what the caller has.
+    const delegator = alias(organizationMembers, "delegator_member");
+    const delegatee = alias(organizationMembers, "delegatee_member");
     const [row] = await this.db
       .select({ id: userDelegations.id })
       .from(userDelegations)
+      .innerJoin(
+        delegator,
+        and(
+          eq(delegator.orgId, userDelegations.orgId),
+          eq(delegator.id, userDelegations.delegatorMembershipId),
+        ),
+      )
+      .innerJoin(
+        delegatee,
+        and(
+          eq(delegatee.orgId, userDelegations.orgId),
+          eq(delegatee.id, userDelegations.delegateeMembershipId),
+        ),
+      )
       .where(
         and(
           eq(userDelegations.orgId, orgId),
-          eq(userDelegations.delegatorId, approverId),
-          eq(userDelegations.delegateeId, actorUserId),
+          eq(delegator.userId, approverId),
+          eq(delegatee.userId, actorUserId),
           eq(userDelegations.status, "ACTIVE"),
           lte(userDelegations.startsAt, new Date()),
           gt(userDelegations.endsAt, new Date()),
