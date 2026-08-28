@@ -46,6 +46,12 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   unitCost: decimal("unit_cost", { precision: 18, scale: 4 }),
   totalCost: decimal("total_cost", { precision: 18, scale: 4 }),
   idempotencyKey: text("idempotency_key"),
+  /**
+   * A2. The movement this one compensates. A reversal used to be linked to its
+   * original only by `reference_id` holding the id as text, which no constraint
+   * could check and no index could answer questions about.
+   */
+  correctionOfTransactionId: integer("correction_of_transaction_id"),
   postingDate: date("posting_date"),
   reason: text("reason"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
@@ -64,6 +70,17 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   index("idx_inv_txn_org_variant_type_created").on(table.orgId, table.productVariantId, table.transactionType, table.createdAt),
   index("idx_inv_txn_org_posting_date").on(table.orgId, table.postingDate),
   unique("uniq_inv_stock_transactions_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.correctionOfTransactionId],
+    foreignColumns: [table.orgId, table.id],
+    name: "fk_inv_stock_transactions_correction_of_org",
+  }).onDelete("restrict"),
+  uniqueIndex("uniq_inv_stock_transactions_correction_of")
+    .on(table.orgId, table.correctionOfTransactionId)
+    .where(sql`${table.correctionOfTransactionId} IS NOT NULL`),
+  index("idx_inv_stock_transactions_correction_source")
+    .on(table.orgId, table.id)
+    .where(sql`${table.correctionOfTransactionId} IS NOT NULL`),
   check("chk_inv_stock_transactions_arithmetic", sql`${table.quantityAfter} = ${table.quantityBefore} + ${table.quantityChange}`),
   check("chk_inv_stock_transactions_nonzero", sql`${table.quantityChange} <> 0`),
 ]);

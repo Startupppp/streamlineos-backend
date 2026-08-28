@@ -13,6 +13,7 @@ import { MovementCostingService } from "./movement-costing.service";
 import { InventoryAccountingBridge } from "./accounting-bridge";
 import { UomConversionService } from "./uom-conversion.service";
 import { StockProjectionService } from "./stock-projection.service";
+import { TransitLocationService } from "./transit-location.service";
 
 @Module({
   imports: [AccountingGlModule, AccountingPostingModule],
@@ -28,6 +29,7 @@ import { StockProjectionService } from "./stock-projection.service";
     MovementCostingService,
     InventoryAccountingBridge,
     UomConversionService,
+    TransitLocationService,
   ],
   exports: [StockProjectionService, 
     StockEngineService,
@@ -41,6 +43,7 @@ import { StockProjectionService } from "./stock-projection.service";
     MovementCostingService,
     InventoryAccountingBridge,
     UomConversionService,
+    TransitLocationService,
   ],
 })
 export class InvStockEngineModule {}

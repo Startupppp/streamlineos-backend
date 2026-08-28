@@ -12,6 +12,7 @@ import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { addDec, cmpDec } from "../stock-engine/decimal";
 import { InvBarcodeService } from "../barcode/inv-barcode.service";
+import { StockProjectionService } from "../stock-engine/stock-projection.service";
 import { loadOrderableVariants } from "../products/lib/orderable-variants";
 import type {
   CreateWaveInput,
@@ -26,6 +27,7 @@ export class PickWaveService {
     private readonly warehouseScope: WarehouseScopeService,
     private readonly numSeq: NumberSequenceService,
     private readonly barcode: InvBarcodeService,
+    private readonly projection: StockProjectionService,
   ) {}
 
   /**
@@ -234,6 +236,7 @@ export class PickWaveService {
         .select({
           id: invPickListLines.id,
           productVariantId: invPickListLines.productVariantId,
+          locationId: invPickListLines.locationId,
           quantityToPick: invPickListLines.quantityToPick,
           quantityPicked: invPickListLines.quantityPicked,
         })
@@ -293,6 +296,20 @@ export class PickWaveService {
           ),
         );
 
+      // The substitute is physically in the tote, so it is picked stock and has
+      // to leave availability like any other pick. It is tracked on its own
+      // columns rather than folded into `quantityPicked`, so it needed its own
+      // call — without it, swapping an item made those units sellable twice.
+      if (substituteVariantId !== null && substituteQuantity !== null && line.locationId !== null) {
+        await this.projection.recordPicked(
+          tx,
+          orgId,
+          substituteVariantId,
+          line.locationId,
+          substituteQuantity,
+        );
+      }
+
       const complete = await this.waveIsComplete(tx, orgId, pickListId);
       await tx
         .update(invPickLists)
@@ -330,6 +347,7 @@ export class PickWaveService {
         .select({
           id: invPickListLines.id,
           productVariantId: invPickListLines.productVariantId,
+          locationId: invPickListLines.locationId,
           quantityToPick: invPickListLines.quantityToPick,
           quantityPicked: invPickListLines.quantityPicked,
         })
@@ -374,6 +392,24 @@ export class PickWaveService {
             eq(invPickListLines.id, input.pickLineId),
           ),
         );
+
+      // A1/A2. Wave picking wrote `quantity_picked` and nothing else, so units
+      // standing in a tote were still counted as available and offered to the
+      // next customer — the same defect A1 fixed on the sales-order pick path,
+      // left in place on this one. The single-order path already does this.
+      //
+      // Only the increment, because the bucket is maintained relatively: two
+      // concurrent picks against one line must both count.
+      const pickedAt = input.locationId ?? line.locationId;
+      if (pickedAt !== null) {
+        await this.projection.recordPicked(
+          tx,
+          orgId,
+          line.productVariantId,
+          pickedAt,
+          input.quantityPicked,
+        );
+      }
 
       const complete = await this.waveIsComplete(tx, orgId, pickListId);
 

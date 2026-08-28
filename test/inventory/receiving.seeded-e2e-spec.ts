@@ -238,4 +238,45 @@ describe("[seeded-e2e] goods receipt discrepancies and exact quantities", () => 
     expect(grnLine!.quantity_received).toBe("10.0000");
     expect(grnLine!.discrepancy_reason).toBeNull();
   });
+
+  describe("a terminal purchase order stops being expected", () => {
+    const onOrder = async () => {
+      const [row] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ total: string }>(sql`
+          SELECT COALESCE(SUM(COALESCE(on_order, 0)), 0)::text AS total
+          FROM inv_stock_levels
+          WHERE org_id = ${scene.orgId} AND product_variant_id = ${scene.variantId}`),
+      );
+      return Number(row!.total);
+    };
+
+    it("takes the outstanding quantity back out when the order is cancelled", async () => {
+      // Sending books the goods as expected; nothing took them back out again
+      // when the order was abandoned. Replenishment then read a permanent
+      // phantom arrival and under-ordered that variant every cycle.
+      const before = await onOrder();
+      const { poId } = await sentOrder(30);
+      expect(await onOrder()).toBe(before + 30);
+
+      await asTenant(() =>
+        app.app.get(PoService).cancelPo(scene.orgId, poId, scene.userId),
+      );
+      expect(await onOrder()).toBe(before);
+    });
+
+    it("takes the undelivered remainder back out when a partial order is closed", async () => {
+      const before = await onOrder();
+      const { poId, poLineId } = await sentOrder(20);
+      await receive(poId, { poLineId, quantityReceived: "8.0000", qualityStatus: "ACCEPTED" });
+
+      // 8 arrived, so 12 are still expected — until the buyer closes the order,
+      // at which point nobody is ever going to deliver them.
+      expect(await onOrder()).toBe(before + 12);
+
+      await asTenant(() =>
+        app.app.get(PoService).closePo(scene.orgId, poId, scene.userId),
+      );
+      expect(await onOrder()).toBe(before);
+    });
+  });
 });

@@ -310,6 +310,11 @@ export class SoCoreService {
         qualityHoldQty: true,
         outgoingQty: true,
       },
+      // A2. Availability now depends on where the row stands, not only on its
+      // buckets: goods parked at a warehouse's TRANSIT location are on hand and
+      // are not for sale. Without this the ATP a sales order quotes would
+      // include stock that is physically in a van.
+      with: { location: { columns: { isSellable: true } } },
     });
 
     const grouped = new Map<
@@ -321,6 +326,7 @@ export class SoCoreService {
         blocked: number;
         qualityHold: number;
         outgoing: number;
+        available: number;
       }
     >();
 
@@ -332,6 +338,20 @@ export class SoCoreService {
       const blocked = parseFloat(l.blockedQty ?? "0");
       const qualityHold = parseFloat(l.qualityHoldQty ?? "0");
       const outgoing = parseFloat(l.outgoingQty ?? "0");
+      // A2. Per row, before anything is summed. The subtraction is linear so
+      // the total is the same one summing-then-subtracting produced -- except
+      // that the location gate can only be applied while the row still knows
+      // which location it belongs to.
+      const available = Number(
+        availableQty({
+          on_hand: l.onHand,
+          committed: l.committed,
+          blocked_qty: l.blockedQty,
+          quality_hold_qty: l.qualityHoldQty,
+          outgoing_qty: l.outgoingQty,
+          is_sellable: l.location?.isSellable ?? null,
+        }),
+      );
 
       if (existing) {
         existing.onHand += onHand;
@@ -340,6 +360,7 @@ export class SoCoreService {
         existing.blocked += blocked;
         existing.qualityHold += qualityHold;
         existing.outgoing += outgoing;
+        existing.available += available;
       } else {
         grouped.set(l.productVariantId, {
           onHand,
@@ -348,6 +369,7 @@ export class SoCoreService {
           blocked,
           qualityHold,
           outgoing,
+          available,
         });
       }
     }
@@ -367,19 +389,11 @@ export class SoCoreService {
         blocked,
         qualityHold,
         onOrder,
-        // A1. One formula. This copy omitted outgoing_qty, so a line already
-        // picked and waiting on the bench was offered to the next order —
-        // and `outgoingQty` was reported as `committed`, which is a different
-        // bucket entirely.
-        available: Number(
-          availableQty({
-            on_hand: String(onHand),
-            committed: String(committed),
-            blocked_qty: String(blocked),
-            quality_hold_qty: String(qualityHold),
-            outgoing_qty: String(outgoing),
-          }),
-        ),
+        // A1/A2. One formula, applied per stock row above. This copy omitted
+        // outgoing_qty, so a line already picked and waiting on the bench was
+        // offered to the next order — and `outgoingQty` was reported as
+        // `committed`, which is a different bucket entirely.
+        available: agg?.available ?? 0,
         incomingQty: onOrder,
         outgoingQty: outgoing,
       };

@@ -18,6 +18,7 @@ import { InventoryAccountingBridge } from "./accounting-bridge";
 import { loadCostingContext } from "./costing-context";
 import {
   INV_ERRORS,
+  type StockMovement,
   type StockEngineCommand,
   type StockEngineResult,
   type ReverseCommand,
@@ -69,6 +70,30 @@ function assertBucketsCoherent(
   ) {
     throw new BadRequestException({ code: INV_ERRORS.HOLD_EXCEEDS_ON_HAND });
   }
+}
+
+/**
+ * A2. The cost basis a movement inherits from an earlier one in the same
+ * command, or null when it names none.
+ *
+ * Backward references only, and validated rather than assumed: a forward or
+ * self reference would read an entry that has not been written yet, which
+ * silently yields `undefined` and books the receipt at no cost at all.
+ */
+function resolveInheritedCost(
+  movement: StockMovement,
+  movementIndex: number,
+  derivedUnitCost: ReadonlyArray<string | null>,
+): string | null {
+  const source = movement.costFromMovementIndex;
+  if (source === undefined) return null;
+  if (!Number.isInteger(source) || source < 0 || source >= movementIndex) {
+    throw new BadRequestException({
+      code: INV_ERRORS.INVALID_DOCUMENT_STATE,
+      message: `Movement ${movementIndex} inherits its cost from movement ${source}, which is not an earlier movement in this command`,
+    });
+  }
+  return derivedUnitCost[source] ?? null;
 }
 
 function resolvePostingDate(cmd: StockEngineCommand): string {
@@ -193,7 +218,12 @@ export class StockEngineService {
       })),
     );
 
-    for (const movement of cmd.movements) {
+    // A2. What each movement actually cost, so a later movement in the same
+    // command can be received at the figure an earlier one turned out to
+    // consume rather than at an estimate of it.
+    const derivedUnitCost: Array<string | null> = [];
+
+    for (const [movementIndex, movement] of cmd.movements.entries()) {
       const level = locked.get(
         levelKey({
           productVariantId: movement.productVariantId,
@@ -236,8 +266,45 @@ export class StockEngineService {
         qualityHoldQty: newQualityHold,
       });
 
-      const unitCost = movement.unitCost ?? null;
-      const totalCost = unitCost && positive ? mulDec(unitCost, delta) : null;
+      // A2. The cost side is decided before the fact row is written, so the row
+      // carries its cost from birth. It used to be inserted cost-less and
+      // UPDATEd a moment later, which is the only reason this table had to stay
+      // writable at all.
+      const inheritedUnitCost = resolveInheritedCost(
+        movement,
+        movementIndex,
+        derivedUnitCost,
+      );
+      const costingInput = {
+        orgId,
+        costing,
+        movement,
+        delta,
+        unitCost: inheritedUnitCost ?? movement.unitCost ?? null,
+        onHandBefore: level.onHand,
+        averageCostBefore: level.averageCost,
+        allowNegativeStock: settings.allowNegativeStock,
+        sourceType: cmd.sourceType ?? null,
+        sourceId: cmd.sourceId,
+      };
+      const planned =
+        bucket === "ON_HAND" && !movement.settledCost
+          ? await this.movementCosting.plan(tx, costingInput)
+          : null;
+
+      const unitCost = movement.settledCost
+        ? movement.settledCost.unitCost
+        : planned
+          ? planned.unitCost
+          : costingInput.unitCost;
+      const totalCost = movement.settledCost
+        ? movement.settledCost.totalCost
+        : planned
+          ? planned.totalCost
+          : costingInput.unitCost && positive
+            ? mulDec(costingInput.unitCost, delta)
+            : null;
+      derivedUnitCost[movementIndex] = unitCost;
 
       const [txnRow] = await tx
         .insert(invStockTransactions)
@@ -255,6 +322,7 @@ export class StockEngineService {
           quantityAfter: bucketAfter,
           unitCost,
           totalCost,
+          correctionOfTransactionId: movement.correctionOfTransactionId ?? null,
           idempotencyKey: cmd.idempotencyKey,
           postingDate,
           reason: cmd.reason ?? null,
@@ -270,20 +338,12 @@ export class StockEngineService {
       txnIds.push(txnRow.id);
 
       let newAvgCost = level.averageCost;
-      if (bucket === "ON_HAND") {
-        newAvgCost = await this.movementCosting.applyCosting(
+      if (planned) {
+        newAvgCost = await this.movementCosting.commit(
           tx,
-          orgId,
-          costing,
-          movement,
+          costingInput,
+          planned,
           txnRow.id,
-          delta,
-          unitCost,
-          level.onHand,
-          level.averageCost,
-          settings.allowNegativeStock,
-          cmd.sourceType ?? null,
-          cmd.sourceId,
         );
       }
 
@@ -514,7 +574,9 @@ export class StockEngineService {
         const cmdLevels: StockEngineResult["levels"] = [];
         const decreasedVariantIds = new Set<number>();
 
-        for (const movement of cmd.movements) {
+        const derivedUnitCost: Array<string | null> = [];
+
+        for (const [movementIndex, movement] of cmd.movements.entries()) {
           const levelKey = `${movement.productVariantId}:${movement.locationId}:${movement.lotId ?? null}:${movement.serialId ?? null}`;
           const state = levelMap.get(levelKey);
           if (!state)
@@ -550,9 +612,42 @@ export class StockEngineService {
             qualityHoldQty: newQualityHold,
           });
 
-          const unitCost = movement.unitCost ?? null;
-          const totalCost =
-            unitCost && positive ? mulDec(unitCost, delta) : null;
+          // A2, as in executeInTx: cost decided before the fact row exists.
+          const inheritedUnitCost = resolveInheritedCost(
+            movement,
+            movementIndex,
+            derivedUnitCost,
+          );
+          const costingInput = {
+            orgId,
+            costing,
+            movement,
+            delta,
+            unitCost: inheritedUnitCost ?? movement.unitCost ?? null,
+            onHandBefore: state.onHand,
+            averageCostBefore: state.averageCost,
+            allowNegativeStock: settings.allowNegativeStock,
+            sourceType: cmd.sourceType ?? null,
+            sourceId: cmd.sourceId,
+          };
+          const planned =
+            bucket === "ON_HAND" && !movement.settledCost
+              ? await this.movementCosting.plan(tx, costingInput)
+              : null;
+
+          const unitCost = movement.settledCost
+            ? movement.settledCost.unitCost
+            : planned
+              ? planned.unitCost
+              : costingInput.unitCost;
+          const totalCost = movement.settledCost
+            ? movement.settledCost.totalCost
+            : planned
+              ? planned.totalCost
+              : costingInput.unitCost && positive
+                ? mulDec(costingInput.unitCost, delta)
+                : null;
+          derivedUnitCost[movementIndex] = unitCost;
 
           const [txnRow] = await tx
             .insert(invStockTransactions)
@@ -570,6 +665,7 @@ export class StockEngineService {
               quantityAfter: bucketAfter,
               unitCost,
               totalCost,
+              correctionOfTransactionId: movement.correctionOfTransactionId ?? null,
               idempotencyKey: cmd.idempotencyKey,
               postingDate,
               reason: cmd.reason ?? null,
@@ -585,20 +681,12 @@ export class StockEngineService {
           txnIds.push(txnRow.id);
 
           let newAvgCost = state.averageCost;
-          if (bucket === "ON_HAND") {
-            newAvgCost = await this.movementCosting.applyCosting(
+          if (planned) {
+            newAvgCost = await this.movementCosting.commit(
               tx,
-              orgId,
-              costing,
-              movement,
+              costingInput,
+              planned,
               txnRow.id,
-              delta,
-              unitCost,
-              state.onHand,
-              state.averageCost,
-              settings.allowNegativeStock,
-              cmd.sourceType ?? null,
-              cmd.sourceId,
             );
           }
 
@@ -695,11 +783,52 @@ export class StockEngineService {
         code: INV_ERRORS.INVALID_DOCUMENT_STATE,
       });
 
+    // A2. A posted movement may be corrected once. Reversing it twice unwinds it
+    // twice, and the second unwind is stock that never existed — the idempotency
+    // key stops a retry of the *same* request, not a second request to reverse
+    // the same movement. This check is for a legible error; the partial unique
+    // index on (org_id, correction_of_transaction_id) is what makes it true when
+    // two reversals race, where a check on its own always loses.
+    const existing = await tx
+      .select({ id: invStockTransactions.id })
+      .from(invStockTransactions)
+      .where(
+        and(
+          eq(invStockTransactions.orgId, orgId),
+          eq(invStockTransactions.correctionOfTransactionId, original.id),
+        ),
+      )
+      .limit(1);
+    if (existing.length > 0)
+      throw new BadRequestException({
+        code: INV_ERRORS.INVALID_DOCUMENT_STATE,
+        message: `Movement ${original.id} has already been reversed by movement ${existing[0]!.id}`,
+      });
+
     // Unwind the layer this receipt created before posting the counter-movement.
     // Left to the ordinary issue path, the reversal would consume unrelated
     // older layers and leave the erroneous layer sitting in stock.
+    //
+    // A2. Unwinding it is only half the job, and the missing half was a live
+    // defect: the compensating movement then went down the ordinary issue path
+    // and tried to consume layers *again*. Where the reversed receipt was the
+    // only coverage that raised "cost layers do not cover this issue" and the
+    // reversal was impossible; where older layers existed it succeeded and took
+    // the same value out of inventory twice. `settledCost` says the cost side is
+    // already accounted for.
+    let settledCost: { unitCost: string | null; totalCost: string | null } | undefined;
     if (isPositive(original.quantityChange)) {
-      await this.valuation.reverseReceiptLayer(tx, orgId, original.id);
+      const unwound = await this.valuation.reverseReceiptLayer(tx, orgId, original.id);
+      if (unwound) {
+        settledCost = {
+          unitCost: original.unitCost,
+          totalCost:
+            original.totalCost ??
+            (original.unitCost
+              ? mulDec(original.unitCost, original.quantityChange)
+              : null),
+        };
+      }
     }
 
     const reversalKey = `reversal:${cmd.idempotencyKey}`;
@@ -718,6 +847,9 @@ export class StockEngineService {
           serialId: original.serialId ?? undefined,
           quantityDelta: mulDec(original.quantityChange, "-1"),
           unitCost: original.unitCost ?? undefined,
+          qualityBucket: original.quantityBucket,
+          correctionOfTransactionId: original.id,
+          ...(settledCost ? { settledCost } : {}),
         },
       ],
     });

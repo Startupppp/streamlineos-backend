@@ -29,6 +29,39 @@ export interface StockMovement {
   quantityDelta: string;
   unitCost?: string;
   qualityBucket?: QualityBucket;
+  /**
+   * A2. The posted movement this one compensates. Set by `reverseInTx`; a
+   * correction is the only legitimate way to change what the ledger says, and
+   * the link is what makes the pair legible afterwards.
+   */
+  correctionOfTransactionId?: number;
+  /**
+   * A2. The cost side is already settled by the caller: record this cost on the
+   * row and consume no layers.
+   *
+   * Set when reversing a receipt. `reverseReceiptLayer` has already unwound the
+   * layer that receipt created, so letting the compensating movement take the
+   * ordinary issue path made it consume layers a second time — either failing
+   * outright ("cost layers do not cover this issue") when the reversed receipt
+   * was the only coverage, or, worse, quietly consuming unrelated older layers
+   * and removing the same value from inventory twice.
+   */
+  settledCost?: { unitCost: string | null; totalCost: string | null };
+  /**
+   * A2. Take this receipt's cost basis from what an earlier movement in the
+   * same command actually turned out to cost, by index into `movements`.
+   *
+   * A transfer's transit leg is the case: the goods are received into transit
+   * at exactly what leaving the source consumed, and that figure is not known
+   * until the outbound issue has drawn its layers. Estimating it instead —
+   * average cost, or the oldest open layer — is exact under weighted average
+   * and wrong under FIFO the moment an issue crosses a layer boundary, which
+   * understates inventory for the length of the journey.
+   *
+   * Only a backward reference is legal: a movement cannot inherit from one that
+   * has not been costed yet.
+   */
+  costFromMovementIndex?: number;
 }
 
 export interface StockEngineCommand {

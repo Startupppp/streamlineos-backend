@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   invLots,
   invSalesOrders,
@@ -23,6 +23,7 @@ import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { subDec, cmpDec } from "../stock-engine/decimal";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { ReservationService } from "../stock-engine/reservation.service";
+import { StockProjectionService } from "../stock-engine/stock-projection.service";
 import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 
@@ -36,6 +37,7 @@ export class SoLifecycleService {
     private readonly numSeq: NumberSequenceService,
     private readonly settingsService: InventorySettingsService,
     private readonly reservationService: ReservationService,
+    private readonly projection: StockProjectionService,
     private readonly journalPosting: InventoryAccountingBridge,
     private readonly planLimits: PlanLimitsService,
   ) {}
@@ -97,6 +99,38 @@ export class SoLifecycleService {
       columns: { id: true },
     });
 
+    // A1/A2. Anything already picked for this order is standing in a tote, and
+    // cancelling the order is what sends it back to the shelf. Releasing the
+    // reservations was the only unwind here, so picked-then-cancelled units
+    // stayed in `outgoing_qty` for good — subtracted from availability by every
+    // future query, with no document left alive to explain why. The
+    // reconciliation report names it as `outgoing_vs_picks` drift.
+    const picked = await this.db.execute<{
+      product_variant_id: number;
+      location_id: number;
+      quantity: string;
+    }>(sql`
+      SELECT pll.product_variant_id, pll.location_id, pll.quantity_picked::text AS quantity
+        FROM inv_pick_list_lines pll
+        JOIN inv_so_lines sol ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
+       WHERE pll.org_id = ${orgId}
+         AND sol.so_id = ${soId}
+         AND pll.location_id IS NOT NULL
+         AND pll.quantity_picked::numeric > 0
+      UNION ALL
+      -- A substitute is what actually went in the tote, tracked on its own
+      -- columns rather than folded into quantity_picked, so it needs its own
+      -- release or the swapped-in units stay unsellable.
+      SELECT pll.substitute_variant_id, pll.location_id, pll.substitute_quantity::text
+        FROM inv_pick_list_lines pll
+        JOIN inv_so_lines sol ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
+       WHERE pll.org_id = ${orgId}
+         AND sol.so_id = ${soId}
+         AND pll.location_id IS NOT NULL
+         AND pll.substitute_variant_id IS NOT NULL
+         AND COALESCE(pll.substitute_quantity, 0)::numeric > 0
+    `);
+
     await this.db.transaction(async (tx) => {
       for (const res of reservations) {
         await this.reservationService.releaseReservationInTx(
@@ -104,6 +138,16 @@ export class SoLifecycleService {
           orgId,
           userId,
           res.id,
+        );
+      }
+
+      for (const row of picked) {
+        await this.projection.shipOutgoing(
+          tx,
+          orgId,
+          row.product_variant_id,
+          row.location_id,
+          row.quantity,
         );
       }
 

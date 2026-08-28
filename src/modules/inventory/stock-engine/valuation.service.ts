@@ -50,6 +50,38 @@ export interface IssueResult {
   uncoveredQuantity: string;
 }
 
+/** One layer an issue will draw from, and what it will cost to draw from it. */
+interface PlannedDraw {
+  layerId: number;
+  layerUnitCost: string;
+  take: string;
+  unitCost: string;
+  lineCost: string;
+  remainingAfter: string;
+}
+
+/**
+ * A2 — the decision an issue makes, separated from the writes that record it.
+ *
+ * Costing used to run *after* the stock transaction was inserted, then UPDATE
+ * that row with the cost it had worked out. So a posted movement was editable
+ * by design, and the ledger could not be made append-only while that was true.
+ *
+ * Splitting the issue in two removes the need: `planIssue` locks the layers and
+ * works out the cost, the caller inserts the fact row already carrying it, and
+ * `commitIssue` writes the layer consumption against the row's id. The layer
+ * locks are taken in `planIssue` and held by the surrounding transaction until
+ * commit, so nothing can consume them in between.
+ */
+export interface IssuePlan extends IssueResult {
+  draws: PlannedDraw[];
+  /** Quantity no layer covered, and the cost it will be backfilled at. */
+  uncovered: { quantity: string; unitCost: string } | null;
+}
+
+/** An issue's inputs, before the fact row it will be recorded against exists. */
+export type PlannedIssueInput = Omit<IssueInput, "stockTransactionId">;
+
 /**
  * Owns cost layers, layer consumption and COGS.
  *
@@ -105,17 +137,23 @@ export class ValuationService {
     return averageAfter;
   }
 
-  async recordIssue(tx: Tx, input: IssueInput): Promise<IssueResult> {
-    if (cmpDec(input.quantity, "0") <= 0) {
-      return {
-        totalCost: "0.0000",
-        unitCost: "0.0000",
-        uncoveredQuantity: "0.0000",
-      };
-    }
+  /**
+   * Works out what an issue will cost, taking the layer locks it will need.
+   * Writes nothing: the caller has not inserted the fact row yet.
+   */
+  async planIssue(tx: Tx, input: PlannedIssueInput): Promise<IssuePlan> {
+    const empty: IssuePlan = {
+      totalCost: "0.0000",
+      unitCost: "0.0000",
+      uncoveredQuantity: "0.0000",
+      draws: [],
+      uncovered: null,
+    };
+    if (cmpDec(input.quantity, "0") <= 0) return empty;
 
     const layers = await this.lockConsumableLayers(tx, input);
 
+    const draws: PlannedDraw[] = [];
     let outstanding = input.quantity;
     let totalCost = "0.0000";
 
@@ -127,28 +165,20 @@ export class ValuationService {
       const unitCost = this.issueUnitCost(input, layer.unit_cost);
       const lineCost = mulDec(take, unitCost);
 
-      const newRemaining = subDec(available, take);
-      await tx
-        .update(invValuationLayers)
-        .set({
-          remainingQuantity: newRemaining,
-          remainingValue: mulDec(newRemaining, layer.unit_cost),
-        })
-        .where(eq(invValuationLayers.id, layer.id));
-
-      await tx.insert(invValuationConsumptions).values({
-        orgId: input.orgId,
-        stockTransactionId: input.stockTransactionId,
-        valuationLayerId: layer.id,
-        quantity: take,
+      draws.push({
+        layerId: layer.id,
+        layerUnitCost: layer.unit_cost,
+        take,
         unitCost,
-        totalCost: lineCost,
+        lineCost,
+        remainingAfter: subDec(available, take),
       });
 
       outstanding = subDec(outstanding, take);
       totalCost = addDec(totalCost, lineCost);
     }
 
+    let uncovered: IssuePlan["uncovered"] = null;
     if (cmpDec(outstanding, "0") > 0) {
       // The layers do not cover the issue. With negative stock blocked this can
       // only mean the layer ledger has drifted from the snapshot, which must be
@@ -161,16 +191,71 @@ export class ValuationService {
         });
       }
       const fallback = this.fallbackUnitCost(input);
-      const backfillCost = mulDec(outstanding, fallback);
-      await this.recordUncovered(tx, input, outstanding, fallback);
-      totalCost = addDec(totalCost, backfillCost);
+      uncovered = { quantity: outstanding, unitCost: fallback };
+      totalCost = addDec(totalCost, mulDec(outstanding, fallback));
     }
 
-    const uncovered = outstanding;
     return {
       totalCost,
       unitCost: divDec(totalCost, input.quantity),
-      uncoveredQuantity: uncovered,
+      uncoveredQuantity: outstanding,
+      draws,
+      uncovered,
+    };
+  }
+
+  /**
+   * Records a planned issue against the fact row it belongs to. Every write the
+   * old `recordIssue` performed happens here, in the same order, against layers
+   * this transaction already holds locks on.
+   */
+  async commitIssue(
+    tx: Tx,
+    input: PlannedIssueInput,
+    plan: IssuePlan,
+    stockTransactionId: number,
+  ): Promise<void> {
+    for (const draw of plan.draws) {
+      await tx
+        .update(invValuationLayers)
+        .set({
+          remainingQuantity: draw.remainingAfter,
+          remainingValue: mulDec(draw.remainingAfter, draw.layerUnitCost),
+        })
+        .where(eq(invValuationLayers.id, draw.layerId));
+
+      await tx.insert(invValuationConsumptions).values({
+        orgId: input.orgId,
+        stockTransactionId,
+        valuationLayerId: draw.layerId,
+        quantity: draw.take,
+        unitCost: draw.unitCost,
+        totalCost: draw.lineCost,
+      });
+    }
+
+    if (plan.uncovered) {
+      await this.recordUncovered(
+        tx,
+        { ...input, stockTransactionId },
+        plan.uncovered.quantity,
+        plan.uncovered.unitCost,
+      );
+    }
+  }
+
+  /**
+   * Plan and commit in one call, for callers that already hold the fact row's
+   * id. The engine no longer takes this path — it needs the cost before the row
+   * exists — but the behaviour is identical and the unit tests exercise it.
+   */
+  async recordIssue(tx: Tx, input: IssueInput): Promise<IssueResult> {
+    const plan = await this.planIssue(tx, input);
+    await this.commitIssue(tx, input, plan, input.stockTransactionId);
+    return {
+      totalCost: plan.totalCost,
+      unitCost: plan.unitCost,
+      uncoveredQuantity: plan.uncoveredQuantity,
     };
   }
 
@@ -209,7 +294,7 @@ export class ValuationService {
     return true;
   }
 
-  private async lockConsumableLayers(tx: Tx, input: IssueInput) {
+  private async lockConsumableLayers(tx: Tx, input: PlannedIssueInput) {
     // Bounded: a variant with a long tail of open layers previously locked every
     // one of them on every issue. 500 layers is far more than any single issue
     // needs, and a shortfall past that surfaces as an uncovered quantity.
@@ -236,7 +321,7 @@ export class ValuationService {
     `);
   }
 
-  private issueUnitCost(input: IssueInput, layerUnitCost: string): string {
+  private issueUnitCost(input: PlannedIssueInput, layerUnitCost: string): string {
     switch (input.costingMethod) {
       case "FIFO":
         return layerUnitCost;
@@ -251,7 +336,7 @@ export class ValuationService {
     }
   }
 
-  private fallbackUnitCost(input: IssueInput): string {
+  private fallbackUnitCost(input: PlannedIssueInput): string {
     if (input.costingMethod === "STANDARD" && input.standardCost)
       return input.standardCost;
     return input.averageCost ?? "0.0000";

@@ -7,31 +7,69 @@ import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { ReconciliationQueryInput, RepairInput } from "./dto/reconciliation.schemas";
 
 /**
- * Ledger-to-projection reconciliation — INV-104.
+ * Ledger-to-projection reconciliation — INV-104, extended by A2.
  *
  * `inv_stock_levels` is a projection: every figure in it should be derivable
  * from facts recorded elsewhere. Nothing checked that, so a lost update, a
  * partially applied repair or a direct write would leave the projection quietly
- * disagreeing with the ledger and every dashboard reading the projection.
+ * disagreeing with the facts and every dashboard reading the projection.
  *
- * What is rebuildable, and what is not, is the important distinction here:
+ * All six quantity buckets are now checked, and all six are rebuildable. Each
+ * has its own source of truth:
  *
- *   on_hand, blocked_qty, quality_hold_qty  — sums of ledger movements, by the
- *                                             bucket each movement names
- *   committed                               — sum of ACTIVE reservations; the
- *                                             reservation service moves it
- *                                             directly and writes no ledger row
- *   on_order, outgoing_qty                  — derived from open documents, not
- *                                             ledgerised at all, so this report
- *                                             does not claim to check them
+ *   on_hand, blocked_qty, quality_hold_qty  sums of ledger movements, by the
+ *                                           bucket each movement names
+ *   committed                               sum of ACTIVE reservations at the
+ *                                           row's grain
+ *   on_order                                outstanding quantity on purchase
+ *                                           orders that are SENT or PARTIAL
+ *   outgoing_qty                            picked and not yet shipped, less
+ *                                           the part ACTIVE reservations cover
  *
- * Reporting a figure as reconciled when nothing reconciles it would be worse
+ * The last two were previously declared un-checkable, on the grounds that
+ * nothing wrote them. A1 gave them a writer — `StockProjectionService` — so
+ * that is no longer true, and a report that names a fault it cannot fix (which
+ * `committed` was, being checked but never repaired) is half a tool.
+ *
+ * Three things about the derivations are worth knowing before reading them:
+ *
+ *  1. **Every expected value is a function of the row's *key* alone**
+ *     (org, variant, location, lot, serial) and of other tables — never of the
+ *     bucket columns being rewritten. That is what makes the rebuild idempotent
+ *     and makes repairing six buckets in one statement order-independent.
+ *     In particular `outgoing_qty` subtracts the *reservation-derived*
+ *     `committed`, not the projected one, so a corrupt `committed` cannot
+ *     propagate into the outgoing figure.
+ *
+ *  2. **`on_order` lives on one row per (variant, warehouse).** A purchase
+ *     order names a warehouse, not a bin, so `addOnOrder` parks the whole
+ *     figure on the warehouse's first active receivable location, with a null
+ *     lot and serial. The expected value aggregates the same way: every other
+ *     row in the warehouse expects zero. A warehouse with no receivable
+ *     location has nowhere to hold the figure, and both the check and the
+ *     repair are silent about it — neither invents a projection row.
+ *
+ *  3. **`outgoing_qty` is derived from *every* pick line, not only the ones the
+ *     sales-order writer drives.** `PickWaveService` records picks and never
+ *     touches the bucket, so wave-picked stock shows up here as
+ *     `outgoing_vs_picks` drift. That is a real gap in the writer rather than a
+ *     false positive: the units are picked, they are not shipped, and
+ *     availability should not be offering them. Deriving instead from
+ *     "whatever `SoFulfillmentService` happens to write" would be circular and
+ *     would have hidden the gap. A substituted wave line is counted at its own
+ *     variant's `quantity_picked` only; the substitute itself is not modelled
+ *     by the bucket at all.
+ *
+ * What remains unreconcilable is listed on the report, and stays honest:
+ * reporting a figure as reconciled when nothing reconciles it would be worse
  * than not reporting it.
  */
 
 export type ReconciliationCheck =
   | "projection_vs_ledger"
   | "committed_vs_reservations"
+  | "on_order_vs_purchase_orders"
+  | "outgoing_vs_picks"
   | "ledger_arithmetic"
   | "orphan_projection";
 
@@ -73,7 +111,118 @@ interface DriftQueryRow extends Record<string, unknown> {
 type Executor = Pick<Db, "execute">;
 
 /**
- * The four checks, as standalone queries.
+ * The document-derived expected value of `committed` for the projection row
+ * aliased `sl`.
+ *
+ * Written once and embedded everywhere it is needed rather than transcribed:
+ * the first version of this predicate referenced `res.qty` where the column is
+ * `reserved_qty`, a hand-copied spec passed anyway, and only booting the
+ * service found it. A second copy is a second chance to make that mistake.
+ */
+const EXPECTED_COMMITTED: SQL = sql`
+  COALESCE((
+    SELECT SUM(res.reserved_qty::numeric)
+      FROM inv_stock_reservations res
+     WHERE res.org_id = sl.org_id
+       AND res.product_variant_id = sl.product_variant_id
+       AND res.location_id IS NOT DISTINCT FROM sl.location_id
+       AND res.lot_id IS NOT DISTINCT FROM sl.lot_id
+       AND res.serial_id IS NOT DISTINCT FROM sl.serial_id
+       AND res.status = 'ACTIVE'
+  ), 0)`;
+
+/**
+ * The document-derived expected value of `on_order` for the row aliased `sl`.
+ *
+ * Outstanding, not ordered: `quantity - quantity_received` per line, clamped at
+ * zero so an over-receipt on one line cannot eat another line's inbound. Only
+ * SENT and PARTIAL orders count — a draft has not been placed, and a received,
+ * closed or cancelled one is no longer on its way.
+ *
+ * The `me.id = (SELECT … LIMIT 1)` test is the load-bearing half: it reproduces
+ * `addOnOrder`'s choice of row, so exactly one row per (variant, warehouse)
+ * expects the figure and every other row expects zero. Aggregate any other way
+ * and every row in the warehouse reads as drift.
+ */
+const EXPECTED_ON_ORDER: SQL = sql`
+  COALESCE((
+    SELECT SUM(GREATEST(0, pol.quantity::numeric - pol.quantity_received::numeric))
+      FROM inv_locations me
+      JOIN inv_po_lines pol
+        ON pol.org_id = sl.org_id
+       AND pol.product_variant_id = sl.product_variant_id
+      JOIN inv_purchase_orders po
+        ON po.org_id = pol.org_id
+       AND po.id = pol.po_id
+       AND po.warehouse_id = me.warehouse_id
+     WHERE me.org_id = sl.org_id
+       AND me.id = sl.location_id
+       AND sl.lot_id IS NULL
+       AND sl.serial_id IS NULL
+       AND po.status IN ('SENT', 'PARTIAL')
+       AND me.id = (
+             SELECT anchor.id
+               FROM inv_locations anchor
+              WHERE anchor.org_id = me.org_id
+                AND anchor.warehouse_id = me.warehouse_id
+                AND anchor.is_active = true
+                AND anchor.is_receivable = true
+              ORDER BY anchor.id
+              LIMIT 1)
+  ), 0)`;
+
+/**
+ * The document-derived expected value of `outgoing_qty` for the row aliased
+ * `sl`.
+ *
+ * Two halves, both from `recordPicked`'s doc comment, which is the authority on
+ * what this bucket means:
+ *
+ *   picked and not yet shipped — pick lines at this (variant, location),
+ *     belonging to a sales order that has not reached a shipped, invoiced,
+ *     closed or cancelled state. The in-flight statuses are enumerated
+ *     positively so that a status added later defaults to "no longer on the
+ *     bench" rather than silently inflating the bucket.
+ *
+ *   less the part ACTIVE reservations cover — `committed` and `outgoing_qty`
+ *     are disjoint by construction: reserved units are already out of
+ *     availability through `committed`, and counting them again would subtract
+ *     the same goods twice.
+ *
+ * Matched on (variant, location) with no lot or serial term, because that is
+ * exactly what `recordPicked` updates on. Narrowing it to the full natural key
+ * would report drift on every lot-tracked row the writer fans out to.
+ */
+const EXPECTED_OUTGOING: SQL = sql`
+  GREATEST(0, COALESCE((
+    SELECT SUM(
+             CASE WHEN pll.product_variant_id = sl.product_variant_id
+                  THEN pll.quantity_picked::numeric ELSE 0 END
+             -- A substitute is what actually went in the tote. It is tracked on
+             -- its own columns rather than folded into quantity_picked (packing
+             -- keys on product_variant_id and would otherwise accept a package
+             -- of the original), so it needs its own term here or swapping an
+             -- item leaves those units sellable.
+           + CASE WHEN pll.substitute_variant_id = sl.product_variant_id
+                  THEN COALESCE(pll.substitute_quantity, 0)::numeric ELSE 0 END
+           )
+      FROM inv_pick_list_lines pll
+      JOIN inv_pick_lists pl
+        ON pl.org_id = pll.org_id AND pl.id = pll.pick_list_id
+      JOIN inv_so_lines sol
+        ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
+      JOIN inv_sales_orders so
+        ON so.org_id = sol.org_id AND so.id = sol.so_id
+     WHERE pll.org_id = sl.org_id
+       AND (pll.product_variant_id = sl.product_variant_id
+            OR pll.substitute_variant_id = sl.product_variant_id)
+       AND pll.location_id = sl.location_id
+       AND pl.status <> 'CANCELLED'
+       AND so.status IN ('DRAFT', 'CONFIRMED', 'PARTIALLY_RESERVED', 'RESERVED', 'PICKED', 'PACKED')
+  ), 0) - ${EXPECTED_COMMITTED})`;
+
+/**
+ * The six checks, as standalone queries.
  *
  * Exported because the real-database spec has to run *these*, not a
  * transcription of them: the first version of the committed check referenced
@@ -119,20 +268,43 @@ export const reconciliationQueries = {
       SELECT sl.id AS stock_level_id, sl.product_variant_id, sl.location_id, sl.lot_id, sl.serial_id,
              'committed' AS field,
              sl.committed::text AS projected,
-             COALESCE(r.total, 0)::text AS expected,
-             (sl.committed::numeric - COALESCE(r.total, 0))::text AS difference
+             e.expected::text AS expected,
+             (sl.committed::numeric - e.expected)::text AS difference
       FROM inv_stock_levels sl
-      LEFT JOIN LATERAL (
-        SELECT SUM(res.reserved_qty::numeric) AS total
-        FROM inv_stock_reservations res
-        WHERE res.org_id = sl.org_id
-          AND res.product_variant_id = sl.product_variant_id
-          AND res.location_id IS NOT DISTINCT FROM sl.location_id
-          AND res.lot_id IS NOT DISTINCT FROM sl.lot_id
-          AND res.serial_id IS NOT DISTINCT FROM sl.serial_id
-          AND res.status = 'ACTIVE'
-      ) r ON TRUE
-      WHERE ${where} AND sl.committed::numeric <> COALESCE(r.total, 0)
+      CROSS JOIN LATERAL (SELECT ${EXPECTED_COMMITTED} AS expected) e
+      WHERE ${where} AND sl.committed::numeric <> e.expected
+      ORDER BY sl.id
+      LIMIT ${cap}
+    `);
+  },
+
+  /** on_order against the purchase orders that are supposed to have produced it. */
+  onOrderDrift(tx: Executor, orgId: string, where: SQL, cap: number) {
+    return tx.execute<DriftQueryRow>(sql`
+      SELECT sl.id AS stock_level_id, sl.product_variant_id, sl.location_id, sl.lot_id, sl.serial_id,
+             'on_order' AS field,
+             COALESCE(sl.on_order, 0)::text AS projected,
+             e.expected::text AS expected,
+             (COALESCE(sl.on_order, 0)::numeric - e.expected)::text AS difference
+      FROM inv_stock_levels sl
+      CROSS JOIN LATERAL (SELECT ${EXPECTED_ON_ORDER} AS expected) e
+      WHERE ${where} AND COALESCE(sl.on_order, 0)::numeric <> e.expected
+      ORDER BY sl.id
+      LIMIT ${cap}
+    `);
+  },
+
+  /** outgoing_qty against the picks that are supposed to have produced it. */
+  outgoingDrift(tx: Executor, orgId: string, where: SQL, cap: number) {
+    return tx.execute<DriftQueryRow>(sql`
+      SELECT sl.id AS stock_level_id, sl.product_variant_id, sl.location_id, sl.lot_id, sl.serial_id,
+             'outgoing_qty' AS field,
+             COALESCE(sl.outgoing_qty, 0)::text AS projected,
+             e.expected::text AS expected,
+             (COALESCE(sl.outgoing_qty, 0)::numeric - e.expected)::text AS difference
+      FROM inv_stock_levels sl
+      CROSS JOIN LATERAL (SELECT ${EXPECTED_OUTGOING} AS expected) e
+      WHERE ${where} AND COALESCE(sl.outgoing_qty, 0)::numeric <> e.expected
       ORDER BY sl.id
       LIMIT ${cap}
     `);
@@ -182,9 +354,19 @@ export const reconciliationQueries = {
   },
 
   /**
-   * Rebuilds the ledger-derived buckets. Buckets the ledger does not describe
-   * (on_order, outgoing_qty) are left exactly as they were rather than zeroed on
-   * the way past.
+   * Rebuilds all six quantity buckets from their sources.
+   *
+   * `average_cost` is not one of them and is deliberately left alone: it is a
+   * running weighted average, so only a sequential replay of the ledger could
+   * rebuild it, and this is a set-based statement.
+   *
+   * Two properties this statement must keep. It takes `FOR UPDATE OF sl`, so a
+   * concurrent writer to the same grain blocks rather than racing; and it
+   * updates only rows that actually differ, so a repeat is a genuine no-op
+   * rather than a no-op that still writes and still bumps `updated_at`. Every
+   * expected value is computed from the row's key and other tables — never from
+   * the bucket columns being rewritten — so the six can be repaired in one
+   * statement without the order of assignment mattering.
    */
   rebuild(tx: Executor, orgId: string, where: SQL) {
     return tx.execute<{ id: number }>(sql`
@@ -199,7 +381,10 @@ export const reconciliationQueries = {
         SELECT sl.id,
                COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.quantity_bucket = 'ON_HAND'), 0) AS on_hand,
                COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.quantity_bucket = 'BLOCKED'), 0) AS blocked_qty,
-               COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.quantity_bucket = 'QUALITY_HOLD'), 0) AS quality_hold_qty
+               COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.quantity_bucket = 'QUALITY_HOLD'), 0) AS quality_hold_qty,
+               ${EXPECTED_COMMITTED} AS committed,
+               ${EXPECTED_ON_ORDER} AS on_order,
+               ${EXPECTED_OUTGOING} AS outgoing_qty
         FROM inv_stock_levels sl
         WHERE ${where}
         ORDER BY sl.id
@@ -208,12 +393,18 @@ export const reconciliationQueries = {
       UPDATE inv_stock_levels dest
       SET on_hand = target.on_hand,
           blocked_qty = target.blocked_qty,
-          quality_hold_qty = target.quality_hold_qty
+          quality_hold_qty = target.quality_hold_qty,
+          committed = target.committed,
+          on_order = target.on_order,
+          outgoing_qty = target.outgoing_qty
       FROM target
       WHERE dest.id = target.id
         AND (dest.on_hand::numeric <> target.on_hand
           OR COALESCE(dest.blocked_qty, 0)::numeric <> target.blocked_qty
-          OR COALESCE(dest.quality_hold_qty, 0)::numeric <> target.quality_hold_qty)
+          OR COALESCE(dest.quality_hold_qty, 0)::numeric <> target.quality_hold_qty
+          OR dest.committed::numeric <> target.committed
+          OR COALESCE(dest.on_order, 0)::numeric <> target.on_order
+          OR COALESCE(dest.outgoing_qty, 0)::numeric <> target.outgoing_qty)
       RETURNING dest.id
     `);
   },
@@ -236,6 +427,16 @@ export function reconciliationFilters(
   return sql.join(parts, sql` AND `);
 }
 
+/**
+ * What this report still does not claim to check.
+ *
+ * One entry, and it is a genuine one rather than a bucket nobody got round to:
+ * every quantity bucket is now derived from documents or from the ledger.
+ */
+const UNRECONCILABLE = [
+  "average_cost — a running weighted average, not a quantity bucket: it depends on the order movements arrived in, so only a sequential replay could rebuild it, and this repair is set-based",
+];
+
 @Injectable()
 export class InvReconciliationService {
   constructor(
@@ -255,9 +456,11 @@ export class InvReconciliationService {
     // One extra row distinguishes "exactly at the cap" from "there is more".
     const cap = query.limit + 1;
 
-    const [buckets, committed, arithmetic, orphans] = await Promise.all([
+    const [buckets, committed, onOrder, outgoing, arithmetic, orphans] = await Promise.all([
       reconciliationQueries.bucketDrift(this.db, orgId, where, cap),
       reconciliationQueries.committedDrift(this.db, orgId, where, cap),
+      reconciliationQueries.onOrderDrift(this.db, orgId, where, cap),
+      reconciliationQueries.outgoingDrift(this.db, orgId, where, cap),
       reconciliationQueries.arithmeticAnomalies(this.db, orgId, scope.location(sql.raw("t.location_id")), cap),
       reconciliationQueries.orphanProjections(this.db, orgId, where, cap),
     ]);
@@ -265,6 +468,8 @@ export class InvReconciliationService {
     const drift: DriftRow[] = [
       ...buckets.map((r) => this.toDrift("projection_vs_ledger", r)),
       ...committed.map((r) => this.toDrift("committed_vs_reservations", r)),
+      ...onOrder.map((r) => this.toDrift("on_order_vs_purchase_orders", r)),
+      ...outgoing.map((r) => this.toDrift("outgoing_vs_picks", r)),
       ...arithmetic.map((r) => this.toDrift("ledger_arithmetic", r)),
       ...orphans.map((r) => this.toDrift("orphan_projection", r)),
     ];
@@ -276,11 +481,15 @@ export class InvReconciliationService {
         warehouseId: query.warehouseId ?? null,
         productVariantId: query.productVariantId ?? null,
       },
-      checked: ["projection_vs_ledger", "committed_vs_reservations", "ledger_arithmetic", "orphan_projection"],
-      unreconcilable: [
-        "on_order — derived from open purchase orders, never written to the ledger",
-        "outgoing_qty — derived from open picks and shipments, never written to the ledger",
+      checked: [
+        "projection_vs_ledger",
+        "committed_vs_reservations",
+        "on_order_vs_purchase_orders",
+        "outgoing_vs_picks",
+        "ledger_arithmetic",
+        "orphan_projection",
       ],
+      unreconcilable: [...UNRECONCILABLE],
       drift: drift.slice(0, query.limit),
       driftCount: drift.length,
       truncated: drift.length > query.limit,
@@ -302,16 +511,12 @@ export class InvReconciliationService {
     };
   }
 
-
-
-
-
   /**
-   * Rebuilds the ledger-derived buckets from the ledger.
+   * Rebuilds every quantity bucket from the facts that define it.
    *
-   * This rewrites a projection, not history: the movements themselves are never
-   * touched, and a bucket the ledger does not describe (on_order, outgoing_qty)
-   * is left exactly as it was rather than being zeroed on the way past.
+   * This rewrites a projection, not history: the movements, reservations,
+   * purchase orders and pick lines it reads are never touched. `average_cost`
+   * is left exactly as it was rather than zeroed on the way past.
    *
    * Dry run by default, and re-running after a successful repair reports zero
    * rows because there is no longer any difference to write.

@@ -237,6 +237,109 @@ describe("[seeded-e2e] picking waves", () => {
     expect(result.waveComplete).toBe(true);
   });
 
+  it("takes wave-picked units out of availability", async () => {
+    // A1/A2. `confirmPick` wrote `quantity_picked` and nothing else, so units
+    // already in a tote were still offered to the next customer — the single
+    // order pick path maintained `outgoing_qty` and this one did not. The
+    // reconciliation report named it as `outgoing_vs_picks` drift, which is how
+    // it was found.
+    //
+    // Picked from a *second* bin on purpose. `committed` and `outgoing_qty` are
+    // disjoint by construction — only the part no reservation covers is added —
+    // so a pick from the bin the order reserved could leave the bucket at zero
+    // legitimately, and the assertion would hold whether or not the writer ran.
+    // No reservation sits on this bin, so every picked unit has to land here.
+    const db = () => app.app.get<Db>(DRIZZLE);
+    const suffix = randomUUID().slice(0, 6);
+    const [spare] = await asTenant(() =>
+      db().execute<{ id: number }>(sql`
+        INSERT INTO inv_locations (org_id, warehouse_id, name, code, location_type)
+        VALUES (${scene.orgId}, ${scene.warehouseId}, 'Overflow', ${`OVF${suffix}`}, 'BIN')
+        RETURNING id`),
+    );
+    const spareId = spare!.id;
+
+    await asTenant(() =>
+      app.app.get(StockEngineService).execute(scene.orgId, scene.userId, {
+        idempotencyKey: `wave-outgoing-${suffix}`,
+        sourceType: "picking-waves-fixture",
+        sourceId: suffix,
+        movements: [
+          {
+            transactionType: "PURCHASE",
+            productVariantId: scene.variantId,
+            locationId: spareId,
+            quantityDelta: "10.0000",
+            unitCost: "1.0000",
+          },
+        ],
+      }),
+    );
+
+    const bucketsAt = async (locationId: number) => {
+      const [row] = await asTenant(() =>
+        db().execute<{ committed: string; outgoing: string }>(sql`
+          SELECT COALESCE(SUM(committed), 0)::text AS committed,
+                 COALESCE(SUM(COALESCE(outgoing_qty, 0)), 0)::text AS outgoing
+          FROM inv_stock_levels
+          WHERE org_id = ${scene.orgId}
+            AND product_variant_id = ${scene.variantId}
+            AND location_id = ${locationId}`),
+      );
+      return { committed: Number(row!.committed), outgoing: Number(row!.outgoing) };
+    };
+
+    const before = await bucketsAt(spareId);
+    expect(before.committed).toBe(0);
+    expect(before.outgoing).toBe(0);
+
+    const order = await confirmedOrder(3);
+    const wave = await asTenant(() =>
+      waves().createWave(scene.orgId, scene.userId, {
+        warehouseId: scene.warehouseId,
+        soIds: [order],
+      }),
+    );
+    const detail = await asTenant(() =>
+      waves().getWave(scene.orgId, scene.userId, wave.pickListId),
+    );
+
+    await asTenant(() =>
+      waves().confirmPick(scene.orgId, scene.userId, wave.pickListId, {
+        pickLineId: detail.lines[0]!.id,
+        quantityPicked: "3.0000",
+        locationId: spareId,
+      }),
+    );
+
+    const after = await bucketsAt(spareId);
+    expect(after.outgoing).toBe(3);
+    // Availability at that bin drops by exactly the picked quantity: the goods
+    // are on the shelf but spoken for.
+    const [level] = await asTenant(() =>
+      db().execute<{ available: string }>(sql`
+        SELECT (on_hand::numeric - committed::numeric
+                - COALESCE(blocked_qty, 0)::numeric
+                - COALESCE(quality_hold_qty, 0)::numeric
+                - COALESCE(outgoing_qty, 0)::numeric)::text AS available
+        FROM inv_stock_levels
+        WHERE org_id = ${scene.orgId}
+          AND product_variant_id = ${scene.variantId}
+          AND location_id = ${spareId}`),
+    );
+    expect(Number(level!.available)).toBe(7);
+
+    // A1/A2. Cancelling sends the tote back to the shelf. Releasing the
+    // reservations used to be the only unwind, so picked-then-cancelled units
+    // stayed in `outgoing_qty` for good — permanently unsellable stock with no
+    // live document left to explain why.
+    await asTenant(() =>
+      app.app.get(SoLifecycleService).cancelSo(scene.orgId, order, scene.userId),
+    );
+    const cancelled = await bucketsAt(spareId);
+    expect(cancelled.outgoing).toBe(0);
+  });
+
   it("refuses a confirmation whose scan is a different product", async () => {
     // The reason this check lives on the server: the screen is showing the
     // task, so it agrees with itself whatever is actually in the picker's hand.

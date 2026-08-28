@@ -107,7 +107,8 @@ function defaultAudit() {
 
 function defaultMovementCosting() {
   return {
-    applyCosting: jest.fn(async () => null),
+    plan: jest.fn(async () => ({ kind: "receipt", costingMethod: "FIFO", unitCost: null, totalCost: null })),
+    commit: jest.fn(async () => null),
     emitLowStock: jest.fn(async () => undefined),
   };
 }

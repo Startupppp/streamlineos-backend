@@ -38,6 +38,8 @@ function computePoTotals(lines: Array<{ quantity: number; unitCost: string; taxR
   };
 }
 
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
 @Injectable()
 export class PoService {
   constructor(
@@ -342,6 +344,52 @@ export class PoService {
     return sent;
   }
 
+  /**
+   * A1/A2. Take the still-outstanding quantity of a purchase order back out of
+   * `on_order`.
+   *
+   * `sendPo` books the outstanding quantity as expected and a receipt takes the
+   * arrived part back out, but the two terminal states did not: a cancelled or
+   * closed order left its unreceived remainder booked as inbound forever, and
+   * replenishment reading a permanent phantom arrival under-orders that variant
+   * every cycle. The reconciliation report names this as `on_order_vs_purchase_orders`
+   * drift, which is how it surfaced.
+   *
+   * Idempotent in effect: `addOnOrder` clamps at zero, and both callers move the
+   * order into a terminal status in the same transaction, so it cannot run twice.
+   */
+  private async releaseOnOrder(
+    tx: Tx,
+    orgId: string,
+    poId: number,
+    warehouseId: number | null,
+  ): Promise<void> {
+    if (warehouseId === null) return;
+    const lines = await tx
+      .select({
+        productVariantId: invPoLines.productVariantId,
+        quantity: invPoLines.quantity,
+        quantityReceived: invPoLines.quantityReceived,
+      })
+      .from(invPoLines)
+      .where(and(eq(invPoLines.orgId, orgId), eq(invPoLines.poId, poId)));
+
+    for (const line of lines) {
+      const outstanding = subDec(
+        String(line.quantity),
+        String(line.quantityReceived),
+      );
+      if (!isPositive(outstanding)) continue;
+      await this.projection.addOnOrder(
+        tx,
+        orgId,
+        line.productVariantId,
+        warehouseId,
+        `-${outstanding}`,
+      );
+    }
+  }
+
   async closePo(orgId: string, poId: number, userId: string) {
     const po = await this.db.query.invPurchaseOrders.findFirst({
       where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
@@ -352,10 +400,15 @@ export class PoService {
       throw new BadRequestException("Only RECEIVED or PARTIAL purchase orders can be closed");
     }
 
-    const [closed] = await this.db.update(invPurchaseOrders)
-      .set({ status: "CLOSED", updatedAt: new Date() })
-      .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
-      .returning();
+    const [closed] = await this.db.transaction(async (tx) => {
+      // A PARTIAL order closes with a remainder nobody will ever deliver.
+      await this.releaseOnOrder(tx, orgId, poId, po.warehouseId);
+      return tx
+        .update(invPurchaseOrders)
+        .set({ status: "CLOSED", updatedAt: new Date() })
+        .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
+        .returning();
+    });
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
     await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
@@ -380,10 +433,16 @@ export class PoService {
       throw new BadRequestException("Cannot cancel a purchase order that has already received goods");
     }
 
-    const [cancelled] = await this.db.update(invPurchaseOrders)
-      .set({ status: "CANCELLED", updatedAt: new Date() })
-      .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
-      .returning();
+    const [cancelled] = await this.db.transaction(async (tx) => {
+      // Only a SENT order ever booked anything; a DRAFT was never expected.
+      if (po.status === "SENT")
+        await this.releaseOnOrder(tx, orgId, poId, po.warehouseId);
+      return tx
+        .update(invPurchaseOrders)
+        .set({ status: "CANCELLED", updatedAt: new Date() })
+        .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
+        .returning();
+    });
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
     await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));

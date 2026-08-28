@@ -11,9 +11,19 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import { TransitLocationService } from "../stock-engine/transit-location.service";
 import type { ListTransfersInput, CreateTransferInput, CompleteTransferInput } from "./dto/inv-stock.schemas";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/**
+ * The grain a transfer's cost is carried at. Valuation layers are keyed per
+ * (variant, location, lot) and know nothing about serials, so a serial is not
+ * part of this key.
+ */
+function costKey(line: { productVariantId: number; lotId: number | null }): string {
+  return `${line.productVariantId}:${line.lotId ?? ""}`;
+}
 
 @Injectable()
 export class InvStockTransfersService {
@@ -24,6 +34,7 @@ export class InvStockTransfersService {
     private readonly reservationService: ReservationService,
     private readonly numSeq: NumberSequenceService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly transitLocations: TransitLocationService,
   ) {}
 
   async listTransfers(orgId: string, filters: ListTransfersInput, scope: DataScope = "all", userId?: string) {
@@ -193,6 +204,13 @@ export class InvStockTransfersService {
 
   // B1-06: engine.executeInTx + reservation consumption + status update in one transaction.
   // invalidateCaches (stock levels + reservations list) called after the outer tx commits.
+  //
+  // A2. Two movements per line, not one. TRANSFER_OUT empties the source bin and
+  // TRANSFER_IN fills the source warehouse's transit location in the same engine
+  // command, so org-wide on-hand -- and the valuation that follows it -- is
+  // unchanged by a dispatch. Before this the goods were on no stock level at all
+  // between dispatch and completion: total on-hand silently dropped for the
+  // duration of the journey and nothing told a planner where the units were.
   async dispatchTransfer(orgId: string, userId: string, transferId: number, idempotencyKey: string) {
     const transfer = await this.db.query.invStockTransfers.findFirst({
       where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
@@ -204,25 +222,46 @@ export class InvStockTransfersService {
     }
 
     await this.db.transaction(async (tx) => {
+      const sourceWarehouseId = await this.sourceWarehouseId(tx, orgId, transfer);
+      const transitLocationId = await this.transitLocations.resolve(tx, orgId, sourceWarehouseId);
       const result = await this.engine.executeInTx(tx, orgId, userId, {
         idempotencyKey,
         sourceType: "inv_transfer",
         sourceId: transferId.toString(),
         reason: `Dispatch transfer ${transfer.referenceNumber}`,
-        movements: transfer.lines.map((line) => ({
-          transactionType: "TRANSFER_OUT" as const,
-          productVariantId: line.productVariantId,
-          locationId: transfer.fromLocationId,
-          quantityDelta: `-${line.quantity}`,
-          lotId: line.lotId ?? undefined,
-          serialId: line.serialId ?? undefined,
-        })),
+        // Paired, and the transit receipt inherits the outbound issue's derived
+        // cost by index: the goods enter transit at exactly what leaving the
+        // source consumed. An estimate read beforehand — average cost, or the
+        // oldest open layer — is exact under weighted average but wrong under
+        // FIFO as soon as an issue crosses a layer boundary, and understates
+        // inventory for the whole journey.
+        movements: transfer.lines.flatMap((line, lineIndex) => [
+          {
+            transactionType: "TRANSFER_OUT" as const,
+            productVariantId: line.productVariantId,
+            locationId: transfer.fromLocationId,
+            quantityDelta: `-${line.quantity}`,
+            lotId: line.lotId ?? undefined,
+            serialId: line.serialId ?? undefined,
+          },
+          {
+            transactionType: "TRANSFER_IN" as const,
+            productVariantId: line.productVariantId,
+            locationId: transitLocationId,
+            quantityDelta: line.quantity,
+            lotId: line.lotId ?? undefined,
+            serialId: line.serialId ?? undefined,
+            costFromMovementIndex: lineIndex * 2,
+          },
+        ]),
       });
 
       // Carry the cost the source layers were actually consumed at onto the
       // line, so completion can rebuild it at the destination. Cost layers are
       // keyed per location, so without this the stock arrives with no basis.
-      await this.stampDispatchedCost(tx, orgId, transfer.lines, result.transactionIds);
+      await this.stampDispatchedCost(
+        tx, orgId, transfer.fromLocationId, transfer.lines, result.transactionIds,
+      );
 
       if (transfer.status === "RESERVED") {
         const activeReservations = await tx
@@ -258,10 +297,19 @@ export class InvStockTransfersService {
    * Reads back the unit cost the engine derived for each TRANSFER_OUT and stores
    * it on the matching transfer line. Matched on (variant, lot) because a
    * transfer may move several lots of the same variant.
+   *
+   * A2. A dispatch now writes two rows per line, and the second one is a
+   * TRANSFER_IN at the transit location whose cost is the estimated basis this
+   * service handed the engine, not the cost the source layers were actually
+   * consumed at. Matching it instead of the OUT leg would cost the destination
+   * from the waypoint's own inbound number and lose the entire point of
+   * carrying the cost across, so the read is pinned to the OUT leg twice over:
+   * by transaction type and by source location.
    */
   private async stampDispatchedCost(
     tx: Tx,
     orgId: string,
+    fromLocationId: number,
     lines: ReadonlyArray<{ id: number; productVariantId: number; lotId: number | null }>,
     transactionIds: readonly number[],
   ): Promise<void> {
@@ -277,6 +325,8 @@ export class InvStockTransfersService {
       .where(and(
         eq(invStockTransactions.orgId, orgId),
         inArray(invStockTransactions.id, [...transactionIds]),
+        eq(invStockTransactions.transactionType, "TRANSFER_OUT"),
+        eq(invStockTransactions.locationId, fromLocationId),
       ));
 
     const costByKey = new Map<string, string>();
@@ -284,7 +334,7 @@ export class InvStockTransfersService {
       if (t.unitCost) costByKey.set(`${t.productVariantId}:${t.lotId ?? ""}`, t.unitCost);
 
     for (const line of lines) {
-      const cost = costByKey.get(`${line.productVariantId}:${line.lotId ?? ""}`);
+      const cost = costByKey.get(costKey(line));
       if (!cost) continue;
       await tx.update(invStockTransferLines)
         .set({ dispatchedUnitCost: cost })
@@ -292,8 +342,48 @@ export class InvStockTransfersService {
     }
   }
 
+  /**
+   * The warehouse the goods are leaving.
+   *
+   * `from_warehouse_id` is nullable on the header — a transfer may name only its
+   * locations — so the location's own warehouse is the fallback, and the only
+   * answer that is always available.
+   */
+  private async sourceWarehouseId(
+    tx: Tx,
+    orgId: string,
+    transfer: { fromWarehouseId: number | null; fromLocationId: number },
+  ): Promise<number> {
+    if (transfer.fromWarehouseId !== null) return transfer.fromWarehouseId;
+    const [row] = await tx.execute<{ warehouse_id: number }>(sql`
+      SELECT warehouse_id FROM inv_locations
+      WHERE org_id = ${orgId} AND id = ${transfer.fromLocationId}
+      LIMIT 1
+    `);
+    if (!row) throw new BadRequestException("Transfer source location no longer exists");
+    return Number(row.warehouse_id);
+  }
+
   // B1-07: engine.executeInTx + line quantityReceived updates + status update in one transaction.
   // invalidateCaches called after.
+  //
+  // A2. The mirror of dispatch: TRANSFER_OUT takes the goods off the source
+  // warehouse's transit location and TRANSFER_IN puts them in the destination
+  // bin, in one command, so on-hand is conserved on arrival exactly as it was on
+  // departure.
+  //
+  // Only what was actually received leaves transit. `quantityReceived` may be
+  // less than what was dispatched -- a short receipt is a real event, not an
+  // error -- and the shortfall stays standing at the transit location rather
+  // than being silently written off. It is on hand, it is not sellable, and it
+  // is visible to anyone asking where the missing units went.
+  //
+  // The transit leg is skipped when the transfer never reached IN_TRANSIT.
+  // Completing straight from PENDING or RESERVED posts a destination receipt
+  // with no matching issue anywhere -- stock from nowhere -- which is a
+  // pre-existing hole in this state machine and not one this change opens or
+  // closes; adding a transit issue for goods that were never dispatched would
+  // simply fail for want of stock.
   async completeTransfer(orgId: string, userId: string, transferId: number, data: CompleteTransferInput, idempotencyKey: string) {
     const transfer = await this.db.query.invStockTransfers.findFirst({
       where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
@@ -303,24 +393,42 @@ export class InvStockTransfersService {
     if (transfer.status !== "IN_TRANSIT" && transfer.status !== "PENDING" && transfer.status !== "RESERVED") {
       throw new BadRequestException("Transfer cannot be completed in its current status");
     }
+    const wasDispatched = transfer.status === "IN_TRANSIT";
 
-    const movements = data.lines
-      .map((completion) => {
+    await this.db.transaction(async (tx: Tx) => {
+      const transitLocationId = wasDispatched
+        ? await this.transitLocations.resolve(
+            tx, orgId, await this.sourceWarehouseId(tx, orgId, transfer),
+          )
+        : null;
+
+      const movements = data.lines.flatMap((completion) => {
         const line = transfer.lines.find((l) => l.id === completion.transferLineId);
-        if (!line || completion.quantityReceived <= 0) return null;
-        return {
+        if (!line || completion.quantityReceived <= 0) return [];
+        const received = completion.quantityReceived.toFixed(4);
+        const arrival = {
           transactionType: "TRANSFER_IN" as const,
           productVariantId: line.productVariantId,
           locationId: transfer.toLocationId,
-          quantityDelta: completion.quantityReceived.toFixed(4),
+          quantityDelta: received,
           lotId: line.lotId ?? undefined,
           serialId: line.serialId ?? undefined,
           unitCost: line.dispatchedUnitCost ?? undefined,
         };
-      })
-      .filter((m): m is NonNullable<typeof m> => m !== null);
+        if (transitLocationId === null) return [arrival];
+        return [
+          {
+            transactionType: "TRANSFER_OUT" as const,
+            productVariantId: line.productVariantId,
+            locationId: transitLocationId,
+            quantityDelta: `-${received}`,
+            lotId: line.lotId ?? undefined,
+            serialId: line.serialId ?? undefined,
+          },
+          arrival,
+        ];
+      });
 
-    await this.db.transaction(async (tx: Tx) => {
       await this.engine.executeInTx(tx, orgId, userId, {
         idempotencyKey,
         sourceType: "inv_transfer",
@@ -356,6 +464,13 @@ export class InvStockTransfersService {
       columns: { id: true, status: true },
     });
     if (!transfer) throw new NotFoundException("Transfer not found");
+    // A2. Deliberately unchanged. Cancelling stops at RESERVED, so no cancel can
+    // strand goods at a transit location -- there is nothing there to strand
+    // until a dispatch has happened. The gap that does exist is the other way
+    // round: an IN_TRANSIT transfer has no terminal state but COMPLETED, so a
+    // journey that is abandoned, or completed short, leaves its stock standing
+    // in transit with no route out of it. Closing that needs a state machine
+    // decision (an abandon/return-to-source transition), not a wider cancel.
     if (transfer.status !== "PENDING" && transfer.status !== "RESERVED") {
       throw new BadRequestException("Only PENDING or RESERVED transfers can be cancelled");
     }

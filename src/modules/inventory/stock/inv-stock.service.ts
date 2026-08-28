@@ -10,7 +10,6 @@ import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService, type WarehouseScope } from "../stock-engine/warehouse-scope.service";
 import { CostVisibilityService, stripCostFields } from "../stock-engine/cost-visibility";
 import { availableQtySql, availableQtySumSql } from "../stock-engine/available-sql";
-import { availableQty } from "../stock-engine/decimal";
 import type {
   ListStockLevelsInput, ListTransactionsInput, AvailabilityQueryInput,
 } from "./dto/inv-stock.schemas";
@@ -182,7 +181,14 @@ export class InvStockService {
           COALESCE(SUM(committed::numeric), 0)::text AS committed,
           COALESCE(SUM(COALESCE(blocked_qty, 0)::numeric), 0)::text AS blocked_qty,
           COALESCE(SUM(COALESCE(quality_hold_qty, 0)::numeric), 0)::text AS quality_hold_qty,
-          COALESCE(SUM(COALESCE(outgoing_qty, 0)::numeric), 0)::text AS outgoing_qty
+          COALESCE(SUM(COALESCE(outgoing_qty, 0)::numeric), 0)::text AS outgoing_qty,
+          -- A2. Availability is summed per row, by the one definition, because
+          -- it is now a function of where each row stands as well as of its
+          -- buckets. Summing the buckets first and subtracting afterwards -- as
+          -- this did -- cannot express "and none of it is in a van", so goods in
+          -- transit were promisable. on_hand above deliberately still counts
+          -- them: they exist, and the org's total must not dip while they move.
+          ${availableQtySumSql("sl")}::text AS available
         FROM inv_stock_levels sl
         WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${variantId}
         ${scope.sql}
@@ -228,28 +234,19 @@ export class InvStockService {
 
     const onHand = parseFloat(String(stockRow?.["on_hand"] ?? "0"));
     const committed = parseFloat(String(stockRow?.["committed"] ?? "0"));
-    const blocked = parseFloat(String(stockRow?.["blocked_qty"] ?? "0"));
-    const qualityHold = parseFloat(String(stockRow?.["quality_hold_qty"] ?? "0"));
     const incoming = parseFloat(String(incomingRow?.["incoming"] ?? "0"));
     const outgoing = parseFloat(String(outgoingRow?.["outgoing"] ?? "0"));
 
-    // A1. Exact and complete. This copy dropped outgoing_qty and used floats,
-    // so it disagreed with the SQL beside it in two separate ways.
+    // A1/A2. Exact and complete, and computed by the one definition in
+    // `available-sql.ts`. This used to be a TypeScript re-derivation from the
+    // summed buckets: it dropped outgoing_qty, it used floats, and once
+    // availability became location-aware it could not have been made right at
+    // all, because the sum has already thrown away which location each row was.
     //
-    // `outgoingQty` is the projection bucket — picked, not yet shipped. It is
-    // deliberately not `outgoing` below, which is open sales-order demand and a
-    // different quantity entirely; conflating the two is easy and produces a
-    // number that looks right.
-    const outgoingQty = parseFloat(String(stockRow?.["outgoing_qty"] ?? "0"));
-    const available = Number(
-      availableQty({
-        on_hand: String(onHand),
-        committed: String(committed),
-        blocked_qty: String(blocked),
-        quality_hold_qty: String(qualityHold),
-        outgoing_qty: String(outgoingQty),
-      }),
-    );
+    // `outgoing` below is open sales-order demand, not the `outgoing_qty`
+    // projection bucket — picked, not yet shipped. Conflating the two is easy
+    // and produces a number that looks right.
+    const available = parseFloat(String(stockRow?.["available"] ?? "0"));
     const forecasted = onHand + incoming - outgoing;
 
     return {

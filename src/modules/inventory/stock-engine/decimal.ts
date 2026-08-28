@@ -96,6 +96,13 @@ export function isPositive(a: string): boolean {
  *
  * `on_order` is deliberately *not* here. Goods on a purchase order are not
  * available to promise — they are not in the building.
+ *
+ * A2 added a condition rather than a term. Stock standing at a location flagged
+ * `is_sellable = false` — the per-warehouse `TRANSIT` location a dispatched
+ * transfer parks its goods at — is on hand and is not available, whatever the
+ * four terms below say. It is a gate, not a subtraction, so it is not in this
+ * list; the list is still the complete set of quantities that are subtracted.
+ * The SQL half of the same rule lives in `available-sql.ts`.
  */
 export const AVAILABLE_QTY_TERMS = [
   "committed",
@@ -110,7 +117,19 @@ export function availableQty(level: {
   blocked_qty: string | null;
   quality_hold_qty: string | null;
   outgoing_qty: string | null;
+  /**
+   * Whether the location this row stands at may be sold from. Nullable with a
+   * `true` default in the schema, so only an explicit `false` withdraws the
+   * stock: absent, null and true all mean sellable, matching the SQL half's
+   * `is_sellable IS NOT FALSE`.
+   */
+  is_sellable?: boolean | null;
 }): string {
+  // A2. Goods in transit are on hand and are not for sale. Callers that
+  // aggregate across locations before calling this must apply the gate per row,
+  // or they will promise a van.
+  if (level.is_sellable === false) return "0.0000";
+
   return subDec(
     subDec(
       subDec(subDec(level.on_hand, level.committed), level.blocked_qty ?? "0"),
