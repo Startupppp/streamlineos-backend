@@ -65,7 +65,8 @@ async function populatedTables(sql) {
 async function foreignKeyEdges(sql) {
   return sql`
     SELECT cn.nspname AS child_schema, c.relname AS child,
-           pn.nspname AS parent_schema, p.relname AS parent
+           pn.nspname AS parent_schema, p.relname AS parent,
+           k.condeferrable AS deferrable
     FROM pg_constraint k
     JOIN pg_class c ON c.oid = k.conrelid
     JOIN pg_namespace cn ON cn.oid = c.relnamespace
@@ -83,6 +84,7 @@ export function topologicalOrder(tables, edges) {
     const child = key(e.child_schema, e.child);
     const parent = key(e.parent_schema, e.parent);
     if (child === parent) continue;
+    if (e.deferrable) continue;
     if (!present.has(child) || !present.has(parent)) continue;
     parents.get(child).add(parent);
   }
@@ -121,8 +123,8 @@ async function backup() {
 
     for (const t of plan) {
       const [meta] = await sql.unsafe(digestSql(t.schema, t.table));
-      const rows = await sql.unsafe(`SELECT * FROM ${qualify(t.schema, t.table)}`);
-      totalRows += rows.length;
+      const payload = await copyOut(sql, t);
+      totalRows += Number(meta.rows);
       lines.push(
         JSON.stringify({
           kind: "table",
@@ -131,10 +133,10 @@ async function backup() {
           rows: Number(meta.rows),
           digest: meta.digest,
           deferred: cyclic.some((c) => c.schema === t.schema && c.table === t.table),
+          copy: payload.toString("base64"),
         }),
       );
-      for (const row of rows) lines.push(JSON.stringify({ kind: "row", data: row }));
-      log(`${t.schema}.${t.table}: ${rows.length} rows, digest ${meta.digest.slice(0, 12)}`);
+      log(`${t.schema}.${t.table}: ${meta.rows} rows, digest ${meta.digest.slice(0, 12)}`);
     }
 
     mkdirSync(dirname(file), { recursive: true });
@@ -149,40 +151,97 @@ async function backup() {
   }
 }
 
+async function copyOut(sql, t) {
+  const chunks = [];
+  const readable = await sql.unsafe(`COPY ${qualify(t.schema, t.table)} TO STDOUT`).readable();
+  for await (const chunk of readable) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+async function copyIn(sql, t, payload) {
+  const writable = await sql.unsafe(`COPY ${qualify(t.schema, t.table)} FROM STDIN`).writable();
+  await new Promise((done, fail) => {
+    writable.on("error", fail);
+    writable.on("finish", done);
+    writable.write(payload);
+    writable.end();
+  });
+}
+
 function readBackup() {
-  const parsed = readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
-  const tables = [];
-  for (const entry of parsed) {
-    if (entry.kind === "table") tables.push({ ...entry, data: [] });
-    else tables[tables.length - 1].data.push(entry.data);
-  }
-  return tables;
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+    .filter((entry) => entry.kind === "table");
+}
+
+async function cycleBreakers(sql, cyclic) {
+  if (cyclic.length === 0) return [];
+  const names = cyclic.map((t) => t.table);
+  return sql`
+    SELECT cn.nspname AS schema, c.relname AS "table", k.conname AS name,
+           pg_get_constraintdef(k.oid) AS def
+    FROM pg_constraint k
+    JOIN pg_class c ON c.oid = k.conrelid
+    JOIN pg_namespace cn ON cn.oid = c.relnamespace
+    JOIN pg_class p ON p.oid = k.confrelid
+    WHERE k.contype = 'f'
+      AND c.relname = ANY(${names})
+      AND p.relname = ANY(${names})`;
 }
 
 async function restore() {
   const tables = readBackup();
   const sql = connect(topology.cell.ownerDirect);
   try {
+    const cyclic = tables.filter((t) => t.deferred);
+    const breakers = await cycleBreakers(sql, cyclic);
+
+    for (const b of breakers) {
+      await sql.unsafe(
+        `ALTER TABLE ${qualify(b.schema, b.table)} DROP CONSTRAINT "${b.name}"`,
+      );
+      log(`dropped cycle-breaking constraint ${b.table}.${b.name}`);
+    }
+
     for (const t of [...tables].reverse())
       await sql.unsafe(`TRUNCATE ${qualify(t.schema, t.table)} CASCADE`);
     log(`truncated ${tables.length} tables`);
 
     let restored = 0;
     for (const t of tables) {
-      if (t.data.length === 0) continue;
-      const columns = Object.keys(t.data[0]);
-      const list = columns.map((c) => `"${c}"`).join(", ");
-      const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
-      for (const row of t.data) {
-        await sql.unsafe(
-          `INSERT INTO ${qualify(t.schema, t.table)} (${list}) VALUES (${placeholders})`,
-          columns.map((c) => row[c]),
-        );
-        restored++;
-      }
-      log(`${t.schema}.${t.table}: restored ${t.data.length}`);
+      if (t.rows === 0) continue;
+      await copyIn(sql, t, Buffer.from(t.copy, "base64"));
+      restored += t.rows;
+      log(`${t.schema}.${t.table}: restored ${t.rows}`);
     }
-    console.log(`\nRESULT: RESTORE OK cell=${topology.cellId} rows=${restored}`);
+
+    const unrestored = [];
+    for (const b of breakers) {
+      try {
+        await sql.unsafe(
+          `ALTER TABLE ${qualify(b.schema, b.table)} ADD CONSTRAINT "${b.name}" ${b.def}`,
+        );
+        log(`re-added ${b.table}.${b.name}`);
+      } catch (error) {
+        unrestored.push(`${b.table}.${b.name}: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+
+    if (unrestored.length > 0) {
+      console.error(
+        `\nRESULT: RESTORE INCOMPLETE — ${unrestored.length} constraint(s) could not be re-added`,
+      );
+      for (const u of unrestored) console.error(`  ${u}`);
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log(
+      `\nRESULT: RESTORE OK cell=${topology.cellId} rows=${restored}` +
+        ` constraints_rebuilt=${breakers.length}`,
+    );
   } finally {
     await sql.end();
   }
