@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, date, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, boolean, date, jsonb, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invShipmentStatusEnum, invPackageStatusEnum, invLoadStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
@@ -91,6 +91,37 @@ export const invCartonTypes = pgTable("inv_carton_types", {
   unique("uniq_inv_carton_types_org_code").on(table.orgId, table.code),
   unique("uniq_inv_carton_types_org_id").on(table.orgId, table.id),
   index("idx_inv_carton_types_org_active").on(table.orgId, table.isActive),
+]);
+
+/**
+ * INV-207 — the journey between "shipped" and "delivered".
+ *
+ * Carrier webhooks are duplicated and out of order as a matter of course. The
+ * partial unique index on the carrier's own event id makes replay a no-op by
+ * construction rather than by a check that races another delivery of the same
+ * event; `occurredAt` and `receivedAt` are kept apart because a three-hour gap
+ * between them is the difference between a late parcel and a late webhook, and
+ * only both columns can tell those apart.
+ */
+export const invShipmentStatusEvents = pgTable("inv_shipment_status_events", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  shipmentId: integer("shipment_id").notNull(),
+  carrierId: integer("carrier_id"),
+  status: invShipmentStatusEnum("status").notNull(),
+  occurredAt: timestamp("occurred_at").notNull(),
+  receivedAt: timestamp("received_at").defaultNow().notNull(),
+  carrierEventId: text("carrier_event_id"),
+  description: text("description"),
+  /** Exactly what the carrier sent. Our reading of it is an interpretation. */
+  rawPayload: jsonb("raw_payload").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_inv_shipment_status_events_shipment").on(
+    table.orgId,
+    table.shipmentId,
+    table.occurredAt,
+  ),
 ]);
 
 export const invPackages = pgTable("inv_packages", {

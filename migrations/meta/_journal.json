@@ -2136,6 +2136,13 @@
       "when": 1787830377441,
       "tag": "0524_cartonization",
       "breakpoints": true
+    },
+    {
+      "idx": 306,
+      "version": "7",
+      "when": 1787830378441,
+      "tag": "0525_carrier_status_events",
+      "breakpoints": true
     }
   ]
 }
