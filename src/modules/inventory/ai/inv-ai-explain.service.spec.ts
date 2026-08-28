@@ -1,5 +1,5 @@
-import { NotFoundException, ServiceUnavailableException } from "@nestjs/common";
-import { InvAiExplainService } from "./inv-ai-explain.service";
+import { ConflictException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { InvAiExplainService, hashReorderEvidence } from "./inv-ai-explain.service";
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { AiConfirmationService } from "../../ai/confirmation/ai-confirmation.service";
 import type { InvReplenishmentService } from "../replenishment/inv-replenishment.service";
@@ -22,17 +22,39 @@ const MOCK_INSIGHT = {
   createdAt: new Date("2026-01-01"),
 };
 
+/**
+ * INV-102 shape. The model returns a status, bounded fields, and actions as
+ * enum members with evidence it was actually given -- `suggestedActions`, a
+ * list of sentences the model wrote, is gone.
+ */
 const MOCK_NARRATION = {
+  status: "ok" as const,
   explanation: "SKU-007 has critically low stock relative to weekly demand.",
   factors: [
     { label: "Available qty", value: "2", isFactual: true },
     { label: "Weekly demand", value: "10", isFactual: true },
     { label: "Action needed", value: "Reorder immediately", isFactual: false },
   ],
-  suggestedActions: [
-    "Create a purchase order for SKU-007",
-    "Alert the procurement team",
+  recommendations: [
+    {
+      action: "draft_purchase_order" as const,
+      rationale: "Cover is below the weekly demand figure above.",
+      evidence: [{ kind: "product_variant" as const, id: 7 }],
+    },
+    {
+      action: "open_stock_movements" as const,
+      rationale: "The recent issues explain the drop.",
+      evidence: [{ kind: "product_variant" as const, id: 7 }],
+    },
   ],
+};
+
+/** The gateway hands back provenance beside the payload; the service records it. */
+const MOCK_GATEWAY_META = {
+  model: "test-model",
+  latencyMs: 12,
+  correlationId: "corr-1",
+  usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
 };
 
 function buildService(
@@ -145,7 +167,25 @@ describe("InvAiExplainService - explainInsight", () => {
     const result = await service.explainInsight("org-1", "user-1", 1);
 
     expect(result.explanation).toBe(MOCK_NARRATION.explanation);
-    expect(result.suggestedActions).toEqual(MOCK_NARRATION.suggestedActions);
+    // Actions are resolved server-side now: the model named two enum members
+    // and the server supplied the label, route and permission for each.
+    expect(result.actions.map((a) => a.action)).toEqual([
+      "draft_purchase_order",
+      "open_stock_movements",
+    ]);
+    expect(result.actions.every((a) => a.permission.startsWith("inventory:"))).toBe(
+      true,
+    );
+    expect(result.provenance).toEqual({
+      contractVersion: 1,
+      promptKey: "inv.insight-explain",
+      promptVersion: 1,
+      // Both come from the gateway result rather than being defaulted here,
+      // which is the point: a stored narrative can be traced to the call that
+      // produced it.
+      model: "fast",
+      correlationId: "x",
+    });
 
     const factual = result.factors.filter((f) => f.isFactual);
     const nonFactual = result.factors.filter((f) => !f.isFactual);
@@ -222,13 +262,20 @@ const MOCK_SUGGESTION = {
 };
 
 const MOCK_EXPLAIN_RESPONSE = {
+  status: "ok" as const,
   explanation: "Reorder is necessary due to low forecasted stock.",
   factors: [
     { label: "Current on-hand", value: "3", isFactual: true },
     { label: "Suggested order qty", value: "42", isFactual: true },
     { label: "Consider safety stock", value: "10%", isFactual: false },
   ],
-  suggestedActions: ["Create purchase order for SKU-077"],
+  recommendations: [
+    {
+      action: "draft_purchase_order" as const,
+      rationale: "Forecast exceeds cover before the lead time elapses.",
+      evidence: [{ kind: "product_variant" as const, id: 77 }],
+    },
+  ],
 };
 
 const MOCK_PROPOSAL = {
@@ -257,7 +304,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
         .fn()
         .mockImplementation((opts: { prompt: { user: string } }) => {
           capturedUserPrompt = opts.prompt.user;
-          return Promise.resolve({ ok: true, data: MOCK_EXPLAIN_RESPONSE });
+          return Promise.resolve({ ok: true, data: MOCK_EXPLAIN_RESPONSE, ...MOCK_GATEWAY_META });
         }),
     };
     const confirmation = {
@@ -287,7 +334,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
         .fn()
         .mockImplementation((opts: { prompt: { system: string } }) => {
           capturedSystemPrompt = opts.prompt.system;
-          return Promise.resolve({ ok: true, data: MOCK_EXPLAIN_RESPONSE });
+          return Promise.resolve({ ok: true, data: MOCK_EXPLAIN_RESPONSE, ...MOCK_GATEWAY_META });
         }),
     };
     const confirmation = {
@@ -314,7 +361,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
     const gateway = {
       invokeStructured: jest
         .fn()
-        .mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE }),
+        .mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE, ...MOCK_GATEWAY_META }),
     };
     const confirmation = {
       propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
@@ -340,7 +387,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
     const gateway = {
       invokeStructured: jest
         .fn()
-        .mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE }),
+        .mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE, ...MOCK_GATEWAY_META }),
     };
     const generatePo = jest.fn();
     const confirmation = {
@@ -369,7 +416,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
     const gateway = {
       invokeStructured: jest
         .fn()
-        .mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE }),
+        .mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE, ...MOCK_GATEWAY_META }),
     };
     const confirmation = {
       propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
@@ -437,18 +484,25 @@ describe("InvAiExplainService - getReorderProposal", () => {
 
   it("should preserve isFactual values for both factual and suggestion factors", async () => {
     const explainWithBothFactTypes = {
+      status: "ok" as const,
       explanation: "Reorder necessary.",
       factors: [
         { label: "Stock level", value: "42", isFactual: true },
         { label: "Consider safety stock", value: "10%", isFactual: false },
       ],
-      suggestedActions: ["Order now"],
+      recommendations: [
+        {
+          action: "draft_purchase_order" as const,
+          rationale: "Cover is short.",
+          evidence: [{ kind: "product_variant" as const, id: 77 }],
+        },
+      ],
     };
 
     const gateway = {
       invokeStructured: jest
         .fn()
-        .mockResolvedValue({ ok: true, data: explainWithBothFactTypes }),
+        .mockResolvedValue({ ok: true, data: explainWithBothFactTypes, ...MOCK_GATEWAY_META }),
     };
     const confirmation = {
       propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
@@ -630,6 +684,86 @@ const MOCK_VENDOR_PERFORMANCE = {
   onTimeRate: 0.72,
   avgLeadTimeDays: 9,
 };
+
+describe("InvAiExplainService - stale evidence on confirm", () => {
+  const material = {
+    productVariantId: 77,
+    currentOnHand: 3,
+    suggestedOrderQty: 42,
+    vendorId: 5,
+  };
+  const asSuggestion = (onHand: number) => ({
+    productVariantId: 77,
+    currentOnHand: onHand,
+    suggestedQty: 42,
+    vendorId: 5,
+    warehouseId: 9,
+  });
+
+  function build(onHandNow: number | null) {
+    const confirmation = {
+      confirm: jest.fn().mockResolvedValue({
+        proposalId: 1,
+        payload: {
+          suggestion: asSuggestion(3),
+          evidenceHash: hashReorderEvidence(material),
+        },
+      }),
+      markExecuted: jest.fn().mockResolvedValue(undefined),
+    };
+    const replenishment = {
+      getSuggestionForVariant: jest
+        .fn()
+        .mockResolvedValue(onHandNow === null ? null : asSuggestion(onHandNow)),
+      generatePo: jest.fn().mockResolvedValue({ id: 900 }),
+    };
+    return { confirmation, replenishment };
+  }
+
+  it("posts the order when the position is unchanged", async () => {
+    // The control. Without it the refusals below would also pass against a
+    // guard that rejected every confirmation.
+    const { confirmation, replenishment } = build(3);
+    const service = buildService({}, {}, confirmation, replenishment);
+    await expect(
+      service.confirmReorderProposal("org-1", "user-1", 1, "tok"),
+    ).resolves.toEqual({ id: 900 });
+    expect(replenishment.generatePo).toHaveBeenCalled();
+  });
+
+  it("refuses when on-hand moved while the proposal was waiting", async () => {
+    // Someone received 500 units between the proposal and the click. Posting
+    // the original 42 would order against a position that no longer exists.
+    const { confirmation, replenishment } = build(503);
+    const service = buildService({}, {}, confirmation, replenishment);
+    await expect(
+      service.confirmReorderProposal("org-1", "user-1", 1, "tok"),
+    ).rejects.toThrow(ConflictException);
+    expect(replenishment.generatePo).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the suggestion has gone away entirely", async () => {
+    // Restocked past the reorder point: there is no suggestion left to act on,
+    // and "no evidence" must not read the same as "evidence unchanged".
+    const { confirmation, replenishment } = build(null);
+    const service = buildService({}, {}, confirmation, replenishment);
+    await expect(
+      service.confirmReorderProposal("org-1", "user-1", 1, "tok"),
+    ).rejects.toThrow(ConflictException);
+    expect(replenishment.generatePo).not.toHaveBeenCalled();
+  });
+
+  it("hashes only the figures that would change the decision", async () => {
+    // A rename must not invalidate a proposal, or the warning gets clicked
+    // through; a quantity change must.
+    expect(hashReorderEvidence(material)).toBe(
+      hashReorderEvidence({ ...material }),
+    );
+    expect(hashReorderEvidence({ ...material, suggestedOrderQty: 43 })).not.toBe(
+      hashReorderEvidence(material),
+    );
+  });
+});
 
 describe("InvAiExplainService - getSupplierDelayBriefing", () => {
   it("should group vendor_delay insights by vendor and return one entry per vendor", async () => {
