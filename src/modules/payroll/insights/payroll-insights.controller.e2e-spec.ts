@@ -114,6 +114,18 @@ const mockCalendarService = {
   remove: jest.fn().mockResolvedValue({ ok: true }),
 };
 
+const QUERY_CHAIN_METHODS = [
+  "from", "leftJoin", "innerJoin", "rightJoin", "fullJoin", "where",
+  "orderBy", "limit", "offset", "groupBy", "having", "for",
+] as const;
+
+function queryChain(rows: unknown[] = []): Record<string, unknown> {
+  const node: Record<string, unknown> = {};
+  for (const method of QUERY_CHAIN_METHODS) node[method] = jest.fn(() => node);
+  node["then"] = (resolve: (value: unknown) => unknown) => resolve(rows);
+  return node;
+}
+
 const mockDrizzle = {
   __client: { end: jest.fn().mockResolvedValue(undefined) },
   execute: jest.fn().mockResolvedValue([]),
@@ -121,16 +133,8 @@ const mockDrizzle = {
     async (fn: (tx: { execute: jest.Mock }) => Promise<unknown>) =>
       fn({ execute: jest.fn().mockResolvedValue([]) }),
   ),
-  select: jest.fn().mockReturnValue({
-    from: jest.fn().mockReturnValue({
-      leftJoin: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue([]),
-        }),
-      }),
-      where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-    }),
-  }),
+  select: jest.fn(() => queryChain()),
+  selectDistinct: jest.fn(() => queryChain()),
   update: jest.fn().mockReturnValue({
     set: jest.fn().mockReturnValue({
       where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1, status: "VERIFIED" }]) }),

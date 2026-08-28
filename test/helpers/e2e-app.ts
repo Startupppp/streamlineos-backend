@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { INestApplication } from "@nestjs/common";
+import { VERSION_NEUTRAL, VersioningType } from "@nestjs/common";
 import { Test, type TestingModuleBuilder } from "@nestjs/testing";
 import { decodeJwt } from "jose";
 import type { NextFunction, Request, Response } from "express";
@@ -19,6 +20,7 @@ import {
 import type { RegionDefinition } from "src/common/region/region.config";
 import type { Db } from "src/db/drizzle.types";
 import { DRIZZLE } from "src/db/drizzle.constants";
+import { API_VERSION_CURRENT } from "src/common/http/api-version";
 
 /**
  * Controller e2e specs assert the guard chain — 401 / 402 / 403 — and every one
@@ -151,7 +153,7 @@ const accessStub = {
  * membership, entitlements and access: production keeps failing closed for an
  * unplaced tenant, which is the behaviour ticket 03 exists to guarantee.
  */
-function installFixtureRegionRegistry(db: Db): void {
+export function installFixtureRegionRegistry(db: Db): void {
   const definition: RegionDefinition = {
     key: "primary",
     databaseUrl: process.env.DATABASE_URL ?? "",
@@ -203,6 +205,10 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
   const ref = await builder.compile();
   installFixtureRegionRegistry(ref.get<Db>(DRIZZLE));
   const app = ref.createNestApplication();
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: [API_VERSION_CURRENT, VERSION_NEUTRAL],
+  });
   app.use((req: Request, _res: Response, next: NextFunction) =>
     storage.run(fixtureFromToken(req.headers.authorization), next),
   );

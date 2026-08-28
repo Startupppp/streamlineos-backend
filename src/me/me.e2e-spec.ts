@@ -5,6 +5,9 @@ import { AppModule } from "../app.module";
 import { AllExceptionsFilter } from "../common/http/all-exceptions.filter";
 import { signToken } from "../../test/helpers/sign-token";
 import { stubMembershipState } from "../../test/helpers/membership-state";
+import { installFixtureRegionRegistry } from "../../test/helpers/e2e-app";
+import { DRIZZLE } from "../db/drizzle.constants";
+import type { Db } from "../db/drizzle.types";
 
 describe("/me (e2e)", () => {
   let app: INestApplication;
@@ -20,6 +23,7 @@ describe("/me (e2e)", () => {
         member_1: { role: "SALES" },
       },
     ).compile();
+    installFixtureRegionRegistry(moduleRef.get<Db>(DRIZZLE));
     app = moduleRef.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
@@ -58,6 +62,7 @@ describe("/me (e2e)", () => {
     const token = await signToken({ sub: "member_1", permissions: ["crm:leads:delete"] });
     const res = await request(app.getHttpServer()).get("/me").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ permissions: [] });
+    expect(res.body).not.toHaveProperty("permissions");
+    expect(JSON.stringify(res.body)).not.toContain("crm:leads:delete");
   });
 });
