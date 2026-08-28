@@ -104,9 +104,10 @@ export const helpdeskTickets = pgTable("helpdesk_tickets", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_helpdesk_tickets_org_id").on(table.orgId, table.id),
-  index("idx_helpdesk_tickets_org_status").on(table.orgId, table.status),
-  index("idx_helpdesk_tickets_org_user").on(table.orgId, table.userId),
-  index("idx_helpdesk_tickets_org_assignee").on(table.orgId, table.assigneeId),
+  index("idx_helpdesk_tickets_org_created").on(table.orgId, table.createdAt.desc(), table.id.desc()),
+  index("idx_helpdesk_tickets_org_status_created").on(table.orgId, table.status, table.createdAt.desc(), table.id.desc()),
+  index("idx_helpdesk_tickets_org_user_created").on(table.orgId, table.userId, table.createdAt.desc(), table.id.desc()),
+  index("idx_helpdesk_tickets_org_assignee_created").on(table.orgId, table.assigneeId, table.createdAt.desc(), table.id.desc()),
 ]);
 
 export const hrHelpdeskRouting = pgTable("hr_helpdesk_routing", {

@@ -5,14 +5,23 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import {
   organizationMembers,
   performanceReviews,
+  reviewCycles,
   users,
 } from "../../../db/schema";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import {
+  keysetAfterId,
+  keysetAfterValue,
+  keysetBeforeId,
+  keysetBeforeValue,
+} from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
@@ -25,6 +34,7 @@ import type {
   CreatePerformanceReviewInput,
   CreatePipInput,
   CreateReviewCycleInput,
+  ListPerformanceReviewsInput,
   UpdateOneOnOneInput,
   UpdatePerformanceReviewInput,
   UpdatePipInput,
@@ -106,7 +116,7 @@ export class PerformanceReviewsService {
       })
       .returning();
 
-    void this.notifyReviewAssigned(
+    await this.notifyReviewAssigned(
       orgId,
       review?.id,
       input.userId,
@@ -118,41 +128,81 @@ export class PerformanceReviewsService {
     return review;
   }
 
-  listReviews(
+  async listReviews(
     orgId: string,
-    userId: string,
+    actorUserId: string,
     scope: DataScope,
-    filters: {
-      userId?: string;
-      cycleId?: number;
-      limit?: number;
-      offset?: number;
-    },
+    query: ListPerformanceReviewsInput,
   ) {
-    const conditions = [eq(performanceReviews.orgId, orgId)];
-    conditions.push(
-      applyScope(scope, orgId, userId, { ownerColumn: performanceReviews.userId }),
-    );
-    if (filters.userId && scope === "all") {
-      conditions.push(eq(performanceReviews.userId, filters.userId));
+    const conditions: SQL[] = [
+      eq(performanceReviews.orgId, orgId),
+      applyScope(scope, orgId, actorUserId, { ownerColumn: performanceReviews.userId }),
+    ];
+    if (query.userId) conditions.push(eq(performanceReviews.userId, query.userId));
+    if (query.cycleId) conditions.push(eq(performanceReviews.cycleId, query.cycleId));
+    if (query.status) conditions.push(eq(performanceReviews.status, query.status));
+
+    const ascending = query.sortDir === "asc";
+    const byPeriod = query.sortField === "periodStart";
+    const sortColumn = byPeriod
+      ? performanceReviews.periodStart
+      : performanceReviews.createdAt;
+
+    const position = decodeCursor(query.cursor);
+    if (position) {
+      const bound = byPeriod
+        ? (ascending ? keysetAfterValue : keysetBeforeValue)(
+            sortColumn,
+            performanceReviews.id,
+            position,
+          )
+        : (ascending ? keysetAfterId : keysetBeforeId)(
+            sortColumn,
+            performanceReviews.id,
+            position,
+          );
+      conditions.push(bound);
     }
-    if (filters.cycleId)
-      conditions.push(eq(performanceReviews.cycleId, filters.cycleId));
 
-    const limit = Math.min(filters.limit ?? 50, 100);
-    const offset = Math.max(filters.offset ?? 0, 0);
+    const reviewer = alias(users, "performance_reviewer");
+    const rows = await this.db
+      .select({
+        id: performanceReviews.id,
+        orgId: performanceReviews.orgId,
+        userId: performanceReviews.userId,
+        reviewerId: performanceReviews.reviewerId,
+        cycleId: performanceReviews.cycleId,
+        periodStart: performanceReviews.periodStart,
+        periodEnd: performanceReviews.periodEnd,
+        status: performanceReviews.status,
+        overallRating: performanceReviews.overallRating,
+        createdAt: performanceReviews.createdAt,
+        updatedAt: performanceReviews.updatedAt,
+        user: { id: users.id, name: users.name, image: users.image },
+        reviewer: { id: reviewer.id, name: reviewer.name },
+        cycle: { id: reviewCycles.id, name: reviewCycles.name, status: reviewCycles.status },
+      })
+      .from(performanceReviews)
+      .leftJoin(users, eq(users.id, performanceReviews.userId))
+      .leftJoin(reviewer, eq(reviewer.id, performanceReviews.reviewerId))
+      .leftJoin(
+        reviewCycles,
+        and(
+          eq(reviewCycles.id, performanceReviews.cycleId),
+          eq(reviewCycles.orgId, performanceReviews.orgId),
+        ),
+      )
+      .where(and(...conditions))
+      .orderBy(
+        ascending ? asc(sortColumn) : desc(sortColumn),
+        ascending ? asc(performanceReviews.id) : desc(performanceReviews.id),
+      )
+      .limit(query.limit + 1);
 
-    return this.db.query.performanceReviews.findMany({
-      where: and(...conditions),
-      with: {
-        user: { columns: { id: true, name: true, image: true } },
-        reviewer: { columns: { id: true, name: true } },
-        cycle: true,
-      },
-      orderBy: [desc(performanceReviews.createdAt)],
-      limit,
-      offset,
-    });
+    return buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: byPeriod ? row.periodStart : row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async getReview(orgId: string, reviewId: number) {

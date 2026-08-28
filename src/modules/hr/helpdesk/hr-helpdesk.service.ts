@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   ConflictException,
   ForbiddenException,
@@ -5,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   helpdeskTickets,
   hrHelpdeskComments,
@@ -13,10 +14,11 @@ import {
   kbArticles,
   users,
 } from "../../../db/schema";
-import { AccessService } from "../../access/access.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
   AddCommentInput,
   CreateInput,
@@ -26,78 +28,90 @@ import type {
   UpdateTicketInput,
 } from "./dto/hr-helpdesk.schemas";
 
+const HELPDESK_SEARCH_CAP = 500;
+const KB_SUGGEST_CAP = 20;
+
 @Injectable()
 export class HrHelpdeskService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly dispatch: NotificationDispatchService,
-    private readonly access: AccessService,
   ) {}
 
   async list(orgId: string, userId: string, isAdmin: boolean, filters: ListInput) {
-    const conditions: SQL[] = [eq(helpdeskTickets.orgId, orgId)];
+    const position = decodeCursor(filters.cursor);
+
+    const baseConditions: SQL[] = [eq(helpdeskTickets.orgId, orgId)];
 
     if (!isAdmin) {
-      conditions.push(eq(helpdeskTickets.userId, userId));
+      baseConditions.push(eq(helpdeskTickets.userId, userId));
     } else if (filters.userId) {
-      conditions.push(eq(helpdeskTickets.userId, filters.userId));
+      baseConditions.push(eq(helpdeskTickets.userId, filters.userId));
     }
 
-    if (filters.status) conditions.push(eq(helpdeskTickets.status, filters.status));
-    if (filters.category) conditions.push(eq(helpdeskTickets.category, filters.category));
-    if (filters.assigneeId) conditions.push(eq(helpdeskTickets.assigneeId, filters.assigneeId));
+    if (filters.status) baseConditions.push(eq(helpdeskTickets.status, filters.status));
+    if (filters.category) baseConditions.push(eq(helpdeskTickets.category, filters.category));
+    if (filters.assigneeId) baseConditions.push(eq(helpdeskTickets.assigneeId, filters.assigneeId));
 
     if (!isAdmin) {
       const confidentialFilter = or(
         eq(helpdeskTickets.isConfidential, false),
         eq(helpdeskTickets.userId, userId),
       );
-      if (confidentialFilter) conditions.push(confidentialFilter);
+      if (confidentialFilter) baseConditions.push(confidentialFilter);
     }
 
-    const offset = (filters.page - 1) * filters.pageSize;
+    if (filters.q) {
+      const searchCondition = await this.ticketSearchCondition(filters.q, `%${filters.q}%`);
+      baseConditions.push(searchCondition);
+    }
 
-    const [rows, [countRow]] = await Promise.all([
-      this.db
-        .select({
-          id: helpdeskTickets.id,
-          orgId: helpdeskTickets.orgId,
-          userId: helpdeskTickets.userId,
-          title: helpdeskTickets.title,
-          description: helpdeskTickets.description,
-          category: helpdeskTickets.category,
-          priority: helpdeskTickets.priority,
-          status: helpdeskTickets.status,
-          assigneeId: helpdeskTickets.assigneeId,
-          isConfidential: helpdeskTickets.isConfidential,
-          slaDueAt: helpdeskTickets.slaDueAt,
-          resolvedAt: helpdeskTickets.resolvedAt,
-          resolution: helpdeskTickets.resolution,
-          createdAt: helpdeskTickets.createdAt,
-          updatedAt: helpdeskTickets.updatedAt,
-          authorName: users.name,
-          authorImage: users.image,
-        })
-        .from(helpdeskTickets)
-        .leftJoin(users, eq(users.id, helpdeskTickets.userId))
-        .where(and(...conditions))
-        .orderBy(desc(helpdeskTickets.createdAt))
-        .limit(filters.pageSize)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`COUNT(*)::int` })
-        .from(helpdeskTickets)
-        .where(and(...conditions)),
-    ]);
+    const conditions = and(...baseConditions);
 
-    const total = countRow?.count ?? 0;
-    return {
-      items: rows,
-      total,
-      page: filters.page,
-      pageSize: filters.pageSize,
-      totalPages: Math.ceil(total / filters.pageSize),
-    };
+    const keyset = position
+      ? and(conditions, keysetBeforeId(helpdeskTickets.createdAt, helpdeskTickets.id, position))
+      : conditions;
+
+    const rows = await this.db
+      .select({
+        id: helpdeskTickets.id,
+        orgId: helpdeskTickets.orgId,
+        userId: helpdeskTickets.userId,
+        title: helpdeskTickets.title,
+        description: helpdeskTickets.description,
+        category: helpdeskTickets.category,
+        priority: helpdeskTickets.priority,
+        status: helpdeskTickets.status,
+        assigneeId: helpdeskTickets.assigneeId,
+        isConfidential: helpdeskTickets.isConfidential,
+        slaDueAt: helpdeskTickets.slaDueAt,
+        resolvedAt: helpdeskTickets.resolvedAt,
+        resolution: helpdeskTickets.resolution,
+        createdAt: helpdeskTickets.createdAt,
+        updatedAt: helpdeskTickets.updatedAt,
+        authorName: users.name,
+        authorImage: users.image,
+      })
+      .from(helpdeskTickets)
+      .leftJoin(users, eq(users.id, helpdeskTickets.userId))
+      .where(keyset)
+      .orderBy(desc(helpdeskTickets.createdAt), desc(helpdeskTickets.id))
+      .limit(filters.limit + 1);
+
+    return buildCursorPage(rows, filters.limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
+  }
+
+  private async ticketSearchCondition(term: string, like: string): Promise<SQL> {
+    const fallback = sql`(${helpdeskTickets.title} ILIKE ${like} OR ${helpdeskTickets.description} ILIKE ${like})`;
+    const rows = await this.db.execute(
+      sql`SELECT app.search_helpdesk_ticket_ids(${term}, ${HELPDESK_SEARCH_CAP + 1}) AS id`,
+    );
+    if (rows.length === 0) return sql`false`;
+    if (rows.length > HELPDESK_SEARCH_CAP) return fallback;
+    const ids = rows.map((r) => Number(r["id"]));
+    return inArray(helpdeskTickets.id, ids);
   }
 
   async getById(orgId: string, userId: string, isAdmin: boolean, ticketId: number) {
@@ -126,7 +140,7 @@ export class HrHelpdeskService {
       })
       .from(hrHelpdeskComments)
       .leftJoin(users, eq(users.id, hrHelpdeskComments.authorId))
-      .where(eq(hrHelpdeskComments.ticketId, ticketId))
+      .where(and(eq(hrHelpdeskComments.ticketId, ticketId), eq(hrHelpdeskComments.orgId, orgId)))
       .orderBy(hrHelpdeskComments.createdAt);
 
     return { ...ticket, comments };
@@ -157,22 +171,44 @@ export class HrHelpdeskService {
 
     const assigneeId = routing[0]?.assigneeUserId ?? null;
 
-    const [ticket] = await this.db
-      .insert(helpdeskTickets)
-      .values({
-        orgId,
-        userId,
-        title: body.title,
-        description: body.description,
-        category: body.category,
-        priority: body.priority ?? "MEDIUM",
-        status: "TODO",
-        isConfidential,
-        assigneeId,
-      })
-      .returning();
+    const ticket = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(helpdeskTickets)
+        .values({
+          orgId,
+          userId,
+          title: body.title,
+          description: body.description,
+          category: body.category,
+          priority: body.priority ?? "MEDIUM",
+          status: "TODO",
+          isConfidential,
+          assigneeId,
+        })
+        .returning();
 
-    void this.dispatchNewTicketEmails(orgId, userId, body.title, body.category, body.priority ?? "MEDIUM").catch(() => {});
+      if (!row) throw new ConflictException("Failed to create ticket.");
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "helpdesk_ticket",
+        aggregateId: String(row.id),
+        aggregateVersion: Date.now(),
+        eventType: "hr.helpdesk.ticket_created",
+        payload: {
+          ticketId: row.id,
+          orgId,
+          creatorId: userId,
+          title: body.title,
+          category: body.category,
+          priority: body.priority ?? "MEDIUM",
+        },
+        occurredAt: new Date(),
+      });
+
+      return row;
+    });
 
     return ticket;
   }
@@ -186,7 +222,7 @@ export class HrHelpdeskService {
   ) {
     const ticket = await this.db.query.helpdeskTickets.findFirst({
       where: and(eq(helpdeskTickets.id, ticketId), eq(helpdeskTickets.orgId, orgId)),
-      columns: { id: true, userId: true, isConfidential: true },
+      columns: { id: true, userId: true, isConfidential: true, assigneeId: true, status: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found.");
 
@@ -199,11 +235,60 @@ export class HrHelpdeskService {
     if (body.resolution !== undefined) patch.resolution = body.resolution ?? undefined;
     if (body.status === "DONE" && !patch.resolvedAt) patch.resolvedAt = new Date();
 
-    const [updated] = await this.db
-      .update(helpdeskTickets)
-      .set(patch)
-      .where(and(eq(helpdeskTickets.id, ticketId), eq(helpdeskTickets.orgId, orgId)))
-      .returning();
+    const assigneeChanged = body.assigneeId !== undefined && body.assigneeId !== ticket.assigneeId;
+    const statusChanged = body.status !== undefined && body.status !== ticket.status;
+    const newAssigneeId = body.assigneeId ?? null;
+
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(helpdeskTickets)
+        .set(patch)
+        .where(and(eq(helpdeskTickets.id, ticketId), eq(helpdeskTickets.orgId, orgId)))
+        .returning();
+
+      if (!row) throw new NotFoundException("Ticket not found.");
+
+      if (assigneeChanged && newAssigneeId) {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "helpdesk_ticket",
+          aggregateId: String(ticketId),
+          aggregateVersion: Date.now(),
+          eventType: "hr.helpdesk.ticket_assigned",
+          payload: {
+            ticketId,
+            orgId,
+            actorId: userId,
+            assigneeId: newAssigneeId,
+            title: row.title,
+          },
+          occurredAt: new Date(),
+        });
+      }
+
+      if (statusChanged && body.status) {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "helpdesk_ticket",
+          aggregateId: String(ticketId),
+          aggregateVersion: Date.now() + 1,
+          eventType: "hr.helpdesk.ticket_status_changed",
+          payload: {
+            ticketId,
+            orgId,
+            actorId: userId,
+            newStatus: body.status,
+            title: row.title,
+            ownerId: ticket.userId,
+          },
+          occurredAt: new Date(),
+        });
+      }
+
+      return row;
+    });
 
     return updated;
   }
@@ -270,7 +355,31 @@ export class HrHelpdeskService {
   }
 
   async suggest(orgId: string, input: SuggestInput) {
-    const pattern = `%${input.query}%`;
+    const term = input.query;
+    const like = `%${term}%`;
+
+    const fallback = and(
+      eq(kbArticles.orgId, orgId),
+      eq(kbArticles.status, "published"),
+      or(
+        sql`${kbArticles.title} ILIKE ${like}`,
+        sql`${kbArticles.excerpt} ILIKE ${like}`,
+      ),
+    );
+
+    const rows = await this.db.execute(
+      sql`SELECT app.search_kb_article_ids(${term}, ${KB_SUGGEST_CAP + 1}) AS id`,
+    );
+
+    const articleWhere = rows.length === 0
+      ? sql`false`
+      : rows.length > KB_SUGGEST_CAP
+      ? fallback
+      : and(
+          eq(kbArticles.orgId, orgId),
+          eq(kbArticles.status, "published"),
+          inArray(kbArticles.id, rows.map((r) => Number(r["id"]))),
+        );
 
     const articles = await this.db
       .select({
@@ -281,62 +390,10 @@ export class HrHelpdeskService {
         source: sql<string>`'article'`,
       })
       .from(kbArticles)
-      .where(
-        and(
-          eq(kbArticles.orgId, orgId),
-          eq(kbArticles.status, "published"),
-          or(
-            ilike(kbArticles.title, pattern),
-            ilike(kbArticles.excerpt, pattern),
-          ),
-        ),
-      )
+      .where(articleWhere)
       .orderBy(desc(kbArticles.updatedAt))
       .limit(5);
 
-    const handbooks = await this.db
-      .select({
-        id: sql<number>`0`,
-        title: sql<string>`${input.query}`,
-        slug: sql<string>`''`,
-        excerpt: sql<string>`''`,
-        source: sql<string>`'handbook'`,
-      })
-      .from(kbArticles)
-      .where(sql`false`)
-      .limit(0);
-
-    return { results: [...articles, ...handbooks].slice(0, 5) };
-  }
-
-  private async dispatchNewTicketEmails(
-    orgId: string,
-    creatorId: string,
-    ticketTitle: string,
-    category: string,
-    priority: string,
-  ) {
-    const [hrMemberRows, [creator]] = await Promise.all([
-      this.access.membersWithPermission(orgId, "hr:employees:manage"),
-      this.db
-        .select({ name: users.name })
-        .from(users)
-        .where(eq(users.id, creatorId))
-        .limit(1),
-    ]);
-
-    if (hrMemberRows.length === 0) return;
-
-    const creatorName = creator?.name ?? "Employee";
-    await this.dispatch.emit({
-      eventKey: "hr.helpdesk.ticket_created",
-      orgId,
-      actorUserId: creatorId,
-      targetUserIds: hrMemberRows.map((m) => m.userId),
-      entityType: "helpdesk_ticket",
-      title: ticketTitle,
-      message: `${creatorName} created a ${priority} HR helpdesk ticket in ${category}.`,
-      variables: { ticketTitle, category, priority, creatorName },
-    });
+    return { results: articles.slice(0, 5) };
   }
 }

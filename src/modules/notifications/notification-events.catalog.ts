@@ -238,6 +238,12 @@ const HR = [
   e("hr.helpdesk.ticket_created", "hr", "WORKFLOW", "HR helpdesk ticket created", {
     defaultChannels: IA_EMAIL,
   }),
+  e("hr.helpdesk.ticket_assigned", "hr", "WORKFLOW", "HR helpdesk ticket assigned", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.helpdesk.ticket_status_changed", "hr", "WORKFLOW", "HR helpdesk ticket status changed", {
+    defaultChannels: IA,
+  }),
   e("hr.resignation.submitted", "hr", "WORKFLOW", "Resignation submitted", {
     defaultChannels: IA_EMAIL,
   }),

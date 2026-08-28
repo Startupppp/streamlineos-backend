@@ -39,6 +39,30 @@ export function keysetAfterValue(
   return sql`(${sortColumn}, ${idColumn}) > (${sql.param(String(position.sortValue), sortColumn)}, ${sql.param(Number(position.id), idColumn)})`;
 }
 
+export function keysetBeforeValue(
+  sortColumn: PgColumn,
+  idColumn: PgColumn,
+  position: KeysetPosition,
+): SQL {
+  return sql`(${sortColumn}, ${idColumn}) < (${sql.param(String(position.sortValue), sortColumn)}, ${sql.param(Number(position.id), idColumn)})`;
+}
+
+export function keysetAfterId(
+  sortColumn: PgColumn,
+  idColumn: PgColumn,
+  position: KeysetPosition,
+): SQL {
+  return sql`(${sortColumn}, ${idColumn}) > (${sql.param(at(position), sortColumn)}, ${sql.param(Number(position.id), idColumn)})`;
+}
+
+export function keysetBeforeId(
+  sortColumn: PgColumn,
+  idColumn: PgColumn,
+  position: KeysetPosition,
+): SQL {
+  return sql`(${sortColumn}, ${idColumn}) < (${sql.param(at(position), sortColumn)}, ${sql.param(Number(position.id), idColumn)})`;
+}
+
 /** Everything strictly after the position, for a list read oldest-first. */
 export function keysetAfter(
   sortColumn: PgColumn,

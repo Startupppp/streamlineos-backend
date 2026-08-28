@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createGoalSchema = z
   .object({
@@ -218,6 +219,16 @@ export const updatePerformanceReviewSchema = z.object({
   cycleId: z.number().int().positive().optional(),
 });
 
+export const listPerformanceReviewsSchema = z.object({
+  userId: z.string().min(1).optional(),
+  cycleId: z.coerce.number().int().positive().optional(),
+  status: z.enum(["DRAFT", "IN_PROGRESS", "COMPLETED", "ARCHIVED"]).optional(),
+  sortField: z.enum(["createdAt", "periodStart"]).default("createdAt"),
+  sortDir: z.enum(["asc", "desc"]).default("desc"),
+  limit: pageSizeField(50),
+  cursor: z.string().optional(),
+});
+
 export const updateReviewCycleSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   type: z.enum(["QUARTERLY", "HALF_YEARLY", "ANNUAL", "CUSTOM"]).optional(),
@@ -241,3 +252,4 @@ export type UpdatePerformanceReviewInput = z.infer<typeof updatePerformanceRevie
 export type UpdateReviewCycleInput = z.infer<typeof updateReviewCycleSchema>;
 export type CreateReviewCycleInput = z.infer<typeof createReviewCycleSchema>;
 export type CreatePerformanceReviewInput = z.infer<typeof createPerformanceReviewSchema>;
+export type ListPerformanceReviewsInput = z.infer<typeof listPerformanceReviewsSchema>;

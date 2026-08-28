@@ -51,6 +51,9 @@ export const performanceReviews = pgTable("performance_reviews", {
   unique("uniq_performance_reviews_org_id").on(table.orgId, table.id),
   index("idx_perf_reviews_org_cycle").on(table.orgId, table.cycleId),
   index("idx_perf_reviews_user").on(table.userId),
+  index("idx_perf_reviews_org_created_id").on(table.orgId, table.createdAt.desc(), table.id.desc()),
+  index("idx_perf_reviews_org_user_created_id").on(table.orgId, table.userId, table.createdAt.desc(), table.id.desc()),
+  index("idx_perf_reviews_org_period_start_id").on(table.orgId, table.periodStart.desc(), table.id.desc()),
 ]);
 
 export const oneOnOneMeetings = pgTable("one_on_one_meetings", {

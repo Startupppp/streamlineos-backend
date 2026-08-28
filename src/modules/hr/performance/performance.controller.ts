@@ -29,6 +29,7 @@ import {
   createPerformanceReviewSchema,
   createPipSchema,
   createReviewCycleSchema,
+  listPerformanceReviewsSchema,
   updateGoalCollectionSchema,
   updateGoalItemSchema,
   updateKeyResultSchema,
@@ -42,6 +43,7 @@ import {
   type CreatePerformanceReviewInput,
   type CreatePipInput,
   type CreateReviewCycleInput,
+  type ListPerformanceReviewsInput,
   type UpdateGoalCollectionInput,
   type UpdateGoalItemInput,
   type UpdateKeyResultInput,
@@ -207,21 +209,11 @@ export class PerformanceController {
   @Get("reviews")
   @RequirePermission("hr:performance:view")
   async listReviews(
-    @Query("userId") userId: string | undefined,
-    @Query("cycleId") cycleId: string | undefined,
-    @Query("limit") limit: string | undefined,
-    @Query("offset") offset: string | undefined,
+    @Query(new ZodValidationPipe(listPerformanceReviewsSchema)) query: ListPerformanceReviewsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolvePerformanceScope(this.access, u);
-    const rawLimit = limit !== undefined ? Number(limit) : undefined;
-    const cappedLimit = rawLimit !== undefined ? Math.min(Math.max(rawLimit, 1), 100) : undefined;
-    return this.reviewsService.listReviews(u.orgId, u.userId, scope, {
-      userId,
-      cycleId: cycleId ? Number(cycleId) : undefined,
-      limit: cappedLimit,
-      offset: offset !== undefined ? Math.max(Number(offset), 0) : undefined,
-    });
+    return this.reviewsService.listReviews(u.orgId, u.userId, scope, query);
   }
 
   @Post("reviews")
