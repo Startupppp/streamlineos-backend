@@ -6,6 +6,7 @@ import {
   buildScopedDashboardCacheKey,
   buildOrgDashboardCacheKey,
 } from "./dashboard-cache-key";
+import { resolveDashboardStatsFlags } from "./dashboard-scope";
 import { attendance, leaveRequests } from "../../db/schema";
 import type { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -218,5 +219,35 @@ describe("getLeavesToday scope application", () => {
     expect(query.sql).toContain('"leave_requests"."user_id" = ');
     expect(query.params).toContain(ACTOR);
     expect(query.sql).not.toContain("scope_teammate");
+  });
+});
+
+describe("dashboard stats flags", () => {
+  function accessWithAttendanceScope(scope: DataScope): AccessService {
+    return {
+      getPermissionsVersion: async () => 1,
+      scopeFor: async (_u: CurrentUserContext, key: string) =>
+        key === "hr:attendance:manage" ? scope : "all",
+      resolveUserPermissions: async () =>
+        new Map<string, DataScope>([["hr:attendance:manage", scope]]),
+    } as unknown as AccessService;
+  }
+
+  it("shows the org-wide present count only to an all-scope attendance reader", async () => {
+    const all = await resolveDashboardStatsFlags(
+      accessWithAttendanceScope("all"),
+      makeUser(ACTOR, ORG),
+    );
+    expect(all.attendance).toBe(true);
+  });
+
+  it("withholds the org-wide present count from own and team scopes", async () => {
+    for (const scope of ["own", "team", "none"] as const) {
+      const flags = await resolveDashboardStatsFlags(
+        accessWithAttendanceScope(scope),
+        makeUser(ACTOR, ORG),
+      );
+      expect(flags.attendance).toBe(false);
+    }
   });
 });

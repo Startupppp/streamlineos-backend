@@ -33,7 +33,7 @@ function balanceSelect() {
   return chain;
 }
 
-function policySelect(rows: unknown[]) {
+function selectChain(rows: unknown[]) {
   const chain = {
     from: jest.fn(),
     where: jest.fn(),
@@ -82,7 +82,10 @@ describe("LeavesWriteService server-derived approver", () => {
       query: {
         users: { findFirst: jest.fn().mockResolvedValue(undefined) },
       },
-      select: jest.fn().mockReturnValue(policySelect([{ probationRestricted: false }])),
+      select: jest.fn()
+        .mockReturnValueOnce(selectChain([{ id: 5, orgId: "org-1", userId: "manager-1", role: "MEMBER", isOwner: false, status: "ACTIVE" }]))
+        .mockReturnValueOnce(selectChain([]))
+        .mockReturnValueOnce(selectChain([{ probationRestricted: false }])),
       transaction: jest.fn(
         async (callback: (transaction: typeof tx) => Promise<unknown>) =>
           callback(tx),
@@ -137,6 +140,7 @@ describe("LeavesWriteService server-derived approver", () => {
         orgId: USER.orgId,
         userId: USER.userId,
         approverId: "manager-1",
+        approverMembershipId: 5,
       }),
     );
     expect(workflowEngine.startWorkflow).not.toHaveBeenCalled();

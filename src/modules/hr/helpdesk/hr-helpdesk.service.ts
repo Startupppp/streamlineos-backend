@@ -17,6 +17,11 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
@@ -171,6 +176,20 @@ export class HrHelpdeskService {
 
     const assigneeId = routing[0]?.assigneeUserId ?? null;
 
+    let assigneeMembershipId: number | null = null;
+    if (assigneeId) {
+      try {
+        const actor = await assertOrganizationActor(this.db, orgId, {
+          kind: "user",
+          userId: assigneeId,
+        });
+        assigneeMembershipId = actor.membershipId;
+      } catch (e) {
+        if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+        throw e;
+      }
+    }
+
     const ticket = await this.db.transaction(async (tx) => {
       const [row] = await tx
         .insert(helpdeskTickets)
@@ -184,6 +203,7 @@ export class HrHelpdeskService {
           status: "TODO",
           isConfidential,
           assigneeId,
+          assigneeMembershipId,
         })
         .returning();
 
@@ -230,10 +250,27 @@ export class HrHelpdeskService {
 
     const patch: Partial<typeof helpdeskTickets.$inferInsert> = {};
     if (body.status !== undefined) patch.status = body.status;
-    if (body.assigneeId !== undefined) patch.assigneeId = body.assigneeId ?? null;
     if (body.priority !== undefined) patch.priority = body.priority;
     if (body.resolution !== undefined) patch.resolution = body.resolution ?? undefined;
     if (body.status === "DONE" && !patch.resolvedAt) patch.resolvedAt = new Date();
+
+    if (body.assigneeId !== undefined) {
+      patch.assigneeId = body.assigneeId ?? null;
+      if (body.assigneeId) {
+        try {
+          const actor = await assertOrganizationActor(this.db, orgId, {
+            kind: "user",
+            userId: body.assigneeId,
+          });
+          patch.assigneeMembershipId = actor.membershipId;
+        } catch (e) {
+          if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+          throw e;
+        }
+      } else {
+        patch.assigneeMembershipId = null;
+      }
+    }
 
     const assigneeChanged = body.assigneeId !== undefined && body.assigneeId !== ticket.assigneeId;
     const statusChanged = body.status !== undefined && body.status !== ticket.status;

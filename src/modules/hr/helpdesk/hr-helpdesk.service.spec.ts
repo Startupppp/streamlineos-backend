@@ -278,6 +278,20 @@ describe("HrHelpdeskService", () => {
       mockDb.query.helpdeskTickets.findFirst.mockResolvedValue(existing);
       mockTx.returning.mockResolvedValue([{ ...existing, assigneeId: "agent1", title: existing.title }]);
 
+      const memberChain = {
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue([{ id: 7, orgId: "org1", userId: "agent1", role: "MEMBER", isOwner: false, status: "ACTIVE" }]),
+      };
+      const personChain = {
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue([]),
+      };
+      mockDb.select
+        .mockReturnValueOnce(memberChain)
+        .mockReturnValueOnce(personChain);
+
       await service.updateTicket("org1", "admin1", true, 1, { assigneeId: "agent1" });
 
       expect(mockDb.transaction).toHaveBeenCalled();

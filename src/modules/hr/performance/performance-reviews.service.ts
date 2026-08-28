@@ -26,6 +26,11 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
 import { ReviewCyclesService } from "./review-cycles.service";
 import { OneOnOneMeetingsService } from "./one-on-one-meetings.service";
 import { PerformancePipsService } from "./performance-pips.service";
@@ -98,12 +103,26 @@ export class PerformanceReviewsService {
     }
 
     const reviewerId = input.reviewerId ?? actorId;
+
+    let reviewerMembershipId: number;
+    try {
+      const actor = await assertOrganizationActor(this.db, orgId, {
+        kind: "user",
+        userId: reviewerId,
+      });
+      reviewerMembershipId = actor.membershipId;
+    } catch (e) {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    }
+
     const [review] = await this.db
       .insert(performanceReviews)
       .values({
         orgId,
         userId: input.userId,
         reviewerId,
+        reviewerMembershipId,
         cycleId: input.cycleId,
         periodStart: input.periodStart,
         periodEnd: input.periodEnd,

@@ -12,6 +12,7 @@ import {
   OrganizationActorError,
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 
 export type UpdateReimbursementResult =
   | { ok: false; reason: "not_found" | "own_request" }
@@ -86,7 +87,10 @@ export class ReimbursementsService {
       .where(and(eq(reimbursements.id, reimbursementId), eq(reimbursements.orgId, orgId)));
 
     if (body.status === "APPROVED" || body.status === "REJECTED") {
-      void this.dispatchAutomation(orgId, reimbursementId, existing.userId, existing.amount, body.status);
+      const status = body.status;
+      const dispatch = () =>
+        this.dispatchAutomation(orgId, reimbursementId, existing.userId, existing.amount, status);
+      if (!registerAfterCommit(dispatch)) await dispatch();
     }
 
     return { ok: true };
