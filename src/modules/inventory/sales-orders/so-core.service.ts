@@ -22,6 +22,7 @@ import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { SoLifecycleService } from "./so-lifecycle.service";
 import { addDec, mulDec } from "../stock-engine/stock-engine.service";
 import { loadOrderableVariants } from "../products/lib/orderable-variants";
+import { availableQty } from "../stock-engine/decimal";
 import type {
   CreateSoInput,
   ListSoInput,
@@ -307,6 +308,7 @@ export class SoCoreService {
         onOrder: true,
         blockedQty: true,
         qualityHoldQty: true,
+        outgoingQty: true,
       },
     });
 
@@ -318,6 +320,7 @@ export class SoCoreService {
         onOrder: number;
         blocked: number;
         qualityHold: number;
+        outgoing: number;
       }
     >();
 
@@ -328,6 +331,7 @@ export class SoCoreService {
       const onOrder = parseFloat(l.onOrder);
       const blocked = parseFloat(l.blockedQty ?? "0");
       const qualityHold = parseFloat(l.qualityHoldQty ?? "0");
+      const outgoing = parseFloat(l.outgoingQty ?? "0");
 
       if (existing) {
         existing.onHand += onHand;
@@ -335,6 +339,7 @@ export class SoCoreService {
         existing.onOrder += onOrder;
         existing.blocked += blocked;
         existing.qualityHold += qualityHold;
+        existing.outgoing += outgoing;
       } else {
         grouped.set(l.productVariantId, {
           onHand,
@@ -342,6 +347,7 @@ export class SoCoreService {
           onOrder,
           blocked,
           qualityHold,
+          outgoing,
         });
       }
     }
@@ -353,6 +359,7 @@ export class SoCoreService {
       const blocked = agg?.blocked ?? 0;
       const qualityHold = agg?.qualityHold ?? 0;
       const onOrder = agg?.onOrder ?? 0;
+      const outgoing = agg?.outgoing ?? 0;
       return {
         productVariantId: id,
         onHand,
@@ -360,9 +367,21 @@ export class SoCoreService {
         blocked,
         qualityHold,
         onOrder,
-        available: onHand - committed - blocked - qualityHold,
+        // A1. One formula. This copy omitted outgoing_qty, so a line already
+        // picked and waiting on the bench was offered to the next order —
+        // and `outgoingQty` was reported as `committed`, which is a different
+        // bucket entirely.
+        available: Number(
+          availableQty({
+            on_hand: String(onHand),
+            committed: String(committed),
+            blocked_qty: String(blocked),
+            quality_hold_qty: String(qualityHold),
+            outgoing_qty: String(outgoing),
+          }),
+        ),
         incomingQty: onOrder,
-        outgoingQty: committed,
+        outgoingQty: outgoing,
       };
     });
   }

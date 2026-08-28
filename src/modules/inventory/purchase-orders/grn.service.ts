@@ -35,6 +35,7 @@ import type {
 } from "./dto/inv-purchase-orders.schemas";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { PoService } from "./po.service";
+import { StockProjectionService } from "../stock-engine/stock-projection.service";
 
 @Injectable()
 export class GrnService {
@@ -47,6 +48,7 @@ export class GrnService {
     private readonly journalPosting: InventoryAccountingBridge,
     private readonly poService: PoService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly projection: StockProjectionService,
   ) {}
 
   async receiveGoods(
@@ -310,6 +312,19 @@ export class GrnService {
           qualityStatus: line.qualityStatus,
           rejectionReason: line.rejectionReason,
         });
+
+        // A1. Goods that have arrived are no longer on order. Without this the
+        // bucket only ever grows, and replenishment sees a permanent phantom
+        // inbound that suppresses every future proposal.
+        if (po.warehouseId !== null) {
+          await this.projection.addOnOrder(
+            tx,
+            orgId,
+            poLine.productVariantId,
+            po.warehouseId,
+            `-${line.quantityReceived}`,
+          );
+        }
 
         await tx
           .update(invPoLines)

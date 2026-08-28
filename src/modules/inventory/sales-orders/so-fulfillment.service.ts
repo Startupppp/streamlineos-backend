@@ -19,6 +19,7 @@ import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { SoCoreService } from "./so-core.service";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
 import { addDec, cmpDec } from "../stock-engine/decimal";
+import { StockProjectionService } from "../stock-engine/stock-projection.service";
 
 @Injectable()
 export class SoFulfillmentService {
@@ -33,6 +34,7 @@ export class SoFulfillmentService {
     private readonly numSeq: NumberSequenceService,
     private readonly journalPosting: InventoryAccountingBridge,
     private readonly soCore: SoCoreService,
+    private readonly projection: StockProjectionService,
   ) {}
 
   async reserveSo(orgId: string, soId: number, userId: string, idempotencyKey: string, data: ReserveSoInput) {
@@ -156,6 +158,24 @@ export class SoFulfillmentService {
       status: "COMPLETED",
       createdBy: userId,
     }).returning();
+
+    // A1. `outgoing_qty` had no writer at all, so availability ignored one of
+    // its five terms. Only the portion no reservation covers is recorded here:
+    // a reserved pick is already out of availability via `committed`, and
+    // counting it twice would be a worse error than counting it never.
+    await this.db.transaction(async (tx) => {
+      for (const line of data.lines) {
+        const soLine = so.lines.find((l) => l.id === line.soLineId);
+        if (!soLine) continue;
+        await this.projection.recordPicked(
+          tx,
+          orgId,
+          soLine.productVariantId,
+          line.locationId,
+          line.quantityPicked,
+        );
+      }
+    });
 
     await this.db.insert(invPickListLines).values(
       data.lines.map((line) => {
@@ -288,6 +308,24 @@ export class SoFulfillmentService {
         eq(invPickLists.soId, soId),
       ),
       with: { lines: true },
+    });
+
+    // A1. The goods leave, so the bucket that held them empties. Driven from
+    // the pick lines rather than the order lines: a partially picked order
+    // ships what was picked, and the bucket has to match that.
+    await this.db.transaction(async (tx) => {
+      for (const pickList of pickLists) {
+        for (const line of pickList.lines) {
+          if (line.locationId === null) continue;
+          await this.projection.shipOutgoing(
+            tx,
+            orgId,
+            line.productVariantId,
+            line.locationId,
+            String(line.quantityPicked),
+          );
+        }
+      }
     });
 
     const reservations = await this.db.query.invStockReservations.findMany({

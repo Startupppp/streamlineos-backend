@@ -100,3 +100,19 @@ export const suggestPutawaySchema = z
   })
   .strict();
 export type SuggestPutawayInput = z.infer<typeof suggestPutawaySchema>;
+
+/** A7. Grant one person warehouse scope. Identity of the grantor comes from the token. */
+export const grantWarehouseUserSchema = z
+  .object({
+    userId: z.string().trim().min(1).max(255),
+  })
+  .strict();
+export type GrantWarehouseUserInput = z.infer<typeof grantWarehouseUserSchema>;
+
+export const listAssignableUsersSchema = z
+  .object({
+    q: z.string().trim().max(100).optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(50),
+  })
+  .strict();
+export type ListAssignableUsersInput = z.infer<typeof listAssignableUsersSchema>;

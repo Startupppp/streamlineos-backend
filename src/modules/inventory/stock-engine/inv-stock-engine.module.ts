@@ -12,10 +12,11 @@ import { CostVisibilityService } from "./cost-visibility";
 import { MovementCostingService } from "./movement-costing.service";
 import { InventoryAccountingBridge } from "./accounting-bridge";
 import { UomConversionService } from "./uom-conversion.service";
+import { StockProjectionService } from "./stock-projection.service";
 
 @Module({
   imports: [AccountingGlModule, AccountingPostingModule],
-  providers: [
+  providers: [StockProjectionService, 
     StockEngineService,
     ReservationService,
     NumberSequenceService,
@@ -28,7 +29,7 @@ import { UomConversionService } from "./uom-conversion.service";
     InventoryAccountingBridge,
     UomConversionService,
   ],
-  exports: [
+  exports: [StockProjectionService, 
     StockEngineService,
     ReservationService,
     NumberSequenceService,

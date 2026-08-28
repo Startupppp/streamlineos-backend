@@ -9,6 +9,8 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService, type WarehouseScope } from "../stock-engine/warehouse-scope.service";
 import { CostVisibilityService, stripCostFields } from "../stock-engine/cost-visibility";
+import { availableQtySql, availableQtySumSql } from "../stock-engine/available-sql";
+import { availableQty } from "../stock-engine/decimal";
 import type {
   ListStockLevelsInput, ListTransactionsInput, AvailabilityQueryInput,
 } from "./dto/inv-stock.schemas";
@@ -77,7 +79,7 @@ export class InvStockService {
             sl.outgoing_qty,
             sl.average_cost,
             sl.updated_at,
-            (sl.on_hand::numeric - sl.committed::numeric - COALESCE(sl.blocked_qty, 0)::numeric - COALESCE(sl.quality_hold_qty, 0)::numeric) AS available
+            ${availableQtySql("sl")} AS available
           FROM inv_stock_levels sl
           WHERE sl.org_id = ${orgId}
             ${scope.sql}
@@ -179,7 +181,8 @@ export class InvStockService {
           COALESCE(SUM(on_hand::numeric), 0)::text AS on_hand,
           COALESCE(SUM(committed::numeric), 0)::text AS committed,
           COALESCE(SUM(COALESCE(blocked_qty, 0)::numeric), 0)::text AS blocked_qty,
-          COALESCE(SUM(COALESCE(quality_hold_qty, 0)::numeric), 0)::text AS quality_hold_qty
+          COALESCE(SUM(COALESCE(quality_hold_qty, 0)::numeric), 0)::text AS quality_hold_qty,
+          COALESCE(SUM(COALESCE(outgoing_qty, 0)::numeric), 0)::text AS outgoing_qty
         FROM inv_stock_levels sl
         WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${variantId}
         ${scope.sql}
@@ -209,7 +212,7 @@ export class InvStockService {
           w.name AS warehouse_name,
           COALESCE(SUM(sl.on_hand::numeric), 0)::text AS on_hand,
           COALESCE(SUM(sl.committed::numeric), 0)::text AS committed,
-          COALESCE(SUM(sl.on_hand::numeric - sl.committed::numeric - COALESCE(sl.blocked_qty, 0)::numeric - COALESCE(sl.quality_hold_qty, 0)::numeric), 0)::text AS available
+          ${availableQtySumSql("sl")}::text AS available
         FROM inv_stock_levels sl
         JOIN inv_locations loc ON loc.id = sl.location_id
         JOIN inv_warehouses w ON w.id = loc.warehouse_id
@@ -230,7 +233,23 @@ export class InvStockService {
     const incoming = parseFloat(String(incomingRow?.["incoming"] ?? "0"));
     const outgoing = parseFloat(String(outgoingRow?.["outgoing"] ?? "0"));
 
-    const available = onHand - committed - blocked - qualityHold;
+    // A1. Exact and complete. This copy dropped outgoing_qty and used floats,
+    // so it disagreed with the SQL beside it in two separate ways.
+    //
+    // `outgoingQty` is the projection bucket — picked, not yet shipped. It is
+    // deliberately not `outgoing` below, which is open sales-order demand and a
+    // different quantity entirely; conflating the two is easy and produces a
+    // number that looks right.
+    const outgoingQty = parseFloat(String(stockRow?.["outgoing_qty"] ?? "0"));
+    const available = Number(
+      availableQty({
+        on_hand: String(onHand),
+        committed: String(committed),
+        blocked_qty: String(blocked),
+        quality_hold_qty: String(qualityHold),
+        outgoing_qty: String(outgoingQty),
+      }),
+    );
     const forecasted = onHand + incoming - outgoing;
 
     return {

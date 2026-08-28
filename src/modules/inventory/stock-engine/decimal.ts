@@ -68,6 +68,42 @@ export function isPositive(a: string): boolean {
  * physically present but not sellable — including outgoing_qty, which is picked
  * but not yet shipped and was previously ignored, so it was promised twice.
  */
+/**
+ * The five terms of availability, named once.
+ *
+ * A1. There were six independent copies of this arithmetic — four in SQL, two
+ * in JavaScript — and not one of them subtracted `outgoing_qty`, so stock that
+ * had been picked and was standing on the packing bench was still being
+ * promised to the next customer. Copies of a formula do not stay equal; they
+ * stay equal until somebody adds a term, and then they are silently different
+ * in whichever direction is least visible.
+ *
+ * The meanings, fixed here so every reader matches:
+ *
+ *   `committed`     held by an ACTIVE reservation
+ *   `outgoing_qty`  picked, and covered by no reservation
+ *   `blocked_qty`   administratively blocked
+ *   `quality_hold_qty`  held pending inspection
+ *
+ * `committed` and `outgoing_qty` are disjoint by construction: only the picked
+ * quantity a reservation does *not* cover enters `outgoing_qty`. Both are
+ * subtracted and neither double-counts the other.
+ *
+ * The obvious alternative -- move the quantity from `committed` to
+ * `outgoing_qty` on pick -- breaks the `committed_vs_reservations`
+ * reconciliation check, because `committed` is a projection of ACTIVE
+ * reservations and picking does not consume one.
+ *
+ * `on_order` is deliberately *not* here. Goods on a purchase order are not
+ * available to promise — they are not in the building.
+ */
+export const AVAILABLE_QTY_TERMS = [
+  "committed",
+  "blocked_qty",
+  "quality_hold_qty",
+  "outgoing_qty",
+] as const;
+
 export function availableQty(level: {
   on_hand: string;
   committed: string;

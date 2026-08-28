@@ -19,6 +19,8 @@ import { UomConversionService } from "../stock-engine/uom-conversion.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { addDec, mulDec } from "../stock-engine/stock-engine.service";
 import type { ListPoInput, CreatePoInput, UpdatePoInput } from "./dto/inv-purchase-orders.schemas";
+import { StockProjectionService } from "../stock-engine/stock-projection.service";
+import { isPositive, subDec } from "../stock-engine/decimal";
 
 function computePoTotals(lines: Array<{ quantity: number; unitCost: string; taxRate: string }>) {
   let subtotal = "0.0000";
@@ -45,6 +47,7 @@ export class PoService {
     private readonly numSeq: NumberSequenceService,
     private readonly warehouseScope: WarehouseScopeService,
     private readonly uom: UomConversionService,
+    private readonly projection: StockProjectionService,
   ) {}
 
   async resolveLocationId(orgId: string, warehouseId: number | null | undefined): Promise<number> {
@@ -292,10 +295,47 @@ export class PoService {
       throw new BadRequestException("This purchase order requires approval before sending");
     }
 
-    const [sent] = await this.db.update(invPurchaseOrders)
-      .set({ status: "SENT", sentAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
-      .returning();
+    // A1. `on_order` had no writer at all: it sat at its "0" default while
+    // replenishment read it, so a warehouse that had already ordered the
+    // shortfall ordered it again the following week. Sending is the moment the
+    // goods become expected.
+    const [sent] = await this.db.transaction(async (tx) => {
+      const updated = await tx
+        .update(invPurchaseOrders)
+        .set({ status: "SENT", sentAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
+        .returning();
+
+      if (po.warehouseId !== null) {
+        const lines = await tx
+          .select({
+            productVariantId: invPoLines.productVariantId,
+            quantity: invPoLines.quantity,
+            quantityReceived: invPoLines.quantityReceived,
+          })
+          .from(invPoLines)
+          .where(and(eq(invPoLines.orgId, orgId), eq(invPoLines.poId, poId)));
+
+        for (const line of lines) {
+          // Outstanding, not ordered: a partially received order re-sent must
+          // not book the already-arrived units as still on their way.
+          const outstanding = subDec(
+            String(line.quantity),
+            String(line.quantityReceived),
+          );
+          if (isPositive(outstanding)) {
+            await this.projection.addOnOrder(
+              tx,
+              orgId,
+              line.productVariantId,
+              po.warehouseId,
+              outstanding,
+            );
+          }
+        }
+      }
+      return updated;
+    });
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
     await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));

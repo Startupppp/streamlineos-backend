@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { DemandBaselineService } from "./demand-baseline.service";
 import { SafetyStockPolicyService } from "./safety-stock-policy.service";
+import { availableQtySumSql } from "../../stock-engine/available-sql";
 
 export interface ReorderEvidenceLine {
   /** What this figure is. */
@@ -56,21 +57,29 @@ export class ReorderProposalService {
   ) {}
 
   private async position(orgId: string, productVariantId: number) {
+    // A1. `available` was `onHand - committed` here — a two-term copy that
+    // ignored blocked, quality-held and picked-not-shipped stock, so a
+    // reorder proposal reasoned about a position the warehouse could not
+    // actually sell.
     const [row] = await this.db.execute<{
       on_hand: string;
       committed: string;
       on_order: string;
+      available: string;
     }>(sql`
-      SELECT COALESCE(SUM(on_hand), 0)::text AS on_hand,
-             COALESCE(SUM(committed), 0)::text AS committed,
-             COALESCE(SUM(on_order), 0)::text AS on_order
-      FROM inv_stock_levels
-      WHERE org_id = ${orgId} AND product_variant_id = ${productVariantId}
+      SELECT COALESCE(SUM(sl.on_hand), 0)::text AS on_hand,
+             COALESCE(SUM(sl.committed), 0)::text AS committed,
+             COALESCE(SUM(sl.on_order), 0)::text AS on_order,
+             ${availableQtySumSql("sl")}::text AS available
+      FROM inv_stock_levels sl
+      WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${productVariantId}
     `);
-    const onHand = Number(row?.on_hand ?? 0);
-    const committed = Number(row?.committed ?? 0);
-    const onOrder = Number(row?.on_order ?? 0);
-    return { onHand, committed, onOrder, available: onHand - committed };
+    return {
+      onHand: Number(row?.on_hand ?? 0),
+      committed: Number(row?.committed ?? 0),
+      onOrder: Number(row?.on_order ?? 0),
+      available: Number(row?.available ?? 0),
+    };
   }
 
   async propose(

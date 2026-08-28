@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
+import { availableQtySumSql } from "../../stock-engine/available-sql";
 
 export interface WarehousePosition {
   warehouseId: number;
@@ -95,12 +96,14 @@ export class TransferRecommendationService {
       warehouse_name: string;
       on_hand: string;
       committed: string;
+      available: string;
       demand: string;
     }>(sql`
       SELECT w.id AS warehouse_id,
              w.name AS warehouse_name,
              COALESCE(SUM(sl.on_hand), 0)::text AS on_hand,
              COALESCE(SUM(sl.committed), 0)::text AS committed,
+             ${availableQtySumSql("sl")}::text AS available,
              COALESCE((
                SELECT SUM(-t.quantity_change)
                FROM inv_stock_transactions t
@@ -129,7 +132,10 @@ export class TransferRecommendationService {
     const positions: WarehousePosition[] = rows.map((row) => {
       const onHand = Number(row.on_hand);
       const committed = Number(row.committed);
-      const available = onHand - committed;
+      // A1. One formula. A two-term copy here treated blocked, quality-held
+      // and picked-not-shipped stock as transferable, so the plan would move
+      // goods that were already spoken for.
+      const available = Number(row.available);
       const weeklyDemand = Number(row.demand) / weeks;
       return {
         warehouseId: row.warehouse_id,
