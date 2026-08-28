@@ -185,15 +185,34 @@ export interface SupplierDelayBriefingResult {
   generatedAt: Date;
 }
 
+/**
+ * The restraint rules, which every call gets. They are about arithmetic and
+ * evidence, not about output shape, so a prose briefing needs them just as much
+ * as a structured one does.
+ */
+const RESTRAINT_RULES = [
+  "You are an inventory operations analyst. Your only job is to narrate and explain pre-computed evidence.",
+  "CRITICAL RULES you must never violate:",
+  "1. You MUST NOT compute, invent, or derive any numbers. Every quantity, value, date, and percentage is provided to you.",
+  "2. You MUST NOT contradict the evidence. Reference the exact figures given.",
+  "3. Your explanation narrates WHY these computed facts are operationally significant.",
+  "4. isFactual=true means the fact comes directly from the evidence data. isFactual=false means it is your operational suggestion.",
+  "5. Keep explanations concise (2-4 sentences).",
+];
+
+/**
+ * Prose narration -- the digest and the supplier-delay briefing. These call
+ * `invokeText` and are rendered as a paragraph, so telling them about a status
+ * envelope and an action enum would describe a shape they cannot return.
+ */
+function buildNarrationSystemPrompt(): string {
+  return RESTRAINT_RULES.join("\n");
+}
+
+/** Structured calls, held to the INV-102 contract. */
 function buildSystemPrompt(): string {
   return [
-    "You are an inventory operations analyst. Your only job is to narrate and explain pre-computed evidence.",
-    "CRITICAL RULES you must never violate:",
-    "1. You MUST NOT compute, invent, or derive any numbers. Every quantity, value, date, and percentage is provided to you.",
-    "2. You MUST NOT contradict the evidence. Reference the exact figures given.",
-    "3. Your explanation narrates WHY these computed facts are operationally significant.",
-    "4. isFactual=true means the fact comes directly from the evidence data. isFactual=false means it is your operational suggestion.",
-    "5. Keep explanations concise (2-4 sentences).",
+    ...RESTRAINT_RULES,
     "6. Reply with status \"ok\" when the evidence supports an answer, \"insufficient_evidence\" (naming what is missing) when it does not, or \"refused\" when the request is not yours to answer. Do not answer anyway.",
     `7. Every recommendation names one action from this exact list and nothing else: ${INV_AI_ACTIONS.join(", ")}. You do not describe an action, choose a route, or name a permission -- the server does that.`,
     "8. Cite evidence as {kind, id} pairs drawn only from the evidence given to you. An id you were not given will be rejected and the whole answer discarded.",
@@ -364,7 +383,7 @@ export class InvAiExplainService {
         charge: true,
         redact: false,
         prompt: {
-          system: buildSystemPrompt(),
+          system: buildNarrationSystemPrompt(),
           user: buildDigestUserPrompt(groups),
           promptKey: "inv.digest-narrate",
           promptVersion: 1,
@@ -597,7 +616,7 @@ export class InvAiExplainService {
               charge: true,
               redact: false,
               prompt: {
-                system: buildSystemPrompt(),
+                system: buildNarrationSystemPrompt(),
                 user: buildDelayBriefingUserPrompt(vendors),
                 promptKey: "inv.supplier-delay-briefing",
                 promptVersion: 1,
