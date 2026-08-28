@@ -16,6 +16,10 @@ const REGISTRY = {
   "tenant-ctx-errors": { owner: "platform-reliability", runbookAnchor: "#tenant-ctx-errors", severity: "critical" },
   p95: { owner: "platform-reliability", runbookAnchor: "#p95", severity: "high" },
   "seam-latency": { owner: "platform-reliability", runbookAnchor: "#seam-latency", severity: "high" },
+  "queue-age": { owner: "platform-reliability", runbookAnchor: "#queue-backlog", severity: "high" },
+  "pool-saturation": { owner: "platform-reliability", runbookAnchor: "#database-cell-failure", severity: "high" },
+  "tenant-cost": { owner: "platform-reliability", runbookAnchor: "#tenant-cost", severity: "high" },
+  "cell-recovery": { owner: "platform-reliability", runbookAnchor: "#cell-recovery", severity: "critical" },
 };
 
 const RUNBOOK_BASE =

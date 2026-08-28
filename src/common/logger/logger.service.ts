@@ -25,9 +25,10 @@ function emit(level: LogLevel, message: string, meta?: unknown): void {
       level,
       message: truncateForLog(message),
       ...(context?.correlationId ? { correlationId: context.correlationId } : {}),
+      ...(context?.release ? { release: context.release } : {}),
+      ...(context?.cellId ? { cellId: context.cellId } : {}),
       ...(context?.orgId ? { orgId: context.orgId } : {}),
       ...(context?.actorId ? { actorId: context.actorId } : {}),
-      ...(context?.cellId ? { cellId: context.cellId } : {}),
       ...(context?.method ? { method: context.method } : {}),
       ...(context?.route ? { route: context.route } : {}),
       // Everything a caller passes is untrusted for logging purposes: it may carry

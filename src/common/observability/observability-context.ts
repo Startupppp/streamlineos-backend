@@ -18,6 +18,8 @@ export interface ObservabilityContext {
   method?: string;
   route?: string;
   cellId?: string;
+  /** Build identifier stamped at the edge from APP_RELEASE so a deploy can be implicated in a spike. */
+  release?: string;
 }
 
 /** Everything callers may fill in later; the correlation id is fixed at entry. */
@@ -52,6 +54,7 @@ export function enrichObservabilityContext(patch: ObservabilityEnrichment): bool
   if (patch.method) context.method = patch.method;
   if (patch.route) context.route = patch.route;
   if (patch.cellId) context.cellId = patch.cellId;
+  if (patch.release) context.release = patch.release;
   return true;
 }
 
