@@ -75,7 +75,8 @@ export class DashboardHrService {
       resolveDashboardStatsFlags(this.access, u),
     ]);
 
-    const full = await this.cache.cached(
+    const full = await this.cache.cachedForOrg(
+      orgId,
       statsKey,
       async () => {
         const today = getTodayString();
@@ -143,7 +144,8 @@ export class DashboardHrService {
       scope,
       today,
     );
-    return this.cache.cached(
+    return this.cache.cachedForOrg(
+      orgId,
       key,
       async () => {
         const scopePredicate = applyScope(scope, orgId, userId, {
@@ -224,7 +226,8 @@ export class DashboardHrService {
       scope,
       today,
     );
-    return this.cache.cached(
+    return this.cache.cachedForOrg(
+      orgId,
       key,
       () => this.buildTeamAttendance(orgId, today, scope, u),
       CACHE_TTL.SHORT,
@@ -334,7 +337,8 @@ export class DashboardHrService {
       "birthdays",
       today,
     );
-    return this.cache.cached(
+    return this.cache.cachedForOrg(
+      orgId,
       key,
       () => this.buildBirthdays(orgId),
       CACHE_TTL.MEDIUM,

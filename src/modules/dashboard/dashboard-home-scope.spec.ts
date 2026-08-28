@@ -11,6 +11,19 @@ import { attendance, leaveRequests } from "../../db/schema";
 import type { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
+import { CacheService } from "../../common/cache/cache.service";
+
+async function cacheKeyForOrg(orgId: string, localKey: string): Promise<string> {
+  let captured = "";
+  const cache = new CacheService(null);
+  const original = cache.cached.bind(cache);
+  cache.cached = async <T>(key: string, fetcher: () => Promise<T>, ttl?: number) => {
+    captured = key;
+    return original(key, fetcher, ttl);
+  };
+  await cache.cachedForOrg(orgId, localKey, async () => null);
+  return captured;
+}
 
 const dialect = new PgDialect();
 const ORG = "org_test_1";
@@ -116,15 +129,29 @@ describe("scoped dashboard cache key isolation", () => {
     expect(k1).not.toBe(k2);
   });
 
-  it("(c) same actor in different orgs produces different keys", async () => {
+  it("(c) the org segment comes from cachedForOrg, not from the local key", async () => {
     const access = makeAccess(1);
-    const u1 = makeUser(ACTOR, ORG);
-    const u2 = makeUser(ACTOR, ORG2);
-    const [k1, k2] = await Promise.all([
-      buildScopedDashboardCacheKey(access, u1, "attendance", "all"),
-      buildScopedDashboardCacheKey(access, u2, "attendance", "all"),
-    ]);
+    const local = await buildScopedDashboardCacheKey(
+      access,
+      makeUser(ACTOR, ORG),
+      "attendance",
+      "all",
+    );
+    expect(local).not.toContain(ORG);
+
+    const cache = new CacheService(null);
+    const seen: string[] = [];
+    for (const orgId of [ORG, ORG2]) {
+      await cache.cachedForOrg(orgId, local, async () => {
+        return null;
+      });
+      seen.push(orgId);
+    }
+    const k1 = await cacheKeyForOrg(ORG, local);
+    const k2 = await cacheKeyForOrg(ORG2, local);
     expect(k1).not.toBe(k2);
+    expect(k1).toContain(ORG);
+    expect(seen).toHaveLength(2);
   });
 
   it("(c) different actors across different orgs produce different keys", async () => {

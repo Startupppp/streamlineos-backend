@@ -156,7 +156,8 @@ export class DashboardLeaveService {
       "holidays",
       today,
     );
-    return this.cache.cached(
+    return this.cache.cachedForOrg(
+      orgId,
       key,
       () =>
         this.db

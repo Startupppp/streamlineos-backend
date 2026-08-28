@@ -10,7 +10,7 @@ export async function buildScopedDashboardCacheKey(
   dimension?: string,
 ): Promise<string> {
   const version = await access.getPermissionsVersion(u.orgId);
-  const base = `dashboard-home:${u.orgId}:u${u.userId}:v${version}:${resource}:${scope}`;
+  const base = `dashboard-home:u${u.userId}:v${version}:${resource}:${scope}`;
   return dimension ? `${base}:${dimension}` : base;
 }
 
@@ -21,6 +21,6 @@ export async function buildOrgDashboardCacheKey(
   dimension?: string,
 ): Promise<string> {
   const version = await access.getPermissionsVersion(orgId);
-  const base = `dashboard-home:${orgId}:v${version}:${resource}`;
+  const base = `dashboard-home:v${version}:${resource}`;
   return dimension ? `${base}:${dimension}` : base;
 }
