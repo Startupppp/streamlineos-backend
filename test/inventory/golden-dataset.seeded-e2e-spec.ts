@@ -11,6 +11,7 @@ import { VendorReturnsService } from "src/modules/inventory/returns/vendor-retur
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 import { buildInventoryFixture, type InventoryFixture } from "test/helpers/inventory-fixture";
+import { RecallsService } from "src/modules/inventory/quality/quality-recalls.service";
 
 /**
  * INV-103 — the golden dataset, and every reader agreeing with it.
@@ -181,12 +182,14 @@ describe("[seeded-e2e] the golden inventory dataset", () => {
 
   describe("warehouse scope", () => {
     /**
-     * These four lists were unscoped until INV-109's second pass, and each is
-     * now filtered through the document that carries the warehouse — a serial
-     * by its location, a package by its shipment, a customer return by its
-     * order or shipment, a vendor return by its receipt. Scope predicates are
-     * raw SQL fragments, so a malformed one only fails when it runs. Calling
-     * each once is what proves the fragment is valid.
+     * These lists were unscoped until INV-109, and each is now filtered through
+     * whatever carries the warehouse — a serial by its location, a package by
+     * its shipment, a customer return by its order or shipment, a vendor return
+     * by its receipt, and (third pass) a lot by the stock it holds, a recall by
+     * the lots its lines name. Scope predicates are raw SQL fragments, so a
+     * malformed one only fails when it runs, and a service whose module never
+     * imported the provider it injects type-checks perfectly and cannot boot.
+     * Calling each once is what proves both.
      */
     it("every newly scoped list executes and stays inside the tenant", async () => {
       const lists = [
@@ -194,6 +197,8 @@ describe("[seeded-e2e] the golden inventory dataset", () => {
         () => seededApp.app.get(PackagesService).list(fixture.orgId, fixture.userId, { page: 1, limit: 50 }),
         () => seededApp.app.get(CustomerReturnsService).list(fixture.orgId, fixture.userId, { page: 1, limit: 50 }),
         () => seededApp.app.get(VendorReturnsService).list(fixture.orgId, fixture.userId, { page: 1, limit: 50 }),
+        () => seededApp.app.get(InvTraceabilityService).listLots(fixture.orgId, fixture.userId, { page: 1, limit: 50 }),
+        () => seededApp.app.get(RecallsService).list(fixture.orgId, fixture.userId, { page: 1, limit: 50 }),
       ];
       for (const read of lists) {
         const result = await asTenant(fixture.orgId, read);

@@ -38,7 +38,7 @@ export class InvTraceabilityController {
     @Query(new ZodValidationPipe(listLotsSchema)) filters: ListLotsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.traceability.listLots(u.orgId, filters);
+    return this.traceability.listLots(u.orgId, u.userId, filters);
   }
 
   @Get("lots/:lotId")

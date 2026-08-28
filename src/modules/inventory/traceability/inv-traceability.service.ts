@@ -24,10 +24,32 @@ export class InvTraceabilityService {
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async listLots(orgId: string, filters: ListLotsInput) {
+  async listLots(orgId: string, userId: string, filters: ListLotsInput) {
     const { variantId, productId, status, expiringWithinDays, search, page, limit } = filters;
     const offset = (page - 1) * limit;
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const conditions = [eq(invLots.orgId, orgId)];
+
+    // INV-109. A lot carries no warehouse or location column of its own, which
+    // is why it was left unscoped -- but it is attributable through the stock
+    // it holds, the same way a serial is attributable through its location and
+    // a package through its shipment.
+    //
+    // The decision this encodes: a lot with stock in a warehouse the operator
+    // holds is theirs to see; a lot with stock *nowhere* is attributable to no
+    // warehouse and stays out of a scoped list. That is the same rule already
+    // applied to serials, packages and returns, and it fails closed -- an
+    // unattributable row is hidden rather than shown.
+    if (!scope.unrestricted) {
+      conditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM inv_stock_levels sl
+          WHERE sl.org_id = ${orgId}
+            AND sl.lot_id = ${invLots.id}
+            AND ${scope.location(sql`sl.location_id`)}
+        )`,
+      );
+    }
 
     if (variantId != null) conditions.push(eq(invLots.productVariantId, variantId));
     if (status) conditions.push(eq(invLots.status, status));

@@ -24,7 +24,7 @@ export class RecallsController {
     @Query(new ZodValidationPipe(listRecallsQuerySchema)) q: ListRecallsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.list(u.orgId, q);
+    return this.svc.list(u.orgId, u.userId, q);
   }
 
   @Get(":recallId")

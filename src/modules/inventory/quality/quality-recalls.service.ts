@@ -17,26 +17,61 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { ListRecallsQueryInput, CreateRecallInput, UpdateRecallInput } from "./dto/quality.schemas";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 
 @Injectable()
 export class RecallsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly warehouseScope: WarehouseScopeService,
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
     private readonly audit: InventoryAuditService,
   ) {}
 
-  async list(orgId: string, query: ListRecallsQueryInput) {
+  async list(orgId: string, userId: string, query: ListRecallsQueryInput) {
     const { status, page, limit } = query;
     const offset = (page - 1) * limit;
-    const hash = `${status ?? ""}:${limit}:${offset}`;
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    // The resolved scope belongs in the key. Without it the first caller's
+    // warehouses are cached and served to the next, which defeats the
+    // predicate in both directions.
+    const scopeKey =
+      scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
+    const hash = `${scopeKey}:${status ?? ""}:${limit}:${offset}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.invQualityRecallsNamespace(orgId),
       hash,
       async () => {
         const conditions = [eq(invRecallEvents.orgId, orgId)];
+
+        // INV-109. A recall carries no warehouse of its own; it is attributable
+        // through the lots and variants its lines name, and those through the
+        // stock they hold. A recall touching nothing an operator can see stays
+        // out of their list.
+        //
+        // Hiding a safety event reads uncomfortably, so worth being explicit:
+        // visibility is not what stops recalled goods moving. The allocator
+        // refuses a recalled lot under every strategy regardless of who is
+        // looking, so scoping the list changes what an operator reads, never
+        // what the engine permits.
+        if (scope !== null) {
+          conditions.push(
+            sql`EXISTS (
+              SELECT 1
+              FROM inv_recall_lines rl
+              JOIN inv_stock_levels sl
+                ON sl.org_id = rl.org_id
+               AND (sl.lot_id = rl.lot_id
+                    OR (rl.lot_id IS NULL AND sl.product_variant_id = rl.product_variant_id))
+              WHERE rl.org_id = ${orgId}
+                AND rl.recall_id = ${invRecallEvents.id}
+                AND ${this.warehouseScope.locationPredicate(scope, sql`sl.location_id`)}
+            )`,
+          );
+        }
+
         if (status) conditions.push(eq(invRecallEvents.status, status));
         const where = and(...conditions);
         const [items, countResult] = await Promise.all([
