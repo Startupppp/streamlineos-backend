@@ -90,3 +90,13 @@ export const listWarehousesSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(100),
 }).strict();
 export type ListWarehousesInput = z.infer<typeof listWarehousesSchema>;
+
+/** INV-202. Where should this quantity of this variant go in this warehouse? */
+export const suggestPutawaySchema = z
+  .object({
+    warehouseId: z.coerce.number().int().positive(),
+    productVariantId: z.coerce.number().int().positive(),
+    quantity: z.string().regex(/^\d+(\.\d{1,4})?$/),
+  })
+  .strict();
+export type SuggestPutawayInput = z.infer<typeof suggestPutawaySchema>;

@@ -7,7 +7,10 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { InvWarehousesService } from "./inv-warehouses.service";
+import { PutawayService } from "./putaway.service";
 import {
+  suggestPutawaySchema,
+  type SuggestPutawayInput,
   createWarehouseSchema, updateWarehouseSchema, createLocationSchema, updateLocationSchema, listWarehouseStockSchema, listWarehousesSchema,
   type CreateWarehouseInput, type UpdateWarehouseInput, type CreateLocationInput, type UpdateLocationInput, type ListWarehouseStockInput, type ListWarehousesInput,
 } from "./dto/inv-warehouses.schemas";
@@ -17,7 +20,24 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 @Controller("inventory/warehouses")
 @UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvWarehousesController {
-  constructor(private readonly warehouses: InvWarehousesService) {}
+  constructor(
+    private readonly warehouses: InvWarehousesService,
+    private readonly putaway: PutawayService,
+  ) {}
+
+  /**
+   * INV-202. Advisory: it says where the goods would fit, and the engine still
+   * refuses a putaway that does not. A suggestion is not an authorisation.
+   */
+  @Get("putaway/suggestions")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:read")
+  suggestPutaway(
+    @Query(new ZodValidationPipe(suggestPutawaySchema)) query: SuggestPutawayInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.putaway.suggest(u.orgId, u.userId, query);
+  }
 
   @Get()
   @UseGuards(PermissionGuard)

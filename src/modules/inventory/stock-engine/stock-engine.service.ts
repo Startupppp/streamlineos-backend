@@ -88,6 +88,53 @@ export class StockEngineService {
     private readonly movementCosting: MovementCostingService,
   ) {}
 
+  /**
+   * Locations with no capacity recorded are unlimited, which is the common case
+   * and must stay free. One aggregate covers every raised location; the HAVING
+   * does the comparison in the database so a numeric never becomes a float on
+   * the way to a decision.
+   */
+  private async assertLocationCapacity(
+    tx: Tx,
+    orgId: string,
+    movements: StockEngineCommand["movements"],
+  ): Promise<void> {
+    const raised = [
+      ...new Set(
+        movements
+          .filter(
+            (m) =>
+              (m.qualityBucket ?? "ON_HAND") === "ON_HAND" &&
+              isPositive(m.quantityDelta),
+          )
+          .map((m) => m.locationId),
+      ),
+    ];
+    if (raised.length === 0) return;
+
+    const over = await tx.execute<{ id: number; code: string; capacity: string; total: string }>(sql`
+      SELECT l.id, l.code, l.capacity::text AS capacity, COALESCE(SUM(sl.on_hand), 0)::text AS total
+      FROM inv_locations l
+      LEFT JOIN inv_stock_levels sl
+        ON sl.org_id = l.org_id AND sl.location_id = l.id
+      WHERE l.org_id = ${orgId}
+        AND l.id IN (${sql.join(raised.map((id) => sql`${id}`), sql`, `)})
+        AND l.capacity IS NOT NULL
+      GROUP BY l.id, l.code, l.capacity
+      HAVING COALESCE(SUM(sl.on_hand), 0) > l.capacity
+    `);
+
+    if (over.length > 0) {
+      const detail = over
+        .map((row) => `${row.code} holds ${row.total} against a capacity of ${row.capacity}`)
+        .join("; ");
+      throw new BadRequestException({
+        code: INV_ERRORS.LOCATION_CAPACITY_EXCEEDED,
+        message: `Location capacity exceeded: ${detail}`,
+      });
+    }
+  }
+
   async executeInTx(
     tx: Tx,
     orgId: string,
@@ -267,6 +314,10 @@ export class StockEngineService {
         onHand: newOnHand,
       });
     }
+
+    // INV-202. Same check as the batch path: capacity is a property of the
+    // shelf and has to hold on whichever route a movement arrives by.
+    await this.assertLocationCapacity(tx, orgId, cmd.movements);
 
     await this.auditService.insert(tx, {
       orgId,
@@ -575,6 +626,15 @@ export class StockEngineService {
             onHand: newOnHand,
           });
         }
+
+        // INV-202. A bin's capacity was settable in the warehouse editor and
+        // read by nothing, which made it decorative -- an operator could put a
+        // pallet into a location the building has no room for and the system
+        // would agree. Checked after the levels are written so it sees the
+        // resulting position rather than a prediction of it, and only for
+        // locations a movement actually raised: a capacity check on a location
+        // stock just left is a query for no reason.
+        await this.assertLocationCapacity(tx, orgId, cmd.movements);
 
         await this.auditService.insert(tx, {
           orgId,
