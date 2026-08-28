@@ -23,6 +23,8 @@ import {
   type ExpiryReportInput,
 } from "./dto/inv-reports.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { OperationsMetricsService } from "./operations-metrics.service";
+import { throughputQuerySchema, type ThroughputQueryInput } from "./dto/operations-metrics.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/reports")
@@ -31,7 +33,22 @@ export class InvReportsController {
   constructor(
     private readonly reports: InvReportsService,
     private readonly extended: InvReportsExtendedService,
+    private readonly operationsMetrics: OperationsMetricsService,
   ) {}
+
+  /**
+   * INV-210. Throughput and SLA over a bounded window, computed from the facts
+   * the rest of the phase records rather than from a counter that would drift.
+   */
+  @Get("throughput")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:reports:read")
+  throughput(
+    @Query(new ZodValidationPipe(throughputQuerySchema)) query: ThroughputQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.operationsMetrics.throughput(u.orgId, u.userId, query);
+  }
 
   @Get("dashboard")
   @UseGuards(PermissionGuard)
