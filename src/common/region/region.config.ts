@@ -26,6 +26,7 @@ export interface RegionStorageConfig {
   readonly secretAccessKey?: string;
   readonly publicUrl?: string;
   readonly kbPublicUrl?: string;
+  readonly keyPrefix?: string;
 }
 
 export const TENANT_CLASSES = ["SHARED", "DEDICATED"] as const;
@@ -37,6 +38,8 @@ export interface RegionCellConfig {
   readonly searchCluster: string;
   readonly acceptedTenantClasses: readonly TenantClassKey[];
   readonly complianceZones: readonly string[];
+  readonly cacheKeyPrefix?: string;
+  readonly searchApiKey?: string;
 }
 
 export interface RegionDefinition {
@@ -172,6 +175,8 @@ export function resolveRegionTopology(env: NodeJS.ProcessEnv): RegionTopology {
         complianceZones: parseList(
           read(env, envKey(key, "COMPLIANCE_ZONES"), ...flat("COMPLIANCE_ZONES")),
         ),
+        cacheKeyPrefix: read(env, envKey(key, "CACHE_KEY_PREFIX"), ...flat("CACHE_KEY_PREFIX")),
+        searchApiKey: read(env, envKey(key, "SEARCH_API_KEY"), ...flat("SEARCH_API_KEY")),
       },
       storage: {
         region: read(env, envKey(key, "R2_REGION"), ...flat("R2_REGION")) ?? "auto",
@@ -190,6 +195,7 @@ export function resolveRegionTopology(env: NodeJS.ProcessEnv): RegionTopology {
           ...flat("NEXT_PUBLIC_R2_PUBLIC_URL"),
         ),
         kbPublicUrl: read(env, envKey(key, "R2_KB_PUBLIC_URL"), ...flat("R2_KB_PUBLIC_URL")),
+        keyPrefix: read(env, envKey(key, "R2_KEY_PREFIX"), ...flat("R2_KEY_PREFIX")),
       },
     };
   }

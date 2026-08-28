@@ -254,5 +254,17 @@ test("forecastSaturation correctly fits a trend from well-spaced samples", () =>
   assert.ok(result.status === "forecast" || result.status === "refused" || result.status === "decreasing");
 });
 
+test("forecastSaturation excludes duringBulkLoad entries from the trend", () => {
+  const now = Date.now();
+  const history = [
+    { ts: now - 30 * 86_400_000, resources: { "connections": { used: 10, limit: 100 } } },
+    { ts: now - 20 * 86_400_000, resources: { "connections": { used: 20, limit: 100 } }, duringBulkLoad: true },
+    { ts: now - 10 * 86_400_000, resources: { "connections": { used: 30, limit: 100 } } },
+  ];
+  const result = forecastSaturation(history, "connections");
+  assert.equal(result.status, "refused", `Expected refused, got ${result.status} — bulk-load entry must not count as a qualifying sample`);
+  assert.equal(result.wellSpaced, 2, `Expected 2 well-spaced non-bulk samples, got ${result.wellSpaced}`);
+});
+
 if (process.exitCode !== 1)
   process.stdout.write("\nAll cell-capacity tests passed.\n");

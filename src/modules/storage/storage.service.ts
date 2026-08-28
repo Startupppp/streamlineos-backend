@@ -89,6 +89,7 @@ interface StoragePlacement {
   readonly client: S3Client;
   readonly bucketName?: string;
   readonly publicUrl?: string;
+  readonly keyPrefix?: string;
 }
 
 @Injectable()
@@ -166,6 +167,7 @@ export class StorageService {
       client: this.clientFor(cfg),
       bucketName: cfg.bucketName,
       publicUrl: storage.publicUrl ?? this.config.NEXT_PUBLIC_R2_PUBLIC_URL,
+      keyPrefix: storage.keyPrefix,
     };
   }
 
@@ -254,7 +256,8 @@ export class StorageService {
     const bucketName = this.requireBucketFrom(placement, bucketOverride);
 
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
-    const key = `${folder}/${randomUUID()}-${sanitizedName}`;
+    const rawKey = `${folder}/${randomUUID()}-${sanitizedName}`;
+    const key = placement.keyPrefix ? `${placement.keyPrefix}/${rawKey}` : rawKey;
 
     await placement.client.send(
       new PutObjectCommand({
@@ -291,7 +294,8 @@ export class StorageService {
     const placement = await this.placementFor(orgId);
     const bucketName = this.requireBucketFrom(placement, bucketOverride);
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
-    const key = `${folder}/${randomUUID()}-${sanitizedName}`;
+    const rawKey = `${folder}/${randomUUID()}-${sanitizedName}`;
+    const key = placement.keyPrefix ? `${placement.keyPrefix}/${rawKey}` : rawKey;
 
     await placement.client.send(
       new PutObjectCommand({
@@ -380,10 +384,11 @@ export class StorageService {
   ): Promise<void> {
     const placement = await this.placementFor(orgId);
     const bucketName = this.requireBucketFrom(placement, bucketOverride);
+    const resolvedKey = placement.keyPrefix ? `${placement.keyPrefix}/${key}` : key;
     await placement.client.send(
       new PutObjectCommand({
         Bucket: bucketName,
-        Key: key,
+        Key: resolvedKey,
         Body: buffer,
         ContentType: mimeType,
       }),

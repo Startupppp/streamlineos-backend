@@ -1,4 +1,5 @@
 import { CronLeaseService } from "./cron-lease.service";
+import { PROCESS_CELL_ID } from "../../common/cell-resources/cell-id";
 
 describe("CronLeaseService", () => {
   it("runs one worker and releases only its lease token", async () => {
@@ -12,10 +13,10 @@ describe("CronLeaseService", () => {
 
     expect(result).toEqual({ ran: true, result: { delivered: 2 } });
     expect(work).toHaveBeenCalledTimes(1);
-    expect(redis.set).toHaveBeenCalledWith("cron:lease:outbox-events-worker", expect.any(String), { ex: 120, nx: true });
+    expect(redis.set).toHaveBeenCalledWith(`cron:lease:${PROCESS_CELL_ID}:outbox-events-worker`, expect.any(String), { ex: 120, nx: true });
     expect(redis.eval).toHaveBeenCalledWith(
       expect.stringContaining('redis.call("get", KEYS[1]) == ARGV[1]'),
-      ["cron:lease:outbox-events-worker"],
+      [`cron:lease:${PROCESS_CELL_ID}:outbox-events-worker`],
       [expect.any(String)],
     );
   });
@@ -121,12 +122,12 @@ describe("CronLeaseService", () => {
       const store = new Map<string, string>();
       const service = new CronLeaseService(buildFakeRedis(store) as never);
 
-      store.set("cron:lease:expiry-job", "stale-token");
+      store.set(`cron:lease:${PROCESS_CELL_ID}:expiry-job`, "stale-token");
 
       const whileHeld = await service.withLease("expiry-job", 1, async () => "during");
       expect(whileHeld).toEqual({ ran: false });
 
-      store.delete("cron:lease:expiry-job");
+      store.delete(`cron:lease:${PROCESS_CELL_ID}:expiry-job`);
 
       const afterExpiry = await service.withLease("expiry-job", 1, async () => "after");
       expect(afterExpiry).toEqual({ ran: true, result: "after" });

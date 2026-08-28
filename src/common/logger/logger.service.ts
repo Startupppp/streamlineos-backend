@@ -27,6 +27,7 @@ function emit(level: LogLevel, message: string, meta?: unknown): void {
       ...(context?.correlationId ? { correlationId: context.correlationId } : {}),
       ...(context?.orgId ? { orgId: context.orgId } : {}),
       ...(context?.actorId ? { actorId: context.actorId } : {}),
+      ...(context?.cellId ? { cellId: context.cellId } : {}),
       ...(context?.method ? { method: context.method } : {}),
       ...(context?.route ? { route: context.route } : {}),
       // Everything a caller passes is untrusted for logging purposes: it may carry

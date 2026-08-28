@@ -17,6 +17,7 @@ export interface ObservabilityContext {
   actorId?: string;
   method?: string;
   route?: string;
+  cellId?: string;
 }
 
 /** Everything callers may fill in later; the correlation id is fixed at entry. */
@@ -50,6 +51,7 @@ export function enrichObservabilityContext(patch: ObservabilityEnrichment): bool
   if (patch.actorId) context.actorId = patch.actorId;
   if (patch.method) context.method = patch.method;
   if (patch.route) context.route = patch.route;
+  if (patch.cellId) context.cellId = patch.cellId;
   return true;
 }
 

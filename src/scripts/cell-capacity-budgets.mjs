@@ -122,7 +122,7 @@ export function checkAdmission(ratio) {
 
 export function forecastSaturation(historyEntries, resourceId) {
   const relevant = historyEntries.filter(
-    (h) => h.resources[resourceId] != null && h.resources[resourceId].limit > 0,
+    (h) => !h.duringBulkLoad && h.resources[resourceId] != null && h.resources[resourceId].limit > 0,
   );
   const spacedRaw = filterWellSpacedSamples(relevant);
 

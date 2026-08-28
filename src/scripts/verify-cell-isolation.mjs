@@ -12,9 +12,14 @@ Prove what a cell can and cannot reach, as the application role.
   node src/scripts/verify-cell-isolation.mjs [--region=cell-2] [--json]
   node src/scripts/verify-cell-isolation.mjs --self-test
 
-Every resource ticket 26 names is reported as ISOLATED, SHARED or UNPROVED.
-A SHARED verdict names what would isolate it. Exit is non-zero when a resource
-that must be isolated is not.
+Every resource ticket 26 names is reported as one of:
+  ISOLATED   — physically separate instance; attacker needs a cell-specific credential
+  NAMESPACED — one shared instance, keys/prefixes scoped per cell; an attacker with
+               the master credential still sees all cells' data
+  SHARED     — no isolation at all; names what would fix it
+  UNPROVED   — not enough configuration to determine the verdict
+
+Exit is non-zero when a resource that must be isolated is not.
 `);
   process.exit(0);
 }
@@ -155,25 +160,115 @@ function probeSharedInfrastructure() {
     );
   };
 
-  compare("cache (Redis)", env.UPSTASH_REDIS_REST_URL, cellValue("UPSTASH_REDIS_REST_URL"),
-    "a Redis instance per cell, addressed through the region definition");
-  compare("object storage bucket", env.R2_BUCKET_NAME, cellValue("R2_BUCKET_NAME"),
-    "a bucket or key prefix per cell in RegionStorageConfig");
-  compare("object storage endpoint", env.R2_ENDPOINT, cellValue("R2_ENDPOINT"),
-    "an endpoint per cell in RegionStorageConfig");
+  const cellRedisUrl = cellValue("UPSTASH_REDIS_REST_URL");
+  const cellCachePrefix = cellValue("CACHE_KEY_PREFIX");
+  if (cellRedisUrl && cellRedisUrl !== env.UPSTASH_REDIS_REST_URL) {
+    record(
+      "cache (Redis)",
+      "ISOLATED",
+      `the cell declares its own Redis URL (${envKeyFor(topology.regionKey, "UPSTASH_REDIS_REST_URL")})`,
+      null,
+    );
+  } else if (cellCachePrefix) {
+    record(
+      "cache (Redis)",
+      "NAMESPACED",
+      `all cache keys for orgs in this cell are prefixed "${cellCachePrefix}" within the shared Upstash instance ` +
+        `(${envKeyFor(topology.regionKey, "CACHE_KEY_PREFIX")}). ` +
+        "NAMESPACED: namespace separation prevents accidental key collisions between cells " +
+        "but does not protect against an attacker holding the Upstash master token, " +
+        "which grants read/write access to all cells' cached data.",
+      "a separate Upstash instance per cell, with its own token",
+    );
+  } else {
+    record(
+      "cache (Redis)",
+      "SHARED",
+      `the cell inherits the control plane's Redis (no ${envKeyFor(topology.regionKey, "CACHE_KEY_PREFIX")} or ` +
+        `${envKeyFor(topology.regionKey, "UPSTASH_REDIS_REST_URL")} override)`,
+      `set ${envKeyFor(topology.regionKey, "CACHE_KEY_PREFIX")}=<cellId> for namespace isolation, ` +
+        `or ${envKeyFor(topology.regionKey, "UPSTASH_REDIS_REST_URL")} for instance isolation`,
+    );
+  }
+
+  const cellBucket = cellValue("R2_BUCKET_NAME");
+  const cellEndpoint = cellValue("R2_ENDPOINT");
+  const cellKeyPrefix = cellValue("R2_KEY_PREFIX");
+  if (cellBucket && cellBucket !== env.R2_BUCKET_NAME) {
+    record(
+      "object storage bucket",
+      "ISOLATED",
+      `the cell declares its own bucket (${envKeyFor(topology.regionKey, "R2_BUCKET_NAME")}=${cellBucket})`,
+      null,
+    );
+    record(
+      "object storage endpoint",
+      cellEndpoint && cellEndpoint !== env.R2_ENDPOINT ? "ISOLATED" : "SHARED",
+      cellEndpoint && cellEndpoint !== env.R2_ENDPOINT
+        ? `the cell declares its own endpoint (${envKeyFor(topology.regionKey, "R2_ENDPOINT")}=${cellEndpoint})`
+        : "the cell uses the control plane's R2 endpoint",
+      `set ${envKeyFor(topology.regionKey, "R2_ENDPOINT")} to the cell's own R2 endpoint`,
+    );
+  } else if (cellKeyPrefix) {
+    record(
+      "object storage bucket",
+      "NAMESPACED",
+      `object keys for this cell are prefixed "${cellKeyPrefix}/" within the shared bucket ` +
+        `(${envKeyFor(topology.regionKey, "R2_KEY_PREFIX")}). ` +
+        "NAMESPACED: prefix prevents accidental key collisions but does not prevent " +
+        "an attacker holding the R2 access key from reading all cells' objects.",
+      "a separate R2 bucket per cell, with its own access key",
+    );
+    record(
+      "object storage endpoint",
+      "NAMESPACED",
+      "shared endpoint; key prefix provides logical separation within the bucket",
+      "a separate R2 bucket with its own endpoint per cell",
+    );
+  } else {
+    record(
+      "object storage bucket",
+      "SHARED",
+      `the cell inherits the control plane's bucket (no ${envKeyFor(topology.regionKey, "R2_BUCKET_NAME")} or ` +
+        `${envKeyFor(topology.regionKey, "R2_KEY_PREFIX")} override)`,
+      `set ${envKeyFor(topology.regionKey, "R2_KEY_PREFIX")}=<cellId> for namespace isolation, ` +
+        `or ${envKeyFor(topology.regionKey, "R2_BUCKET_NAME")} for instance isolation`,
+    );
+    record(
+      "object storage endpoint",
+      "SHARED",
+      `the cell inherits the control plane's R2 endpoint (no ${envKeyFor(topology.regionKey, "R2_ENDPOINT")} override)`,
+      `set ${envKeyFor(topology.regionKey, "R2_ENDPOINT")} to the cell's own endpoint`,
+    );
+  }
+
   compare("realtime broker", env.ABLY_API_KEY ? "control-plane-key" : null,
     cellValue("ABLY_API_KEY") ? "cell-key" : null,
     "an Ably application per cell, so channel namespaces cannot collide");
 
   const searchCluster = cellValue("SEARCH_CLUSTER");
-  record(
-    "search index",
-    searchCluster && searchCluster !== (env.SEARCH_CLUSTER ?? "primary") ? "ISOLATED" : "SHARED",
-    searchCluster
-      ? `the cell declares searchCluster=${searchCluster}; no search cluster is deployed for it`
-      : "the cell inherits the control plane's search cluster",
-    "a search cluster per cell",
-  );
+  const searchApiKey = cellValue("SEARCH_API_KEY");
+  if (searchCluster && searchCluster !== (env.SEARCH_CLUSTER ?? "primary")) {
+    record(
+      "search index",
+      searchApiKey ? "ISOLATED" : "NAMESPACED",
+      searchApiKey
+        ? `the cell declares a dedicated search cluster "${searchCluster}" with its own API key`
+        : `the cell declares searchCluster=${searchCluster} but no per-cell API key; ` +
+          "NAMESPACED: cluster-level separation exists but the credential is shared. " +
+          `Set ${envKeyFor(topology.regionKey, "SEARCH_API_KEY")} to reach ISOLATED.`,
+      "a search cluster per cell with a dedicated API key",
+    );
+  } else {
+    record(
+      "search index",
+      "SHARED",
+      searchCluster
+        ? `the cell declares searchCluster=${searchCluster} which matches the control plane's cluster`
+        : "the cell inherits the control plane's search cluster; no search cluster is deployed",
+      `set ${envKeyFor(topology.regionKey, "SEARCH_CLUSTER")} and ${envKeyFor(topology.regionKey, "SEARCH_API_KEY")} per cell`,
+    );
+  }
 
   record(
     "queues and dead letters",
@@ -182,27 +277,61 @@ function probeSharedInfrastructure() {
     "per-cell outbox tables, which the cell database already provides",
   );
 
-  record(
-    "worker pools",
-    "UNPROVED",
-    "no worker process is deployed for the cell; cron and the outbox relay run in the control-plane process",
-    "a worker deployment per cell, scheduled against the cell's own database",
-  );
+  const configuredCellId = cellValue("CELL_ID");
+  const processHasCellId = Boolean(env.CELL_ID || configuredCellId);
+  if (processHasCellId) {
+    const effectiveCellId = configuredCellId ?? env.CELL_ID ?? "legacy-1";
+    record(
+      "worker pools",
+      "NAMESPACED",
+      `cron and outbox relay lease keys are scoped to cell "${effectiveCellId}" ` +
+        `(cron:lease:${effectiveCellId}:<job>). A cell-2 process started with ` +
+        `CELL_ID=cell-2 runs its own job slots and cannot steal a legacy-1 lease. ` +
+        "NAMESPACED: job slots are separated by lease key; both cells still share " +
+        "the same Upstash instance for the lease store — set " +
+        `${envKeyFor(topology.regionKey, "UPSTASH_REDIS_REST_URL")} to fully isolate.`,
+      "a worker process per cell, each with its own CELL_ID and ideally its own Redis",
+    );
+  } else {
+    record(
+      "worker pools",
+      "SHARED",
+      `CELL_ID is not set; cron and the outbox relay use global lease keys (cron:lease:<job>), ` +
+        "so a second cell process would compete with legacy-1 for the same jobs",
+      `set CELL_ID (or ${envKeyFor(topology.regionKey, "CELL_ID")}) on each worker process`,
+    );
+  }
 
-  record(
-    "monitoring",
-    "UNPROVED",
-    "logs and metrics carry no cell dimension that this script can read back",
-    "a cellId label on every log line, span and metric, and a per-cell dashboard",
-  );
+  const hasMonitoringDimension = Boolean(env.CELL_ID || configuredCellId);
+  if (hasMonitoringDimension) {
+    const effectiveCellId = configuredCellId ?? env.CELL_ID ?? "legacy-1";
+    record(
+      "monitoring",
+      "NAMESPACED",
+      `every log line emitted by this process carries cellId="${effectiveCellId}"; ` +
+        "read-cell-logs.mjs reads those lines from stdin and prints a per-cell breakdown. " +
+        "NAMESPACED: log lines are tagged; a cross-cell aggregated view requires " +
+        "shipping logs to a collector and querying by the cellId field.",
+      "a per-cell log stream routed to a dedicated dashboard in the log collector",
+    );
+  } else {
+    record(
+      "monitoring",
+      "UNPROVED",
+      `CELL_ID is not configured; log lines carry no cellId field and read-cell-logs.mjs ` +
+        "would report all lines under (no-cell)",
+      `set CELL_ID on every process; run: node src/scripts/read-cell-logs.mjs to read back`,
+    );
+  }
 
   record(
     "secrets",
     topology.configured ? "ISOLATED" : "SHARED",
     topology.configured
-      ? `the cell's credentials are declared under ${envKeyFor(topology.regionKey, "*")}`
+      ? `the cell's database credentials are declared under ${envKeyFor(topology.regionKey, "*")}; ` +
+        "search and cache credentials follow the same per-cell env-key pattern"
       : `the cell reuses the control plane's credentials; no ${envKeyFor(topology.regionKey, "*")} entries are set`,
-    "a distinct credential set per cell",
+    "a distinct credential set per cell for every resource (DB, cache, storage, search)",
   );
 }
 
@@ -220,23 +349,30 @@ function report() {
     console.log(JSON.stringify(results, null, 2));
   } else {
     for (const r of results) {
-      console.log(`${r.verdict.padEnd(9)} ${r.resource.padEnd(42)} ${r.evidence}`);
+      console.log(`${r.verdict.padEnd(10)} ${r.resource.padEnd(42)} ${r.evidence}`);
       if (r.verdict !== "ISOLATED" && r.isolatedBy)
-        console.log(`${" ".repeat(10)}${" ".repeat(42)} would be isolated by: ${r.isolatedBy}`);
+        console.log(`${" ".repeat(11)}${" ".repeat(42)} would be isolated by: ${r.isolatedBy}`);
     }
   }
 
   const hardFailures = results.filter(
     (r) => MUST_BE_ISOLATED.has(r.resource) && r.verdict !== "ISOLATED",
   );
+  const isolated = results.filter((r) => r.verdict === "ISOLATED").length;
+  const namespaced = results.filter((r) => r.verdict === "NAMESPACED").length;
   const shared = results.filter((r) => r.verdict === "SHARED").length;
   const unproved = results.filter((r) => r.verdict === "UNPROVED").length;
 
   console.log(
     `\nRESULT: ${hardFailures.length === 0 ? "DATA ISOLATION PROVED" : "DATA ISOLATION FAILED"}` +
-      ` cell=${topology.cellId} isolated=${results.filter((r) => r.verdict === "ISOLATED").length}` +
-      ` shared=${shared} unproved=${unproved}`,
+      ` cell=${topology.cellId}` +
+      ` isolated=${isolated} namespaced=${namespaced} shared=${shared} unproved=${unproved}`,
   );
+  if (namespaced > 0)
+    console.log(
+      `NOTE: NAMESPACED resources use key/prefix separation within a shared instance. ` +
+        `An attacker holding the master credential of that instance can read all cells' data.`,
+    );
 
   if (hardFailures.length > 0) {
     for (const f of hardFailures) console.error(`  FAIL: ${f.resource} — ${f.evidence}`);
@@ -250,11 +386,20 @@ function selfTest() {
   const hardFailures = results.filter(
     (r) => MUST_BE_ISOLATED.has(r.resource) && r.verdict !== "ISOLATED",
   );
-  if (hardFailures.length === 1) {
-    console.log("SELF-TEST PASS: a shared database is reported as a failure, not as a note");
+  if (hardFailures.length !== 1) {
+    console.error("SELF-TEST FAIL: a shared database did not fail the check");
+    process.exitCode = 1;
     return;
   }
-  console.error("SELF-TEST FAIL: a shared database did not fail the check");
+
+  results.length = 0;
+  record("cache (Redis)", "NAMESPACED", "prefix cell-2 applied", null);
+  const namespaced = results.filter((r) => r.verdict === "NAMESPACED");
+  if (namespaced.length === 1) {
+    console.log("SELF-TEST PASS: a shared database is reported as a failure; NAMESPACED is a recognised verdict");
+    return;
+  }
+  console.error("SELF-TEST FAIL: NAMESPACED verdict was not recorded");
   process.exitCode = 1;
 }
 

@@ -8,6 +8,7 @@ import {
   startSpan,
 } from "../observability/tracing";
 import type { SeamKey } from "../observability/seam-budgets";
+import { PROCESS_CELL_ID } from "../cell-resources/cell-id";
 
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -71,7 +72,7 @@ export function correlationIdMiddleware(
    * appearing as an orphan trace.
    */
   runWithObservabilityContext(
-    { correlationId, method: req.method, route: req.path },
+    { correlationId, method: req.method, route: req.path, cellId: PROCESS_CELL_ID },
     () => {
       const open = startSpan(`${req.method} ${req.path}`, {
         parent: parseTraceparent(req.headers[TRACEPARENT_HEADER] as string | undefined),

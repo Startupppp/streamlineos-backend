@@ -17,7 +17,7 @@ import {
 import { readLoadDriverResults, isDuringBulkLoad } from "./cell-cost/load-driver-reader.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const HISTORY_PATH = resolve(__dirname, "../../../../.cell-capacity-history.json");
+const HISTORY_PATH = resolve(__dirname, "../../.cell-capacity-history.json");
 const LOAD_DRIVER_PATH = resolve(__dirname, "../../.load-driver-results.json");
 const CELL_ID = process.env.CELL_ID ?? "legacy-1";
 
@@ -235,11 +235,15 @@ async function main() {
     for (const m of measurements)
       resourceSnapshot[m.id] = { used: m.used, limit: m.limit };
 
-    history.entries.push({ ts: nowTs, cellId: CELL_ID, resources: resourceSnapshot, duringBulkLoad: duringLoad || undefined });
+    const prevWellSpaced = filterWellSpacedSamples(history.entries.filter((e) => !e.duringBulkLoad));
+    const lastWS = prevWellSpaced.length > 0 ? prevWellSpaced[prevWellSpaced.length - 1] : null;
+    const tooClose = lastWS !== null && nowTs - lastWS.ts < MIN_SAMPLE_SPACING_MS;
+
+    history.entries.push({ ts: nowTs, cellId: CELL_ID, resources: resourceSnapshot, duringBulkLoad: duringLoad || undefined, tooCloseToPrevious: tooClose || undefined });
     saveHistory(history);
 
     const spacingDays = Math.round(MIN_SAMPLE_SPACING_MS / 86_400_000);
-    const wellSpaced = filterWellSpacedSamples(history.entries);
+    const wellSpaced = filterWellSpacedSamples(history.entries.filter((e) => !e.duringBulkLoad));
     const last = wellSpaced.length > 0 ? wellSpaced[wellSpaced.length - 1] : null;
     const nextAfter = last ? new Date(last.ts + MIN_SAMPLE_SPACING_MS).toISOString().replace("T", " ").slice(0, 19) + " UTC" : "now";
 

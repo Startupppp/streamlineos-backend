@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { Redis } from "@upstash/redis";
 import { randomUUID } from "node:crypto";
 import { withSpan } from "../observability/tracing";
+import { getRegionRegistry, hasRegionRegistry } from "../region/region-registry";
 
 export const REDIS = "REDIS";
 
@@ -172,36 +173,48 @@ export class CacheService {
     return Math.round(baseTtl * (0.85 + Math.random() * 0.3));
   }
 
-  cachedForOrg<T>(
+  private async cellPrefixForOrg(orgId: string): Promise<string | null> {
+    if (!hasRegionRegistry()) return null;
+    try {
+      return await getRegionRegistry().cacheKeyPrefixForOrg(orgId);
+    } catch {
+      return null;
+    }
+  }
+
+  async cachedForOrg<T>(
     orgId: string,
     localKey: string,
     fetcher: () => Promise<T>,
     baseTtl = 300,
   ): Promise<T> {
-    return this.cached(`${orgId}:${localKey}`, fetcher, this.applyJitter(baseTtl));
+    const prefix = await this.cellPrefixForOrg(orgId);
+    const key = prefix ? `${prefix}:${orgId}:${localKey}` : `${orgId}:${localKey}`;
+    return this.cached(key, fetcher, this.applyJitter(baseTtl));
   }
 
-  cachedVersionedForOrg<T>(
+  async cachedVersionedForOrg<T>(
     orgId: string,
     namespace: string,
     localKey: string,
     fetcher: () => Promise<T>,
     baseTtl = 300,
   ): Promise<T> {
-    return this.cachedVersioned(
-      `${orgId}:${namespace}`,
-      localKey,
-      fetcher,
-      this.applyJitter(baseTtl),
-    );
+    const prefix = await this.cellPrefixForOrg(orgId);
+    const ns = prefix ? `${prefix}:${orgId}:${namespace}` : `${orgId}:${namespace}`;
+    return this.cachedVersioned(ns, localKey, fetcher, this.applyJitter(baseTtl));
   }
 
-  invalidateNamespaceForOrg(orgId: string, namespace: string): Promise<void> {
-    return this.invalidateNamespace(`${orgId}:${namespace}`);
+  async invalidateNamespaceForOrg(orgId: string, namespace: string): Promise<void> {
+    const prefix = await this.cellPrefixForOrg(orgId);
+    const ns = prefix ? `${prefix}:${orgId}:${namespace}` : `${orgId}:${namespace}`;
+    return this.invalidateNamespace(ns);
   }
 
-  invalidateForOrg(orgId: string, localKey: string): Promise<void> {
-    return this.invalidate(`${orgId}:${localKey}`);
+  async invalidateForOrg(orgId: string, localKey: string): Promise<void> {
+    const prefix = await this.cellPrefixForOrg(orgId);
+    const key = prefix ? `${prefix}:${orgId}:${localKey}` : `${orgId}:${localKey}`;
+    return this.invalidate(key);
   }
 
 }

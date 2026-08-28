@@ -9,8 +9,8 @@ import { fetchNeonConsumption, fetchAblyStats, fetchResendStats, fetchCloudflare
 import { readLoadDriverResults, isDuringBulkLoad, EXPECTED_FIELDS } from "./cell-cost/load-driver-reader.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const HISTORY_PATH = resolve(__dirname, "../../../../.cell-cost-history.json");
-const CAP_HISTORY_PATH = resolve(__dirname, "../../../../.cell-capacity-history.json");
+const HISTORY_PATH = resolve(__dirname, "../../.cell-cost-history.json");
+const CAP_HISTORY_PATH = resolve(__dirname, "../../.cell-capacity-history.json");
 const LOAD_DRIVER_PATH = resolve(__dirname, "../../.load-driver-results.json");
 const CELL_ID = process.env.CELL_ID ?? "legacy-1";
 
@@ -30,7 +30,7 @@ function connect(url) {
 }
 
 function trendLine(entries, key) {
-  const spaced = filterWellSpacedSamples(entries);
+  const spaced = filterWellSpacedSamples(entries.filter((e) => !e.duringBulkLoad));
   const points = spaced
     .filter((e) => e[key] != null && Number.isFinite(e[key]))
     .map((e) => ({ t: e.ts, v: e[key] }))
@@ -79,7 +79,7 @@ async function sampleAiCostByOrg(ownerDb, sampleSize) {
 }
 
 function printSpacingStatus(history) {
-  const spaced = filterWellSpacedSamples(history.entries);
+  const spaced = filterWellSpacedSamples(history.entries.filter((e) => !e.duringBulkLoad));
   const spacingDays = Math.round(MIN_SAMPLE_SPACING_MS / 86_400_000);
   const last = spaced.length > 0 ? spaced[spaced.length - 1] : null;
   const nextAfter = last ? new Date(last.ts + MIN_SAMPLE_SPACING_MS).toISOString().replace("T", " ").slice(0, 19) + " UTC" : "now";
@@ -159,7 +159,13 @@ async function main() {
     const aiResult = results.find((r) => r.id === "per-ai-token" && r.status === "ok");
     const storageResult = results.find((r) => r.id === "per-gb-stored" && r.status === "ok");
 
+    const prevWellSpaced = filterWellSpacedSamples(history.entries.filter((e) => !e.duringBulkLoad));
+    const lastWS = prevWellSpaced.length > 0 ? prevWellSpaced[prevWellSpaced.length - 1] : null;
+    const tooClose = lastWS !== null && nowTs - lastWS.ts < MIN_SAMPLE_SPACING_MS;
+
     const entry = { ts: nowTs, cellId: CELL_ID };
+    if (tooClose) entry.tooCloseToPrevious = true;
+    if (duringLoad) entry.duringBulkLoad = true;
     if (activeOrgsResult) entry.activeOrgs = activeOrgsResult.quantity;
     if (aiResult) {
       entry.totalTokens = aiResult.quantity;
@@ -183,7 +189,7 @@ async function main() {
     if (tokenTrend)
       process.stdout.write(`  AI cost/token: ${tokenTrend.vMean.toFixed(4)} milli-credits/token avg, ${tokenTrend.dailyChange >= 0 ? "+" : ""}${tokenTrend.dailyChange.toFixed(6)}/day over ${tokenTrend.points} samples\n`);
     else {
-      const spaced = filterWellSpacedSamples(history.entries);
+      const spaced = filterWellSpacedSamples(history.entries.filter((e) => !e.duringBulkLoad));
       process.stdout.write(`  AI cost/token: REFUSED — ${spaced.length} well-spaced sample(s) of ${history.entries.length} total; need 3 each ≥${Math.round(MIN_SAMPLE_SPACING_MS / 86_400_000)}d apart\n`);
     }
 
@@ -196,7 +202,7 @@ async function main() {
       process.stdout.write(`  Occupancy: ${activeOrgsResult.quantity} active org(s)\n`);
       const creditTrend = trendLine(history.entries, "creditsMilli");
       if (!creditTrend) {
-        const spaced = filterWellSpacedSamples(history.entries);
+        const spaced = filterWellSpacedSamples(history.entries.filter((e) => !e.duringBulkLoad));
         process.stdout.write(`  AI cost forecast: REFUSED — ${spaced.length} well-spaced sample(s); need 3 each ≥${Math.round(MIN_SAMPLE_SPACING_MS / 86_400_000)}d apart\n`);
       } else {
         const projMonthly = Math.max(0, creditTrend.vMean + creditTrend.dailyChange * 30);
