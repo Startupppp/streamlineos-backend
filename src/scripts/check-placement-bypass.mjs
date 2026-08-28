@@ -57,6 +57,10 @@ export const CONTEXT_EXIT_ALLOWLIST = new Map([
     "placement is a control-plane read that runs before any tenant is known and must not be tied to a caller's tenant connection in a multi-region deployment",
   ],
   [
+    "src/common/region/cell-admission.ts",
+    "chooses the cell a NEW organisation is placed into by reading cell_capacity_measurements, which necessarily runs before that organisation and therefore any tenant context exists; same class as the placement lookup above",
+  ],
+  [
     "src/common/tenant/run-in-tenant-transaction.ts",
     "runInNewTenantTransaction implementation: deliberately escapes any ambient context before opening a fresh isolated tenant transaction",
   ],
