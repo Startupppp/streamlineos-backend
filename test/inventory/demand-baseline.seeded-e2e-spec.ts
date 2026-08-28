@@ -4,6 +4,7 @@ import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { DemandBaselineService } from "src/modules/inventory/replenishment/forecast/demand-baseline.service";
+import { SafetyStockPolicyService } from "src/modules/inventory/replenishment/forecast/safety-stock-policy.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 
@@ -191,6 +192,50 @@ describe("[seeded-e2e] demand baselines", () => {
     // Twenty-six weekly points cannot support a 52-week claim, and the
     // candidate list shows which lags were even considered.
     expect(report.seasonality.candidates.some((c) => c.lag === 52)).toBe(false);
+  });
+
+  describe("INV-303 safety stock policy", () => {
+    const policy = () => app.app.get(SafetyStockPolicyService);
+
+    it("refuses a normal-model buffer for gappy demand", async () => {
+      // The guard that matters. The arithmetic would still produce a number,
+      // and the number would still look like a service level, which is exactly
+      // why returning it with a footnote is not good enough.
+      const result = await asTenant(() =>
+        policy().policyFor(scene.orgId, scene.soldVariantId, { weeks: 26 }),
+      );
+      expect(result.applicable).toBe(false);
+      expect(result.policy).toBeNull();
+      expect(result.notes.join(" ")).toMatch(/does not describe it/);
+    });
+
+    it("says so when there is no demand to buffer against", async () => {
+      const result = await asTenant(() =>
+        policy().policyFor(scene.orgId, scene.quietVariantId, { weeks: 26 }),
+      );
+      expect(result.demandCategory).toBe("no_demand");
+      expect(result.notes.join(" ")).toMatch(/nothing to buffer/);
+    });
+
+    it("flags a lead time it could not measure", async () => {
+      // No receipts on record. The difference between "this supplier is
+      // reliable" and "nobody measured" is invisible in the number and
+      // decisive for the answer.
+      const result = await asTenant(() =>
+        policy().policyFor(scene.orgId, scene.soldVariantId, { weeks: 26 }),
+      );
+      expect(result.leadTime.observations).toBe(0);
+      expect(result.notes.join(" ")).toMatch(/cannot support a lead-time deviation/);
+    });
+
+    it("reports demand statistics whether or not the model applies", async () => {
+      // The refusal must not swallow the facts the refusal was based on.
+      const result = await asTenant(() =>
+        policy().policyFor(scene.orgId, scene.soldVariantId, { weeks: 26 }),
+      );
+      expect(result.demand.periods).toBeGreaterThan(20);
+      expect(result.demand.mean).toBeGreaterThan(0);
+    });
   });
 
   it("refuses to judge a baseline on a handful of weeks", async () => {

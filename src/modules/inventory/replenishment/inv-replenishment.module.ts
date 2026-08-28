@@ -7,11 +7,12 @@ import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { InvStockLowConsumerService } from "./inv-stock-low-consumer.service";
 import { DemandBaselineService } from "./forecast/demand-baseline.service";
+import { SafetyStockPolicyService } from "./forecast/safety-stock-policy.service";
 
 @Module({
   imports: [InvStockEngineModule, OutboxModule, NotificationsModule],
   controllers: [InvReplenishmentController, InvForecastingController],
-  providers: [InvReplenishmentService, InvStockLowConsumerService, DemandBaselineService],
+  providers: [InvReplenishmentService, InvStockLowConsumerService, DemandBaselineService, SafetyStockPolicyService],
   exports: [DemandBaselineService, InvReplenishmentService],
 })
 export class InvReplenishmentModule {}

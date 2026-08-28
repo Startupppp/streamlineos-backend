@@ -10,6 +10,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvReplenishmentService } from "./inv-replenishment.service";
 import { forecastingSchema, type ForecastingInput } from "./dto/replenishment.schemas";
 import { DemandBaselineService } from "./forecast/demand-baseline.service";
+import { SafetyStockPolicyService } from "./forecast/safety-stock-policy.service";
 
 @RequireModule("inventory")
 @Controller("inventory/forecasting")
@@ -18,7 +19,22 @@ export class InvForecastingController {
   constructor(
     private readonly replenishment: InvReplenishmentService,
     private readonly demandBaseline: DemandBaselineService,
+    private readonly safetyStockPolicy: SafetyStockPolicyService,
   ) {}
+
+  /**
+   * INV-303. Safety stock and reorder point over measured demand and measured
+   * lead times, or an explanation of why the model does not apply.
+   */
+  @Get("safety-stock/:productVariantId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:replenishment:manage")
+  safetyStockPolicyFor(
+    @Param("productVariantId", ParseIntPipe) productVariantId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.safetyStockPolicy.policyFor(u.orgId, productVariantId);
+  }
 
   /**
    * INV-301. The deterministic baseline for one SKU, and how every candidate
