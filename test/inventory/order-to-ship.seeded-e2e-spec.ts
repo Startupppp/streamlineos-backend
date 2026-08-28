@@ -174,7 +174,7 @@ describe("[seeded-e2e] purchase order to shipment", () => {
         app.app.get(GrnService).receiveGoods(scene.orgId, po.id, scene.userId, `grn-${po.id}`, {
           receivedDate: "2026-06-02",
           locationId: scene.locationId,
-          lines: [{ poLineId: poLines[0]!.id, quantityReceived: 100, qualityStatus: "ACCEPTED" }],
+          lines: [{ poLineId: poLines[0]!.id, quantityReceived: "100.0000", qualityStatus: "ACCEPTED" }],
         }),
       );
 
@@ -305,7 +305,7 @@ describe("[seeded-e2e] purchase order to shipment", () => {
         app.app.get(GrnService).receiveGoods(scene.orgId, po.id, scene.userId, key, {
           receivedDate: "2026-06-06",
           locationId: scene.locationId,
-          lines: [{ poLineId: lines[0]!.id, quantityReceived: 10, qualityStatus: "ACCEPTED" }],
+          lines: [{ poLineId: lines[0]!.id, quantityReceived: "10.0000", qualityStatus: "ACCEPTED" }],
         }),
       );
 

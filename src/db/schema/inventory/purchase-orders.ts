@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { invPoStatusEnum, invGrnQualityEnum } from "../common/enums";
+import { invPoStatusEnum, invGrnQualityEnum, invGrnDiscrepancyEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { clients } from "../crm/contacts";
 import { businessParties } from "../party/business-parties";
@@ -124,6 +124,16 @@ export const invGrnLines = pgTable("inv_grn_lines", {
   uomFactor: decimal("uom_factor", { precision: 18, scale: 6 }),
   qualityStatus: invGrnQualityEnum("quality_status").default("ACCEPTED").notNull(),
   rejectionReason: text("rejection_reason"),
+  /**
+   * INV-201. What the line still owed at the moment of receipt, snapshotted
+   * for the same reason `uomFactor` is: a receipt has to stay readable after
+   * the purchase order moves under it. Without it, "was this short?" can only
+   * be answered by replaying every receipt against the line, and by then the
+   * person who saw the pallet has gone home.
+   */
+  quantityExpected: decimal("quantity_expected", { precision: 18, scale: 4 }),
+  /** NULL means the line matched, which is the common case. */
+  discrepancyReason: invGrnDiscrepancyEnum("discrepancy_reason"),
 }, (table) => [
   unique("uniq_inv_grn_lines_org_id").on(table.orgId, table.id),
   foreignKey({

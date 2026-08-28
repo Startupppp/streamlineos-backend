@@ -47,7 +47,18 @@ export type UpdatePoInput = z.infer<typeof updatePoSchema>;
 
 const grnLotLineSchema = z.object({
   poLineId: z.number().int().positive(),
-  quantityReceived: z.number().positive(),
+  /**
+   * INV-201. A decimal string, not a number. This quantity becomes a stock
+   * ledger row, and it was reaching the engine as `Number(...).toFixed(4)` --
+   * float arithmetic on the one value the inventory PRD forbids it for.
+   */
+  quantityReceived: z.string().regex(/^\d+(\.\d{1,4})?$/),
+  /**
+   * Why the line did not match what the purchase order still owed. Optional:
+   * a routine partial delivery is not an exception and should not demand
+   * paperwork, and the expected quantity is snapshotted either way.
+   */
+  discrepancyReason: z.enum(["SHORT", "OVER", "DAMAGED", "WRONG_ITEM"]).optional(),
   qualityStatus: z.enum(["ACCEPTED", "REJECTED"]).default("ACCEPTED"),
   rejectionReason: z.string().max(500).optional(),
   lotNumber: z.string().max(100).optional(),

@@ -23,7 +23,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
-import { addDec, mulDec, isPositive } from "../stock-engine/decimal";
+import { addDec, cmpDec, divDec, mulDec, subDec, isPositive } from "../stock-engine/decimal";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
@@ -101,12 +101,18 @@ export class GrnService {
 
     const grnNumber = await this.numSeq.next(orgId, "GRN");
 
-    const overReceiptTolerancePct = Number(settings.overReceiptTolerancePct);
 
     const lotMap = new Map<string, number>();
     const serialMap = new Map<string, number>();
 
     const grnId = await this.db.transaction(async (tx) => {
+      // What each line owed at receipt time, computed under the row lock in the
+      // validation pass and carried to the insert pass so both agree. Recomputing
+      // it later would read a total the first pass has already moved.
+      const expectedByLine = new Map<
+        number,
+        { expected: string; discrepancyReason: "SHORT" | "OVER" | "DAMAGED" | "WRONG_ITEM" | null }
+      >();
       for (const line of data.lines) {
         const poLine = po.lines.find((l) => l.id === line.poLineId);
         if (!poLine)
@@ -127,21 +133,39 @@ export class GrnService {
         if (!lockedLine)
           throw new BadRequestException(`PO line ${line.poLineId} not found`);
 
-        const quantity = Number(lockedLine.quantity);
-        const quantityReceived = Number(lockedLine.quantity_received);
-        const remaining = quantity - quantityReceived;
-        const maxAllowed =
-          remaining * (1 + overReceiptTolerancePct / 100);
+        // Exact throughout. The old form parsed both sides to floats, added an
+        // 0.0001 epsilon to paper over the comparison, and then posted
+        // `toFixed(4)` of a float into the stock ledger.
+        const remaining = subDec(
+          String(lockedLine.quantity),
+          String(lockedLine.quantity_received),
+        );
+        const maxAllowed = addDec(
+          remaining,
+          mulDec(remaining, divDec(settings.overReceiptTolerancePct, "100")),
+        );
 
-        if (line.quantityReceived > maxAllowed + 0.0001) {
+        if (cmpDec(line.quantityReceived, maxAllowed) > 0) {
           throw new BadRequestException(
-            `Line ${line.poLineId}: received qty ${line.quantityReceived} exceeds allowed max ${maxAllowed.toFixed(4)} (over-receipt tolerance ${settings.overReceiptTolerancePct}%)`,
+            `Line ${line.poLineId}: received qty ${line.quantityReceived} exceeds allowed max ${maxAllowed} (over-receipt tolerance ${settings.overReceiptTolerancePct}%)`,
           );
         }
 
+        // The receipt records what the line still owed at this moment, so a
+        // short delivery stays legible after the purchase order moves on. An
+        // over-receipt is exceptional by definition -- it only got here by
+        // passing the tolerance gate above -- so it is labelled even when the
+        // receiver did not say why.
+        const overReceipt = cmpDec(line.quantityReceived, remaining) > 0;
+        expectedByLine.set(line.poLineId, {
+          expected: remaining,
+          discrepancyReason:
+            line.discrepancyReason ?? (overReceipt ? ("OVER" as const) : null),
+        });
+
         if (trackingMethod === "SERIAL") {
           const serials = line.serialNumbers ?? [];
-          if (serials.length !== line.quantityReceived) {
+          if (cmpDec(String(serials.length), line.quantityReceived) !== 0) {
             throw new BadRequestException(
               `Line ${line.poLineId}: SERIAL-tracked product requires ${line.quantityReceived} serial numbers, got ${serials.length}`,
             );
@@ -279,7 +303,10 @@ export class GrnService {
           orgId,
           grnId: grn.id,
           poLineId: line.poLineId,
-          quantityReceived: line.quantityReceived.toString(),
+          quantityReceived: line.quantityReceived,
+          quantityExpected: expectedByLine.get(line.poLineId)?.expected ?? null,
+          discrepancyReason:
+            expectedByLine.get(line.poLineId)?.discrepancyReason ?? null,
           qualityStatus: line.qualityStatus,
           rejectionReason: line.rejectionReason,
         });
@@ -287,7 +314,7 @@ export class GrnService {
         await tx
           .update(invPoLines)
           .set({
-            quantityReceived: sql`${invPoLines.quantityReceived} + ${line.quantityReceived}`,
+            quantityReceived: sql`${invPoLines.quantityReceived} + ${line.quantityReceived}::numeric`,
           })
           .where(
             and(
@@ -323,7 +350,7 @@ export class GrnService {
               locationId,
               lotId,
               serialId: undefined,
-              quantityDelta: line.quantityReceived.toFixed(4),
+              quantityDelta: line.quantityReceived,
               unitCost: poLine.unitCost ?? undefined,
             });
           }
@@ -334,7 +361,7 @@ export class GrnService {
         where: eq(invPoLines.poId, poId),
       });
       const allReceived = allLines.every(
-        (l) => parseFloat(l.quantityReceived) >= parseFloat(l.quantity),
+        (l) => cmpDec(l.quantityReceived, l.quantity) >= 0,
       );
       await tx
         .update(invPurchaseOrders)
@@ -392,7 +419,7 @@ export class GrnService {
     let totalValueDec = "0.0000";
     for (const line of acceptedLines) {
       const poLine = po.lines.find((l) => l.id === line.poLineId)!;
-      totalValueDec = addDec(totalValueDec, mulDec(String(line.quantityReceived), poLine.unitCost));
+      totalValueDec = addDec(totalValueDec, mulDec(line.quantityReceived, poLine.unitCost));
     }
     const totalValue = Number(totalValueDec);
 
