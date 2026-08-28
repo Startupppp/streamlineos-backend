@@ -15,7 +15,8 @@ export function qualify(schema: string, table: string): string {
 }
 
 export function sqlLiteral(value: string): string {
-  if (value.includes("\0")) throw new Error("a SQL literal cannot contain a null byte");
+  if (value.includes("\0"))
+    throw new Error("a SQL literal cannot contain a null byte");
   return `'${value.replace(/'/g, "''")}'`;
 }
 
@@ -33,7 +34,13 @@ export function digestSqlFor(
   primaryKeyColumns: readonly string[],
 ): string {
   if (primaryKeyColumns.length === 0) return keylessDigestSql(entry, orgId);
-  return tableDigestSql(entry.schema, entry.table, entry.tenantColumn, orgId, primaryKeyColumns);
+  return tableDigestSql(
+    entry.schema,
+    entry.table,
+    entry.tenantColumn,
+    orgId,
+    primaryKeyColumns,
+  );
 }
 
 export function countSqlFor(entry: TablePlanEntry, orgId: string): string {
@@ -58,9 +65,12 @@ export async function readSlice(
   const countRows = await sql.unsafe(countSqlFor(entry, orgId));
   const rows = Number(countRows[0]?.rows ?? 0);
 
-  const digestRows = await sql.unsafe(digestSqlFor(entry, orgId, primaryKeyColumns));
+  const digestRows = await sql.unsafe(
+    digestSqlFor(entry, orgId, primaryKeyColumns),
+  );
   const rawDigest = digestRows[0]?.digest;
-  const digest = rawDigest === null || rawDigest === undefined ? "empty" : String(rawDigest);
+  const digest =
+    rawDigest === null || rawDigest === undefined ? "empty" : String(rawDigest);
 
   if (rows === 0) return { rows: 0, digest, payload: Buffer.alloc(0) };
 
@@ -82,7 +92,9 @@ export async function writeSlice(
   payload: Buffer,
 ): Promise<void> {
   if (payload.length === 0) return;
-  const query = sql.unsafe(`COPY ${qualify(entry.schema, entry.table)} FROM STDIN`);
+  const query = sql.unsafe(
+    `COPY ${qualify(entry.schema, entry.table)} FROM STDIN`,
+  );
   const writable = await query.writable();
   await Promise.all([pipeline(Readable.from([payload]), writable), query]);
 }
@@ -106,10 +118,131 @@ export async function readDigest(
   primaryKeyColumns: readonly string[],
 ): Promise<{ rows: number; digest: string }> {
   const countRows = await sql.unsafe(countSqlFor(entry, orgId));
-  const digestRows = await sql.unsafe(digestSqlFor(entry, orgId, primaryKeyColumns));
+  const digestRows = await sql.unsafe(
+    digestSqlFor(entry, orgId, primaryKeyColumns),
+  );
   const rawDigest = digestRows[0]?.digest;
   return {
     rows: Number(countRows[0]?.rows ?? 0),
-    digest: rawDigest === null || rawDigest === undefined ? "empty" : String(rawDigest),
+    digest:
+      rawDigest === null || rawDigest === undefined
+        ? "empty"
+        : String(rawDigest),
   };
+}
+
+export function batchedCountSql(
+  entries: readonly TablePlanEntry[],
+  orgId: string,
+): string {
+  const parts = entries.map(
+    (e) =>
+      `SELECT ${sqlLiteral(qualify(e.schema, e.table))} AS t, count(*)::bigint AS n` +
+      ` FROM ${qualify(e.schema, e.table)}` +
+      ` WHERE ${quoteIdent(e.tenantColumn)} = ${sqlLiteral(orgId)}`,
+  );
+  return parts.join(" UNION ALL ");
+}
+
+export async function countNonEmpty(
+  sql: SqlExecutor,
+  entries: readonly TablePlanEntry[],
+  orgId: string,
+  chunkSize = 150,
+): Promise<ReadonlyMap<string, number>> {
+  const counts = new Map<string, number>();
+  for (let i = 0; i < entries.length; i += chunkSize) {
+    const chunk = entries.slice(i, i + chunkSize);
+    const rows = await sql.unsafe(batchedCountSql(chunk, orgId));
+    for (const row of rows) counts.set(String(row.t), Number(row.n));
+  }
+  return counts;
+}
+
+export interface GlobalParentSlice {
+  readonly schema: string;
+  readonly table: string;
+  readonly payload: Buffer;
+  readonly rows: number;
+}
+
+export function globalParentSelectSql(
+  parentSchema: string,
+  parentTable: string,
+  clauses: readonly { parentColumn: string; childSql: string }[],
+): string {
+  const predicates = clauses
+    .map((c) => `${quoteIdent(c.parentColumn)} IN (${c.childSql})`)
+    .join(" OR ");
+  return `SELECT * FROM ${qualify(parentSchema, parentTable)} WHERE ${predicates}`;
+}
+
+export function childKeySql(
+  childSchema: string,
+  childTable: string,
+  childColumn: string,
+  tenantColumn: string,
+  orgId: string,
+): string {
+  return (
+    `SELECT ${quoteIdent(childColumn)} FROM ${qualify(childSchema, childTable)} ` +
+    `WHERE ${quoteIdent(tenantColumn)} = ${sqlLiteral(orgId)} ` +
+    `AND ${quoteIdent(childColumn)} IS NOT NULL`
+  );
+}
+
+export async function readGlobalParentSlice(
+  sql: SqlExecutor,
+  parentSchema: string,
+  parentTable: string,
+  clauses: readonly { parentColumn: string; childSql: string }[],
+): Promise<GlobalParentSlice> {
+  const select = globalParentSelectSql(parentSchema, parentTable, clauses);
+  const countRows = await sql.unsafe(
+    `SELECT count(*)::int AS rows FROM (${select}) s`,
+  );
+  const rows = Number(countRows[0]?.rows ?? 0);
+  if (rows === 0)
+    return {
+      schema: parentSchema,
+      table: parentTable,
+      payload: Buffer.alloc(0),
+      rows: 0,
+    };
+
+  const query = sql.unsafe(`COPY (${select}) TO STDOUT`);
+  const readable = await query.readable();
+  const chunks: Buffer[] = [];
+  for await (const chunk of readable) chunks.push(Buffer.from(chunk));
+  await query;
+  return {
+    schema: parentSchema,
+    table: parentTable,
+    payload: Buffer.concat(chunks),
+    rows,
+  };
+}
+
+export async function writeGlobalParentSlice(
+  sql: SqlExecutor,
+  slice: GlobalParentSlice,
+): Promise<number> {
+  if (slice.payload.length === 0) return 0;
+  const staging = `relocation_stage_${slice.table}`.slice(0, 63);
+  await sql.unsafe(`DROP TABLE IF EXISTS ${quoteIdent(staging)}`);
+  await sql.unsafe(
+    `CREATE TEMP TABLE ${quoteIdent(staging)} (LIKE ${qualify(slice.schema, slice.table)})`,
+  );
+  const query = sql.unsafe(`COPY ${quoteIdent(staging)} FROM STDIN`);
+  const writable = await query.writable();
+  await Promise.all([
+    pipeline(Readable.from([slice.payload]), writable),
+    query,
+  ]);
+  const inserted = await sql.unsafe(
+    `INSERT INTO ${qualify(slice.schema, slice.table)} ` +
+      `SELECT * FROM ${quoteIdent(staging)} ON CONFLICT DO NOTHING`,
+  );
+  await sql.unsafe(`DROP TABLE IF EXISTS ${quoteIdent(staging)}`);
+  return inserted.count ?? 0;
 }

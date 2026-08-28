@@ -170,3 +170,23 @@ export function section(title) {
 export function join(statements) {
   return statements.filter((s) => s !== null && s !== "").join(`\n${BREAK}\n`);
 }
+
+export function createSequence(sequence) {
+  return (
+    `CREATE SEQUENCE IF NOT EXISTS ${qualify(sequence.schema, sequence.name)}` +
+    ` AS ${sequence.type} INCREMENT BY ${sequence.increment}` +
+    ` MINVALUE ${sequence.minvalue} MAXVALUE ${sequence.maxvalue}` +
+    ` START WITH ${sequence.start} CACHE ${sequence.cache}` +
+    `${sequence.cycle ? " CYCLE" : " NO CYCLE"};`
+  );
+}
+
+export function ownSequence(sequence) {
+  if (sequence.ownedBy === null) return null;
+  const parts = sequence.ownedBy.split(".");
+  if (parts.length !== 3) return null;
+  return (
+    `ALTER SEQUENCE ${qualify(sequence.schema, sequence.name)} OWNED BY ` +
+    `${qualify(parts[0], parts[1])}.${ident(parts[2])};`
+  );
+}

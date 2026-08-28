@@ -15,6 +15,7 @@ import {
   createIndex,
   createPolicy,
   createSchema,
+  createSequence,
   createTable,
   createTrigger,
   createType,
@@ -23,6 +24,7 @@ import {
   ident,
   join,
   literal,
+  ownSequence,
   qualify,
   section,
 } from "./chain-repair/emit-ddl.mjs";
@@ -109,6 +111,7 @@ function plan(source, target, direction) {
 
   return {
     missingSchemas: difference(source.schemas, target.schemas),
+    missingSequences: difference(source.sequences, target.sequences),
     newTypes,
     addedLabels,
     missingTables,
@@ -150,6 +153,10 @@ function emit(p, header, violations = new Map()) {
   push(
     "schemas",
     p.missingSchemas.map((s) => createSchema(s)),
+  );
+  push(
+    "sequences",
+    p.missingSequences.map((q) => createSequence(q)),
   );
   push(
     "enum types the chain never creates",
@@ -226,6 +233,10 @@ function emit(p, header, violations = new Map()) {
     p.policies.map((t) => createPolicy(t)),
   );
   push(
+    "sequence ownership",
+    p.missingSequences.map((q) => ownSequence(q)),
+  );
+  push(
     "privileges on the tables this file creates",
     p.missingTables.map((t) => grantAppRole(t, APP_ROLE)),
   );
@@ -278,6 +289,7 @@ async function probeViolations(url, foreignKeys) {
 function counts(p) {
   return {
     schemas: p.missingSchemas.length,
+    sequences: p.missingSequences.length,
     types: p.newTypes.length,
     enumLabels: p.addedLabels.length,
     tables: p.missingTables.length,

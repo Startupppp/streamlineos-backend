@@ -23,12 +23,18 @@ import {
 import {
   readCycleBreakers,
   readForeignKeyEdges,
+  readGlobalParentReferences,
   readPrimaryKeyColumns,
   readTenantTables,
 } from "./relocation/catalog-tables";
 import {
+  childKeySql,
+  countNonEmpty,
   deleteSlice,
   qualify,
+  readGlobalParentSlice,
+  writeGlobalParentSlice,
+  type GlobalParentSlice,
   readDigest,
   readSlice,
   writeSlice,
@@ -368,6 +374,62 @@ async function copy(orgId: string): Promise<void> {
     const staged: { entry: TablePlanEntry; payload: Buffer }[] = [];
     let stagedBytes = 0;
 
+    const plannedNames = new Set(
+      order.map((e) => qualifiedName(e.schema, e.table)),
+    );
+    const tenantColumnOf = new Map(
+      order.map((e) => [qualifiedName(e.schema, e.table), e.tenantColumn]),
+    );
+    const globalRefs = await readGlobalParentReferences(source, plannedNames);
+    const byParent = new Map<
+      string,
+      { parentColumn: string; childSql: string }[]
+    >();
+    for (const ref of globalRefs) {
+      const tenantColumn = tenantColumnOf.get(
+        qualifiedName(ref.childSchema, ref.childTable),
+      );
+      if (tenantColumn === undefined) continue;
+      const key = qualifiedName(ref.parentSchema, ref.parentTable);
+      const clauses = byParent.get(key) ?? [];
+      clauses.push({
+        parentColumn: ref.parentColumn,
+        childSql: childKeySql(
+          ref.childSchema,
+          ref.childTable,
+          ref.childColumn,
+          tenantColumn,
+          orgId,
+        ),
+      });
+      byParent.set(key, clauses);
+    }
+    log(
+      `${globalRefs.length} foreign key(s) reach ${byParent.size} table(s) outside the tenant` +
+        ` plan; those rows travel first or the tenant rows have nothing to reference`,
+    );
+
+    const globalSlices: GlobalParentSlice[] = [];
+    for (const [key, clauses] of byParent) {
+      const parts = key.split(".");
+      const slice = await readGlobalParentSlice(
+        source,
+        parts[0],
+        parts[1],
+        clauses,
+      );
+      if (slice.rows > 0) {
+        globalSlices.push(slice);
+        log(`read global ${key}: ${slice.rows} row(s)`);
+      }
+    }
+
+    const counts = await countNonEmpty(source, order, orgId);
+    log(
+      `counted ${order.length} tables in ${Math.ceil(order.length / 150)} round trip(s);` +
+        ` ${[...counts.values()].filter((n) => n > 0).length} hold rows for this organization`,
+    );
+
     for (const entry of order) {
       const name = qualifiedName(entry.schema, entry.table);
       if (skipping) {
@@ -376,12 +438,21 @@ async function copy(orgId: string): Promise<void> {
       }
       if (LIMIT > 0 && processed >= LIMIT) break;
 
+      if ((counts.get(qualify(entry.schema, entry.table)) ?? 0) === 0) {
+        pending.push({ name, digest: "empty", rows: 0 });
+        copiedTables += 1;
+        processed += 1;
+        continue;
+      }
+
       const pk = primaryKeys.get(name) ?? [];
       const slice = await readSlice(source, entry, orgId, pk);
       if (slice.rows > 0) {
         staged.push({ entry, payload: slice.payload });
         stagedBytes += slice.payload.length;
-        log(`read ${name}: ${slice.rows} rows, digest ${slice.digest.slice(0, 12)}`);
+        log(
+          `read ${name}: ${slice.rows} rows, digest ${slice.digest.slice(0, 12)}`,
+        );
       }
       pending.push({ name, digest: slice.digest, rows: slice.rows });
       copiedTables += 1;
@@ -400,7 +471,9 @@ async function copy(orgId: string): Promise<void> {
       }
     }
 
-    log(`staged ${staged.length} non-empty table(s), ${stagedBytes} bytes; writing target`);
+    log(
+      `staged ${staged.length} non-empty table(s), ${stagedBytes} bytes; writing target`,
+    );
 
     target = connect(targetUrl);
     const breakers = await readCycleBreakers(target, cyclic);
@@ -415,7 +488,14 @@ async function copy(orgId: string): Promise<void> {
     try {
       await targetSql.begin(async (tx) => {
         await tx.unsafe("SET CONSTRAINTS ALL DEFERRED");
-        for (const item of staged) await writeSlice(tx, item.entry, item.payload);
+        for (const slice of globalSlices) {
+          const inserted = await writeGlobalParentSlice(tx, slice);
+          log(
+            `target: ${slice.schema}.${slice.table} +${inserted} global row(s)`,
+          );
+        }
+        for (const item of staged)
+          await writeSlice(tx, item.entry, item.payload);
       });
     } finally {
       await rebuildConstraints(targetSql, breakers, rebuilt, failed);
@@ -477,7 +557,15 @@ async function verify(orgId: string): Promise<void> {
       const name = qualifiedName(entry.schema, entry.table);
       const pk = primaryKeys.get(name) ?? [];
       const from = await readDigest(source, entry, orgId, pk);
-      const to = await readDigest(target, entry, orgId, pk);
+      let to = { rows: -1, digest: "missing-in-target" };
+      try {
+        to = await readDigest(target, entry, orgId, pk);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        mismatches.push(`${name}: unreadable in the target — ${message}`);
+        compared += 1;
+        continue;
+      }
       const matched = from.rows === to.rows && from.digest === to.digest;
       compared += 1;
       await source`
@@ -533,8 +621,17 @@ async function rollback(orgId: string): Promise<void> {
     const { plan } = await loadPlan(source);
     const { order, cyclic } = await orderedPlan(source, plan);
     let deleted = 0;
-    for (const entry of deletionOrder(order))
+    const organizationsEntry = order.find(
+      (e) => e.schema === "public" && e.table === "organizations",
+    );
+    if (organizationsEntry !== undefined) {
+      deleted += await deleteSlice(target, organizationsEntry, orgId);
+      log("target: removed the organization row first so its cascades run");
+    }
+    for (const entry of deletionOrder(order)) {
+      if (entry === organizationsEntry) continue;
       deleted += await deleteSlice(target, entry, orgId);
+    }
 
     const rebuilt: string[] = [];
     const failed: string[] = [];

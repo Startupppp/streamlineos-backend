@@ -9,7 +9,9 @@ function str(value: unknown): string {
   return String(value);
 }
 
-export async function readTenantTables(sql: Sql): Promise<readonly CatalogTenantTable[]> {
+export async function readTenantTables(
+  sql: Sql,
+): Promise<readonly CatalogTenantTable[]> {
   const rows = await sql`
     SELECT n.nspname AS schema, c.relname AS "table", a.attname AS tenant_column,
            c.relkind AS kind
@@ -46,7 +48,9 @@ export async function readTenantTables(sql: Sql): Promise<readonly CatalogTenant
   return tables;
 }
 
-export async function readForeignKeyEdges(sql: Sql): Promise<readonly ForeignKeyEdge[]> {
+export async function readForeignKeyEdges(
+  sql: Sql,
+): Promise<readonly ForeignKeyEdge[]> {
   const rows = await sql`
     SELECT cn.nspname AS child_schema, c.relname AS child_table,
            pn.nspname AS parent_schema, p.relname AS parent_table,
@@ -83,7 +87,9 @@ export async function readPrimaryKeyColumns(
 
   const map = new Map<string, readonly string[]>();
   for (const row of rows) {
-    const columns = Array.isArray(row.columns) ? row.columns.map((c) => str(c)) : [];
+    const columns = Array.isArray(row.columns)
+      ? row.columns.map((c) => str(c))
+      : [];
     map.set(`${str(row.schema)}.${str(row.table)}`, columns);
   }
   return map;
@@ -119,4 +125,51 @@ export async function readCycleBreakers(
     name: str(row.name),
     definition: str(row.definition),
   }));
+}
+
+export interface GlobalParentReference {
+  readonly parentSchema: string;
+  readonly parentTable: string;
+  readonly parentColumn: string;
+  readonly childSchema: string;
+  readonly childTable: string;
+  readonly childColumn: string;
+}
+
+export async function readGlobalParentReferences(
+  sql: Sql,
+  plannedTables: ReadonlySet<string>,
+): Promise<readonly GlobalParentReference[]> {
+  const rows = await sql`
+    SELECT cn.nspname AS child_schema, c.relname AS child_table, ca.attname AS child_column,
+           pn.nspname AS parent_schema, p.relname AS parent_table, pa.attname AS parent_column
+    FROM pg_constraint k
+    JOIN pg_class c ON c.oid = k.conrelid
+    JOIN pg_namespace cn ON cn.oid = c.relnamespace
+    JOIN pg_class p ON p.oid = k.confrelid
+    JOIN pg_namespace pn ON pn.oid = p.relnamespace
+    JOIN pg_attribute ca ON ca.attrelid = k.conrelid AND ca.attnum = k.conkey[1]
+    JOIN pg_attribute pa ON pa.attrelid = k.confrelid AND pa.attnum = k.confkey[1]
+    WHERE k.contype = 'f' AND array_length(k.conkey, 1) = 1`;
+
+  const seen = new Set<string>();
+  const refs: GlobalParentReference[] = [];
+  for (const row of rows) {
+    const child = `${str(row.child_schema)}.${str(row.child_table)}`;
+    const parent = `${str(row.parent_schema)}.${str(row.parent_table)}`;
+    if (!plannedTables.has(child)) continue;
+    if (plannedTables.has(parent)) continue;
+    const key = `${child}.${str(row.child_column)}->${parent}.${str(row.parent_column)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({
+      parentSchema: str(row.parent_schema),
+      parentTable: str(row.parent_table),
+      parentColumn: str(row.parent_column),
+      childSchema: str(row.child_schema),
+      childTable: str(row.child_table),
+      childColumn: str(row.child_column),
+    });
+  }
+  return refs;
 }

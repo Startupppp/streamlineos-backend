@@ -191,8 +191,43 @@ async function rlsEnabled(sql) {
   }));
 }
 
+
+async function sequences(sql) {
+  const rows = await sql`
+    SELECT n.nspname AS schema, c.relname AS name,
+           s.seqstart AS start, s.seqincrement AS increment,
+           s.seqmin AS minvalue, s.seqmax AS maxvalue, s.seqcache AS cache,
+           s.seqcycle AS cycle, format_type(s.seqtypid, NULL) AS type,
+           (SELECT dn.nspname || '.' || dc.relname || '.' || a.attname
+              FROM pg_depend d
+              JOIN pg_class dc ON dc.oid = d.refobjid
+              JOIN pg_namespace dn ON dn.oid = dc.relnamespace
+              JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+             WHERE d.objid = c.oid AND d.classid = 'pg_class'::regclass
+               AND d.refclassid = 'pg_class'::regclass AND d.deptype IN ('a', 'i')
+             LIMIT 1) AS owned_by
+    FROM pg_sequence s
+    JOIN pg_class c ON c.oid = s.seqrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname <> ALL(${SYSTEM_SCHEMAS})`;
+  return rows.map((r) => ({
+    key: `${r.schema}.${r.name}`,
+    schema: String(r.schema),
+    name: String(r.name),
+    type: String(r.type),
+    start: String(r.start),
+    increment: String(r.increment),
+    minvalue: String(r.minvalue),
+    maxvalue: String(r.maxvalue),
+    cache: String(r.cache),
+    cycle: r.cycle === true,
+    ownedBy: r.owned_by === null ? null : String(r.owned_by),
+  }));
+}
+
 export const READERS = {
   schemas,
+  sequences,
   enums,
   tables,
   columns,
