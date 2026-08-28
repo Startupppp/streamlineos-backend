@@ -109,6 +109,31 @@ jobs:
         run: pnpm exec knip --no-progress
         continue-on-error: true
 
+      # No source line may hand a secret or PII to a logger outside the redactor, and every
+      # @UseRateLimit key must have a TIERS entry — an unknown key silently disables the limit
+      # while the decorator still reads as protection. Self-test first: a scanner that matches
+      # nothing reports a clean tree.
+      - name: No secret reaches a log, and every rate limit has a tier
+        run: pnpm check:log-secrets:self-test && pnpm check:log-secrets
+
+      # Alert detection logic, exercised against fixtures. These do not touch a database or a
+      # webhook; they prove each alert fires on a breaching input and stays quiet on a clean one.
+      - name: Alert self-tests
+        run: |
+          pnpm alert:queue-age:self-test
+          pnpm alert:pool-saturation:self-test
+          pnpm alert:tenant-cost:self-test
+          pnpm alert:dispatch:self-test
+          pnpm failure-drill:self-test
+
+      # Cross-tenant negative-test coverage. Reported, not enforced: coverage is 27% (209/773
+      # tenant-owned services) and failing the build on a number nobody can move in one commit
+      # would train people to ignore it. Flip continue-on-error off once the baseline is raised
+      # and the check compares against a recorded floor rather than demanding completeness.
+      - name: Cross-tenant isolation coverage (reported)
+        run: pnpm check:tenant-isolation:self-test && pnpm check:tenant-isolation
+        continue-on-error: true
+
   # Tenant isolation, against a real database as the real application role.
   #
   # Its own job because it needs credentials CI cannot fabricate, and because a

@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "../app.module";
 import { buildOpenApiDocument } from "../common/openapi/build-openapi-document";
+import { applyOpenApiEnv } from "./openapi-env";
 
 export const OPENAPI_ARTIFACT_PATH = resolve(__dirname, "..", "..", "openapi.json");
 
@@ -15,6 +16,7 @@ export async function generateOpenApiJson(): Promise<{
   unconvertible: string[];
   operations: number;
 }> {
+  applyOpenApiEnv();
   const app = await NestFactory.create(AppModule, {
     logger: false,
     abortOnError: false,

@@ -6603,7 +6603,6 @@
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
@@ -6614,9 +6613,28 @@
             "in": "query",
             "required": false,
             "schema": {
-              "default": 50,
               "type": "integer",
               "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           }
@@ -6643,7 +6661,6 @@
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
@@ -6654,9 +6671,28 @@
             "in": "query",
             "required": false,
             "schema": {
-              "default": 50,
               "type": "integer",
               "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           }
@@ -8785,7 +8821,6 @@
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
@@ -8796,9 +8831,28 @@
             "in": "query",
             "required": false,
             "schema": {
-              "default": 20,
               "type": "integer",
               "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           },
@@ -52173,6 +52227,32 @@
         "description": "Exposure: permission — crm:deals:read"
       }
     },
+    "/directory/employment": {
+      "get": {
+        "operationId": "EmploymentFactsController_list",
+        "parameters": [
+          {
+            "name": "userIds",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "EmploymentFacts"
+        ],
+        "x-exposure": "universal",
+        "description": "Exposure: universal — any authenticated member, subject from the token"
+      }
+    },
     "/directory/engagements/{workerEngagementId}": {
       "patch": {
         "operationId": "DirectoryController_updateEngagement",
@@ -77260,18 +77340,25 @@
             }
           },
           {
-            "name": "page",
+            "name": "q",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
             }
           },
           {
-            "name": "pageSize",
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -83620,7 +83707,86 @@
     "/hr/performance/reviews": {
       "get": {
         "operationId": "PerformanceController_listReviews",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "cycleId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "IN_PROGRESS",
+                "COMPLETED",
+                "ARCHIVED"
+              ]
+            }
+          },
+          {
+            "name": "sortField",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "createdAt",
+              "type": "string",
+              "enum": [
+                "createdAt",
+                "periodStart"
+              ]
+            }
+          },
+          {
+            "name": "sortDir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -120026,16 +120192,7 @@
     "/notifications/events": {
       "get": {
         "operationId": "NotificationsController_stream",
-        "parameters": [
-          {
-            "name": "token",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "parameters": [],
         "responses": {
           "200": {
             "description": ""
@@ -156113,21 +156270,8 @@
     },
     "/timesheets/exceptions": {
       "get": {
-        "operationId": "ExceptionsController_list",
+        "operationId": "TimesheetExceptionsController_list",
         "parameters": [
-          {
-            "name": "severity",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "BLOCKER",
-                "WARNING",
-                "INFO"
-              ]
-            }
-          },
           {
             "name": "status",
             "in": "query",
@@ -156137,8 +156281,59 @@
               "enum": [
                 "OPEN",
                 "RESOLVED",
-                "OVERRIDDEN"
+                "DISMISSED"
               ]
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "WARNING",
+                "ERROR"
+              ]
+            }
+          },
+          {
+            "name": "rule",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -156148,16 +156343,16 @@
           }
         },
         "tags": [
-          "Exceptions"
+          "TimesheetExceptions"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "payroll:runs:view",
-        "description": "Exposure: permission — payroll:runs:view"
+        "x-permission": "timesheets:exceptions:view",
+        "description": "Exposure: permission — timesheets:exceptions:view"
       }
     },
     "/timesheets/exceptions/{exceptionId}/dismiss": {
       "post": {
-        "operationId": "ExceptionsController_dismiss",
+        "operationId": "TimesheetExceptionsController_dismiss",
         "parameters": [
           {
             "name": "exceptionId",
@@ -156174,7 +156369,7 @@
           }
         },
         "tags": [
-          "Exceptions"
+          "TimesheetExceptions"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:exceptions:manage",
@@ -156203,7 +156398,7 @@
     },
     "/timesheets/exceptions/{exceptionId}/resolve": {
       "post": {
-        "operationId": "ExceptionsController_resolve",
+        "operationId": "TimesheetExceptionsController_resolve",
         "parameters": [
           {
             "name": "exceptionId",
@@ -156220,11 +156415,11 @@
           }
         },
         "tags": [
-          "Exceptions"
+          "TimesheetExceptions"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "payroll:runs:update",
-        "description": "Exposure: permission — payroll:runs:update",
+        "x-permission": "timesheets:exceptions:manage",
+        "description": "Exposure: permission — timesheets:exceptions:manage",
         "requestBody": {
           "required": true,
           "content": {
@@ -156232,11 +156427,15 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "note": {
+                  "reason": {
                     "type": "string",
+                    "minLength": 3,
                     "maxLength": 500
                   }
-                }
+                },
+                "required": [
+                  "reason"
+                ]
               }
             }
           }
@@ -156245,7 +156444,7 @@
     },
     "/timesheets/exceptions/run-detection": {
       "post": {
-        "operationId": "ExceptionsController_runDetection",
+        "operationId": "TimesheetExceptionsController_runDetection",
         "parameters": [],
         "responses": {
           "200": {
@@ -156253,7 +156452,7 @@
           }
         },
         "tags": [
-          "Exceptions"
+          "TimesheetExceptions"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:exceptions:manage",
@@ -156262,7 +156461,7 @@
     },
     "/timesheets/exceptions/summary": {
       "get": {
-        "operationId": "ExceptionsController_summary",
+        "operationId": "TimesheetExceptionsController_summary",
         "parameters": [],
         "responses": {
           "200": {
@@ -156270,7 +156469,7 @@
           }
         },
         "tags": [
-          "Exceptions"
+          "TimesheetExceptions"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:exceptions:view",
@@ -157839,7 +158038,7 @@
     },
     "/users": {
       "get": {
-        "operationId": "UsersController_listUsers",
+        "operationId": "UsersController_listUsersV2",
         "parameters": [
           {
             "name": "page",
