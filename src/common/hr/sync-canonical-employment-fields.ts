@@ -10,7 +10,6 @@ export interface CanonicalEmploymentPatch {
   employeeNumber?: string | null;
 }
 
-/** Dual-write only when a canonical primary employment already exists. */
 export async function syncCanonicalEmploymentFields(
   db: DbOrTx,
   orgId: string,
