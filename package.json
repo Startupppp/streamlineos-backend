@@ -87,6 +87,8 @@
     "check:record-access:self-test": "node src/scripts/check-record-access.mjs --self-test",
     "check:module-entitlement": "node src/scripts/check-module-entitlement.mjs",
     "check:module-entitlement:self-test": "node src/scripts/check-module-entitlement.mjs --self-test",
+    "check:module-lifecycle": "node src/scripts/check-module-lifecycle.mjs",
+    "check:module-lifecycle:self-test": "node src/scripts/check-module-lifecycle.mjs --self-test",
     "check:idempotent-commands": "node src/scripts/check-idempotent-commands.mjs",
     "check:idempotent-commands:self-test": "node src/scripts/check-idempotent-commands.mjs --self-test",
     "openapi:generate": "node --max-old-space-size=8192 -r ts-node/register/transpile-only src/scripts/generate-openapi.ts",
@@ -102,7 +104,8 @@
     "verify:payroll-payee-parity": "node --env-file=.env -r ts-node/register src/scripts/verify-payroll-payee-parity.ts",
     "verify:multi-org-employment": "node --env-file=.env -r ts-node/register src/scripts/verify-multi-org-employment.ts",
     "check:owner-authority": "node src/scripts/check-owner-authority.mjs",
-    "check:owner-authority:self-test": "node src/scripts/check-owner-authority.mjs --self-test"
+    "check:owner-authority:self-test": "node src/scripts/check-owner-authority.mjs --self-test",
+    "verify:membership-revocation": "node --env-file=.env -r ts-node/register src/scripts/verify-membership-revocation.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

@@ -12,12 +12,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { readBankDetails } from "../../common/hr/canonical-bank-details";
 import { readSensitive } from "../../common/security/sensitive-field";
-import { decryptBankDetails, decrypt as decryptLegacy } from "../hr/onboarding/core/crypto.helpers";
-import {
-  recordEmploymentFallback,
-  reportEmploymentDrift,
-} from "./employment-fallback-counter";
-import { resolveFact } from "./employment-fact-resolution";
 import {
   emptyEmploymentFacts,
   type EmploymentFactName,
@@ -37,12 +31,6 @@ type FactRow = {
   departmentId: string | null;
   locationId: string | null;
   managerUserId: string | null;
-  legacyEmployeeId: string | null;
-  legacyDesignation: string | null;
-  legacyJoiningDate: string | null;
-  legacyDepartmentId: string | null;
-  legacyLocationId: string | null;
-  legacyManagerUserId: string | null;
 };
 
 type SensitiveRow = {
@@ -51,16 +39,8 @@ type SensitiveRow = {
   salaryAmountCents: number | null;
   bankDetails: string | null;
   taxId: string | null;
-  legacyMonthlySalary: string | null;
-  legacyBankDetails: string | null;
-  legacyTaxId: string | null;
 };
 
-function legacyCents(decimalAmount: string | null): number | null {
-  if (decimalAmount === null) return null;
-  const amount = Number(decimalAmount);
-  return Number.isFinite(amount) ? Math.round(amount * 100) : null;
-}
 
 @Injectable()
 export class EmploymentFactsService {
@@ -89,12 +69,6 @@ export class EmploymentFactsService {
         departmentId: hrEmployments.departmentId,
         locationId: hrEmployments.locationId,
         managerUserId: managerPerson.userId,
-        legacyEmployeeId: users.employeeId,
-        legacyDesignation: users.designation,
-        legacyJoiningDate: users.joiningDate,
-        legacyDepartmentId: users.orgDepartmentId,
-        legacyLocationId: users.branchId,
-        legacyManagerUserId: users.reportingTo,
       })
       .from(users)
       .leftJoin(
@@ -140,12 +114,12 @@ export class EmploymentFactsService {
       resolved.set(row.userId, {
         userId: row.userId,
         employmentId: row.employmentId,
-        employeeNumber: this.pick(orgId, row.userId, "employeeNumber", row.employeeNumber, row.legacyEmployeeId),
-        designation: this.pick(orgId, row.userId, "designation", row.designation, row.legacyDesignation),
-        joiningDate: this.pick(orgId, row.userId, "joiningDate", row.joiningDate, row.legacyJoiningDate),
-        departmentId: this.pick(orgId, row.userId, "departmentId", row.departmentId, row.legacyDepartmentId),
-        locationId: this.pick(orgId, row.userId, "locationId", row.locationId, row.legacyLocationId),
-        managerUserId: this.pick(orgId, row.userId, "managerUserId", row.managerUserId, row.legacyManagerUserId),
+        employeeNumber: row.employeeNumber,
+        designation: row.designation,
+        joiningDate: row.joiningDate,
+        departmentId: row.departmentId,
+        locationId: row.locationId,
+        managerUserId: row.managerUserId,
       });
     }
 
@@ -288,9 +262,6 @@ export class EmploymentFactsService {
         salaryAmountCents: hrEmployeeSensitiveFields.salaryAmountCents,
         bankDetails: hrEmployeeSensitiveFields.bankDetails,
         taxId: hrEmployeeSensitiveFields.taxId,
-        legacyMonthlySalary: users.monthlySalary,
-        legacyBankDetails: users.bankDetails,
-        legacyTaxId: users.taxId,
       })
       .from(users)
       .leftJoin(
@@ -325,27 +296,9 @@ export class EmploymentFactsService {
       resolved.set(row.userId, {
         userId: row.userId,
         employmentId: row.employmentId,
-        salaryAmountCents: this.pick(
-          orgId,
-          row.userId,
-          "salaryAmountCents",
-          row.salaryAmountCents,
-          legacyCents(row.legacyMonthlySalary),
-        ),
-        bankDetails: this.pick(
-          orgId,
-          row.userId,
-          "bankDetails",
-          canonicalBank,
-          row.legacyBankDetails ? decryptBankDetails(row.legacyBankDetails) : null,
-        ),
-        taxId: this.pick(
-          orgId,
-          row.userId,
-          "taxId",
-          canonicalTax,
-          row.legacyTaxId ? decryptLegacy(row.legacyTaxId) : null,
-        ),
+        salaryAmountCents: row.salaryAmountCents,
+        bankDetails: canonicalBank,
+        taxId: canonicalTax,
       });
     }
 
@@ -362,16 +315,4 @@ export class EmploymentFactsService {
     return resolved;
   }
 
-  private pick<T>(
-    orgId: string,
-    userId: string,
-    field: EmploymentFactName,
-    canonical: T | null,
-    legacy: T | null,
-  ): T | null {
-    const resolution = resolveFact(canonical, legacy);
-    if (resolution.usedFallback) recordEmploymentFallback(orgId, userId, field);
-    if (resolution.disagreed) reportEmploymentDrift(orgId, userId, field, canonical, legacy);
-    return resolution.value;
-  }
 }

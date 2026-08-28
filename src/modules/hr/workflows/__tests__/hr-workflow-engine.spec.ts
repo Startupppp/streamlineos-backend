@@ -3,6 +3,7 @@ import { BadRequestException, ForbiddenException, NotFoundException } from "@nes
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { HrWorkflowEngineService } from "../hr-workflow-engine.service";
 import { AccessService } from "../../../access/access.service";
+import { EmploymentFactsService } from "../../../directory/employment-facts.service";
 
 function makeSelectChain(results: unknown[][] = []) {
   let callIndex = 0;
@@ -80,12 +81,32 @@ function makeAccessService() {
   } as unknown as AccessService;
 }
 
-async function makeService(db: ReturnType<typeof makeDb>): Promise<HrWorkflowEngineService> {
+function makeEmploymentFacts(overrides: Partial<{ managerUserId: string | null; departmentId: string | null }> = {}) {
+  return {
+    userId: "emp1",
+    employmentId: null,
+    employeeNumber: null,
+    designation: null,
+    joiningDate: null,
+    departmentId: overrides.departmentId ?? null,
+    locationId: null,
+    managerUserId: overrides.managerUserId ?? null,
+  };
+}
+
+async function makeService(
+  db: ReturnType<typeof makeDb>,
+  employment?: { getFacts?: jest.Mock },
+): Promise<HrWorkflowEngineService> {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       HrWorkflowEngineService,
       { provide: DRIZZLE, useValue: db },
       { provide: AccessService, useValue: makeAccessService() },
+      {
+        provide: EmploymentFactsService,
+        useValue: employment ?? { getFacts: jest.fn().mockResolvedValue(makeEmploymentFacts()) },
+      },
     ],
   }).compile();
   return module.get(HrWorkflowEngineService);
@@ -108,49 +129,65 @@ describe("HrWorkflowEngineService — resolveApprovers", () => {
     expect(result).toEqual([]);
   });
 
-  it("returns direct manager via users.reportingTo", async () => {
-    const db = makeDb([[{ reportingTo: "manager-1" }]]);
-    const service = await makeService(db);
+  it("returns direct manager via employment facts", async () => {
+    const db = makeDb([]);
+    const service = await makeService(db, {
+      getFacts: jest.fn().mockResolvedValue(makeEmploymentFacts({ managerUserId: "manager-1" })),
+    });
     const step = { stepOrder: 1, name: "Step 1", approverType: "direct_manager", mode: "serial" };
     const result = await service.resolveApprovers(step, "emp1", "org1");
     expect(result).toEqual(["manager-1"]);
   });
 
-  it("returns empty array when employee has no reportingTo", async () => {
-    const db = makeDb([[{ reportingTo: null }]]);
-    const service = await makeService(db);
+  it("returns empty array when employee has no manager", async () => {
+    const db = makeDb([]);
+    const service = await makeService(db, {
+      getFacts: jest.fn().mockResolvedValue(makeEmploymentFacts({ managerUserId: null })),
+    });
     const step = { stepOrder: 1, name: "Step 1", approverType: "direct_manager", mode: "serial" };
     const result = await service.resolveApprovers(step, "emp1", "org1");
     expect(result).toEqual([]);
   });
 
-  it("returns manager's manager via two user lookups", async () => {
-    const db = makeDb([[{ reportingTo: "manager-1" }], [{ reportingTo: "grand-manager" }]]);
-    const service = await makeService(db);
+  it("returns manager's manager via two employment fact lookups", async () => {
+    const db = makeDb([]);
+    const service = await makeService(db, {
+      getFacts: jest.fn()
+        .mockResolvedValueOnce(makeEmploymentFacts({ managerUserId: "manager-1" }))
+        .mockResolvedValueOnce(makeEmploymentFacts({ managerUserId: "grand-manager" })),
+    });
     const step = { stepOrder: 1, name: "Step 1", approverType: "managers_manager", mode: "serial" };
     const result = await service.resolveApprovers(step, "emp1", "org1");
     expect(result).toEqual(["grand-manager"]);
   });
 
-  it("returns empty for managers_manager when direct manager has no reportingTo", async () => {
-    const db = makeDb([[{ reportingTo: "manager-1" }], [{ reportingTo: null }]]);
-    const service = await makeService(db);
+  it("returns empty for managers_manager when direct manager has no manager", async () => {
+    const db = makeDb([]);
+    const service = await makeService(db, {
+      getFacts: jest.fn()
+        .mockResolvedValueOnce(makeEmploymentFacts({ managerUserId: "manager-1" }))
+        .mockResolvedValueOnce(makeEmploymentFacts({ managerUserId: null })),
+    });
     const step = { stepOrder: 1, name: "Step 1", approverType: "managers_manager", mode: "serial" };
     const result = await service.resolveApprovers(step, "emp1", "org1");
     expect(result).toEqual([]);
   });
 
-  it("resolves dynamic_expression dot-path on user object", async () => {
-    const db = makeDb([[{ id: "emp1", reportingTo: "mgr-from-dot-path", firstName: "Alice" }]]);
-    const service = await makeService(db);
+  it("resolves dynamic_expression dot-path on employment facts", async () => {
+    const db = makeDb([[{ role: "MEMBER" }]]);
+    const service = await makeService(db, {
+      getFacts: jest.fn().mockResolvedValue(makeEmploymentFacts({ managerUserId: "mgr-from-dot-path" })),
+    });
     const step = { stepOrder: 1, name: "Step 1", approverType: "dynamic_expression", approverValue: "user.reportingTo", mode: "serial" };
     const result = await service.resolveApprovers(step, "emp1", "org1");
     expect(result).toEqual(["mgr-from-dot-path"]);
   });
 
-  it("returns empty for dynamic_expression when dot-path value resolves to a number not string", async () => {
-    const db = makeDb([[{ id: "emp1", departmentId: 5 }]]);
-    const service = await makeService(db);
+  it("returns empty for dynamic_expression when dot-path value is null", async () => {
+    const db = makeDb([[{ role: "MEMBER" }]]);
+    const service = await makeService(db, {
+      getFacts: jest.fn().mockResolvedValue(makeEmploymentFacts({ departmentId: null })),
+    });
     const step = { stepOrder: 1, name: "Step 1", approverType: "dynamic_expression", approverValue: "user.departmentId", mode: "serial" };
     const result = await service.resolveApprovers(step, "emp1", "org1");
     expect(result).toEqual([]);

@@ -70,6 +70,10 @@ function buildService(options: {
     { membersWithPermission: jest.fn().mockResolvedValue([]) } as never,
     { resolve: jest.fn().mockResolvedValue({ id: "manager-1", name: "Manager" }) } as never,
     { probationCoverageOn } as never,
+    {
+      getFacts: jest.fn().mockResolvedValue({ managerUserId: null }),
+      getDirectReportUserIds: jest.fn().mockResolvedValue([]),
+    } as never,
   );
   return { service, insertedValues, probationCoverageOn };
 }

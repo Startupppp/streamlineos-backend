@@ -70,16 +70,16 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
       orderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockResolvedValue([]),
     };
+    const joinChain: Record<string, jest.Mock> = {
+      leftJoin: jest.fn(),
+      where: jest.fn().mockReturnValue(dataChain),
+    };
+    joinChain["leftJoin"].mockReturnValue(joinChain);
     return {
       dataChain,
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnValue({
-            leftJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue(dataChain),
-            }),
-            where: jest.fn().mockReturnValue(dataChain),
-          }),
+          innerJoin: jest.fn().mockReturnValue(joinChain),
         }),
       }),
     };
@@ -91,7 +91,10 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
         async (_key: string, fn: () => Promise<unknown>) => fn(),
       ),
     };
-    return new EmployeesService(db as never, cache as never, undefined as never);
+    const employment = {
+      getFactsBatch: jest.fn().mockResolvedValue(new Map()),
+    };
+    return new EmployeesService(db as never, cache as never, employment as never);
   }
 
   let applyScopeSpy: jest.SpyInstance;

@@ -2,6 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { assertTransitionAllowed } from "../../organization/core/lifecycle/organization-lifecycle-transitions";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
@@ -178,7 +179,10 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
   }
 
   describe("ORGANIZATION-scoped acceptance is gated on org lifecycle", () => {
-    it("throws BadRequestException when an active legal hold exists", async () => {
+    // A legal hold preserves data; it is not an administrative freeze. Blocking
+    // ownership transfer would strand an organisation under an indefinite hold
+    // whose owner has left, with nobody able to take it over.
+    it("is NOT blocked by an active legal hold, which only refuses destructive transitions", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
         async (_db, fn) => fn(makeTenantTx("ACTIVE", true) as any),
@@ -186,10 +190,27 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
 
       await expect(
         service.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).resolves.toBeDefined();
 
       expect(jest.mocked(runInTenantTransaction)).toHaveBeenCalledTimes(1);
-      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("still refuses the destructive transitions a hold does block", () => {
+      expect(
+        assertTransitionAllowed("TERMINAL_DELETE", "ACTIVE", {
+          hasActiveLegalHold: true,
+        }).allowed,
+      ).toBe(false);
+      expect(
+        assertTransitionAllowed("PURGE_SCHEDULE", "ACTIVE", {
+          hasActiveLegalHold: true,
+        }).allowed,
+      ).toBe(false);
+      expect(
+        assertTransitionAllowed("OWNERSHIP_TRANSFER", "ACTIVE", {
+          hasActiveLegalHold: true,
+        }).allowed,
+      ).toBe(true);
     });
 
     it("throws BadRequestException when the org statusV2 disallows the OWNERSHIP_TRANSFER transition", async () => {

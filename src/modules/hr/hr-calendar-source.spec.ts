@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 import { Test } from "@nestjs/testing";
 import { AttendancePolicyService } from "./time/attendance-policy.service";
+import { EmploymentFactsService } from "../directory/employment-facts.service";
 
 const ctx: CalendarSourceContext = {
   orgId: "org-1",
@@ -57,6 +58,7 @@ function buildDb(queryResults: unknown[][]): unknown {
 async function buildSource(
   db: unknown,
   attendancePolicy?: jest.Mocked<AttendancePolicyService>,
+  joiningDate: string | null = null,
 ): Promise<HrCalendarSource> {
   const module = await Test.createTestingModule({
     providers: [
@@ -66,6 +68,21 @@ async function buildSource(
       {
         provide: AttendancePolicyService,
         useValue: attendancePolicy ?? buildAttendancePolicy(),
+      },
+      {
+        provide: EmploymentFactsService,
+        useValue: {
+          getFacts: jest.fn().mockResolvedValue({
+            userId: ctx.userId,
+            employmentId: null,
+            employeeNumber: null,
+            designation: null,
+            joiningDate,
+            departmentId: null,
+            locationId: null,
+            managerUserId: null,
+          }),
+        },
       },
     ],
   }).compile();
@@ -99,7 +116,7 @@ describe("HrCalendarSource", () => {
   });
 
   it("returns an empty array when no data and employment has not started yet", async () => {
-    const source = await buildSource(buildDb(emptyWith({})));
+    const source = await buildSource(buildDb(emptyWith({})), undefined, "2999-01-01");
     const result = await source.load(ctx);
     expect(result).toHaveLength(0);
   });

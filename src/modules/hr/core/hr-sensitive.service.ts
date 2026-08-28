@@ -48,7 +48,7 @@ export class HrSensitiveService {
     private readonly audit: HrAuditService,
   ) {}
 
-  async get(orgId: string, employmentId: number, actorId: string, ipAddress?: string) {
+  async get(orgId: string, employmentId: number, actorId: string, actorMembershipId?: number | null, ipAddress?: string) {
     const [emp] = await this.db
       .select({ id: hrEmployments.id })
       .from(hrEmployments)
@@ -77,6 +77,7 @@ export class HrSensitiveService {
     await this.audit.log({
       orgId,
       actorId,
+      actorMembershipId,
       entityType: "hr_employee_sensitive_fields",
       entityId: String(employmentId),
       action: "sensitive.viewed",
@@ -90,6 +91,7 @@ export class HrSensitiveService {
     orgId: string,
     employmentId: number,
     actorId: string,
+    actorMembershipId: number | null | undefined,
     input: UpdateSensitiveInput,
     ipAddress?: string,
   ) {
@@ -188,6 +190,7 @@ export class HrSensitiveService {
     await this.audit.log({
       orgId,
       actorId,
+      actorMembershipId,
       entityType: "hr_employee_sensitive_fields",
       entityId: String(employmentId),
       action: "sensitive.updated",

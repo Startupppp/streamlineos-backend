@@ -106,6 +106,10 @@ describe("LeavesWriteService server-derived approver", () => {
         }),
       } as never,
       { probationCoverageOn: jest.fn().mockResolvedValue("past-probation") } as never,
+      {
+        getFacts: jest.fn().mockResolvedValue({ managerUserId: null }),
+        getDirectReportUserIds: jest.fn().mockResolvedValue([]),
+      } as never,
     );
     const afterCommit: AfterCommitHook[] = [];
     const context = {

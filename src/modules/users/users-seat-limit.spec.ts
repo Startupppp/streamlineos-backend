@@ -8,6 +8,12 @@ import { SeatLedgerService } from "../billing/core/seat-ledger.service";
 import { InvitationsService } from "../organization/core/invitations.service";
 import { OrgMembershipService } from "../organization/core/org-membership.service";
 import { UsersService } from "./users.service";
+import { EmploymentFactsService } from "../directory/employment-facts.service";
+
+const stubEmployment = {
+  getFacts: jest.fn().mockResolvedValue({ managerUserId: null }),
+  getFactsBatch: jest.fn().mockResolvedValue(new Map()),
+};
 
 describe("UsersService direct member creation", () => {
   it("checks the member seat limit before writing a direct-created member", async () => {
@@ -31,6 +37,7 @@ describe("UsersService direct member creation", () => {
         { provide: OrgMembershipService, useValue: {} },
         { provide: PlanLimitsService, useValue: { assertWithinLimit } },
         { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn() } },
+        { provide: EmploymentFactsService, useValue: stubEmployment },
       ],
     }).compile();
     const service = moduleRef.get(UsersService);
@@ -120,6 +127,7 @@ describe("UsersService direct member creation", () => {
         { provide: OrgMembershipService, useValue: {} },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
         { provide: SeatLedgerService, useValue: { recordSeatEvent } },
+        { provide: EmploymentFactsService, useValue: stubEmployment },
       ],
     }).compile();
 

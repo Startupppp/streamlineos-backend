@@ -114,18 +114,11 @@ export const users = pgTable("users", {
   firstName: text("first_name"),
   lastName: text("last_name"),
   gender: genderEnum("gender"),
-  joiningDate: date("joining_date"),
   dateOfBirth: date("date_of_birth"),
-  taxId: text("tax_id"),
-  bankDetails: text("bank_details"),
   image: text("image"),
-  orgDepartmentId: text("org_department_id"),
-  designation: text("designation"),
   phone: text("phone"),
   whatsappNumber: text("whatsapp_number"),
   whatsappSameAsPhone: boolean("whatsapp_same_as_phone").default(true).notNull(),
-  monthlySalary: decimal("monthly_salary", { precision: 15, scale: 2 }),
-  employeeId: text("employee_id"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   isActive: boolean("is_active").default(true).notNull(),
   userStatus: text("user_status").default("active").notNull(),
@@ -133,8 +126,6 @@ export const users = pgTable("users", {
   activatedAt: timestamp("activated_at"),
   archivedAt: timestamp("archived_at"),
   deletedAt: timestamp("deleted_at"),
-  reportingTo: text("reporting_to"),
-  branchId: text("branch_id"),
   emergencyContact: jsonb("emergency_contact").$type<{
     name: string;
     relation: string;
@@ -157,9 +148,6 @@ export const users = pgTable("users", {
 }, (table) => [
   index("idx_users_email").on(table.email),
   index("idx_users_last_active_org").on(table.lastActiveOrgId),
-  index("idx_users_reporting_to").on(table.reportingTo),
-  index("idx_users_org_department").on(table.orgDepartmentId),
-  foreignKey({ columns: [table.reportingTo], foreignColumns: [table.id] }),
 ]);
 
 export const accounts = pgTable("accounts", {
@@ -342,14 +330,9 @@ export const organizationMembersRelations = relations(organizationMembers, ({ on
   }),
 }));
 
-export const usersRelations = relations(users, ({ one, many }) => ({
+export const usersRelations = relations(users, ({ many }) => ({
   organizations: many(organizationMembers),
   accounts: many(accounts),
-  manager: one(users, {
-    fields: [users.reportingTo],
-    references: [users.id],
-    relationName: "manager",
-  }),
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({

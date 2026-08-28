@@ -23,8 +23,24 @@ const APPROVER = {
   lastName: "Manager",
   email: "manager@example.com",
   image: null,
-  designation: "Lead",
+  designation: null,
 };
+
+function makeEmployment(managerUserId: string | null = "manager-1") {
+  return {
+    getFacts: jest.fn().mockResolvedValue({
+      userId: "employee-1",
+      employmentId: null,
+      employeeNumber: null,
+      designation: null,
+      joiningDate: null,
+      departmentId: null,
+      locationId: null,
+      managerUserId,
+    }),
+    getFactsBatch: jest.fn().mockResolvedValue(new Map()),
+  };
+}
 
 describe("LeaveApproverService", () => {
   afterEach(() => jest.restoreAllMocks());
@@ -33,7 +49,7 @@ describe("LeaveApproverService", () => {
     const db = {
       select: jest
         .fn()
-        .mockReturnValueOnce(selectLimit([{ reportingTo: "manager-1" }]))
+        .mockReturnValueOnce(selectLimit([{ userId: "employee-1" }]))
         .mockReturnValueOnce(selectLimit([APPROVER])),
     };
     const access = {
@@ -44,7 +60,7 @@ describe("LeaveApproverService", () => {
         .fn()
         .mockResolvedValue(new Map([["hr:leaves:approve", "all"]])),
     };
-    const service = new LeaveApproverService(db as never, access as never, undefined as never);
+    const service = new LeaveApproverService(db as never, access as never, makeEmployment("manager-1") as never);
 
     await expect(service.resolve("org-1", "employee-1")).resolves.toEqual(
       APPROVER,
@@ -60,7 +76,7 @@ describe("LeaveApproverService", () => {
     const db = {
       select: jest
         .fn()
-        .mockReturnValueOnce(selectLimit([{ reportingTo: "manager-1" }]))
+        .mockReturnValueOnce(selectLimit([{ userId: "employee-1" }]))
         .mockReturnValueOnce(selectLimit([fallback])),
     };
     const access = {
@@ -72,7 +88,7 @@ describe("LeaveApproverService", () => {
         .mockResolvedValueOnce(new Map([["hr:leaves:approve", "own"]]))
         .mockResolvedValueOnce(new Map([["hr:leaves:approve", "all"]])),
     };
-    const service = new LeaveApproverService(db as never, access as never, undefined as never);
+    const service = new LeaveApproverService(db as never, access as never, makeEmployment("manager-1") as never);
 
     await expect(service.resolve("org-1", "employee-1")).resolves.toEqual(
       fallback,
@@ -83,7 +99,7 @@ describe("LeaveApproverService", () => {
     const db = {
       select: jest
         .fn()
-        .mockReturnValueOnce(selectLimit([{ reportingTo: "manager-1" }]))
+        .mockReturnValueOnce(selectLimit([{ userId: "employee-1" }]))
         .mockReturnValueOnce(selectLimit([{ id: 11 }]))
         .mockReturnValueOnce(selectLimit([APPROVER])),
     };
@@ -94,7 +110,7 @@ describe("LeaveApproverService", () => {
         .mockResolvedValue(new Map([["hr:leaves:approve", "team"]])),
     };
     const scopeSpy = jest.spyOn(applyScopeModule, "applyScope");
-    const service = new LeaveApproverService(db as never, access as never, undefined as never);
+    const service = new LeaveApproverService(db as never, access as never, makeEmployment("manager-1") as never);
 
     await expect(service.resolve("org-1", "employee-1")).resolves.toEqual(
       APPROVER,

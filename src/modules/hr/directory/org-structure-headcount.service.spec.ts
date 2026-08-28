@@ -9,15 +9,14 @@ describe("OrgStructureService headcount aggregation", () => {
       { label: "Engineering", count: 12 },
       { label: "Unassigned", count: 2 },
     ]);
+    const joinChain: Record<string, jest.Mock> = {
+      leftJoin: jest.fn(),
+      where: jest.fn().mockReturnValue({ groupBy: groupByDepartment }),
+    };
+    joinChain["leftJoin"].mockReturnValue(joinChain);
     const selectHeadcount = jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
-        innerJoin: jest.fn().mockReturnValue({
-          leftJoin: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({
-              groupBy: groupByDepartment,
-            }),
-          }),
-        }),
+        innerJoin: jest.fn().mockReturnValue(joinChain),
       }),
     });
     const cache = {
