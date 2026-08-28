@@ -10,7 +10,12 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { SessionsService } from "../../sessions/sessions.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AblyService } from "../../realtime/ably.service";
-import { orgUnitMembers, users } from "../../../db/schema";
+import {
+  organizationMembers,
+  orgUnitMembers,
+  ownershipTransfers,
+  users,
+} from "../../../db/schema";
 import {
   runWithTenantContext,
   type AfterCommitHook,
@@ -291,6 +296,38 @@ describe("OrgMembershipService — module-ownership guards", () => {
       await expect(svc.removeMember(ORG_ID, ACTOR_ID, MEMBER_ID)).rejects.toBeInstanceOf(
         BadRequestException,
       );
+    });
+
+    it("clears the member's ownership transfers before deleting the membership row", async () => {
+      const tx = buildTxMock([
+        { result: [{ isOwner: false, id: 5 }], endWithLimit: true },
+        { result: [] },
+        { result: [] },
+      ]);
+      const db = {
+        query: {
+          users: {
+            findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
+          },
+        },
+        transaction: jest.fn().mockImplementation(
+          async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
+        ),
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        }),
+      };
+      const svc = await buildService(db);
+
+      await svc.removeMember(ORG_ID, ACTOR_ID, MEMBER_ID);
+
+      const deleted = tx.delete.mock.calls.map((call) => call[0]);
+      const transferAt = deleted.indexOf(ownershipTransfers);
+      const membershipAt = deleted.indexOf(organizationMembers);
+
+      expect(transferAt).toBeGreaterThanOrEqual(0);
+      expect(membershipAt).toBeGreaterThanOrEqual(0);
+      expect(transferAt).toBeLessThan(membershipAt);
     });
   });
 
