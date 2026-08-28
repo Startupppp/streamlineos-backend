@@ -2500,6 +2500,27 @@
       "when": 1787940428254,
       "tag": "0645_account_org_index_last_activated",
       "breakpoints": true
+    },
+    {
+      "idx": 363,
+      "version": "7",
+      "when": 1787940488254,
+      "tag": "0646_hr_actor_membership_expand",
+      "breakpoints": true
+    },
+    {
+      "idx": 364,
+      "version": "7",
+      "when": 1787940548254,
+      "tag": "0647_pay_time_actor_membership_expand",
+      "breakpoints": true
+    },
+    {
+      "idx": 365,
+      "version": "7",
+      "when": 1787940608254,
+      "tag": "0648_build_actor_membership_expand",
+      "breakpoints": true
     }
   ]
 }
