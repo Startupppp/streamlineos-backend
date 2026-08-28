@@ -6,8 +6,13 @@
  *   @NoTenantTransaction() on a handler or controller class
  *   runOutsideTenantContext( call sites
  *   withIdentity( call sites
- *   src/modules/cron/** files that access this.db without forEachOrg / runIn*TenantTransaction
+ *   cron-like files (src/modules/cron/** or files containing @Cron/@Interval) that
+ *     access this.db without forEachOrg / runIn*TenantTransaction
  *   registerAfterCommit( callbacks whose body accesses this.db without a transaction wrapper
+ *
+ * Known limits (require call-graph analysis; not detectable by text scanning):
+ *   registerAfterCommit(() => this.doDbWork()) — the db access lives in the called method, not the callback body.
+ *   A closure defined inside a guard block but invoked later (e.g. process.nextTick(fn)) — textually inside the guard, executes outside it.
  *
  * Usage:  node src/scripts/check-placement-bypass.mjs [--self-test] [--root=<dir>]
  * Exit:   0 clean · 1 a bypass not on the allowlist · 2 broken pattern
@@ -149,10 +154,113 @@ export const AFTER_COMMIT_DB_ALLOWLIST = new Map([]);
 
 // -- helpers -----------------------------------------------------------------
 
+function escapeRe(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripCommentsAndStrings(src) {
+  const out = [];
+  let i = 0;
+  let inBlock = false;
+  let inString = null;
+
+  while (i < src.length) {
+    const ch = src[i];
+
+    if (inBlock) {
+      if (ch === "*" && src[i + 1] === "/") {
+        out.push(" ", " ");
+        i += 2;
+        inBlock = false;
+      } else {
+        out.push(ch === "\n" ? "\n" : " ");
+        i++;
+      }
+      continue;
+    }
+
+    if (inString !== null) {
+      if (ch === "\\") {
+        out.push(" ", " ");
+        i += 2;
+        continue;
+      }
+      if (ch === inString) {
+        out.push(" ");
+        inString = null;
+        i++;
+        continue;
+      }
+      if (ch === "\n" && inString !== "`") {
+        out.push("\n");
+        inString = null;
+        i++;
+        continue;
+      }
+      out.push(ch === "\n" ? "\n" : " ");
+      i++;
+      continue;
+    }
+
+    if (ch === "/" && src[i + 1] === "*") {
+      out.push(" ", " ");
+      i += 2;
+      inBlock = true;
+      continue;
+    }
+
+    if (ch === "/" && src[i + 1] === "/") {
+      while (i < src.length && src[i] !== "\n") {
+        out.push(" ");
+        i++;
+      }
+      continue;
+    }
+
+    if (ch === '"' || ch === "'" || ch === "`") {
+      inString = ch;
+      out.push(" ");
+      i++;
+      continue;
+    }
+
+    out.push(ch);
+    i++;
+  }
+
+  return out.join("");
+}
+
+function collectImportAliases(src, originalNames) {
+  const locals = new Set(originalNames);
+  const importRe = /import\s*\{([^}]+)\}\s*from\s*['"][^'"]+['"]/g;
+  let m;
+  while ((m = importRe.exec(src)) !== null) {
+    const specifiers = m[1];
+    for (const orig of originalNames) {
+      const aliasRe = new RegExp(`\\b${escapeRe(orig)}\\b\\s+as\\s+(\\w+)`);
+      const aliasMatch = aliasRe.exec(specifiers);
+      if (aliasMatch) locals.add(aliasMatch[1]);
+    }
+  }
+  return locals;
+}
+
+function isCronLike(src, rel) {
+  return rel.includes("/modules/cron/") || /[@]Cron\(|[@]Interval\(/.test(src);
+}
+
 export function balanced(src, from) {
   let depth = 0;
+  let inString = null;
   for (let i = from; i < src.length; i++) {
     const ch = src[i];
+    if (inString !== null) {
+      if (ch === "\\") { i++; continue; }
+      if (ch === inString) inString = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") { inString = ch; continue; }
     if ("([{".includes(ch)) depth++;
     else if (")]}".includes(ch)) {
       depth--;
@@ -215,50 +323,54 @@ function resolveAllowlist(finding) {
 // -- analysis ----------------------------------------------------------------
 
 export function findAnnotationSites(src, filePath) {
-  const lines = src.split("\n");
+  const stripped = stripCommentsAndStrings(src);
+  const lines = stripped.split("\n");
+  const localNames = collectImportAliases(src, ["NoTenantTransaction"]);
+  const decoratorRe = new RegExp(
+    `@(${[...localNames].map(escapeRe).join("|")})\\s*\\(\\s*\\)`,
+  );
   const results = [];
   for (let i = 0; i < lines.length; i++) {
-    const t = lines[i].trimStart();
-    if (t.startsWith("//") || t.startsWith("*")) continue;
-    if (lines[i].includes("@NoTenantTransaction()"))
+    if (decoratorRe.test(lines[i]))
       results.push({ file: filePath, line: i + 1, kind: "no-tenant-transaction" });
   }
   return results;
 }
 
 export function findContextExitSites(src, filePath) {
-  const lines = src.split("\n");
+  const stripped = stripCommentsAndStrings(src);
+  const lines = stripped.split("\n");
+  const localNames = collectImportAliases(src, ["runOutsideTenantContext"]);
+  const callRe = new RegExp(`\\b(${[...localNames].map(escapeRe).join("|")})\\s*\\(`);
   const results = [];
   for (let i = 0; i < lines.length; i++) {
-    const t = lines[i].trimStart();
-    if (t.startsWith("//") || t.startsWith("*")) continue;
-    if (lines[i].includes("runOutsideTenantContext("))
+    if (callRe.test(lines[i]))
       results.push({ file: filePath, line: i + 1, kind: "context-exit" });
   }
   return results;
 }
 
 export function findIdentitySites(src, filePath) {
-  const lines = src.split("\n");
+  const stripped = stripCommentsAndStrings(src);
+  const lines = stripped.split("\n");
+  const localNames = collectImportAliases(src, ["withIdentity"]);
+  const callRe = new RegExp(`\\b(${[...localNames].map(escapeRe).join("|")})\\s*\\(`);
   const results = [];
   for (let i = 0; i < lines.length; i++) {
-    const t = lines[i].trimStart();
-    if (t.startsWith("//") || t.startsWith("*")) continue;
-    if (lines[i].includes("withIdentity("))
+    if (callRe.test(lines[i]))
       results.push({ file: filePath, line: i + 1, kind: "with-identity" });
   }
   return results;
 }
 
-// Whole-file matching went blind the moment a cron file guarded ANY of its work:
-// one runInNewTenantTransaction anywhere excused every other `this.db` in the file.
-// Sites are located individually and each is judged by the block it sits in.
 export function findCronBypassSites(src, filePath) {
+  const strippedSrc = stripCommentsAndStrings(src);
+
   const guarded = [];
   for (const guard of ["forEachOrg(", "runInNewTenantTransaction(", "runInTenantTransaction("]) {
     let at = 0;
     while (true) {
-      const pos = src.indexOf(guard, at);
+      const pos = strippedSrc.indexOf(guard, at);
       if (pos === -1) break;
       const body = balanced(src, pos + guard.length - 1);
       if (body) guarded.push([pos, pos + body.length]);
@@ -267,10 +379,23 @@ export function findCronBypassSites(src, filePath) {
   }
 
   const results = [];
-  const site = /\bthis\.db\s*\.\s*(select|insert|update|delete|execute|transaction|query)\b/g;
+  const site =
+    /\bthis\.db(?:(?:\?\.|\s*\.\s*)(?:select|insert|update|delete|execute|transaction|query)\b|\s*\[)/g;
   let match;
-  while ((match = site.exec(src)) !== null) {
+  while ((match = site.exec(strippedSrc)) !== null) {
     const pos = match.index;
+    if (guarded.some(([from, to]) => pos > from && pos < to)) continue;
+    results.push({
+      file: filePath,
+      line: src.slice(0, pos).split("\n").length,
+      kind: "cron-bypass",
+    });
+  }
+
+  const aliasPat = /(?:=\s*this\.db\b|\{\s*\bdb\b[^}]*\}\s*=\s*this\b)/g;
+  let aliasMatch;
+  while ((aliasMatch = aliasPat.exec(strippedSrc)) !== null) {
+    const pos = aliasMatch.index;
     if (guarded.some(([from, to]) => pos > from && pos < to)) continue;
     results.push({
       file: filePath,
@@ -287,18 +412,24 @@ export function isCronBypass(src) {
 }
 
 export function findAfterCommitDbSites(src, filePath) {
+  const strippedSrc = stripCommentsAndStrings(src);
   const needle = "registerAfterCommit(";
   const results = [];
   let idx = 0;
 
   while (true) {
-    const pos = src.indexOf(needle, idx);
+    const pos = strippedSrc.indexOf(needle, idx);
     if (pos === -1) break;
 
     const line = src.slice(0, pos).split("\n").length;
     const body = balanced(src, pos + needle.length - 1);
+    const strippedBody = body ? stripCommentsAndStrings(body) : null;
 
-    if (body && /\bthis\.db\b/.test(body) && !/runIn(?:New)?TenantTransaction|withTenant\b/.test(body))
+    if (
+      strippedBody &&
+      /\bthis\.db\b/.test(strippedBody) &&
+      !/runIn(?:New)?TenantTransaction|withTenant\b/.test(strippedBody)
+    )
       results.push({ file: filePath, line, kind: "after-commit-db" });
 
     idx = pos + needle.length;
@@ -322,7 +453,6 @@ if (SELF_TEST) {
   const cronBypassSrc = "async run() {\n  const rows = await this.db.select().from(organizations);\n}";
   const cronSafeSrc =
     "async run() {\n  await forEachOrg(this.db, 'sweep', async (tx) => { await this.db.select().from(orgs); });\n}";
-  // Guards SOME work and leaves one bare site: the shape whole-file matching missed.
   const cronPartlyGuardedSrc = [
     "async run() {",
     "  await forEachOrg(this.db, 'sweep', async (tx) => { await this.db.select().from(a); });",
@@ -349,6 +479,47 @@ if (SELF_TEST) {
   for (const [, reason] of emptyReasonAllowlist) {
     if (!reason || !reason.trim()) { emptyReasonDetected = true; break; }
   }
+
+  const parenInStringSrc = [
+    'await forEachOrg(this.db, "(", async (tx) => { await tx.select().from(a); });',
+    "await this.db.select().from(bypass_table);",
+  ].join("\n");
+
+  const cronOutsidePathSrc = [
+    "import { Cron } from '@nestjs/schedule';",
+    "@Cron('0 * * * *')",
+    "async run() { await this.db.select().from(organizations); }",
+  ].join("\n");
+
+  const optChainingEvadeSrc = [
+    "async run() {",
+    "  const rows = await this.db?.select().from(organizations);",
+    "}",
+  ].join("\n");
+
+  const aliasedWithIdentitySrc = [
+    "import { withIdentity as wi } from '../common/identity';",
+    "async doWork() {",
+    "  const rows = await wi(this.db, userId, (tx) => tx.select().from(t));",
+    "}",
+  ].join("\n");
+
+  const commentAnnotationSrc = "const x = 1; // @NoTenantTransaction()\nasync method() {}";
+
+  const spacedDecoratorSrc = "@NoTenantTransaction( )\nasync stream() {}";
+
+  const hookWithCommentDbSrc = [
+    "registerAfterCommit(async () => {",
+    "  // this.db.update(someTable).set({ x: 1 });",
+    "  doSomethingElse();",
+    "});",
+  ].join("\n");
+
+  const aliasedDecoratorSrc = [
+    "import { NoTenantTransaction as NTT } from './decorators';",
+    "@NTT()",
+    "async stream() {}",
+  ].join("\n");
 
   const annotationInUnknown = findAnnotationSites(annotationSrc, unknownFile);
   const annotationInAi = findAnnotationSites(annotationSrc, aiFile);
@@ -379,6 +550,14 @@ if (SELF_TEST) {
     afterCommitDbFlaggedWhenNaked: nakedSites.length === 1,
     afterCommitDbCleanWhenGuarded: guardedSites.length === 0,
     emptyReasonInAllowlistIsDetected: emptyReasonDetected,
+    balancedIgnoresParenInsideString: findCronBypassSites(parenInStringSrc, "x").length > 0,
+    cronDetectedOutsideCronFolder: isCronLike(cronOutsidePathSrc, "src/modules/billing/billing.scheduler.ts"),
+    optionalChainingDetected: findCronBypassSites(optChainingEvadeSrc, "x").length > 0,
+    aliasedWithIdentityDetected: findIdentitySites(aliasedWithIdentitySrc, unknownFile).length > 0,
+    annotationInCommentNotFlagged: findAnnotationSites(commentAnnotationSrc, unknownFile).length === 0,
+    spacedDecoratorDetected: findAnnotationSites(spacedDecoratorSrc, unknownFile).length > 0,
+    afterCommitDbCommentNotFlagged: findAfterCommitDbSites(hookWithCommentDbSrc, unknownFile).length === 0,
+    aliasedDecoratorDetected: findAnnotationSites(aliasedDecoratorSrc, unknownFile).length > 0,
   };
 
   const pass = Object.values(checks).every(Boolean);
@@ -410,14 +589,13 @@ const findings = [];
 for (const file of walkTs(SCAN_ROOT)) {
   const rel = toRelPath(file);
   const src = readFileSync(file, "utf8");
-  const isCron = rel.includes("/modules/cron/");
 
   for (const f of findAnnotationSites(src, rel)) findings.push(f);
   for (const f of findContextExitSites(src, rel)) findings.push(f);
   for (const f of findIdentitySites(src, rel)) findings.push(f);
   for (const f of findAfterCommitDbSites(src, rel)) findings.push(f);
 
-  if (isCron) for (const f of findCronBypassSites(src, rel)) findings.push(f);
+  if (isCronLike(src, rel)) for (const f of findCronBypassSites(src, rel)) findings.push(f);
 }
 
 if (!EXTERNAL_ROOT && findings.length < MIN_BYPASS_SITES) {
