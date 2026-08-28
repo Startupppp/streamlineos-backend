@@ -397,7 +397,7 @@ export class RecruitmentService {
       async (tx) => {
         const org = await tx.query.organizations.findFirst({
           where: eq(organizations.id, referrer.orgId),
-          columns: { name: true },
+          columns: { name: true, currency: true },
         });
 
         const openJobs = await tx.query.jobPostings.findMany({
@@ -415,6 +415,7 @@ export class RecruitmentService {
         return {
           referrerName: referrer.name,
           orgName: org?.name ?? "StreamlineOS",
+          currency: org?.currency ?? "INR",
           openJobs,
           referrals: referrals.map((r) => ({
             id: r.id,
