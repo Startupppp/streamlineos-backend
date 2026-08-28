@@ -52,9 +52,18 @@ function buildService(options: {
     },
     insert: jest.fn().mockReturnValue({ values: insertedValues }),
   };
+  const ACTOR_MEMBERSHIP = [
+    { id: 5, orgId: "org-1", userId: "manager-1", role: "MEMBER", isOwner: false, status: "ACTIVE" },
+  ];
+  let selectCall = 0;
   const db = {
     query: { users: { findFirst: jest.fn().mockResolvedValue(undefined) } },
-    select: jest.fn(() => chainOf(["from", "where", "limit"], options.policyRows)),
+    select: jest.fn(() => {
+      const position = selectCall % 3;
+      selectCall += 1;
+      const rows = position === 0 ? ACTOR_MEMBERSHIP : position === 1 ? [] : options.policyRows;
+      return chainOf(["from", "where", "limit"], rows);
+    }),
     transaction: jest.fn(
       async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
     ),

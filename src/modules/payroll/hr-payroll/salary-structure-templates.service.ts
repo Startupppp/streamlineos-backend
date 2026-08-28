@@ -10,7 +10,23 @@ export class SalaryStructureTemplatesService {
 
   list(orgId: string) {
     return this.db
-      .select()
+      .select({
+        id: salaryStructureTemplates.id,
+        orgId: salaryStructureTemplates.orgId,
+        name: salaryStructureTemplates.name,
+        basicSalary: salaryStructureTemplates.basicSalary,
+        hraPercent: salaryStructureTemplates.hraPercent,
+        specialAllowance: salaryStructureTemplates.specialAllowance,
+        medicalAllowance: salaryStructureTemplates.medicalAllowance,
+        travelAllowance: salaryStructureTemplates.travelAllowance,
+        otherAllowances: salaryStructureTemplates.otherAllowances,
+        pfDeductionPercent: salaryStructureTemplates.pfDeductionPercent,
+        professionalTax: salaryStructureTemplates.professionalTax,
+        effectiveFrom: salaryStructureTemplates.effectiveFrom,
+        effectiveTo: salaryStructureTemplates.effectiveTo,
+        isActive: salaryStructureTemplates.isActive,
+        createdAt: salaryStructureTemplates.createdAt,
+      })
       .from(salaryStructureTemplates)
       .where(eq(salaryStructureTemplates.orgId, orgId))
       .orderBy(desc(salaryStructureTemplates.createdAt))

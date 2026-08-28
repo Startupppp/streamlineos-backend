@@ -30,15 +30,44 @@ function encryptField(value: string | null | undefined): string | null | undefin
   return encrypt(value);
 }
 
-function decryptRow(row: SensitiveRow): SensitiveRow {
-  const out = { ...row };
+const SENSITIVE_COLUMNS = {
+  id: hrEmployeeSensitiveFields.id,
+  orgId: hrEmployeeSensitiveFields.orgId,
+  employmentId: hrEmployeeSensitiveFields.employmentId,
+  salaryAmountCents: hrEmployeeSensitiveFields.salaryAmountCents,
+  salaryCurrency: hrEmployeeSensitiveFields.salaryCurrency,
+  salaryFrequency: hrEmployeeSensitiveFields.salaryFrequency,
+  bankDetails: hrEmployeeSensitiveFields.bankDetails,
+  taxId: hrEmployeeSensitiveFields.taxId,
+  panNumber: hrEmployeeSensitiveFields.panNumber,
+  nationalId: hrEmployeeSensitiveFields.nationalId,
+  passportNumber: hrEmployeeSensitiveFields.passportNumber,
+  passportExpiry: hrEmployeeSensitiveFields.passportExpiry,
+  visaType: hrEmployeeSensitiveFields.visaType,
+  visaExpiry: hrEmployeeSensitiveFields.visaExpiry,
+  medicalNotes: hrEmployeeSensitiveFields.medicalNotes,
+  bloodGroup: hrEmployeeSensitiveFields.bloodGroup,
+  disciplinaryRecords: hrEmployeeSensitiveFields.disciplinaryRecords,
+  grievanceRecords: hrEmployeeSensitiveFields.grievanceRecords,
+  bgvStatus: hrEmployeeSensitiveFields.bgvStatus,
+  bgvCompletedAt: hrEmployeeSensitiveFields.bgvCompletedAt,
+  createdAt: hrEmployeeSensitiveFields.createdAt,
+  updatedAt: hrEmployeeSensitiveFields.updatedAt,
+};
+
+type SensitiveProjection = {
+  [K in keyof typeof SENSITIVE_COLUMNS]: SensitiveRow[K];
+};
+
+type EncryptedField = (typeof ENCRYPTED_FIELDS)[number];
+
+function decryptRow<T extends { [K in EncryptedField]: string | null }>(row: T): T {
+  const decrypted: { [K in EncryptedField]?: string } = {};
   for (const field of ENCRYPTED_FIELDS) {
-    const value = out[field];
-    if (typeof value === "string" && value !== "") {
-      out[field] = decrypt(value);
-    }
+    const value = row[field];
+    if (typeof value === "string" && value !== "") decrypted[field] = decrypt(value);
   }
-  return out;
+  return { ...row, ...decrypted };
 }
 
 @Injectable()
@@ -64,7 +93,7 @@ export class HrSensitiveService {
     if (!emp) throw new NotFoundException("Employment not found");
 
     const [row] = await this.db
-      .select()
+      .select(SENSITIVE_COLUMNS)
       .from(hrEmployeeSensitiveFields)
       .where(
         and(
@@ -121,7 +150,7 @@ export class HrSensitiveService {
 
     const existing = rows[0].sensitive;
 
-    let updated: typeof hrEmployeeSensitiveFields.$inferSelect;
+    let updated: SensitiveProjection;
 
     if (!existing) {
       const [inserted] = await this.db
@@ -144,7 +173,7 @@ export class HrSensitiveService {
           bloodGroup: input.bloodGroup ?? null,
           bgvStatus: input.bgvStatus ?? null,
         })
-        .returning();
+        .returning(SENSITIVE_COLUMNS);
       if (!inserted) throw new Error("Failed to create sensitive record");
       updated = inserted;
     } else {
@@ -174,7 +203,7 @@ export class HrSensitiveService {
             eq(hrEmployeeSensitiveFields.orgId, orgId),
           ),
         )
-        .returning();
+        .returning(SENSITIVE_COLUMNS);
       if (!patched) throw new NotFoundException("Sensitive record not found");
       updated = patched;
     }
@@ -206,10 +235,12 @@ export class HrSensitiveService {
     return this.resolveSensitiveRecordCollections(orgId, decryptRow(updated));
   }
 
-  private async resolveSensitiveRecordCollections(
+  private async resolveSensitiveRecordCollections<
+    T extends Pick<SensitiveRow, "id" | "bankDetails" | "disciplinaryRecords" | "grievanceRecords">,
+  >(
     organizationId: string,
-    sensitiveRow: SensitiveRow,
-  ): Promise<Omit<SensitiveRow, "bankDetails"> & { bankDetails: BankDetails | null }> {
+    sensitiveRow: T,
+  ): Promise<Omit<T, "bankDetails"> & { bankDetails: BankDetails | null }> {
     const normalizedCollections = await loadSensitiveRecordCollections(
       this.db,
       organizationId,

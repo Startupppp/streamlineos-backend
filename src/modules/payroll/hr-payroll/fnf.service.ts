@@ -121,7 +121,11 @@ export class FnfService {
     body: UpdateFnfBody,
   ): Promise<UpdateFnfResult> {
     const [existing] = await this.db
-      .select()
+      .select({
+        status: fnfSettlements.status,
+        approvedBy: fnfSettlements.approvedBy,
+        notes: fnfSettlements.notes,
+      })
       .from(fnfSettlements)
       .where(
         and(eq(fnfSettlements.id, fnfId), eq(fnfSettlements.orgId, orgId)),

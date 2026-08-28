@@ -474,7 +474,23 @@ export class EssService {
 
   async getOwnFnf(orgId: string, userId: string) {
     const [settlement] = await this.db
-      .select()
+      .select({
+        id: fnfSettlements.id,
+        basicDues: fnfSettlements.basicDues,
+        leaveEncashment: fnfSettlements.leaveEncashment,
+        bonusDue: fnfSettlements.bonusDue,
+        deductions: fnfSettlements.deductions,
+        loanRecovery: fnfSettlements.loanRecovery,
+        netPayable: fnfSettlements.netPayable,
+        status: fnfSettlements.status,
+        notes: fnfSettlements.notes,
+        reimbursementsDue: fnfSettlements.reimbursementsDue,
+        assetRecovery: fnfSettlements.assetRecovery,
+        noticeRecovery: fnfSettlements.noticeRecovery,
+        otherDeductions: fnfSettlements.otherDeductions,
+        statementPublishedAt: fnfSettlements.statementPublishedAt,
+        createdAt: fnfSettlements.createdAt,
+      })
       .from(fnfSettlements)
       .where(
         and(
