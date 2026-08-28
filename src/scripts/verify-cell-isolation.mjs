@@ -121,8 +121,8 @@ async function probeDatabase() {
       "the migration chain's RLS policies",
     );
 
-    await controlOwner`DELETE FROM cell_isolation_probe WHERE marker LIKE ${marker + "%"}`;
-    await cellOwner`DELETE FROM cell_isolation_probe WHERE marker LIKE ${marker + "%"}`;
+    await controlOwner`DROP TABLE IF EXISTS cell_isolation_probe`;
+    await cellOwner`DROP TABLE IF EXISTS cell_isolation_probe`;
   } finally {
     await Promise.all([cellApp.end(), controlApp.end(), cellOwner.end(), controlOwner.end()]);
   }
