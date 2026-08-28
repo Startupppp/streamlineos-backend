@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import {
   expenses,
   finExpensePolicies,
@@ -19,7 +19,15 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { compareDecimals, formatDecimal } from "../accounting/core/money.util";
-import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
+import {
+  EXPENSE_AGGREGATE_TYPE,
+  EXPENSE_DECIDED_EVENT,
+  EXPENSE_SUBMITTED_EVENT,
+  expenseAggregateVersion,
+  expenseDecidedPayloadSchema,
+  expenseSubmittedPayloadSchema,
+} from "./dto/expense-outbox.schemas";
 import { FinancePostingService } from "../accounting/posting/finance-posting.service";
 import type { PostJournalLine } from "../accounting/core/finance-posting.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -58,7 +66,6 @@ export class ExpenseLifecycleService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
-    private readonly dispatch: NotificationDispatchService,
     private readonly posting: FinancePostingService,
   ) {}
 
@@ -195,7 +202,7 @@ export class ExpenseLifecycleService {
     const approvalResult = await this.findApplicableApprovalPolicy(u.orgId, amount);
 
     await this.db.transaction(async (tx) => {
-      await tx
+      const [updated] = await tx
         .update(expenses)
         .set({
           status: "SUBMITTED",
@@ -203,7 +210,8 @@ export class ExpenseLifecycleService {
           policyFlag: policyResult.policyFlag,
           updatedAt: new Date(),
         })
-        .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)));
+        .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)))
+        .returning({ updatedAt: expenses.updatedAt });
 
       if (approvalResult.needsApproval) {
         await tx.insert(finApprovalRequests).values({
@@ -214,6 +222,28 @@ export class ExpenseLifecycleService {
           requestedBy: u.userId,
         });
       }
+
+      if (!approvalResult.approverUserId) return;
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: u.orgId,
+        aggregateType: EXPENSE_AGGREGATE_TYPE,
+        aggregateId: String(expenseId),
+        aggregateVersion: expenseAggregateVersion(updated ?? {}),
+        eventType: EXPENSE_SUBMITTED_EVENT,
+        payload: expenseSubmittedPayloadSchema.parse({
+          expenseId,
+          orgId: u.orgId,
+          actorUserId: u.userId,
+          amount: expense.amount,
+          category: expense.category,
+          description: expense.description ?? null,
+          recipients: { mode: "EXPLICIT", userIds: [approvalResult.approverUserId] },
+          runAutomations: false,
+        }),
+        occurredAt: new Date(),
+      });
     });
 
     this.audit.log({
@@ -223,18 +253,6 @@ export class ExpenseLifecycleService {
       targetId: String(expenseId),
       targetType: "expense",
     });
-
-    if (approvalResult.approverUserId) {
-      await this.dispatch.emit({
-        eventKey: "accounting.expense.submitted",
-        orgId: u.orgId,
-        actorUserId: u.userId,
-        targetUserIds: [approvalResult.approverUserId],
-        entityType: "expense",
-        entityId: String(expenseId),
-        variables: { amount: expense.amount, category: expense.category },
-      });
-    }
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
 
@@ -329,16 +347,40 @@ export class ExpenseLifecycleService {
       lines,
     });
 
-    await this.db
-      .update(expenses)
-      .set({
-        status: "REIMBURSEMENT_PENDING",
-        approverId: u.userId,
-        approvedAt: new Date(),
-        postedJournalEntryId: postResult.entryId,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)));
+    await this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(expenses)
+        .set({
+          status: "REIMBURSEMENT_PENDING",
+          approverId: u.userId,
+          approvedAt: new Date(),
+          postedJournalEntryId: postResult.entryId,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)))
+        .returning({ updatedAt: expenses.updatedAt });
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: u.orgId,
+        aggregateType: EXPENSE_AGGREGATE_TYPE,
+        aggregateId: String(expenseId),
+        aggregateVersion: expenseAggregateVersion(updated ?? {}),
+        eventType: EXPENSE_DECIDED_EVENT,
+        payload: expenseDecidedPayloadSchema.parse({
+          expenseId,
+          orgId: u.orgId,
+          actorUserId: u.userId,
+          recipientUserId: expense.userId,
+          status: "APPROVED",
+          amount: expense.amount,
+          category: expense.category,
+          rejectionReason: null,
+          journalEntryId: postResult.entryId,
+        }),
+        occurredAt: new Date(),
+      });
+    });
 
     this.audit.log({
       action: "expense.approved",
@@ -347,16 +389,6 @@ export class ExpenseLifecycleService {
       targetId: String(expenseId),
       targetType: "expense",
       metadata: { journalEntryId: postResult.entryId },
-    });
-
-    await this.dispatch.emit({
-      eventKey: "accounting.expense.approved",
-      orgId: u.orgId,
-      actorUserId: u.userId,
-      targetUserIds: [expense.userId],
-      entityType: "expense",
-      entityId: String(expenseId),
-      variables: { amount: expense.amount, category: expense.category },
     });
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
@@ -381,27 +413,51 @@ export class ExpenseLifecycleService {
       throw new BadRequestException(`Expense in status ${expense.status} cannot be rejected`);
     }
 
-    await this.db
-      .update(expenses)
-      .set({
-        status: "REJECTED",
-        rejectionReason,
-        approverId: u.userId,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)));
+    await this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(expenses)
+        .set({
+          status: "REJECTED",
+          rejectionReason,
+          approverId: u.userId,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)))
+        .returning({ updatedAt: expenses.updatedAt });
 
-    await this.db
-      .update(finApprovalRequests)
-      .set({ status: "REJECTED", decidedBy: u.userId, decidedAt: new Date(), decisionComment: rejectionReason })
-      .where(
-        and(
-          eq(finApprovalRequests.orgId, u.orgId),
-          eq(finApprovalRequests.recordType, "EXPENSE"),
-          eq(finApprovalRequests.recordId, expenseId),
-          eq(finApprovalRequests.status, "PENDING"),
-        ),
-      );
+      await tx
+        .update(finApprovalRequests)
+        .set({ status: "REJECTED", decidedBy: u.userId, decidedAt: new Date(), decisionComment: rejectionReason })
+        .where(
+          and(
+            eq(finApprovalRequests.orgId, u.orgId),
+            eq(finApprovalRequests.recordType, "EXPENSE"),
+            eq(finApprovalRequests.recordId, expenseId),
+            eq(finApprovalRequests.status, "PENDING"),
+          ),
+        );
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: u.orgId,
+        aggregateType: EXPENSE_AGGREGATE_TYPE,
+        aggregateId: String(expenseId),
+        aggregateVersion: expenseAggregateVersion(updated ?? {}),
+        eventType: EXPENSE_DECIDED_EVENT,
+        payload: expenseDecidedPayloadSchema.parse({
+          expenseId,
+          orgId: u.orgId,
+          actorUserId: u.userId,
+          recipientUserId: expense.userId,
+          status: "REJECTED",
+          amount: expense.amount,
+          category: expense.category,
+          rejectionReason,
+          journalEntryId: null,
+        }),
+        occurredAt: new Date(),
+      });
+    });
 
     this.audit.log({
       action: "expense.rejected",
@@ -410,16 +466,6 @@ export class ExpenseLifecycleService {
       targetId: String(expenseId),
       targetType: "expense",
       metadata: { rejectionReason },
-    });
-
-    await this.dispatch.emit({
-      eventKey: "accounting.expense.rejected",
-      orgId: u.orgId,
-      actorUserId: u.userId,
-      targetUserIds: [expense.userId],
-      entityType: "expense",
-      entityId: String(expenseId),
-      variables: { amount: expense.amount, category: expense.category, reason: rejectionReason },
     });
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));

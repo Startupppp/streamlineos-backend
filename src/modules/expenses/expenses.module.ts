@@ -2,6 +2,11 @@ import { Module } from "@nestjs/common";
 import { AutomationModule } from "../automation/automation.module";
 import { AccountingModule } from "../accounting/core/accounting.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { OutboxModule } from "../../common/outbox/outbox.module";
+import {
+  ExpenseDecidedConsumer,
+  ExpenseSubmittedConsumer,
+} from "./expense-outbox.consumer";
 import { ExpensesController } from "./expenses.controller";
 import { ExpenseCategoriesController } from "./expense-categories.controller";
 import { ExpensesImportController } from "./expenses-import.controller";
@@ -14,9 +19,17 @@ import { TravelService } from "./travel.service";
 import { EmployeeExpensesController } from "./employee-expenses.controller";
 
 @Module({
-  imports: [AutomationModule, AccountingModule, NotificationsModule],
+  imports: [AutomationModule, AccountingModule, NotificationsModule, OutboxModule],
   controllers: [EmployeeExpensesController, ExpensesController, ExpenseCategoriesController, ExpensesImportController, TravelController],
-  providers: [ExpensesService, ExpensesWriteService, ExpensesImportService, ExpenseLifecycleService, TravelService],
+  providers: [
+    ExpensesService,
+    ExpensesWriteService,
+    ExpensesImportService,
+    ExpenseLifecycleService,
+    TravelService,
+    ExpenseSubmittedConsumer,
+    ExpenseDecidedConsumer,
+  ],
   exports: [ExpensesService, ExpenseLifecycleService],
 })
 export class ExpensesModule {}

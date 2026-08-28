@@ -7,8 +7,9 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, like, lte, or, sql } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import { z } from "zod";
-import { expenses, organizationMembers, organizations, users } from "../../db/schema";
+import { expenses, organizationMembers, organizations } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -16,11 +17,17 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { EmailService } from "../email/email.service";
-import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { AutomationService } from "../automation/automation.service";
 import { AccessService } from "../access/access.service";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
-import { logSideEffectFailure } from "../../common/logger/side-effect";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
+import {
+  EXPENSE_AGGREGATE_TYPE,
+  EXPENSE_DECIDED_EVENT,
+  EXPENSE_SUBMITTED_EVENT,
+  expenseAggregateVersion,
+  expenseDecidedPayloadSchema,
+  expenseSubmittedPayloadSchema,
+} from "./dto/expense-outbox.schemas";
 import {
   updateExpenseDetailsSchema,
   updateExpenseStatusSchema,
@@ -66,36 +73,58 @@ export class ExpensesWriteService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly email: EmailService,
-    private readonly dispatch: NotificationDispatchService,
-    private readonly automation: AutomationService,
     private readonly access: AccessService,
   ) {}
 
   async create(orgId: string, userId: string, body: CreateExpenseInput) {
-    const [expense] = await this.db
-      .insert(expenses)
-      .values({
-        orgId,
-        userId,
-        category: body.category,
-        categoryId: body.categoryId,
-        amount: body.amount.toString(),
-        description: body.description,
-        receiptUrl: body.receiptUrl,
-        receiptFileName: body.receiptFileName,
-        merchant: body.merchant,
-        paymentMethod: body.paymentMethod,
-        projectId: body.projectId,
-        expenseDate: formatDateOnly(body.expenseDate),
-        status: "PENDING",
-        approverId: null,
-        approvedAt: null,
-      })
-      .returning();
+    const expense = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(expenses)
+        .values({
+          orgId,
+          userId,
+          category: body.category,
+          categoryId: body.categoryId,
+          amount: body.amount.toString(),
+          description: body.description,
+          receiptUrl: body.receiptUrl,
+          receiptFileName: body.receiptFileName,
+          merchant: body.merchant,
+          paymentMethod: body.paymentMethod,
+          projectId: body.projectId,
+          expenseDate: formatDateOnly(body.expenseDate),
+          status: "PENDING",
+          approverId: null,
+          approvedAt: null,
+        })
+        .returning();
 
-    if (!expense) {
-      throw new InternalServerErrorException("Failed to create expense.");
-    }
+      if (!row) {
+        throw new InternalServerErrorException("Failed to create expense.");
+      }
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: EXPENSE_AGGREGATE_TYPE,
+        aggregateId: String(row.id),
+        aggregateVersion: expenseAggregateVersion(row),
+        eventType: EXPENSE_SUBMITTED_EVENT,
+        payload: expenseSubmittedPayloadSchema.parse({
+          expenseId: row.id,
+          orgId,
+          actorUserId: userId,
+          amount: body.amount.toString(),
+          category: body.category,
+          description: body.description ?? null,
+          recipients: { mode: "EXPENSE_APPROVERS" },
+          runAutomations: true,
+        }),
+        occurredAt: new Date(),
+      });
+
+      return row;
+    });
 
     this.audit.log({
       action: "expense.created",
@@ -105,8 +134,6 @@ export class ExpensesWriteService {
       targetType: "expense",
       metadata: { category: body.category, amount: body.amount },
     });
-
-    void this.dispatchExpenseSubmitted(orgId, userId, expense.id, body);
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(orgId));
 
@@ -228,15 +255,40 @@ export class ExpensesWriteService {
         throw new BadRequestException("Expense has already been processed.");
       }
 
-      await tx
+      const [updated] = await tx
         .update(expenses)
         .set({
           status: body.status,
           approverId: u.userId,
           approvedAt: body.status === "APPROVED" || body.status === "PAID" ? new Date() : null,
           rejectionReason: body.rejectionReason ?? null,
+          updatedAt: new Date(),
         })
-        .where(eq(expenses.id, expenseId));
+        .where(eq(expenses.id, expenseId))
+        .returning({ updatedAt: expenses.updatedAt });
+
+      if (!expense.userId) return;
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: u.orgId,
+        aggregateType: EXPENSE_AGGREGATE_TYPE,
+        aggregateId: String(expenseId),
+        aggregateVersion: expenseAggregateVersion(updated ?? {}),
+        eventType: EXPENSE_DECIDED_EVENT,
+        payload: expenseDecidedPayloadSchema.parse({
+          expenseId,
+          orgId: u.orgId,
+          actorUserId: u.userId,
+          recipientUserId: expense.userId,
+          status: body.status,
+          amount: expense.amount,
+          category: expense.category,
+          rejectionReason: body.rejectionReason ?? null,
+          journalEntryId: null,
+        }),
+        occurredAt: new Date(),
+      });
     });
 
     const auditAction =
@@ -253,8 +305,6 @@ export class ExpensesWriteService {
       targetType: "expense",
       metadata: { status: body.status, rejectionReason: body.rejectionReason },
     });
-
-    void this.dispatchExpenseDecision(u, expenseId, body.status, body.rejectionReason ?? null);
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
     return { success: true };
@@ -392,84 +442,6 @@ export class ExpensesWriteService {
     );
 
     return { success: true };
-  }
-
-  private async dispatchExpenseSubmitted(
-    orgId: string,
-    userId: string,
-    expenseId: number,
-    body: CreateExpenseInput,
-  ): Promise<void> {
-    try {
-      const actor = await this.db.query.users.findFirst({
-        where: eq(users.id, userId),
-        columns: { name: true },
-      });
-      const actorName = actor?.name ?? null;
-
-      await this.automation.runAutomationsForEvent(orgId, "expense.submitted", {
-        expenseId,
-        userId,
-        employeeName: actorName ?? "",
-        amount: body.amount.toString(),
-        category: body.category,
-        submittedAt: new Date().toISOString(),
-      });
-
-      const approvers = await this.access.membersWithPermission(orgId, "hr:expenses:approve");
-      if (approvers.length === 0) return;
-
-      await this.dispatch.emit({
-        eventKey: "accounting.expense.submitted",
-        orgId,
-        actorUserId: userId,
-        targetUserIds: approvers.map((approver) => approver.userId),
-        entityType: "expense",
-        entityId: String(expenseId),
-        title: "Expense submitted for approval",
-        message: `${actorName ?? "An employee"} submitted ${body.category} for ${body.amount}.`,
-        variables: { employeeName: actorName ?? "Employee", amount: body.amount.toString(), category: body.category, description: body.description ?? "" },
-      });
-    } catch (err: unknown) {
-      logSideEffectFailure("expense submitted notification", { orgId, expenseId })(err);
-      return;
-    }
-  }
-
-  private async dispatchExpenseDecision(
-    u: CurrentUserContext,
-    expenseId: number,
-    status: "APPROVED" | "REJECTED" | "PAID",
-    rejectionReason: string | null,
-  ): Promise<void> {
-    try {
-      const expenseRow = await this.db.query.expenses.findFirst({
-        where: eq(expenses.id, expenseId),
-        columns: { userId: true, category: true, amount: true },
-      });
-      if (!expenseRow?.userId) return;
-
-      const { amount, category } = expenseRow;
-      const eventKey = status === "APPROVED"
-        ? "accounting.expense.approved"
-        : status === "REJECTED"
-          ? "accounting.expense.rejected"
-          : "accounting.reimbursement.paid";
-      await this.dispatch.emit({
-        eventKey,
-        orgId: u.orgId,
-        actorUserId: u.userId,
-        targetUserIds: [expenseRow.userId],
-        entityType: "expense",
-        entityId: String(expenseId),
-        title: status === "PAID" ? "Expense reimbursement paid" : `Expense ${status.toLowerCase()}`,
-        message: status === "REJECTED" ? `Your ${category} expense was rejected: ${rejectionReason ?? "No reason provided"}` : `Your ${category} expense was ${status === "PAID" ? "paid" : status.toLowerCase()}.`,
-        variables: { amount, category, rejectionReason },
-      });
-    } catch (err: unknown) {
-      logSideEffectFailure("expense decision notification", { orgId: u.orgId, expenseId })(err);
-      return;
-    }
   }
 
   private async fetchAdminEmails(orgId: string): Promise<string[]> {
