@@ -39,6 +39,7 @@ import {
 } from "./ownership-members.helper";
 import type { DeclineTransferInput } from "./dto/ownership.schemas";
 import type { NotificationEventKey } from "../notifications/notification-events.catalog";
+import { OrganizationSagaService } from "../organization/core/lifecycle/organization-saga.service";
 
 @Injectable()
 export class OwnershipTransferResponseService {
@@ -47,6 +48,7 @@ export class OwnershipTransferResponseService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly saga: OrganizationSagaService,
   ) {}
 
   private async invalidateUserAccess(
@@ -156,29 +158,107 @@ export class OwnershipTransferResponseService {
         { hasActiveLegalHold: preflight.hasActiveLegalHold },
       );
       if (!transition.allowed) throw new BadRequestException(transition.reason);
+
+      const sagaCtx = await this.saga.begin(
+        "OWNERSHIP_TRANSFER",
+        orgId,
+        `ownership-transfer:${orgId}:${transferId}`,
+        actorUserId,
+        preflight.statusV2 ?? "ACTIVE",
+      );
+      const done = new Set(
+        sagaCtx.steps.filter((s) => s.state === "DONE").map((s) => s.stepName),
+      );
+
+      let fromUserId: string | undefined;
+      try {
+        if (!done.has("validate-new-owner"))
+          await this.saga.runStep(
+            sagaCtx.saga.sagaId,
+            "validate-new-owner",
+            () => Promise.resolve(),
+          );
+
+        if (!done.has("transfer-ownership"))
+          fromUserId = await this.saga.runStep(
+            sagaCtx.saga.sagaId,
+            "transfer-ownership",
+            () =>
+              this.applyOrgTransfer(
+                orgId,
+                transferId,
+                transfer.fromMembershipId,
+                transfer.toMembershipId,
+              ),
+          );
+
+        await this.saga.complete(sagaCtx.saga.sagaId);
+      } catch (err) {
+        await this.saga.compensate(sagaCtx.saga.sagaId, {});
+        throw err;
+      }
+
+      if (fromUserId !== undefined) {
+        await this.invalidateUserAccess(orgId, actorUserId);
+        await this.invalidateUserAccess(orgId, fromUserId);
+
+        await Promise.all([
+          this.cache.invalidateForOrg(orgId, "ownership:modules"),
+          this.invalidateTransferCaches(orgId, null),
+        ]);
+
+        this.audit.log({
+          action: "ownership.transfer_accepted",
+          userId: actorUserId,
+          orgId,
+          targetId: transferId,
+          targetType: "ownership_transfer",
+          metadata: {
+            transferId,
+            scope: transfer.scope,
+            moduleKey: transfer.moduleKey ?? undefined,
+            initiatedByMembershipId: transfer.initiatedByMembershipId,
+            fromMembershipId: transfer.fromMembershipId,
+            toMembershipId: transfer.toMembershipId,
+          },
+        });
+
+        void this.dispatch
+          .emit({
+            eventKey: "ownership.transfer.accepted",
+            orgId,
+            actorUserId,
+            targetUserIds: [fromUserId],
+            entityType: "ownership_transfer",
+            entityId: transferId,
+            title: "Ownership transfer accepted",
+            message:
+              "Your ownership of the organization has been transferred and is now held by the person you nominated. Your own permissions have changed.",
+            link: "/settings/organization",
+          })
+          .catch((error: unknown) => {
+            logger.error("ownership transfer accepted notification failed", {
+              error,
+              transferId,
+            });
+          });
+      }
+
+      return { success: true as const };
     }
 
-    const fromUserId =
-      transfer.scope === "ORGANIZATION"
-        ? await this.applyOrgTransfer(
-            orgId,
-            transferId,
-            transfer.fromMembershipId,
-            transfer.toMembershipId,
-          )
-        : await this.applyModuleTransfer(
-            orgId,
-            transferId,
-            transfer.moduleKey,
-            transfer.fromMembershipId,
-            transfer.toMembershipId,
-          );
+    const fromUserId = await this.applyModuleTransfer(
+      orgId,
+      transferId,
+      transfer.moduleKey,
+      transfer.fromMembershipId,
+      transfer.toMembershipId,
+    );
 
     await this.invalidateUserAccess(orgId, actorUserId);
     await this.invalidateUserAccess(orgId, fromUserId);
 
-    const moduleKeyForAccept =
-      transfer.scope === "MODULE" ? transfer.moduleKey : null;
+    const moduleKeyForAccept = transfer.moduleKey;
     await Promise.all([
       ...(moduleKeyForAccept
         ? [
@@ -205,10 +285,6 @@ export class OwnershipTransferResponseService {
       },
     });
 
-    const subject =
-      transfer.scope === "ORGANIZATION"
-        ? "the organization"
-        : `the ${transfer.moduleKey} module`;
     void this.dispatch
       .emit({
         eventKey: "ownership.transfer.accepted",
@@ -218,7 +294,7 @@ export class OwnershipTransferResponseService {
         entityType: "ownership_transfer",
         entityId: transferId,
         title: "Ownership transfer accepted",
-        message: `Your ownership of ${subject} has been transferred and is now held by the person you nominated. Your own permissions have changed.`,
+        message: `Your ownership of the ${transfer.moduleKey} module has been transferred and is now held by the person you nominated. Your own permissions have changed.`,
         link: "/settings/organization",
       })
       .catch((error: unknown) => {

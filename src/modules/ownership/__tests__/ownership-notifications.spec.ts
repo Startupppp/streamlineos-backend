@@ -3,6 +3,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { OrganizationSagaService } from "../../organization/core/lifecycle/organization-saga.service";
 import { OwnershipTransfersService } from "../ownership-transfers.service";
 import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 
@@ -99,6 +100,21 @@ describe("Ownership transfer notifications", () => {
           },
         },
         { provide: NotificationDispatchService, useValue: { emit } },
+        {
+          provide: OrganizationSagaService,
+          useValue: {
+            begin: jest
+              .fn()
+              .mockResolvedValue({ saga: { sagaId: "saga-notif" }, steps: [] }),
+            runStep: jest
+              .fn()
+              .mockImplementation(
+                (_sagaId: string, _step: string, fn: () => Promise<unknown>) => fn(),
+              ),
+            complete: jest.fn().mockResolvedValue(undefined),
+            compensate: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 

@@ -11,6 +11,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { OrganizationSagaService } from "../../organization/core/lifecycle/organization-saga.service";
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction");
 jest.mock("../../../common/auth/membership-state.service");
@@ -93,6 +94,10 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     insert: jest.Mock;
     transaction: jest.Mock;
   };
+  let sagaBegin: jest.Mock;
+  let sagaRunStep: jest.Mock;
+  let sagaComplete: jest.Mock;
+  let sagaCompensate: jest.Mock;
 
   const ORG = "org-lifecycle-test";
   const TRANSFER_ID = "transfer-lc-1";
@@ -129,6 +134,16 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     jest.mocked(revokeModuleOwnerRole).mockImplementation(() => Promise.resolve());
     jest.mocked(assertModuleOwnerRoleAssigned).mockImplementation(() => Promise.resolve());
 
+    sagaBegin = jest.fn().mockResolvedValue({
+      saga: { sagaId: "test-saga-ownership" },
+      steps: [],
+    });
+    sagaRunStep = jest.fn().mockImplementation(
+      (_sagaId: string, _stepName: string, fn: () => Promise<unknown>) => fn(),
+    );
+    sagaComplete = jest.fn().mockResolvedValue(undefined);
+    sagaCompensate = jest.fn().mockResolvedValue(undefined);
+
     mockDb = {
       select: jest.fn(),
       update: jest.fn(),
@@ -150,6 +165,15 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
           },
         },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: OrganizationSagaService,
+          useValue: {
+            begin: sagaBegin,
+            runStep: sagaRunStep,
+            complete: sagaComplete,
+            compensate: sagaCompensate,
+          },
+        },
       ],
     }).compile();
 
@@ -179,14 +203,12 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
   }
 
   describe("ORGANIZATION-scoped acceptance is gated on org lifecycle", () => {
-    // A legal hold preserves data; it is not an administrative freeze. Blocking
-    // ownership transfer would strand an organisation under an indefinite hold
-    // whose owner has left, with nobody able to take it over.
     it("is NOT blocked by an active legal hold, which only refuses destructive transitions", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
         async (_db, fn) => fn(makeTenantTx("ACTIVE", true) as any),
       );
+      setupOrgTransferTx();
 
       await expect(
         service.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
@@ -274,6 +296,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
 
       expect(result).toEqual({ success: true });
       expect(jest.mocked(runInTenantTransaction)).not.toHaveBeenCalled();
+      expect(sagaBegin).not.toHaveBeenCalled();
       expect(mockDb.transaction).toHaveBeenCalledTimes(1);
     });
   });
@@ -295,6 +318,101 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
         { orgId: ORG },
       );
       expect(mockDb.select).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("OWNERSHIP_TRANSFER saga wiring", () => {
+    it("org transfer: retry skips validate-new-owner when already DONE", async () => {
+      setupCommonDbMocks();
+      jest.mocked(runInTenantTransaction).mockImplementation(
+        async (_db, fn) => fn(makeTenantTx("ACTIVE", false) as any),
+      );
+      setupOrgTransferTx();
+
+      sagaBegin.mockResolvedValueOnce({
+        saga: { sagaId: "resume-ownership-1" },
+        steps: [
+          { stepName: "validate-new-owner", state: "DONE" },
+          { stepName: "transfer-ownership", state: "PENDING" },
+        ],
+      });
+
+      await service.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID);
+
+      const runStepCalls = sagaRunStep.mock.calls.map((c) => c[1] as string);
+      expect(runStepCalls).not.toContain("validate-new-owner");
+      expect(runStepCalls).toContain("transfer-ownership");
+    });
+
+    it("org transfer: failure in transfer-ownership calls compensate and rethrows", async () => {
+      setupCommonDbMocks();
+      jest.mocked(runInTenantTransaction).mockImplementation(
+        async (_db, fn) => fn(makeTenantTx("ACTIVE", false) as any),
+      );
+
+      const boom = new Error("transfer failed");
+      sagaRunStep.mockImplementation(
+        (_sagaId: string, stepName: string, fn: () => Promise<unknown>) => {
+          if (stepName === "transfer-ownership") throw boom;
+          return fn();
+        },
+      );
+
+      await expect(service.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID)).rejects.toBe(boom);
+      expect(sagaCompensate).toHaveBeenCalledWith("test-saga-ownership", {});
+    });
+
+    it("org transfer: saga begin is called with org-scoped transfer requestKey", async () => {
+      setupCommonDbMocks();
+      jest.mocked(runInTenantTransaction).mockImplementation(
+        async (_db, fn) => fn(makeTenantTx("ACTIVE", false) as any),
+      );
+      setupOrgTransferTx();
+
+      await service.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID);
+
+      expect(sagaBegin).toHaveBeenCalledWith(
+        "OWNERSHIP_TRANSFER",
+        ORG,
+        `ownership-transfer:${ORG}:${TRANSFER_ID}`,
+        ACTOR_USER,
+        "ACTIVE",
+      );
+    });
+
+    it("MODULE-scoped transfer still bypasses the org saga entirely", async () => {
+      const pendingModuleTransfer = {
+        id: TRANSFER_ID,
+        scope: "MODULE" as const,
+        moduleKey: "crm",
+        fromMembershipId: 1,
+        initiatedByMembershipId: 1,
+        toMembershipId: 2,
+        status: "PENDING",
+        expiresAt: new Date(Date.now() + 3_600_000),
+      };
+
+      mockDb.select
+        .mockReturnValueOnce(makeSelectChain([pendingModuleTransfer]))
+        .mockReturnValueOnce(makeSelectChain([recipientMembership]));
+
+      const txMock = {
+        select: jest.fn()
+          .mockReturnValueOnce(makeSelectChain([{ ownerMembershipId: 1 }]))
+          .mockReturnValueOnce(makeSelectChain([fromMember, toMember])),
+        insert: jest.fn().mockReturnValue(makeInsertChain()),
+        update: jest.fn().mockReturnValue(makeUpdateChain([{ id: TRANSFER_ID }])),
+      };
+      mockDb.transaction.mockImplementation(
+        async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
+      );
+
+      const result = await service.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID);
+
+      expect(result).toEqual({ success: true });
+      expect(sagaBegin).not.toHaveBeenCalled();
+      expect(sagaRunStep).not.toHaveBeenCalled();
+      expect(jest.mocked(runInTenantTransaction)).not.toHaveBeenCalled();
     });
   });
 });

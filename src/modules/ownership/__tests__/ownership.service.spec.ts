@@ -9,6 +9,7 @@ import { OwnershipService } from "../ownership.service";
 import { OwnershipTransfersService } from "../ownership-transfers.service";
 import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { OrganizationSagaService } from "../../organization/core/lifecycle/organization-saga.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -127,6 +128,18 @@ describe("OwnershipService — access / business-rule logic", () => {
           },
         },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: OrganizationSagaService,
+          useValue: {
+            begin: jest.fn().mockResolvedValue({ saga: { sagaId: "saga-test" }, steps: [] }),
+            runStep: jest
+              .fn()
+              .mockImplementation((_s, _n, fn) => fn()),
+            complete: jest.fn().mockResolvedValue(undefined),
+            compensate: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+
       ],
     }).compile();
     ownership = moduleRef.get(OwnershipService);
