@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -44,6 +45,7 @@ export class SurveyParticipantsController {
   }
 
   @Post("invite")
+  @Idempotent("surveys.participants.invite")
   @HttpCode(200)
   @RequirePermission("surveys:participants:manage")
   invite(
@@ -55,6 +57,7 @@ export class SurveyParticipantsController {
   }
 
   @Post("remind")
+  @Idempotent("surveys.participants.remind")
   @HttpCode(200)
   @RequirePermission("surveys:participants:manage")
   remind(

@@ -17,6 +17,7 @@ import { moduleAvailabilityResolver } from "../../../common/rbac/module-availabi
 import { CATALOG_MODULES } from "../access-policy";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { OwnershipTransfersService } from "../../ownership/ownership-transfers.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -155,12 +156,14 @@ describe("AccessService.resolveUserPermissions — org owner receives every cata
 
     const result = new Map(
       Object.entries(
-        await (buildService(db) as unknown as {
+        (await (buildService(db) as unknown as {
           computeUserPermissions: (
             orgId: string,
             userId: string,
-          ) => Promise<Record<string, "all" | "team" | "own" | "none">>;
-        }).computeUserPermissions(ORG_A, USER),
+          ) => Promise<{
+            perms: Record<string, "all" | "team" | "own" | "none">;
+          }>;
+        }).computeUserPermissions(ORG_A, USER)).perms,
       ),
     );
 
@@ -196,6 +199,7 @@ describe("AccessService.getAccessSnapshot — org owner receives every catalog p
       isOrgOwner: true,
       sessionId: "session-owner",
       tokenScopes: null,
+      principal: humanSessionPrincipal(1, true),
     };
 
     const svc = buildService(db);
@@ -242,12 +246,14 @@ describe("AccessService.resolveUserPermissions — ORG_ADMIN role grants every c
 
     const result = new Map(
       Object.entries(
-        await (buildService(db) as unknown as {
+        (await (buildService(db) as unknown as {
           computeUserPermissions: (
             orgId: string,
             userId: string,
-          ) => Promise<Record<string, "all" | "team" | "own" | "none">>;
-        }).computeUserPermissions(ORG_A, USER),
+          ) => Promise<{
+            perms: Record<string, "all" | "team" | "own" | "none">;
+          }>;
+        }).computeUserPermissions(ORG_A, USER)).perms,
       ),
     );
 

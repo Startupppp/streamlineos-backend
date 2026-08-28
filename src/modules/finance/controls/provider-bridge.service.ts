@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { systemActor } from "../../../common/auth/system-actor";
 
 export interface RecordProviderPaymentInput {
   provider: string;
@@ -22,14 +23,11 @@ export class ProviderBridgeService {
     actorUserId: string,
     input: RecordProviderPaymentInput,
   ): Promise<void> {
-    const user: CurrentUserContext = {
-      userId: actorUserId,
+    const user = systemActor(
+      "finance.controls.provider-bridge",
       orgId,
-      role: "SYSTEM",
-      isOrgOwner: false,
-      tokenScopes: null,
-      sessionId: "provider-webhook",
-    };
+      actorUserId,
+    );
     const gross = Number(input.grossAmount);
     const fee = Number(input.feeAmount);
     const net = gross - fee;

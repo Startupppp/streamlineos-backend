@@ -34,7 +34,7 @@ describe("EmployeesService.getStats — SQL aggregates, no row fetch", () => {
         attendance: { findMany: attFindMany },
       },
     };
-    const service = new EmployeesService(db as never, undefined as never);
+    const service = new EmployeesService(db as never, undefined as never, undefined as never);
     return { service, leaveFindMany, attFindMany };
   }
 
@@ -91,7 +91,7 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
         async (_key: string, fn: () => Promise<unknown>) => fn(),
       ),
     };
-    return new EmployeesService(db as never, cache as never);
+    return new EmployeesService(db as never, cache as never, undefined as never);
   }
 
   let applyScopeSpy: jest.SpyInstance;

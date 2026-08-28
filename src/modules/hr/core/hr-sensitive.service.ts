@@ -11,6 +11,8 @@ import { HrAuditService } from "./hr-audit.service";
 import { encrypt, decrypt } from "../onboarding/core/crypto.helpers";
 import { resolveCompatibleList } from "../../../common/db/expand-contract-compat";
 import { loadSensitiveRecordCollections } from "./hr-sensitive-record-compat";
+import { sealSensitiveJson } from "../../../common/security/sensitive-field";
+import { readBankDetails, type BankDetails } from "../../../common/hr/canonical-bank-details";
 
 type SensitiveRow = typeof hrEmployeeSensitiveFields.$inferSelect;
 
@@ -128,7 +130,7 @@ export class HrSensitiveService {
           salaryAmountCents: input.salaryAmountCents ?? null,
           salaryCurrency: input.salaryCurrency ?? null,
           salaryFrequency: input.salaryFrequency ?? null,
-          bankDetails: input.bankDetails ?? null,
+          bankDetails: input.bankDetails !== undefined ? sealSensitiveJson(input.bankDetails) : null,
           taxId: encryptField(input.taxId) ?? null,
           panNumber: encryptField(input.panNumber) ?? null,
           nationalId: encryptField(input.nationalId) ?? null,
@@ -150,7 +152,7 @@ export class HrSensitiveService {
           ...(input.salaryAmountCents !== undefined && { salaryAmountCents: input.salaryAmountCents }),
           ...(input.salaryCurrency !== undefined && { salaryCurrency: input.salaryCurrency }),
           ...(input.salaryFrequency !== undefined && { salaryFrequency: input.salaryFrequency }),
-          ...(input.bankDetails !== undefined && { bankDetails: input.bankDetails }),
+          ...(input.bankDetails !== undefined && { bankDetails: sealSensitiveJson(input.bankDetails) }),
           ...(input.taxId !== undefined && { taxId: encryptField(input.taxId) }),
           ...(input.panNumber !== undefined && { panNumber: encryptField(input.panNumber) }),
           ...(input.nationalId !== undefined && { nationalId: encryptField(input.nationalId) }),
@@ -204,7 +206,7 @@ export class HrSensitiveService {
   private async resolveSensitiveRecordCollections(
     organizationId: string,
     sensitiveRow: SensitiveRow,
-  ): Promise<SensitiveRow> {
+  ): Promise<Omit<SensitiveRow, "bankDetails"> & { bankDetails: BankDetails | null }> {
     const normalizedCollections = await loadSensitiveRecordCollections(
       this.db,
       organizationId,
@@ -216,6 +218,7 @@ export class HrSensitiveService {
     ): boolean => JSON.stringify(legacyRecord) === JSON.stringify(normalizedRecord);
     return {
       ...sensitiveRow,
+      bankDetails: sensitiveRow.bankDetails ? readBankDetails(sensitiveRow.bankDetails) : null,
       disciplinaryRecords:
         sensitiveRow.disciplinaryRecords === null
           ? null

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
+import { and, desc, eq, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -12,27 +12,21 @@ import {
   payrollLineItems,
   payrollRunEmployees,
   payrollRuns,
-  users,
 } from "../../../db/schema";
-import {
-  hrEmployments,
-  hrEmployeeSensitiveFields,
-  hrPeople,
-} from "../../../db/schema/hr/core-people";
 import {
   getIndiaBundleForDate,
   IN_STATUTORY_RULE_BUNDLE_VERSION,
 } from "../runs/lib/statutory-registry";
-import { decrypt } from "../hr-payroll/lib/encryption";
 import {
   buildFilingExport,
   type EmployeeStatutorySourceRow,
   type FilingExportType,
 } from "./export-builders";
 import { PayrollEntitiesService } from "../entities/entities.service";
-import { requirePayrollUserIds } from "../lib/payroll-user-id";
 import { payrollSubjectKeyFromRunEmployee } from "../lib/payroll-subject";
 import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { decrypt } from "../hr-payroll/lib/encryption";
 
 export function resolveStatutoryTaxId(
   canonicalTaxId: string | null | undefined,
@@ -76,6 +70,7 @@ export class PayrollFilingsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly entities: PayrollEntitiesService,
+    private readonly efService: EmploymentFactsService,
   ) {}
 
   capabilities() {
@@ -435,17 +430,15 @@ export class PayrollFilingsService {
           workerId: payrollRunEmployees.workerId,
           gross: payrollRunEmployees.gross,
           net: payrollRunEmployees.net,
-          taxId: users.taxId,
         })
         .from(payrollRunEmployees)
-        .leftJoin(users, eq(users.id, payrollRunEmployees.userId))
         .where(
           and(
             eq(payrollRunEmployees.orgId, orgId),
             eq(payrollRunEmployees.runId, run.id),
           ),
         ),
-      loadRunEmployeePayees(this.db, orgId, run.id),
+      loadRunEmployeePayees(this.db, orgId, run.id, this.efService),
     ]);
 
     if (runEmployeeRows.length === 0) {
@@ -453,72 +446,6 @@ export class PayrollFilingsService {
     }
 
     const payeeByRunEmployee = new Map(payees.map((payee) => [payee.runEmployeeId, payee]));
-    const userIds = requirePayrollUserIds(runEmployeeRows.map((e) => e.userId));
-    const employments = userIds.length
-      ? await this.db
-          .select({
-            userId: hrPeople.userId,
-            employmentId: hrEmployments.id,
-            employeeNumber: hrEmployments.employeeNumber,
-          })
-          .from(hrEmployments)
-          .innerJoin(
-            hrPeople,
-            and(
-              eq(hrPeople.id, hrEmployments.personId),
-              eq(hrPeople.orgId, hrEmployments.orgId),
-            ),
-          )
-          .where(
-            and(
-              eq(hrEmployments.orgId, orgId),
-              eq(hrPeople.orgId, orgId),
-              inArray(hrPeople.userId, userIds),
-              eq(hrEmployments.isPrimary, true),
-            ),
-          )
-      : [];
-
-    const empNumByUser = new Map(
-      employments
-        .filter((e): e is typeof e & { userId: string } => e.userId != null)
-        .map((e) => [e.userId, e.employeeNumber]),
-    );
-    const employmentIdByUser = new Map(
-      employments
-        .filter((e): e is typeof e & { userId: string } => e.userId != null)
-        .map((e) => [e.userId, e.employmentId]),
-    );
-
-    const employmentIds = employments.map((e) => e.employmentId);
-    const sensitiveRows =
-      employmentIds.length > 0
-        ? await this.db
-            .select({
-              employmentId: hrEmployeeSensitiveFields.employmentId,
-              taxId: hrEmployeeSensitiveFields.taxId,
-              panNumber: hrEmployeeSensitiveFields.panNumber,
-              bankDetails: hrEmployeeSensitiveFields.bankDetails,
-            })
-            .from(hrEmployeeSensitiveFields)
-            .where(
-              and(
-                eq(hrEmployeeSensitiveFields.orgId, orgId),
-                inArray(hrEmployeeSensitiveFields.employmentId, employmentIds),
-              ),
-            )
-        : [];
-
-    const sensitiveByEmployment = new Map(
-      sensitiveRows.map((s) => [
-        s.employmentId,
-        {
-          ...s,
-          taxId: s.taxId ? decrypt(s.taxId) : s.taxId,
-          panNumber: s.panNumber ? decrypt(s.panNumber) : s.panNumber,
-        },
-      ]),
-    );
 
     const lineRows = await this.db
       .select({
@@ -542,27 +469,17 @@ export class PayrollFilingsService {
 
     const employees: EmployeeStatutorySourceRow[] = runEmployeeRows.map((e) => {
       const payee = payeeByRunEmployee.get(e.id);
-      const userBank = payee?.bankDetails ?? null;
-      const empId = e.userId ? employmentIdByUser.get(e.userId) : undefined;
-      const sens = empId != null ? sensitiveByEmployment.get(empId) : undefined;
-      const sensBank = sens?.bankDetails ?? null;
+      const bank = payee?.bankDetails ?? null;
 
-      const uan =
-        (userBank?.pfUanNumber?.trim() ||
-          sensBank?.pfUanNumber?.trim() ||
-          null) ?? null;
-      const esiIpNumber =
-        (userBank?.esiIpNumber?.trim() ||
-          sensBank?.esiIpNumber?.trim() ||
-          null) ?? null;
-      const pan = resolveStatutoryTaxId(sens?.taxId, sens?.panNumber, e.taxId);
+      const uan = bank?.pfUanNumber?.trim() || null;
+      const esiIpNumber = bank?.esiIpNumber?.trim() || null;
+      const pan = payee?.taxId ?? null;
 
       return {
         subjectKey: payrollSubjectKeyFromRunEmployee(e),
         userId: e.userId,
         workerId: e.workerId,
-        employeeNumber:
-          (e.userId ? empNumByUser.get(e.userId) : null) ?? payee?.workerNumber ?? null,
+        employeeNumber: payee?.employeeId ?? payee?.workerNumber ?? null,
         employeeName: payee?.displayName ?? e.userId ?? e.workerId ?? "Payee",
         email: payee?.email ?? null,
         gross: e.gross ?? "0",

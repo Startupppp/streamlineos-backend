@@ -85,6 +85,7 @@ export class BillingController {
   }
 
   @Post("checkout")
+  @Idempotent("billing.checkout")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
@@ -96,6 +97,7 @@ export class BillingController {
   }
 
   @Post("addons/purchase")
+  @Idempotent("billing.addon.purchase")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
@@ -150,6 +152,7 @@ export class BillingController {
   }
 
   @Post("razorpay")
+  @Idempotent("billing.order.create")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
@@ -179,6 +182,7 @@ export class BillingController {
   }
 
   @Post("marketplace/:appId/install")
+  @Idempotent("billing.marketplace.install")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
   installApp(
@@ -199,6 +203,7 @@ export class BillingController {
   }
 
   @Post("marketplace/:appId/trial")
+  @Idempotent("billing.marketplace.trial")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
   startTrial(
@@ -306,6 +311,7 @@ export class BillingController {
   }
 
   @Post("affiliate/register")
+  @Idempotent("billing.affiliate.register")
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
@@ -321,6 +327,7 @@ export class BillingController {
   }
 
   @Post("affiliate/payout-request")
+  @Idempotent("billing.affiliate.payout-request")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
@@ -329,6 +336,7 @@ export class BillingController {
   }
 
   @Post("referrals")
+  @Idempotent("billing.referral.create")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:referrals:manage")
   async createReferral(
@@ -389,6 +397,7 @@ export class BillingController {
   }
 
   @Post("enterprise-quotes/:quoteId/submit")
+  @Idempotent("billing.enterprise-quote.submit")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:create")
@@ -400,6 +409,7 @@ export class BillingController {
   }
 
   @Post("enterprise-quotes/:quoteId/approve")
+  @Idempotent("billing.enterprise-quote.approve")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
@@ -412,6 +422,7 @@ export class BillingController {
   }
 
   @Post("enterprise-quotes/:quoteId/reject")
+  @Idempotent("billing.enterprise-quote.reject")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
@@ -424,6 +435,7 @@ export class BillingController {
   }
 
   @Post("enterprise-quotes/:quoteId/send")
+  @Idempotent("billing.enterprise-quote.send")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
@@ -435,6 +447,7 @@ export class BillingController {
   }
 
   @Post("enterprise-quotes/:quoteId/accept")
+  @Idempotent("billing.enterprise-quote.accept")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:view")

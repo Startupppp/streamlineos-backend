@@ -15,6 +15,7 @@ import { GenerateService } from "../runs/generate.service";
 import { PayrollPostingService } from "../payroll-posting.service";
 import { toPaise } from "../runs/lib/money";
 import { payrollSubjectKeyFromRunEmployee } from "../lib/payroll-subject";
+import { systemActor } from "../../../common/auth/system-actor";
 
 function fiscalYearFromMonth(month: string): string {
   const [y, m] = month.split("-").map(Number);
@@ -80,7 +81,7 @@ export class LockingService {
       await this.generate.postPayrollLock(orgId, runId, tx);
       await this.writeTdsYtdLedger(tx, orgId, runId, run.month);
       await this.payrollPosting.postFinalized(
-        { userId, orgId, role: "system", isOrgOwner: true, sessionId: "system", tokenScopes: null },
+        systemActor("payroll.run.finalize-posting", orgId, userId),
         runId,
         run.month,
         run.grossTotal ?? "0",

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField, optionalPageNumberField } from "../../../../common/pagination/list-query.schema";
+import { pageNumberField, pageSizeField, optionalPageNumberField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const upsertSlaSchema = z.object({
   stage: z.string().min(1),
@@ -14,9 +14,9 @@ export const interviewListSchema = z
     upcoming: z.enum(["true", "false"]).optional(),
     relevant: z.enum(["true", "false"]).optional(),
     page: optionalPageNumberField(),
-    pageSize: z.coerce.number().int().min(1).max(200).optional(),
+    pageSize: optionalPageSizeField(),
     /** @deprecated prefer page/pageSize */
-    limit: z.coerce.number().int().min(1).max(200).optional(),
+    limit: optionalPageSizeField(),
     /** @deprecated prefer page/pageSize */
     offset: z.coerce.number().int().min(0).optional(),
   })

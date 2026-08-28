@@ -51,6 +51,7 @@ export const ownershipTransfers = pgTable(
     scope: text("scope").$type<TransferScope>().notNull(),
     moduleKey: text("module_key"),
     fromMembershipId: integer("from_membership_id").notNull(),
+    initiatedByMembershipId: integer("initiated_by_membership_id").notNull(),
     toMembershipId: integer("to_membership_id").notNull(),
     status: text("status").$type<TransferStatus>().default("PENDING").notNull(),
     initiatedAt: timestamp("initiated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -76,6 +77,11 @@ export const ownershipTransfers = pgTable(
     foreignKey({
       name: "fk_ownership_transfers_to_member",
       columns: [table.orgId, table.toMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "fk_ownership_transfers_initiator",
+      columns: [table.orgId, table.initiatedByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     }).onDelete("restrict"),
   ],
@@ -106,5 +112,10 @@ export const ownershipTransfersRelations = relations(ownershipTransfers, ({ one 
     fields: [ownershipTransfers.orgId, ownershipTransfers.toMembershipId],
     references: [organizationMembers.orgId, organizationMembers.id],
     relationName: "toOwnershipTransfer",
+  }),
+  initiatedByMembership: one(organizationMembers, {
+    fields: [ownershipTransfers.orgId, ownershipTransfers.initiatedByMembershipId],
+    references: [organizationMembers.orgId, organizationMembers.id],
+    relationName: "initiatedOwnershipTransfer",
   }),
 }));

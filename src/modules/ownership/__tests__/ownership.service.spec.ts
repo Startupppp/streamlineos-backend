@@ -113,7 +113,19 @@ describe("OwnershipService — access / business-rule logic", () => {
         OwnershipTransferResponseService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), cached: jest.fn(), cachedVersioned: jest.fn() } },
+        {
+          provide: CacheService,
+          useValue: {
+            invalidate: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+            invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+            cached: jest.fn(),
+            cachedVersioned: jest.fn(),
+            cachedForOrg: jest.fn(),
+            cachedVersionedForOrg: jest.fn(),
+          },
+        },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
@@ -220,6 +232,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION",
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         toMembershipId: 2,
         status: "ACCEPTED",
         expiresAt: new Date(Date.now() + 3_600_000),
@@ -236,6 +249,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION",
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         toMembershipId: 2,
         status: "PENDING",
         expiresAt: new Date(Date.now() - 1000),
@@ -255,6 +269,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION",
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         toMembershipId: 2,
         status: "PENDING",
         expiresAt: new Date(Date.now() + 3_600_000),
@@ -273,6 +288,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION",
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         toMembershipId: 2,
         status: "PENDING",
         expiresAt: new Date(Date.now() + 3_600_000),
@@ -301,6 +317,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       const transfer = {
         id: TRANSFER_ID,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         status: "CANCELLED",
         scope: "MODULE",
         moduleKey: "hr",
@@ -316,6 +333,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       const transfer = {
         id: TRANSFER_ID,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         status: "PENDING",
         scope: "MODULE",
         moduleKey: "hr",
@@ -334,6 +352,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       const transfer = {
         id: TRANSFER_ID,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         status: "PENDING",
         scope: "MODULE",
         moduleKey: "hr",
@@ -358,6 +377,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION",
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
       };
       const actorMembership = { id: 99, userId: ACTOR_USER, isOwner: false, status: "ACTIVE" };
       mockDb.select
@@ -382,6 +402,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "MODULE" as const,
         moduleKey: MODULE_KEY,
         fromMembershipId: FROM_MEMBERSHIP_ID,
+        initiatedByMembershipId: FROM_MEMBERSHIP_ID,
         toMembershipId: TO_MEMBERSHIP_ID,
         status: "PENDING" as const,
         expiresAt: new Date(Date.now() + 3_600_000),
@@ -484,6 +505,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION" as const,
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
       };
       const recipientMembership = { id: 2, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
 
@@ -501,6 +523,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       const transfer = {
         id: TRANSFER_ID,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         status: "PENDING" as const,
         scope: "MODULE" as const,
         moduleKey: "hr",
@@ -526,6 +549,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION" as const,
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
       };
       const recipientMembership = { id: 2, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
 

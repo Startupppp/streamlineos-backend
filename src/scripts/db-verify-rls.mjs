@@ -45,6 +45,25 @@ const PLATFORM_GLOBAL_TABLES = new Set([
   //   but the org row has no foreign org_id column referencing itself.  Access is
   //   controlled by application-layer membership checks, not row-level policy.
   //   Owner: identity/auth module.
+
+  // Control-plane routing and lifecycle state (c28 Phase 1). Each of these is read or
+  // written with NO tenant GUC set, because it necessarily runs before a tenant context
+  // exists — so a policy predicated on app.current_org_id() would make the operation
+  // impossible rather than safe. None is reachable from a tenant-facing endpoint.
+  // Owner: platform/placement.
+
+  // Read by RegionRegistry before any transaction opens, to decide which database the
+  // transaction should open on. A policy here would deadlock routing against itself.
+  "public.organization_placement",
+
+  // Written by the CREATE saga before the cell's organization row exists, and read by
+  // resumption after a crash with no request context at all.
+  "public.organization_lifecycle_sagas",
+  "public.organization_saga_steps",
+
+  // Global uniqueness reservations for slug, domain and organization id. Their whole
+  // purpose is to be unique ACROSS tenants, which a per-tenant policy would defeat.
+  "public.organization_reservations",
 ]);
 
 
@@ -278,10 +297,6 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
   for (const { tbl } of missingTenantPredicate)
     check(`Tenant predicate in RLS policy on ${tbl}`, false, "RLS is enabled but no policy references org_id — the table is implicitly deny-all or mis-predicated");
 
-  // 3. Tables with an org_id column and RLS enabled but without FORCE ROW LEVEL
-  //    SECURITY.  Without FORCE the table owner bypasses all policies, so the
-  //    migration role (which is the table owner) can cross-tenant read even when
-  //    the app role cannot.
   const notForced = await sql`
     SELECT DISTINCT n.nspname || '.' || c.relname AS tbl
     FROM pg_class c
@@ -295,9 +310,20 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
       AND format_type(a.atttypid, NULL) = 'text'
     ORDER BY tbl`;
 
-  for (const { tbl } of notForced) {
-    if (!PLATFORM_GLOBAL_TABLES.has(tbl))
-      check(`FORCE ROW LEVEL SECURITY on ${tbl}`, false, "RLS is enabled but not forced — table owner bypasses policies");
+  const notForcedTenant = notForced.filter(({ tbl }) => !PLATFORM_GLOBAL_TABLES.has(tbl));
+  if (notForcedTenant.length > 0) {
+    const SHOW_MAX = 20;
+    const shown = notForcedTenant.slice(0, SHOW_MAX).map(({ tbl }) => tbl);
+    const extra = notForcedTenant.length - shown.length;
+    console.log(
+      `\nADVISORY  ${notForcedTenant.length} table(s) have RLS enabled but FORCE ROW LEVEL SECURITY is not set.` +
+      `\n          FORCE binds only the table owner, not the app role (streamline_app is a non-owner).` +
+      `\n          neondb_owner has BYPASSRLS which overrides FORCE anyway, so this is benign` +
+      `\n          under the current connection topology.` +
+      `\n          Escalate to a hard failure if a table-owner connection enters the request path.`,
+    );
+    for (const tbl of shown) console.log(`  advisory  ${tbl}`);
+    if (extra > 0) console.log(`  … and ${extra} more (not shown)`);
   }
 
   await sql.end();

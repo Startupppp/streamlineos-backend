@@ -13,6 +13,7 @@ import {
   createAttendanceRegularizationSchema,
   type CreateAttendanceRegularizationInput,
 } from "./dto/attendance.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const listRegularizationsSchema = z.object({
   userId: z.string().optional(),
@@ -67,6 +68,7 @@ export class AttendanceRegularizationController {
   }
 
   @Post(":regularizationId/reject")
+  @Idempotent("hr.attendance-regularization.reject")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")

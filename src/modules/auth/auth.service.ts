@@ -36,6 +36,7 @@ import {
   getTrialDays,
   TRIAL_PLAN,
 } from "../billing/core/plan-entitlements.constants";
+import { placeOrganization } from "../../common/region/placement-lookup";
 import { regionForNewOrg } from "../../common/region/region-registry";
 
 function slugify(name: string): string {
@@ -75,6 +76,9 @@ export class AuthService {
     const userId = randomUUID();
     const orgId = randomUUID();
 
+    const region = regionForNewOrg();
+    await placeOrganization(this.db, { orgId, region });
+
     await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
       const seqRows = await tx.execute(
         sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
@@ -87,7 +91,7 @@ export class AuthService {
 
       await tx.insert(organizations).values({
         id: orgId,
-        region: regionForNewOrg(),
+        region,
         ownerMembershipId,
         name: input.companyName,
         slug: slugify(input.companyName),

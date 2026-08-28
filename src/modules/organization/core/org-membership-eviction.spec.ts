@@ -9,6 +9,20 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { OrgMembershipService } from "./org-membership.service";
 import { AblyService } from "../../realtime/ably.service";
 
+jest.mock("../../../common/tenant/with-identity", () => ({
+  withIdentity: jest.fn(
+    (_db: unknown, _userId: string, fn: (tx: unknown) => unknown) => {
+      const rows = [{ n: 1 }];
+      const chain: Record<string, unknown> = {};
+      for (const method of ["select", "from", "innerJoin", "leftJoin", "where", "orderBy", "limit"]) {
+        chain[method] = () => chain;
+      }
+      chain.then = (resolve: (value: unknown) => unknown) => resolve(rows);
+      return Promise.resolve(fn(chain));
+    },
+  ),
+}));
+
 describe("OrgMembershipService access revocation", () => {
   it("evicts only the requested organization without revoking account sessions", async () => {
     const where = jest.fn().mockResolvedValue(undefined);
@@ -16,11 +30,23 @@ describe("OrgMembershipService access revocation", () => {
     const update = jest.fn().mockReturnValue({ set });
     const revokeAllForUser = jest.fn();
     const invalidate = jest.fn().mockResolvedValue(undefined);
-    const tx = { execute: jest.fn().mockResolvedValue([]), update };
+    const selectChain: Record<string, unknown> = {};
+    for (const method of ["from", "innerJoin", "where", "orderBy", "limit"]) {
+      selectChain[method] = () => selectChain;
+    }
+    selectChain.then = (resolve: (value: unknown) => unknown) =>
+      resolve([{ id: 7 }]);
+    const tx = {
+      execute: jest.fn().mockResolvedValue([]),
+      select: jest.fn().mockReturnValue(selectChain),
+      delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
+      update,
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
-        { provide: AblyService, useValue: { revokeUserTokens: jest.fn() } },
+        { provide: AblyService, useValue: { revokeUserTokens: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: EmailService,
           useValue: {
@@ -32,6 +58,7 @@ describe("OrgMembershipService access revocation", () => {
         {
           provide: DRIZZLE,
           useValue: {
+            query: { users: { findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }) } },
             transaction: jest
               .fn()
               .mockImplementation(
@@ -50,7 +77,7 @@ describe("OrgMembershipService access revocation", () => {
     }).compile();
     const service = moduleRef.get(OrgMembershipService);
 
-    await service.revokeOrgScopedAccess("org-1", "member-1");
+    await service.revokeOrgScopedAccess("org-1", "member-1", "removed");
 
     expect(update).toHaveBeenCalledTimes(1);
     expect(revokeAllForUser).not.toHaveBeenCalled();

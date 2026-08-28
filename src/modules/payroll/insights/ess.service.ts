@@ -27,6 +27,7 @@ import { hrEquityGrants } from "../../../db/schema/hr/enterprise-comp";
 import { LoansService } from "../hr-payroll/loans.service";
 import { ReimbursementsService } from "../hr-payroll/reimbursements.service";
 import { TaxService } from "../hr-payroll/tax.service";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { type BankDetails, decryptBankDetails, encryptBankDetails } from "../../hr/onboarding/core/crypto.helpers";
 import { detectScheme, validateSchemeCode } from "../../payroll/payout/lib/bank-validation";
 import type { EssBank } from "./dto/insights.schemas";
@@ -40,6 +41,7 @@ export class EssService {
     private readonly loansService: LoansService,
     private readonly reimbursementsService: ReimbursementsService,
     private readonly taxService: TaxService,
+    private readonly employmentFacts: EmploymentFactsService,
   ) {}
 
   async getActiveToggles(orgId: string): Promise<PayrollToggles> {
@@ -406,9 +408,8 @@ export class EssService {
   async getBankDetails(orgId: string, userId: string) {
     const toggles = await this.getActiveToggles(orgId);
     if (!toggles.essAllowBankUpdate) throw new ForbiddenException("Bank details access is disabled");
-    const user = await this.db.query.users.findFirst({ where: eq(users.id, userId) });
-    if (!user) throw new NotFoundException("User not found");
-    const details = decryptBankDetails(user.bankDetails);
+    const sensitive = await this.employmentFacts.getSensitiveFacts(orgId, userId);
+    const details = sensitive.bankDetails;
     if (!details) return { hasBank: false, masked: null };
     return {
       hasBank: true,

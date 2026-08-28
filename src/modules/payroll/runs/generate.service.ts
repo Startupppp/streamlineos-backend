@@ -14,10 +14,10 @@ import {
   reimbursements,
   incentives,
   salaryLoans,
-  users,
   payrollRunAllocations,
 } from "../../../db/schema";
-import { decryptBankDetails } from "../hr-payroll/lib/encryption";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import type { SensitiveEmploymentFacts } from "../../directory/employment-facts.types";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
@@ -44,6 +44,7 @@ export class GenerateService {
     private readonly pipeline: GeneratePipelineService,
     private readonly notifications: PayrollNotificationsService,
     private readonly runLocks: PayrollRunLockService,
+    private readonly efService: EmploymentFactsService,
   ) {}
 
   async generateRun(
@@ -99,13 +100,18 @@ export class GenerateService {
     const eligibleUserIds = profiles
       .map((p) => p.userId)
       .filter((id): id is string => id !== null);
-    const [heldUserIds, duplicateBankAccountUserIds, lockedPeriodId, statutoryFlags] =
-      await Promise.all([
-        this.loadHeldUserIds(orgId, runId, eligibleUserIds),
-        this.findDuplicateBankAccounts(eligibleUserIds),
-        getLockedInputPeriodId(this.db, orgId, run.month),
-        this.loadStatutoryIdFlags(eligibleUserIds),
-      ]);
+    const sensitiveFacts =
+      eligibleUserIds.length > 0
+        ? await this.efService.getSensitiveFactsBatch(orgId, eligibleUserIds)
+        : new Map<string, SensitiveEmploymentFacts>();
+
+    const duplicateBankAccountUserIds = this.findDuplicateBankAccounts(eligibleUserIds, sensitiveFacts);
+    const statutoryFlags = this.loadStatutoryIdFlags(eligibleUserIds, sensitiveFacts);
+
+    const [heldUserIds, lockedPeriodId] = await Promise.all([
+      this.loadHeldUserIds(orgId, runId, eligibleUserIds),
+      getLockedInputPeriodId(this.db, orgId, run.month),
+    ]);
     const periodLocked = lockedPeriodId != null;
 
     if (isRecalc) {
@@ -518,24 +524,21 @@ export class GenerateService {
     return new Set(requirePayrollUserIds(rows.map((r) => r.userId)));
   }
 
-  private async findDuplicateBankAccounts(userIds: string[]): Promise<string[]> {
+  private findDuplicateBankAccounts(
+    userIds: string[],
+    sensitiveFacts: Map<string, SensitiveEmploymentFacts>,
+  ): string[] {
     if (userIds.length < 2) return [];
-    const rows = await this.db
-      .select({ id: users.id, bankDetails: users.bankDetails })
-      .from(users)
-      .where(inArray(users.id, userIds));
-
     const keyToUserIds = new Map<string, string[]>();
-    for (const row of rows) {
-      const bank = decryptBankDetails(row.bankDetails ?? null);
-      const account = bank?.accountNumber?.trim().toLowerCase();
+    for (const userId of userIds) {
+      const facts = sensitiveFacts.get(userId);
+      const account = facts?.bankDetails?.accountNumber?.trim().toLowerCase();
       if (!account) continue;
-      const key = `${account}|${(bank?.ifsc ?? "").trim().toLowerCase()}`;
+      const key = `${account}|${(facts?.bankDetails?.ifsc ?? "").trim().toLowerCase()}`;
       const list = keyToUserIds.get(key) ?? [];
-      list.push(row.id);
+      list.push(userId);
       keyToUserIds.set(key, list);
     }
-
     const duplicates = new Set<string>();
     for (const list of keyToUserIds.values()) {
       if (list.length > 1) list.forEach((id) => duplicates.add(id));
@@ -543,21 +546,16 @@ export class GenerateService {
     return [...duplicates];
   }
 
-  /** PF UAN / ESI IP presence from encrypted user bank details (onboarding path). */
-  private async loadStatutoryIdFlags(
+  private loadStatutoryIdFlags(
     userIds: string[],
-  ): Promise<Map<string, { missingPfUan: boolean; missingEsiIp: boolean }>> {
+    sensitiveFacts: Map<string, SensitiveEmploymentFacts>,
+  ): Map<string, { missingPfUan: boolean; missingEsiIp: boolean }> {
     const map = new Map<string, { missingPfUan: boolean; missingEsiIp: boolean }>();
-    if (userIds.length === 0) return map;
-    const rows = await this.db
-      .select({ id: users.id, bankDetails: users.bankDetails })
-      .from(users)
-      .where(inArray(users.id, userIds));
-    for (const row of rows) {
-      const bank = decryptBankDetails(row.bankDetails ?? null);
-      const uan = bank?.pfUanNumber?.trim() ?? "";
-      const ip = bank?.esiIpNumber?.trim() ?? "";
-      map.set(row.id, {
+    for (const userId of userIds) {
+      const facts = sensitiveFacts.get(userId);
+      const uan = facts?.bankDetails?.pfUanNumber?.trim() ?? "";
+      const ip = facts?.bankDetails?.esiIpNumber?.trim() ?? "";
+      map.set(userId, {
         missingPfUan: !/^\d{12}$/.test(uan),
         missingEsiIp: ip.length === 0,
       });

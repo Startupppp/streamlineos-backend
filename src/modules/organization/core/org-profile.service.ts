@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
@@ -33,7 +34,19 @@ import {
 } from "../../../common/org/provision-org-modules";
 import { provisionEmployeeSelfService } from "../../../common/org/provision-employee-self-service";
 import { withIdentity } from "../../../common/tenant/with-identity";
-import { regionForNewOrg } from "../../../common/region/region-registry";
+import {
+  getRegionRegistry,
+  hasRegionRegistry,
+  PlacementRefusedError,
+  regionForNewOrg,
+} from "../../../common/region/region-registry";
+import {
+  placeOrganization,
+  unplaceOrganization,
+} from "../../../common/region/placement-lookup";
+import { logger } from "../../../common/logger/logger.service";
+import { AccountOrganizationIndexService } from "./account-organization-index.service";
+import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
 
 @Injectable()
 export class OrgProfileService {
@@ -41,9 +54,21 @@ export class OrgProfileService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
+    private readonly indexService: AccountOrganizationIndexService,
+    private readonly saga: OrganizationSagaService,
   ) {}
 
   async listUserOrganizations(userId: string) {
+    const fromIndex = await this.indexService.listForUser(userId);
+    if (fromIndex.length > 0) return fromIndex;
+
+    void this.indexService.refreshForUser(userId).catch((error: unknown) => {
+      logger.error("[account-org-index] cold-path projection failed", {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+
     const memberships = await withIdentity(this.db, userId, (tx) =>
       tx
         .select({
@@ -79,7 +104,18 @@ export class OrgProfileService {
   }
 
   async switchOrg(userId: string, targetOrgId: string) {
-    const result = await withIdentity(this.db, userId, async (tx) => {
+    let targetDb: Db = this.db;
+    if (hasRegionRegistry()) {
+      try {
+        const placement = await getRegionRegistry().admittedPlacementForOrg(targetOrgId, "write");
+        targetDb = getRegionRegistry().bindingFor(placement.region).db;
+      } catch (err) {
+        if (err instanceof PlacementRefusedError) throw err;
+        throw new NotFoundException("Organization not found");
+      }
+    }
+
+    const { outgoingOrgId, ...switchResult } = await withIdentity(targetDb, userId, async (tx) => {
       const membership = await tx.query.organizationMembers.findFirst({
         where: and(
           eq(organizationMembers.userId, userId),
@@ -125,12 +161,20 @@ export class OrgProfileService {
         );
       }
 
+      const [currentUser] = await tx
+        .select({ lastActiveOrgId: users.lastActiveOrgId })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      const outgoingOrgId = currentUser?.lastActiveOrgId ?? null;
+
       await tx
         .update(users)
         .set({ lastActiveOrgId: targetOrgId })
         .where(eq(users.id, userId));
 
       return {
+        outgoingOrgId,
         orgId: org.id,
         name: org.name,
         slug: org.slug,
@@ -139,24 +183,26 @@ export class OrgProfileService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+    if (outgoingOrgId && outgoingOrgId !== targetOrgId) {
+      await this.cache.invalidate(CACHE_KEYS.accessVersion(outgoingOrgId));
+    }
 
     this.audit.log({ action: "org.switched", userId, orgId: targetOrgId });
 
-    return result;
+    // The projection is allowed to be stale, so a failure here must not fail the
+    // switch — but it must not be invisible either, or the next outage is too.
+    void this.indexService.refreshForUser(userId).catch((error: unknown) => {
+      logger.error("[account-org-index] opportunistic refresh failed", {
+        userId,
+        targetOrgId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+
+    return switchResult;
   }
 
   async createOrganization(userId: string, input: CreateOrganizationInput) {
-    const [existing] = await this.db
-      .select({ id: organizations.id })
-      .from(organizations)
-      .where(eq(organizations.slug, input.slug))
-      .limit(1);
-
-    if (existing)
-      throw new ConflictException("Organization slug already exists");
-
-    const orgId = randomUUID();
-
     let billingEmail: string | null = input.billingEmail ?? null;
     if (!billingEmail) {
       const [actor] = await this.db
@@ -167,7 +213,116 @@ export class OrgProfileService {
       billingEmail = actor?.email ?? null;
     }
 
+    // Scoped to the actor as well as the slug: keyed on the slug alone, a second
+    // person attempting a taken slug would resume the first person's saga and
+    // bootstrap their organisation. The slug's global uniqueness is the
+    // reservation's job, not the request key's.
+    const requestKey = `create:${userId}:${input.slug}`;
+    const { saga, steps } = await this.saga.begin(
+      "CREATE",
+      randomUUID(),
+      requestKey,
+      userId,
+      null,
+    );
+
+    const orgId = saga.organizationId;
+    const done = new Set(
+      steps.filter((step) => step.state === "DONE").map((step) => step.stepName),
+    );
+    const region = regionForNewOrg();
+
+    try {
+      if (!done.has("reserve-identity"))
+        await this.saga.runStep(saga.sagaId, "reserve-identity", async () => {
+          const idReserved = await this.saga.reserve(
+            "ORGANIZATION_ID",
+            orgId,
+            orgId,
+            saga.sagaId,
+          );
+          if (!idReserved)
+            throw new ConflictException("Organization id is already reserved");
+
+          const slugReserved = await this.saga.reserve(
+            "SLUG",
+            input.slug,
+            orgId,
+            saga.sagaId,
+          );
+          if (!slugReserved)
+            throw new ConflictException("Organization slug already exists");
+        });
+
+      if (!done.has("reserve-placement"))
+        await this.saga.runStep(saga.sagaId, "reserve-placement", () =>
+          placeOrganization(this.db, { orgId, region }),
+        );
+
+      if (!done.has("bootstrap-cell-organization"))
+        await this.saga.runStep(
+          saga.sagaId,
+          "bootstrap-cell-organization",
+          () => this.bootstrapCellOrganization(orgId, userId, region, billingEmail, input),
+        );
+
+      if (!done.has("bootstrap-owner-membership"))
+        await this.saga.runStep(saga.sagaId, "bootstrap-owner-membership", async () => {
+          const [owner] = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+            tx
+              .select({ id: organizationMembers.id })
+              .from(organizationMembers)
+              .where(
+                and(
+                  eq(organizationMembers.orgId, orgId),
+                  eq(organizationMembers.isOwner, true),
+                ),
+              )
+              .limit(1),
+          );
+          if (!owner)
+            throw new Error(
+              `Organization ${orgId} was created without an owner membership`,
+            );
+        });
+
+      if (!done.has("activate-directory-projection"))
+        await this.saga.runStep(saga.sagaId, "activate-directory-projection", () =>
+          this.indexService.refreshForUser(userId),
+        );
+
+      await this.saga.complete(saga.sagaId);
+    } catch (error) {
+      await this.saga.compensate(saga.sagaId, {
+        "reserve-identity": async () => {
+          await this.saga.release("SLUG", input.slug);
+          await this.saga.release("ORGANIZATION_ID", orgId);
+        },
+        "reserve-placement": () => unplaceOrganization(this.db, orgId),
+      });
+      throw error;
+    }
+
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+
+    return { id: orgId, name: input.name, slug: input.slug };
+  }
+
+  private async bootstrapCellOrganization(
+    orgId: string,
+    userId: string,
+    region: string,
+    billingEmail: string | null,
+    input: CreateOrganizationInput,
+  ): Promise<void> {
     await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+      const [already] = await tx
+        .select({ id: organizations.id })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+      if (already) return;
+
       const seqRows = await tx.execute(
         sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
       );
@@ -177,7 +332,7 @@ export class OrgProfileService {
       }
       await tx.insert(organizations).values({
         id: orgId,
-        region: regionForNewOrg(),
+        region,
         name: input.name,
         slug: input.slug,
         billingEmail,
@@ -211,10 +366,6 @@ export class OrgProfileService {
         .set({ lastActiveOrgId: orgId })
         .where(eq(users.id, userId));
     });
-
-    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-
-    return { id: orgId, name: input.name, slug: input.slug };
   }
 
   async getProfile(userId: string, orgId: string) {

@@ -60,13 +60,7 @@ export const simulationCandidatesQuerySchema = z.object({
 export const listRolesQuerySchema = z
   .object({
     page: pageNumberField,
-    limit: z.coerce
-      .number()
-      .int()
-      .refine((value) => [10, 20, 50, 100].includes(value), {
-        message: "Limit must be 10, 20, 50, or 100",
-      })
-      .default(20),
+    limit: pageSizeField(20),
     search: z.string().trim().max(100).optional(),
   })
   .strict();

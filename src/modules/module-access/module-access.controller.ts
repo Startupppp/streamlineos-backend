@@ -19,6 +19,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { ModuleAccessService } from "./module-access.service";
 import { ModuleAccessGroupsService } from "./module-access-groups.service";
 import { ModuleStandingRosterService } from "./module-standing-roster.service";
@@ -310,6 +311,7 @@ export class ModuleAccessController {
   }
 
   @Post(":moduleKey/ownership/transfer")
+  @Idempotent("ownership.module-access.transfer-initiate")
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:ownership-transfer")
@@ -322,6 +324,7 @@ export class ModuleAccessController {
   }
 
   @Delete(":moduleKey/ownership/transfer")
+  @Idempotent("ownership.module-access.transfer-cancel")
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:ownership-transfer")

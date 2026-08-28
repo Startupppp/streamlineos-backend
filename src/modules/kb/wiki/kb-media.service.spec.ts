@@ -6,6 +6,7 @@ import type { StorageService, UploadResult } from "../../storage/storage.service
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { KbIndexingService } from "../retrieval/kb-indexing.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { validateEnv } from "../../../config/env.validation";
 
 const kbConfig = validateEnv({
@@ -48,6 +49,7 @@ function makeUser(orgId = "org-42"): CurrentUserContext {
     role: "member",
     sessionId: "sess-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
   };
 }
 

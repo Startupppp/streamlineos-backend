@@ -16,10 +16,11 @@ import { CACHE_KEYS } from "../../../../common/cache/cache-keys";
 import { organizationPeople } from "../../../../db/schema/directory/organization-people";
 import {
   decrypt,
-  decryptBankDetails,
   encrypt,
   encryptBankDetails,
 } from "./crypto.helpers";
+import { sealSensitiveJson } from "../../../../common/security/sensitive-field";
+import { readBankDetails } from "../../../../common/hr/canonical-bank-details";
 import { resolveCountryRequirements } from "./onboarding-requirements.catalog";
 import type { BankDetailsInput, PersonalDetailsInput } from "./dto/onboarding.schemas";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
@@ -246,18 +247,19 @@ export class OnboardingDetailsService {
           iban: bankDetails.iban,
           routingNumber: bankDetails.routingCode,
         };
+        const sealedBankDetails = sealSensitiveJson(sensitiveBankDetails);
         await tx
           .insert(hrEmployeeSensitiveFields)
           .values({
             orgId,
             employmentId: employment.id,
-            bankDetails: sensitiveBankDetails,
+            bankDetails: sealedBankDetails,
             taxId: encryptedTaxId ?? null,
           })
           .onConflictDoUpdate({
             target: hrEmployeeSensitiveFields.employmentId,
             set: {
-              bankDetails: sensitiveBankDetails,
+              bankDetails: sealedBankDetails,
               ...(encryptedTaxId ? { taxId: encryptedTaxId } : {}),
               updatedAt: new Date(),
             },
@@ -273,8 +275,6 @@ export class OnboardingDetailsService {
   async getBankDetails(orgId: string, userId: string) {
     const [user] = await this.db
       .select({
-        bankDetails: users.bankDetails,
-        taxId: users.taxId,
         sensitiveBankDetails: hrEmployeeSensitiveFields.bankDetails,
         sensitiveTaxId: hrEmployeeSensitiveFields.taxId,
         sensitivePanNumber: hrEmployeeSensitiveFields.panNumber,
@@ -317,28 +317,12 @@ export class OnboardingDetailsService {
       throw new NotFoundException("User not found in this organization");
     }
 
-    const userBank = decryptBankDetails(user.bankDetails);
-    const sensitiveBank = user.sensitiveBankDetails;
-    const bank = userBank ?? (sensitiveBank
-      ? {
-          accountNumber: sensitiveBank.accountNumber ?? "",
-          bankName: sensitiveBank.bankName ?? "",
-          branch: sensitiveBank.branch ?? "",
-          ifsc: sensitiveBank.ifsc ?? "",
-          accountHolder: sensitiveBank.accountHolder ?? "",
-          pfUanNumber: sensitiveBank.pfUanNumber,
-          esiIpNumber: sensitiveBank.esiIpNumber,
-          iban: sensitiveBank.iban,
-          swift: sensitiveBank.swift,
-          routingCode: sensitiveBank.routingNumber,
-          statutory: undefined,
-        }
-      : null);
-    const countryCode = userBank?.bankCountry ?? "IN";
+    const bank = user.sensitiveBankDetails ? readBankDetails(user.sensitiveBankDetails) : null;
+    const countryCode = bank?.bankCountry ?? "IN";
     const requirements = resolveCountryRequirements(countryCode);
     const statutory = { ...(bank?.statutory ?? {}) };
     const primaryStatutoryKey = requirements.statutoryFields[0]?.key;
-    const encryptedTaxId = user.taxId ?? user.sensitiveTaxId ?? user.sensitivePanNumber;
+    const encryptedTaxId = user.sensitiveTaxId ?? user.sensitivePanNumber;
     if (encryptedTaxId && primaryStatutoryKey) {
       statutory[primaryStatutoryKey] ??= decrypt(encryptedTaxId);
     }

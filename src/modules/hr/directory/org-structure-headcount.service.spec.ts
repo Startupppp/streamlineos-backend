@@ -34,6 +34,7 @@ describe("OrgStructureService headcount aggregation", () => {
     const service = new OrgStructureService(
       { select: selectHeadcount } as unknown as Db,
       cache as unknown as CacheService,
+      undefined as never,
     );
 
     await expect(

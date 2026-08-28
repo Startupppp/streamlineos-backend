@@ -5,6 +5,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import {
   entityActionOptionsSchema,
   entityActionsAvailableSchema,
@@ -80,6 +81,7 @@ export class ChatEntityActionsController {
   }
 
   @Post("submit")
+  @Idempotent("chat.action.submit")
   @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   async submitAction(
     @Body(new ZodValidationPipe(submitEntityActionSchema))

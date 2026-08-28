@@ -83,6 +83,8 @@ describe("OrgLifecycleService", () => {
 
   it("archives atomically, moves the active org, and evicts only org-scoped access", async () => {
     selectResults.push(
+      [{ statusV2: "ACTIVE" }],
+      [],
       [{ userId: "user-1" }],
       [{ orgId: "org-2" }],
     );
@@ -94,7 +96,7 @@ describe("OrgLifecycleService", () => {
 
     expect(db.transaction).toHaveBeenCalledTimes(3);
     expect(revokeAllPending).toHaveBeenCalledWith("org-1", db);
-    expect(revokeOrgScopedAccess).toHaveBeenCalledWith("org-1", "user-1");
+    expect(revokeOrgScopedAccess).toHaveBeenCalledWith("org-1", "user-1", "removed");
     expect(cacheInvalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession("user-1"));
   });
 
@@ -139,7 +141,8 @@ describe("OrgLifecycleService", () => {
 
   it("returns the owner's next organization after deleting their active organization", async () => {
     selectResults.push(
-      [{ id: "org-1", name: "Alpha", slug: "alpha" }],
+      [{ id: "org-1", name: "Alpha", slug: "alpha", statusV2: "ACTIVE" }],
+      [],
       [{ userId: "user-1" }],
       [{ orgId: "org-2" }],
     );
@@ -148,7 +151,7 @@ describe("OrgLifecycleService", () => {
       service.deleteOrg("org-1", "user-1", "Alpha"),
     ).resolves.toEqual({ success: true, nextOrgId: "org-2" });
 
-    expect(revokeOrgScopedAccess).toHaveBeenCalledWith("org-1", "user-1");
+    expect(revokeOrgScopedAccess).toHaveBeenCalledWith("org-1", "user-1", "removed");
     expect(cacheInvalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession("user-1"));
   });
 });

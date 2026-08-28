@@ -28,6 +28,7 @@ import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { CreateLeaveInput } from "./dto/leaves.schemas";
 import { LeaveApproverService } from "./leave-approver.service";
 import { decideProbationLeave } from "./probation-leave-restriction";
@@ -52,6 +53,7 @@ export class LeavesWriteService {
     private readonly access: AccessService,
     private readonly approvers: LeaveApproverService,
     private readonly probation: ProbationService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   private async invalidateLeaveAnalytics(orgId: string): Promise<void> {
@@ -307,21 +309,13 @@ export class LeavesWriteService {
     startDate: string,
     endDate: string,
   ): Promise<string[]> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: { reportingTo: true },
-    });
+    const facts = await this.employment.getFacts(orgId, userId);
 
-    const sameMgrUsers = user?.reportingTo
-      ? await this.db.query.users.findMany({
-          where: eq(users.reportingTo, user.reportingTo),
-          columns: { id: true },
-        })
+    const peerIds = facts.managerUserId
+      ? (await this.employment.getDirectReportUserIds(orgId, facts.managerUserId)).filter(
+          (id) => id !== userId,
+        )
       : [];
-
-    const peerIds = sameMgrUsers
-      .map((peerUser) => peerUser.id)
-      .filter((peerUserId) => peerUserId !== userId);
     if (peerIds.length === 0) return [];
 
     const conflicts = await this.db.query.leaveRequests.findMany({

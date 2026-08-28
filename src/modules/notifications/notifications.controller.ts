@@ -21,6 +21,7 @@ import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { NotificationsService } from "./notifications.service";
 import { NotificationEventService } from "./notification-event.service";
 import { NoTenantTransaction } from "../../common/tenant";
@@ -181,6 +182,7 @@ export class NotificationsController {
   }
 
   @Post(":notificationId/approve")
+  @Idempotent("notifications.action.approve")
   @Universal()
   @HttpCode(200)
   approve(
@@ -191,6 +193,7 @@ export class NotificationsController {
   }
 
   @Post(":notificationId/reject")
+  @Idempotent("notifications.action.reject")
   @Universal()
   @HttpCode(200)
   reject(

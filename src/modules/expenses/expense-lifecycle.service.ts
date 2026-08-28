@@ -23,6 +23,7 @@ import { NotificationDispatchService } from "../notifications/notification-dispa
 import { FinancePostingService } from "../accounting/posting/finance-posting.service";
 import type { PostJournalLine } from "../accounting/core/finance-posting.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { holdsOwnerOnly } from "../../common/rbac/owner-only-operations";
 
 function normalizeMerchant(merchant: string | null | undefined): string {
   if (!merchant) return "";
@@ -270,7 +271,7 @@ export class ExpenseLifecycleService {
     });
 
     if (openApprovalRequest) {
-      if (!u.isOrgOwner) {
+      if (!holdsOwnerOnly(u, "finance.expense.grant-without-approval")) {
         throw new BadRequestException("This expense requires a pending approval to be granted first");
       }
       await this.db

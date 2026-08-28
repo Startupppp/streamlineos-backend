@@ -63,6 +63,7 @@ export class ReimbursementsController {
   }
 
   @Post(":batchId/approve")
+  @Idempotent("finance.reimbursement.approve")
   @HttpCode(200)
   @RequirePermission("accounting:reimbursements:approve")
   async approve(

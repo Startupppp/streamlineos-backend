@@ -57,9 +57,30 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadModuleManifest } from "./permission-key-extractors.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const SRC_ROOT = join(__dirname, "..");
+
+// ---------------------------------------------------------------------------
+// Manifest pilot: publicExposure consistency for "timesheets"
+// ---------------------------------------------------------------------------
+
+const PILOT_MODULE = "timesheets";
+
+/**
+ * Returns true when the manifest's publicExposure value agrees with whether
+ * any handler classified as "public" was found inside the module's folder.
+ *
+ * @param {{ moduleFolder: string, publicExposure: boolean }} pilotEntry
+ * @param {Array<{ file: string, handlers: Array<{ classification: string }> }>} results
+ */
+export function checkPublicExposurePilot(pilotEntry, results) {
+  const prefix = `modules/${pilotEntry.moduleFolder}/`;
+  const moduleResults = results.filter((r) => r.file.replace(/\\/g, "/").includes(prefix));
+  const hasPublic = moduleResults.some((r) => r.handlers.some((h) => h.classification === "public"));
+  return { ok: hasPublic === pilotEntry.publicExposure, hasPublic };
+}
 
 // ---------------------------------------------------------------------------
 // Regexes
@@ -415,6 +436,32 @@ class BadNameController {
   const r9 = parseControllerHandlers(emptyName);
   checks.emptyInServiceNameIsNotADeclaration = r9[0]?.classification === "UNDECLARED";
 
+  // --- Pilot: publicExposure mismatch is detected ---
+  // A manifest that says publicExposure: true while the module's folder has no
+  // public handlers must fail the check, proving the check bites on bad data.
+  const noPublicScan = [
+    {
+      file: `src/modules/timesheets/timesheets.controller.ts`,
+      handlers: [{ method: "list", classification: "permissioned" }],
+    },
+  ];
+  const wrongExposureEntry = { moduleFolder: "timesheets", publicExposure: true };
+  const correctExposureEntry = { moduleFolder: "timesheets", publicExposure: false };
+  const pilotMismatch = checkPublicExposurePilot(wrongExposureEntry, noPublicScan);
+  const pilotMatch = checkPublicExposurePilot(correctExposureEntry, noPublicScan);
+  checks.pilotPublicExposureMismatchDetected = !pilotMismatch.ok;
+  checks.pilotPublicExposureMatchPasses = pilotMatch.ok;
+
+  // A module folder with a public handler matches publicExposure: true
+  const hasPublicScan = [
+    {
+      file: `src/modules/blog/blog.controller.ts`,
+      handlers: [{ method: "list", classification: "public" }],
+    },
+  ];
+  const blogEntry = { moduleFolder: "blog", publicExposure: true };
+  checks.pilotPublicExposureTrueMatchPasses = checkPublicExposurePilot(blogEntry, hasPublicScan).ok;
+
   const pass = Object.values(checks).every(Boolean);
   process.stdout.write(
     JSON.stringify({ selfTest: true, pass, checks }, null, 2) + "\n",
@@ -531,4 +578,26 @@ if (asJson) {
   );
 }
 
-process.exit(totalUndeclared > 0 ? 1 : 0);
+// ---------------------------------------------------------------------------
+// Manifest pilot check — timesheets only
+// ---------------------------------------------------------------------------
+
+let pilotFailed = false;
+try {
+  const manifest = loadModuleManifest();
+  const pilotEntry = manifest.modules.find((m) => m.id === PILOT_MODULE);
+  if (pilotEntry) {
+    const pilotCheck = checkPublicExposurePilot(pilotEntry, results);
+    if (!asJson) {
+      process.stdout.write(
+        `\nManifest pilot (${PILOT_MODULE}): publicExposure=${pilotEntry.publicExposure} — ` +
+          `${pilotCheck.ok ? "OK" : `FAIL (scan found ${pilotCheck.hasPublic ? "" : "no "}public handlers in its folder)`}\n`,
+      );
+    }
+    if (!pilotCheck.ok) pilotFailed = true;
+  }
+} catch (err) {
+  process.stderr.write(`Manifest pilot check skipped: ${err.message}\n`);
+}
+
+process.exit(totalUndeclared > 0 || pilotFailed ? 1 : 0);

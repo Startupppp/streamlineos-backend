@@ -8,6 +8,7 @@ describe("LeavesService user projection", () => {
       {} as never,
       {} as never,
       {} as never,
+      undefined as never,
     );
 
     await service.thisWeek("org-1");

@@ -374,6 +374,7 @@ export class OnboardingController {
   }
 
   @Post("submit")
+  @Idempotent("hr.onboarding.submit")
   @Universal()
   submit(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.submit(u.orgId, u.userId);

@@ -1,5 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import {
   payrollRunEmployees,
@@ -8,16 +7,12 @@ import {
   organizationPeople,
 } from "../../../db/schema";
 import {
-  hrPeople,
-  hrEmployments,
-  hrEmployeeSensitiveFields,
-} from "../../../db/schema/hr/core-people";
-import { decryptBankDetails, type BankDetails } from "../hr-payroll/lib/encryption";
-import {
   payrollSubjectFromRunEmployee,
   payrollSubjectKeyFromRunEmployee,
 } from "./payroll-subject";
 import type { PayrollProfileSubject } from "./payroll-subject";
+import type { EmploymentFactsService } from "../../directory/employment-facts.service";
+import type { BankDetails } from "../../directory/employment-facts.types";
 
 export type { PayrollProfileSubject };
 
@@ -33,10 +28,9 @@ export type PayrollPayeeDetails = {
   designation: string | null;
   joiningDate: string | null;
   bankDetails: DecryptedBankDetails;
+  taxId: string | null;
   workerNumber: string | null;
 };
-
-const linkedPersonUser = alias(users, "payroll_payee_linked_user");
 
 function personName(row: {
   displayName: string | null;
@@ -47,39 +41,11 @@ function personName(row: {
   return row.displayName?.trim() || composed || "Payee";
 }
 
-function bankFromSensitive(
-  sensitiveBank: typeof hrEmployeeSensitiveFields.$inferSelect["bankDetails"] | null | undefined,
-): DecryptedBankDetails {
-  if (!sensitiveBank || typeof sensitiveBank !== "object") return null;
-  const accountNumber = sensitiveBank.accountNumber?.trim();
-  if (!accountNumber) return null;
-  return {
-    accountNumber,
-    bankName: sensitiveBank.bankName ?? "",
-    branch: sensitiveBank.branch ?? "",
-    ifsc: sensitiveBank.ifsc ?? "",
-    accountHolder: sensitiveBank.accountHolder ?? "",
-    pfUanNumber: sensitiveBank.pfUanNumber,
-    esiIpNumber: sensitiveBank.esiIpNumber,
-  };
-}
-
-function pickBank(
-  userBank: string | null | undefined,
-  linkedUserBank: string | null | undefined,
-  sensitiveBank: typeof hrEmployeeSensitiveFields.$inferSelect["bankDetails"] | null | undefined,
-): DecryptedBankDetails {
-  const fromUser = decryptBankDetails(userBank ?? null);
-  if (fromUser?.accountNumber) return fromUser;
-  const fromLinked = decryptBankDetails(linkedUserBank ?? null);
-  if (fromLinked?.accountNumber) return fromLinked;
-  return bankFromSensitive(sensitiveBank);
-}
-
 export async function loadRunEmployeePayees(
   db: Db,
   orgId: string,
   runId: number,
+  efService: EmploymentFactsService,
 ): Promise<PayrollPayeeDetails[]> {
   const rows = await db
     .select({
@@ -88,16 +54,12 @@ export async function loadRunEmployeePayees(
       workerId: payrollRunEmployees.workerId,
       userName: users.name,
       userEmail: users.email,
-      userEmployeeId: users.employeeId,
-      userDesignation: users.designation,
-      userJoiningDate: users.joiningDate,
-      userBankDetails: users.bankDetails,
       workerNumber: workers.workerNumber,
       personDisplayName: organizationPeople.displayName,
       personFirstName: organizationPeople.firstName,
       personLastName: organizationPeople.lastName,
       personWorkEmail: organizationPeople.workEmail,
-      linkedUserBankDetails: linkedPersonUser.bankDetails,
+      organizationPersonId: workers.organizationPersonId,
     })
     .from(payrollRunEmployees)
     .leftJoin(users, eq(payrollRunEmployees.userId, users.id))
@@ -115,52 +77,42 @@ export async function loadRunEmployeePayees(
         eq(organizationPeople.organizationId, workers.organizationId),
       ),
     )
-    .leftJoin(linkedPersonUser, eq(linkedPersonUser.id, organizationPeople.userId))
     .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
 
-  const workerOnlyEmails = rows
-    .filter((row) => !row.userId && row.workerId && row.personWorkEmail)
-    .map((row) => row.personWorkEmail as string);
+  const userIds = [
+    ...new Set(
+      rows
+        .filter((r): r is typeof r & { userId: string } => r.userId !== null)
+        .map((r) => r.userId),
+    ),
+  ];
 
-  const sensitiveByEmail = new Map<string, { bankDetails: typeof hrEmployeeSensitiveFields.$inferSelect["bankDetails"] }>();
+  const personIds = [
+    ...new Set(
+      rows
+        .filter(
+          (r): r is typeof r & { organizationPersonId: string } =>
+            r.userId === null && r.organizationPersonId !== null,
+        )
+        .map((r) => r.organizationPersonId),
+    ),
+  ];
 
-  if (workerOnlyEmails.length > 0) {
-    const sensitiveRows = await db
-      .select({
-        workEmail: organizationPeople.workEmail,
-        panNumber: hrEmployeeSensitiveFields.panNumber,
-        bankDetails: hrEmployeeSensitiveFields.bankDetails,
-      })
-      .from(hrEmployeeSensitiveFields)
-      .innerJoin(hrEmployments, eq(hrEmployments.id, hrEmployeeSensitiveFields.employmentId))
-      .innerJoin(hrPeople, eq(hrPeople.id, hrEmployments.personId))
-      .innerJoin(
-        organizationPeople,
-        and(
-          eq(organizationPeople.organizationId, hrPeople.orgId),
-          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
-        ),
-      )
-      .where(
-        and(
-          eq(hrEmployeeSensitiveFields.orgId, orgId),
-          eq(hrEmployments.isPrimary, true),
-          inArray(organizationPeople.workEmail, workerOnlyEmails),
-        ),
-      );
-
-    for (const row of sensitiveRows) {
-      if (!row.workEmail) continue;
-      sensitiveByEmail.set(row.workEmail, { bankDetails: row.bankDetails });
-    }
-  }
+  const [factsMap, sensitiveMap, personSensitiveMap] = await Promise.all([
+    efService.getFactsBatch(orgId, userIds),
+    efService.getSensitiveFactsBatch(orgId, userIds),
+    efService.getSensitiveFactsByPersonBatch(orgId, personIds),
+  ]);
 
   return rows.map((row) => {
     const subject = payrollSubjectFromRunEmployee(row);
-    const sens =
-      !row.userId && row.personWorkEmail
-        ? sensitiveByEmail.get(row.personWorkEmail)
-        : undefined;
+    const facts = row.userId !== null ? factsMap.get(row.userId) : undefined;
+    const sensitive =
+      row.userId !== null
+        ? sensitiveMap.get(row.userId)
+        : row.organizationPersonId !== null
+          ? personSensitiveMap.get(row.organizationPersonId)
+          : undefined;
 
     const displayName =
       row.userName ??
@@ -178,10 +130,11 @@ export async function loadRunEmployeePayees(
       subjectKey: payrollSubjectKeyFromRunEmployee(row),
       displayName,
       email: row.userEmail ?? row.personWorkEmail ?? null,
-      employeeId: row.userEmployeeId ?? row.workerNumber ?? null,
-      designation: row.userDesignation ?? null,
-      joiningDate: row.userJoiningDate ?? null,
-      bankDetails: pickBank(row.userBankDetails, row.linkedUserBankDetails, sens?.bankDetails),
+      employeeId: facts?.employeeNumber ?? row.workerNumber ?? null,
+      designation: facts?.designation ?? null,
+      joiningDate: facts?.joiningDate ?? null,
+      bankDetails: sensitive?.bankDetails ?? null,
+      taxId: sensitive?.taxId ?? null,
       workerNumber: row.workerNumber ?? null,
     };
   });
@@ -191,13 +144,14 @@ export async function loadRunEmployeePayeeById(
   db: Db,
   orgId: string,
   runEmployeeId: number,
+  efService: EmploymentFactsService,
 ): Promise<PayrollPayeeDetails | null> {
   const runRow = await db.query.payrollRunEmployees.findFirst({
     where: and(eq(payrollRunEmployees.id, runEmployeeId), eq(payrollRunEmployees.orgId, orgId)),
     columns: { runId: true },
   });
   if (!runRow) return null;
-  const payees = await loadRunEmployeePayees(db, orgId, runRow.runId);
+  const payees = await loadRunEmployeePayees(db, orgId, runRow.runId, efService);
   return payees.find((payee) => payee.runEmployeeId === runEmployeeId) ?? null;
 }
 

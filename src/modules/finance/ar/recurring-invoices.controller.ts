@@ -6,6 +6,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { RecurringInvoicesService } from "./recurring-invoices.service";
 import {
   createRecurringTemplateSchema,
@@ -70,6 +71,7 @@ export class RecurringInvoicesController {
   }
 
   @Post(":templateId/run-now")
+  @Idempotent("finance.recurring-invoice.run-now")
   @HttpCode(200)
   @RequirePermission("accounting:recurring:manage")
   runNow(

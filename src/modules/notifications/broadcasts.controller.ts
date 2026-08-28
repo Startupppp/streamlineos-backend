@@ -11,6 +11,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
@@ -88,6 +89,7 @@ export class BroadcastsController {
   }
 
   @Post(":broadcastId/publish")
+  @Idempotent("notifications.broadcast.publish")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")

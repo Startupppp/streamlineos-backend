@@ -56,7 +56,11 @@ export class StorageVaultController {
     if (!doc) throw new NotFoundException("Document not found.");
 
     await this.db.insert(vaultAccessLogs).values({
+      orgId: u.orgId,
+      candidateId,
       vaultDocumentId: documentId,
+      filename: doc.filename,
+      documentType: doc.documentType,
       accessedBy: u.userId,
       action: "VIEW",
     });

@@ -6,6 +6,7 @@ import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 jest.mock("../../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -19,6 +20,7 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
     isOrgOwner: true,
     sessionId: "s-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, true),
     ...overrides,
   };
 }

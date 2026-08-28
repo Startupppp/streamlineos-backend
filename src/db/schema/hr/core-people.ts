@@ -208,18 +208,8 @@ export const hrEmployeeSensitiveFields = pgTable("hr_employee_sensitive_fields",
   salaryAmountCents: integer("salary_amount_cents"),
   salaryCurrency: text("salary_currency").default("INR"),
   salaryFrequency: text("salary_frequency").default("MONTHLY"),
-  bankDetails: jsonb("bank_details").$type<{
-    accountNumber?: string;
-    bankName?: string;
-    branch?: string;
-    ifsc?: string;
-    swift?: string;
-    accountHolder?: string;
-    pfUanNumber?: string;
-    esiIpNumber?: string;
-    iban?: string;
-    routingNumber?: string;
-  }>(),
+  bankDetails: text("bank_details"),
+  encryptionKeyRef: text("encryption_key_ref"),
   taxId: text("tax_id"),
   panNumber: text("pan_number"),
   nationalId: text("national_id"),

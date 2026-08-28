@@ -35,6 +35,7 @@ import {
   loadRunEmployeePayeeById,
   loadRunEmployeePayees,
 } from "../lib/payroll-run-payee";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { CalculationSnapshot, PayrollToggles } from "../payroll.types";
 import type { PayslipTemplateConfig } from "./dto/payout.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -65,6 +66,7 @@ export class PublishingService {
     private readonly dispatch: NotificationDispatchService,
     private readonly access: AccessService,
     private readonly notifications: PayrollNotificationsService,
+    private readonly efService: EmploymentFactsService,
   ) {}
 
   async publish(
@@ -102,7 +104,7 @@ export class PublishingService {
       ? [org.address.city, org.address.state, org.address.country].filter(Boolean).join(", ")
       : undefined;
 
-    let payees = await loadRunEmployeePayees(this.db, orgId, runId);
+    let payees = await loadRunEmployeePayees(this.db, orgId, runId, this.efService);
     const totalRunEmployeeCount = payees.length;
 
     if (runEmployeeIds && runEmployeeIds.length > 0) {
@@ -449,7 +451,7 @@ export class PublishingService {
       throw new ConflictException("Calculation snapshot not available for this payslip");
     }
 
-    const payee = await loadRunEmployeePayeeById(this.db, publication.orgId, publication.runEmployeeId);
+    const payee = await loadRunEmployeePayeeById(this.db, publication.orgId, publication.runEmployeeId, this.efService);
     if (!payee) {
       throw new ConflictException("Payee details not available for this payslip");
     }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const createSchema = z.object({
   title: z.string().min(1).max(200),
@@ -14,7 +15,7 @@ export const patchSchema = z.object({
 });
 
 export const listResponsesSchema = z.object({
-  limit: z.coerce.number().int().min(1).max(500).default(200),
+  limit: pageSizeField(200),
 });
 
 export const submitResponseSchema = z.object({

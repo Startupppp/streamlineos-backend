@@ -11,6 +11,7 @@ import { PayrollFilingsService } from "./filings/filings.service";
 import { PayrollJobsService } from "./jobs/payroll-jobs.service";
 import { PayrollJobsController } from "./jobs/jobs.controller";
 import { PayrollJobsWorkerService } from "./jobs/payroll-jobs-worker.service";
+import { DirectoryModule } from "../directory/directory.module";
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { PayrollJobsWorkerService } from "./jobs/payroll-jobs-worker.service";
     PayrollPayoutModule,
     PayrollInsightsModule,
     PayrollEntitiesModule,
+    DirectoryModule,
   ],
   controllers: [PayrollEntitiesController, PayrollFilingsController, PayrollJobsController],
   providers: [

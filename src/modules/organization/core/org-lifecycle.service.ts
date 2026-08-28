@@ -12,11 +12,15 @@ import {
   leaveBlackoutDates,
   onboardingTasks,
   organizationMembers,
+  organizationLegalHolds,
   organizations,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import {
+  assertTransitionAllowed,
+} from "./lifecycle/organization-lifecycle-transitions";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
@@ -26,6 +30,11 @@ import { InvitationsService } from "./invitations.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
+import { unplaceOrganization } from "../../../common/region/placement-lookup";
+import {
+  getRegionRegistry,
+  hasRegionRegistry,
+} from "../../../common/region/region-registry";
 
 @Injectable()
 export class OrgLifecycleService {
@@ -36,6 +45,23 @@ export class OrgLifecycleService {
     private readonly orgMembership: OrgMembershipService,
     private readonly invitations: InvitationsService,
   ) {}
+
+  private async hasActiveLegalHold(
+    orgId: string,
+    db: DbOrTx = this.db,
+  ): Promise<boolean> {
+    const [hold] = await db
+      .select({ holdId: organizationLegalHolds.holdId })
+      .from(organizationLegalHolds)
+      .where(
+        and(
+          eq(organizationLegalHolds.orgId, orgId),
+          isNull(organizationLegalHolds.releasedAt),
+        ),
+      )
+      .limit(1);
+    return hold !== undefined;
+  }
 
   private async listMemberUserIds(db: DbOrTx, orgId: string): Promise<string[]> {
     const members = await db
@@ -58,7 +84,7 @@ export class OrgLifecycleService {
 
   private async revokeMembersAccess(orgId: string, memberUserIds: string[]): Promise<void> {
     for (const memberUserId of memberUserIds) {
-      await this.orgMembership.revokeOrgScopedAccess(orgId, memberUserId);
+      await this.orgMembership.revokeOrgScopedAccess(orgId, memberUserId, "removed");
     }
   }
 
@@ -146,11 +172,34 @@ export class OrgLifecycleService {
   }
 
   async archiveOrg(orgId: string, userId: string) {
-    const memberUserIds = await runInTenantTransaction(
+    const preflight = await runInTenantTransaction(
       this.db,
-      (tx) => this.listMemberUserIds(tx, orgId),
+      async (tx) => {
+        const [row] = await tx
+          .select({ statusV2: organizations.statusV2 })
+          .from(organizations)
+          .where(eq(organizations.id, orgId))
+          .limit(1);
+        if (!row) return null;
+
+        return {
+          statusV2: row.statusV2,
+          hasActiveLegalHold: await this.hasActiveLegalHold(orgId, tx),
+          memberUserIds: await this.listMemberUserIds(tx, orgId),
+        };
+      },
       { orgId },
     );
+    if (!preflight) throw new NotFoundException("Organization not found");
+
+    const transition = assertTransitionAllowed(
+      "ARCHIVE",
+      preflight.statusV2 ?? "ACTIVE",
+      { hasActiveLegalHold: preflight.hasActiveLegalHold },
+    );
+    if (!transition.allowed) throw new BadRequestException(transition.reason);
+
+    const memberUserIds = preflight.memberUserIds;
     const replacements = await this.resolveReplacementOrgIds(
       orgId,
       memberUserIds,
@@ -191,6 +240,7 @@ export class OrgLifecycleService {
       tx
         .select({
           orgStatus: organizations.status,
+          statusV2: organizations.statusV2,
           isOwner: organizationMembers.isOwner,
           memberStatus: organizationMembers.status,
         })
@@ -211,6 +261,13 @@ export class OrgLifecycleService {
     if (row.orgStatus !== "ARCHIVED") {
       throw new BadRequestException("Organization is not archived");
     }
+    const activeLegalHoldForRestore = await this.hasActiveLegalHold(orgId);
+    const transition = assertTransitionAllowed(
+      "RESTORE",
+      row.statusV2 ?? "ARCHIVED",
+      { hasActiveLegalHold: activeLegalHoldForRestore },
+    );
+    if (!transition.allowed) throw new BadRequestException(transition.reason);
 
     const memberUserIds = await runInTenantTransaction(
       this.db,
@@ -250,6 +307,7 @@ export class OrgLifecycleService {
             id: organizations.id,
             name: organizations.name,
             slug: organizations.slug,
+            statusV2: organizations.statusV2,
           })
           .from(organizations)
           .where(eq(organizations.id, orgId))
@@ -257,6 +315,14 @@ export class OrgLifecycleService {
       { orgId },
     );
     if (!org) throw new NotFoundException("Organization not found");
+
+    const activeLegalHold = await this.hasActiveLegalHold(orgId);
+    const transition = assertTransitionAllowed(
+      "TERMINAL_DELETE",
+      org.statusV2 ?? "ACTIVE",
+      { hasActiveLegalHold: activeLegalHold },
+    );
+    if (!transition.allowed) throw new BadRequestException(transition.reason);
 
     const provided = confirmation.trim().toLowerCase();
     const matches =
@@ -296,6 +362,9 @@ export class OrgLifecycleService {
       { orgId },
     );
 
+    await unplaceOrganization(this.db, orgId);
+    if (hasRegionRegistry()) getRegionRegistry().forget(orgId);
+
     await this.revokeMembersAccess(orgId, memberUserIds);
     await this.bustMembersMembership(orgId, memberUserIds);
 
@@ -325,6 +394,14 @@ export class OrgLifecycleService {
     if (org.statusV2 === "PURGED") {
       throw new BadRequestException("Organization is already purged");
     }
+
+    const activeLegalHoldForPurge = await this.hasActiveLegalHold(orgId);
+    const purgeTransition = assertTransitionAllowed(
+      "PURGE_SCHEDULE",
+      org.statusV2 ?? "ACTIVE",
+      { hasActiveLegalHold: activeLegalHoldForPurge },
+    );
+    if (!purgeTransition.allowed) throw new BadRequestException(purgeTransition.reason);
 
     const purgeJobId = randomUUID();
     const purgeScheduledAt = new Date(Date.now() + scheduledForDays * 24 * 60 * 60 * 1000);
@@ -367,6 +444,13 @@ export class OrgLifecycleService {
     if (org.statusV2 !== "PURGE_SCHEDULED") {
       throw new BadRequestException("No purge is scheduled for this organization");
     }
+
+    const cancelTransition = assertTransitionAllowed(
+      "PURGE_CANCEL",
+      org.statusV2 ?? "PURGE_SCHEDULED",
+      { hasActiveLegalHold: false },
+    );
+    if (!cancelTransition.allowed) throw new BadRequestException(cancelTransition.reason);
 
     await runInTenantTransaction(
       this.db,

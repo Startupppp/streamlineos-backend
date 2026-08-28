@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { AccessService } from "../../access/access.service";
 
 jest.mock("../../rbac/permissions", () => ({
@@ -26,6 +27,7 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     isOrgOwner: false,
     sessionId: "session-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }

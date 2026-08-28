@@ -95,6 +95,7 @@ export class InvStockTransfersController {
   }
 
   @Post(":transferId/cancel")
+  @Idempotent("inventory.stock-transfer.cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   cancelTransfer(

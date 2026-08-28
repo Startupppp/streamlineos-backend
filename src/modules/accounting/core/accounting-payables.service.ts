@@ -21,6 +21,7 @@ import { AccountingPayablesQueryService } from "./accounting-payables-query.serv
 import { RateResolverService } from "../../finance/controls/rate-resolver.service";
 import { FxService } from "../../finance/controls/fx.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { systemActor } from "../../../common/auth/system-actor";
 import type { DataScope } from "../../access/access.types";
 import type {
   AgedReceivablesQuery,
@@ -385,14 +386,7 @@ export class AccountingPayablesService {
       );
       const baseAmountSettled = (allocatedAmount * settledRate).toFixed(4);
 
-      const user: CurrentUserContext = {
-        userId,
-        orgId,
-        role: "system",
-        isOrgOwner: false,
-        tokenScopes: null,
-        sessionId: "",
-      };
+      const user = systemActor("accounting.payables.fx-posting", orgId, userId);
 
       this.fx
         .postRealizedGainLoss(user, {

@@ -79,6 +79,7 @@ export class InvPurchaseOrdersController {
   }
 
   @Post(":poId/approve")
+  @Idempotent("inventory.purchase-order.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)

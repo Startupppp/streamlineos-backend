@@ -27,3 +27,10 @@ export { structuredNestLogger } from "./nest-logger.adapter";
 export { LogSpanExporter } from "./log-span-exporter";
 export { LogErrorReporter } from "./log-error-reporter";
 export * from "./tracing";
+export { SEAM_BUDGETS, getSeam, listSeams, type SeamBudget, type SeamKey } from "./seam-budgets";
+export {
+  EVENT_LOOP_SEAM,
+  EventLoopDelayMonitor,
+  eventLoopDelayMonitor,
+  type EventLoopDelaySample,
+} from "./event-loop-delay";

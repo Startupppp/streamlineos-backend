@@ -4,6 +4,7 @@ import { ExecutionContextHost } from "@nestjs/core/helpers/execution-context-hos
 import { Test, type TestingModule } from "@nestjs/testing";
 import { Public } from "../../common/auth/public.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import { AccessService } from "./access.service";
 import { PermissionGuard } from "./permission.guard";
 import { RequirePermission } from "./require-permission.decorator";
@@ -30,6 +31,7 @@ const user: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 describe("PermissionGuard", () => {

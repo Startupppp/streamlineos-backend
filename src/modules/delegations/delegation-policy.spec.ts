@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import type { DataScope } from "../access/access.types";
 import {
   assertDelegationPolicy,
@@ -14,6 +15,7 @@ const actor: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 describe("assertDelegationPolicy", () => {

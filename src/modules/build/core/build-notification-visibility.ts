@@ -1,6 +1,7 @@
 import { HttpException, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { MembershipStateService } from "../../../common/auth/membership-state.service";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { NotificationVisibilityRegistry } from "../../notifications/notification-visibility.registry";
 import { ProjectsTicketsService } from "./projects-tickets.service";
 
@@ -36,7 +37,7 @@ export class BuildNotificationVisibility implements OnModuleInit {
     // Resolved from the database, never from a token claim (§21). This runs with no
     // request context, so nothing here may read req.rbacScope or ALS request state.
     const state = await this.membership.resolve(userId, orgId);
-    if (!state.active) return false;
+    if (!state.active || state.membershipId === null) return false;
 
     try {
       await this.tickets.getTicket(
@@ -49,6 +50,7 @@ export class BuildNotificationVisibility implements OnModuleInit {
           isOrgOwner: state.isOwner,
           sessionId: `notify:${userId}`,
           tokenScopes: null,
+          principal: humanSessionPrincipal(state.membershipId, state.isOwner),
         },
         ticketId,
       );

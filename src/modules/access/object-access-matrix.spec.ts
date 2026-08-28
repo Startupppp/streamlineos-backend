@@ -6,6 +6,7 @@ import { pageVisibleTo } from "../kb/retrieval/kb-page-visibility";
 import { ScopedRead } from "./object-access";
 import { organizationMembers } from "../../db/schema";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import type { Db } from "../../db/drizzle.module";
 
 const dialect = new PgDialect();
@@ -18,6 +19,7 @@ const actor = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext 
   isOrgOwner: false,
   sessionId: "s-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
   ...overrides,
 });
 

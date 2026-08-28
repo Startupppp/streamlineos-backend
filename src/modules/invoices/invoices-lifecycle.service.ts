@@ -9,6 +9,7 @@ import { FinancePostingService } from "../accounting/posting/finance-posting.ser
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { systemActor } from "../../common/auth/system-actor";
 
 type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;
 
@@ -116,14 +117,7 @@ export class InvoicesLifecycleService {
     });
 
     if (existingEntry && existingEntry.status === "POSTED") {
-      const ctx: CurrentUserContext = {
-        userId,
-        orgId,
-        role: "system",
-        isOrgOwner: false,
-        tokenScopes: null,
-        sessionId: "",
-      };
+      const ctx = systemActor("invoices.void-reversal", orgId, userId);
       await this.financePosting.reverseJournal(ctx, existingEntry.id, `Void invoice ${invoice.invoiceNumber}`);
     }
 

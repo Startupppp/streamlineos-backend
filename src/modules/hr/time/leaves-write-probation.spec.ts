@@ -2,6 +2,7 @@ process.env.APP_URL ??= "http://localhost:1000";
 
 import { BadRequestException } from "@nestjs/common";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { ProbationCoverage } from "../lifecycle/probation-coverage";
 import { LeavesWriteService } from "./leaves-write.service";
 import { PROBATION_LEAVE_REFUSAL } from "./probation-leave-restriction";
@@ -13,6 +14,7 @@ const USER: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 const REQUEST = {

@@ -9,6 +9,7 @@ import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { EntitlementsService } from "../access/entitlements.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { agentTokenPrincipal } from "../../common/auth/principal";
 
 @Injectable()
 export class AgentTokenGuard implements CanActivate {
@@ -38,6 +39,8 @@ export class AgentTokenGuard implements CanActivate {
           id: agentTokens.id,
           userId: agentTokens.userId,
           orgId: agentTokens.orgId,
+          issuerMembershipId: agentTokens.issuerMembershipId,
+          scopes: agentTokens.scopes,
         })
         .from(agentTokens)
         .where(
@@ -68,6 +71,7 @@ export class AgentTokenGuard implements CanActivate {
           }),
           tx
             .select({
+              membershipId: organizationMembers.id,
               orgId: organizationMembers.orgId,
               role: organizationMembers.role,
               isOwner: organizationMembers.isOwner,
@@ -93,10 +97,14 @@ export class AgentTokenGuard implements CanActivate {
           userId: row.userId,
           orgId: row.orgId,
           role: member.role,
-          permissions: [],
           isOrgOwner: member.isOwner,
           sessionId: `agent-token:${row.id}`,
-          tokenScopes: null,
+          tokenScopes: [...row.scopes],
+          principal: agentTokenPrincipal(
+            row.issuerMembershipId,
+            row.id,
+            row.scopes,
+          ),
         };
       },
       { orgId: row.orgId },

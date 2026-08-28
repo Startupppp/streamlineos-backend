@@ -92,8 +92,8 @@ export class RecruitmentCandidateRecordsService {
     return this.vault.addVaultDocument(orgId, userId, candidateId, input);
   }
 
-  deleteVaultDocument(orgId: string, candidateId: number, documentId: number) {
-    return this.vault.deleteVaultDocument(orgId, candidateId, documentId);
+  deleteVaultDocument(orgId: string, candidateId: number, documentId: number, actorId?: string) {
+    return this.vault.deleteVaultDocument(orgId, candidateId, documentId, actorId);
   }
 
   listVaultAccessLogs(orgId: string, candidateId: number) {

@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import { authorize, type AccessResolver } from "./authorize";
 import type { DataScope } from "./access.types";
 import {
@@ -15,6 +16,7 @@ function makeCtx(partial: Partial<CurrentUserContext> = {}): CurrentUserContext 
     isOrgOwner: false,
     sessionId: "session-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...partial,
   };
 }

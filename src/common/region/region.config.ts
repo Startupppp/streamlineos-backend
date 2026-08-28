@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  DEFAULT_DATABASE_SHARD,
+  DEFAULT_SEARCH_CLUSTER,
+  LEGACY_CELL_ID,
+} from "./placement";
 
 /**
  * Where a tenant's data physically lives.
@@ -23,10 +28,17 @@ export interface RegionStorageConfig {
   readonly kbPublicUrl?: string;
 }
 
+export interface RegionCellConfig {
+  readonly cellId: string;
+  readonly databaseShard: string;
+  readonly searchCluster: string;
+}
+
 export interface RegionDefinition {
   readonly key: string;
   readonly databaseUrl: string;
   readonly storage: RegionStorageConfig;
+  readonly cell: RegionCellConfig;
 }
 
 export interface RegionTopology {
@@ -109,6 +121,15 @@ export function resolveRegionTopology(env: NodeJS.ProcessEnv): RegionTopology {
     regions[key] = {
       key,
       databaseUrl,
+      cell: {
+        cellId: read(env, envKey(key, "CELL_ID"), ...flat("CELL_ID")) ?? LEGACY_CELL_ID,
+        databaseShard:
+          read(env, envKey(key, "DATABASE_SHARD"), ...flat("DATABASE_SHARD")) ??
+          DEFAULT_DATABASE_SHARD,
+        searchCluster:
+          read(env, envKey(key, "SEARCH_CLUSTER"), ...flat("SEARCH_CLUSTER")) ??
+          DEFAULT_SEARCH_CLUSTER,
+      },
       storage: {
         region: read(env, envKey(key, "R2_REGION"), ...flat("R2_REGION")) ?? "auto",
         endpoint: read(env, envKey(key, "R2_ENDPOINT"), ...flat("R2_ENDPOINT")),

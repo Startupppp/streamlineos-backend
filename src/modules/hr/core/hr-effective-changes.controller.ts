@@ -58,6 +58,7 @@ export class HrEffectiveChangesController {
   }
 
   @Patch(":changeId/approve")
+  @Idempotent("hr.effective-change.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   approve(

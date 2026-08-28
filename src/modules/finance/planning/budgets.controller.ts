@@ -9,6 +9,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { BudgetsService } from "./budgets.service";
 import { BvaService } from "./bva.service";
 import {
@@ -79,6 +80,7 @@ export class BudgetsController {
   }
 
   @Post("budgets/:budgetId/submit")
+  @Idempotent("finance.budget.submit")
   @RequirePermission("accounting:budgets:update")
   @HttpCode(200)
   submitBudget(
@@ -90,6 +92,7 @@ export class BudgetsController {
   }
 
   @Post("budgets/:budgetId/approve")
+  @Idempotent("finance.budget.approve")
   @RequirePermission("accounting:budgets:approve")
   @HttpCode(200)
   approveBudget(

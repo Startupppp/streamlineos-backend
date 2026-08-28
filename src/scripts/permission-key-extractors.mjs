@@ -14,6 +14,19 @@ import { fileURLToPath } from "node:url";
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
 
+// The module manifest, loaded rather than parsed — every manifest check uses this
+export function loadModuleManifest() {
+  const raw = execFileSync(
+    process.execPath,
+    ["-r", "ts-node/register/transpile-only", resolve(SCRIPT_DIR, "dump-module-manifest.ts")],
+    { cwd: BACKEND_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+  );
+  const parsed = JSON.parse(raw);
+  if (typeof parsed.version !== "number" || !Array.isArray(parsed.modules) || parsed.modules.length === 0)
+    throw new Error("module manifest dump returned invalid data");
+  return parsed;
+}
+
 // The real backend catalog, loaded rather than parsed
 export function loadBackendCatalog() {
   const raw = execFileSync(

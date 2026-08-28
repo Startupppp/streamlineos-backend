@@ -5,6 +5,7 @@ import {
   ISSUE_STAGES,
 } from "../../../db/schema/crm/issue-records";
 import { queryBoolean } from "../../../common/validation/query-boolean";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 /**
  * The boundary of the three record types.
@@ -24,7 +25,6 @@ import { queryBoolean } from "../../../common/validation/query-boolean";
  * honest audit trail.
  */
 
-/** The platform's list cap. A page larger than this is a report, not a list. */
 export const MAX_PAGE = 400;
 
 const identifier = z.string().min(1).max(64);
@@ -39,7 +39,7 @@ export const listIssuesQuerySchema = z
      * layout that describes none of them.
      */
     recordType: z.enum(ISSUE_RECORD_TYPES),
-    limit: z.coerce.number().int().min(1).max(MAX_PAGE).default(50),
+    limit: pageSizeField(50),
     cursor: z.string().min(1).max(512).optional(),
 
     stage: z.enum(ISSUE_STAGES).optional(),
@@ -144,7 +144,7 @@ export type EscalateIssueInput = z.infer<typeof escalateIssueSchema>;
 
 export const listTransitionsQuerySchema = z
   .object({
-    limit: z.coerce.number().int().min(1).max(MAX_PAGE).default(100),
+    limit: pageSizeField(100),
   })
   .strict();
 export type ListTransitionsQuery = z.infer<typeof listTransitionsQuerySchema>;

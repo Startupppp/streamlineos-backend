@@ -9,6 +9,7 @@ import {
   organizationMembers,
   users,
 } from "../../../db/schema";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -51,6 +52,7 @@ export class LeavesService {
     private readonly cache: CacheService,
     private readonly access: AccessService,
     @Optional() private readonly ledger: LeaveLedgerService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   balance(orgId: string, userId: string) {
@@ -138,22 +140,9 @@ export class LeavesService {
 
     if (isAll) return base;
 
-    const reportingUsers = await this.db
-      .select({ id: users.id })
-      .from(users)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.userId, users.id),
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .where(eq(users.reportingTo, userId));
+    const reportingUserIds = await this.employment.getDirectReportUserIds(orgId, userId);
 
-    if (reportingUsers.length === 0) return base;
-
-    const reportingUserIds = reportingUsers.map((r) => r.id);
+    if (reportingUserIds.length === 0) return base;
     const alreadyFetchedIds = new Set(base.map((r) => r.id));
 
     const reporteeRequests = await this.db.query.leaveRequests.findMany({

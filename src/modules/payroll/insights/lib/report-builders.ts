@@ -1,5 +1,6 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
+import { hrEmployments, hrPeople } from "../../../../db/schema/hr/core-people";
 import {
   payrollRuns,
   payrollLineItems,
@@ -112,7 +113,24 @@ export async function getLineItemsForRun(
       eq(payrollLineItems.runEmployeeId, payrollRunEmployees.id),
     )
     .innerJoin(users, eq(payrollRunEmployees.userId, users.id))
-    .leftJoin(orgUnits, and(eq(orgUnits.id, users.orgDepartmentId), eq(orgUnits.kind, "DEPARTMENT")))
+    .leftJoin(
+      hrPeople,
+      and(
+        eq(hrPeople.orgId, payrollRunEmployees.orgId),
+        eq(hrPeople.userId, users.id),
+        isNull(hrPeople.deletedAt),
+      ),
+    )
+    .leftJoin(
+      hrEmployments,
+      and(
+        eq(hrEmployments.orgId, payrollRunEmployees.orgId),
+        eq(hrEmployments.personId, hrPeople.id),
+        eq(hrEmployments.isPrimary, true),
+        isNull(hrEmployments.deletedAt),
+      ),
+    )
+    .leftJoin(orgUnits, and(eq(orgUnits.id, hrEmployments.departmentId), eq(orgUnits.kind, "DEPARTMENT")))
     .leftJoin(
       employeeSalaryProfiles,
       eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId),

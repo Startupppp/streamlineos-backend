@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
+  hrEmployments,
+  hrPeople,
   orgUnits,
   organizationMembers,
   users,
@@ -138,7 +140,20 @@ export class BranchesService {
           eq(organizationMembers.orgId, orgId),
         ),
       )
-      .where(eq(users.branchId, branchId));
+      .leftJoin(
+        hrPeople,
+        and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, users.id), isNull(hrPeople.deletedAt)),
+      )
+      .leftJoin(
+        hrEmployments,
+        and(
+          eq(hrEmployments.orgId, orgId),
+          eq(hrEmployments.personId, hrPeople.id),
+          eq(hrEmployments.isPrimary, true),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
+      .where(eq(hrEmployments.locationId, branchId));
 
     return {
       id: branch.id,

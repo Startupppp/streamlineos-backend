@@ -2,6 +2,7 @@ import { ForbiddenException } from "@nestjs/common";
 import { StorageController } from "./storage.controller";
 import { StorageService } from "./storage.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import type { AppConfig } from "../../config/env.validation";
 
 function makeStorageConfig(publicUrl?: string): AppConfig {
@@ -28,6 +29,7 @@ function ctx(orgId: string): CurrentUserContext {
     isOrgOwner: false,
     sessionId: "sess-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
   };
 }
 

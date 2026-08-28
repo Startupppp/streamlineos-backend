@@ -2262,6 +2262,62 @@
       "when": 1787830399441,
       "tag": "0606_audit_log_platform_event_consistency",
       "breakpoints": true
+    },
+    {
+      "idx": 328,
+      "version": "7",
+      "when": 1787830400441,
+      "tag": "0607_vault_access_logs_survive_document_deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 329,
+      "version": "7",
+      "when": 1787830401441,
+      "tag": "0608_organization_placement_and_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 330,
+      "version": "7",
+      "when": 1787830402441,
+      "tag": "0609_employment_sensitive_fields_envelope_encryption",
+      "breakpoints": true
+    },
+    {
+      "idx": 331,
+      "version": "7",
+      "when": 1787830403441,
+      "tag": "0610_agent_tokens_membership_and_ceiling",
+      "breakpoints": true
+    },
+    {
+      "idx": 332,
+      "version": "7",
+      "when": 1787830404441,
+      "tag": "0611_delegations_and_overrides_expand_membership",
+      "breakpoints": true
+    },
+    {
+      "idx": 333,
+      "version": "7",
+      "when": 1787830405441,
+      "tag": "0612_delegations_and_overrides_enforce_membership",
+      "breakpoints": true
+    },
+    {
+      "idx": 334,
+      "version": "7",
+      "when": 1787830406441,
+      "tag": "0613_delegations_and_overrides_drop_user_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 335,
+      "version": "7",
+      "when": 1787830407441,
+      "tag": "0614_ownership_transfers_record_initiator",
+      "breakpoints": true
     }
   ]
 }

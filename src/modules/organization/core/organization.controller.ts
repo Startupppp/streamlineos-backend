@@ -25,6 +25,8 @@ import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
 import { NoTenantTransaction } from "../../../common/tenant";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
+import { assertOwnerOnly } from "../../../common/rbac/owner-only-operations";
+import { isStructuralOrgAdminContext } from "../../../common/rbac/is-structural-org-admin";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
@@ -122,13 +124,13 @@ export class OrganizationController {
 
   @Post()
   @HttpCode(201)
-  @AuthorizedInService("createOrganization rejects a caller who is not an org owner, below")
+  @AuthorizedInService("createOrganization rejects a caller who is not a structural org owner or org admin, below")
   @Idempotent("organization.create")
   createOrganization(
     @Body(new ZodValidationPipe(createOrganizationSchema)) body: CreateOrganizationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) {
+    if (!isStructuralOrgAdminContext(u)) {
       throw new ForbiddenException("Forbidden");
     }
     return this.organization.createOrganization(u.userId, body);
@@ -320,7 +322,7 @@ export class OrganizationController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   archiveOrg(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
+    assertOwnerOnly(u, "organization.archive");
     return this.organization.archiveOrg(u.orgId, u.userId);
   }
 
@@ -351,7 +353,7 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(deleteOrgSchema)) body: DeleteOrgInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
+    assertOwnerOnly(u, "organization.delete");
     return this.organization.deleteOrg(u.orgId, u.userId, body.confirmation);
   }
 
@@ -364,7 +366,7 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(schedulePurgeSchema)) body: SchedulePurgeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
+    assertOwnerOnly(u, "organization.purge.schedule");
     const targetOrgId = u.orgId;
     return this.organization.schedulePurge(
       targetOrgId,
@@ -382,7 +384,7 @@ export class OrganizationController {
     @Param("orgId") orgId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
+    assertOwnerOnly(u, "organization.purge.cancel");
     const targetOrgId = u.orgId;
     return this.organization.cancelPurge(targetOrgId, u.userId);
   }

@@ -15,6 +15,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
 import {
   approveReviewSchema,
@@ -58,6 +59,7 @@ export class KbPageReviewsController {
   }
 
   @Post("page-reviews/:reviewId/approve")
+  @Idempotent("kb.page-review.approve")
   @HttpCode(200)
   @RequirePermission("kb:reviews:manage")
   async approve(
@@ -69,6 +71,7 @@ export class KbPageReviewsController {
   }
 
   @Post("page-reviews/:reviewId/reject")
+  @Idempotent("kb.page-review.reject")
   @HttpCode(200)
   @RequirePermission("kb:reviews:manage")
   async reject(

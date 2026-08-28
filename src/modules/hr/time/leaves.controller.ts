@@ -49,6 +49,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CompOffGrantService } from "./comp-off-grant.service";
 import { LeaveTypesService } from "./leave-types.service";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("hr")
 @Controller("hr/leaves")
@@ -180,6 +181,7 @@ export class LeavesController {
   }
 
   @Put(":leaveId/approve")
+  @Idempotent("hr.leave.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:approve")
   approve(
@@ -191,6 +193,7 @@ export class LeavesController {
   }
 
   @Put(":leaveId/reject")
+  @Idempotent("hr.leave.reject")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:approve")
   reject(

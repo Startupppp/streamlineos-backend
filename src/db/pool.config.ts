@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type postgres from "postgres";
+import { SEAM_BUDGETS } from "../common/observability/seam-budgets";
 
 export type PoolOptions = NonNullable<Parameters<typeof postgres>[1]>;
 
@@ -7,7 +8,7 @@ const NEON_HOST = /\.neon\.tech/i;
 const POOLED_HOST = /-pooler\./i;
 
 const DEFAULT_APPLICATION_NAME = "streamlineos-api";
-const DEFAULT_SLOW_ACQUIRE_MS = 250;
+const DEFAULT_SLOW_ACQUIRE_MS = SEAM_BUDGETS['db.pool.wait'].thresholdMs;
 const DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 5;
 const DIRECT_ENDPOINT_SAFE_MAX = 10;
 

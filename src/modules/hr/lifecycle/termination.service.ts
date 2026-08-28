@@ -5,8 +5,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, lte, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lte, notInArray, sql } from "drizzle-orm";
 import {
+  hrEmployments,
+  hrPeople,
   terminations,
   users,
   organizationMembers,
@@ -81,12 +83,14 @@ export class TerminationService {
             id: users.id,
             name: users.name,
             email: users.email,
-            designation: users.designation,
-            employeeId: users.employeeId,
+            designation: hrEmployments.designation,
+            employeeId: hrEmployments.employeeNumber,
           },
         })
         .from(terminations)
         .leftJoin(users, eq(terminations.userId, users.id))
+        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
+        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
         .where(where)
         .orderBy(desc(terminations.createdAt))
         .limit(limit)

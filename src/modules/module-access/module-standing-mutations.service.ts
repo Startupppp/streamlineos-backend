@@ -38,6 +38,7 @@ import {
   revokeModuleOwnerRole,
 } from "../ownership/module-owner-role.helper";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { assertOwnerOnly } from "../../common/rbac/owner-only-operations";
 import { AccessService } from "../access/access.service";
 
 @Injectable()
@@ -240,10 +241,7 @@ export class ModuleStandingMutationsService {
         `The ${definition?.displayName ?? moduleKey} module does not support ownership transfer`,
       );
 
-    if (!actor.isOrgOwner)
-      throw new ForbiddenException(
-        "Only an organization owner may perform a direct module ownership transfer",
-      );
+    assertOwnerOnly(actor, "organization.ownership.direct-module-transfer");
 
     const actorMembership = await this.db.query.organizationMembers.findFirst({
       where: and(

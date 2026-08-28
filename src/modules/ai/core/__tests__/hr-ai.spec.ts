@@ -15,6 +15,7 @@ import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
 
 const USER_CTX: CurrentUserContext = {
   userId: "user1",
@@ -23,6 +24,7 @@ const USER_CTX: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "sess1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 class PassAuthGuard implements CanActivate {

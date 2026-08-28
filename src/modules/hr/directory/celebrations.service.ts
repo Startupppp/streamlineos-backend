@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
-import { leaveRequests, leaveTypes, organizationMembers, users } from "../../../db/schema";
+import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import { hrEmployments, hrPeople, leaveRequests, leaveTypes, organizationMembers, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -58,10 +58,12 @@ export class CelebrationsService {
         name: users.name,
         image: users.image,
         dateOfBirth: users.dateOfBirth,
-        joiningDate: users.joiningDate,
+        joiningDate: hrEmployments.joiningDate,
       })
       .from(organizationMembers)
       .leftJoin(users, eq(users.id, organizationMembers.userId))
+      .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
+      .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
       .where(
         and(
           eq(organizationMembers.orgId, orgId),
@@ -151,10 +153,12 @@ export class CelebrationsService {
         lastName: users.lastName,
         image: users.image,
         dateOfBirth: users.dateOfBirth,
-        joiningDate: users.joiningDate,
+        joiningDate: hrEmployments.joiningDate,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
+      .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
       .where(
         and(
           eq(organizationMembers.orgId, orgId),

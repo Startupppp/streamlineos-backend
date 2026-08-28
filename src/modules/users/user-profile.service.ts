@@ -27,6 +27,7 @@ import type {
 import { withClientInfo } from "../../common/http/parse-user-agent";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import { SessionsService } from "../sessions/sessions.service";
+import { EmploymentFactsService } from "../directory/employment-facts.service";
 
 /** Caps the history arrays so one export cannot pull an unbounded audit trail. */
 const EXPORT_HISTORY_LIMIT = 500;
@@ -37,6 +38,7 @@ export class UserProfileService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly sessions: SessionsService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   private async assertMember(orgId: string, userId: string): Promise<void> {
@@ -276,7 +278,7 @@ export class UserProfileService {
   async getMembership(orgId: string, userId: string) {
     await this.assertMember(orgId, userId);
 
-    const [rows, placement] = await Promise.all([
+    const [rows, facts] = await Promise.all([
       this.db
         .select({
           unitId: orgUnitMembers.orgUnitId,
@@ -291,10 +293,7 @@ export class UserProfileService {
             eq(orgUnitMembers.orgId, orgId),
           ),
         ),
-      this.db.query.users.findFirst({
-        where: eq(users.id, userId),
-        columns: { reportingTo: true },
-      }),
+      this.employment.getFacts(orgId, userId),
     ]);
 
     const byKind = (kind: string) =>
@@ -307,7 +306,7 @@ export class UserProfileService {
       branchId: byKind("BRANCH"),
       departmentId: byKind("DEPARTMENT"),
       teamId: byKind("TEAM"),
-      managerUserId: placement?.reportingTo ?? null,
+      managerUserId: facts.managerUserId,
     };
   }
 
@@ -388,21 +387,23 @@ export class UserProfileService {
   async exportUserData(orgId: string, userId: string) {
     await this.assertMember(orgId, userId);
 
-    const [identity] = await this.db
-      .select({
-        id: users.id,
-        email: users.email,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        phone: users.phone,
-        designation: users.designation,
-        image: users.image,
-        emailVerified: users.emailVerified,
-        createdAt: users.createdAt,
-      })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+    const [[identity], identityFacts] = await Promise.all([
+      this.db
+        .select({
+          id: users.id,
+          email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          phone: users.phone,
+          image: users.image,
+          emailVerified: users.emailVerified,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1),
+      this.employment.getFacts(orgId, userId),
+    ]);
     if (!identity) throw new NotFoundException("User not found");
 
     const [membership, preferences, sessions, loginHistory, auditLog] = await Promise.all([
@@ -414,7 +415,7 @@ export class UserProfileService {
     ]);
 
     return {
-      subject: identity,
+      subject: { ...identity, designation: identityFacts.designation },
       membership,
       preferences,
       sessions,

@@ -4,6 +4,7 @@ import {
 } from "../module-standing";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const ORG = "org-1";
 const MODULE = "hr";
@@ -42,7 +43,15 @@ function createDb(options: Options): Db {
 }
 
 function actor(isOrgOwner = false): CurrentUserContext {
-  return { orgId: ORG, userId: "user-1", isOrgOwner } as CurrentUserContext;
+  return {
+    orgId: ORG,
+    userId: "user-1",
+    role: isOrgOwner ? "OWNER" : "MEMBER",
+    isOrgOwner,
+    sessionId: "sess-1",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, isOrgOwner),
+  };
 }
 
 describe("resolveModuleManagementStanding", () => {

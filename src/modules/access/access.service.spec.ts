@@ -680,7 +680,15 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
-        .mockReturnValueOnce(makeSelectChain([{ permissionKey: STALE_KEY }]))
+        .mockReturnValueOnce(
+          makeSelectChain([
+            {
+              permissionKey: STALE_KEY,
+              startsAt: new Date(Date.now() - 60_000),
+              endsAt: new Date(Date.now() + 60_000),
+            },
+          ]),
+        )
         .mockReturnValueOnce(makeSelectChain([])),
     };
 

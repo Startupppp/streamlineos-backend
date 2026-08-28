@@ -15,6 +15,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { isStructuralOrgAdminContext } from "../../common/rbac/is-structural-org-admin";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { DealsApprovalsService } from "./deals-approvals.service";
 import {
@@ -66,7 +67,7 @@ export class DealsApprovalsController {
     @Res({ passthrough: true }) res: Response,
   ) {
     if ("approvalId" in body) {
-      if (!u.isOrgOwner) {
+      if (!isStructuralOrgAdminContext(u)) {
         throw new ForbiddenException("Only admins can resolve approvals");
       }
       const updated = await this.approvals.resolveApproval(u.orgId, u.userId, body);

@@ -6,6 +6,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -15,6 +16,7 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
     isOrgOwner: false,
     sessionId: "s-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }

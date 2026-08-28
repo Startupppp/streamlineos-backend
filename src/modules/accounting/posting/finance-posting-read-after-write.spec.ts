@@ -8,6 +8,7 @@ import { CacheService, REDIS } from "../../../common/cache/cache.service";
 import { InMemoryRedis } from "../../../common/cache/in-memory-redis.test-double";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
 import type { PostJournalInput } from "../core/finance-posting.types";
 import type { AccountType } from "../core/accounting.types";
@@ -31,6 +32,7 @@ const USER: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "sess1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 interface LedgerAccount {

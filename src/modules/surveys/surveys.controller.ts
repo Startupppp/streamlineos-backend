@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -60,6 +61,7 @@ export class SurveysController {
   }
 
   @Post(":surveyId/publish")
+  @Idempotent("surveys.survey.publish")
   @RequirePermission("surveys:publish")
   publish(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.forms.publish(u.orgId, surveyId);

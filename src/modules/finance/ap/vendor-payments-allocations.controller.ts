@@ -1,4 +1,5 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -19,6 +20,7 @@ export class VendorPaymentsAllocationsController {
   constructor(private readonly service: VendorPaymentsAllocationsService) {}
 
   @Post("allocations")
+  @Idempotent("accounting.vendor-payment.allocate")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:manage")
   @HttpCode(200)

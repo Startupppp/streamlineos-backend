@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { logger } from "../../../../common/logger/logger.service";
 import {
   registerAfterCommit,
@@ -11,6 +11,7 @@ import { users } from "../../../../db/schema";
 import { AccessService } from "../../../access/access.service";
 import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import { HrAutomationEngineService } from "../../automations/hr-automation-engine.service";
+import { EmploymentFactsService } from "../../../directory/employment-facts.service";
 
 export type OnboardingInitiationRecipient = {
   id: string;
@@ -27,6 +28,7 @@ export class OnboardingInitiationDispatchService {
     private readonly notifications: NotificationDispatchService,
     private readonly access: AccessService,
     private readonly automation: HrAutomationEngineService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   schedule(
@@ -90,21 +92,12 @@ export class OnboardingInitiationDispatchService {
 
     const managerTaskCount = ownerRoleCounts.get("MANAGER") ?? 0;
     if (managerTaskCount > 0) {
-      const [employee] = await this.db
-        .select({ managerId: users.reportingTo })
-        .from(users)
-        .where(eq(users.id, target.id))
-        .limit(1);
-      if (employee?.managerId) {
-        const [manager] = await this.db
-          .select({ id: users.id })
-          .from(users)
-          .where(eq(users.id, employee.managerId))
-          .limit(1);
-        if (manager) deliveries.push(this.notifications.emit({
+      const facts = await this.employment.getFacts(orgId, target.id);
+      if (facts.managerUserId) {
+        deliveries.push(this.notifications.emit({
           eventKey: "hr.onboarding.started",
           orgId,
-          targetUserIds: [manager.id],
+          targetUserIds: [facts.managerUserId],
           entityType: "employee",
           entityId: target.id,
           message: `${target.name ?? "A new joiner"} has onboarding tasks assigned to you.`,

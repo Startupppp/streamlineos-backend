@@ -1,6 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import {
+  hrEmployeeSensitiveFields,
+  hrEmployments,
+  hrPeople,
   organizationMembers,
   orgUnitMembers,
   orgUnits,
@@ -56,10 +59,12 @@ export class HrDashboardReportsService {
     const windowEnd = months[months.length - 1].end;
 
     const joiningRows = await this.db
-      .select({ joiningDate: users.joiningDate })
+      .select({ joiningDate: hrEmployments.joiningDate })
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), isNotNull(users.joiningDate), lte(users.joiningDate, windowEnd)));
+      .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
+      .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+      .where(and(eq(organizationMembers.orgId, orgId), isNotNull(hrEmployments.joiningDate), lte(hrEmployments.joiningDate, windowEnd)));
 
     const countByMonthEnd = new Map<string, number>();
     for (const r of joiningRows) {
@@ -303,12 +308,15 @@ export class HrDashboardReportsService {
         email: users.email,
         gender: users.gender,
         dateOfBirth: users.dateOfBirth,
-        joiningDate: users.joiningDate,
-        taxId: users.taxId,
+        joiningDate: hrEmployments.joiningDate,
+        taxId: hrEmployeeSensitiveFields.taxId,
         departmentName: orgUnits.name,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
+      .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+      .leftJoin(hrEmployeeSensitiveFields, eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id))
       .leftJoin(orgUnitMembers, eq(orgUnitMembers.userId, organizationMembers.userId))
       .leftJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
       .where(eq(organizationMembers.orgId, orgId));

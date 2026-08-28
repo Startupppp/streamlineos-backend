@@ -35,6 +35,7 @@ import {
   type CreateAccommodationTaskInput,
   type UpdateAccommodationTaskInput,
 } from "../dto/accommodations.schemas";
+import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/accommodations")
@@ -104,6 +105,7 @@ export class AccommodationsController {
   }
 
   @Post(":accommodationId/approve")
+  @Idempotent("hr.accommodation.approve")
   @RequirePermission("hr:accommodations:manage")
   async approve(
     @CurrentUser() user: CurrentUserContext,

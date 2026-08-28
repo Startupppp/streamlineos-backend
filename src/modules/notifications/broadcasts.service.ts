@@ -3,6 +3,8 @@ import { eq, and, desc, lt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   broadcastAudienceTargets,
   broadcasts,
+  hrEmployments,
+  hrPeople,
   organizationMembers,
   roleAssignments,
   users,
@@ -245,8 +247,21 @@ export class BroadcastsService {
 
     const [userRow, roleRows] = await Promise.all([
       this.db
-        .select({ deptId: users.orgDepartmentId })
+        .select({ deptId: hrEmployments.departmentId })
         .from(users)
+        .leftJoin(
+          hrPeople,
+          and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, users.id), isNull(hrPeople.deletedAt)),
+        )
+        .leftJoin(
+          hrEmployments,
+          and(
+            eq(hrEmployments.orgId, orgId),
+            eq(hrEmployments.personId, hrPeople.id),
+            eq(hrEmployments.isPrimary, true),
+            isNull(hrEmployments.deletedAt),
+          ),
+        )
         .where(eq(users.id, userId))
         .then((rows) => rows[0]),
       this.db
@@ -449,11 +464,29 @@ export class BroadcastsService {
     if (audienceType === "departments") {
       const deptIds = await targetIds("DEPARTMENT");
       if (deptIds.length === 0) return [];
+      const deptSql = sql.join(deptIds.map((id) => sql`${id}`), sql`, `);
       const rows = await this.db
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
-        .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .where(and(eq(organizationMembers.orgId, orgId), inArray(users.orgDepartmentId, deptIds)));
+        .innerJoin(
+          users,
+          and(
+            eq(users.id, organizationMembers.userId),
+            sql`EXISTS (
+              SELECT 1
+              FROM ${hrPeople} hp
+              INNER JOIN ${hrEmployments} he ON he.person_id = hp.id
+                AND he.org_id = ${orgId}
+                AND he.is_primary = true
+                AND he.deleted_at IS NULL
+                AND he.department_id IN (${deptSql})
+              WHERE hp.user_id = ${users.id}
+                AND hp.org_id = ${orgId}
+                AND hp.deleted_at IS NULL
+            )`,
+          ),
+        )
+        .where(eq(organizationMembers.orgId, orgId));
       return dedupe(rows.map((r) => r.userId));
     }
 

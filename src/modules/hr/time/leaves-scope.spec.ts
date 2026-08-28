@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -27,6 +28,7 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     isOrgOwner: false,
     sessionId: "s1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }

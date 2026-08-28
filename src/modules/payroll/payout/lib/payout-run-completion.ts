@@ -10,6 +10,7 @@ import {
 } from "../../../../db/schema";
 import type { AuditService } from "../../../../common/audit/audit.service";
 import type { PayrollPostingService } from "../../payroll-posting.service";
+import { systemActor } from "../../../../common/auth/system-actor";
 import type { JournalOutboxService } from "../../insights/journal-outbox.service";
 
 export interface RunCompletionDeps {
@@ -199,7 +200,7 @@ export async function checkRunCompletion(
 
     if (paidRun[0]) {
       void deps.payrollPosting.postPaid(
-        { userId: actorId, orgId, role: "system", isOrgOwner: true, sessionId: "system", tokenScopes: null },
+        systemActor("payroll.run.payout-posting", orgId, actorId),
         runId,
         paidRun[0].month,
         paidRun[0].netTotal ?? "0",

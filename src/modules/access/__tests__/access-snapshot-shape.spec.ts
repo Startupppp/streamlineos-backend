@@ -1,6 +1,7 @@
 import { AccessSnapshotResolver } from "../access-snapshot.resolver";
 import type { DataScope } from "../access.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext => ({
   userId: "user-1",
@@ -9,6 +10,7 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
   ...overrides,
 });
 

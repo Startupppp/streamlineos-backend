@@ -29,6 +29,7 @@ import { AuditService } from '../../../common/audit/audit.service';
 import { StorageService } from '../../storage/storage.service';
 import type { PayrollPostingService } from '../payroll-posting.service';
 import { ForbiddenException } from '@nestjs/common';
+import { EmploymentFactsService } from '../../directory/employment-facts.service';
 
 type TestDb = PostgresJsDatabase<typeof schema>;
 
@@ -317,7 +318,7 @@ describe('Scenario 1 — Idempotency replay', () => {
     it('returns the same batch on a second call with an identical idempotency key', async () => {
       const auditSvc = new AuditService(db);
       const storageSvc = new StorageService({} as unknown as MediaCompressionService, storageConfig);
-      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
+      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService, new EmploymentFactsService(db));
 
       const idemKey = `${P}idem-key-001`;
 
@@ -443,7 +444,7 @@ describe('Scenario 1 — Idempotency replay', () => {
     it('rejects fetching another org member bank details for a user outside the caller org', async () => {
       const auditSvc = new AuditService(db);
       const storageSvc = new StorageService({} as unknown as MediaCompressionService, storageConfig);
-      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
+      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService, new EmploymentFactsService(db));
 
       await expect(svc.getBankDetails(ORG_A, USER_B, USER_A)).rejects.toThrow(ForbiddenException);
     });
@@ -451,7 +452,7 @@ describe('Scenario 1 — Idempotency replay', () => {
     it('allows fetching bank details for a confirmed member of the caller org', async () => {
       const auditSvc = new AuditService(db);
       const storageSvc = new StorageService({} as unknown as MediaCompressionService, storageConfig);
-      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
+      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService, new EmploymentFactsService(db));
 
       const result = await svc.getBankDetails(ORG_A, USER_A, USER_A);
       expect(result.accountNumber).toBe('1234567890');

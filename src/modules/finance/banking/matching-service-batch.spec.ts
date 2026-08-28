@@ -1,6 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { MatchingService } from "./matching.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 type InsertedMatch = {
   orgId: string;
@@ -105,7 +106,7 @@ function makeDb(overrides: Partial<{
 
 const ORG_ID = "org1";
 const BANK_ACCOUNT_ID = 10;
-const U = { orgId: ORG_ID, userId: "u1", role: "member", isOrgOwner: false, tokenScopes: null, sessionId: "" } as const;
+const U = { orgId: ORG_ID, userId: "u1", role: "member", isOrgOwner: false, tokenScopes: null, sessionId: "", principal: humanSessionPrincipal(1, false) } as const;
 
 const TXN_UNMATCHED = {
   id: 1,

@@ -1,7 +1,8 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
 import {
   payrollRunEmployees,
   payrollLineItems,
@@ -209,7 +210,24 @@ export class ReportsService {
       })
       .from(payrollRunEmployees)
       .innerJoin(users, eq(payrollRunEmployees.userId, users.id))
-      .leftJoin(orgUnits, and(eq(orgUnits.id, users.orgDepartmentId), eq(orgUnits.kind, "DEPARTMENT")))
+      .leftJoin(
+        hrPeople,
+        and(
+          eq(hrPeople.orgId, payrollRunEmployees.orgId),
+          eq(hrPeople.userId, users.id),
+          isNull(hrPeople.deletedAt),
+        ),
+      )
+        .leftJoin(
+        hrEmployments,
+        and(
+          eq(hrEmployments.orgId, payrollRunEmployees.orgId),
+          eq(hrEmployments.personId, hrPeople.id),
+          eq(hrEmployments.isPrimary, true),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
+        .leftJoin(orgUnits, and(eq(orgUnits.id, hrEmployments.departmentId), eq(orgUnits.kind, "DEPARTMENT")))
       .where(whereClause)
       .groupBy(orgUnits.name);
 

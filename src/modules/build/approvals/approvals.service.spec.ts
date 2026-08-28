@@ -8,6 +8,7 @@ import type { ChatChannelsService } from "../../chat/chat-channels.service";
 import type { ChatMessagesService } from "../../chat/chat-messages.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const makeApprovalRow = (
   overrides: Record<string, unknown> = {},
@@ -55,6 +56,7 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
   ...overrides,
 });
 

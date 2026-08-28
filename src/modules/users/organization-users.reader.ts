@@ -1,7 +1,9 @@
 import { NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import {
+  hrEmployments,
+  hrPeople,
   organizationMembers,
   orgUnitMembers,
   orgUnits,
@@ -12,9 +14,13 @@ import {
 } from "../../db/schema";
 import { membershipStatusToUserStatus } from "../organization/core/org-membership.service";
 import type { ListUsersInput } from "./dto/users.schemas";
+import { EmploymentFactsService } from "../directory/employment-facts.service";
 
 export class OrganizationUsersReader {
-  constructor(private readonly database: Db) {}
+  constructor(
+    private readonly database: Db,
+    private readonly employment: EmploymentFactsService,
+  ) {}
 
   async listUsers(orgId: string, params: ListUsersInput) {
     const {
@@ -47,8 +53,8 @@ export class OrganizationUsersReader {
 
     if (role) conditions.push(eq(organizationMembers.role, role));
     if (departmentId !== undefined)
-      conditions.push(eq(users.orgDepartmentId, departmentId));
-    if (branchId !== undefined) conditions.push(eq(users.branchId, branchId));
+      conditions.push(eq(hrEmployments.departmentId, departmentId));
+    if (branchId !== undefined) conditions.push(eq(hrEmployments.locationId, branchId));
     if (teamId !== undefined) {
       conditions.push(
         sql`EXISTS (
@@ -62,8 +68,14 @@ export class OrganizationUsersReader {
         )`,
       );
     }
-    if (managerUserId !== undefined)
-      conditions.push(eq(users.reportingTo, managerUserId));
+    if (managerUserId !== undefined) {
+      const directReportIds = await this.employment.getDirectReportUserIds(orgId, managerUserId);
+      conditions.push(
+        directReportIds.length > 0
+          ? inArray(organizationMembers.userId, directReportIds)
+          : sql<boolean>`FALSE`,
+      );
+    }
 
     if (status === "active") {
       conditions.push(
@@ -114,9 +126,6 @@ export class OrganizationUsersReader {
           membershipStatus: organizationMembers.status,
           membershipLeftAt: organizationMembers.leftAt,
           emailVerified: users.emailVerified,
-          departmentId: users.orgDepartmentId,
-          branchId: users.branchId,
-          designation: users.designation,
           phone: users.phone,
           createdAt: users.createdAt,
           joinedAt: organizationMembers.joinedAt,
@@ -130,6 +139,8 @@ export class OrganizationUsersReader {
         })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
+        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
         .leftJoin(teamsSubquery, eq(teamsSubquery.userId, users.id))
         .where(and(...conditions))
         .orderBy(sortExpr)
@@ -139,17 +150,24 @@ export class OrganizationUsersReader {
         .select({ total: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
+        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
         .where(and(...conditions)),
     ]);
 
     const total = countResult[0]?.total ?? 0;
+    const factsMap = await this.employment.getFactsBatch(orgId, data.map((r) => r.id));
 
     return {
       data: data.map((row) => {
         const { membershipStatus, membershipLeftAt, teamNames, ...rest } = row;
         const userStatus = membershipStatusToUserStatus(membershipStatus);
+        const facts = factsMap.get(row.id);
         return {
           ...rest,
+          departmentId: facts?.departmentId ?? null,
+          branchId: facts?.locationId ?? null,
+          designation: facts?.designation ?? null,
           isActive: userStatus === "active",
           userStatus,
           archivedAt: userStatus === "archived" ? membershipLeftAt : null,
@@ -178,15 +196,11 @@ export class OrganizationUsersReader {
         image: users.image,
         role: organizationMembers.role,
         isOwner: organizationMembers.isOwner,
-        departmentId: users.orgDepartmentId,
-        designation: users.designation,
         phone: users.phone,
         whatsappNumber: users.whatsappNumber,
         whatsappSameAsPhone: users.whatsappSameAsPhone,
-        employeeId: users.employeeId,
         membershipStatus: organizationMembers.status,
         membershipLeftAt: organizationMembers.leftAt,
-        reportingTo: users.reportingTo,
         team: sql<string | null>`(
           SELECT ${orgUnitMembers.orgUnitId}
           FROM ${orgUnitMembers}
@@ -196,7 +210,6 @@ export class OrganizationUsersReader {
             AND ${orgUnits.kind} = 'TEAM'
           LIMIT 1
         )`,
-        branchId: users.branchId,
         emergencyContact: users.emergencyContact,
         bio: users.bio,
         linkedinUrl: users.linkedinUrl,
@@ -204,7 +217,6 @@ export class OrganizationUsersReader {
         githubUrl: users.githubUrl,
         websiteUrl: users.websiteUrl,
         totpEnabled: users.totpEnabled,
-        joiningDate: users.joiningDate,
         dateOfBirth: users.dateOfBirth,
         gender: users.gender,
         onboardingDocStatus: users.onboardingDocStatus,
@@ -232,8 +244,15 @@ export class OrganizationUsersReader {
     const row = rows[0]!;
     const { membershipStatus, membershipLeftAt, ...rest } = row;
     const userStatus = membershipStatusToUserStatus(membershipStatus);
+    const facts = await this.employment.getFacts(orgId, userId);
     return {
       ...rest,
+      departmentId: facts.departmentId,
+      designation: facts.designation,
+      employeeId: facts.employeeNumber,
+      reportingTo: facts.managerUserId,
+      joiningDate: facts.joiningDate,
+      branchId: facts.locationId,
       isActive: userStatus === "active",
       userStatus,
       archivedAt: userStatus === "archived" ? membershipLeftAt : null,

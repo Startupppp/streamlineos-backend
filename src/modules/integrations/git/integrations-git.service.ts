@@ -16,14 +16,7 @@ import type {
   WebhookRequest,
 } from "./git.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-
-const SYSTEM_ACTOR: Omit<CurrentUserContext, "orgId"> = {
-  userId: "system",
-  role: "SYSTEM",
-  isOrgOwner: true,
-  tokenScopes: null,
-  sessionId: "git-webhook",
-};
+import { systemActor } from "../../../common/auth/system-actor";
 
 @Injectable()
 export class IntegrationsGitService {
@@ -140,7 +133,10 @@ export class IntegrationsGitService {
       if (!ticket.projectId) continue;
       const targetStatus = projectCompletedStatus.get(ticket.projectId);
       if (!targetStatus || ticket.status === targetStatus) continue;
-      const systemCtx: CurrentUserContext = { ...SYSTEM_ACTOR, orgId };
+      const systemCtx: CurrentUserContext = systemActor(
+        "integrations.git.webhook",
+        orgId,
+      );
       try {
         await this.projectsTickets.updateTicket(systemCtx, ticket.id, { status: targetStatus });
       } catch (error) {

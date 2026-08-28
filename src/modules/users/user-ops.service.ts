@@ -43,6 +43,7 @@ import {
 import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-owner";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { UserOperationsReporter } from "./user-operations.reporter";
+import { EmploymentFactsService } from "../directory/employment-facts.service";
 
 @Injectable()
 export class UserOpsService {
@@ -56,8 +57,9 @@ export class UserOpsService {
     private readonly usersSvc: UsersService,
     private readonly access: AccessService,
     private readonly email: EmailService,
+    private readonly employment: EmploymentFactsService,
   ) {
-    this.reporter = new UserOperationsReporter(db, cache);
+    this.reporter = new UserOperationsReporter(db, cache, employment);
   }
 
   async exportUsers(orgId: string): Promise<string> {

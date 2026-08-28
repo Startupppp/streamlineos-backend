@@ -45,6 +45,7 @@ import {
   type UpdateExpensePatchInput,
 } from "./dto/expense.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 
 const EXPORT_HEADERS = [
   "Date",
@@ -181,6 +182,7 @@ export class ExpensesController {
   }
 
   @Post(":expenseId/submit")
+  @Idempotent("expenses.expense.submit")
   @HttpCode(200)
   @RequirePermission("hr:expenses:create")
   async submit(
@@ -191,6 +193,7 @@ export class ExpensesController {
   }
 
   @Post(":expenseId/approve")
+  @Idempotent("expenses.expense.approve")
   @HttpCode(200)
   @RequirePermission("hr:expenses:approve")
   async approve(
@@ -201,6 +204,7 @@ export class ExpensesController {
   }
 
   @Post(":expenseId/reject")
+  @Idempotent("expenses.expense.reject")
   @HttpCode(200)
   @RequirePermission("hr:expenses:approve")
   async reject(

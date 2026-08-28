@@ -6,6 +6,7 @@ import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAccessService } from "../core/kb-access.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 
@@ -40,6 +41,7 @@ const makeUser = () => ({
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 });
 
 describe("KbAskService — source citation re-verification", () => {

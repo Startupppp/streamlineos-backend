@@ -33,6 +33,7 @@ import {
 } from "./dto/huddle.schemas";
 import { z } from "zod";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 
 @ApiTags("Chat Huddles & Video")
@@ -195,6 +196,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Invite users to an active huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/invite")
+  @Idempotent("chat.huddle.invite")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   invite(

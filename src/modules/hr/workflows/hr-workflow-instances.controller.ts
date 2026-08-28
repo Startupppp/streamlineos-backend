@@ -18,6 +18,7 @@ import {
 } from "./dto/workflow.schemas";
 import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const PaginationSchema = z.object({
   page: pageNumberField,
@@ -74,6 +75,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/approve")
+  @Idempotent("hr.workflow-instance.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @HttpCode(200)
@@ -93,6 +95,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/reject")
+  @Idempotent("hr.workflow-instance.reject")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @HttpCode(200)

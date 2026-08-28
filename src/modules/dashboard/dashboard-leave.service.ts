@@ -1,7 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import {
   holidays,
+  hrEmployments,
+  hrPeople,
   leaveBalances,
   leaveRequests,
   leaveTypes,
@@ -17,6 +19,7 @@ import { type DashboardForbidden } from "./dashboard.errors";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
 import { resolveLeavesDashboardScope } from "./dashboard-scope";
+import { resignationApprovalScope } from "./resignation-approval-scope";
 import { leaveApprovalScope } from "../hr/time/leaves-scope";
 
 @Injectable()
@@ -36,11 +39,24 @@ export class DashboardLeaveService {
         endDate: leaveRequests.endDate,
         leaveTypeId: leaveRequests.leaveTypeId,
         employeeName: users.name,
-        employeeDesignation: users.designation,
+        employeeDesignation: hrEmployments.designation,
         employeeImage: users.image,
       })
       .from(leaveRequests)
       .innerJoin(users, eq(leaveRequests.userId, users.id))
+      .leftJoin(
+        hrPeople,
+        and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, users.id), isNull(hrPeople.deletedAt)),
+      )
+      .leftJoin(
+        hrEmployments,
+        and(
+          eq(hrEmployments.orgId, orgId),
+          eq(hrEmployments.personId, hrPeople.id),
+          eq(hrEmployments.isPrimary, true),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
       .where(
         and(
           eq(leaveRequests.orgId, orgId),
@@ -105,6 +121,7 @@ export class DashboardLeaveService {
         const [resignationCount] = await this.db
           .select({ count: sql<number>`count(*)::int` })
           .from(resignations)
+          .innerJoin(users, eq(users.id, resignations.userId))
           .where(
             and(
               eq(resignations.orgId, orgId),
@@ -112,6 +129,7 @@ export class DashboardLeaveService {
                 resignations.status,
                 resignationStatuses as ("SUBMITTED" | "PENDING_HR" | "HR_APPROVED")[],
               ),
+              resignationApprovalScope(scope, orgId, u.userId),
             ),
           );
 

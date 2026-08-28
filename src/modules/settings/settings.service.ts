@@ -21,6 +21,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { isStructuralOrgAdminContext } from "../../common/rbac/is-structural-org-admin";
 import { queryAiUsage } from "./ai-usage.query";
 import { PERMISSIONS } from "../rbac/permissions";
 import { AccessService } from "../access/access.service";
@@ -117,14 +118,14 @@ export class SettingsService {
   }
 
   getAiUsage(u: CurrentUserContext) {
-    if (!u.isOrgOwner) {
+    if (!isStructuralOrgAdminContext(u)) {
       throw new ForbiddenException("Forbidden");
     }
     return queryAiUsage(this.db, u.orgId);
   }
 
   async listApiKeys(u: CurrentUserContext) {
-    if (!u.isOrgOwner) {
+    if (!isStructuralOrgAdminContext(u)) {
       throw new ForbiddenException("Only admins can manage API keys.");
     }
     return this.db.query.apiKeys.findMany({
@@ -136,7 +137,7 @@ export class SettingsService {
   }
 
   async createApiKey(u: CurrentUserContext, input: CreateApiKeyInput) {
-    if (!u.isOrgOwner) {
+    if (!isStructuralOrgAdminContext(u)) {
       throw new ForbiddenException("Only admins can create API keys.");
     }
 
@@ -167,7 +168,7 @@ export class SettingsService {
   }
 
   async revokeApiKey(u: CurrentUserContext, keyId: string) {
-    if (!u.isOrgOwner) {
+    if (!isStructuralOrgAdminContext(u)) {
       throw new ForbiddenException("Only admins can revoke API keys.");
     }
 
@@ -395,7 +396,7 @@ export class SettingsService {
   }
 
   async updateFeatureFlag(u: CurrentUserContext, input: FeatureFlagInput) {
-    if (!u.isOrgOwner) {
+    if (!isStructuralOrgAdminContext(u)) {
       throw new ForbiddenException("Forbidden");
     }
 

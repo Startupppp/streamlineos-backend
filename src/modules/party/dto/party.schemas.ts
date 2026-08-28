@@ -80,7 +80,7 @@ export const updateContactSchema = z.object({
 export const mirrorDivergenceQuerySchema = z
   .object({
     kind: z.enum(["LEAD", "CLIENT", "CONTACT", "ORGANISATION"]).optional(),
-    limit: z.coerce.number().int().min(1).max(500).default(200),
+    limit: pageSizeField(200),
     after: z.coerce.number().int().min(0).default(0),
   })
   .refine((query) => query.after === 0 || query.kind !== undefined, {

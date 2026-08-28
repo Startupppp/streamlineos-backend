@@ -17,6 +17,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { FnfInsightsService } from "./fnf.service";
 import { patchFnfSchema, type PatchFnfInput } from "../hr-payroll/dto/payroll.schemas";
 
@@ -44,6 +45,7 @@ export class FnfController {
   }
 
   @Post(":settlementId/approve")
+  @Idempotent("payroll.fnf.approve")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:fnf:manage")

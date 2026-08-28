@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 
 /**
  * A ratchet over the identity migration, held while it is in progress.
@@ -101,24 +101,36 @@ describe("the legacy identity tables gain no new readers", () => {
       source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 "),
     );
 
-  function readersInTree(): string[] {
-    /*
-     * Tracked files plus untracked ones git would accept, which is not the same
-     * as "tracked". A new call site is a new *file* as often as it is a new line,
-     * and a tracked-only scan cannot see one until it is committed -- by which
-     * point the ratchet reports it as a regression instead of preventing it. The
-     * exclusions keep build artefacts and ignored scratch out.
-     */
-    const tracked = execSync(
-      "git ls-files --cached --others --exclude-standard 'src/**/*.ts'",
-      { encoding: "utf8" },
-    )
-      .split("\n")
-      // Tracked-but-deleted paths are still listed, and another session is
-      // mid-refactor in this tree, so existence is checked rather than assumed.
-      .filter((f) => f && !f.includes("db/schema/") && existsSync(f));
+  const SRC_ROOT = resolve(__dirname, "../..");
 
-    return tracked.filter((file) => {
+  /*
+   * A filesystem walk, not `git ls-files`. The previous scan shelled out with a
+   * single-quoted glob, which cmd.exe does not strip, so `git ls-files` received
+   * the pattern literally, matched nothing, and BOTH assertions below passed
+   * vacuously -- the ratchet guarded nothing at all on a Windows checkout. A
+   * walk sees new files before they are committed, which is the property the
+   * `--others` flag was there for.
+   */
+  function sourceFiles(dir: string, found: string[] = []): string[] {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        if (entry !== "node_modules") sourceFiles(full, found);
+      } else if (entry.endsWith(".ts") && !entry.endsWith(".d.ts")) {
+        found.push(full);
+      }
+    }
+    return found;
+  }
+
+  function allSourceFiles(): string[] {
+    return sourceFiles(SRC_ROOT)
+      .map((full) => `src/${relative(SRC_ROOT, full).split("\\").join("/")}`)
+      .filter((file) => !file.includes("db/schema/"));
+  }
+
+  function readersInTree(): string[] {
+    return allSourceFiles().filter((file) => {
       const source = readFileSync(file, "utf8");
       for (const match of source.matchAll(LEGACY_IMPORT))
         for (const raw of match[1]!.split(","))
@@ -126,6 +138,12 @@ describe("the legacy identity tables gain no new readers", () => {
       return namesALegacyTableInSql(source);
     });
   }
+
+  it("scans enough files that a broken scan cannot pass vacuously", () => {
+    // The failure this ratchet actually suffered: the scan returned zero files
+    // and every assertion below went green. An empty scan must fail loudly.
+    expect(allSourceFiles().length).toBeGreaterThan(2000);
+  });
 
   it("has no reader that is not already known", () => {
     const known = new Set(KNOWN_READERS);
@@ -163,7 +181,12 @@ describe("the legacy identity tables gain no new readers", () => {
    * exemption lists only ever get longer by accident.
    */
   it("agrees with the lint rule about which files may still read them", () => {
-    const config = readFileSync("eslint.config.mjs", "utf8");
+    // Normalised: the working copy is CRLF on Windows, and anchoring on "\n    "
+    // silently found nothing there, which threw rather than compared.
+    const config = readFileSync(resolve(SRC_ROOT, "..", "eslint.config.mjs"), "utf8").replace(
+      /\r\n/g,
+      "\n",
+    );
 
     // Anchored on the rule, not on the shape: three config objects carry an
     // `ignores` array indented exactly like this one, and taking the first is

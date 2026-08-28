@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   jobPostingStatusEnum, candidateStatusEnum, interviewTypeEnum,
@@ -364,11 +364,19 @@ export const candidateDocumentsVault = pgTable("candidate_documents_vault", {
 
 export const vaultAccessLogs = pgTable("vault_access_logs", {
   id: serial("id").primaryKey(),
-  vaultDocumentId: integer("vault_document_id").references(() => candidateDocumentsVault.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  candidateId: integer("candidate_id").references(() => candidates.id, { onDelete: "cascade" }).notNull(),
+  vaultDocumentId: integer("vault_document_id").references(() => candidateDocumentsVault.id, { onDelete: "set null" }),
+  filename: text("filename").notNull(),
+  documentType: text("document_type"),
   accessedBy: text("accessed_by").references(() => users.id).notNull(),
-  action: text("action").notNull().default("VIEW"),
+  action: text("action").$type<"VIEW" | "DOWNLOAD" | "DELETE">().notNull().default("VIEW"),
   accessedAt: timestamp("accessed_at").defaultNow().notNull(),
-});
+}, (table) => [
+  unique("uniq_vault_access_logs_org_id").on(table.orgId, table.id),
+  index("idx_vault_access_logs_org_candidate_accessed").on(table.orgId, table.candidateId, table.accessedAt.desc()),
+  check("chk_vault_access_logs_action", sql`${table.action} IN ('VIEW', 'DOWNLOAD', 'DELETE')`),
+]);
 
 export const interviewSlas = pgTable("interview_slas", {
   id: serial("id").primaryKey(),

@@ -2,6 +2,7 @@ import {
   pgTable,
   text,
   serial,
+  integer,
   timestamp,
   jsonb,
   index,
@@ -14,6 +15,7 @@ export const hrAuditLogs = pgTable("hr_audit_logs", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   actorId: text("actor_id").references(() => users.id, { onDelete: "set null" }),
+  actorMembershipId: integer("actor_membership_id"),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),
   action: text("action").notNull(),
@@ -27,6 +29,7 @@ export const hrAuditLogs = pgTable("hr_audit_logs", {
   index("idx_hr_audit_logs_org").on(table.orgId),
   index("idx_hr_audit_logs_org_entity").on(table.orgId, table.entityType, table.entityId),
   index("idx_hr_audit_logs_actor").on(table.actorId),
+  index("idx_hr_audit_logs_org_actor_membership").on(table.orgId, table.actorMembershipId),
   index("idx_hr_audit_logs_created_at").on(table.createdAt),
   index("idx_hr_audit_logs_org_created_id").on(
     table.orgId,

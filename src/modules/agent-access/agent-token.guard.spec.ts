@@ -54,8 +54,14 @@ describe("AgentTokenGuard", () => {
     };
   }
 
-  const validTokenRow = { id: TOKEN_ID, userId: USER_ID, orgId: ORG_ID };
-  const memberRow = { orgId: ORG_ID, role: "ENGINEERING", isOwner: false, enabledModules: ["projects"] };
+  const validTokenRow = {
+    id: TOKEN_ID,
+    userId: USER_ID,
+    orgId: ORG_ID,
+    issuerMembershipId: 7,
+    scopes: ["build:tickets:view", "build:tickets:update"],
+  };
+  const memberRow = { membershipId: 7, orgId: ORG_ID, role: "ENGINEERING", isOwner: false, enabledModules: ["projects"] };
   const subRow = { plan: "pro" };
 
   beforeEach(async () => {
@@ -104,7 +110,17 @@ describe("AgentTokenGuard", () => {
     const result = await guard.canActivate(ctx);
     expect(result).toBe(true);
     const req = ctx.switchToHttp().getRequest() as { user?: unknown };
-    expect(req.user).toMatchObject({ userId: USER_ID, orgId: ORG_ID });
+    expect(req.user).toMatchObject({
+      userId: USER_ID,
+      orgId: ORG_ID,
+      tokenScopes: ["build:tickets:view", "build:tickets:update"],
+      principal: {
+        kind: "agent-token",
+        issuerMembershipId: 7,
+        tokenId: TOKEN_ID,
+        ceiling: ["build:tickets:view", "build:tickets:update"],
+      },
+    });
   });
 
   it("throws 401 when token is missing", async () => {

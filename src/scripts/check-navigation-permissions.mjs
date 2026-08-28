@@ -15,10 +15,56 @@ import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   loadBackendCatalog,
+  loadModuleManifest,
   parseNavGates,
   parsePermissionConstants,
   parseRouteRefs,
 } from "./permission-key-extractors.mjs";
+
+const PILOT_MODULE = "timesheets";
+
+/**
+ * Extracts { product, href } pairs from a sidebar nav file source.
+ * Tracks the most recent `product:` declaration and associates each `href:` with it.
+ *
+ * @param {string} src
+ * @returns {Array<{ product: string, href: string, line: number }>}
+ */
+export function parseNavProductRoutes(src) {
+  const routes = [];
+  const lines = src.split("\n");
+  let currentProduct = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const productMatch = line.match(/\bproduct:\s*["']([^"']*)["']/);
+    if (productMatch) {
+      currentProduct = productMatch[1];
+      continue;
+    }
+    const hrefMatch = line.match(/\bhref:\s*["']([^"']*)["']/);
+    if (hrefMatch && currentProduct !== null) {
+      routes.push({ product: currentProduct, href: hrefMatch[1], line: i + 1 });
+    }
+  }
+  return routes;
+}
+
+/**
+ * For the pilot module, every nav route with a matching productKey must have
+ * an href that starts with the manifest's declared route.
+ *
+ * @param {{ productKey: string|null, route: string|null }} pilotEntry
+ * @param {Array<{ product: string, href: string, line: number }>} navRoutes
+ */
+export function checkNavRoutePilot(pilotEntry, navRoutes) {
+  if (pilotEntry.productKey === null || pilotEntry.route === null) {
+    return { ok: true, violations: [] };
+  }
+  const violations = navRoutes.filter(
+    (r) => r.product === pilotEntry.productKey && !r.href.startsWith(pilotEntry.route),
+  );
+  return { ok: violations.length === 0, violations };
+}
 
 const args = process.argv.slice(2);
 
@@ -147,6 +193,46 @@ if (args.includes("--self-test")) {
       !unenforced.some((g) => g.key === "real:thing:view"),
   };
 
+  // --- Pilot: nav route outside declared module route is detected ---
+  const pilotManEntry = { productKey: "timesheets", route: "/timesheets" };
+  const correctNavRoutes = [
+    { product: "timesheets", href: "/timesheets/my-hours", line: 5 },
+    { product: "timesheets", href: "/timesheets/approvals", line: 8 },
+    { product: "crm", href: "/crm/deals", line: 12 },
+  ];
+  const wrongNavRoutes = [
+    { product: "timesheets", href: "/timesheets/my-hours", line: 5 },
+    { product: "timesheets", href: "/wrong-path/timesheets-export", line: 9 },
+  ];
+  const pilotNavOk = checkNavRoutePilot(pilotManEntry, correctNavRoutes);
+  const pilotNavFail = checkNavRoutePilot(pilotManEntry, wrongNavRoutes);
+  checks.pilotNavRouteMatchPasses = pilotNavOk.ok;
+  checks.pilotNavRouteMismatchDetected = !pilotNavFail.ok && pilotNavFail.violations.length === 1;
+
+  // productRoutes parser: extracts product + href pairs correctly
+  const syntheticNavSrc = [
+    `  {`,
+    `    label: "My Hours",`,
+    `    product: "timesheets",`,
+    `    routes: [`,
+    `      { href: "/timesheets/my-hours", label: "My Hours", icon: X },`,
+    `      { href: "/timesheets/approvals", label: "Approvals", icon: X },`,
+    `    ],`,
+    `  },`,
+    `  {`,
+    `    label: "CRM",`,
+    `    product: "crm",`,
+    `    routes: [`,
+    `      { href: "/crm/deals", label: "Deals", icon: X },`,
+    `    ],`,
+    `  },`,
+  ].join("\n");
+  const parsed = parseNavProductRoutes(syntheticNavSrc);
+  checks.pilotNavParserExtractsTimesheetsRoutes =
+    parsed.filter((r) => r.product === "timesheets").length === 2;
+  checks.pilotNavParserExtractsCrmRoutes =
+    parsed.filter((r) => r.product === "crm").length === 1;
+
   const pass = Object.values(checks).every(Boolean);
   process.stdout.write(
     JSON.stringify({ selfTest: true, pass, checks, catalogError }, null, 2) + "\n",
@@ -270,10 +356,42 @@ if (unenforced.size > 0) {
 const failures = unknown.size + unenforced.size;
 if (failures === 0) {
   console.log("OK — every navigation gate names a key that some route enforces.");
-  process.exit(0);
+} else {
+  console.error(
+    `FAIL — ${unknown.size} key(s) absent from the backend catalog, ` +
+      `${unenforced.size} key(s) enforced by no route.`,
+  );
 }
-console.error(
-  `FAIL — ${unknown.size} key(s) absent from the backend catalog, ` +
-    `${unenforced.size} key(s) enforced by no route.`,
-);
-process.exit(1);
+
+// -- Manifest pilot: nav routes for timesheets are under /timesheets ----------
+
+let pilotFailed = false;
+try {
+  const manifest = loadModuleManifest();
+  const pilotEntry = manifest.modules.find((m) => m.id === PILOT_MODULE);
+  if (pilotEntry) {
+    const allNavRoutes = [];
+    for (const name of navFiles) {
+      const full = join(NAV_DIR, name);
+      allNavRoutes.push(...parseNavProductRoutes(readFileSync(full, "utf8")));
+    }
+    const pilotCheck = checkNavRoutePilot(pilotEntry, allNavRoutes);
+    if (pilotCheck.ok) {
+      console.log(`\nManifest pilot (${PILOT_MODULE}): all nav routes are under "${pilotEntry.route}" — OK`);
+    } else {
+      console.error(`\nManifest pilot (${PILOT_MODULE}): FAIL — nav routes outside declared route:`);
+      for (const v of pilotCheck.violations) {
+        console.error(`  product="${v.product}"  href="${v.href}"  line=${v.line}`);
+      }
+      pilotFailed = true;
+    }
+  }
+} catch (err) {
+  process.stderr.write(`Manifest pilot check skipped: ${err.message}\n`);
+}
+
+if (failures === 0 && !pilotFailed) {
+  process.exit(0);
+} else {
+  process.exit(1);
+}

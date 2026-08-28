@@ -21,6 +21,7 @@ import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tena
 import { ChatAssistantService } from "./chat-assistant.service";
 import { type AiCreditLedger } from "../gateway/credit-ledger.interface";
 import type { AiUsageService } from "./ai-usage.service";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
 
 const ACTOR = {
   userId: "user_1",
@@ -30,6 +31,7 @@ const ACTOR = {
   isOrgOwner: false,
   sessionId: "sess_1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 function makeLedger(overrides: Partial<AiCreditLedger> = {}): jest.Mocked<AiCreditLedger> {

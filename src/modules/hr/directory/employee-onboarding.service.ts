@@ -4,10 +4,12 @@ import {
   Injectable,
   InternalServerErrorException,
 } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import {
+  hrEmployments,
+  hrPeople,
   magicLinkTokens,
   organizationMembers,
   users,
@@ -113,13 +115,15 @@ export class EmployeeOnboardingService {
 
     if (body.employeeId?.trim()) {
       const [duplicate] = await this.db
-        .select({ userId: users.id })
-        .from(organizationMembers)
-        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .select({ userId: hrPeople.userId })
+        .from(hrEmployments)
+        .innerJoin(hrPeople, and(eq(hrPeople.id, hrEmployments.personId), eq(hrPeople.orgId, actor.orgId), isNull(hrPeople.deletedAt)))
         .where(
           and(
-            eq(organizationMembers.orgId, actor.orgId),
-            eq(users.employeeId, resolvedEmployeeId),
+            eq(hrEmployments.orgId, actor.orgId),
+            eq(hrEmployments.employeeNumber, resolvedEmployeeId),
+            eq(hrEmployments.isPrimary, true),
+            isNull(hrEmployments.deletedAt),
           ),
         )
         .limit(1);

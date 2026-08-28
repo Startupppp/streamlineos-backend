@@ -7,6 +7,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { PostJournalInput } from "../core/finance-posting.types";
 import { ACCT_STATEMENTS_NS } from "../settings/accounting-settings.constants";
 
@@ -17,6 +18,7 @@ const USER: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "sess1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 /**

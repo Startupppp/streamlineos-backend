@@ -18,6 +18,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { RecurringBillsService } from "./recurring-bills.service";
 import {
   createRecurringBillSchema,
@@ -88,6 +89,7 @@ export class RecurringBillsController {
   }
 
   @Post(":templateId/run-now")
+  @Idempotent("finance.recurring-bill.run-now")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
   @HttpCode(200)

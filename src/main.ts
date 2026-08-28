@@ -16,12 +16,14 @@ import { correlationIdMiddleware } from "./common/http/correlation-id.middleware
 import {
   LogErrorReporter,
   LogSpanExporter,
+  eventLoopDelayMonitor,
   reportError,
   setErrorReporter,
   setSpanExporter,
   structuredNestLogger,
 } from "./common/observability";
 import { ResponseTransformInterceptor } from "./common/interceptors/response-transform.interceptor";
+import { resolveAdmissionConfig } from "./common/admission/admission.config";
 import { logger } from "./common/logger/logger.service";
 
 setDefaultResultOrder("ipv4first");
@@ -74,6 +76,7 @@ async function bootstrap(): Promise<void> {
   // computed from.
   setErrorReporter(new LogErrorReporter());
   setSpanExporter(new LogSpanExporter());
+  eventLoopDelayMonitor.start();
 
   app.use(helmet());
   app.use(compression());
@@ -89,10 +92,15 @@ async function bootstrap(): Promise<void> {
     credentials: true,
   });
 
-  app.useBodyParser("json", { limit: "3mb" });
+  const admission = resolveAdmissionConfig(process.env);
+
+  app.useBodyParser("json", { limit: admission.maxBodyBytes });
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new ResponseTransformInterceptor());
-  app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
+  app.useBodyParser("urlencoded", {
+    extended: true,
+    limit: Math.floor(admission.maxBodyBytes / 3),
+  });
 
   if (isDevelopment) {
     const swaggerConfig = new DocumentBuilder()

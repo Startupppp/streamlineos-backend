@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { AttendanceSummaryController } from "./attendance-summary.controller";
 
 describe("AttendanceSummaryController scope boundary", () => {
@@ -14,6 +15,7 @@ describe("AttendanceSummaryController scope boundary", () => {
       isOrgOwner: false,
       sessionId: "session-1",
       tokenScopes: null,
+      principal: humanSessionPrincipal(1, false),
     } satisfies CurrentUserContext;
     const query = {
       periodStart: "2026-08-01",

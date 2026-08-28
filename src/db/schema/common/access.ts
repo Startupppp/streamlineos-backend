@@ -158,9 +158,7 @@ export const userModuleAccess = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    organizationMembershipId: integer("organization_membership_id").notNull(),
     moduleKey: text("module_key").notNull(),
     enabled: boolean("enabled").default(true).notNull(),
     updatedBy: text("updated_by").references(() => users.id, {
@@ -172,12 +170,20 @@ export const userModuleAccess = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_user_module_access_org_user_module").on(
+    uniqueIndex("uniq_user_module_access_org_membership_module").on(
       table.orgId,
-      table.userId,
+      table.organizationMembershipId,
       table.moduleKey,
     ),
-    index("idx_user_module_access_org_user").on(table.orgId, table.userId),
+    index("idx_user_module_access_org_membership").on(
+      table.orgId,
+      table.organizationMembershipId,
+    ),
+    foreignKey({
+      name: "fk_user_module_access_membership",
+      columns: [table.orgId, table.organizationMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("cascade"),
   ],
 );
 

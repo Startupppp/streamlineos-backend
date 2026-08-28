@@ -51,7 +51,7 @@ describe("OrgMembershipService access notifications", () => {
       from: jest.fn().mockReturnValue(joinChain),
     }),
     update: jest.fn().mockReturnValue({
-      set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+      set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue(Object.assign(Promise.resolve([]), { returning: jest.fn().mockResolvedValue([]) })) }),
     }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
     insert: jest.fn().mockReturnValue({
@@ -66,6 +66,7 @@ describe("OrgMembershipService access notifications", () => {
     query: {
       organizationMembers: { findFirst: memberFindFirst },
       organizations: { findFirst: orgFindFirst },
+      users: { findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }) },
       users: { findFirst: userFindFirst },
     },
     select: tx.select,
@@ -91,7 +92,7 @@ describe("OrgMembershipService access notifications", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
-        { provide: AblyService, useValue: { revokeUserTokens: jest.fn() } },
+        { provide: AblyService, useValue: { revokeUserTokens: jest.fn().mockResolvedValue(undefined) } },
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         {

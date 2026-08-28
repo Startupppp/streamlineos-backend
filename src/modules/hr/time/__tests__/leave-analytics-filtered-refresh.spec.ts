@@ -1,6 +1,7 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../../common/cache/cache-keys";
 import type { DataScope } from "../../../access/access.types";
@@ -18,6 +19,7 @@ function makeUser(userId: string): CurrentUserContext {
     isOrgOwner: false,
     sessionId: `session-${userId}`,
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
   };
 }
 
@@ -94,7 +96,7 @@ describe("leave analytics filtered read-after-write", () => {
         .fn()
         .mockResolvedValue(new Map<string, DataScope>([[LEAVES_PERMISSION, scope]])),
     };
-    return new LeavesService(db as never, cache, access as never, undefined as never);
+    return new LeavesService(db as never, cache, access as never, undefined as never, undefined as never);
   }
 
   function buildWriter() {

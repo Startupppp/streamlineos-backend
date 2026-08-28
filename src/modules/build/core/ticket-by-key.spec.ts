@@ -2,6 +2,7 @@ import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
 import type { DataScope } from "../../access/access.types";
 import { TICKETS_PERMISSION } from "./tickets-scope";
@@ -16,6 +17,7 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   isOrgOwner: true,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, true),
   ...overrides,
 });
 

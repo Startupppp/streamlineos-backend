@@ -7,6 +7,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -38,6 +39,7 @@ export class TransfersController {
   }
 
   @Post()
+  @Idempotent("accounting.bank-transfer.create")
   @HttpCode(201)
   @RequirePermission("accounting:banking:manage")
   create(

@@ -5,6 +5,7 @@ import { OnboardingController } from "./onboarding.controller";
 import type { ModuleChecklistService } from "../flow/module-checklist.service";
 import type { GuidedTourService } from "../flow/guided-tour.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
 
 function ctx(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -14,6 +15,7 @@ function ctx(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
     isOrgOwner: false,
     sessionId: "sess-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }

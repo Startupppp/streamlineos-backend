@@ -22,6 +22,7 @@ jest.mock("../../../common/date", () => {
 import { BadRequestException } from "@nestjs/common";
 import { differenceInDays } from "../../../common/date";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
 import { updateEmployeeSchema } from "./dto/hr-directory.schemas";
 import { EmployeeMutationsService } from "./employee-mutations.service";
@@ -34,6 +35,7 @@ function ctx(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
     isOrgOwner: false,
     sessionId: "sess-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }

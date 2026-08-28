@@ -11,6 +11,8 @@ import { OrganizationSettingsService } from "./organization-settings.service";
 import { InvitationsService } from "./invitations.service";
 import { InvitationsReadService } from "./invitations-read.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
+import { AccountOrganizationIndexService } from "./account-organization-index.service";
+import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
 import { RealtimeModule } from "../../realtime/realtime.module";
 
 @Module({
@@ -25,12 +27,16 @@ import { RealtimeModule } from "../../realtime/realtime.module";
     InvitationsService,
     InvitationsReadService,
     InvitationAcceptanceService,
+    AccountOrganizationIndexService,
+    OrganizationSagaService,
   ],
   exports: [
     InvitationsService,
     InvitationsReadService,
     InvitationAcceptanceService,
     OrgMembershipService,
+    AccountOrganizationIndexService,
+    OrganizationSagaService,
   ],
 })
 export class OrganizationModule {}

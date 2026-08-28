@@ -4,8 +4,10 @@ import { HrHelpdeskService } from "./hr-helpdesk.service";
 import { HrCalendarController } from "./hr-calendar.controller";
 import { HrCalendarService } from "./hr-calendar.service";
 import { CelebrationsService } from "../directory/celebrations.service";
+import { NotificationsModule } from "../../notifications/notifications.module";
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [HrHelpdeskController, HrCalendarController],
   providers: [HrHelpdeskService, HrCalendarService, CelebrationsService],
 })

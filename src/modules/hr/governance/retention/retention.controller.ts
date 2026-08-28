@@ -35,6 +35,7 @@ import {
   type UpdateDataRequestInput,
   type ListDataRequestsInput,
 } from "./retention.dto";
+import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("hr")
 @Controller("hr/governance/retention")
@@ -114,6 +115,7 @@ export class RetentionController {
   }
 
   @Post("requests/:requestId/approve")
+  @Idempotent("hr.retention.approve")
   @RequirePermission("hr:retention:manage")
   async approveRequest(
     @CurrentUser() user: CurrentUserContext,

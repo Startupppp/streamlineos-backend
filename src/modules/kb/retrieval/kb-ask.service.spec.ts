@@ -7,6 +7,7 @@ import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAccessService } from "../core/kb-access.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const makeGatewayOk = (text: string) => ({
   ok: true as const,
@@ -66,6 +67,7 @@ const user = {
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 const input = { question: "How do I reset my password?" };
 

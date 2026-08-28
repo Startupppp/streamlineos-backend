@@ -2,6 +2,7 @@ import {
   Controller, Get, HttpCode, Patch, Delete, Post, Param, Query, Body, UseGuards, Res
 } from "@nestjs/common";
 import type { Response } from "express";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -103,6 +104,7 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Post("invite")
+  @Idempotent("users.invitation.create")
   inviteUser(
     @Body(new ZodValidationPipe(inviteUserSchema)) body: InviteUserInput,
     @CurrentUser() u: CurrentUserContext,
@@ -117,6 +119,7 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Post("bulk-invite")
+  @Idempotent("users.invitation.bulk-create")
   bulkInvite(
     @Body(new ZodValidationPipe(bulkInviteSchema)) body: BulkInviteInput,
     @CurrentUser() u: CurrentUserContext,
@@ -178,6 +181,7 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Post("invitations/:invitationId/resend")
+  @Idempotent("users.invitation.resend")
   @HttpCode(200)
   resendInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
     return this.invitations.resend(u.orgId, invitationId, {
@@ -323,6 +327,7 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Post(":userId/send-signin-link")
+  @Idempotent("users.signin-link.send")
   @HttpCode(200)
   sendSigninLink(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userOps.sendSigninLink(u.orgId, userId, u.userId);

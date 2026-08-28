@@ -44,7 +44,7 @@ describe("LeaveApproverService", () => {
         .fn()
         .mockResolvedValue(new Map([["hr:leaves:approve", "all"]])),
     };
-    const service = new LeaveApproverService(db as never, access as never);
+    const service = new LeaveApproverService(db as never, access as never, undefined as never);
 
     await expect(service.resolve("org-1", "employee-1")).resolves.toEqual(
       APPROVER,
@@ -72,7 +72,7 @@ describe("LeaveApproverService", () => {
         .mockResolvedValueOnce(new Map([["hr:leaves:approve", "own"]]))
         .mockResolvedValueOnce(new Map([["hr:leaves:approve", "all"]])),
     };
-    const service = new LeaveApproverService(db as never, access as never);
+    const service = new LeaveApproverService(db as never, access as never, undefined as never);
 
     await expect(service.resolve("org-1", "employee-1")).resolves.toEqual(
       fallback,
@@ -94,7 +94,7 @@ describe("LeaveApproverService", () => {
         .mockResolvedValue(new Map([["hr:leaves:approve", "team"]])),
     };
     const scopeSpy = jest.spyOn(applyScopeModule, "applyScope");
-    const service = new LeaveApproverService(db as never, access as never);
+    const service = new LeaveApproverService(db as never, access as never, undefined as never);
 
     await expect(service.resolve("org-1", "employee-1")).resolves.toEqual(
       APPROVER,

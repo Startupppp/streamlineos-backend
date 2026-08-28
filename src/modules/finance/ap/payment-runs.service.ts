@@ -28,6 +28,7 @@ import { JournalPostingService } from "../../accounting/posting/journal-posting.
 import { RateResolverService } from "../controls/rate-resolver.service";
 import { FxService } from "../controls/fx.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { systemActor } from "../../../common/auth/system-actor";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import { checkApprovalPolicy } from "./ap-approval.helper";
 import type {
@@ -545,14 +546,11 @@ export class PaymentRunsService {
         new Date(`${paymentDateIso}T00:00:00.000Z`),
       );
       const baseAmountSettled = (capture.amount * settledRate).toFixed(4);
-      const user: CurrentUserContext = {
-        userId: capture.userId,
+      const user = systemActor(
+        "finance.payment-run.fx-posting",
         orgId,
-        role: "system",
-        isOrgOwner: false,
-        tokenScopes: null,
-        sessionId: "",
-      };
+        capture.userId,
+      );
 
       this.fx
         .postRealizedGainLoss(user, {

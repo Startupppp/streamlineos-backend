@@ -37,6 +37,7 @@ import { syncCanonicalEmploymentFields } from "../../common/hr/sync-canonical-em
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../billing/core/seat-ledger.service";
 import { OrganizationUsersReader } from "./organization-users.reader";
+import { EmploymentFactsService } from "../directory/employment-facts.service";
 
 @Injectable()
 export class UsersService {
@@ -51,8 +52,9 @@ export class UsersService {
     private readonly seatLedger: SeatLedgerService,
     private readonly invitationsSvc: InvitationsService,
     private readonly orgMembership: OrgMembershipService,
+    private readonly employment: EmploymentFactsService,
   ) {
-    this.reader = new OrganizationUsersReader(db);
+    this.reader = new OrganizationUsersReader(db, employment);
   }
 
   private async invalidateMembershipCaches(orgId: string): Promise<void> {

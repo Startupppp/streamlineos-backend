@@ -14,6 +14,8 @@ import {
 import {
   attendance,
   calendarEvents,
+  hrEmployments,
+  hrPeople,
   leaveBalances,
   leaveTypes,
   notifications,
@@ -202,7 +204,7 @@ export class DashboardHrService {
           userId: attendance.userId,
           userName: users.name,
           userImage: users.image,
-          userDesignation: users.designation,
+          userDesignation: hrEmployments.designation,
           checkIn: attendance.checkIn,
           checkOut: attendance.checkOut,
           status: attendance.status,
@@ -210,6 +212,19 @@ export class DashboardHrService {
         })
         .from(attendance)
         .innerJoin(users, eq(attendance.userId, users.id))
+        .leftJoin(
+          hrPeople,
+          and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, users.id), isNull(hrPeople.deletedAt)),
+        )
+        .leftJoin(
+          hrEmployments,
+          and(
+            eq(hrEmployments.orgId, orgId),
+            eq(hrEmployments.personId, hrPeople.id),
+            eq(hrEmployments.isPrimary, true),
+            isNull(hrEmployments.deletedAt),
+          ),
+        )
         .where(and(eq(attendance.orgId, orgId), eq(attendance.date, today))),
     ]);
 
@@ -294,7 +309,7 @@ export class DashboardHrService {
         .select({
           id: users.id,
           name: users.name,
-          designation: users.designation,
+          designation: hrEmployments.designation,
           image: users.image,
           mmdd: sql<string>`to_char(${users.dateOfBirth}::date, 'MM-DD')`,
         })
@@ -302,6 +317,19 @@ export class DashboardHrService {
         .innerJoin(
           organizationMembers,
           eq(organizationMembers.userId, users.id),
+        )
+        .leftJoin(
+          hrPeople,
+          and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, users.id), isNull(hrPeople.deletedAt)),
+        )
+        .leftJoin(
+          hrEmployments,
+          and(
+            eq(hrEmployments.orgId, orgId),
+            eq(hrEmployments.personId, hrPeople.id),
+            eq(hrEmployments.isPrimary, true),
+            isNull(hrEmployments.deletedAt),
+          ),
         )
         .where(
           and(
@@ -316,22 +344,35 @@ export class DashboardHrService {
         .select({
           id: users.id,
           name: users.name,
-          designation: users.designation,
+          designation: hrEmployments.designation,
           image: users.image,
-          joiningDate: users.joiningDate,
-          mmdd: sql<string>`to_char(${users.joiningDate}::date, 'MM-DD')`,
+          joiningDate: hrEmployments.joiningDate,
+          mmdd: sql<string>`to_char(${hrEmployments.joiningDate}::date, 'MM-DD')`,
         })
         .from(users)
         .innerJoin(
           organizationMembers,
           eq(organizationMembers.userId, users.id),
         )
+        .leftJoin(
+          hrPeople,
+          and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, users.id), isNull(hrPeople.deletedAt)),
+        )
+        .leftJoin(
+          hrEmployments,
+          and(
+            eq(hrEmployments.orgId, orgId),
+            eq(hrEmployments.personId, hrPeople.id),
+            eq(hrEmployments.isPrimary, true),
+            isNull(hrEmployments.deletedAt),
+          ),
+        )
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
             eq(users.isActive, true),
-            sql`to_char(${users.joiningDate}::date, 'MM-DD') IN (${mmddValues})`,
-            sql`EXTRACT(YEAR FROM age(${users.joiningDate}::date)) >= 1`,
+            sql`to_char(${hrEmployments.joiningDate}::date, 'MM-DD') IN (${mmddValues})`,
+            sql`EXTRACT(YEAR FROM age(${hrEmployments.joiningDate}::date)) >= 1`,
           ),
         )
         .limit(50),

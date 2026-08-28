@@ -39,6 +39,10 @@
     "alert:tenant-ctx-errors:self-test": "node src/scripts/alert-tenant-ctx-errors.mjs --self-test",
     "alert:p95": "node src/scripts/alert-p95.mjs",
     "alert:p95:self-test": "node src/scripts/alert-p95.mjs --self-test",
+    "alert:seam-latency": "node src/scripts/alert-seam-latency.mjs",
+    "alert:seam-latency:self-test": "node src/scripts/alert-seam-latency.mjs --self-test",
+    "alert:dispatch:self-test": "node src/scripts/alert-dispatch.mjs --self-test",
+    "alert:test-event": "node --env-file-if-exists=.env src/scripts/alert-dispatch.mjs --test-event",
     "verify:chat-mentions": "node --env-file=.env src/scripts/verify-chat-mention-delivery.mjs",
     "verify:permissions": "node src/scripts/check-permission-keys.mjs",
     "seed:build-load": "node --env-file=.env src/scripts/seed-build-load.mjs",
@@ -80,7 +84,14 @@
     "check:scope-application": "node src/scripts/check-scope-application.mjs",
     "check:scope-application:self-test": "node src/scripts/check-scope-application.mjs --self-test",
     "check:record-access": "node src/scripts/check-record-access.mjs",
-    "check:record-access:self-test": "node src/scripts/check-record-access.mjs --self-test"
+    "check:record-access:self-test": "node src/scripts/check-record-access.mjs --self-test",
+    "check:placement-bypass": "node src/scripts/check-placement-bypass.mjs",
+    "check:placement-bypass:self-test": "node src/scripts/check-placement-bypass.mjs --self-test",
+    "backfill:employment": "node --env-file=.env -r ts-node/register src/scripts/backfill-employment-truth.ts",
+    "report:employment-drift": "node --env-file=.env -r ts-node/register src/scripts/report-employment-drift.ts",
+    "alert:employment-drift": "node src/scripts/alert-employment-drift.mjs",
+    "alert:employment-drift:self-test": "node src/scripts/alert-employment-drift.mjs --self-test",
+    "verify:payroll-payee-parity": "node --env-file=.env -r ts-node/register src/scripts/verify-payroll-payee-parity.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

@@ -55,12 +55,36 @@ import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   loadBackendCatalog,
+  loadModuleManifest,
   parsePermissionConstants,
   parseRouteRefs,
   parseUnionKeys,
 } from "./permission-key-extractors.mjs";
 
 export { parsePermissionConstants, parseRouteRefs, parseUnionKeys };
+
+const PILOT_MODULE = "timesheets";
+
+/**
+ * Returns { ok, violations } where violations lists resolved permission keys that
+ * fall outside the namespaces the manifest entry declares for the pilot module.
+ *
+ * @param {{ id: string, administersNamespaces: string[] }} pilotEntry
+ * @param {Array<{ key: string|null, resolved: boolean, file: string, line: number }>} routeRefs
+ * @param {string} modulesDir  absolute path to backend/src/modules/
+ */
+export function checkNamespacePilot(pilotEntry, routeRefs, modulesDir) {
+  const allowedNamespaces = [pilotEntry.id, ...pilotEntry.administersNamespaces];
+  const prefix = `modules/${pilotEntry.id}/`;
+  const violations = routeRefs.filter((ref) => {
+    if (!ref.resolved || ref.key === null) return false;
+    const filePath = ref.file.replace(/\\/g, "/");
+    if (!filePath.includes(prefix)) return false;
+    const ns = ref.key.split(":")[0];
+    return !allowedNamespaces.includes(ns);
+  });
+  return { ok: violations.length === 0, violations };
+}
 
 const args = process.argv.slice(2);
 
@@ -166,6 +190,32 @@ if (args.includes("--self-test")) {
       !ghostsFromFrontend.some((r) => r.key === "real:thing:view"),
     intentionalSubsetDoesNotFire: !ghostsFromBackend.some((r) => r.key === "real:other:read"),
   };
+
+  // --- Pilot: namespace mismatch is detected ---
+  const pilotEntry = { id: "timesheets", administersNamespaces: [] };
+  const insideRef = {
+    key: "timesheets:entries:view",
+    resolved: true,
+    file: "src/modules/timesheets/timesheets.controller.ts",
+    line: 5,
+  };
+  const outsideRef = {
+    key: "hr:employees:view",
+    resolved: true,
+    file: "src/modules/timesheets/timesheets.controller.ts",
+    line: 10,
+  };
+  const otherModuleRef = {
+    key: "hr:employees:view",
+    resolved: true,
+    file: "src/modules/hr/hr.controller.ts",
+    line: 5,
+  };
+  const pilotOk = checkNamespacePilot(pilotEntry, [insideRef, otherModuleRef], BACKEND_MODULES_DIR);
+  const pilotFail = checkNamespacePilot(pilotEntry, [insideRef, outsideRef], BACKEND_MODULES_DIR);
+  checks.pilotNamespaceMatchPasses = pilotOk.ok;
+  checks.pilotNamespaceMismatchDetected = !pilotFail.ok && pilotFail.violations.length === 1;
+  checks.pilotOtherModuleRefNotFlagged = pilotOk.violations.length === 0;
 
   const pass = Object.values(checks).every(Boolean);
   process.stdout.write(
@@ -291,12 +341,38 @@ if (missingFrontend.size > 0) {
 const totalFailures = missingBackend.size + missingFrontend.size + unresolved.size;
 if (totalFailures === 0) {
   console.log("OK — every @RequirePermission key resolves and exists in the backend catalog and the frontend PermissionKey union.");
-  process.exit(0);
 } else {
   console.error(
     `FAIL — ${unresolved.size} unresolvable argument(s), ` +
       `${missingBackend.size} key(s) absent from backend catalog, ` +
       `${missingFrontend.size} key(s) absent from frontend PermissionKey union.`,
   );
+}
+
+// ── Manifest pilot: namespace check for timesheets ──────────────────────────
+
+let pilotFailed = false;
+try {
+  const manifest = loadModuleManifest();
+  const pilotManifestEntry = manifest.modules.find((m) => m.id === PILOT_MODULE);
+  if (pilotManifestEntry) {
+    const pilotCheck = checkNamespacePilot(pilotManifestEntry, routeRefs, BACKEND_MODULES_DIR);
+    if (pilotCheck.ok) {
+      console.log(`\nManifest pilot (${PILOT_MODULE}): all @RequirePermission keys in its folder use declared namespaces — OK`);
+    } else {
+      console.error(`\nManifest pilot (${PILOT_MODULE}): FAIL — keys outside declared namespaces:`);
+      for (const v of pilotCheck.violations) {
+        console.error(`  "${v.key}"  ${relative(REPO_ROOT, v.file)}:${v.line}`);
+      }
+      pilotFailed = true;
+    }
+  }
+} catch (err) {
+  process.stderr.write(`Manifest pilot check skipped: ${err.message}\n`);
+}
+
+if (totalFailures === 0 && !pilotFailed) {
+  process.exit(0);
+} else {
   process.exit(1);
 }

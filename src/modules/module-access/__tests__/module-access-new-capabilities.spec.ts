@@ -7,6 +7,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 jest.mock("../../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -20,6 +21,7 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
     isOrgOwner: false,
     sessionId: "s-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }
@@ -490,7 +492,9 @@ describe("ModuleAccessGroupsService ownership authority", () => {
   async function buildOwnershipService(ownerUserId = "u-owner") {
     const select = jest
       .fn()
-      .mockReturnValue(makeFlexChain([{ userId: ownerUserId }]));
+      .mockReturnValue(
+        makeFlexChain([{ userId: ownerUserId, ownerMembershipId: 11 }]),
+      );
     const cached = jest.fn().mockResolvedValue(ownership);
     const resolveUserPermissions = jest
       .fn()
@@ -588,6 +592,7 @@ describe("ModuleAccessGroupsService ownership authority", () => {
         orgId: "org-1",
         moduleKey: "hr",
         fromMembershipId: 11,
+        initiatedByMembershipId: 11,
         toMembershipId: 12,
       }),
     );

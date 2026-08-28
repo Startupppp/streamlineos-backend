@@ -9,6 +9,7 @@ import { Test } from "@nestjs/testing";
 import type { NextFunction, Request, Response } from "express";
 import request from "supertest";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import { Public } from "../../common/auth/public.decorator";
 import { AccessService } from "./access.service";
 import { PermissionGuard } from "./permission.guard";
@@ -49,6 +50,7 @@ const user: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 function attachUser(req: Request, _res: Response, next: NextFunction): void {

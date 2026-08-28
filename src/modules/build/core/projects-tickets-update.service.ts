@@ -16,6 +16,7 @@ import { logger } from "../../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { systemJobCovers } from "../../../common/auth/principal";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { ProjectsActivityService } from "./projects-activity.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
@@ -169,7 +170,7 @@ export class ProjectsTicketsUpdateService {
     }
 
     const accessResult =
-      u.isOrgOwner
+      u.isOrgOwner || systemJobCovers(u.principal, "build:tickets:update")
         ? { hasAccess: true, role: "OWNER" as string | null }
         : await this.read.checkProjectAccess(
             orgId,

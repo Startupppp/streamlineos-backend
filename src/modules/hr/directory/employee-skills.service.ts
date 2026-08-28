@@ -2,6 +2,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   employeeSkills,
+  hrEmployments,
+  hrPeople,
   orgUnitMembers,
   orgUnits,
   organizationMembers,
@@ -75,7 +77,7 @@ export class EmployeeSkillsService {
         userId: users.id,
         name: users.name,
         image: users.image,
-        designation: users.designation,
+        designation: hrEmployments.designation,
         role: organizationMembers.role,
         department,
         matchedSkill,
@@ -83,6 +85,8 @@ export class EmployeeSkillsService {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
+      .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
       .innerJoin(
         employeeSkills,
         and(
@@ -119,7 +123,7 @@ export class EmployeeSkillsService {
         users.id,
         users.name,
         users.image,
-        users.designation,
+        hrEmployments.designation,
         organizationMembers.role,
       )
       .orderBy(desc(matchedLevel), asc(sql`lower(${users.name})`), asc(users.id))

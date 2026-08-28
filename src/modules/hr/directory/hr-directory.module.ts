@@ -24,6 +24,7 @@ import { AssetsRecoveryService } from "./assets-recovery.service";
 import { BackgroundVerificationService } from "./background-verification.service";
 import { AccessRequestsService } from "./access-requests.service";
 import { BillingModule } from "../../billing/core/billing.module";
+import { DirectoryModule } from "../../directory/directory.module";
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { BillingModule } from "../../billing/core/billing.module";
     HrAutomationsModule,
     HrCoreModule,
     BillingModule,
+    DirectoryModule,
   ],
   controllers: [
     EmployeesController,

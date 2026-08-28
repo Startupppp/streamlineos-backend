@@ -73,6 +73,7 @@ export class OwnershipTransferResponseService {
         scope: ownershipTransfers.scope,
         moduleKey: ownershipTransfers.moduleKey,
         fromMembershipId: ownershipTransfers.fromMembershipId,
+        initiatedByMembershipId: ownershipTransfers.initiatedByMembershipId,
         toMembershipId: ownershipTransfers.toMembershipId,
         status: ownershipTransfers.status,
         expiresAt: ownershipTransfers.expiresAt,
@@ -159,6 +160,7 @@ export class OwnershipTransferResponseService {
         transferId,
         scope: transfer.scope,
         moduleKey: transfer.moduleKey ?? undefined,
+        initiatedByMembershipId: transfer.initiatedByMembershipId,
         fromMembershipId: transfer.fromMembershipId,
         toMembershipId: transfer.toMembershipId,
       },
@@ -234,7 +236,7 @@ export class OwnershipTransferResponseService {
           org.ownerMembershipId === fromMember.id);
       if (!isCurrentOwner) {
         throw new BadRequestException(
-          "Initiator is no longer the organization owner; transfer is invalid",
+          "Organization ownership changed since this transfer was initiated; it can no longer be accepted",
         );
       }
       if (!toMember || toMember.status !== "ACTIVE") {
@@ -305,6 +307,12 @@ export class OwnershipTransferResponseService {
         )
         .for("update");
 
+      if (!currentOwnership || currentOwnership.ownerMembershipId !== fromMembershipId) {
+        throw new BadRequestException(
+          "Module ownership changed since this transfer was initiated; it can no longer be accepted",
+        );
+      }
+
       const memberships = await tx
         .select({
           id: organizationMembers.id,
@@ -327,15 +335,7 @@ export class OwnershipTransferResponseService {
       const toMember = memberships.find((m) => m.id === toMembershipId);
 
       if (!fromMember)
-        throw new BadRequestException("Initiating member no longer exists");
-      if (
-        currentOwnership &&
-        currentOwnership.ownerMembershipId !== fromMember.id
-      ) {
-        throw new BadRequestException(
-          "Initiator is no longer the module owner; transfer is invalid",
-        );
-      }
+        throw new BadRequestException("Expected current owner's membership no longer exists");
       if (!toMember || toMember.status !== "ACTIVE") {
         throw new BadRequestException(
           "Recipient membership is no longer active",
@@ -498,6 +498,7 @@ export class OwnershipTransferResponseService {
       .select({
         id: ownershipTransfers.id,
         fromMembershipId: ownershipTransfers.fromMembershipId,
+        initiatedByMembershipId: ownershipTransfers.initiatedByMembershipId,
         status: ownershipTransfers.status,
         scope: ownershipTransfers.scope,
         moduleKey: ownershipTransfers.moduleKey,
@@ -527,7 +528,8 @@ export class OwnershipTransferResponseService {
     if (!actorMembership)
       throw new ForbiddenException("Not a member of this organization");
 
-    if (!isOrgOwner && actorMembership.id !== transfer.fromMembershipId) {
+    const initiatorId = transfer.initiatedByMembershipId;
+    if (!isOrgOwner && actorMembership.id !== initiatorId) {
       throw new ForbiddenException(
         "Only the initiator or an org owner may cancel this transfer",
       );

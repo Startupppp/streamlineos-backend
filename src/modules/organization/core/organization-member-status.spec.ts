@@ -31,7 +31,7 @@ describe("OrgMembershipService member status guards", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
-        { provide: AblyService, useValue: { revokeUserTokens: jest.fn() } },
+        { provide: AblyService, useValue: { revokeUserTokens: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: EmailService,
           useValue: {
@@ -40,7 +40,7 @@ describe("OrgMembershipService member status guards", () => {
           },
         },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
-        { provide: DRIZZLE, useValue: { query: { organizationMembers: { findFirst } } } },
+        { provide: DRIZZLE, useValue: { query: { organizationMembers: { findFirst }, users: { findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }) } } } },
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
           provide: CacheService,
@@ -138,7 +138,13 @@ function buildTxMock(selectResults: { result: unknown[]; endWithLimit?: boolean 
     }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
     update: jest.fn().mockReturnValue({
-      set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue(
+          Object.assign(Promise.resolve(undefined), {
+            returning: jest.fn().mockResolvedValue([]),
+          }),
+        ),
+      }),
     }),
     insert: jest.fn().mockReturnValue({
       values: jest.fn().mockReturnValue({
@@ -147,6 +153,20 @@ function buildTxMock(selectResults: { result: unknown[]; endWithLimit?: boolean 
     }),
   };
 }
+
+jest.mock("../../../common/tenant/with-identity", () => ({
+  withIdentity: jest.fn(
+    (_db: unknown, _userId: string, fn: (tx: unknown) => unknown) => {
+      const rows = [{ n: 1 }];
+      const chain: Record<string, unknown> = {};
+      for (const method of ["select", "from", "innerJoin", "leftJoin", "where", "orderBy", "limit"]) {
+        chain[method] = () => chain;
+      }
+      chain.then = (resolve: (value: unknown) => unknown) => resolve(rows);
+      return Promise.resolve(fn(chain));
+    },
+  ),
+}));
 
 describe("OrgMembershipService — module-ownership guards", () => {
   const auditLog = jest.fn();
@@ -158,7 +178,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
-        { provide: AblyService, useValue: { revokeUserTokens: jest.fn() } },
+        { provide: AblyService, useValue: { revokeUserTokens: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: EmailService,
           useValue: {
@@ -200,6 +220,11 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [{ moduleKey: "hr" }, { moduleKey: "crm" }] },
       ]);
       const db = {
+        query: {
+          users: {
+            findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
+          },
+        },
         transaction: jest.fn().mockImplementation(
           async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
         ),
@@ -222,6 +247,11 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [{ isOwner: true, id: 1 }], endWithLimit: true },
       ]);
       const db = {
+        query: {
+          users: {
+            findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
+          },
+        },
         transaction: jest.fn().mockImplementation(
           async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
         ),
@@ -241,6 +271,11 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [] },
       ]);
       const db = {
+        query: {
+          users: {
+            findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
+          },
+        },
         transaction: jest.fn().mockImplementation(
           async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
         ),
@@ -280,6 +315,11 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [{ moduleKey: "build" }] },
       ]);
       const db = {
+        query: {
+          users: {
+            findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
+          },
+        },
         transaction: jest.fn().mockImplementation(
           async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
         ),
@@ -302,6 +342,11 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [], endWithLimit: true },
       ]);
       const db = {
+        query: {
+          users: {
+            findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
+          },
+        },
         transaction: jest.fn().mockImplementation(
           async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
         ),

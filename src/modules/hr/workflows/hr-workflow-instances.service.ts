@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, desc, inArray, lte, or, sql } from "drizzle-orm";
+import { and, eq, desc, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -7,11 +7,13 @@ import {
   hrWorkflowStepActions,
   hrWorkflowDelegations,
 } from "../../../db/schema/hr/workflow-engine";
-import { users, organizationMembers } from "../../../db/schema/common/auth";
+import { users } from "../../../db/schema/common/auth";
+import { hrEmployments, hrPeople } from "../../../db/schema";
 import { orgUnits } from "../../../db/schema/common/organization";
 import type { WorkflowInstanceQueryDto } from "./dto/workflow.schemas";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 import { AccessService } from "../../access/access.service";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 interface ResolvedStep {
   stepOrder: number;
@@ -25,6 +27,7 @@ export class HrWorkflowInstancesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly engine: HrWorkflowEngineService,
     private readonly access: AccessService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   async listForDefinition(
@@ -271,95 +274,76 @@ export class HrWorkflowInstancesService {
   private async buildApproverCache(orgId: string, subjectIds: string[]) {
     const uniqueSubjectIds = [...new Set(subjectIds)];
 
-    const [subjectRows, hrApprovers, financeApprovers] = await Promise.all([
+    const [subjectFactsMap, hrApprovers, financeApprovers] = await Promise.all([
       uniqueSubjectIds.length > 0
-        ? this.db
-            .select({
-              id: users.id,
-              reportingTo: users.reportingTo,
-              orgDepartmentId: users.orgDepartmentId,
-              branchId: users.branchId,
-            })
-            .from(users)
-            .innerJoin(
-              organizationMembers,
-              and(
-                eq(organizationMembers.userId, users.id),
-                eq(organizationMembers.orgId, orgId),
-              ),
-            )
-            .where(inArray(users.id, uniqueSubjectIds))
-        : Promise.resolve([]),
+        ? this.employment.getFactsBatch(orgId, uniqueSubjectIds)
+        : Promise.resolve(new Map()),
       this.access.membersWithPermission(orgId, "hr:leaves:approve"),
       this.access.membersWithPermission(orgId, "accounting:approvals:decide"),
     ]);
 
     const hrUserIds = hrApprovers.map((m) => m.userId);
+    const subjectFacts = [...subjectFactsMap.values()];
 
-    const subjectMap = new Map(subjectRows.map((u) => [u.id, u]));
     const managerIds = [
       ...new Set(
-        subjectRows
-          .map((u) => u.reportingTo)
+        subjectFacts
+          .map((f) => f.managerUserId)
           .filter((id): id is string => id !== null && id !== undefined),
       ),
     ];
     const deptIds = [
       ...new Set(
-        subjectRows
-          .map((u) => u.orgDepartmentId)
+        subjectFacts
+          .map((f) => f.departmentId)
           .filter((id): id is string => id !== null && id !== undefined),
       ),
     ];
-    const branchIds = [
+    const locationIds = [
       ...new Set(
-        subjectRows
-          .map((u) => u.branchId)
+        subjectFacts
+          .map((f) => f.locationId)
           .filter((id): id is string => id !== null && id !== undefined),
       ),
     ];
 
-    const [managerRows, deptRows, locationHrRows] = await Promise.all([
+    const [managerFactsMap, deptRows, locationHrRows] = await Promise.all([
       managerIds.length > 0
-        ? this.db
-            .select({ id: users.id, reportingTo: users.reportingTo })
-            .from(users)
-            .where(inArray(users.id, managerIds))
-        : Promise.resolve([]),
+        ? this.employment.getFactsBatch(orgId, managerIds)
+        : Promise.resolve(new Map()),
       deptIds.length > 0
         ? this.db
             .select({ id: orgUnits.id, managerId: orgUnits.headUserId })
             .from(orgUnits)
             .where(inArray(orgUnits.id, deptIds))
         : Promise.resolve([]),
-      branchIds.length > 0 && hrUserIds.length > 0
+      locationIds.length > 0 && hrUserIds.length > 0
         ? this.db
-            .select({ id: users.id, branchId: users.branchId })
+            .select({ id: users.id, locationId: hrEmployments.locationId })
             .from(users)
+            .innerJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
+            .innerJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
             .where(
               and(
                 inArray(users.id, hrUserIds),
-                inArray(users.branchId, branchIds),
+                inArray(hrEmployments.locationId, locationIds),
               ),
             )
-            .limit(branchIds.length * 10)
+            .limit(locationIds.length * 10)
         : Promise.resolve([]),
     ]);
 
     const locationHrMap = new Map<string, string[]>();
     for (const row of locationHrRows) {
-      if (row.branchId === null || row.branchId === undefined) continue;
-      const existing = locationHrMap.get(row.branchId);
-      if (existing) {
-        existing.push(row.id);
-      } else {
-        locationHrMap.set(row.branchId, [row.id]);
-      }
+      if (row.locationId === null || row.locationId === undefined) continue;
+      const existing = locationHrMap.get(row.locationId);
+      if (existing) existing.push(row.id);
+      else locationHrMap.set(row.locationId, [row.id]);
     }
 
     return {
-      subjectMap,
-      managerMap: new Map(managerRows.map((u) => [u.id, u])),
+      subjectMap: subjectFactsMap,
+      managerMap: managerFactsMap,
       deptMap: new Map(deptRows.map((d) => [d.id, d])),
       locationHrMap,
       hrUserIds,
@@ -376,18 +360,17 @@ export class HrWorkflowInstancesService {
       case "named_user":
         return step.approverValue ? [step.approverValue] : [];
       case "direct_manager": {
-        const reportingTo =
-          cache.subjectMap.get(subjectEmployeeId)?.reportingTo;
-        return reportingTo ? [reportingTo] : [];
+        const managerUserId = cache.subjectMap.get(subjectEmployeeId)?.managerUserId;
+        return managerUserId ? [managerUserId] : [];
       }
       case "managers_manager": {
-        const mgr = cache.subjectMap.get(subjectEmployeeId)?.reportingTo;
+        const mgr = cache.subjectMap.get(subjectEmployeeId)?.managerUserId;
         if (!mgr) return [];
-        const mm = cache.managerMap.get(mgr)?.reportingTo;
+        const mm = cache.managerMap.get(mgr)?.managerUserId;
         return mm ? [mm] : [];
       }
       case "department_head": {
-        const deptId = cache.subjectMap.get(subjectEmployeeId)?.orgDepartmentId;
+        const deptId = cache.subjectMap.get(subjectEmployeeId)?.departmentId;
         if (!deptId) return [];
         const managerId = cache.deptMap.get(deptId)?.managerId;
         return managerId ? [managerId] : [];
@@ -397,9 +380,9 @@ export class HrWorkflowInstancesService {
       case "finance_role":
         return cache.financeUserIds;
       case "location_hr": {
-        const branchId = cache.subjectMap.get(subjectEmployeeId)?.branchId;
-        if (!branchId) return [];
-        return cache.locationHrMap.get(branchId) ?? [];
+        const locationId = cache.subjectMap.get(subjectEmployeeId)?.locationId;
+        if (!locationId) return [];
+        return cache.locationHrMap.get(locationId) ?? [];
       }
       default:
         return [];

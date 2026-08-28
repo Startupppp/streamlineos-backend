@@ -3,6 +3,8 @@ import { and, eq, inArray, isNull, lte, gte, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
+  hrEmployments,
+  hrPeople,
   hrPolicies,
   orgUnitMembers,
   orgUnits,
@@ -156,11 +158,13 @@ export class HrPolicyEvaluationService {
       this.db
         .select({
           userId: organizationMembers.userId,
-          designation: users.designation,
-          locationId: users.branchId,
+          designation: hrEmployments.designation,
+          locationId: hrEmployments.locationId,
         })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
+        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
         .where(
           and(
             eq(organizationMembers.orgId, orgId),

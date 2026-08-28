@@ -22,6 +22,7 @@ import type {
   CalendarEventSource,
   CalendarSourceContext,
 } from "../calendar/calendar-event-source";
+import { EmploymentFactsService } from "../directory/employment-facts.service";
 
 const WEEKDAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
@@ -53,6 +54,7 @@ export class HrCalendarSource implements CalendarEventSource {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly attendancePolicy: AttendancePolicyService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   /**
@@ -259,6 +261,7 @@ export class HrCalendarSource implements CalendarEventSource {
       attendanceRules,
       shiftRosterRules,
       membershipData,
+      employmentFacts,
     ] = await Promise.all([
       this.db
         .select({
@@ -381,10 +384,8 @@ export class HrCalendarSource implements CalendarEventSource {
         .select({
           joinedAt: organizationMembers.joinedAt,
           activatedAt: organizationMembers.activatedAt,
-          joiningDate: users.joiningDate,
         })
         .from(organizationMembers)
-        .innerJoin(users, eq(users.id, organizationMembers.userId))
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
@@ -392,6 +393,8 @@ export class HrCalendarSource implements CalendarEventSource {
           ),
         )
         .limit(1),
+
+      this.employment.getFacts(orgId, userId),
     ]);
 
     const result: CalendarEventProjection[] = [];
@@ -438,7 +441,7 @@ export class HrCalendarSource implements CalendarEventSource {
     const today = formatInTimeZone(new Date(), orgTimezone, "yyyy-MM-dd");
     const membership = membershipData[0];
     const employmentStart =
-      membership?.joiningDate ??
+      employmentFacts.joiningDate ??
       (membership?.activatedAt
         ? formatInTimeZone(membership.activatedAt, orgTimezone, "yyyy-MM-dd")
         : membership?.joinedAt

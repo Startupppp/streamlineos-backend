@@ -16,6 +16,12 @@ import {
   type CurrentUserContext,
 } from "./backend-claims";
 import { backendJwtPayloadSchema } from "./backend-claims-schema";
+import {
+  ACCOUNT_ONLY_PRINCIPAL,
+  humanSessionPrincipal,
+  personalTokenPrincipal,
+  type Principal,
+} from "./principal";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { withIdentity } from "../tenant/with-identity";
@@ -38,7 +44,6 @@ interface OrgContextEntry {
   value: OrgContext;
   expiresAt: number;
 }
-
 
 const ORG_CTX_TTL_MS = 60_000;
 const REVOCATION_CACHE_TTL_MS = 5_000;
@@ -184,10 +189,11 @@ export class JwtAuthGuard implements CanActivate {
       let role = "";
       let isOrgOwner = false;
       let resolvedOrgId = orgId ?? "";
+      let principal: Principal = ACCOUNT_ONLY_PRINCIPAL;
 
       if (orgId) {
         const state = await this.membership.resolve(claims.sub, orgId);
-        if (!state.active) {
+        if (!state.active || state.membershipId === null) {
           if (!allowNoOrg) {
             // The login is still valid; only this organization membership is
             // no longer usable. A 401 would incorrectly sign the person out of
@@ -203,6 +209,7 @@ export class JwtAuthGuard implements CanActivate {
         } else {
           role = state.role;
           isOrgOwner = state.isOwner;
+          principal = humanSessionPrincipal(state.membershipId, state.isOwner);
         }
       }
 
@@ -213,6 +220,7 @@ export class JwtAuthGuard implements CanActivate {
         isOrgOwner,
         sessionId: claims.sessionId,
         tokenScopes: null,
+        principal,
       };
       return true;
     }
@@ -316,7 +324,7 @@ export class JwtAuthGuard implements CanActivate {
     if (!resolved) return null;
 
     const state = await this.membership.resolve(matched.userId, resolved.orgId);
-    if (!state.active) return null;
+    if (!state.active || state.membershipId === null) return null;
 
     void this.db
       .update(userApiTokens)
@@ -331,6 +339,12 @@ export class JwtAuthGuard implements CanActivate {
       isOrgOwner: state.isOwner,
       sessionId: `pat:${matched.id}`,
       tokenScopes: matched.scopes,
+      principal: personalTokenPrincipal(
+        state.membershipId,
+        state.isOwner,
+        matched.id,
+        matched.scopes,
+      ),
     };
   }
 

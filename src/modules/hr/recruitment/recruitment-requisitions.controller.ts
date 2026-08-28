@@ -7,6 +7,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RecruitmentRequisitionsService } from "./recruitment-requisitions.service";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   requisitionListSchema,
   createRequisitionSchema,
@@ -44,18 +45,21 @@ export class RecruitmentRequisitionsController {
   }
 
   @Patch(":requisitionId/submit")
+  @Idempotent("hr.requisition.submit")
   @RequirePermission("hr:requisitions:manage")
   submit(@CurrentUser() u: CurrentUserContext, @Param("requisitionId", ParseIntPipe) requisitionId: number) {
     return this.service.submit(u.orgId, requisitionId);
   }
 
   @Patch(":requisitionId/approve")
+  @Idempotent("hr.requisition.approve")
   @RequirePermission("hr:requisitions:manage")
   approve(@CurrentUser() u: CurrentUserContext, @Param("requisitionId", ParseIntPipe) requisitionId: number) {
     return this.service.approve(u.orgId, requisitionId, u.userId);
   }
 
   @Patch(":requisitionId/reject")
+  @Idempotent("hr.requisition.reject")
   @RequirePermission("hr:requisitions:manage")
   reject(
     @CurrentUser() u: CurrentUserContext,

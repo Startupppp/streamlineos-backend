@@ -20,7 +20,9 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { logger } from "../../../common/logger/logger.service";
 import { type Db } from "../../../db/drizzle.module";
+import { alias } from "drizzle-orm/pg-core";
 import {
+  organizationMembers,
   timesheetPeriods,
   timesheets,
   timesheetSettings,
@@ -74,14 +76,30 @@ export class ApprovalsService {
     approverId: string,
     actorUserId: string,
   ): Promise<boolean> {
+    const delegatorMember = alias(organizationMembers, "delegation_delegator");
+    const delegateeMember = alias(organizationMembers, "delegation_delegatee");
     const [row] = await this.db
       .select({ id: userDelegations.id })
       .from(userDelegations)
+      .innerJoin(
+        delegatorMember,
+        and(
+          eq(delegatorMember.orgId, userDelegations.orgId),
+          eq(delegatorMember.id, userDelegations.delegatorMembershipId),
+        ),
+      )
+      .innerJoin(
+        delegateeMember,
+        and(
+          eq(delegateeMember.orgId, userDelegations.orgId),
+          eq(delegateeMember.id, userDelegations.delegateeMembershipId),
+        ),
+      )
       .where(
         and(
           eq(userDelegations.orgId, orgId),
-          eq(userDelegations.delegatorId, approverId),
-          eq(userDelegations.delegateeId, actorUserId),
+          eq(delegatorMember.userId, approverId),
+          eq(delegateeMember.userId, actorUserId),
           eq(userDelegations.status, "ACTIVE"),
           lte(userDelegations.startsAt, new Date()),
           gt(userDelegations.endsAt, new Date()),

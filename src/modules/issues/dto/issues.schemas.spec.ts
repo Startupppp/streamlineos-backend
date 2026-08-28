@@ -6,6 +6,7 @@ import {
   updateIssueSchema,
   MAX_PAGE,
 } from "./issues.schemas";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 /**
  * The boundary, asserted against the schemas directly.
@@ -21,13 +22,18 @@ describe("listing the three record types", () => {
     expect(listIssuesQuerySchema.safeParse({ recordType: "complaint" }).success).toBe(true);
   });
 
-  it("caps the page at the platform limit", () => {
-    expect(
-      listIssuesQuerySchema.safeParse({ recordType: "task", limit: MAX_PAGE }).success,
-    ).toBe(true);
-    expect(
-      listIssuesQuerySchema.safeParse({ recordType: "task", limit: MAX_PAGE + 1 }).success,
-    ).toBe(false);
+  it("clamps an over-large page to the platform cap instead of rejecting it", () => {
+    const atOldCap = listIssuesQuerySchema.safeParse({ recordType: "task", limit: MAX_PAGE });
+    const overCap = listIssuesQuerySchema.safeParse({ recordType: "task", limit: MAX_PAGE + 1 });
+
+    expect(atOldCap.success && atOldCap.data.limit).toBe(PAGE_SIZE_CAP);
+    expect(overCap.success && overCap.data.limit).toBe(PAGE_SIZE_CAP);
+  });
+
+  it("still serves a page smaller than the cap unchanged", () => {
+    const under = listIssuesQuerySchema.safeParse({ recordType: "task", limit: 25 });
+
+    expect(under.success && under.data.limit).toBe(25);
   });
 
   /**

@@ -1,4 +1,5 @@
 import { Body, Controller, HttpCode, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -16,6 +17,7 @@ export class JournalApprovalsController {
   constructor(private readonly approvals: JournalApprovalsService) {}
 
   @Post(":entryId/submit-approval")
+  @Idempotent("accounting.journal.submit-approval")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:create")
   @HttpCode(200)
@@ -27,6 +29,7 @@ export class JournalApprovalsController {
   }
 
   @Post(":entryId/approve")
+  @Idempotent("accounting.journal.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:approve")
   @HttpCode(200)
@@ -39,6 +42,7 @@ export class JournalApprovalsController {
   }
 
   @Post(":entryId/reject")
+  @Idempotent("accounting.journal.reject")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:approve")
   @HttpCode(200)

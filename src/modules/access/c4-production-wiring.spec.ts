@@ -11,6 +11,7 @@ import { resolvePersonalDashboardModules } from "../dashboard/dashboard-scope";
 import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 import type { CalendarEventSource } from "../calendar/calendar-event-source";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -21,6 +22,7 @@ const user: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 /**

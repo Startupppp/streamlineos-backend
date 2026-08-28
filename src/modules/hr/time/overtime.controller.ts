@@ -10,6 +10,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { OvertimeService } from "./overtime.service";
 import { createOvertimeSchema, type CreateOvertimeInput } from "./dto/overtime.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const listQuerySchema = z.object({
   page: pageNumberField,
@@ -42,6 +43,7 @@ export class OvertimeController {
   }
 
   @Patch(":overtimeRequestId/approve")
+  @Idempotent("hr.overtime.approve")
   @RequirePermission("hr:attendance:manage")
   approve(
     @CurrentUser() u: CurrentUserContext,
@@ -51,6 +53,7 @@ export class OvertimeController {
   }
 
   @Patch(":overtimeRequestId/reject")
+  @Idempotent("hr.overtime.reject")
   @RequirePermission("hr:attendance:manage")
   reject(
     @CurrentUser() u: CurrentUserContext,

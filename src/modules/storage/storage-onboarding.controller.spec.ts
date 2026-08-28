@@ -2,6 +2,7 @@ import { BadRequestException, ServiceUnavailableException } from "@nestjs/common
 import { OnboardingDocumentsController } from "./storage-onboarding.controller";
 import type { StorageService } from "./storage.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import * as tenantContext from "../../common/tenant/tenant-context";
 
 jest.mock("../../common/tenant/tenant-context", () => ({
@@ -20,6 +21,7 @@ function makeUser(orgId = "org-1"): CurrentUserContext {
     isOrgOwner: false,
     sessionId: "sess-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
   };
 }
 

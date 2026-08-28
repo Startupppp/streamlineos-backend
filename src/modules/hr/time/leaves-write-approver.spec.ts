@@ -6,6 +6,7 @@ import {
   type TenantContext,
 } from "../../../common/tenant/tenant-context";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { createLeaveSchema } from "./dto/leaves.schemas";
 import { LeavesWriteService } from "./leaves-write.service";
 
@@ -16,6 +17,7 @@ const USER: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 function balanceSelect() {

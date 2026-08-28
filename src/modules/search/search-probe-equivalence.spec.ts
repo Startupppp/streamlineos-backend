@@ -6,6 +6,7 @@ import { SearchService, type SearchResponse } from "./search.service";
 import type { AccessService } from "../access/access.service";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import type { Db } from "../../db/drizzle.module";
 
 /**
@@ -220,6 +221,7 @@ const USER: CurrentUserContext = {
   isOrgOwner: true,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, true),
 };
 
 interface ProbeCall {

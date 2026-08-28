@@ -6,6 +6,7 @@ import { organizationMembers, users } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 const LEAVE_APPROVE_PERMISSION = "hr:leaves:approve";
 const APPROVER_CANDIDATE_LIMIT = 100;
@@ -20,26 +21,21 @@ export interface LeaveApprover {
   designation: string | null;
 }
 
-/**
- * Resolves one deterministic approver on the server. The direct manager is
- * preferred, then permission holders are considered in membership order. A
- * candidate's effective AccessService scope must include the subject.
- */
 @Injectable()
 export class LeaveApproverService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   async resolve(
     orgId: string,
     subjectUserId: string,
   ): Promise<LeaveApprover | null> {
-    const [subject] = await this.db
-      .select({ reportingTo: users.reportingTo })
+    const [memberCheck] = await this.db
+      .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(
         and(
           eq(organizationMembers.orgId, orgId),
@@ -48,28 +44,26 @@ export class LeaveApproverService {
         ),
       )
       .limit(1);
-    if (!subject) return null;
+    if (!memberCheck) return null;
 
-    const holders = await this.access.membersWithPermission(
-      orgId,
-      LEAVE_APPROVE_PERMISSION,
-      { limit: APPROVER_CANDIDATE_LIMIT },
-    );
+    const [subjectFacts, holders] = await Promise.all([
+      this.employment.getFacts(orgId, subjectUserId),
+      this.access.membersWithPermission(orgId, LEAVE_APPROVE_PERMISSION, { limit: APPROVER_CANDIDATE_LIMIT }),
+    ]);
+
     const candidateIds = [
-      ...(subject.reportingTo ? [subject.reportingTo] : []),
+      ...(subjectFacts.managerUserId ? [subjectFacts.managerUserId] : []),
       ...holders.map((holder) => holder.userId),
     ];
 
-    for (const candidateId of new Set(candidateIds)) {
+    const uniqueCandidateIds = [...new Set(candidateIds)];
+    const candidateFactsBatch = await this.employment.getFactsBatch(orgId, uniqueCandidateIds);
+
+    for (const candidateId of uniqueCandidateIds) {
       if (candidateId === subjectUserId) continue;
-      const permissions = await this.access.resolveUserPermissions(
-        orgId,
-        candidateId,
-      );
+      const permissions = await this.access.resolveUserPermissions(orgId, candidateId);
       const scope = permissions.get(LEAVE_APPROVE_PERMISSION) ?? "none";
-      if (!(await this.includesSubject(scope, orgId, candidateId, subjectUserId))) {
-        continue;
-      }
+      if (!(await this.includesSubject(scope, orgId, candidateId, subjectUserId))) continue;
 
       const [candidate] = await this.db
         .select({
@@ -79,7 +73,6 @@ export class LeaveApproverService {
           lastName: users.lastName,
           email: users.email,
           image: users.image,
-          designation: users.designation,
         })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
@@ -91,7 +84,10 @@ export class LeaveApproverService {
           ),
         )
         .limit(1);
-      if (candidate) return candidate;
+      if (candidate) {
+        const facts = candidateFactsBatch.get(candidateId);
+        return { ...candidate, designation: facts?.designation ?? null };
+      }
     }
 
     return null;

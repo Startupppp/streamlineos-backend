@@ -23,6 +23,7 @@ import {
   rejectAdjustmentSchema,
 } from "./dto/payroll-inputs.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 type RequestWithUser = { user: CurrentUserContext };
 
@@ -138,6 +139,7 @@ export class PayrollInputsController {
   }
 
   @Post("adjustments")
+  @Idempotent("payroll.adjustment.create")
   @RequirePermission("hr:payroll:generate")
   async createAdjustment(@Req() req: RequestWithUser, @Body() body: unknown) {
     const input = createAdjustmentSchema.parse(body);
@@ -145,6 +147,7 @@ export class PayrollInputsController {
   }
 
   @Patch("adjustments/:adjustmentId/approve")
+  @Idempotent("payroll.adjustment.approve")
   @RequirePermission("hr:payroll:approve")
   async approveAdjustment(
     @Req() req: RequestWithUser,
@@ -154,6 +157,7 @@ export class PayrollInputsController {
   }
 
   @Patch("adjustments/:adjustmentId/reject")
+  @Idempotent("payroll.adjustment.reject")
   @RequirePermission("hr:payroll:approve")
   async rejectAdjustment(
     @Req() req: RequestWithUser,

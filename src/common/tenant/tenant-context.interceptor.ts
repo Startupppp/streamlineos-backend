@@ -17,23 +17,40 @@ import {
   type TenantAudience,
 } from "./tenant-context";
 import { withTenant } from "./with-tenant";
+import type { PlacementIntent } from "../region/placement";
 import { bindObservabilityContext, reportError } from "../observability";
 import { runInNewTenantTransaction } from "./run-in-tenant-transaction";
 
 interface TenantBearingRequest {
+  method?: string;
   user?: { orgId?: string };
   portalUser?: { organizationId?: string };
 }
 
-function resolveTenant(
-  req: TenantBearingRequest,
-): { orgId: string; audience: TenantAudience } | null {
+const READ_ONLY_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+interface ResolvedTenant {
+  orgId: string;
+  audience: TenantAudience;
+  intent: PlacementIntent;
+}
+
+function resolveTenant(req: TenantBearingRequest): ResolvedTenant | null {
+  // A request that cannot write is not fenced; anything else is, including an
+  // unrecognised method, because guessing "read" would skip the fence.
+  const intent: PlacementIntent = READ_ONLY_METHODS.has(
+    (req.method ?? "").toUpperCase(),
+  )
+    ? "read"
+    : "write";
+
   const portalOrgId = req.portalUser?.organizationId;
-  if (portalOrgId) return { orgId: portalOrgId, audience: "PORTAL" };
+  if (portalOrgId)
+    return { orgId: portalOrgId, audience: "PORTAL", intent };
 
   const orgId = req.user?.orgId;
   // A signed-in user with no workspace yet has orgId "" — nothing tenant-scoped to open
-  if (orgId) return { orgId, audience: "INTERNAL" };
+  if (orgId) return { orgId, audience: "INTERNAL", intent };
 
   return null;
 }
@@ -65,13 +82,14 @@ export class TenantContextInterceptor implements NestInterceptor {
   }
 
   private async runInTenantTransaction(
-    resolved: { orgId: string; audience: TenantAudience },
+    resolved: ResolvedTenant,
     next: CallHandler,
   ): Promise<unknown> {
     const afterCommit: AfterCommitHook[] = [];
+    const tenant = { orgId: resolved.orgId, audience: resolved.audience };
 
     const result = await withTenant(this.db, resolved, (tx) =>
-      this.tenant.run({ ...resolved, tx, afterCommit }, () =>
+      this.tenant.run({ ...tenant, tx, afterCommit }, () =>
         lastValueFrom(next.handle()),
       ),
     );

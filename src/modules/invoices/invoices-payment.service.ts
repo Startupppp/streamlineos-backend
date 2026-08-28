@@ -18,6 +18,7 @@ import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import { RateResolverService } from "../finance/controls/rate-resolver.service";
 import { FxService } from "../finance/controls/fx.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { systemActor } from "../../common/auth/system-actor";
 import type { RecordPaymentInput } from "./dto/invoice-write.schemas";
 
 @Injectable()
@@ -232,14 +233,7 @@ export class InvoicesPaymentService {
         new Date(`${paymentDateIso}T00:00:00.000Z`),
       );
       const baseAmountSettled = (allocatedAmount * settledRate).toFixed(4);
-      const user: CurrentUserContext = {
-        userId,
-        orgId,
-        role: "system",
-        isOrgOwner: false,
-        tokenScopes: null,
-        sessionId: "",
-      };
+      const user = systemActor("invoices.payment.fx-posting", orgId, userId);
 
       this.fx
         .postRealizedGainLoss(user, {

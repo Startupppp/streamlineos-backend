@@ -1,4 +1,5 @@
 import type { DataScope } from "../access/access.types";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import { CRM_PERMISSIONS } from "../rbac/permissions/crm";
 import {
   ISSUES_VIEW_PERMISSION,
@@ -18,6 +19,7 @@ const caller = (overrides: { isOrgOwner?: boolean } = {}) => ({
   isOrgOwner: overrides.isOrgOwner ?? false,
   sessionId: "sess_1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, overrides.isOrgOwner ?? false),
 });
 
 describe("how much of the three record types a caller sees", () => {

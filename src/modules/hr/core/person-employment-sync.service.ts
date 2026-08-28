@@ -140,7 +140,7 @@ export class PersonEmploymentSyncService {
 
   async ensureFromUser(
     orgId: string,
-    actorId: string,
+    actorId: string | null,
     input: EnsurePersonEmploymentInput,
     tx?: Db,
   ): Promise<EnsurePersonEmploymentResult> {
@@ -328,7 +328,7 @@ export class PersonEmploymentSyncService {
 
   async ensureFromUserId(
     orgId: string,
-    actorId: string,
+    actorId: string | null,
     userId: string,
     tx?: Db,
     lifecycleStatus: EnsurePersonEmploymentInput["lifecycleStatus"] = "ACTIVE",
@@ -383,7 +383,7 @@ export class PersonEmploymentSyncService {
 
   async backfillOrg(
     orgId: string,
-    actorId: string,
+    actorId: string | null,
   ): Promise<BackfillResult> {
     const result: BackfillResult = {
       scanned: 0,
@@ -487,7 +487,7 @@ export class PersonEmploymentSyncService {
 
   private async processMemberBatch(
     orgId: string,
-    actorId: string,
+    actorId: string | null,
     members: PrefetchedActiveMember[],
     result: BackfillResult,
   ): Promise<void> {
