@@ -2108,6 +2108,13 @@
       "when": 1787830373441,
       "tag": "0520_rbac_membership_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 302,
+      "version": "7",
+      "when": 1787830374441,
+      "tag": "0521_drop_resurrected_sku_uniques",
+      "breakpoints": true
     }
   ]
 }
