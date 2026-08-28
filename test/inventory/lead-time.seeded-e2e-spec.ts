@@ -80,6 +80,36 @@ describe("[seeded-e2e] lead time and fill rate", () => {
                   '2026-06-01'::date + (${days} || ' days')::interval, ${userId})`);
       }
 
+      // Three order lines for 10 units each. One picked in full, one picked
+      // short, one not picked at all -- so the line rate and the unit rate come
+      // out different, which is the whole reason both are reported.
+      const so = await one<{ id: number }>(sql`
+        INSERT INTO inv_sales_orders
+          (org_id, so_number, order_date, currency, subtotal, tax_amount, discount, total, created_by)
+        VALUES (${seeded.orgId}, ${`SO-${tag}`}, '2026-07-01'::date, 'INR',
+                '0', '0', '0', '0', ${userId})
+        RETURNING id`);
+      const pick = await one<{ id: number }>(sql`
+        INSERT INTO inv_pick_lists (org_id, pick_number, so_id, status, created_by)
+        VALUES (${seeded.orgId}, ${`PK-${tag}`}, ${so.id}, 'COMPLETED', ${userId})
+        RETURNING id`);
+
+      for (const [i, picked] of [10, 4, 0].entries()) {
+        const line = await one<{ id: number }>(sql`
+          INSERT INTO inv_so_lines
+            (org_id, so_id, product_variant_id, quantity, unit_price, amount, line_order)
+          VALUES (${seeded.orgId}, ${so.id}, ${variant.id}, '10.0000', '1.0000', '10.0000', ${i})
+          RETURNING id`);
+        if (picked > 0) {
+          await db.execute(sql`
+            INSERT INTO inv_pick_list_lines
+              (org_id, pick_list_id, so_line_id, product_variant_id,
+               quantity_to_pick, quantity_picked)
+            VALUES (${seeded.orgId}, ${pick.id}, ${line.id}, ${variant.id},
+                    '10.0000', ${`${picked}.0000`})`);
+        }
+      }
+
       return {
         orgId: seeded.orgId,
         userId,
@@ -123,6 +153,39 @@ describe("[seeded-e2e] lead time and fill rate", () => {
     expect(estimate.observations).toBe(0);
     expect(estimate.reliable).toBe(false);
     expect(estimate.note).toMatch(/configured assumption, not a measurement/);
+  });
+
+  it("separates the line fill rate from the unit fill rate", async () => {
+    // Three lines of 10: one filled, one short at 4, one untouched. Lines in
+    // full is 1 of 3; units is 14 of 30. They diverge, and only the line rate
+    // describes what a customer experienced.
+    const fill = await asTenant(() =>
+      svc().fillRate(scene.orgId, scene.variantId, { from: "2026-06-01", to: "2026-07-31" }),
+    );
+    expect(fill.linesRequested).toBe(3);
+    expect(fill.linesFilledInFull).toBe(1);
+    expect(fill.lineFillRate).toBeCloseTo(0.3333, 3);
+    expect(fill.quantityRequested).toBe(30);
+    expect(fill.quantityFilled).toBe(14);
+    expect(fill.unitFillRate).toBeCloseTo(0.4667, 3);
+  });
+
+  it("never reports more filled than was requested", async () => {
+    // An over-pick must not push a fill rate above 1 -- a 130% service level
+    // reads as a data error to anybody looking at a dashboard, and hides the
+    // real number.
+    const fill = await asTenant(() =>
+      svc().fillRate(scene.orgId, scene.variantId, { from: "2026-06-01", to: "2026-07-31" }),
+    );
+    expect(fill.unitFillRate).toBeLessThanOrEqual(1);
+    expect(fill.lineFillRate).toBeLessThanOrEqual(1);
+  });
+
+  it("says a rate over few lines is arithmetic rather than a trend", async () => {
+    const fill = await asTenant(() =>
+      svc().fillRate(scene.orgId, scene.variantId, { from: "2026-06-01", to: "2026-07-31" }),
+    );
+    expect(fill.note).toMatch(/arithmetic rather than a trend/);
   });
 
   it("reports no fill rate for a window with no demand", async () => {
