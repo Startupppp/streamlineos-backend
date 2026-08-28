@@ -96,7 +96,10 @@ export class InvWarehousesService {
     }));
   }
 
-  async getWarehouse(orgId: string, warehouseId: number) {
+  // A7: a warehouse the caller holds no scope on is not theirs to read. 404, not
+  // 403 -- a 403 on an id they may not see confirms it exists.
+  async getWarehouse(orgId: string, userId: string, warehouseId: number) {
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
     const wh = await this.db.query.invWarehouses.findFirst({
       where: and(eq(invWarehouses.id, warehouseId), eq(invWarehouses.orgId, orgId)),
       with: { locations: { with: { children: true } } },
@@ -190,7 +193,8 @@ export class InvWarehousesService {
 
   // B1-13: Bounded to MAX_PAGE_LIMIT. Accepts optional {page, limit}.
   // Return shape preserved (array) — full {data, pagination} envelope is a follow-up.
-  async listLocations(orgId: string, warehouseId: number, page = 1, limit = MAX_PAGE_LIMIT) {
+  async listLocations(orgId: string, userId: string, warehouseId: number, page = 1, limit = MAX_PAGE_LIMIT) {
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
     const boundedLimit = Math.min(limit, MAX_PAGE_LIMIT);
     const offset = (page - 1) * boundedLimit;
     return this.db.query.invLocations.findMany({
@@ -240,7 +244,8 @@ export class InvWarehousesService {
     return updated;
   }
 
-  async getWarehouseStock(orgId: string, warehouseId: number, page: number, limit: number) {
+  async getWarehouseStock(orgId: string, userId: string, warehouseId: number, page: number, limit: number) {
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
     const wh = await this.db.query.invWarehouses.findFirst({
       where: and(eq(invWarehouses.id, warehouseId), eq(invWarehouses.orgId, orgId)),
       columns: { id: true },

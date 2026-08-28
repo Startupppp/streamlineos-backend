@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import {
   invReorderRules,
@@ -15,6 +15,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import type { ListRulesInput, CreateRuleInput, UpdateRuleInput, GeneratePoInput, ForecastingInput, SuggestionsQueryInput } from "./dto/replenishment.schemas";
+import { applyOrderPolicy } from "./forecast/order-policy";
 
 @Injectable()
 export class InvReplenishmentService {
@@ -281,15 +282,85 @@ export class InvReplenishmentService {
     return null;
   }
 
+  /**
+   * C2/INV-309. The client names *which* variants to order, never *how many*.
+   *
+   * The quantity used to be taken straight from the request body, so a modified
+   * payload produced a purchase order for any amount the caller liked — and
+   * nothing applied the supplier's minimum order quantity or pack size, so the
+   * numbers the vendor received were frequently ones they would reject.
+   *
+   * Every line is now re-derived here: the suggestion engine's quantity for
+   * that variant, put through the supplier's order policy. A body quantity is
+   * ignored rather than rejected, because the caller is not doing anything
+   * wrong by sending one — it is simply not the authority.
+   */
   async generatePo(orgId: string, userId: string, body: GeneratePoInput) {
+    const recomputed = await Promise.all(
+      body.suggestions.map(async (s) => {
+        const suggestion = await this.getSuggestionForVariant(
+          orgId,
+          s.productVariantId,
+          body.warehouseId ?? undefined,
+        );
+        const [policy] = await this.db
+          .select({
+            minOrderQty: invProducts.minOrderQty,
+            orderMultiple: invProducts.orderMultiple,
+          })
+          .from(invProductVariants)
+          .innerJoin(
+            invProducts,
+            and(
+              eq(invProducts.orgId, invProductVariants.orgId),
+              eq(invProducts.id, invProductVariants.productId),
+            ),
+          )
+          .where(
+            and(
+              eq(invProductVariants.orgId, orgId),
+              eq(invProductVariants.id, s.productVariantId),
+            ),
+          );
+
+        // No live suggestion means the shortfall has already been met — by a
+        // receipt, a transfer, or another order. Ordering anyway is how a
+        // warehouse buys the same shortfall twice.
+        const engineQty = suggestion?.suggestedQty ?? 0;
+        const rounded = applyOrderPolicy(engineQty, {
+          minOrderQty: policy?.minOrderQty === null || policy?.minOrderQty === undefined
+            ? null
+            : Number(policy.minOrderQty),
+          orderMultiple:
+            policy?.orderMultiple === null || policy?.orderMultiple === undefined
+              ? null
+              : Number(policy.orderMultiple),
+        });
+
+        return {
+          productVariantId: s.productVariantId,
+          suggestedQty: rounded.ordered,
+          unitCost: s.unitCost ?? 0,
+          policyReasons: rounded.reasons,
+        };
+      }),
+    );
+
+    const orderable = recomputed.filter((line) => line.suggestedQty > 0);
+    if (orderable.length === 0) {
+      throw new BadRequestException(
+        "None of these variants still need ordering — the shortfall has already been met.",
+      );
+    }
+
     return this.db.transaction(async (tx) => {
       const poNumber = await this.numSeq.next(orgId, "PO", tx);
       const today = new Date().toISOString().slice(0, 10);
 
-      const subtotal = body.suggestions.reduce((sum, s) => {
-        const cost = s.unitCost ?? 0;
-        return sum + s.suggestedQty * cost;
-      }, 0);
+      const subtotal = orderable.reduce(
+        (sum, s) => sum + s.suggestedQty * s.unitCost,
+        0,
+      );
 
       const [po] = await tx
         .insert(invPurchaseOrders)
@@ -309,21 +380,19 @@ export class InvReplenishmentService {
         })
         .returning();
 
-      if (body.suggestions.length > 0) {
-        await tx.insert(invPoLines).values(
-          body.suggestions.map((s, i) => ({
-            orgId,
-            poId: po.id,
-            productVariantId: s.productVariantId,
-            quantity: String(s.suggestedQty),
-            quantityReceived: "0",
-            unitCost: String(s.unitCost ?? 0),
-            taxRate: "0",
-            amount: String(s.suggestedQty * (s.unitCost ?? 0)),
-            lineOrder: i,
-          })),
-        );
-      }
+      await tx.insert(invPoLines).values(
+        orderable.map((s, i) => ({
+          orgId,
+          poId: po.id,
+          productVariantId: s.productVariantId,
+          quantity: String(s.suggestedQty),
+          quantityReceived: "0",
+          unitCost: String(s.unitCost),
+          taxRate: "0",
+          amount: String(s.suggestedQty * s.unitCost),
+          lineOrder: i,
+        })),
+      );
 
       return po;
     });

@@ -109,6 +109,14 @@ export const grantWarehouseUserSchema = z
   .strict();
 export type GrantWarehouseUserInput = z.infer<typeof grantWarehouseUserSchema>;
 
+export const listWarehouseUsersSchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .strict();
+export type ListWarehouseUsersInput = z.infer<typeof listWarehouseUsersSchema>;
+
 export const listAssignableUsersSchema = z
   .object({
     q: z.string().trim().max(100).optional(),

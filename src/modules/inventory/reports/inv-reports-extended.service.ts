@@ -19,6 +19,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import type { ValuationReportInput, SlowMovingQueryInput, ExpiryReportInput, ReorderQueryInput } from "./dto/inv-reports.schemas";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import { availableQtySql } from "../stock-engine/available-sql";
 
 @Injectable()
 export class InvReportsExtendedService {
@@ -353,6 +354,10 @@ export class InvReportsExtendedService {
           onHand: invStockLevels.onHand,
           onOrder: invStockLevels.onOrder,
           committed: invStockLevels.committed,
+          // A1. The frontend was computing `onHand - committed` and calling it
+          // availability — an eighth copy of the formula, two terms short. The
+          // server owns this number.
+          availableQty: availableQtySql("inv_stock_levels"),
           averageCost: invStockLevels.averageCost,
           variantSku: invProductVariants.sku,
           variantName: invProductVariants.name,
