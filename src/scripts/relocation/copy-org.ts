@@ -1,6 +1,10 @@
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type { Sql } from "postgres";
 import { tableDigestSql } from "../../common/relocation/relocation-checksum";
 import type { TablePlanEntry } from "../../common/relocation/relocation-plan";
+
+export type SqlExecutor = Pick<Sql, "unsafe">;
 
 export function quoteIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
@@ -46,7 +50,7 @@ export interface TableSlice {
 }
 
 export async function readSlice(
-  sql: Sql,
+  sql: SqlExecutor,
   entry: TablePlanEntry,
   orgId: string,
   primaryKeyColumns: readonly string[],
@@ -73,19 +77,18 @@ export async function readSlice(
 }
 
 export async function writeSlice(
-  sql: Sql,
+  sql: SqlExecutor,
   entry: TablePlanEntry,
   payload: Buffer,
 ): Promise<void> {
   if (payload.length === 0) return;
   const query = sql.unsafe(`COPY ${qualify(entry.schema, entry.table)} FROM STDIN`);
   const writable = await query.writable();
-  writable.end(payload);
-  await query;
+  await Promise.all([pipeline(Readable.from([payload]), writable), query]);
 }
 
 export async function deleteSlice(
-  sql: Sql,
+  sql: SqlExecutor,
   entry: TablePlanEntry,
   orgId: string,
 ): Promise<number> {
@@ -97,7 +100,7 @@ export async function deleteSlice(
 }
 
 export async function readDigest(
-  sql: Sql,
+  sql: SqlExecutor,
   entry: TablePlanEntry,
   orgId: string,
   primaryKeyColumns: readonly string[],

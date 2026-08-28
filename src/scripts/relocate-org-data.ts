@@ -3,6 +3,7 @@ import * as dotenv from "dotenv";
 import postgres from "postgres";
 import type { Sql } from "postgres";
 import {
+  RELOCATION_STATES,
   assertTransitionAllowed,
   canRollback,
   isTerminal,
@@ -15,14 +16,23 @@ import {
   type RelocationPlan,
   type TablePlanEntry,
 } from "../common/relocation/relocation-plan";
-import { deletionOrder, topologicalOrder } from "../common/relocation/table-graph";
+import {
+  deletionOrder,
+  topologicalOrder,
+} from "../common/relocation/table-graph";
 import {
   readCycleBreakers,
   readForeignKeyEdges,
   readPrimaryKeyColumns,
   readTenantTables,
 } from "./relocation/catalog-tables";
-import { deleteSlice, qualify, readDigest, readSlice, writeSlice } from "./relocation/copy-org";
+import {
+  deleteSlice,
+  qualify,
+  readDigest,
+  readSlice,
+  writeSlice,
+} from "./relocation/copy-org";
 
 dotenv.config({ path: resolve(process.cwd(), ".env") });
 
@@ -61,7 +71,9 @@ const log = (msg: string): void =>
   console.log(`[${((Date.now() - started) / 1000).toFixed(1)}s] ${msg}`);
 
 function directUrl(url: string): string {
-  return /-pooler\..*\.neon\.tech/i.test(url) ? url.replace("-pooler.", ".") : url;
+  return /-pooler\..*\.neon\.tech/i.test(url)
+    ? url.replace("-pooler.", ".")
+    : url;
 }
 
 function withDatabase(url: string, database: string): string {
@@ -90,9 +102,14 @@ interface Endpoints {
 function endpoints(): Endpoints {
   const base = directUrl(requireEnv("DATABASE_URL"));
   const targetDatabase = TARGET_REGION.replace(/-/g, "");
-  const configured = process.env[`REGION_${TARGET_REGION.toUpperCase().replace(/-/g, "_")}_DATABASE_URL`];
+  const configured =
+    process.env[
+      `REGION_${TARGET_REGION.toUpperCase().replace(/-/g, "_")}_DATABASE_URL`
+    ];
   const targetUrl =
-    configured === undefined || configured === "" ? withDatabase(base, targetDatabase) : directUrl(configured);
+    configured === undefined || configured === ""
+      ? withDatabase(base, targetDatabase)
+      : directUrl(configured);
   return { sourceUrl: base, targetUrl, targetDatabase };
 }
 
@@ -108,17 +125,49 @@ interface RelocationRow {
   readonly last_copied_table: string | null;
 }
 
-async function activeRelocation(sql: Sql, orgId: string): Promise<RelocationRow | null> {
-  const rows = await sql<RelocationRow[]>`
+const KNOWN_STATES: ReadonlySet<string> = new Set<string>(RELOCATION_STATES);
+
+function toRelocationState(value: unknown): RelocationState {
+  const text = String(value);
+  for (const state of RELOCATION_STATES) if (state === text) return state;
+  throw new Error(
+    `organization_relocations.current_state holds "${text}", which is not a declared` +
+      ` relocation state. Known: ${[...KNOWN_STATES].join(", ")}`,
+  );
+}
+
+async function activeRelocation(
+  sql: Sql,
+  orgId: string,
+): Promise<RelocationRow | null> {
+  const rows = await sql<Record<string, unknown>[]>`
     SELECT relocation_id, organization_id, source_cell, target_cell, current_state,
            tables_planned, tables_copied, rows_copied, last_copied_table
     FROM organization_relocations
     WHERE organization_id = ${orgId} AND is_active = true
     ORDER BY started_at DESC LIMIT 1`;
-  return rows[0] ?? null;
+  const row = rows[0];
+  if (row === undefined) return null;
+  const lastTable = row.last_copied_table;
+  return {
+    relocation_id: Number(row.relocation_id),
+    organization_id: String(row.organization_id),
+    source_cell: String(row.source_cell),
+    target_cell: String(row.target_cell),
+    current_state: toRelocationState(row.current_state),
+    tables_planned: Number(row.tables_planned),
+    tables_copied: Number(row.tables_copied),
+    rows_copied: Number(row.rows_copied),
+    last_copied_table:
+      lastTable === null || lastTable === undefined ? null : String(lastTable),
+  };
 }
 
-async function moveTo(sql: Sql, row: RelocationRow, next: RelocationState): Promise<void> {
+async function moveTo(
+  sql: Sql,
+  row: RelocationRow,
+  next: RelocationState,
+): Promise<void> {
   assertTransitionAllowed(row.current_state, next);
   await sql`
     UPDATE organization_relocations
@@ -128,7 +177,9 @@ async function moveTo(sql: Sql, row: RelocationRow, next: RelocationState): Prom
   log(`${row.current_state} → ${next}`);
 }
 
-async function loadPlan(sql: Sql): Promise<{ plan: RelocationPlan; catalogNames: string[] }> {
+async function loadPlan(
+  sql: Sql,
+): Promise<{ plan: RelocationPlan; catalogNames: string[] }> {
   const catalog = await readTenantTables(sql);
   const plan = buildRelocationPlan(catalog);
   const catalogNames = catalog.map((t) => qualifiedName(t.schema, t.table));
@@ -138,20 +189,27 @@ async function loadPlan(sql: Sql): Promise<{ plan: RelocationPlan; catalogNames:
 async function orderedPlan(
   sql: Sql,
   plan: RelocationPlan,
-): Promise<{ order: readonly TablePlanEntry[]; cyclic: readonly TablePlanEntry[] }> {
+): Promise<{
+  order: readonly TablePlanEntry[];
+  cyclic: readonly TablePlanEntry[];
+}> {
   const edges = await readForeignKeyEdges(sql);
   const { ordered, cyclic } = topologicalOrder([...plan.tables], edges);
   return { order: ordered, cyclic };
 }
 
-function assertCoverage(plan: RelocationPlan, catalogNames: readonly string[]): void {
+function assertCoverage(
+  plan: RelocationPlan,
+  catalogNames: readonly string[],
+): void {
   const coverage = planCoverage(catalogNames, plan);
   if (coverage.uncovered.length === 0) return;
   console.error(
     `REFUSED: ${coverage.uncovered.length} tenant table(s) are not covered by the copy plan.` +
       ` A verified database beside a table that never travelled is a half-moved organization.`,
   );
-  for (const t of coverage.uncovered.slice(0, 20)) console.error(`  uncovered  ${t}`);
+  for (const t of coverage.uncovered.slice(0, 20))
+    console.error(`  uncovered  ${t}`);
   process.exitCode = 1;
   throw new Error("plan coverage incomplete");
 }
@@ -165,15 +223,26 @@ async function showPlan(): Promise<void> {
     const partitioned = plan.tables.filter((t) => t.isPartitioned);
     console.log(`tenant tables in the catalogue : ${catalogNames.length}`);
     console.log(`tables in the copy plan        : ${plan.tables.length}`);
-    console.log(`coverage                       : ${(coverage.coverageRatio * 100).toFixed(1)}%`);
-    console.log(`uncovered                      : ${coverage.uncovered.length}`);
+    console.log(
+      `coverage                       : ${(coverage.coverageRatio * 100).toFixed(1)}%`,
+    );
+    console.log(
+      `uncovered                      : ${coverage.uncovered.length}`,
+    );
     console.log(`partitioned parents in the plan: ${partitioned.length}`);
-    console.log(`object storage scopes          : ${plan.objectStoragePrefixes.length}`);
-    console.log(`search index scopes            : ${plan.searchIndexes.length}`);
-    console.log(`vector index scopes            : ${plan.vectorIndexes.length}`);
+    console.log(
+      `object storage scopes          : ${plan.objectStoragePrefixes.length}`,
+    );
+    console.log(
+      `search index scopes            : ${plan.searchIndexes.length}`,
+    );
+    console.log(
+      `vector index scopes            : ${plan.vectorIndexes.length}`,
+    );
     const { cyclic } = await orderedPlan(sql, plan);
     console.log(`tables in a foreign-key cycle  : ${cyclic.length}`);
-    for (const t of cyclic) console.log(`  cyclic  ${qualifiedName(t.schema, t.table)}`);
+    for (const t of cyclic)
+      console.log(`  cyclic  ${qualifiedName(t.schema, t.table)}`);
     console.log(
       `\nRESULT: ${coverage.uncovered.length === 0 ? "PLAN COVERS EVERY TENANT TABLE" : "PLAN INCOMPLETE"}` +
         ` tables=${plan.tables.length} uncovered=${coverage.uncovered.length}`,
@@ -197,12 +266,16 @@ async function start(orgId: string): Promise<void> {
       process.exitCode = 1;
       return;
     }
-    const placement = await sql<{ region: string; placement_version: number }[]>`
+    const placement = await sql<
+      { region: string; placement_version: number }[]
+    >`
       SELECT region, placement_version FROM organization_placement
       WHERE organization_id = ${orgId} LIMIT 1`;
     const current = placement[0];
     if (current === undefined) {
-      console.error(`REFUSED: org ${orgId} has no placement record; there is nothing to move.`);
+      console.error(
+        `REFUSED: org ${orgId} has no placement record; there is nothing to move.`,
+      );
       process.exitCode = 1;
       return;
     }
@@ -222,6 +295,38 @@ async function start(orgId: string): Promise<void> {
   }
 }
 
+async function rebuildConstraints(
+  target: Sql,
+  breakers: readonly {
+    schema: string;
+    table: string;
+    name: string;
+    definition: string;
+  }[],
+  rebuilt: string[],
+  failed: string[],
+): Promise<void> {
+  for (const b of breakers) {
+    const present = await target<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM pg_constraint k
+      JOIN pg_class c ON c.oid = k.conrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = ${b.schema} AND c.relname = ${b.table} AND k.conname = ${b.name}`;
+    if ((present[0]?.n ?? 0) > 0) continue;
+    try {
+      await target.unsafe(
+        `ALTER TABLE ${qualify(b.schema, b.table)} ADD CONSTRAINT "${b.name}" ${b.definition}`,
+      );
+      rebuilt.push(`${b.table}.${b.name}`);
+      log(`target: rebuilt ${b.table}.${b.name}`);
+    } catch (error) {
+      failed.push(
+        `${b.table}.${b.name}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+}
+
 async function copy(orgId: string): Promise<void> {
   const { sourceUrl, targetUrl } = endpoints();
   const source = connect(sourceUrl);
@@ -229,7 +334,9 @@ async function copy(orgId: string): Promise<void> {
   try {
     const row = await activeRelocation(source, orgId);
     if (row === null) {
-      console.error(`REFUSED: no active relocation for org ${orgId}. Run --start first.`);
+      console.error(
+        `REFUSED: no active relocation for org ${orgId}. Run --start first.`,
+      );
       process.exitCode = 1;
       return;
     }
@@ -244,7 +351,8 @@ async function copy(orgId: string): Promise<void> {
     const { order, cyclic } = await orderedPlan(source, plan);
     const primaryKeys = await readPrimaryKeyColumns(source);
 
-    if (row.current_state === "ACTIVE_SOURCE") await moveTo(source, row, "SNAPSHOT");
+    if (row.current_state === "ACTIVE_SOURCE")
+      await moveTo(source, row, "SNAPSHOT");
 
     const breakers = await readCycleBreakers(target, cyclic);
     for (const b of breakers) {
@@ -260,50 +368,55 @@ async function copy(orgId: string): Promise<void> {
     let copiedRows = row.rows_copied;
     let processed = 0;
 
-    for (const entry of order) {
-      const name = qualifiedName(entry.schema, entry.table);
-      if (skipping) {
-        if (name === resumeAfter) skipping = false;
-        continue;
-      }
-      if (LIMIT > 0 && processed >= LIMIT) break;
+    const rebuilt: string[] = [];
+    const failed: string[] = [];
+    const pending: { name: string; digest: string; rows: number }[] = [];
 
-      const pk = primaryKeys.get(name) ?? [];
-      const slice = await readSlice(source, entry, orgId, pk);
-      if (slice.rows > 0) {
-        await writeSlice(target, entry, slice.payload);
-        log(`${name}: ${slice.rows} rows, digest ${slice.digest.slice(0, 12)}`);
-      }
+    try {
+      await target.begin(async (tx) => {
+        await tx.unsafe("SET CONSTRAINTS ALL DEFERRED");
+        for (const entry of order) {
+          const name = qualifiedName(entry.schema, entry.table);
+          if (skipping) {
+            if (name === resumeAfter) skipping = false;
+            continue;
+          }
+          if (LIMIT > 0 && processed >= LIMIT) break;
+
+          const pk = primaryKeys.get(name) ?? [];
+          const slice = await readSlice(source, entry, orgId, pk);
+          if (slice.rows > 0) {
+            await writeSlice(tx, entry, slice.payload);
+            log(
+              `${name}: ${slice.rows} rows, digest ${slice.digest.slice(0, 12)}`,
+            );
+          }
+          pending.push({ name, digest: slice.digest, rows: slice.rows });
+          copiedTables += 1;
+          copiedRows += slice.rows;
+          processed += 1;
+        }
+      });
+    } finally {
+      await rebuildConstraints(target, breakers, rebuilt, failed);
+    }
+
+    for (const p of pending)
       await source`
         INSERT INTO organization_relocation_checksums
           (relocation_id, scope_kind, scope_name, source_digest, target_digest, matched)
-        VALUES (${row.relocation_id}, 'table', ${name}, ${slice.digest}, '', false)`;
+        VALUES (${row.relocation_id}, 'table', ${p.name}, ${p.digest}, '', false)`;
 
-      copiedTables += 1;
-      copiedRows += slice.rows;
-      processed += 1;
-      await source`
-        UPDATE organization_relocations
-        SET tables_copied = ${copiedTables}, rows_copied = ${copiedRows},
-            last_copied_table = ${name}, updated_at = now()
-        WHERE relocation_id = ${row.relocation_id}`;
-    }
-
-    const rebuilt: string[] = [];
-    const failed: string[] = [];
-    for (const b of breakers) {
-      try {
-        await target.unsafe(
-          `ALTER TABLE ${qualify(b.schema, b.table)} ADD CONSTRAINT "${b.name}" ${b.definition}`,
-        );
-        rebuilt.push(`${b.table}.${b.name}`);
-      } catch (error) {
-        failed.push(`${b.table}.${b.name}: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
+    await source`
+      UPDATE organization_relocations
+      SET tables_copied = ${copiedTables}, rows_copied = ${copiedRows},
+          last_copied_table = ${pending[pending.length - 1]?.name ?? null}, updated_at = now()
+      WHERE relocation_id = ${row.relocation_id}`;
 
     if (failed.length > 0) {
-      console.error(`\nRESULT: COPY INCOMPLETE — ${failed.length} constraint(s) not rebuilt`);
+      console.error(
+        `\nRESULT: COPY INCOMPLETE — ${failed.length} constraint(s) not rebuilt`,
+      );
       for (const f of failed) console.error(`  ${f}`);
       process.exitCode = 1;
       return;
@@ -346,18 +459,26 @@ async function verify(orgId: string): Promise<void> {
         SET target_digest = ${to.digest}, matched = ${matched}, checked_at = now()
         WHERE relocation_id = ${row.relocation_id} AND scope_kind = 'table' AND scope_name = ${name}`;
       if (!matched)
-        mismatches.push(`${name}: source rows=${from.rows} digest=${from.digest.slice(0, 12)} / target rows=${to.rows} digest=${to.digest.slice(0, 12)}`);
+        mismatches.push(
+          `${name}: source rows=${from.rows} digest=${from.digest.slice(0, 12)} / target rows=${to.rows} digest=${to.digest.slice(0, 12)}`,
+        );
     }
 
     if (mismatches.length > 0) {
-      console.error(`\nRESULT: TARGET NOT VERIFIED — ${mismatches.length} mismatch(es) of ${compared}`);
+      console.error(
+        `\nRESULT: TARGET NOT VERIFIED — ${mismatches.length} mismatch(es) of ${compared}`,
+      );
       for (const m of mismatches.slice(0, 20)) console.error(`  ${m}`);
-      console.error("The only legal next state after a checksum mismatch is FAILED.");
+      console.error(
+        "The only legal next state after a checksum mismatch is FAILED.",
+      );
       process.exitCode = 1;
       return;
     }
 
-    console.log(`\nRESULT: TARGET VERIFIED BY READING org=${orgId} tables=${compared} mismatches=0`);
+    console.log(
+      `\nRESULT: TARGET VERIFIED BY READING org=${orgId} tables=${compared} mismatches=0`,
+    );
   } finally {
     await Promise.all([source.end(), target.end()]);
   }
@@ -384,10 +505,28 @@ async function rollback(orgId: string): Promise<void> {
     }
 
     const { plan } = await loadPlan(source);
-    const { order } = await orderedPlan(source, plan);
+    const { order, cyclic } = await orderedPlan(source, plan);
     let deleted = 0;
     for (const entry of deletionOrder(order))
       deleted += await deleteSlice(target, entry, orgId);
+
+    const rebuilt: string[] = [];
+    const failed: string[] = [];
+    await rebuildConstraints(
+      target,
+      await readCycleBreakers(source, cyclic),
+      rebuilt,
+      failed,
+    );
+    if (failed.length > 0) {
+      console.error(
+        `\nRESULT: ROLLBACK INCOMPLETE — ${failed.length} constraint(s) the copy dropped could` +
+          ` not be rebuilt in the target`,
+      );
+      for (const f of failed) console.error(`  ${f}`);
+      process.exitCode = 1;
+      return;
+    }
 
     await source`
       UPDATE organization_relocations
@@ -396,7 +535,8 @@ async function rollback(orgId: string): Promise<void> {
       WHERE relocation_id = ${row.relocation_id}`;
 
     console.log(
-      `\nRESULT: ROLLED BACK org=${orgId} from=${row.current_state} target_rows_deleted=${deleted}`,
+      `\nRESULT: ROLLED BACK org=${orgId} from=${row.current_state}` +
+        ` target_rows_deleted=${deleted} constraints_restored=${rebuilt.length}`,
     );
   } finally {
     await Promise.all([source.end(), target.end()]);
@@ -421,7 +561,9 @@ async function status(orgId: string): Promise<void> {
     console.log(`tables copied  : ${row.tables_copied}/${row.tables_planned}`);
     console.log(`rows copied    : ${row.rows_copied}`);
     console.log(`resume after   : ${row.last_copied_table ?? "(not started)"}`);
-    console.log(`checksums      : ${checks[0]?.matched ?? 0} matched of ${checks[0]?.total ?? 0}`);
+    console.log(
+      `checksums      : ${checks[0]?.matched ?? 0} matched of ${checks[0]?.total ?? 0}`,
+    );
     console.log(`rollback legal : ${canRollback(row.current_state)}`);
   } finally {
     await sql.end();
@@ -432,13 +574,25 @@ function selfTest(): void {
   const failures: string[] = [];
 
   const plan = buildRelocationPlan([
-    { schema: "public", table: "widgets", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "organization_placement", tenantColumn: "organization_id", isPartitioned: false },
+    {
+      schema: "public",
+      table: "widgets",
+      tenantColumn: "org_id",
+      isPartitioned: false,
+    },
+    {
+      schema: "public",
+      table: "organization_placement",
+      tenantColumn: "organization_id",
+      isPartitioned: false,
+    },
   ]);
-  if (plan.tables.length !== 1) failures.push("control-plane routing state was not excluded from the plan");
+  if (plan.tables.length !== 1)
+    failures.push("control-plane routing state was not excluded from the plan");
 
   const coverage = planCoverage(["public.widgets", "public.orphan"], plan);
-  if (coverage.uncovered.length !== 1) failures.push("an uncovered tenant table was not reported");
+  if (coverage.uncovered.length !== 1)
+    failures.push("an uncovered tenant table was not reported");
 
   try {
     assertTransitionAllowed("FLIP_PLACEMENT", "ROLLED_BACK");
@@ -447,8 +601,10 @@ function selfTest(): void {
     // the transition table refuses it, which is the property under test
   }
 
-  if (canRollback("ACTIVE_TARGET")) failures.push("canRollback allowed a post-flip state");
-  if (!canRollback("VERIFY_TARGET")) failures.push("canRollback refused a pre-flip state");
+  if (canRollback("ACTIVE_TARGET"))
+    failures.push("canRollback allowed a post-flip state");
+  if (!canRollback("VERIFY_TARGET"))
+    failures.push("canRollback refused a pre-flip state");
 
   if (failures.length === 0) {
     console.log(
@@ -476,7 +632,9 @@ async function main(): Promise<void> {
   if (argv.includes("--rollback")) return rollback(ORG);
   if (argv.includes("--status")) return status(ORG);
 
-  console.error("Pick one of --plan, --start, --copy, --verify, --rollback, --status, --self-test.");
+  console.error(
+    "Pick one of --plan, --start, --copy, --verify, --rollback, --status, --self-test.",
+  );
   process.exitCode = 1;
 }
 
