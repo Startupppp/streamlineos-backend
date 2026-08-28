@@ -248,7 +248,7 @@ export async function measureNodeFailureCommittedLoss(appSql, owner, orgId) {
     try {
       const pidRows = await owner`
         SELECT pid FROM pg_stat_activity
-        WHERE usename = 'streamline_app' AND state != 'idle' AND pid != pg_backend_pid()
+        WHERE usename = 'streamline_app' AND pid != pg_backend_pid()
         LIMIT 1`;
       if (pidRows.length > 0) {
         terminatedPid = pidRows[0].pid;

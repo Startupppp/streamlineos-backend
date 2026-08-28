@@ -18,7 +18,7 @@
  *   REGIONAL_DISASTER — Neon PITR provides 5-minute RPO at the control-plane layer.
  *     Evidence requires a Neon API branch-restore exercise; that script does not exist.
  *
- * Candidate metrics written to .recovery-drill-results.json are consumed by Lane E
+ * Metrics written to .recovery-drill-results.json are consumed by the load driver
  * (workload-objectives verification).  Key names are stable:
  *   rpo_seconds, rto_seconds, phases.backup_ms, phases.bootstrap_ms,
  *   phases.restore_ms, phases.verify_ms, integrity.ok, integrity.tables,
@@ -135,7 +135,7 @@ if (isSelfTest) {
     notes: [
       "REGIONAL_DISASTER: RPO <= 5m is a Neon PITR guarantee — unverified; no NEON_API_KEY, no scripted branch-restore exercise exists.",
       "CELL_DB_FAILURE: RPO measured as 0s (backup taken immediately before disaster). Real-world RPO = backup frequency.",
-      "cell2 is shared with Lane B (migration-chain work). Drill may need to be re-run if disturbed.",
+      "cell2 is also used by migration-chain work. The drill may need re-running if disturbed.",
     ],
     disturbed: false,
     disturbed_reason: null,
@@ -157,7 +157,7 @@ if (isSelfTest) {
 
 log(`recovery drill — region=${regionKey} dry-run=${isDryRun}`);
 log("WARNING: this drill drops and rebuilds the cell-2 database.");
-log("Verify Lane B's bootstrap is not currently running before proceeding.");
+log("Verify no cold bootstrap is currently running against this cell before proceeding.");
 
 const T_DRILL_START = Date.now();
 const timestamps = {};
@@ -276,7 +276,7 @@ if (!disturbed) {
       "REGIONAL_DISASTER RPO target (<= 5m): UNVERIFIED. Neon PITR provides this guarantee at the control-plane layer, but no NEON_API_KEY and no scripted branch-restore exercise exist. Gap recorded in CELL-RUNBOOK.md.",
       `CELL_DB_FAILURE RPO (${rpo_seconds}s): time between backup completion and disaster declaration in this drill. Real-world RPO = backup run frequency; to meet the 5-minute target, schedule backups every <= 5 minutes.`,
       `CELL_DB_FAILURE RTO (${rto_seconds}s vs ${RTO_TARGET_SECONDS}s target).`,
-      "cell2 is shared with Lane B (migration-chain work). If bootstrap was disturbed, re-run the drill and report the clean run.",
+      "cell2 is also used by migration-chain work. If the bootstrap was disturbed, re-run the drill and report the clean run.",
       "No physical read replica is provisioned. Replica routing seam is built and tested at pool-selection level only. Lag-simulation tests are skipped pending Neon replica provisioning.",
     ],
     disturbed,

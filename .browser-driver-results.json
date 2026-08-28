@@ -1,5 +1,5 @@
 {
-  "generatedAtMs": 1787943491295,
+  "generatedAtMs": 1787945260157,
   "targetUrl": "http://localhost:1000",
   "browserPath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
   "repeat": 5,
@@ -11,115 +11,127 @@
   },
   "samples": [
     {
-      "wallMs": 634,
-      "ttfbMs": 62.399999998509884,
-      "domContentLoadedMs": 248.10000000149012,
-      "loadEventMs": 605.3000000044703,
-      "transferSizeBytes": 26747,
+      "wallMs": 506,
+      "ttfbMs": 39.399999998509884,
+      "domContentLoadedMs": 153.10000000149012,
+      "loadEventMs": 500.79999999701977,
+      "transferSizeBytes": 26744,
       "fromCache": false,
-      "fcpMs": 604,
-      "fpMs": 604
+      "cachedResourceCount": 0,
+      "cachedResourceMaxMs": null,
+      "fcpMs": 412,
+      "fpMs": 412
     },
     {
-      "wallMs": 719,
-      "ttfbMs": 196.39999999850988,
-      "domContentLoadedMs": 562.6999999955297,
-      "loadEventMs": 706.5,
-      "transferSizeBytes": 26758,
+      "wallMs": 247,
+      "ttfbMs": 46.5,
+      "domContentLoadedMs": 217.20000000298023,
+      "loadEventMs": 238.5,
+      "transferSizeBytes": 26746,
       "fromCache": false,
+      "cachedResourceCount": 23,
+      "cachedResourceMaxMs": 0,
       "fcpMs": null,
       "fpMs": null
     },
     {
-      "wallMs": 334,
-      "ttfbMs": 63.69999999552965,
-      "domContentLoadedMs": 120.10000000149012,
-      "loadEventMs": 323.79999999701977,
-      "transferSizeBytes": 26741,
-      "fromCache": false,
-      "fcpMs": 252,
-      "fpMs": 252
-    },
-    {
-      "wallMs": 346,
-      "ttfbMs": 65.19999999552965,
-      "domContentLoadedMs": 111.5,
-      "loadEventMs": 336.6000000014901,
+      "wallMs": 271,
+      "ttfbMs": 48.80000000447035,
+      "domContentLoadedMs": 245.20000000298023,
+      "loadEventMs": 263.1000000014901,
       "transferSizeBytes": 26743,
       "fromCache": false,
-      "fcpMs": 264,
-      "fpMs": 264
-    },
-    {
-      "wallMs": 317,
-      "ttfbMs": 69.5,
-      "domContentLoadedMs": 290,
-      "loadEventMs": 307.20000000298023,
-      "transferSizeBytes": 26752,
-      "fromCache": false,
+      "cachedResourceCount": 23,
+      "cachedResourceMaxMs": 0,
       "fcpMs": null,
       "fpMs": null
+    },
+    {
+      "wallMs": 322,
+      "ttfbMs": 48.20000000298023,
+      "domContentLoadedMs": 101,
+      "loadEventMs": 313.79999999701977,
+      "transferSizeBytes": 26743,
+      "fromCache": false,
+      "cachedResourceCount": 23,
+      "cachedResourceMaxMs": 0,
+      "fcpMs": 240,
+      "fpMs": 240
+    },
+    {
+      "wallMs": 270,
+      "ttfbMs": 52.600000001490116,
+      "domContentLoadedMs": 108.79999999701977,
+      "loadEventMs": 261.29999999701977,
+      "transferSizeBytes": 26746,
+      "fromCache": false,
+      "cachedResourceCount": 23,
+      "cachedResourceMaxMs": 0,
+      "fcpMs": 224,
+      "fpMs": 224
     }
   ],
   "allNavigations": {
     "wallMs": {
       "count": 5,
-      "p50": 346,
-      "p75": 634,
-      "p95": 702,
-      "min": 317,
-      "max": 719
+      "p50": 271,
+      "p75": 322,
+      "p95": 469.19999999999993,
+      "min": 247,
+      "max": 506
     },
     "ttfbMs": {
       "count": 5,
-      "p50": 65.19999999552965,
-      "p75": 69.5,
-      "p95": 171.0199999988079,
-      "min": 62.399999998509884,
-      "max": 196.39999999850988
+      "p50": 48.20000000298023,
+      "p75": 48.80000000447035,
+      "p95": 51.840000002086164,
+      "min": 39.399999998509884,
+      "max": 52.600000001490116
     },
     "fcpMs": {
       "count": 3,
-      "p50": 264,
-      "p75": 434,
-      "p95": 570,
-      "min": 252,
-      "max": 604
+      "p50": 240,
+      "p75": 326,
+      "p95": 394.79999999999995,
+      "min": 224,
+      "max": 412
     }
   },
   "cachedNavigations": {
-    "note": "First navigation excluded — subsequent navigations benefit from browser memory cache of static assets",
+    "note": "A sample counts as cached only when the browser reported it as cached — the navigation document had transferSize 0, or the navigation replayed at least one subresource from cache (transferSize 0 with a non-zero decoded body). Being the second navigation is not evidence of caching and is not accepted as such.",
     "count": 4,
+    "documentServedFromCache": false,
+    "cachedResourceReplays": 92,
     "wallMs": {
       "count": 4,
-      "p50": 340,
-      "p75": 439.25,
-      "p95": 663.0499999999998,
-      "min": 317,
-      "max": 719
+      "p50": 270.5,
+      "p75": 283.75,
+      "p95": 314.34999999999997,
+      "min": 247,
+      "max": 322
     },
     "ttfbMs": {
       "count": 4,
-      "p50": 67.34999999776483,
-      "p75": 101.22499999962747,
-      "p95": 177.36499999873337,
-      "min": 63.69999999552965,
-      "max": 196.39999999850988
+      "p50": 48.50000000372529,
+      "p75": 49.75000000372529,
+      "p95": 52.03000000193715,
+      "min": 46.5,
+      "max": 52.600000001490116
     }
   },
   "objectives": {
     "p95-browser-cached-read": {
       "target": 150,
       "unit": "ms same-region reference device",
-      "measured": 177.36499999873337,
-      "metric": "TTFB on navigations 2+, or wall time if TTFB unavailable",
-      "verdict": "BREACHED",
-      "conditions": "localhost loopback — not the PRD's declared reference geography. Zero network cost; this is the product's own processing time for a cached page response."
+      "measured": 52.03000000193715,
+      "metric": "browser-visible TTFB on warm-cache navigations, corroborated by 92 subresource replays the browser itself reported as cached (transferSize 0, non-zero decoded body). The authenticated navigation document is deliberately no-store, so it is never HTTP-cached and its TTFB is a server read with warm caches rather than a cache replay. Subresource replay durations are not used as the figure: they round to 0 ms and would report a meaninglessly favourable number.",
+      "verdict": "MET",
+      "conditions": "localhost loopback — not the PRD's declared reference geography, so this carries zero network cost and is a floor rather than a comparable figure. Reported only from samples the browser itself marked cached."
     },
     "p75-first-useful-view": {
       "target": 1000,
       "unit": "ms reference device and network",
-      "measured": 434,
+      "measured": 326,
       "metric": "First Contentful Paint p75, or wall time to load event if FCP unavailable",
       "verdict": "MET",
       "conditions": "localhost loopback — not the PRD's declared reference geography. Page navigated to login redirect. FCP is the browser's own measurement of when the first pixel was painted."

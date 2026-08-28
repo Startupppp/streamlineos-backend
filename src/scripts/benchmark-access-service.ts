@@ -34,6 +34,24 @@ import type { Db } from "../db/drizzle.module";
 const OUT = resolve(process.cwd(), ".auth-benchmark-results.json");
 const ITERATIONS = 50_000;
 const WARMUP = 5_000;
+const BATCH_SIZE = 2_000;
+const BATCHES = 100;
+const WALL_SAMPLES = 20_000;
+
+function measureCpuClockGranularityUs(): number {
+  const deltas: number[] = [];
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const before = process.cpuUsage();
+    let delta = 0;
+    while (delta === 0) {
+      const after = process.cpuUsage(before);
+      delta = after.user + after.system;
+    }
+    deltas.push(delta);
+  }
+  deltas.sort((a, b) => a - b);
+  return deltas[Math.floor(deltas.length / 2)] ?? 0;
+}
 
 const argv = process.argv.slice(2);
 const SELF_TEST = argv.includes("--self-test");
@@ -152,28 +170,48 @@ async function run() {
   const totalCpuUs = (cpuAfter.user + cpuAfter.system);
   const perCallCpuUs = totalCpuUs / ITERATIONS;
 
-  const perCallSamples: number[] = [];
-  for (let i = 0; i < Math.min(ITERATIONS, 1000); i++) {
-    const before = process.cpuUsage();
-    await svc.resolveUserPermissions(orgId, userId);
-    const after = process.cpuUsage(before);
-    perCallSamples.push(after.user + after.system);
-  }
-  perCallSamples.sort((a, b) => a - b);
+  const cpuClockGranularityUs = measureCpuClockGranularityUs();
 
-  const p99 = percentile(perCallSamples, 99);
-  const p50 = percentile(perCallSamples, 50);
-  const maxSample = perCallSamples[perCallSamples.length - 1] ?? null;
+  const batchCpuSamples: number[] = [];
+  for (let batch = 0; batch < BATCHES; batch++) {
+    const before = process.cpuUsage();
+    for (let i = 0; i < BATCH_SIZE; i++) {
+      await svc.resolveUserPermissions(orgId, userId);
+    }
+    const after = process.cpuUsage(before);
+    batchCpuSamples.push((after.user + after.system) / BATCH_SIZE);
+  }
+  batchCpuSamples.sort((a, b) => a - b);
+
+  const wallSamples: number[] = [];
+  for (let i = 0; i < WALL_SAMPLES; i++) {
+    const before = process.hrtime.bigint();
+    await svc.resolveUserPermissions(orgId, userId);
+    wallSamples.push(Number(process.hrtime.bigint() - before) / 1000);
+  }
+  wallSamples.sort((a, b) => a - b);
+
+  const p99 = percentile(batchCpuSamples, 99);
+  const p50 = percentile(batchCpuSamples, 50);
+  const maxSample = batchCpuSamples[batchCpuSamples.length - 1] ?? null;
+  const wallP99 = percentile(wallSamples, 99);
+  const wallP50 = percentile(wallSamples, 50);
 
   const target = 100;
-  const verdict = p99 !== null && p99 <= target ? "MET" : "BREACHED";
+  const verdict =
+    p99 !== null && wallP99 !== null && p99 <= target && wallP99 <= target
+      ? "MET"
+      : "BREACHED";
 
   console.log("\nIn-process authorization benchmark results\n");
   console.log(`  total CPU (${ITERATIONS} calls): ${totalCpuUs.toFixed(0)} µs user+system`);
   console.log(`  avg CPU per call:               ${perCallCpuUs.toFixed(2)} µs`);
-  console.log(`  p50 CPU per call:               ${(p50 ?? 0).toFixed(2)} µs`);
-  console.log(`  p99 CPU per call:               ${(p99 ?? 0).toFixed(2)} µs`);
-  console.log(`  max CPU per call:               ${(maxSample ?? 0).toFixed(2)} µs`);
+  console.log(`  CPU clock granularity:          ${cpuClockGranularityUs.toFixed(0)} µs`);
+  console.log(`  p50 CPU per call (batch mean):  ${(p50 ?? 0).toFixed(2)} µs`);
+  console.log(`  p99 CPU per call (batch mean):  ${(p99 ?? 0).toFixed(2)} µs`);
+  console.log(`  max CPU per call (batch mean):  ${(maxSample ?? 0).toFixed(2)} µs`);
+  console.log(`  p50 wall per call:              ${(wallP50 ?? 0).toFixed(2)} µs`);
+  console.log(`  p99 wall per call:              ${(wallP99 ?? 0).toFixed(2)} µs`);
   console.log(`  target:                         ${target} µs CPU without I/O`);
   console.log(`  verdict:                        ${verdict}`);
   console.log("\nConditions:");
@@ -195,12 +233,18 @@ async function run() {
     p50CpuUs: p50,
     p99CpuUs: p99,
     maxSampleCpuUs: maxSample,
+    p50WallUs: wallP50,
+    p99WallUs: wallP99,
+    cpuClockGranularityUs,
+    batchSize: BATCH_SIZE,
+    batches: BATCHES,
     verdict,
     conditions: {
       warmPath: "all four in-process caches primed; zero I/O on measured calls",
       service: "real AccessService instance, real applyUniversalGrants and stripDeniedModules called",
       stubIntegrity: "stub dependencies throw on any call; none fired during benchmark",
-      measurement: "process.cpuUsage() user+system per call",
+      measurement: `process.cpuUsage() over batches of ${BATCH_SIZE} calls, divided by the batch size. The CPU clock here ticks at ${cpuClockGranularityUs.toFixed(0)} µs, so a per-call cpuUsage() delta reads 0 for almost every call and its percentiles are the clock's resolution rather than the product's cost. Batching lifts each sample above the tick. The reported percentiles are therefore percentiles OF BATCH MEANS, not of individual calls, and a single slow call is averaged into its batch.`,
+      wallClockCheck: `process.hrtime.bigint() gives per-call nanosecond resolution, so the wall figures ARE a true per-call distribution. Wall approximates CPU here only because the measured path performs no I/O — the stub dependencies throw if any cold path is reached and none fired. The verdict requires BOTH the batch-mean CPU p99 and the per-call wall p99 to be within target.`,
       asyncOverhead:
         "included — resolveUserPermissions is async, so Promise micro-task scheduling is part of each call's CPU cost",
       note: "The PRD target (100 µs CPU) is for the in-process warm path with no I/O. This benchmark measures exactly that path. The live application's wall-clock budget per request is larger (route overhead, event-loop delay, network) but that is not this objective.",

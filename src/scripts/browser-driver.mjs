@@ -158,7 +158,19 @@ async function navigateAndMeasure(cdp, url, timeoutMs) {
     returnByValue: true,
   });
 
+  const resourceEntries = await cdp.send("Runtime.evaluate", {
+    expression: `JSON.stringify(performance.getEntriesByType("resource").map(e => ({
+      name: e.name, duration: e.duration, transferSize: e.transferSize,
+      decodedBodySize: e.decodedBodySize
+    })))`,
+    returnByValue: true,
+  });
+
   const nav = JSON.parse(navEntries.result.value ?? "[]")[0] ?? null;
+  const resources = JSON.parse(resourceEntries.result.value ?? "[]");
+  const cachedResources = resources.filter(
+    (r) => r.transferSize === 0 && r.decodedBodySize > 0,
+  );
   const paints = JSON.parse(paintEntries.result.value ?? "[]");
   const fcp = paints.find((p) => p.name === "first-contentful-paint");
   const fp = paints.find((p) => p.name === "first-paint");
@@ -170,6 +182,10 @@ async function navigateAndMeasure(cdp, url, timeoutMs) {
     loadEventMs: nav ? nav.loadEventEnd : null,
     transferSizeBytes: nav ? nav.transferSize : null,
     fromCache: nav ? nav.transferSize === 0 : null,
+    cachedResourceCount: cachedResources.length,
+    cachedResourceMaxMs: cachedResources.length
+      ? Math.max(...cachedResources.map((r) => r.duration))
+      : null,
     fcpMs: fcp ? fcp.startTime : null,
     fpMs: fp ? fp.startTime : null,
   };
@@ -312,9 +328,15 @@ async function main() {
   const ttfbSummary = summariseMetric(samples, "ttfbMs");
   const fcpSummary = summariseMetric(samples, "fcpMs");
 
-  const cachedSamples = samples.slice(1);
+  const cachedSamples = samples
+    .slice(1)
+    .filter((s) => s.fromCache === true || (s.cachedResourceCount ?? 0) > 0);
   const cachedWall = summariseMetric(cachedSamples, "wallMs");
   const cachedTtfb = summariseMetric(cachedSamples, "ttfbMs");
+  const cachedResourceReplays = cachedSamples.reduce(
+    (total, s) => total + (s.cachedResourceCount ?? 0),
+    0,
+  );
 
   const result = {
     generatedAtMs: Date.now(),
@@ -334,8 +356,10 @@ async function main() {
       fcpMs: fcpSummary,
     },
     cachedNavigations: {
-      note: "First navigation excluded — subsequent navigations benefit from browser memory cache of static assets",
+      note: "A sample counts as cached only when the browser reported it as cached — the navigation document had transferSize 0, or the navigation replayed at least one subresource from cache (transferSize 0 with a non-zero decoded body). Being the second navigation is not evidence of caching and is not accepted as such.",
       count: cachedSamples.length,
+      documentServedFromCache: cachedSamples.some((s) => s.fromCache === true),
+      cachedResourceReplays,
       wallMs: cachedWall,
       ttfbMs: cachedTtfb,
     },
@@ -343,15 +367,15 @@ async function main() {
       "p95-browser-cached-read": {
         target: 150,
         unit: "ms same-region reference device",
-        measured: cachedTtfb?.p95 ?? cachedWall?.p95 ?? null,
-        metric: "TTFB on navigations 2+, or wall time if TTFB unavailable",
+        measured: cachedTtfb?.p95 ?? null,
+        metric: `browser-visible TTFB on warm-cache navigations, corroborated by ${cachedResourceReplays} subresource replays the browser itself reported as cached (transferSize 0, non-zero decoded body). The authenticated navigation document is deliberately no-store, so it is never HTTP-cached and its TTFB is a server read with warm caches rather than a cache replay. Subresource replay durations are not used as the figure: they round to 0 ms and would report a meaninglessly favourable number.`,
         verdict: (() => {
-          const v = cachedTtfb?.p95 ?? cachedWall?.p95 ?? null;
+          const v = cachedTtfb?.p95 ?? null;
           if (v === null) return "NOT_DRIVEN";
           return v <= 150 ? "MET" : "BREACHED";
         })(),
         conditions:
-          "localhost loopback — not the PRD's declared reference geography. Zero network cost; this is the product's own processing time for a cached page response.",
+          "localhost loopback — not the PRD's declared reference geography, so this carries zero network cost and is a floor rather than a comparable figure. Reported only from samples the browser itself marked cached.",
       },
       "p75-first-useful-view": {
         target: 1000,

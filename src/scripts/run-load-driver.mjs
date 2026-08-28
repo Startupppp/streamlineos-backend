@@ -440,26 +440,48 @@ function report(results, totalRequests, primary, baseline) {
       if (!drillData) {
         console.log(
           `NOT_DRIVEN  ${objective.name.padEnd(38)} ` +
-            `awaiting Lane D recovery drill results at ${RECOVERY_DRILL_PATH}`,
+            `no recovery drill results at ${RECOVERY_DRILL_PATH}`,
         );
-        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", reason: "Lane D recovery drill not yet completed; results will be in backend/.recovery-drill-results.json", target: objective.target });
+        objectives.push({
+          name: objective.name,
+          verdict: "NOT_DRIVEN",
+          reason: `run \`pnpm cell:drill\` — it writes ${RECOVERY_DRILL_PATH}`,
+          target: objective.target,
+        });
         continue;
       }
-      const key = objective.name === "regional-rpo" ? "rpoMinutes" : "rtoMinutes";
-      const measured_v = drillData[key];
-      if (measured_v === undefined || measured_v === null) {
-        console.log(`NOT_DRIVEN  ${objective.name.padEnd(38)} key '${key}' not found in ${RECOVERY_DRILL_PATH}`);
-        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", target: objective.target });
+      const key = objective.name === "regional-rpo" ? "rpo_seconds" : "rto_seconds";
+      const seconds = drillData[key];
+      if (seconds === undefined || seconds === null) {
+        console.log(
+          `NOT_DRIVEN  ${objective.name.padEnd(38)} ` +
+            `the drill ran but could not measure '${key}' — see notes in ${RECOVERY_DRILL_PATH}`,
+        );
+        objectives.push({
+          name: objective.name,
+          verdict: "NOT_DRIVEN",
+          reason: `the drill ran and reported '${key}' as unmeasurable; the blocker is recorded in ${RECOVERY_DRILL_PATH}`,
+          target: objective.target,
+          source: RECOVERY_DRILL_PATH,
+        });
         continue;
       }
+      const measured_v = seconds / 60;
       const verdict = measured_v <= objective.target ? "MET" : "BREACHED";
       measured += 1;
       if (verdict === "BREACHED") breached += 1;
       console.log(
         `${verdict.padEnd(11)} ${objective.name.padEnd(38)} ` +
-          `${measured_v} min target=${objective.target} min (Lane D timed drill)`,
+          `${measured_v.toFixed(1)} min target=${objective.target} min (timed drill, ${drillData.failure_class ?? "unclassified"})`,
       );
-      objectives.push({ name: objective.name, verdict, measured: measured_v, target: objective.target, source: RECOVERY_DRILL_PATH });
+      objectives.push({
+        name: objective.name,
+        verdict,
+        measured: measured_v,
+        target: objective.target,
+        failureClass: drillData.failure_class ?? null,
+        source: RECOVERY_DRILL_PATH,
+      });
       continue;
     }
 

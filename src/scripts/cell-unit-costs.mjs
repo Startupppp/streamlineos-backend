@@ -31,7 +31,7 @@ export const UNIT_COSTS = [
     label: "per 1,000 requests",
     denominatorPer: 1_000,
     source: "unmeasured",
-    requiredInput: "HTTP request count for this cell. Primary source: .load-driver-results.json written by the load driver (Lane B) with field requestCount:number and durationMs:number. Fallback: application request logs or an APM tool.",
+    requiredInput: "HTTP request count for this cell. Primary source: .load-driver-results.json written by the load driver with field requestCount:number and durationMs:number. Fallback: application request logs or an APM tool.",
   },
   {
     id: "per-1k-realtime-minutes",
