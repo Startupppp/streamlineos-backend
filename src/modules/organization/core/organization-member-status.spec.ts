@@ -212,6 +212,10 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [{ moduleKey: "hr" }, { moduleKey: "crm" }] },
       ]);
       const db = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        }),
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
         query: {
           users: {
             findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
@@ -239,6 +243,10 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [{ isOwner: true, id: 1 }], endWithLimit: true },
       ]);
       const db = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        }),
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
         query: {
           users: {
             findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
@@ -263,6 +271,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [] },
       ]);
       const db = {
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
         query: {
           users: {
             findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
@@ -289,6 +298,10 @@ describe("OrgMembershipService — module-ownership guards", () => {
 
     it("converts a raw FK violation (23503 backstop) to BadRequestException", async () => {
       const db = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        }),
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
         transaction: jest.fn().mockRejectedValue({ code: "23503" }),
       };
       const svc = await buildService(db);
@@ -305,6 +318,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [] },
       ]);
       const db = {
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
         query: {
           users: {
             findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
@@ -339,6 +353,10 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [{ moduleKey: "build" }] },
       ]);
       const db = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        }),
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
         query: {
           users: {
             findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
@@ -366,6 +384,10 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [], endWithLimit: true },
       ]);
       const db = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        }),
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
         query: {
           users: {
             findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
@@ -390,6 +412,10 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [{ moduleKey: "inventory" }] },
       ]);
       const db = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        }),
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
         query: { organizationMembers: { findFirst } },
         transaction: jest.fn().mockImplementation(
           async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
@@ -421,6 +447,10 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [{ moduleKey: "payroll" }] },
       ]);
       const db = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        }),
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
         query: { organizationMembers: { findFirst } },
         transaction: jest.fn().mockImplementation(
           async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
@@ -448,6 +478,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [] },
       ]);
       const db = {
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
         query: { organizationMembers: { findFirst } },
         transaction: jest.fn().mockImplementation(
           async (fn: (transaction: unknown) => Promise<unknown>) => fn(tx),
@@ -502,6 +533,10 @@ describe("OrgMembershipService — module-ownership guards", () => {
         },
       ]);
       const db = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        }),
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
         query: { organizationMembers: { findFirst } },
         transaction: jest.fn().mockImplementation(
           async (fn: (transaction: unknown) => Promise<unknown>) => fn(tx),
@@ -538,6 +573,10 @@ describe("OrgMembershipService — module-ownership guards", () => {
         },
       ]);
       const db = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        }),
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
         query: { organizationMembers: { findFirst } },
         transaction: jest.fn().mockImplementation(
           async (fn: (transaction: unknown) => Promise<unknown>) => fn(tx),
