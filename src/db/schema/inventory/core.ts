@@ -55,6 +55,13 @@ export const invProducts = pgTable("inv_products", {
   purchaseUomId: integer("purchase_uom_id").references(() => invUom.id, { onDelete: "set null" }),
   salesUomId: integer("sales_uom_id").references(() => invUom.id, { onDelete: "set null" }),
   defaultVendorId: integer("default_vendor_id"),
+  /**
+   * INV-309. Supplier order policy. Null means unconstrained, which is the
+   * common case; a zero would divide into the rounding as a false answer, so
+   * the CHECK forbids it.
+   */
+  minOrderQty: decimal("min_order_qty", { precision: 18, scale: 4 }),
+  orderMultiple: decimal("order_multiple", { precision: 18, scale: 4 }),
   reorderEnabled: boolean("reorder_enabled").default(false),
   allowNegativeStock: boolean("allow_negative_stock"),
   costPrice: decimal("cost_price", { precision: 18, scale: 4 }).default("0").notNull(),

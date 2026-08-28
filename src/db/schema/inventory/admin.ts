@@ -19,6 +19,12 @@ export const invSettings = pgTable("inv_settings", {
   inspectionOnReturn: boolean("inspection_on_return").default(false).notNull(),
   overReceiptTolerancePct: decimal("over_receipt_tolerance_pct", { precision: 5, scale: 2 }).default("0").notNull(),
   requirePoApproval: boolean("require_po_approval").default(false).notNull(),
+  /**
+   * INV-309. Above this order value a purchase order needs sign-off. Null means
+   * the boolean above decides, which is every order or none — and "every order"
+   * is how an approval policy ends up switched off entirely.
+   */
+  poApprovalThreshold: decimal("po_approval_threshold", { precision: 18, scale: 4 }),
   adjustmentApprovalThreshold: decimal("adjustment_approval_threshold", { precision: 18, scale: 4 }),
   adjustmentApprovalValueThreshold: decimal("adjustment_approval_value_threshold", { precision: 18, scale: 4 }),
   autoReserveOnConfirm: boolean("auto_reserve_on_confirm").default(true).notNull(),

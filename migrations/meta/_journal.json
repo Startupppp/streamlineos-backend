@@ -2150,6 +2150,13 @@
       "when": 1787830379441,
       "tag": "0526_return_inspection",
       "breakpoints": true
+    },
+    {
+      "idx": 308,
+      "version": "7",
+      "when": 1787830380441,
+      "tag": "0527_po_batching_policy",
+      "breakpoints": true
     }
   ]
 }
