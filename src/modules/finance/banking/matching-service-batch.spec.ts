@@ -1,6 +1,14 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { MatchingService } from "./matching.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import {
+  finBankTransactions,
+  finReconciliationMatches,
+  finReconciliationRules,
+  journalEntries,
+  payments,
+  vendorPayments,
+} from "../../../db/schema";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 type InsertedMatch = {
@@ -22,6 +30,36 @@ function makeChain(data: unknown[] = []) {
     self[m] = () => self;
   }
   return self;
+}
+
+/**
+ * Answers each `select()` by the table it reads, never by call order.
+ *
+ * The previous double indexed a fixed array with `selectCallIdx++`, which
+ * assumed `suggestMatches` always issues the same seven queries. It does not:
+ * the journal-entry read is conditional on `account.ledgerAccountId`, and every
+ * case here leaves that null. Six queries ran against seven datasets, so the
+ * client rows were served to the existing-match query, `bankTransactionId` came
+ * back `undefined`, and the idempotency guard could never see a prior match.
+ * Two tests failed and looked like a duplicate-insert bug in the service; the
+ * guard at `matching.service.ts:224-233` was correct the whole time.
+ *
+ * `clients` is deliberately not among the keyed tables and is served by
+ * `fallback` instead. It is one of the four legacy identity tables that
+ * `party/legacy-reader-ratchet.spec.ts` watches, and that list may only shrink —
+ * importing the symbol here to key a mock would have registered this spec as a
+ * new reader of a table the Party migration exists to remove. It is the only
+ * table `suggestMatches` reads that is not listed below.
+ */
+function selectByTable(datasets: Array<[unknown, unknown[]]>, fallback: unknown[]) {
+  return () => {
+    const chain = makeChain([]);
+    chain.from = (table: unknown) => {
+      const hit = datasets.find(([t]) => t === table);
+      return makeChain(hit ? hit[1] : fallback);
+    };
+    return chain;
+  };
 }
 
 type Db = {
@@ -57,16 +95,17 @@ function makeDb(overrides: Partial<{
   const insertedMatches: InsertedMatch[] = [];
   const updatedTxnIds: UpdatedTxnIds = [];
 
-  let selectCallIdx = 0;
-  const promiseResults = [
-    o.rules,
-    o.txns,
-    o.customerPayments,
-    o.vendorPaymentRows,
-    o.journalRows,
+  const select = selectByTable(
+    [
+      [finReconciliationRules, o.rules],
+      [finBankTransactions, o.txns],
+      [payments, o.customerPayments],
+      [vendorPayments, o.vendorPaymentRows],
+      [journalEntries, o.journalRows],
+      [finReconciliationMatches, o.existingMatches],
+    ],
     o.clientRows,
-    o.existingMatches,
-  ];
+  );
 
   const db: Db = {
     query: {
@@ -74,10 +113,7 @@ function makeDb(overrides: Partial<{
         findFirst: jest.fn().mockResolvedValue(o.account),
       },
     },
-    select: jest.fn().mockImplementation(() => {
-      const data = promiseResults[selectCallIdx++] ?? [];
-      return makeChain(data as unknown[]);
-    }),
+    select: jest.fn().mockImplementation(select),
     insert: jest.fn().mockImplementation(() => ({
       values: jest.fn().mockImplementation((rows: InsertedMatch | InsertedMatch[]) => {
         const arr = Array.isArray(rows) ? rows : [rows];
