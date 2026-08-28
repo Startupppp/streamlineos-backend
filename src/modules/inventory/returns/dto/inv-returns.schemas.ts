@@ -34,7 +34,12 @@ const customerReturnLineSchema = z.object({
   productVariantId: z.number().int().positive(),
   quantity: z.string().regex(/^\d+(\.\d{1,4})?$/),
   reason: z.string().max(500),
-  disposition: z.enum(["RESTOCK", "QUARANTINE", "SCRAP"]),
+  /**
+   * INV-209. Optional now. A disposition asserted before anybody opened the
+   * box is a guess, and it used to be the guess that posted stock. Omit it and
+   * the line waits for inspection.
+   */
+  disposition: z.enum(["RESTOCK", "QUARANTINE", "SCRAP"]).optional(),
   targetLocationId: z.number().int().positive().optional(),
   lotId: z.number().int().positive().optional(),
   serialId: z.number().int().positive().optional(),
@@ -53,3 +58,13 @@ export const postCustomerReturnSchema = z.object({
   reason: z.string().max(500).optional(),
 }).strict();
 export type PostCustomerReturnInput = z.infer<typeof postCustomerReturnSchema>;
+
+/** INV-209. The decision made after actually looking at the goods. */
+export const inspectReturnLineSchema = z
+  .object({
+    lineId: z.number().int().positive(),
+    disposition: z.enum(["RESTOCK", "QUARANTINE", "SCRAP"]),
+    inspectionNotes: z.string().max(1000).optional(),
+  })
+  .strict();
+export type InspectReturnLineInput = z.infer<typeof inspectReturnLineSchema>;

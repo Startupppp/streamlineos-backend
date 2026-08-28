@@ -99,6 +99,16 @@ export const invCustomerReturnLines = pgTable("inv_customer_return_lines", {
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
   disposition: invCustomerReturnDispositionEnum("disposition"),
   notes: text("notes"),
+  /**
+   * INV-209. The disposition used to be declared when the return was created,
+   * which is before anybody opened the box -- so it was a guess made from the
+   * customer's description, and the guess posted stock. These record the
+   * decision as a separate act with an author and a time, so "who decided this
+   * was resaleable" has an answer.
+   */
+  inspectedAt: timestamp("inspected_at"),
+  inspectedBy: text("inspected_by").references(() => users.id),
+  inspectionNotes: text("inspection_notes"),
 }, (table) => [
   unique("uniq_inv_customer_return_lines_org_id").on(table.orgId, table.id),
   foreignKey({

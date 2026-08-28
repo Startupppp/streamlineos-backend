@@ -14,6 +14,8 @@ import { CustomerReturnsService } from "./customer-returns.service";
 import {
   listReturnsSchema, createCustomerReturnSchema, postCustomerReturnSchema,
   type ListReturnsInput, type CreateCustomerReturnInput, type PostCustomerReturnInput,
+  inspectReturnLineSchema,
+  type InspectReturnLineInput,
 } from "./dto/inv-returns.schemas";
 
 @RequireModule("inventory")
@@ -50,6 +52,21 @@ export class CustomerReturnsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.create(u.orgId, u.userId, body);
+  }
+
+  /**
+   * INV-209. Records the disposition decided after opening the box, with who
+   * decided it and when. Posting refuses until every line has one.
+   */
+  @Post(":returnId/inspect")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:customer-returns:manage")
+  inspectLine(
+    @Param("returnId", ParseIntPipe) returnId: number,
+    @Body(new ZodValidationPipe(inspectReturnLineSchema)) body: InspectReturnLineInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.service.inspectLine(u.orgId, u.userId, returnId, body);
   }
 
   @Post(":returnId/post")

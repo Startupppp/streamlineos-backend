@@ -12,7 +12,12 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
-import type { ListReturnsInput, CreateCustomerReturnInput, PostCustomerReturnInput } from "./dto/inv-returns.schemas";
+import type {
+  ListReturnsInput,
+  CreateCustomerReturnInput,
+  PostCustomerReturnInput,
+  InspectReturnLineInput,
+} from "./dto/inv-returns.schemas";
 
 @Injectable()
 export class CustomerReturnsService {
@@ -149,6 +154,64 @@ export class CustomerReturnsService {
     return this.get(orgId, ret.id);
   }
 
+  /**
+   * INV-209 — record the decision made after actually looking at the goods.
+   *
+   * This is the step the workflow was missing. A disposition asserted at
+   * creation is a guess from the customer's description, and it was the guess
+   * that posted stock: a "faulty, please refund" note put goods straight into
+   * SCRAP without anybody confirming they were faulty, and a "wrong size" note
+   * restocked goods nobody had looked at.
+   *
+   * The author and the time are recorded, not just the answer, so "who decided
+   * this was resaleable" has an answer six months later when it turns out it
+   * was not.
+   */
+  async inspectLine(
+    orgId: string,
+    userId: string,
+    returnId: number,
+    input: InspectReturnLineInput,
+  ) {
+    const [ret] = await this.db
+      .select({ id: invCustomerReturns.id, status: invCustomerReturns.status })
+      .from(invCustomerReturns)
+      .where(
+        and(eq(invCustomerReturns.orgId, orgId), eq(invCustomerReturns.id, returnId)),
+      );
+    if (!ret) throw new NotFoundException("Customer return not found");
+    // Inspecting a posted return would change a disposition the ledger has
+    // already acted on.
+    if (ret.status !== "DRAFT") {
+      throw new BadRequestException(
+        `A ${ret.status} return can no longer be inspected`,
+      );
+    }
+
+    const [updated] = await this.db
+      .update(invCustomerReturnLines)
+      .set({
+        disposition: input.disposition,
+        inspectionNotes: input.inspectionNotes ?? null,
+        inspectedAt: new Date(),
+        inspectedBy: userId,
+      })
+      .where(
+        and(
+          eq(invCustomerReturnLines.orgId, orgId),
+          eq(invCustomerReturnLines.returnId, returnId),
+          eq(invCustomerReturnLines.id, input.lineId),
+        ),
+      )
+      .returning({ id: invCustomerReturnLines.id });
+    if (!updated) throw new NotFoundException("Return line not found");
+
+    await this.cache.invalidateNamespace(
+      CACHE_KEYS.invCustomerReturnsNamespace(orgId),
+    );
+    return { lineId: input.lineId, disposition: input.disposition };
+  }
+
   async post(
     orgId: string,
     returnId: number,
@@ -163,6 +226,16 @@ export class CustomerReturnsService {
     if (!ret) throw new NotFoundException("Customer return not found");
     if (ret.status === "POSTED") return this.get(orgId, returnId);
     if (ret.status !== "DRAFT") throw new BadRequestException("Only DRAFT customer returns can be posted");
+
+    // INV-209. Posting moves stock, so every line must have been looked at
+    // first. Reported together rather than one at a time: somebody clearing a
+    // twelve-line return should not discover the gaps twelve attempts later.
+    const uninspected = ret.lines.filter((line) => line.disposition === null);
+    if (uninspected.length > 0) {
+      throw new BadRequestException(
+        `These lines have not been inspected yet: ${uninspected.map((l) => l.id).join(", ")}`,
+      );
+    }
 
     const engineMovements: Array<{
       transactionType: string;
