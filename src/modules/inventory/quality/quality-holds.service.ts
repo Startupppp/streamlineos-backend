@@ -84,16 +84,11 @@ export class HoldsService {
       idempotencyKey,
       sourceType: "QUALITY_HOLD",
       sourceId: String(orgId),
+      // One movement, not a transfer. `quality_hold_qty` is subtracted from
+      // `on_hand` by the availability formula, so it is a subset of on_hand
+      // and not a pool beside it — also decrementing ON_HAND would deduct the
+      // same units twice and under-report goods still sitting on the shelf.
       movements: [
-        {
-          transactionType: "QUARANTINE_IN",
-          productVariantId: input.productVariantId,
-          locationId: input.locationId,
-          lotId: input.lotId,
-          serialId: input.serialId,
-          quantityDelta: "-" + input.quantity,
-          qualityBucket: "ON_HAND",
-        },
         {
           transactionType: "QUARANTINE_IN",
           productVariantId: input.productVariantId,
@@ -148,6 +143,8 @@ export class HoldsService {
       idempotencyKey,
       sourceType: "QUALITY_HOLD_RELEASE",
       sourceId: String(holdId),
+      // The mirror of `create`: the units never left ON_HAND, so releasing
+      // them only clears the hold bucket.
       movements: [
         {
           transactionType: "QUARANTINE_OUT",
@@ -157,15 +154,6 @@ export class HoldsService {
           serialId: hold.serialId ?? undefined,
           quantityDelta: "-" + hold.quantity,
           qualityBucket: "QUALITY_HOLD",
-        },
-        {
-          transactionType: "QUARANTINE_OUT",
-          productVariantId: hold.productVariantId,
-          locationId,
-          lotId: hold.lotId ?? undefined,
-          serialId: hold.serialId ?? undefined,
-          quantityDelta: hold.quantity,
-          qualityBucket: "ON_HAND",
         },
       ],
     });

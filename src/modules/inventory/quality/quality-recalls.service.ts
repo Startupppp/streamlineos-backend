@@ -139,8 +139,11 @@ export class RecallsService {
           idempotencyKey: iKey,
           sourceType: "RECALL",
           sourceId: String(recall.id),
+          // A recall quarantines the goods; it does not make them disappear.
+          // Zeroing ON_HAND as well drove available negative and destroyed the
+          // count of what is physically on the shelf — which is exactly the
+          // number a recall needs to report.
           movements: [
-            { transactionType: "QUARANTINE_IN", productVariantId: level.productVariantId, locationId: level.locationId, lotId, quantityDelta: "-" + level.onHand, qualityBucket: "ON_HAND" as const },
             { transactionType: "QUARANTINE_IN", productVariantId: level.productVariantId, locationId: level.locationId, lotId, quantityDelta: level.onHand, qualityBucket: "QUALITY_HOLD" as const },
           ],
         }];

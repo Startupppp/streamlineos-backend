@@ -139,7 +139,7 @@ export class CustomerReturnsService {
         productVariantId: line.productVariantId,
         lotId: line.lotId,
         serialId: line.serialId,
-        quantity: line.quantity.toFixed(4),
+        quantity: line.quantity,
         disposition: line.disposition,
         notes: line.reason,
       }))
@@ -191,6 +191,19 @@ export class CustomerReturnsService {
           qualityBucket: "ON_HAND",
         });
       } else if (disposition === "QUARANTINE") {
+        // Returned goods physically arrive, so ON_HAND rises like any receipt;
+        // the hold then makes them unsellable, netting available to unchanged.
+        // Raising only the hold bucket subtracted the arrival from the good
+        // stock already on the shelf.
+        engineMovements.push({
+          transactionType: "QUARANTINE_IN",
+          productVariantId: line.productVariantId,
+          locationId: targetLocationId,
+          lotId: line.lotId ?? undefined,
+          serialId: line.serialId ?? undefined,
+          quantityDelta: line.quantity,
+          qualityBucket: "ON_HAND",
+        });
         engineMovements.push({
           transactionType: "QUARANTINE_IN",
           productVariantId: line.productVariantId,

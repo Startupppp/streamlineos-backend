@@ -8,6 +8,8 @@ import { AllExceptionsFilter } from "src/common/http/all-exceptions.filter";
 import { INTERNAL_TOKEN_AUDIENCE, INTERNAL_TOKEN_ISSUER } from "src/common/auth/backend-claims";
 import * as schema from "src/db/schema";
 import type { Db } from "src/db/drizzle.module";
+import { PayrollJobsWorkerService } from "src/modules/payroll/jobs/payroll-jobs-worker.service";
+import { PayrollCalendarReminderScheduler } from "src/modules/payroll/insights/payroll-calendar-reminder.scheduler";
 
 export const SEEDED_HARNESS = "[seeded-e2e]" as const;
 
@@ -22,7 +24,24 @@ export async function createSeededE2eApp(): Promise<SeededE2eApp> {
   if (!ownerUrl) throw new Error("DATABASE_URL must be set for seeded e2e tests");
   process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
 
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  /**
+   * Two payroll workers start sweeping on `onModuleInit` with no env gate and
+   * no `.unref()` on their timers — unlike the notification and HR export
+   * workers, which have both. Booting AppModule in a test therefore walks
+   * every organisation in the database (hundreds on a shared dev branch,
+   * each failing on a missing region) and holds the event loop open, which
+   * turned a 60-second inventory suite into a 15-minute one and then a hang.
+   *
+   * Neutered here rather than in payroll: this branch is inventory-only, and
+   * the harness is the right place to say "no background sweeps in tests".
+   */
+  const noopWorker = { onModuleInit: () => undefined, onModuleDestroy: () => undefined };
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(PayrollJobsWorkerService)
+    .useValue(noopWorker)
+    .overrideProvider(PayrollCalendarReminderScheduler)
+    .useValue(noopWorker)
+    .compile();
   const app = moduleRef.createNestApplication();
   app.useGlobalFilters(new AllExceptionsFilter());
   await app.init();

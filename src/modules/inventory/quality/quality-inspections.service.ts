@@ -136,9 +136,11 @@ export class InspectionsService {
       const levelKey = this.stockLevelKey(line.productVariantId, line.lotId, line.serialId);
       const level = stockLevelMap.get(levelKey);
       if (level && parseFloat(level.qualityHoldQty ?? "0") > 0) {
+        // Clearing the hold bucket is the whole release. The units never left
+        // ON_HAND — `quality_hold_qty` is subtracted from it, not held beside
+        // it — so also adding them back to ON_HAND invented stock.
         movements.push(
           { transactionType: "QUARANTINE_OUT", productVariantId: line.productVariantId, locationId: level.locationId, lotId: line.lotId ?? undefined, serialId: line.serialId ?? undefined, quantityDelta: "-" + line.quantity, qualityBucket: "QUALITY_HOLD" },
-          { transactionType: "ADJUSTMENT_IN", productVariantId: line.productVariantId, locationId: level.locationId, lotId: line.lotId ?? undefined, serialId: line.serialId ?? undefined, quantityDelta: line.quantity, qualityBucket: "ON_HAND" },
         );
       }
     }
@@ -203,9 +205,9 @@ export class InspectionsService {
         scrapMoves.push({ transactionType: "SCRAP", ...base, quantityDelta: "-" + line.quantity });
       } else if (dl.disposition === "RELEASE_TO_AVAILABLE") {
         if (cachedLevel && parseFloat(cachedLevel.qualityHoldQty ?? "0") > 0) {
+          // Same as `pass`: releasing clears the hold, it does not add stock.
           releaseMoves.push(
             { transactionType: "QUARANTINE_OUT", ...base, quantityDelta: "-" + line.quantity, qualityBucket: "QUALITY_HOLD" },
-            { transactionType: "ADJUSTMENT_IN", ...base, quantityDelta: line.quantity, qualityBucket: "ON_HAND" },
           );
         }
       } else if (dl.disposition === "RETURN_TO_VENDOR") {

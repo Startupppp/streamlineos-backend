@@ -8,7 +8,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { InventorySettingsService } from "./inventory-settings.service";
 import { InventoryAuditService } from "./inventory-audit.service";
-import { addDec, mulDec, isPositive, isNegative } from "./decimal";
+import { addDec, cmpDec, mulDec, isPositive, isNegative } from "./decimal";
 import { ValuationService } from "./valuation.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
 import { claimIdempotencyKey, extractEngineResult } from "./idempotency";
@@ -37,6 +37,38 @@ function bucketQuantities(
   if (bucket === "BLOCKED") return level.blockedQty;
   if (bucket === "QUALITY_HOLD") return level.qualityHoldQty;
   return level.onHand;
+}
+
+/**
+ * `blocked_qty` and `quality_hold_qty` are *subtracted from* `on_hand` by the
+ * availability formula, which makes each a subset of on_hand rather than a
+ * pool beside it. Two things follow, and neither was checked: a subset cannot
+ * be negative (releasing more than is held), and a subset cannot exceed the
+ * whole (holding more than is on the shelf, which drove available below zero
+ * while on_hand itself stayed comfortably positive and passed the only guard
+ * there was).
+ *
+ * The subset-vs-whole check is relaxed under `allowNegativeStock`, where a
+ * negative on_hand is a deliberate backorder position and "subset of the
+ * whole" stops meaning anything. A negative bucket is never legitimate, so
+ * that one holds either way.
+ */
+function assertBucketsCoherent(
+  next: { onHand: string; blockedQty: string; qualityHoldQty: string },
+  allowNegativeStock: boolean,
+): void {
+  if (!allowNegativeStock && isNegative(next.onHand)) {
+    throw new BadRequestException({ code: INV_ERRORS.INSUFFICIENT_STOCK });
+  }
+  if (isNegative(next.blockedQty) || isNegative(next.qualityHoldQty)) {
+    throw new BadRequestException({ code: INV_ERRORS.RELEASE_EXCEEDS_HELD });
+  }
+  if (
+    !allowNegativeStock &&
+    cmpDec(addDec(next.blockedQty, next.qualityHoldQty), next.onHand) > 0
+  ) {
+    throw new BadRequestException({ code: INV_ERRORS.HOLD_EXCEEDS_ON_HAND });
+  }
 }
 
 function resolvePostingDate(cmd: StockEngineCommand): string {
@@ -138,9 +170,10 @@ export class StockEngineService {
           ? addDec(level.qualityHoldQty, delta)
           : level.qualityHoldQty;
 
-      if (!settings.allowNegativeStock && isNegative(newOnHand)) {
-        throw new BadRequestException({ code: INV_ERRORS.INSUFFICIENT_STOCK });
-      }
+      assertBucketsCoherent(
+        { onHand: newOnHand, blockedQty: newBlocked, qualityHoldQty: newQualityHold },
+        settings.allowNegativeStock,
+      );
 
       // before/after describe the bucket this movement actually moved. Recording
       // on-hand for a hold or block movement made after = before + change false
@@ -450,11 +483,10 @@ export class StockEngineService {
               ? addDec(state.qualityHoldQty, delta)
               : state.qualityHoldQty;
 
-          if (!settings.allowNegativeStock && isNegative(newOnHand)) {
-            throw new BadRequestException({
-              code: INV_ERRORS.INSUFFICIENT_STOCK,
-            });
-          }
+          assertBucketsCoherent(
+            { onHand: newOnHand, blockedQty: newBlocked, qualityHoldQty: newQualityHold },
+            settings.allowNegativeStock,
+          );
 
           const bucketBefore = bucketQuantities(bucket, state);
           const bucketAfter = bucketQuantities(bucket, {

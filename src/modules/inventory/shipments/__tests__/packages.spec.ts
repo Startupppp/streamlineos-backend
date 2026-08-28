@@ -49,6 +49,16 @@ const PKG_ID = 1;
 
 const closedPkg = { id: PKG_ID, orgId: ORG, status: "CLOSED", lines: [] };
 
+/** Unrestricted scope: these are behaviour tests, not scope tests. */
+function makeWarehouseScope() {
+  return {
+    resolve: async () => null,
+    forUser: async () => ({ key: "all", isEmpty: false, unrestricted: true, anyOf: null }),
+    assertWarehouseVisible: async () => undefined,
+    assertLocationVisible: async () => undefined,
+  };
+}
+
 describe("PackagesService.close", () => {
   it("succeeds when package qty is within picked qty", async () => {
     const pkg = { id: PKG_ID, orgId: ORG, shipmentId: 10, status: "OPEN" };
@@ -70,6 +80,7 @@ describe("PackagesService.close", () => {
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
       makeAudit() as never,
+      makeWarehouseScope() as never,
     );
 
     await expect(service.close(ORG, USER, PKG_ID)).resolves.toBeDefined();
@@ -99,6 +110,7 @@ describe("PackagesService.close", () => {
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
       makeAudit() as never,
+      makeWarehouseScope() as never,
     );
 
     await expect(service.close(ORG, USER, PKG_ID)).rejects.toThrow(BadRequestException);
@@ -123,6 +135,7 @@ describe("PackagesService.close", () => {
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
       makeAudit() as never,
+      makeWarehouseScope() as never,
     );
 
     await expect(service.close(ORG, USER, PKG_ID)).resolves.toBeDefined();
@@ -144,6 +157,7 @@ describe("PackagesService.close", () => {
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
       makeAudit() as never,
+      makeWarehouseScope() as never,
     );
 
     await expect(service.close(ORG, USER, PKG_ID)).resolves.toBeDefined();
@@ -160,6 +174,7 @@ describe("PackagesService.close", () => {
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
       makeAudit() as never,
+      makeWarehouseScope() as never,
     );
 
     await expect(service.close(ORG, USER, PKG_ID)).rejects.toThrow(NotFoundException);
@@ -178,6 +193,7 @@ describe("PackagesService.close", () => {
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
       makeAudit() as never,
+      makeWarehouseScope() as never,
     );
 
     await expect(service.close(ORG, USER, PKG_ID)).rejects.toThrow(ConflictException);
@@ -209,6 +225,7 @@ describe("PackagesService.close", () => {
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
       makeAudit() as never,
+      makeWarehouseScope() as never,
     );
 
     await expect(service.close(ORG, USER, PKG_ID)).resolves.toBeDefined();

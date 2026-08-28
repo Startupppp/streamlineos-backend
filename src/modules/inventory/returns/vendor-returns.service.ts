@@ -125,7 +125,7 @@ export class VendorReturnsService {
         productVariantId: line.productVariantId,
         lotId: line.lotId,
         serialId: line.serialId,
-        quantity: line.quantity.toFixed(4),
+        quantity: line.quantity,
         reason: line.reason,
         unitCost: line.unitCost,
       }))

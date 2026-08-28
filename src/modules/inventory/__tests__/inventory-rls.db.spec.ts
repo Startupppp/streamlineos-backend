@@ -79,7 +79,7 @@ describeDb("inventory row-level security", () => {
       onnotice: () => undefined,
       // A blocked GRANT should say so rather than sit behind another suite's
       // locks until the jest timeout turns it into an unexplained failure.
-      connection: { lock_timeout: "5s" },
+      connection: { lock_timeout: "5s" } as never,
     });
 
     usingDeployedRole = Boolean(process.env.APP_DATABASE_URL);

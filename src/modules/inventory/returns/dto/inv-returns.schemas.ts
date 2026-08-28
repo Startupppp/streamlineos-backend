@@ -9,7 +9,7 @@ export type ListReturnsInput = z.infer<typeof listReturnsSchema>;
 
 const vendorReturnLineSchema = z.object({
   productVariantId: z.number().int().positive(),
-  quantity: z.number().positive(),
+  quantity: z.string().regex(/^\d+(\.\d{1,4})?$/),
   reason: z.enum(["DAMAGED", "WRONG_ITEM", "EXCESS", "EXPIRED", "QUALITY_REJECTED"]),
   lotId: z.number().int().positive().optional(),
   serialId: z.number().int().positive().optional(),
@@ -32,7 +32,7 @@ export type PostVendorReturnInput = z.infer<typeof postVendorReturnSchema>;
 
 const customerReturnLineSchema = z.object({
   productVariantId: z.number().int().positive(),
-  quantity: z.number().positive(),
+  quantity: z.string().regex(/^\d+(\.\d{1,4})?$/),
   reason: z.string().max(500),
   disposition: z.enum(["RESTOCK", "QUARANTINE", "SCRAP"]),
   targetLocationId: z.number().int().positive().optional(),

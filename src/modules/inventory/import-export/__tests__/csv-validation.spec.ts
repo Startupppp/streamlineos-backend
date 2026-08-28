@@ -87,7 +87,7 @@ describe("toCsv", () => {
 });
 
 describe("ImportService — opening-stock row validation via previewImport", () => {
-  const service = new ImportService({} as never, {} as never, {} as never);
+  const service = new ImportService({} as never, {} as never, {} as never, {} as never);
 
   function makeFile(csvContent: string): Express.Multer.File {
     return { buffer: Buffer.from(csvContent) } as Express.Multer.File;
