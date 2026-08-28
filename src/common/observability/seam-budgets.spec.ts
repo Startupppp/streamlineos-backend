@@ -32,4 +32,11 @@ describe('SEAM_BUDGETS', () => {
       expect(seam.reason.length).toBeGreaterThan(0);
     }
   });
+
+  it('runtime.eventloop.delay is present with the correct numbers', () => {
+    const seam = SEAM_BUDGETS['runtime.eventloop.delay'];
+    expect(seam.budgetMs).toBe(50);
+    expect(seam.thresholdMs).toBe(37);
+    expect(seam.thresholdMs).toBeLessThan(seam.budgetMs);
+  });
 });

@@ -23,11 +23,10 @@ import { HrCustomFieldsService } from "./hr-custom-fields.service";
 import { PersonEmploymentSyncService } from "./person-employment-sync.service";
 import { EmploymentBackfillService } from "./employment-backfill.service";
 import { EmploymentReconciliationService } from "./employment-reconciliation.service";
-import { DirectoryModule } from "../../directory/directory.module";
-import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { EmploymentFactsModule } from "../../directory/employment-facts.module";
 
 @Module({
-  imports: [HrWorkflowsModule, OrgHierarchyModule, DirectoryModule],
+  imports: [HrWorkflowsModule, OrgHierarchyModule, EmploymentFactsModule],
   controllers: [
     HrPeopleController,
     HrEmploymentsController,
@@ -63,7 +62,7 @@ import { EmploymentFactsService } from "../../directory/employment-facts.service
     PersonEmploymentSyncService,
     EmploymentBackfillService,
     EmploymentReconciliationService,
-    EmploymentFactsService,
+    EmploymentFactsModule,
   ],
 })
 export class HrCoreModule {}

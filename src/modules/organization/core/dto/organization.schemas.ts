@@ -134,6 +134,10 @@ export const schedulePurgeSchema = z.object({
   reason: z.string().min(1).max(500),
 });
 
+export const placeLegalHoldSchema = z.object({
+  reason: z.string().min(1).max(500),
+});
+
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 export type ListMembersInput = z.infer<typeof listMembersSchema>;
 export type UpdateOrgSettingsInput = z.infer<typeof updateOrgSettingsSchema>;
@@ -147,3 +151,4 @@ export type DeleteOrgInput = z.infer<typeof deleteOrgSchema>;
 export type AddCustomDomainInput = z.infer<typeof addCustomDomainSchema>;
 export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;
 export type SchedulePurgeInput = z.infer<typeof schedulePurgeSchema>;
+export type PlaceLegalHoldInput = z.infer<typeof placeLegalHoldSchema>;

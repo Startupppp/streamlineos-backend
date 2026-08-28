@@ -100,15 +100,17 @@ describe("productKey values are in the frontend ProductKey union", () => {
 
 describe("cross-entry uniqueness", () => {
   it("productKey values are unique across all entries (null excluded)", () => {
+    type ProductKeyField = (typeof MODULE_REGISTRY)[number]["productKey"];
     const nonNull = MODULE_REGISTRY.map((e) => e.productKey).filter(
-      (k): k is string => k !== null,
+      (k): k is NonNullable<ProductKeyField> => k !== null,
     );
     expect(new Set(nonNull).size).toBe(nonNull.length);
   });
 
   it("route values are unique across all entries (null excluded)", () => {
+    type RouteField = (typeof MODULE_REGISTRY)[number]["route"];
     const nonNull = MODULE_REGISTRY.map((e) => e.route).filter(
-      (r): r is string => r !== null,
+      (r): r is NonNullable<RouteField> => r !== null,
     );
     expect(new Set(nonNull).size).toBe(nonNull.length);
   });

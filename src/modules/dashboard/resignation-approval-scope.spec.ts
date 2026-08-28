@@ -62,7 +62,16 @@ describe("the pending-approvals resignation count applies the predicate", () => 
     expect(countBlock).toContain("resignationApprovalScope(scope, orgId, u.userId)");
   });
 
-  it("joins the subject so the derived-approver column is reachable", () => {
-    expect(countBlock).toContain("innerJoin(users");
+  it("reaches the approver relation through the predicate, without joining users", () => {
+    expect(countBlock).not.toContain("innerJoin(users");
+  });
+
+  it("keeps the predicate self-contained, so removing the join cannot widen the count", () => {
+    for (const scope of ["own", "team"] as const) {
+      const rendered = dialect.sqlToQuery(resignationApprovalScope(scope, ORG, ACTOR)).sql;
+
+      expect(rendered).not.toContain('"users"');
+      expect(rendered).toContain('"hr_reporting_lines"');
+    }
   });
 });

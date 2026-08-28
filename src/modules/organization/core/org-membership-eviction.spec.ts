@@ -1,3 +1,4 @@
+import { getTableName } from "drizzle-orm";
 import { Test } from "@nestjs/testing";
 import { AccessService } from "../../access/access.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -25,7 +26,11 @@ jest.mock("../../../common/tenant/with-identity", () => ({
 
 describe("OrgMembershipService access revocation", () => {
   it("evicts only the requested organization without revoking account sessions", async () => {
-    const where = jest.fn().mockResolvedValue(undefined);
+    const where = jest.fn().mockReturnValue(
+      Object.assign(Promise.resolve(undefined), {
+        returning: jest.fn().mockResolvedValue([]),
+      }),
+    );
     const set = jest.fn().mockReturnValue({ where });
     const update = jest.fn().mockReturnValue({ set });
     const revokeAllForUser = jest.fn();
@@ -79,7 +84,16 @@ describe("OrgMembershipService access revocation", () => {
 
     await service.revokeOrgScopedAccess("org-1", "member-1", "removed");
 
-    expect(update).toHaveBeenCalledTimes(1);
+    const updatedTables = update.mock.calls.map((call) =>
+      getTableName(call[0] as Parameters<typeof getTableName>[0]),
+    );
+    expect(updatedTables).toEqual(
+      expect.arrayContaining([
+        "agent_tokens",
+        "user_delegations",
+        "ownership_transfers",
+      ]),
+    );
     expect(revokeAllForUser).not.toHaveBeenCalled();
     expect(invalidate).toHaveBeenCalled();
   });

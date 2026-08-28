@@ -6,7 +6,8 @@ export type SeamKey =
   | 'db.roundtrip.complex'
   | 'cache.roundtrip'
   | 'route.cached.read'
-  | 'route.write';
+  | 'route.write'
+  | 'runtime.eventloop.delay';
 
 export interface SeamBudget {
   readonly key: SeamKey;
@@ -65,6 +66,12 @@ export const SEAM_BUDGETS: SeamTable = {
     budgetMs: 500,
     thresholdMs: 375,
     reason: 'PRD p95 transactional write excluding declared async work; threshold is exactly 25% below budget.',
+  },
+  'runtime.eventloop.delay': {
+    key: 'runtime.eventloop.delay',
+    budgetMs: 50,
+    thresholdMs: 37,
+    reason: 'Derived from route.cached.read (150 ms): a loop delay exceeding one-third of that budget makes the route target unattainable regardless of handler speed; threshold is 25% below budget — the same headroom as every other seam.',
   },
 } as const;
 

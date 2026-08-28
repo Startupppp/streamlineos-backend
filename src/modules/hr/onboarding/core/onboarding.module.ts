@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { OnboardingService } from "./onboarding.service";
 import { OnboardingController } from "./onboarding.controller";
 import { AutomationModule } from "../../../automation/automation.module";
+import { NotificationsModule } from "../../../notifications/notifications.module";
 import { HrPoliciesModule } from "../../policies/hr-policies.module";
 import { OnboardingProbationService } from "./onboarding-probation.service";
 import { HrAutomationsModule } from "../../automations/hr-automations.module";
@@ -25,6 +26,7 @@ import { OnboardingSubmissionService } from "./onboarding-submission.service";
     OnboardingFlowModule,
     HrCoreModule,
     HrLifecycleModule,
+    NotificationsModule,
   ],
   providers: [
     OnboardingService,

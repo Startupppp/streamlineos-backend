@@ -297,6 +297,58 @@ export const BUDGETS = [
     ],
   },
   {
+    id: "employee-record-list-canonical",
+    // The employee-record list after the users-table split. Employment facts used to
+    // be columns on `users`; they now come from hr_people -> hr_employments, so this
+    // list gained two joins. The ceiling exists to catch that join falling off an
+    // index, which is the regression the split could introduce even while correct.
+    // minRows is deliberately above dev-seed scale: on 33 employments Postgres
+    // correctly picks a Seq Scan, so forbid-seq-scan would assert a falsehood and a
+    // pass would mean nothing. This reports "seed too small" until seeded to scale.
+    ceiling: 8_000,
+    minRows: 5_000,
+    rowCountSql: `SELECT count(*)::int FROM hr_employments WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT m.user_id, e.employee_number, e.designation, e.joining_date,
+             e.department_id, e.location_id
+      FROM organization_members m
+      LEFT JOIN hr_people p
+        ON p.org_id = $1 AND p.user_id = m.user_id AND p.deleted_at IS NULL
+      LEFT JOIN hr_employments e
+        ON e.org_id = $1 AND e.person_id = p.id AND e.is_primary = true AND e.deleted_at IS NULL
+      WHERE m.org_id = $1 AND m.status = 'ACTIVE'
+      ORDER BY m.joined_at DESC
+      LIMIT 100`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "hr_employments" },
+      { kind: "forbid-seq-scan", relation: "hr_people" },
+    ],
+  },
+  {
+    id: "employee-reporting-line-lookup",
+    // The org chart's manager edge. It used to be users.reporting_to; it is now an
+    // effective-dated hr_reporting_lines row, so the open-line predicate has to stay
+    // indexed or every org-chart render degrades to a scan. Same reason as above for
+    // minRows: hr_reporting_lines is empty on the dev seed, and a budget that passes
+    // over an empty table is a vacuous pass.
+    ceiling: 5_000,
+    minRows: 1_000,
+    rowCountSql: `SELECT count(*)::int FROM hr_employments WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT rl.employment_id, rl.manager_employment_id, rl.effective_from
+      FROM hr_reporting_lines rl
+      WHERE rl.org_id = $1
+        AND rl.line_type = 'primary'
+        AND rl.effective_to = 'infinity'::date
+      ORDER BY rl.employment_id ASC
+      LIMIT 100`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "hr_reporting_lines" },
+    ],
+  },
+  {
     id: "leave-requests-pending-org",
     ceiling: 8_000,
     minRows: 20,

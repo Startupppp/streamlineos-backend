@@ -84,7 +84,8 @@ export const CONTRACT_SCHEMAS: Schemas = {
     properties: {
       data: { type: "array", items: {} },
       nextCursor: {
-        type: ["string", "null"],
+        type: "string",
+        nullable: true,
         description:
           "Absent or null when the page is the last one. A full page means there may be more; a short page is the end.",
       },

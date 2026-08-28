@@ -11,6 +11,11 @@ import { AccessService } from "src/modules/access/access.service";
 import type { DataScope } from "src/modules/access/access.types";
 import { moduleAvailabilityResolver } from "src/common/rbac/module-availability";
 import { RegionRegistry, setRegionRegistry } from "src/common/region/region-registry";
+import {
+  DEFAULT_DATABASE_SHARD,
+  DEFAULT_SEARCH_CLUSTER,
+  LEGACY_CELL_ID,
+} from "src/common/region/placement";
 import type { RegionDefinition } from "src/common/region/region.config";
 import type { Db } from "src/db/drizzle.types";
 import { DRIZZLE } from "src/db/drizzle.constants";
@@ -150,6 +155,11 @@ function installFixtureRegionRegistry(db: Db): void {
   const definition: RegionDefinition = {
     key: "primary",
     databaseUrl: process.env.DATABASE_URL ?? "",
+    cell: {
+      cellId: LEGACY_CELL_ID,
+      databaseShard: DEFAULT_DATABASE_SHARD,
+      searchCluster: DEFAULT_SEARCH_CLUSTER,
+    },
     storage: {
       region: "auto",
       bucket: "fixture",

@@ -12,6 +12,7 @@ const SEAM_BUDGETS = {
   "cache.roundtrip": 1.5,
   "route.cached.read": 112,
   "route.write": 375,
+  "runtime.eventloop.delay": 37,
 };
 
 const args = process.argv.slice(2);

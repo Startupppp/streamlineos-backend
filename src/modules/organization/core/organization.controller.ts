@@ -33,6 +33,7 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { OrganizationService } from "./organization.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
+import { OrganizationLegalHoldService } from "./lifecycle/organization-legal-hold.service";
 import { InvitationsService } from "./invitations.service";
 import { InvitationsReadService } from "./invitations-read.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
@@ -44,6 +45,7 @@ import {
   createHolidaySchema,
   deleteOrgSchema,
   listMembersSchema,
+  placeLegalHoldSchema,
   restoreOrgSchema,
   schedulePurgeSchema,
   securitySettingsSchema,
@@ -57,6 +59,7 @@ import {
   type CreateOrganizationInput,
   type DeleteOrgInput,
   type ListMembersInput,
+  type PlaceLegalHoldInput,
   type RestoreOrgInput,
   type SchedulePurgeInput,
   type SecuritySettingsInput,
@@ -75,6 +78,7 @@ export class OrganizationController {
     private readonly invitationsRead: InvitationsReadService,
     private readonly invitationAcceptance: InvitationAcceptanceService,
     private readonly rateLimit: RateLimitService,
+    private readonly legalHold: OrganizationLegalHoldService,
   ) {}
 
   private getIp(req: { ip?: string; headers: Record<string, string> }): string {
@@ -387,5 +391,33 @@ export class OrganizationController {
     assertOwnerOnly(u, "organization.purge.cancel");
     const targetOrgId = u.orgId;
     return this.organization.cancelPurge(targetOrgId, u.userId);
+  }
+
+  @Post("legal-holds")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:organization:manage")
+  placeLegalHold(
+    @Body(new ZodValidationPipe(placeLegalHoldSchema)) body: PlaceLegalHoldInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.legalHold.place(u.orgId, u.userId, body.reason);
+  }
+
+  @Get("legal-holds")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:organization:manage")
+  listLegalHolds(@CurrentUser() u: CurrentUserContext) {
+    return this.legalHold.listActive(u.orgId);
+  }
+
+  @Delete("legal-holds/:holdId")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:organization:manage")
+  releaseLegalHold(
+    @Param("holdId") holdId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.legalHold.release(holdId, u.orgId, u.userId);
   }
 }

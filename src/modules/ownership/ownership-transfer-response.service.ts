@@ -6,9 +6,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import {
   moduleOwnerships,
+  organizationLegalHolds,
   organizationMembers,
   organizations,
   ownershipTransfers,
@@ -21,6 +22,10 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { logger } from "../../common/logger/logger.service";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import {
+  assertTransitionAllowed,
+} from "../organization/core/lifecycle/organization-lifecycle-transitions";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -117,6 +122,40 @@ export class OwnershipTransferResponseService {
       throw new BadRequestException(
         "Your membership must be ACTIVE to accept a transfer",
       );
+    }
+
+    if (transfer.scope === "ORGANIZATION") {
+      const preflight = await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const [org] = await tx
+            .select({ statusV2: organizations.statusV2 })
+            .from(organizations)
+            .where(eq(organizations.id, orgId))
+            .limit(1);
+          const [hold] = await tx
+            .select({ holdId: organizationLegalHolds.holdId })
+            .from(organizationLegalHolds)
+            .where(
+              and(
+                eq(organizationLegalHolds.orgId, orgId),
+                isNull(organizationLegalHolds.releasedAt),
+              ),
+            )
+            .limit(1);
+          return {
+            statusV2: org?.statusV2 ?? null,
+            hasActiveLegalHold: hold !== undefined,
+          };
+        },
+        { orgId },
+      );
+      const transition = assertTransitionAllowed(
+        "OWNERSHIP_TRANSFER",
+        preflight.statusV2 ?? "ACTIVE",
+        { hasActiveLegalHold: preflight.hasActiveLegalHold },
+      );
+      if (!transition.allowed) throw new BadRequestException(transition.reason);
     }
 
     const fromUserId =

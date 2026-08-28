@@ -121,7 +121,6 @@ export class DashboardLeaveService {
         const [resignationCount] = await this.db
           .select({ count: sql<number>`count(*)::int` })
           .from(resignations)
-          .innerJoin(users, eq(users.id, resignations.userId))
           .where(
             and(
               eq(resignations.orgId, orgId),

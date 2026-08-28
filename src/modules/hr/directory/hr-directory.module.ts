@@ -25,6 +25,7 @@ import { BackgroundVerificationService } from "./background-verification.service
 import { AccessRequestsService } from "./access-requests.service";
 import { BillingModule } from "../../billing/core/billing.module";
 import { DirectoryModule } from "../../directory/directory.module";
+import { NotificationsModule } from "../../notifications/notifications.module";
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { DirectoryModule } from "../../directory/directory.module";
     HrCoreModule,
     BillingModule,
     DirectoryModule,
+    NotificationsModule,
   ],
   controllers: [
     EmployeesController,

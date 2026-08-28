@@ -6,8 +6,8 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 
 import helmet from "helmet";
 import compression from "compression";
-import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
-import { recordRouteClassification } from "./common/auth/record-route-classification";
+import { SwaggerModule } from "@nestjs/swagger";
+import { buildOpenApiDocument } from "./common/openapi/build-openapi-document";
 
 import { AppModule } from "./app.module";
 import { validateEnv } from "./config/env.validation";
@@ -103,19 +103,12 @@ async function bootstrap(): Promise<void> {
   });
 
   if (isDevelopment) {
-    const swaggerConfig = new DocumentBuilder()
-      .setTitle("StreamlineOS API")
-      .setDescription("StreamlineOS platform REST API")
-      .setVersion("1.0")
-      .addBearerAuth()
-      .build();
-
-    const document = SwaggerModule.createDocument(app, swaggerConfig);
-    const classification = recordRouteClassification(app, document);
+    const built = buildOpenApiDocument(app);
     logger.info(
-      `OpenAPI: exposure recorded on ${classification.stamped} operation(s), ${classification.undeclared} undeclared`,
+      `OpenAPI: exposure recorded on ${built.stamped} operation(s), ${built.undeclared} undeclared; ` +
+        `zod contracts on ${built.contractsApplied}, ${built.unconvertible.length} unconvertible`,
     );
-    SwaggerModule.setup("api/docs", app, document);
+    SwaggerModule.setup("api/docs", app, built.document);
   }
 
   await app.listen(config.PORT);

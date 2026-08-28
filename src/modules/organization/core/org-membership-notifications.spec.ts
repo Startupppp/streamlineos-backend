@@ -66,7 +66,6 @@ describe("OrgMembershipService access notifications", () => {
     query: {
       organizationMembers: { findFirst: memberFindFirst },
       organizations: { findFirst: orgFindFirst },
-      users: { findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }) },
       users: { findFirst: userFindFirst },
     },
     select: tx.select,

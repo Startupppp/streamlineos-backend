@@ -70,6 +70,23 @@ jobs:
       - name: Navigation gates name the route's permission
         run: pnpm check:navigation-permissions
 
+      - name: OpenAPI contract is current
+        run: pnpm openapi:check
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          BACKEND_JWT_SECRET: ci-openapi-generation-secret-not-used-for-signing
+          PORTAL_JWT_SECRET: ci-openapi-generation-portal-secret-not-used-here
+          ENCRYPTION_KEY: ci-openapi-generation-encryption-key-unused
+          CORS_ORIGINS: http://localhost:1000
+          APP_URL: http://localhost:1000
+
+      - name: Retryable commands are fenced
+        run: pnpm check:idempotent-commands
+
+      - name: Module manifest agrees with enablement and entitlement
+        run: pnpm check:module-entitlement
+
       - name: Every resolved DataScope reaches a predicate
         run: pnpm check:scope-application
 

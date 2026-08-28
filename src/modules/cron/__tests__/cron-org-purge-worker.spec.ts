@@ -129,7 +129,11 @@ describe("CronOrgPurgeWorkerService", () => {
     expect(result.skipped).toBe(0);
     expect(capturedSetArg()).toMatchObject({ statusV2: "PURGED", status: "PURGED" });
     expect(capturedSetArg()?.purgedAt).toBeInstanceOf(Date);
-    expect(mockOrgMembership.revokeOrgScopedAccess).toHaveBeenCalledWith(ORG_ID, MEMBER_ID);
+    expect(mockOrgMembership.revokeOrgScopedAccess).toHaveBeenCalledWith(
+      ORG_ID,
+      MEMBER_ID,
+      "removed",
+    );
   });
 
   it("blocks completion when an adapter cannot confirm deletion, leaving the org PURGE_SCHEDULED", async () => {
