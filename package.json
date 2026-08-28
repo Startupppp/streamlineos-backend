@@ -161,10 +161,13 @@
     "cell:rollout:regressed-canary": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/run-cell-rollout.ts --regressed-canary",
     "cell:relay": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/verify-cross-cell-relay.ts",
     "cell:relay:self-test": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/verify-cross-cell-relay.ts --self-test",
+    "check:migration-chain": "node src/scripts/verify-migration-chain.mjs",
+    "check:migration-chain:self-test": "node src/scripts/verify-migration-chain.mjs --self-test",
     "auth:benchmark": "node --env-file=.env -r ts-node/register/transpile-only src/scripts/benchmark-access-service.ts",
     "auth:benchmark:self-test": "node -r ts-node/register/transpile-only src/scripts/benchmark-access-service.ts --self-test",
     "browser:measure": "node --env-file-if-exists=.env src/scripts/browser-driver.mjs",
-    "browser:measure:self-test": "node src/scripts/browser-driver.mjs --self-test"
+    "browser:measure:self-test": "node src/scripts/browser-driver.mjs --self-test",
+    "db:apply-one": "node --env-file=.env src/scripts/apply-journalled-migration.mjs"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
@@ -215,6 +215,8 @@ async function main() {
       `\nRESULT: REACHED_HEAD ${executed + skipped}/${journal.entries.length}` +
         ` already_present=${alreadyPresent} chain_gaps=${neverCreated}`,
     );
+
+    writeFileSync(resolve(process.cwd(), ".chain-gaps"), String(neverCreated));
 
     if (neverCreated > 0) {
       console.log(

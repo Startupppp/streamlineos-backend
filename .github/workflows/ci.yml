@@ -105,6 +105,25 @@ jobs:
       - name: Tenant index check
         run: pnpm check:tenant-indexes
 
+      # Restore the chain-gaps marker from the most recent nightly cold bootstrap.
+      # The file is absent on the very first run; in that case criterion (e) of
+      # verify-migration-chain.mjs silently skips rather than failing the build.
+      - name: Restore chain-gaps marker
+        uses: actions/cache/restore@v4
+        with:
+          path: .chain-gaps
+          key: chain-gaps-never-exact-match
+          restore-keys: |
+            chain-gaps-
+
+      # Migration chain integrity: every .sql must be journalled (or on the deliberate
+      # allowlist), no two files may share a numeric prefix, `when` timestamps must be
+      # strictly ascending, and no journal entry may name a missing file. Self-test first;
+      # then the live check. Chain-gap count (criterion e) is only checked when the
+      # .chain-gaps marker is present — it is written by the nightly bootstrap job.
+      - name: Migration chain verification
+        run: pnpm check:migration-chain:self-test && pnpm check:migration-chain
+
       - name: Dead-code report
         run: pnpm exec knip --no-progress
         continue-on-error: true

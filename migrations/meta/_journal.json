@@ -668,6 +668,13 @@
       "breakpoints": true
     },
     {
+      "idx": 366,
+      "version": "7",
+      "when": 1784993507608,
+      "tag": "0649_org_members_org_fk",
+      "breakpoints": true
+    },
+    {
       "idx": 95,
       "version": "7",
       "when": 1784993508607,
@@ -2166,10 +2173,38 @@
       "breakpoints": true
     },
     {
+      "idx": 310,
+      "version": "7",
+      "when": 1787830382441,
+      "tag": "0263_crm_org_party_map",
+      "breakpoints": true
+    },
+    {
+      "idx": 311,
+      "version": "7",
+      "when": 1787830383441,
+      "tag": "0264_crm_org_party_backfill",
+      "breakpoints": true
+    },
+    {
       "idx": 312,
       "version": "7",
       "when": 1787830384441,
       "tag": "0265_party_association_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 313,
+      "version": "7",
+      "when": 1787830385441,
+      "tag": "0266_party_association_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 314,
+      "version": "7",
+      "when": 1787830386441,
+      "tag": "0267_record_layout_adjustments",
       "breakpoints": true
     },
     {
@@ -2453,13 +2488,6 @@
       "breakpoints": true
     },
     {
-      "idx": 356,
-      "version": "7",
-      "when": 1787899958254,
-      "tag": "0636_kb_source_review_tenant_constraints",
-      "breakpoints": true
-    },
-    {
       "idx": 357,
       "version": "7",
       "when": 1787940128254,
@@ -2520,6 +2548,13 @@
       "version": "7",
       "when": 1787940608254,
       "tag": "0648_build_actor_membership_expand",
+      "breakpoints": true
+    },
+    {
+      "idx": 356,
+      "version": "7",
+      "when": 1787940668254,
+      "tag": "0636_kb_source_review_tenant_constraints",
       "breakpoints": true
     }
   ]
