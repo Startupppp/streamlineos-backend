@@ -221,7 +221,7 @@ describe("[seeded-e2e] purchase order to shipment", () => {
       await asTenant(() =>
         app.app.get(SoFulfillmentService).pickSo(scene.orgId, so.id, scene.userId, {
           lines: [
-            { soLineId: soLines[0]!.id, locationId: scene.locationId, quantityPicked: 40 },
+            { soLineId: soLines[0]!.id, locationId: scene.locationId, quantityPicked: "40.0000" },
           ],
         }),
       );

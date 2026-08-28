@@ -18,6 +18,7 @@ import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { SoCoreService } from "./so-core.service";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
+import { addDec, cmpDec } from "../stock-engine/decimal";
 
 @Injectable()
 export class SoFulfillmentService {
@@ -168,18 +169,25 @@ export class SoFulfillmentService {
           locationId: line.locationId,
           lotId: line.lotId,
           serialId: line.serialId,
-          quantityToPick: line.quantityPicked.toFixed(4),
-          quantityPicked: line.quantityPicked.toFixed(4),
+          quantityToPick: line.quantityPicked,
+          quantityPicked: line.quantityPicked,
         };
       })
     );
 
-    const orderedQtyMap = new Map(so.lines.map((l) => [l.id, parseFloat(l.quantity)]));
-    const pickedMap = new Map<number, number>();
+    // Exact. Deciding a whole order is picked on the strength of float
+    // comparisons is how an order ships one unit short and nothing notices.
+    const orderedQtyMap = new Map(so.lines.map((l) => [l.id, String(l.quantity)]));
+    const pickedMap = new Map<number, string>();
     for (const line of data.lines) {
-      pickedMap.set(line.soLineId, (pickedMap.get(line.soLineId) ?? 0) + line.quantityPicked);
+      pickedMap.set(
+        line.soLineId,
+        addDec(pickedMap.get(line.soLineId) ?? "0", line.quantityPicked),
+      );
     }
-    const allPicked = so.lines.every((l) => (pickedMap.get(l.id) ?? 0) >= (orderedQtyMap.get(l.id) ?? 0));
+    const allPicked = so.lines.every(
+      (l) => cmpDec(pickedMap.get(l.id) ?? "0", orderedQtyMap.get(l.id) ?? "0") >= 0,
+    );
 
     await this.db.update(invSalesOrders)
       .set({ status: allPicked ? "PICKED" : so.status, updatedAt: new Date() })

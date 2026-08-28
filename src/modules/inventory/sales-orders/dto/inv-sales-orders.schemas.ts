@@ -62,7 +62,11 @@ const pickLineSchema = z.object({
   locationId: z.number().int().positive(),
   lotId: z.number().int().positive().optional(),
   serialId: z.number().int().positive().optional(),
-  quantityPicked: z.number().positive(),
+  /**
+   * INV-204. A decimal string: this quantity closes a reservation and feeds
+   * the shipment, and it was being written through `Number(...).toFixed(4)`.
+   */
+  quantityPicked: z.string().regex(/^\d+(\.\d{1,4})?$/),
 }).strict();
 
 export const pickSoSchema = z.object({
