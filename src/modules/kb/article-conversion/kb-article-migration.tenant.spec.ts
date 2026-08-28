@@ -1,5 +1,15 @@
 import { KbArticleMigrationService } from "./kb-article-migration.service";
 
+function stubPrivate(
+  service: KbArticleMigrationService,
+  name: string,
+  value: unknown,
+): jest.Mock {
+  const stub = jest.fn().mockResolvedValue(value);
+  Object.defineProperty(service, name, { value: stub, configurable: true });
+  return stub;
+}
+
 jest.mock("../../../common/tenant/with-tenant", () => ({
   withTenant: jest.fn(
     async (
@@ -34,15 +44,13 @@ describe("KbArticleMigrationService tenant boundary", () => {
 
   it("runs preview inside an INTERNAL tenant transaction", async () => {
     const service = new KbArticleMigrationService({} as never);
-    const previewOn = jest
-      .spyOn(service as never, "previewOn")
-      .mockResolvedValue({
-        total: 0,
-        byStatus: {},
-        alreadyMigrated: 0,
-        willMigrate: 0,
-        sample: [],
-      });
+    const previewOn = stubPrivate(service, "previewOn", {
+      total: 0,
+      byStatus: {},
+      alreadyMigrated: 0,
+      willMigrate: 0,
+      sample: [],
+    });
 
     await service.preview("org-1");
 
@@ -61,9 +69,13 @@ describe("KbArticleMigrationService tenant boundary", () => {
 
   it("keeps conversion reads and writes on the same tenant transaction", async () => {
     const service = new KbArticleMigrationService({} as never);
-    const runOn = jest
-      .spyOn(service as never, "runOn")
-      .mockResolvedValue({ migrated: 0, skipped: 0, total: 0, failed: 0, dryRun: true });
+    const runOn = stubPrivate(service, "runOn", {
+      migrated: 0,
+      skipped: 0,
+      total: 0,
+      failed: 0,
+      dryRun: true,
+    });
     const user = { orgId: "org-2", userId: "operator-2" } as never;
 
     await service.run(user, { dryRun: true });

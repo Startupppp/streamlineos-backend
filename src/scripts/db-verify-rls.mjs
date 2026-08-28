@@ -64,6 +64,16 @@ const PLATFORM_GLOBAL_TABLES = new Set([
   // Global uniqueness reservations for slug, domain and organization id. Their whole
   // purpose is to be unique ACROSS tenants, which a per-tenant policy would defeat.
   "public.organization_reservations",
+
+  // Control-plane relocation and placement decisions (c28 Phases 3-4). A relocation row
+  // is written while the organization is being moved between cells, so it must be
+  // readable and writable in the control plane with no tenant GUC — the tenant's own
+  // connection is precisely the one being fenced. Read only by operator scripts and the
+  // placement selector; no tenant-facing endpoint reaches them.
+  "public.organization_relocations",
+  "public.organization_relocation_checksums",
+  "public.placement_decisions",
+  "public.noisy_neighbour_reviews",
 ]);
 
 

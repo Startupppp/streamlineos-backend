@@ -49,6 +49,8 @@ function buildRegistry(db: Db, lookup: OrgRegionLookup): RegionRegistry {
       cellId: LEGACY_CELL_ID,
       databaseShard: DEFAULT_DATABASE_SHARD,
       searchCluster: DEFAULT_SEARCH_CLUSTER,
+      acceptedTenantClasses: ["SHARED"],
+      complianceZones: [],
     },
     storage: { region: "auto", bucket: "fixture" },
   };

@@ -236,7 +236,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM kb_spaces WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, name, slug, icon, cover_image, audience, created_at
+      SELECT id, name, slug, icon, color, audience, created_at
       FROM kb_spaces
       WHERE org_id = $1
       ORDER BY name ASC
@@ -392,7 +392,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM hr_leave_ledger WHERE org_id = $1`,
     params: (f) => [f.orgId, f.userId],
     sql: `
-      SELECT id, leave_type_id, entry_type, days, effective_date
+      SELECT id, leave_type_id, txn_type, days, effective_date
       FROM hr_leave_ledger
       WHERE org_id = $1 AND user_id = $2
       ORDER BY effective_date DESC
@@ -457,7 +457,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM deals WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, title, stage, value, expected_close_date, assigned_to_id
+      SELECT id, name, stage, value, expected_close_date, assigned_to_id
       FROM deals
       WHERE org_id = $1 AND deleted_at IS NULL
       ORDER BY expected_close_date ASC NULLS LAST, id DESC
@@ -553,7 +553,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM payroll_runs WHERE org_id = $1`,
     params: (f) => (f.payrollRunId ? [f.orgId, f.payrollRunId] : null),
     sql: `
-      SELECT id, user_id, worker_id, status, gross_pay, net_pay
+      SELECT id, user_id, worker_id, status, gross, net
       FROM payroll_run_employees
       WHERE org_id = $1 AND run_id = $2
       ORDER BY id ASC
@@ -569,7 +569,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM payroll_runs WHERE org_id = $1`,
     params: (f) => (f.payrollRunId ? [f.orgId, f.payrollRunId] : null),
     sql: `
-      SELECT id, run_employee_id, component_code, amount, quantity
+      SELECT id, run_employee_id, code, amount, sort_order
       FROM payroll_line_items
       WHERE org_id = $1 AND run_id = $2
       ORDER BY id ASC
@@ -587,7 +587,7 @@ export const BUDGETS = [
     sql: `
       SELECT id, name, sku, status, category_id
       FROM inv_products
-      WHERE org_id = $1 AND status <> 'ARCHIVED'
+      WHERE org_id = $1 AND status <> 'DISCONTINUED'
       ORDER BY id DESC
       LIMIT 50`,
     planAssertions: [
@@ -601,7 +601,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM inv_stock_levels WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, product_variant_id, location_id, quantity_available, quantity_reserved
+      SELECT id, product_variant_id, location_id, on_hand, committed
       FROM inv_stock_levels
       WHERE org_id = $1
       ORDER BY product_variant_id ASC
@@ -617,7 +617,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM inv_stock_transactions WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, product_variant_id, transaction_type, quantity, posting_date, created_at
+      SELECT id, product_variant_id, transaction_type, quantity_change, posting_date, created_at
       FROM inv_stock_transactions
       WHERE org_id = $1
       ORDER BY created_at DESC

@@ -159,6 +159,8 @@ function installFixtureRegionRegistry(db: Db): void {
       cellId: LEGACY_CELL_ID,
       databaseShard: DEFAULT_DATABASE_SHARD,
       searchCluster: DEFAULT_SEARCH_CLUSTER,
+      acceptedTenantClasses: ["SHARED"],
+      complianceZones: [],
     },
     storage: {
       region: "auto",

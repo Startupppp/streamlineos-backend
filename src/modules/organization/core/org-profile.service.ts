@@ -38,12 +38,12 @@ import {
   getRegionRegistry,
   hasRegionRegistry,
   PlacementRefusedError,
-  regionForNewOrg,
 } from "../../../common/region/region-registry";
 import {
   placeOrganization,
   unplaceOrganization,
 } from "../../../common/region/placement-lookup";
+import { chooseRegionForNewOrg } from "../../../common/region/cell-admission";
 import { logger } from "../../../common/logger/logger.service";
 import { AccountOrganizationIndexService } from "./account-organization-index.service";
 import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
@@ -222,7 +222,7 @@ export class OrgProfileService {
     const done = new Set(
       steps.filter((step) => step.state === "DONE").map((step) => step.stepName),
     );
-    const region = regionForNewOrg();
+    const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
 
     try {
       if (!done.has("reserve-identity"))

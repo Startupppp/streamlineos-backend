@@ -94,9 +94,13 @@ async function createDatabase() {
   }
 }
 
-function runStep(label, script, extraEnv) {
+const topologyArgs = argv.filter((a) =>
+  /^--(region|cell|database)=/.test(a),
+);
+
+function runStep(label, script, extraEnv, args = []) {
   log(`${label} …`);
-  const result = spawnSync(process.execPath, [script], {
+  const result = spawnSync(process.execPath, [script, ...args], {
     cwd: process.cwd(),
     stdio: "inherit",
     env: { ...process.env, ...extraEnv },
@@ -152,9 +156,10 @@ async function main() {
     APP_DATABASE_URL: topology.cell.app,
   };
 
-  runStep("migrate", "src/scripts/db-bootstrap.mjs", cellEnv);
+  runStep("migrate", "src/scripts/apply-chain-cold.mjs", cellEnv);
   runStep("app-role", "src/scripts/db-bootstrap-app-role.mjs", cellEnv);
   runStep("verify-rls", "src/scripts/db-verify-rls.mjs", cellEnv);
+  runStep("compare-schema", "src/scripts/compare-cell-schema.mjs", {}, topologyArgs);
 
   const facts = await verify();
 

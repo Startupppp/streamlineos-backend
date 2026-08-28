@@ -7,7 +7,11 @@ import {
   transitionPlacementStatus,
 } from "../../../../common/region/placement-lookup";
 import type { PlacementTransitionRow } from "../../../../common/region/placement-lookup";
-import { hasRegionRegistry, getRegionRegistry } from "../../../../common/region/region-registry";
+import {
+  hasRegionRegistry,
+  getRegionRegistry,
+  RegionRegistry,
+} from "../../../../common/region/region-registry";
 import {
   isTransitionAllowed,
   OrganizationPlacementAdminService,
@@ -249,12 +253,17 @@ describe("registry cache invalidation", () => {
   it("calls forgetVersionsBelow with the new version after a successful transition", async () => {
     const original = makeRow({ status: "ACTIVE", placementVersion: 7 });
     const updated = makeRow({ status: "MOVING", placementVersion: 8 });
-    const forgetVersionsBelow = jest.fn();
+    const registry = new RegionRegistry(
+      { primary: "primary", regions: {} },
+      new Map(),
+      async () => null,
+    );
+    const forgetVersionsBelow = jest.mocked(registry.forgetVersionsBelow);
 
     mockFetch.mockResolvedValue(original);
     mockTransition.mockResolvedValue(updated);
     mockHasRegistry.mockReturnValue(true);
-    mockGetRegistry.mockReturnValue({ forgetVersionsBelow } as ReturnType<typeof getRegionRegistry>);
+    mockGetRegistry.mockReturnValue(registry);
 
     await service.markMoving("org-1", "user-1");
 

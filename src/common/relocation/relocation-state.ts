@@ -110,7 +110,7 @@ export function nextState(
     };
 
   const next = eventToNext(current, event);
-  if (next === null)
+  if (next === null || !(TRANSITIONS[current] as readonly string[]).includes(next))
     return {
       ok: false,
       code: "UNKNOWN_EVENT_FOR_STATE",

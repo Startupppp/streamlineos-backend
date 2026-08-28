@@ -37,7 +37,7 @@ import {
   TRIAL_PLAN,
 } from "../billing/core/plan-entitlements.constants";
 import { placeOrganization } from "../../common/region/placement-lookup";
-import { regionForNewOrg } from "../../common/region/region-registry";
+import { chooseRegionForNewOrg } from "../../common/region/cell-admission";
 
 function slugify(name: string): string {
   return (
@@ -76,7 +76,7 @@ export class AuthService {
     const userId = randomUUID();
     const orgId = randomUUID();
 
-    const region = regionForNewOrg();
+    const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
     await placeOrganization(this.db, { orgId, region });
 
     await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {

@@ -28,10 +28,15 @@ export interface RegionStorageConfig {
   readonly kbPublicUrl?: string;
 }
 
+export const TENANT_CLASSES = ["SHARED", "DEDICATED"] as const;
+export type TenantClassKey = (typeof TENANT_CLASSES)[number];
+
 export interface RegionCellConfig {
   readonly cellId: string;
   readonly databaseShard: string;
   readonly searchCluster: string;
+  readonly acceptedTenantClasses: readonly TenantClassKey[];
+  readonly complianceZones: readonly string[];
 }
 
 export interface RegionDefinition {
@@ -64,6 +69,35 @@ function read(env: NodeJS.ProcessEnv, ...names: string[]): string | undefined {
     if (typeof value === "string" && value.trim().length > 0) return value.trim();
   }
   return undefined;
+}
+
+function parseList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+function isTenantClassKey(value: string): value is TenantClassKey {
+  return TENANT_CLASSES.some((known) => known === value);
+}
+
+function parseTenantClasses(
+  region: string,
+  raw: string | undefined,
+): readonly TenantClassKey[] {
+  const values = parseList(raw).map((part) => part.toUpperCase());
+  if (values.length === 0) return ["SHARED"];
+
+  const unknown = values.filter((value) => !isTenantClassKey(value));
+  if (unknown.length > 0)
+    throw new Error(
+      `[region] region "${region}" declares unknown tenant class(es) ${unknown.join(", ")}. ` +
+        `Known: ${TENANT_CLASSES.join(", ")}.`,
+    );
+
+  return values.filter(isTenantClassKey);
 }
 
 function parseKeys(env: NodeJS.ProcessEnv, primary: string): string[] {
@@ -129,6 +163,13 @@ export function resolveRegionTopology(env: NodeJS.ProcessEnv): RegionTopology {
         searchCluster:
           read(env, envKey(key, "SEARCH_CLUSTER"), ...flat("SEARCH_CLUSTER")) ??
           DEFAULT_SEARCH_CLUSTER,
+        acceptedTenantClasses: parseTenantClasses(
+          key,
+          read(env, envKey(key, "TENANT_CLASSES"), ...flat("TENANT_CLASSES")),
+        ),
+        complianceZones: parseList(
+          read(env, envKey(key, "COMPLIANCE_ZONES"), ...flat("COMPLIANCE_ZONES")),
+        ),
       },
       storage: {
         region: read(env, envKey(key, "R2_REGION"), ...flat("R2_REGION")) ?? "auto",

@@ -14,7 +14,7 @@ import {
 import type { Db } from "src/db/drizzle.module";
 import { bumpPermissionsVersion } from "src/common/rbac/access-invalidate";
 import { ORG_MEMBER_ROLES, type OrgMemberRole } from "src/common/rbac/org-roles";
-import { regionForNewOrg } from "src/common/region/region-registry";
+import { DEFAULT_REGION } from "src/common/region/region-registry";
 
 export interface SeededMember {
   userId: string;
@@ -124,16 +124,18 @@ export class SeedBuilder {
       /**
        * Placed, like every organisation the product itself creates.
        *
-       * All three real creation paths call `regionForNewOrg()`; only this
+       * All three real creation paths call `chooseRegionForNewOrg()`; only this
        * fixture did not, so a seeded org was unreachable the moment any code
-       * resolved its region — which every tenant transaction does.
+       * resolved its region — which every tenant transaction does. The fixture
+       * takes the default rather than the selector, because a seed must not
+       * depend on a capacity measurement existing.
        */
       await tx.insert(organizations).values({
         id: orgId,
         name: orgId,
         slug: orgId,
         ownerMembershipId,
-        region: regionForNewOrg(),
+        region: DEFAULT_REGION,
       });
 
       if (ownerAliasEntry) {

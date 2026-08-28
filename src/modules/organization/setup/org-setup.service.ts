@@ -41,7 +41,7 @@ import {
   TRIAL_PLAN,
 } from "../../billing/core/plan-entitlements.constants";
 import { placeOrganization } from "../../../common/region/placement-lookup";
-import { regionForNewOrg } from "../../../common/region/region-registry";
+import { chooseRegionForNewOrg } from "../../../common/region/cell-admission";
 
 export { DEFAULT_SKIP_MODULES, provisionOrgModules };
 
@@ -339,7 +339,7 @@ export class OrgSetupService {
 
     const orgId = randomUUID();
     const orgName = input.companyName?.trim() || "My Organization";
-    const region = regionForNewOrg();
+    const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
     await placeOrganization(this.db, { orgId, region });
 
     await runInNewTenantTransaction(this.db, orgId, async (tx) => {

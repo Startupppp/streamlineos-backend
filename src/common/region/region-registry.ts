@@ -307,15 +307,9 @@ export function hasRegionRegistry(): boolean {
 }
 
 /**
- * The region a newly created organisation is placed in.
- *
- * Every creation path calls this rather than writing a literal, so placement has
- * one rule. Outside a booted application (unit tests, seeds) it falls back to the
- * documented default, which matches both PRIMARY_REGION's default and the value
- * the migration backfills onto existing rows.
+ * The fallback region outside a booted application (unit tests, seeds). It
+ * matches both PRIMARY_REGION's default and the value the migration backfills
+ * onto existing rows. Creation paths call `chooseRegionForNewOrg`, which selects
+ * a measured cell and records why.
  */
 export const DEFAULT_REGION = "primary";
-
-export function regionForNewOrg(): string {
-  return hasRegionRegistry() ? getRegionRegistry().primary : DEFAULT_REGION;
-}
