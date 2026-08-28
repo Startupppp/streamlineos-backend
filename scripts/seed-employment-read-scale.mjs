@@ -54,11 +54,17 @@ async function purge() {
   await sql`DELETE FROM hr_reporting_lines  WHERE org_id = ${SCALE_ORG_ID}`;
   await sql`DELETE FROM hr_employments      WHERE org_id = ${SCALE_ORG_ID}`;
   await sql`DELETE FROM hr_people           WHERE org_id = ${SCALE_ORG_ID}`;
-  await sql`DELETE FROM organization_members WHERE org_id = ${SCALE_ORG_ID}`;
   await sql`DELETE FROM organization_people WHERE organization_id = ${SCALE_ORG_ID}`;
-  await sql`DELETE FROM users WHERE id IN (
-    SELECT id FROM users WHERE email LIKE 'read-scale-%@fixture.invalid')`;
   await sql`DELETE FROM organizations       WHERE id = ${SCALE_ORG_ID}`;
+  await sql`DELETE FROM organization_members WHERE org_id = ${SCALE_ORG_ID}`;
+  for (;;) {
+    const deleted = await sql`
+      DELETE FROM users
+      WHERE id IN (
+        SELECT id FROM users WHERE email LIKE 'read-scale-%@fixture.invalid' LIMIT 500)
+      RETURNING id`;
+    if (deleted.length === 0) break;
+  }
 }
 
 async function seed() {

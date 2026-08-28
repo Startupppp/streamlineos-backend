@@ -67,13 +67,29 @@ ALTER TABLE "fin_reimbursement_batches"
   ADD COLUMN IF NOT EXISTS "bank_account_id" integer;
 
 --> statement-breakpoint
-UPDATE "fin_reimbursement_batches"
-SET "journal_entry_id" = "posted_journal_id"::integer
-WHERE "posted_journal_id" ~ '^[0-9]+$' AND "journal_entry_id" IS NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'fin_reimbursement_batches' AND column_name = 'posted_journal_id'
+  ) THEN
+    UPDATE "fin_reimbursement_batches"
+    SET "journal_entry_id" = "posted_journal_id"::integer
+    WHERE "posted_journal_id" ~ '^[0-9]+$' AND "journal_entry_id" IS NULL;
+  END IF;
+END $$;
 --> statement-breakpoint
-UPDATE "fin_reimbursement_batches"
-SET "bank_account_id" = "cash_account_id"::integer
-WHERE "cash_account_id" ~ '^[0-9]+$' AND "bank_account_id" IS NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'fin_reimbursement_batches' AND column_name = 'cash_account_id'
+  ) THEN
+    UPDATE "fin_reimbursement_batches"
+    SET "bank_account_id" = "cash_account_id"::integer
+    WHERE "cash_account_id" ~ '^[0-9]+$' AND "bank_account_id" IS NULL;
+  END IF;
+END $$;
 
 --> statement-breakpoint
 DO $$
