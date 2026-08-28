@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -9,12 +9,31 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvReplenishmentService } from "./inv-replenishment.service";
 import { forecastingSchema, type ForecastingInput } from "./dto/replenishment.schemas";
+import { DemandBaselineService } from "./forecast/demand-baseline.service";
 
 @RequireModule("inventory")
 @Controller("inventory/forecasting")
 @UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvForecastingController {
-  constructor(private readonly replenishment: InvReplenishmentService) {}
+  constructor(
+    private readonly replenishment: InvReplenishmentService,
+    private readonly demandBaseline: DemandBaselineService,
+  ) {}
+
+  /**
+   * INV-301. The deterministic baseline for one SKU, and how every candidate
+   * scored against it in a rolling-origin backtest. This is the number any
+   * model has to beat before it is allowed to replace the arithmetic.
+   */
+  @Get("baseline/:productVariantId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:replenishment:manage")
+  baseline(
+    @Param("productVariantId", ParseIntPipe) productVariantId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.demandBaseline.baseline(u.orgId, productVariantId);
+  }
 
   @Get()
   @UseGuards(PermissionGuard)
