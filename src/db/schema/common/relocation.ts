@@ -42,6 +42,10 @@ export const organizationRelocations = pgTable(
     placementVersionAtStart: integer("placement_version_at_start").notNull(),
     failureReason: text("failure_reason"),
     rollbackReason: text("rollback_reason"),
+    tablesPlanned: integer("tables_planned").notNull().default(0),
+    tablesCopied: integer("tables_copied").notNull().default(0),
+    rowsCopied: bigint("rows_copied", { mode: "number" }).notNull().default(0),
+    lastCopiedTable: text("last_copied_table"),
     isActive: boolean("is_active").notNull().default(true),
     startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

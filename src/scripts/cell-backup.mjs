@@ -153,19 +153,20 @@ async function backup() {
 
 async function copyOut(sql, t) {
   const chunks = [];
-  const readable = await sql.unsafe(`COPY ${qualify(t.schema, t.table)} TO STDOUT`).readable();
+  const query = sql.unsafe(`COPY ${qualify(t.schema, t.table)} TO STDOUT`);
+  const readable = await query.readable();
   for await (const chunk of readable) chunks.push(chunk);
+  await query;
   return Buffer.concat(chunks);
 }
 
+// The query promise is the completion signal, not the stream's "finish" event. Waiting on
+// "finish" hung indefinitely against a COPY that the server had already completed.
 async function copyIn(sql, t, payload) {
-  const writable = await sql.unsafe(`COPY ${qualify(t.schema, t.table)} FROM STDIN`).writable();
-  await new Promise((done, fail) => {
-    writable.on("error", fail);
-    writable.on("finish", done);
-    writable.write(payload);
-    writable.end();
-  });
+  const query = sql.unsafe(`COPY ${qualify(t.schema, t.table)} FROM STDIN`);
+  const writable = await query.writable();
+  writable.end(payload);
+  await query;
 }
 
 function readBackup() {

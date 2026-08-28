@@ -35,81 +35,106 @@ export interface PlanCoverageReport {
   readonly coverageRatio: number;
 }
 
+export interface CatalogTenantTable {
+  readonly schema: string;
+  readonly table: string;
+  readonly tenantColumn: string;
+  readonly isPartitioned: boolean;
+}
+
+export const NON_RELOCATABLE_TABLES: ReadonlySet<string> = new Set([
+  "public.organization_placement",
+  "public.organization_relocations",
+  "public.organization_relocation_checksums",
+  "public.placement_decisions",
+  "public.organization_lifecycle_sagas",
+  "public.organization_saga_steps",
+  "public.organization_reservations",
+  "public.noisy_neighbour_reviews",
+  "public.cell_capacity_measurements",
+]);
+
+export function qualifiedName(schema: string, table: string): string {
+  return `${schema}.${table}`;
+}
+
+export function buildTablePlan(
+  catalogTables: readonly CatalogTenantTable[],
+): readonly TablePlanEntry[] {
+  return catalogTables
+    .filter(
+      (t) => !NON_RELOCATABLE_TABLES.has(qualifiedName(t.schema, t.table)),
+    )
+    .map((t) => ({
+      schema: t.schema,
+      table: t.table,
+      tenantColumn: t.tenantColumn,
+      isPartitioned: t.isPartitioned,
+    }))
+    .sort((a, b) =>
+      qualifiedName(a.schema, a.table).localeCompare(
+        qualifiedName(b.schema, b.table),
+      ),
+    );
+}
+
+export function buildRelocationPlan(
+  catalogTables: readonly CatalogTenantTable[],
+): RelocationPlan {
+  return {
+    tables: buildTablePlan(catalogTables),
+    objectStoragePrefixes: OBJECT_STORAGE_SCOPES,
+    searchIndexes: SEARCH_INDEX_SCOPES,
+    vectorIndexes: VECTOR_INDEX_SCOPES,
+  };
+}
+
 export function planCoverage(
   allTenantTables: readonly string[],
-  plan: RelocationPlan = DEFAULT_RELOCATION_PLAN,
+  plan: RelocationPlan,
 ): PlanCoverageReport {
   const planned = new Set(
-    plan.tables.map((e) => `${e.schema}.${e.table}`),
+    plan.tables.map((e) => qualifiedName(e.schema, e.table)),
   );
-  const covered = allTenantTables.filter((t) => planned.has(normalizeTableName(t)));
-  const uncovered = allTenantTables.filter((t) => !planned.has(normalizeTableName(t)));
+  const relevant = allTenantTables.filter(
+    (t) => !NON_RELOCATABLE_TABLES.has(normalize(t)),
+  );
+  const covered = relevant.filter((t) => planned.has(normalize(t)));
+  const uncovered = relevant.filter((t) => !planned.has(normalize(t)));
   const coverageRatio =
-    allTenantTables.length === 0 ? 1 : covered.length / allTenantTables.length;
+    relevant.length === 0 ? 1 : covered.length / relevant.length;
   return { covered, uncovered, coverageRatio };
 }
 
-function normalizeTableName(name: string): string {
+function normalize(name: string): string {
   return name.includes(".") ? name : `public.${name}`;
 }
 
-export const DEFAULT_RELOCATION_PLAN: RelocationPlan = {
-  tables: [
-    { schema: "public", table: "organizations", tenantColumn: "id", isPartitioned: false },
-    { schema: "public", table: "organization_members", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "organization_people", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "workers", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "organization_placement", tenantColumn: "organization_id", isPartitioned: false },
-    { schema: "public", table: "outbox_events", tenantColumn: "organization_id", isPartitioned: false },
-    { schema: "public", table: "inbox_records", tenantColumn: "organization_id", isPartitioned: false },
-    { schema: "public", table: "external_effect_ledger", tenantColumn: "organization_id", isPartitioned: false },
-    { schema: "public", table: "notifications", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "user_permission_grants", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "role_assignments", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "role_permission_grants", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "module_ownerships", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "user_delegations", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "subscriptions", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "ai_usage_logs", tenantColumn: "org_id", isPartitioned: true },
-    { schema: "public", table: "chat_messages", tenantColumn: "org_id", isPartitioned: true },
-    { schema: "build", table: "projects", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "build", table: "tickets", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "build", table: "ticket_assignees", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "build", table: "sprints", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "kb_spaces", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "kb_pages", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "kb_page_chunks", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "hr_people", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "hr_employments", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "payroll_runs", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "leave_policies", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "leave_requests", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "attendance_records", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "timesheet_entries", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "expense_claims", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "inventory_items", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "crm_contacts", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "crm_deals", tenantColumn: "org_id", isPartitioned: false },
-    { schema: "public", table: "support_tickets", tenantColumn: "org_id", isPartitioned: false },
-  ],
-  objectStoragePrefixes: [
-    { prefix: "org/{orgId}/", description: "All org-scoped objects" },
-    { prefix: "org/{orgId}/documents/", description: "Uploaded documents and attachments" },
-    { prefix: "org/{orgId}/avatars/", description: "Profile and org avatars" },
-    { prefix: "org/{orgId}/exports/", description: "Data exports" },
-  ],
-  searchIndexes: [
-    { indexName: "tickets-{orgId}", description: "Full-text ticket search index" },
-    { indexName: "kb-{orgId}", description: "KB page full-text index" },
-    { indexName: "people-{orgId}", description: "People directory search index" },
-    { indexName: "contacts-{orgId}", description: "CRM contact search index" },
-  ],
-  vectorIndexes: [
-    {
-      schema: "public",
-      table: "kb_page_chunks",
-      indexName: "idx_kb_page_chunks_embedding",
-      description: "HNSW embedding index for KB semantic search",
-    },
-  ],
-};
+export const OBJECT_STORAGE_SCOPES: readonly ObjectStoragePlanEntry[] = [
+  { prefix: "org/{orgId}/", description: "All org-scoped objects" },
+  {
+    prefix: "org/{orgId}/documents/",
+    description: "Uploaded documents and attachments",
+  },
+  { prefix: "org/{orgId}/avatars/", description: "Profile and org avatars" },
+  { prefix: "org/{orgId}/exports/", description: "Data exports" },
+];
+
+export const SEARCH_INDEX_SCOPES: readonly SearchIndexPlanEntry[] = [
+  {
+    indexName: "tickets-{orgId}",
+    description: "Full-text ticket search index",
+  },
+  { indexName: "kb-{orgId}", description: "KB page full-text index" },
+  { indexName: "people-{orgId}", description: "People directory search index" },
+  { indexName: "contacts-{orgId}", description: "CRM contact search index" },
+];
+
+export const VECTOR_INDEX_SCOPES: readonly VectorIndexPlanEntry[] = [
+  {
+    schema: "public",
+    table: "kb_page_chunks",
+    indexName: "idx_kb_page_chunks_embedding",
+    description: "HNSW embedding index for KB semantic search",
+  },
+];

@@ -80,6 +80,16 @@ export function assertChecksumMatch(
   );
 }
 
+function sqlLiteral(value: string): string {
+  if (value.includes("\0"))
+    throw new Error("a SQL literal cannot contain a null byte");
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
 export function tableDigestSql(
   schema: string,
   table: string,
@@ -87,11 +97,12 @@ export function tableDigestSql(
   orgId: string,
   orderByColumns: readonly string[],
 ): string {
-  const qualifiedTable = `"${schema}"."${table}"`;
-  const orderClause = orderByColumns.map((c) => `"${c}"`).join(", ");
+  const qualifiedTable = `${quoteIdent(schema)}.${quoteIdent(table)}`;
+  const orderClause = orderByColumns.map((c) => quoteIdent(c)).join(", ");
   return (
     `SELECT md5(string_agg(row_to_json(t)::text, ',' ORDER BY ${orderClause})) AS digest ` +
-    `FROM (SELECT * FROM ${qualifiedTable} WHERE "${tenantColumn}" = '${orgId}' ORDER BY ${orderClause}) t`
+    `FROM (SELECT * FROM ${qualifiedTable} WHERE ${quoteIdent(tenantColumn)} = ${sqlLiteral(orgId)}` +
+    ` ORDER BY ${orderClause}) t`
   );
 }
 
