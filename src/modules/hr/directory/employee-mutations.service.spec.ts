@@ -9,6 +9,9 @@ jest.mock("../../../common/org/sync-org-unit-placement", () => ({
 jest.mock("../../../common/hr/sync-canonical-employment-fields", () => ({
   syncCanonicalEmploymentFields: jest.fn().mockResolvedValue(true),
 }));
+jest.mock("../../../common/hr/sync-canonical-reporting-line", () => ({
+  syncCanonicalReportingLine: jest.fn().mockResolvedValue({ status: "written" }),
+}));
 jest.mock("../../../common/date", () => {
   const actual = jest.requireActual<typeof import("../../../common/date")>(
     "../../../common/date",
@@ -56,7 +59,6 @@ function buildService(scope: DataScope, targetMember: object | null = { userId: 
           firstName: "Target",
           lastName: "Employee",
           name: "Target Employee",
-          joiningDate: "2026-08-01",
         }),
       },
     },
@@ -72,15 +74,28 @@ function buildService(scope: DataScope, targetMember: object | null = { userId: 
         : new Map<string, DataScope>([["hr:employees:manage", scope]]),
     ),
   };
+  const employment = {
+    getFacts: jest.fn().mockResolvedValue({
+      userId: "target-1",
+      employmentId: null,
+      employeeNumber: null,
+      designation: null,
+      joiningDate: "2026-08-01",
+      departmentId: null,
+      locationId: null,
+      managerUserId: null,
+    }),
+  };
   const service = new EmployeeMutationsService(
     db as never,
     { invalidate: jest.fn() } as never,
     { logCritical: jest.fn() } as never,
     { emit: jest.fn().mockResolvedValue(undefined) } as never,
     access as never,
+    employment as never,
   );
 
-  return { access, db, service, tx, updateSet };
+  return { access, db, employment, service, tx, updateSet };
 }
 
 describe("EmployeeMutationsService.updateEmployee authorization", () => {
@@ -146,11 +161,8 @@ describe("EmployeeMutationsService.updateEmployee authorization", () => {
       }),
     ).resolves.toEqual({ success: true });
 
-    expect(updateSet).toHaveBeenCalledTimes(2);
-    expect(updateSet.mock.calls[0]?.[0]).toMatchObject({
-      joiningDate: "2026-08-11",
-    });
-    expect(updateSet.mock.calls[1]?.[0]).toHaveProperty("dueDate");
+    expect(updateSet).toHaveBeenCalledTimes(1);
+    expect(updateSet.mock.calls[0]?.[0]).toHaveProperty("dueDate");
     expect(dayDifference).toHaveBeenCalledWith(
       new Date("2026-08-11"),
       new Date("2026-08-01"),
@@ -221,6 +233,7 @@ describe("EmployeeMutationsService base response boundary", () => {
       { logCritical: jest.fn() } as never,
       { emit: jest.fn() } as never,
       {} as never,
+      { getFacts: jest.fn().mockResolvedValue({ managerUserId: null, joiningDate: null, employeeNumber: null, designation: null, departmentId: null, locationId: null, employmentId: null, userId: "target-1" }) } as never,
     );
 
     const response = await service.getEmployeeDetail(
