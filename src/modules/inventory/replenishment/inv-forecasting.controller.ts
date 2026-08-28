@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -13,6 +13,8 @@ import { DemandBaselineService } from "./forecast/demand-baseline.service";
 import { SafetyStockPolicyService } from "./forecast/safety-stock-policy.service";
 import { LeadTimeService } from "./forecast/lead-time.service";
 import { ReorderProposalService } from "./forecast/reorder-proposal.service";
+import { ReplenishmentSimulatorService } from "./forecast/replenishment-simulator.service";
+import { simulateSchema, type SimulateInput } from "./dto/simulate.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/forecasting")
@@ -24,7 +26,25 @@ export class InvForecastingController {
     private readonly safetyStockPolicy: SafetyStockPolicyService,
     private readonly leadTime: LeadTimeService,
     private readonly reorderProposal: ReorderProposalService,
+    private readonly simulator: ReplenishmentSimulatorService,
   ) {}
+
+  /**
+   * INV-306. What-if. Reads and computes; writes nothing, by construction --
+   * there is no path from this service to the stock engine.
+   */
+  @Post("simulate/:productVariantId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:replenishment:manage")
+  simulate(
+    @Param("productVariantId", ParseIntPipe) productVariantId: number,
+    @Body(new ZodValidationPipe(simulateSchema)) body: SimulateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.simulator.simulate(u.orgId, productVariantId, body.scenarios, {
+      serviceLevel: body.serviceLevel,
+    });
+  }
 
   /**
    * INV-305. A proposal with its working shown: every figure carries where it

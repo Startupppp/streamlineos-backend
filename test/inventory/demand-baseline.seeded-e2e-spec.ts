@@ -6,6 +6,7 @@ import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-trans
 import { DemandBaselineService } from "src/modules/inventory/replenishment/forecast/demand-baseline.service";
 import { SafetyStockPolicyService } from "src/modules/inventory/replenishment/forecast/safety-stock-policy.service";
 import { ReorderProposalService } from "src/modules/inventory/replenishment/forecast/reorder-proposal.service";
+import { ReplenishmentSimulatorService } from "src/modules/inventory/replenishment/forecast/replenishment-simulator.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 
@@ -24,6 +25,7 @@ interface Scene {
   soldVariantId: number;
   transferredVariantId: number;
   quietVariantId: number;
+  steadyVariantId: number;
 }
 
 describe("[seeded-e2e] demand baselines", () => {
@@ -65,6 +67,7 @@ describe("[seeded-e2e] demand baselines", () => {
         ).id;
 
       const sold = await variantOf("sold");
+      const steady = await variantOf("steady");
       const transferred = await variantOf("transferred");
       const quiet = await variantOf("quiet");
 
@@ -89,6 +92,11 @@ describe("[seeded-e2e] demand baselines", () => {
       for (const [weeksAgo, qty] of [[1, 5], [3, 7], [5, 4], [8, 9], [12, 6]] as const) {
         await movement(sold, "SALE", weeksAgo, qty);
       }
+      // Demand every single week, of consistent size: smooth by construction,
+      // which is the only shape the normal safety-stock model describes.
+      for (let weeksAgo = 1; weeksAgo <= 20; weeksAgo += 1) {
+        await movement(steady, "SALE", weeksAgo, 10 + (weeksAgo % 3));
+      }
       // A warehouse move is not demand. Counting it would teach the forecast to
       // reorder for a relocation.
       for (const weeksAgo of [1, 2, 3, 4, 5]) {
@@ -101,6 +109,7 @@ describe("[seeded-e2e] demand baselines", () => {
         soldVariantId: sold,
         transferredVariantId: transferred,
         quietVariantId: quiet,
+        steadyVariantId: steady,
       };
     });
   }, 240_000);
@@ -287,6 +296,97 @@ describe("[seeded-e2e] demand baselines", () => {
       expect(proposal.position).toHaveProperty("onHand");
       expect(proposal.position).toHaveProperty("onOrder");
       expect(proposal.evidence.some((e) => e.label === "On order")).toBe(true);
+    });
+  });
+
+  describe("INV-306 what-if simulation", () => {
+    const sim = () => app.app.get(ReplenishmentSimulatorService);
+
+    it("holds more stock when demand grows", async () => {
+      const result = await asTenant(() =>
+        sim().simulate(
+          scene.orgId,
+          scene.steadyVariantId,
+          [{ label: "+50% demand", demandMultiplier: 1.5 }],
+          { weeks: 26 },
+        ),
+      );
+      expect(result.applicable).toBe(true);
+      const scenario = result.scenarios[0]!;
+      expect(scenario.deltaReorderPoint).toBeGreaterThan(0);
+      // The deviation scales with the level rather than staying fixed: holding
+      // sigma constant would make every growth scenario look safer than it is.
+      expect(scenario.deltaSafetyStock).toBeGreaterThan(0);
+    });
+
+    it("holds more stock when the supplier gets slower and less reliable", async () => {
+      const result = await asTenant(() =>
+        sim().simulate(
+          scene.orgId,
+          scene.steadyVariantId,
+          [{ label: "slow supplier", leadTimeWeeks: 8, leadTimeStdDevWeeks: 3 }],
+          { weeks: 26 },
+        ),
+      );
+      expect(result.scenarios[0]!.deltaReorderPoint).toBeGreaterThan(0);
+    });
+
+    it("reports every scenario against the same measured baseline", async () => {
+      // A safety stock of 480 means nothing alone; "310 more than today" is the
+      // sentence a planner acts on.
+      const result = await asTenant(() =>
+        sim().simulate(
+          scene.orgId,
+          scene.steadyVariantId,
+          [
+            { label: "as measured", demandMultiplier: 1 },
+            { label: "double", demandMultiplier: 2 },
+          ],
+          { weeks: 26 },
+        ),
+      );
+      expect(result.baseline).not.toBeNull();
+      // The unchanged scenario must land on the baseline, or the comparison is
+      // measuring the simulator's own drift rather than the change.
+      expect(result.scenarios[0]!.deltaSafetyStock).toBeCloseTo(0, 3);
+      expect(result.scenarios[1]!.deltaSafetyStock).toBeGreaterThan(0);
+    });
+
+    it("declines to simulate demand the model never described", async () => {
+      // A what-if built on a number that was never valid is a more confident
+      // version of the same mistake.
+      const result = await asTenant(() =>
+        sim().simulate(
+          scene.orgId,
+          scene.soldVariantId,
+          [{ label: "+50%", demandMultiplier: 1.5 }],
+          { weeks: 26 },
+        ),
+      );
+      expect(result.applicable).toBe(false);
+      expect(result.scenarios).toEqual([]);
+      expect(result.reason).toBeDefined();
+    });
+
+    it("changes no stock", async () => {
+      // The phase rule, asserted rather than assumed.
+      const before = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM inv_stock_transactions WHERE org_id = ${scene.orgId}`),
+      );
+      await asTenant(() =>
+        sim().simulate(
+          scene.orgId,
+          scene.steadyVariantId,
+          [{ label: "big", demandMultiplier: 10 }],
+          { weeks: 26 },
+        ),
+      );
+      const after = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM inv_stock_transactions WHERE org_id = ${scene.orgId}`),
+      );
+      expect(after[0]!.n).toBe(before[0]!.n);
     });
   });
 

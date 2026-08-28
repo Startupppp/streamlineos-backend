@@ -10,11 +10,12 @@ import { DemandBaselineService } from "./forecast/demand-baseline.service";
 import { SafetyStockPolicyService } from "./forecast/safety-stock-policy.service";
 import { LeadTimeService } from "./forecast/lead-time.service";
 import { ReorderProposalService } from "./forecast/reorder-proposal.service";
+import { ReplenishmentSimulatorService } from "./forecast/replenishment-simulator.service";
 
 @Module({
   imports: [InvStockEngineModule, OutboxModule, NotificationsModule],
   controllers: [InvReplenishmentController, InvForecastingController],
-  providers: [InvReplenishmentService, InvStockLowConsumerService, DemandBaselineService, SafetyStockPolicyService, LeadTimeService, ReorderProposalService],
+  providers: [InvReplenishmentService, InvStockLowConsumerService, DemandBaselineService, SafetyStockPolicyService, LeadTimeService, ReorderProposalService, ReplenishmentSimulatorService],
   exports: [DemandBaselineService, InvReplenishmentService],
 })
 export class InvReplenishmentModule {}
