@@ -7,6 +7,7 @@ import { DemandBaselineService } from "src/modules/inventory/replenishment/forec
 import { SafetyStockPolicyService } from "src/modules/inventory/replenishment/forecast/safety-stock-policy.service";
 import { ReorderProposalService } from "src/modules/inventory/replenishment/forecast/reorder-proposal.service";
 import { ReplenishmentSimulatorService } from "src/modules/inventory/replenishment/forecast/replenishment-simulator.service";
+import { ForecastDriftService } from "src/modules/inventory/replenishment/forecast/forecast-drift.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 
@@ -94,7 +95,7 @@ describe("[seeded-e2e] demand baselines", () => {
       }
       // Demand every single week, of consistent size: smooth by construction,
       // which is the only shape the normal safety-stock model describes.
-      for (let weeksAgo = 1; weeksAgo <= 20; weeksAgo += 1) {
+      for (let weeksAgo = 1; weeksAgo <= 44; weeksAgo += 1) {
         await movement(steady, "SALE", weeksAgo, 10 + (weeksAgo % 3));
       }
       // A warehouse move is not demand. Counting it would teach the forecast to
@@ -387,6 +388,52 @@ describe("[seeded-e2e] demand baselines", () => {
           SELECT count(*)::int AS n FROM inv_stock_transactions WHERE org_id = ${scene.orgId}`),
       );
       expect(after[0]!.n).toBe(before[0]!.n);
+    });
+  });
+
+  describe("INV-310 forecast drift", () => {
+    const drift = () => app.app.get(ForecastDriftService);
+
+    it("refuses to call drift on a history too short to split", async () => {
+      // A drift monitor that cries wolf is switched off within a month, and
+      // then the real drift goes unnoticed too.
+      const report = await asTenant(() =>
+        drift().drift(scene.orgId, scene.soldVariantId, { weeks: 16 }),
+      );
+      expect(report.status).toBe("insufficient_data");
+      expect(report.findings.join(" ")).toMatch(/at least 24 periods/);
+    });
+
+    it("compares both halves with the same method and reports the comparison", async () => {
+      // Not just a verdict: the two error figures are what makes the verdict
+      // arguable, and a monitor nobody can argue with is a monitor nobody
+      // trusts.
+      const report = await asTenant(() =>
+        drift().drift(scene.orgId, scene.steadyVariantId, { weeks: 52 }),
+      );
+      expect(report.method).not.toBeNull();
+      expect(report.earlier).not.toBeNull();
+      expect(report.recent).not.toBeNull();
+      expect(report.findings.join(" ")).toMatch(/MAE/);
+    });
+
+    it("calls steady demand stable rather than inventing a trend", async () => {
+      // The control for the whole monitor. Twenty weeks of consistent demand
+      // must not read as drift, or every SKU will.
+      const report = await asTenant(() =>
+        drift().drift(scene.orgId, scene.steadyVariantId, { weeks: 52 }),
+      );
+      expect(["stable", "improving"]).toContain(report.status);
+    });
+
+    it("says so rather than dividing by a flawless earlier window", async () => {
+      // A flat series forecasts perfectly, and a ratio against zero error
+      // reads as catastrophic drift on a SKU that simply never moved.
+      const report = await asTenant(() =>
+        drift().drift(scene.orgId, scene.quietVariantId, { weeks: 52 }),
+      );
+      expect(report.maeRatio).toBeNull();
+      expect(report.status).toBe("insufficient_data");
     });
   });
 
