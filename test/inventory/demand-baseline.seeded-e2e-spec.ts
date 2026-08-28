@@ -158,6 +158,41 @@ describe("[seeded-e2e] demand baselines", () => {
     expect(report.insufficientReason).toMatch(/No demand recorded/);
   });
 
+  it("classifies the demand shape alongside the ranking", async () => {
+    // INV-302. Five sales across twenty-six weeks is gappy by construction, and
+    // the category is what decides which methods are even defensible.
+    const report = await asTenant(() =>
+      svc().baseline(scene.orgId, scene.soldVariantId, { weeks: 26 }),
+    );
+    expect(["intermittent", "lumpy"]).toContain(report.classification.category);
+    expect(report.classification.adi).toBeGreaterThan(1.32);
+    expect(report.classification.nonZeroPeriods).toBe(5);
+  });
+
+  it("chooses a method the demand shape can justify", async () => {
+    // The point of the restriction: on gappy demand a period average has small
+    // error every week and implies a nonsense reorder point, so it must not be
+    // able to win the ranking.
+    const report = await asTenant(() =>
+      svc().baseline(scene.orgId, scene.soldVariantId, { weeks: 26 }),
+    );
+    expect(["croston", "naive"]).toContain(report.champion!.method);
+    // And when error alone would have picked something else, the disagreement
+    // is reported rather than resolved silently.
+    if (report.unrestrictedBest!.method !== report.champion!.method) {
+      expect(report.shapeNote).toMatch(/cannot justify/);
+    }
+  });
+
+  it("declines to name a season it has not seen twice", async () => {
+    const report = await asTenant(() =>
+      svc().baseline(scene.orgId, scene.soldVariantId, { weeks: 26 }),
+    );
+    // Twenty-six weekly points cannot support a 52-week claim, and the
+    // candidate list shows which lags were even considered.
+    expect(report.seasonality.candidates.some((c) => c.lag === 52)).toBe(false);
+  });
+
   it("refuses to judge a baseline on a handful of weeks", async () => {
     const report = await asTenant(() =>
       svc().baseline(scene.orgId, scene.soldVariantId, { weeks: 6 }),

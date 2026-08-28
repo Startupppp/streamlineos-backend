@@ -3,6 +3,12 @@ import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { rankBaselines, type BacktestResult } from "./backtest";
+import {
+  classifyDemand,
+  detectSeasonality,
+  type DemandClassification,
+  type SeasonalityResult,
+} from "./demand-shape";
 
 export interface DemandPoint {
   period: string;
@@ -13,11 +19,49 @@ export interface DemandBaselineReport {
   productVariantId: number;
   periods: number;
   history: DemandPoint[];
+  /** INV-302. What kind of demand this is, which constrains what is defensible. */
+  classification: DemandClassification;
+  seasonality: SeasonalityResult;
   /** Ordered best first. Empty when there is not enough history to judge. */
   ranked: BacktestResult[];
-  /** The baseline to beat, or null when nothing could be measured. */
+  /** Best among the methods this demand shape can justify. */
   champion: BacktestResult | null;
+  /**
+   * Best by error alone, ignoring shape. Reported separately when it differs,
+   * because the disagreement is information rather than something to resolve
+   * silently.
+   */
+  unrestrictedBest: BacktestResult | null;
+  shapeNote?: string;
   insufficientReason?: string;
+}
+
+/**
+ * INV-302 — which methods this demand shape can justify.
+ *
+ * Ranking by error alone lets a method win while being structurally wrong. On
+ * demand that sells 10 units five times a year, a flat 0.2-per-week forecast
+ * has small error every single week and implies a reorder point that is
+ * nonsense. Restricting the candidate set first, then ranking within it, keeps
+ * the error measure honest about something it can actually measure.
+ */
+function methodsFor(
+  classification: DemandClassification,
+  seasonality: SeasonalityResult,
+): (method: string) => boolean {
+  const seasonal = seasonality.seasonLength !== null;
+  return (method) => {
+    // seasonalNaive on a series with no detected season propagates one
+    // period's noise forward forever, so it is excluded rather than allowed to
+    // win by luck.
+    if (method.startsWith("seasonal_naive")) return seasonal;
+    if (classification.category === "intermittent" || classification.category === "lumpy") {
+      // A period average over gappy demand forecasts a fraction of a unit
+      // every period: never right, never obviously wrong.
+      return method === "croston" || method === "naive";
+    }
+    return method !== "croston";
+  };
 }
 
 /**
@@ -97,8 +141,11 @@ export class DemandBaselineService {
         productVariantId,
         periods: series.length,
         history,
+        classification: classifyDemand(series),
+        seasonality: detectSeasonality(series),
         ranked: [],
         champion: null,
+        unrestrictedBest: null,
         insufficientReason: `Needs at least ${minTrain + 4} periods of history to judge a baseline; has ${series.length}`,
       };
     }
@@ -110,19 +157,37 @@ export class DemandBaselineService {
         productVariantId,
         periods: series.length,
         history,
+        classification: classifyDemand(series),
+        seasonality: detectSeasonality(series),
         ranked: [],
         champion: null,
+        unrestrictedBest: null,
         insufficientReason: "No demand recorded in the window",
       };
     }
 
+    const classification = classifyDemand(series);
+    const seasonality = detectSeasonality(series);
     const ranked = rankBaselines(series, { minTrain });
+
+    const allowed = methodsFor(classification, seasonality);
+    const eligible = ranked.filter((r) => allowed(r.method));
+    const champion = eligible[0] ?? ranked[0] ?? null;
+    const unrestrictedBest = ranked[0] ?? null;
+
     return {
       productVariantId,
       periods: series.length,
       history,
+      classification,
+      seasonality,
       ranked,
-      champion: ranked[0] ?? null,
+      champion,
+      unrestrictedBest,
+      shapeNote:
+        champion && unrestrictedBest && champion.method !== unrestrictedBest.method
+          ? `${unrestrictedBest.method} scored lower error, but ${classification.category} demand cannot justify it; ${champion.method} was chosen instead.`
+          : undefined,
     };
   }
 }
