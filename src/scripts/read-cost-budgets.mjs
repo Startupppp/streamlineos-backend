@@ -537,7 +537,7 @@ export const BUDGETS = [
     sql: `
       SELECT id, name, sku, status, category_id
       FROM inv_products
-      WHERE org_id = $1 AND status <> 'ARCHIVED'
+      WHERE org_id = $1 AND deleted_at IS NULL
       ORDER BY id DESC
       LIMIT 50`,
     planAssertions: [
@@ -551,7 +551,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM inv_stock_levels WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, product_variant_id, location_id, quantity_available, quantity_reserved
+      SELECT id, product_variant_id, location_id, on_hand, committed
       FROM inv_stock_levels
       WHERE org_id = $1
       ORDER BY product_variant_id ASC
@@ -567,7 +567,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM inv_stock_transactions WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, product_variant_id, transaction_type, quantity, posting_date, created_at
+      SELECT id, product_variant_id, transaction_type, quantity_change, posting_date, created_at
       FROM inv_stock_transactions
       WHERE org_id = $1
       ORDER BY created_at DESC

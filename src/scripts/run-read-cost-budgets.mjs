@@ -74,13 +74,19 @@ export function checkPlanAssertions(planAssertions, nodes, budgetId) {
   return failures;
 }
 
-async function runBudget(budget, fixtures, db, orgId) {
+async function runBudget(budget, fixtures, db, orgId, assumeRole) {
   const params = budget.params(fixtures);
   if (params === null)
     return { status: "skip", reason: "no fixture data for this budget" };
 
   try {
     return await db.begin(async (tx) => {
+      // Measuring as the owner is measuring nothing: neondb_owner has
+      // BYPASSRLS, so the tenant predicate never appears in the plan and every
+      // cost this harness exists to catch is invisible. Assuming the app role
+      // for the transaction gets a genuine plan without needing a password
+      // Neon cannot durably hold.
+      if (assumeRole) await tx.unsafe(`SET LOCAL ROLE ${assumeRole}`);
       await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
 
       const [{ count }] = await tx.unsafe(budget.rowCountSql, [orgId]);
@@ -106,9 +112,17 @@ async function runBudget(budget, fixtures, db, orgId) {
 async function main() {
   dotenv.config({ path: resolve(process.cwd(), ".env") });
 
-  const url = process.env.APP_DATABASE_URL;
+  // Two ways to reach a non-BYPASSRLS role. APP_DATABASE_URL connects as it
+  // directly; APP_DB_ROLE connects as the owner and assumes it per
+  // transaction, which is what this database needs -- Neon manages role
+  // credentials in its control plane, so `streamline_app`'s password reverts
+  // when the compute suspends and an app carrying it would break overnight.
+  // Membership plus `WITH SET TRUE` costs nothing and cannot expire.
+  const directUrl = process.env.APP_DATABASE_URL;
+  const assumeRole = directUrl ? null : (process.env.APP_DB_ROLE ?? "streamline_app");
+  const url = directUrl ?? process.env.DATABASE_URL;
   if (!url) {
-    console.error("APP_DATABASE_URL is required (the non-BYPASSRLS app role).");
+    console.error("APP_DATABASE_URL (or DATABASE_URL plus APP_DB_ROLE) is required.");
     process.exit(1);
   }
 
@@ -133,6 +147,24 @@ async function main() {
       : filterIds
         ? BUDGETS.filter((b) => filterIds.has(b.id))
         : BUDGETS;
+
+    // Fail closed. A misconfigured role here does not error -- it quietly
+    // measures as the owner and reports comfortable numbers that mean nothing,
+    // which is worse than not measuring at all.
+    if (assumeRole) {
+      const [effective] = await db.begin(async (tx) => {
+        await tx.unsafe(`SET LOCAL ROLE ${assumeRole}`);
+        return tx`SELECT current_user,
+                         (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass`;
+      });
+      if (effective.bypass) {
+        console.error(
+          `Refusing to measure: ${effective.current_user} has BYPASSRLS, so every plan would omit the tenant predicate.`,
+        );
+        process.exit(1);
+      }
+      console.log(`Measuring as ${effective.current_user} (no BYPASSRLS).`);
+    }
 
     const fixtures = await db.begin(async (tx) => {
       await tx`SELECT set_config('app.organization_id', ${ORG}, true)`;
@@ -198,7 +230,7 @@ async function main() {
     let skipped = 0;
 
     for (const budget of budgets) {
-      const result = await runBudget(budget, fixtures, db, ORG);
+      const result = await runBudget(budget, fixtures, db, ORG, assumeRole);
 
       if (result.status === "skip") {
         if (!SELF_TEST)
