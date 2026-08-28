@@ -124,8 +124,12 @@ export class StockEngineService {
       HAVING COALESCE(SUM(sl.on_hand), 0) > l.capacity
     `);
 
-    if (over.length > 0) {
-      const detail = over
+    // A row with no capacity cannot be a violation. The HAVING clause already
+    // guarantees that, so this is belt and braces against a caller handing back
+    // rows this query did not shape.
+    const breaches = over.filter((row) => row.capacity != null);
+    if (breaches.length > 0) {
+      const detail = breaches
         .map((row) => `${row.code} holds ${row.total} against a capacity of ${row.capacity}`)
         .join("; ");
       throw new BadRequestException({

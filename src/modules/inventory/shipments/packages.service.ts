@@ -16,6 +16,8 @@ import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
 import type { ListPackagesQueryInput, CreatePackageInput, UpdatePackageLinesInput } from "./dto/shipments.schemas";
+import { CartonizationService } from "./cartonization.service";
+import { addDec, cmpDec } from "../stock-engine/decimal";
 
 @Injectable()
 export class PackagesService {
@@ -23,6 +25,7 @@ export class PackagesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly numSeq: NumberSequenceService,
+    private readonly cartonization: CartonizationService,
     private readonly audit: InventoryAuditService,
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
@@ -144,18 +147,37 @@ export class PackagesService {
           .innerJoin(invPickLists, eq(invPickListLines.pickListId, invPickLists.id))
           .where(and(eq(invPickLists.soId, shipment.soId), eq(invPickLists.orgId, orgId)));
 
-        const pickedMap = new Map<number, number>();
+        // Exact. Deciding that a package holds no more than was picked on the
+        // strength of float comparisons is how a parcel goes out with one unit
+        // more than anybody picked.
+        const pickedMap = new Map<number, string>();
         for (const pl of pickLines) {
-          const cur = pickedMap.get(pl.productVariantId) ?? 0;
-          pickedMap.set(pl.productVariantId, cur + parseFloat(pl.quantityPicked));
+          pickedMap.set(
+            pl.productVariantId,
+            addDec(pickedMap.get(pl.productVariantId) ?? "0", String(pl.quantityPicked)),
+          );
         }
         for (const line of lines) {
-          const picked = pickedMap.get(line.productVariantId) ?? 0;
-          if (picked < parseFloat(line.quantity)) {
+          const picked = pickedMap.get(line.productVariantId) ?? "0";
+          if (cmpDec(picked, String(line.quantity)) < 0) {
             throw new BadRequestException(INV_ERRORS.PACKAGE_CONTENT_MISMATCH);
           }
         }
       }
+    }
+
+    // INV-206. Only when a carton was actually chosen. Refusing to close a
+    // package because nobody recorded a carton would stop a warehouse working
+    // over a data-entry gap, which is a worse outcome than an unchecked box.
+    if (pkg.cartonTypeId != null) {
+      await this.cartonization.assertFits(
+        orgId,
+        pkg.cartonTypeId,
+        lines.map((l) => ({
+          productVariantId: l.productVariantId,
+          quantity: Math.ceil(Number(l.quantity)),
+        })),
+      );
     }
 
     await this.db.update(invPackages).set({ status: "CLOSED", updatedAt: new Date() }).where(and(eq(invPackages.id, packageId), eq(invPackages.orgId, orgId)));

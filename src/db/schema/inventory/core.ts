@@ -93,6 +93,19 @@ export const invProductVariants = pgTable("inv_product_variants", {
   sellingPrice: decimal("selling_price", { precision: 18, scale: 4 }).default("0").notNull(),
   attributeValues: jsonb("attribute_values").$type<Record<string, string>>().default({}).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
+  /**
+   * INV-206. Base units as integers -- grams and millimetres. A physical
+   * measure has no fractional gram worth modelling, and integers cannot drift
+   * the way this schema's decimal quantities repeatedly have.
+   *
+   * Nullable because most catalogues do not measure everything, and a missing
+   * dimension has to read as "unknown" rather than as zero: zero fits in
+   * anything, which is the wrong answer to give a packer.
+   */
+  weightGrams: integer("weight_grams"),
+  lengthMm: integer("length_mm"),
+  widthMm: integer("width_mm"),
+  heightMm: integer("height_mm"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),

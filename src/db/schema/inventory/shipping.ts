@@ -69,6 +69,30 @@ export const invShipmentLines = pgTable("inv_shipment_lines", {
   index("idx_inv_shipment_lines_variant").on(table.productVariantId),
 ]);
 
+/**
+ * INV-206 — the cartons this warehouse actually stocks.
+ *
+ * Inner dimensions, because what matters is what fits inside. Integers in
+ * millimetres and grams for the same reason the variant measures are.
+ */
+export const invCartonTypes = pgTable("inv_carton_types", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  innerLengthMm: integer("inner_length_mm").notNull(),
+  innerWidthMm: integer("inner_width_mm").notNull(),
+  innerHeightMm: integer("inner_height_mm").notNull(),
+  maxWeightGrams: integer("max_weight_grams").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  unique("uniq_inv_carton_types_org_code").on(table.orgId, table.code),
+  unique("uniq_inv_carton_types_org_id").on(table.orgId, table.id),
+  index("idx_inv_carton_types_org_active").on(table.orgId, table.isActive),
+]);
+
 export const invPackages = pgTable("inv_packages", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -79,6 +103,8 @@ export const invPackages = pgTable("inv_packages", {
   dimensionsW: decimal("dimensions_w", { precision: 10, scale: 2 }),
   dimensionsH: decimal("dimensions_h", { precision: 10, scale: 2 }),
   status: invPackageStatusEnum("status").default("OPEN").notNull(),
+  /** INV-206. Which carton was chosen, so a closed package can be re-checked. */
+  cartonTypeId: integer("carton_type_id"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

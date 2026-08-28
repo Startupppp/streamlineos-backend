@@ -49,6 +49,14 @@ const PKG_ID = 1;
 
 const closedPkg = { id: PKG_ID, orgId: ORG, status: "CLOSED", lines: [] };
 
+/**
+ * No carton chosen in these fixtures, so the fit check never runs. Present
+ * because the constructor needs it, not because it is under test here.
+ */
+function makeCartonization() {
+  return { assertFits: async () => undefined, suggest: async () => ({}) };
+}
+
 /** Unrestricted scope: these are behaviour tests, not scope tests. */
 function makeWarehouseScope() {
   return {
@@ -79,6 +87,7 @@ describe("PackagesService.close", () => {
       db as never,
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
+      makeCartonization() as never,
       makeAudit() as never,
       makeWarehouseScope() as never,
     );
@@ -109,6 +118,7 @@ describe("PackagesService.close", () => {
       db as never,
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
+      makeCartonization() as never,
       makeAudit() as never,
       makeWarehouseScope() as never,
     );
@@ -134,6 +144,7 @@ describe("PackagesService.close", () => {
       db as never,
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
+      makeCartonization() as never,
       makeAudit() as never,
       makeWarehouseScope() as never,
     );
@@ -156,6 +167,7 @@ describe("PackagesService.close", () => {
       db as never,
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
+      makeCartonization() as never,
       makeAudit() as never,
       makeWarehouseScope() as never,
     );
@@ -173,6 +185,7 @@ describe("PackagesService.close", () => {
       db as never,
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
+      makeCartonization() as never,
       makeAudit() as never,
       makeWarehouseScope() as never,
     );
@@ -192,6 +205,7 @@ describe("PackagesService.close", () => {
       db as never,
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
+      makeCartonization() as never,
       makeAudit() as never,
       makeWarehouseScope() as never,
     );
@@ -224,6 +238,7 @@ describe("PackagesService.close", () => {
       db as never,
       makeCache(closedPkg) as never,
       makeNumSeq() as never,
+      makeCartonization() as never,
       makeAudit() as never,
       makeWarehouseScope() as never,
     );

@@ -8,11 +8,13 @@ import { CarriersService } from "./carriers.service";
 import { PackagesService } from "./packages.service";
 import { ShipmentsService } from "./shipments.service";
 import { LoadsService } from "./loads.service";
+import { CartonizationService } from "./cartonization.service";
+import { CartonizationController } from "./cartonization.controller";
 
 @Module({
   imports: [InvStockEngineModule],
-  controllers: [CarriersController, PackagesController, ShipmentsController, LoadsController],
-  providers: [CarriersService, PackagesService, ShipmentsService, LoadsService],
-  exports: [CarriersService, PackagesService, ShipmentsService, LoadsService],
+  controllers: [CarriersController, PackagesController, ShipmentsController, LoadsController, CartonizationController],
+  providers: [CarriersService, PackagesService, ShipmentsService, LoadsService, CartonizationService],
+  exports: [CarriersService, PackagesService, ShipmentsService, LoadsService, CartonizationService],
 })
 export class InvShipmentsModule {}
