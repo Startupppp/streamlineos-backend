@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import {
@@ -11,16 +11,29 @@ import {
   organizationSagaSteps,
 } from "../../db/schema";
 
+const MIGRATIONS_DIR = join(__dirname, "..", "..", "..", "migrations");
+
 const MIGRATION = join(
-  __dirname,
-  "..",
-  "..",
-  "..",
-  "migrations",
+  MIGRATIONS_DIR,
   "0608_organization_placement_and_lifecycle.sql",
 );
 
 const migrationSql = readFileSync(MIGRATION, "utf8");
+
+/**
+ * A column added later by an expand migration is correct practice, so the column
+ * contract is against every migration that names the table, not against the one
+ * that created it. Restricting to migrations naming the table keeps the check
+ * from passing on an unrelated file that happens to use the same column name.
+ */
+function chainSqlNaming(tableName: string): string {
+  return readdirSync(MIGRATIONS_DIR)
+    .filter((file) => file.endsWith(".sql"))
+    .sort()
+    .map((file) => readFileSync(join(MIGRATIONS_DIR, file), "utf8"))
+    .filter((sql) => sql.includes(`"${tableName}"`))
+    .join("\n");
+}
 
 const withTenantSource = readFileSync(
   join(__dirname, "..", "tenant", "with-tenant.ts"),
@@ -105,10 +118,16 @@ describe("the migration creates what the schema declares", () => {
     "creates %s with every column the schema declares",
     (name, table) => {
       expect(migrationSql).toContain(`CREATE TABLE IF NOT EXISTS "${name}"`);
+      const chainSql = chainSqlNaming(name);
       for (const column of columnNames(table))
-        expect(migrationSql).toContain(`"${column}"`);
+        expect(chainSql).toContain(`"${column}"`);
     },
   );
+
+  it("fails when the schema declares a column no migration ever names", () => {
+    const chainSql = chainSqlNaming("account_organization_index");
+    expect(chainSql).not.toContain('"column_no_migration_declares"');
+  });
 
   it("leaves organization_placement without a foreign key to organizations", () => {
     expect(getTableConfig(organizationPlacement).foreignKeys).toHaveLength(0);

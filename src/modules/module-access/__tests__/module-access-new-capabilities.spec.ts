@@ -577,6 +577,7 @@ describe("ModuleAccessGroupsService ownership authority", () => {
   it("allows the actual module owner to initiate an ownership transfer", async () => {
     const { svc, findFirst, insertValues } = await buildOwnershipService();
     findFirst
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ id: 11 })
       .mockResolvedValueOnce({ id: 12, status: "ACTIVE" });
 

@@ -34,3 +34,10 @@ export {
   eventLoopDelayMonitor,
   type EventLoopDelaySample,
 } from "./event-loop-delay";
+export {
+  recordLegacyActorRead,
+  recordLegacyActorWrite,
+  resetLegacyActorTelemetry,
+  snapshotLegacyActorTelemetry,
+  type LegacyActorSnapshot,
+} from "./legacy-actor-telemetry";

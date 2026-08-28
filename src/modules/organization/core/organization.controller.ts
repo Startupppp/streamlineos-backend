@@ -400,6 +400,7 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(placeLegalHoldSchema)) body: PlaceLegalHoldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    assertOwnerOnly(u, "organization.legal-hold");
     return this.legalHold.place(u.orgId, u.userId, body.reason);
   }
 
@@ -418,6 +419,7 @@ export class OrganizationController {
     @Param("holdId") holdId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    assertOwnerOnly(u, "organization.legal-hold");
     return this.legalHold.release(holdId, u.orgId, u.userId);
   }
 }

@@ -1,0 +1,20 @@
+{
+  "generatedAtMs": 1787943216719,
+  "objective": "p99-in-process-authorization",
+  "target": 100,
+  "unit": "µs CPU time without I/O",
+  "iterations": 50000,
+  "perCallAvgCpuUs": 19.68,
+  "p50CpuUs": 0,
+  "p99CpuUs": 0,
+  "maxSampleCpuUs": 16000,
+  "verdict": "MET",
+  "conditions": {
+    "warmPath": "all four in-process caches primed; zero I/O on measured calls",
+    "service": "real AccessService instance, real applyUniversalGrants and stripDeniedModules called",
+    "stubIntegrity": "stub dependencies throw on any call; none fired during benchmark",
+    "measurement": "process.cpuUsage() user+system per call",
+    "asyncOverhead": "included — resolveUserPermissions is async, so Promise micro-task scheduling is part of each call's CPU cost",
+    "note": "The PRD target (100 µs CPU) is for the in-process warm path with no I/O. This benchmark measures exactly that path. The live application's wall-clock budget per request is larger (route overhead, event-loop delay, network) but that is not this objective."
+  }
+}

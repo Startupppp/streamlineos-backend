@@ -18,6 +18,11 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { leaveApprovalScope, resolveLeavesViewScope } from "./leaves-scope";
 import { AuditService } from "../../../common/audit/audit.service";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
 import { LeaveLedgerService } from "./leave-ledger.service";
 import type { ApproveLeaveInput, RejectLeaveInput, UpdateLeaveInput } from "./dto/leaves.schemas";
 import { LeaveDecisionEffectsService } from "./leave-decision-effects.service";

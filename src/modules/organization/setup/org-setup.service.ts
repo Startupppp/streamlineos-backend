@@ -2,12 +2,14 @@ import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
+  accountOrganizationIndex,
   users,
   subscriptions,
   organizations,
   magicLinkTokens,
   organizationMembers,
 } from "../../../db/schema";
+import { LEGACY_CELL_ID } from "../../../common/region/placement";
 import { addDays, addMinutes } from "date-fns";
 import { type Db } from "../../../db/drizzle.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -445,6 +447,23 @@ export class OrgSetupService {
     );
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
+    void withIdentity(this.db, u.userId, (tx) =>
+      tx
+        .update(accountOrganizationIndex)
+        .set({ lastActivatedAt: new Date() })
+        .where(
+          and(
+            eq(accountOrganizationIndex.userId, u.userId),
+            eq(accountOrganizationIndex.orgId, orgId),
+          ),
+        ),
+    ).catch((error: unknown) => {
+      logger.error('[account-org-index] last-activated write failed', {
+        userId: u.userId,
+        orgId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
     this.schedulePostSetupWork({
       orgId,
       userId: u.userId,
@@ -551,6 +570,23 @@ export class OrgSetupService {
     );
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
+    void withIdentity(this.db, u.userId, (tx) =>
+      tx
+        .update(accountOrganizationIndex)
+        .set({ lastActivatedAt: new Date() })
+        .where(
+          and(
+            eq(accountOrganizationIndex.userId, u.userId),
+            eq(accountOrganizationIndex.orgId, orgId),
+          ),
+        ),
+    ).catch((error: unknown) => {
+      logger.error('[account-org-index] last-activated write failed', {
+        userId: u.userId,
+        orgId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
     this.schedulePostSetupWork({
       orgId,
       userId: u.userId,

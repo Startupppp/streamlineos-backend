@@ -24,6 +24,7 @@ import {
   or,
 } from "drizzle-orm";
 import {
+  accountOrganizationIndex,
   agentTokens,
   invitationEvents,
   invitations,
@@ -749,6 +750,14 @@ export class OrgMembershipService {
     }
 
     await this.revokeOrgScopedAccess(orgId, memberUserId, "removed");
+    await this.db
+      .delete(accountOrganizationIndex)
+      .where(
+        and(
+          eq(accountOrganizationIndex.userId, memberUserId),
+          eq(accountOrganizationIndex.orgId, orgId),
+        ),
+      );
     await this.invalidateMemberListCaches(orgId);
 
     this.audit.log({
@@ -894,6 +903,15 @@ export class OrgMembershipService {
     } else {
       await this.invalidateMemberSessionCaches(orgId, memberUserId);
     }
+    await this.db
+      .update(accountOrganizationIndex)
+      .set({ membershipStatus: userStatusToMembershipStatus(status) })
+      .where(
+        and(
+          eq(accountOrganizationIndex.userId, memberUserId),
+          eq(accountOrganizationIndex.orgId, orgId),
+        ),
+      );
     await this.invalidateMemberListCaches(orgId);
 
     this.audit.log({
@@ -1179,6 +1197,14 @@ export class OrgMembershipService {
         this.revokeOrgScopedAccess(orgId, userId, "left"),
         this.cache.invalidateNamespaceForOrg(orgId, "org:profile"),
         this.invalidateMemberListCaches(orgId),
+        this.db
+          .delete(accountOrganizationIndex)
+          .where(
+            and(
+              eq(accountOrganizationIndex.userId, userId),
+              eq(accountOrganizationIndex.orgId, orgId),
+            ),
+          ),
       ]);
       this.audit.log({
         action: "org.member_left",

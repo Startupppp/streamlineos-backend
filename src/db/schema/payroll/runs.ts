@@ -5,7 +5,7 @@ import {
   salaryComponentCalcMethodEnum, payrollExceptionSeverityEnum,
   payrollExceptionStatusEnum, payrollApprovalStatusEnum,
 } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { workers } from "../directory/workers";
 import { payrollPolicyVersions } from "./policies";
 import { hrPayrollInputPeriods } from "./input-capture";
@@ -37,6 +37,7 @@ export const payrollRuns = pgTable("payroll_runs", {
   lockedBy: text("locked_by").references(() => users.id, { onDelete: "set null" }),
   approvedAt: timestamp("approved_at"),
   approvedBy: text("approved_by").references(() => users.id, { onDelete: "set null" }),
+  approvedByMembershipId: integer("approved_by_membership_id"),
   paidAt: timestamp("paid_at"),
   paidBy: text("paid_by").references(() => users.id, { onDelete: "set null" }),
   publishedAt: timestamp("published_at"),
@@ -66,6 +67,12 @@ export const payrollRuns = pgTable("payroll_runs", {
   index("idx_payroll_runs_org_type").on(table.orgId, table.runType),
   index("idx_payroll_runs_org_entity").on(table.orgId, table.entityId),
   index("idx_payroll_runs_source_run").on(table.sourceRunId),
+  index("idx_payroll_runs_org_approved_actor").on(table.orgId, table.approvedByMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.approvedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_payroll_runs_approved_actor",
+  }).onDelete("restrict"),
 ]);
 
 export const payrollRunEmployees = pgTable("payroll_run_employees", {
@@ -164,6 +171,7 @@ export const payrollApprovals = pgTable("payroll_approvals", {
   requiredPermission: text("required_permission").notNull(),
   status: payrollApprovalStatusEnum("status").default("PENDING").notNull(),
   actedBy: text("acted_by").references(() => users.id, { onDelete: "set null" }),
+  actedByMembershipId: integer("acted_by_membership_id"),
   actedAt: timestamp("acted_at"),
   comment: text("comment"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -172,6 +180,12 @@ export const payrollApprovals = pgTable("payroll_approvals", {
   unique("uniq_payroll_approvals_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_payroll_approvals_run_stage").on(table.runId, table.stage),
   index("idx_payroll_approvals_org_run").on(table.orgId, table.runId),
+  index("idx_payroll_approvals_org_acted_actor").on(table.orgId, table.actedByMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.actedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_payroll_approvals_acted_actor",
+  }).onDelete("restrict"),
 ]);
 
 export const payrollRunsRelations = relations(payrollRuns, ({ one, many }) => ({

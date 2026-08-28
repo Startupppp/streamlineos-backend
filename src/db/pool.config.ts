@@ -32,6 +32,7 @@ export const poolEnvShape = {
     emptyToUndefined,
     z.string().trim().min(1).max(63).optional(),
   ),
+  DB_REPLICA_URL: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
 } as const;
 
 const poolEnvSchema = z.object(poolEnvShape);
@@ -45,6 +46,7 @@ export interface TransactionGuards {
 export interface ResolvedPoolConfig {
   guards: TransactionGuards;
   connectionString: string;
+  replicaConnectionString?: string;
   role: "application" | "owner";
   host: string;
   isNeon: boolean;
@@ -141,6 +143,8 @@ export function resolvePoolConfig(env: NodeJS.ProcessEnv): ResolvedPoolConfig {
     ...(isNeon ? { ssl: "require" as const } : {}),
   };
 
+  const replicaRaw = tuning.DB_REPLICA_URL;
+
   return {
     max,
     host,
@@ -149,6 +153,7 @@ export function resolvePoolConfig(env: NodeJS.ProcessEnv): ResolvedPoolConfig {
     options,
     isPooled,
     connectionString,
+    replicaConnectionString: replicaRaw ? normalizeDatabaseUrl(replicaRaw) : undefined,
     warnings: collectWarnings({ max, isNeon, isPooled, isProduction, guards }),
     role: env.APP_DATABASE_URL ? "application" : "owner",
     slowAcquireMs: tuning.DB_SLOW_ACQUIRE_MS ?? DEFAULT_SLOW_ACQUIRE_MS,

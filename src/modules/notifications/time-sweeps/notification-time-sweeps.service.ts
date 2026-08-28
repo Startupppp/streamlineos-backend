@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, inArray, isNotNull, lte, notInArray, sql } from "drizzle-orm";
-import { calendarEvents, invoices, signEnvelopes, supportTickets } from "../../../db/schema";
+import { calendarEvents, eventAttendees, invoices, signEnvelopes, supportTickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { forEachOrg } from "../../../common/tenant";
@@ -199,7 +199,6 @@ export class NotificationTimeSweepsService {
         title: calendarEvents.title,
         startDate: calendarEvents.startDate,
         createdBy: calendarEvents.createdBy,
-        attendeeIds: calendarEvents.attendeeIds,
       })
       .from(calendarEvents)
       .where(
@@ -211,10 +210,20 @@ export class NotificationTimeSweepsService {
       )
       .limit(200);
 
+    const attendeeRows = rows.length === 0 ? [] : await tx
+      .select({ eventId: eventAttendees.eventId, userId: eventAttendees.userId })
+      .from(eventAttendees)
+      .where(and(eq(eventAttendees.orgId, orgId), inArray(eventAttendees.eventId, rows.map((event) => event.id))));
+    const attendeesByEvent = new Map<number, string[]>();
+    for (const attendee of attendeeRows) {
+      if (!attendee.userId) continue;
+      const users = attendeesByEvent.get(attendee.eventId) ?? [];
+      users.push(attendee.userId);
+      attendeesByEvent.set(attendee.eventId, users);
+    }
+
     for (const event of rows) {
-      const attendees = Array.isArray(event.attendeeIds)
-        ? event.attendeeIds.filter((id): id is string => typeof id === "string")
-        : [];
+      const attendees = attendeesByEvent.get(event.id) ?? [];
       const targets = [...new Set([...attendees, event.createdBy])].filter(Boolean);
       if (targets.length === 0) continue;
       await this.dispatch.emit({

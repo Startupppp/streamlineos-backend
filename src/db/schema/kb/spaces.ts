@@ -9,6 +9,7 @@ import {
   index,
   uniqueIndex,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
@@ -61,7 +62,8 @@ export const kbSpaceMembers = pgTable(
     index("idx_kb_space_members_user").on(table.userId),
     index("idx_kb_space_members_org_role").on(table.orgId, table.role),
     index("idx_kb_space_members_org_space").on(table.orgId, table.spaceId),
-    unique("uniq_kb_space_members_org_id").on(table.orgId, table.id),
+  unique("uniq_kb_space_members_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.spaceId], foreignColumns: [kbSpaces.orgId, kbSpaces.id], name: "fk_kb_space_members_org_space" }),
   ],
 );
 

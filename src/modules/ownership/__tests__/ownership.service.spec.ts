@@ -13,6 +13,8 @@ import { OrganizationSagaService } from "../../organization/core/lifecycle/organ
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 type SelectChain = {
   from: jest.Mock;
@@ -88,11 +90,24 @@ describe("OwnershipService — access / business-rule logic", () => {
     update: jest.Mock;
     delete: jest.Mock;
     transaction: jest.Mock;
+    query: { organizationMembers: { findFirst: jest.Mock } };
   };
 
   const ORG = "org-unit-test";
   const ACTOR_USER = "u-actor";
   const TARGET_USER = "u-target";
+
+  function makeActor(isOrgOwner: boolean): CurrentUserContext {
+    return {
+      orgId: ORG,
+      userId: ACTOR_USER,
+      role: isOrgOwner ? "OWNER" : "MEMBER",
+      isOrgOwner,
+      sessionId: "s-1",
+      tokenScopes: null,
+      principal: humanSessionPrincipal(1, isOrgOwner),
+    };
+  }
 
   beforeEach(async () => {
     jest.resetAllMocks();
@@ -105,6 +120,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       transaction: jest.fn().mockImplementation(
         async (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb),
       ),
+      query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) } },
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -355,9 +371,10 @@ describe("OwnershipService — access / business-rule logic", () => {
       const actorMembership = { id: 99, userId: ACTOR_USER, isOwner: false, status: "ACTIVE" };
       mockDb.select
         .mockReturnValueOnce(makeSelectChain([transfer]))
-        .mockReturnValueOnce(makeSelectChain([actorMembership]));
+        .mockReturnValueOnce(makeSelectChain([actorMembership]))
+        .mockReturnValueOnce(makeSelectChain([]));
       await expect(
-        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, false),
+        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, makeActor(false)),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -374,7 +391,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       mockDb.select.mockReturnValue(makeSelectChain([transfer]));
       mockDb.update.mockReturnValue(makeUpdateChain());
       await expect(
-        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, true),
+        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, makeActor(true)),
       ).resolves.toMatchObject({ success: true });
     });
   });

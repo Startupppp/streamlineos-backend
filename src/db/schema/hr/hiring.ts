@@ -152,6 +152,7 @@ export const candidateResumes = pgTable("candidate_resumes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  index("idx_candidate_resumes_org_candidate").on(table.orgId, table.candidateId),
   uniqueIndex("uniq_candidate_resumes_candidate_id").on(table.candidateId),
 ]);
 

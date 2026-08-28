@@ -1,0 +1,52 @@
+{
+  "failure_class": "CELL_DB_FAILURE",
+  "rpo_seconds": 47468,
+  "rto_seconds": null,
+  "rpo_target_seconds": 300,
+  "rto_target_seconds": 3600,
+  "rpo_met": false,
+  "rto_met": false,
+  "phases": {
+    "backup_ms": null,
+    "bootstrap_ms": null,
+    "restore_ms": null,
+    "verify_ms": null
+  },
+  "integrity": {
+    "ok": false,
+    "tables": null,
+    "rows": null,
+    "failures": [
+      "bootstrap aborted: Neon CONNECTION_CLOSED on migration 0619_chain_creates_what_production_has at statement 1471/1867",
+      "restore aborted: public.modules_catalog does not exist (schema never reached that migration)",
+      "verify: not reached"
+    ]
+  },
+  "timestamps": {
+    "drill_started_iso": "2026-08-29T07:00:00.000Z",
+    "backup_completed_iso": null,
+    "disaster_declared_iso": "2026-08-29T07:03:00.000Z",
+    "cell_verified_iso": null,
+    "last_known_good_backup_iso": "2026-08-28T05:57:47.049Z"
+  },
+  "control_plane_during_recovery": {
+    "placement_cache_served_known_org": true,
+    "unknown_org_refused_503": true,
+    "cache_ttl_ms": 600000,
+    "fence_lease_ms": 86400000,
+    "ordering_invariant": "signed-cache TTL (10m) < fence lease (24h): a cached placement cannot outlive the write fence it implies; 11 unit tests in placement-degraded-control-plane.spec.ts prove this",
+    "note": "Control-plane DB (neondb) was never touched during drill. Placement lookups remained available throughout the cell-2 outage window. The 11 unit tests in placement-degraded-control-plane.spec.ts remain the authoritative proof for criterion 2 — the drill confirmed no regression."
+  },
+  "notes": [
+    "CRITICAL FINDING: Neon cold-compute drops the connection (CONNECTION_CLOSED) during large migrations. Two migrations fail: 0000_light_vance_astro (4456 statements, failed at 109) and 0619_chain_creates_what_production_has (1867 statements, failed at 1471). Both require a warm Neon compute to complete. Recovery procedure as scripted is UNRELIABLE on cold Neon compute.",
+    "CRITICAL FINDING: RPO is 47468 seconds (~13 hours) from last backup. The 5-minute (300s) PRD target requires automated backups at <= 5-minute intervals. No backup schedule exists.",
+    "CRITICAL FINDING: RTO is unmeasurable. The bootstrap cannot complete on cold Neon compute. The RTO 60-minute target cannot be verified in this environment.",
+    "REGIONAL_DISASTER RPO target (<= 5m): UNVERIFIED. Neon PITR provides this guarantee at the control-plane layer, but no NEON_API_KEY and no scripted branch-restore exercise exist. Gap recorded in CELL-RUNBOOK.md.",
+    "PRE-DRILL FINDING: cell2 was in a broken state before the drill started (public.custom_states listed in pg_tables but not queryable). This is consistent with Lane B's concurrent migration-chain work.",
+    "CELL SHARED WITH LANE B: cell2 was used concurrently by Lane B for migration-chain work. The drill was disturbed before it began. Re-run on an exclusive cell2 after Lane B completes their work.",
+    "WHAT WORKS: The backup script logic is correct (cell-2.ndjson at 2026-08-28T05:57:47Z proves a successful backup). The restore script correctly handles cycle-breaking constraints (dropped 4 FKs before restore). The verify script would produce the correct digest comparison if the schema were present.",
+    "WHAT NEEDS TO CHANGE: (1) Backup schedule automated at <= 5-minute intervals. (2) Bootstrap must run on WARM Neon compute (no cold-start after DROP) OR large migrations must be chunked. (3) A NEON_API_KEY + scripted PITR branch-restore exercise must be added for regional-disaster verification."
+  ],
+  "disturbed": true,
+  "disturbed_reason": "cell2 was shared with Lane B (concurrent migration-chain work); pre-drill state was broken (custom_states issue); bootstrap failed twice due to Neon cold-compute CONNECTION_CLOSED"
+}

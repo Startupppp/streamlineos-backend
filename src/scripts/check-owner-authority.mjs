@@ -19,12 +19,7 @@ export const GATE_EXEMPT = new Map([
   ["src/common/rbac/owner-only-operations.ts", "the catalog and its one predicate"],
 ]);
 
-export const UNENFORCED_EXEMPT = new Map([
-  [
-    "organization.legal-hold",
-    "enforced by hr:legalhold:manage in modules/hr/governance/legal-holds, which S1 may not edit; raised as a cross-session request",
-  ],
-]);
+export const UNENFORCED_EXEMPT = new Map([]);
 
 const CATALOG_FILE = "src/common/rbac/owner-only-operations.ts";
 const CATALOG_ID_RE = String.raw`^\s{2}"([a-z0-9.-]+)":\s*\{`;

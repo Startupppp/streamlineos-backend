@@ -1,6 +1,6 @@
 import { and, eq, gt, inArray, lt } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
-import { calendarEvents, eventAttendees, projects, tickets } from "../../db/schema";
+import { calendarEvents, eventAttendees, organizationMembers, projects, tickets } from "../../db/schema";
 import type { LinkedTicket } from "./calendar.types";
 
 // tickets and projects are imported solely for linked-ticket enrichment:
@@ -40,8 +40,14 @@ export class CalendarEventSourceLoader {
         const rows = await this.database
           .select({ eventId: eventAttendees.eventId, status: eventAttendees.status })
           .from(eventAttendees)
+          .innerJoin(organizationMembers, eq(eventAttendees.membershipId, organizationMembers.id))
           .where(
-            and(eq(eventAttendees.userId, userId), inArray(eventAttendees.eventId, eventIds)),
+            and(
+              eq(eventAttendees.orgId, orgId),
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.userId, userId),
+              inArray(eventAttendees.eventId, eventIds),
+            ),
           );
         for (const row of rows) rsvpMap.set(row.eventId, row.status ?? "pending");
       })(),

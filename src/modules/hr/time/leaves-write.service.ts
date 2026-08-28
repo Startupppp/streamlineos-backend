@@ -33,6 +33,11 @@ import type { CreateLeaveInput } from "./dto/leaves.schemas";
 import { LeaveApproverService } from "./leave-approver.service";
 import { decideProbationLeave } from "./probation-leave-restriction";
 import { ProbationService } from "../lifecycle/probation.service";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
 
 interface LeaveRow {
   userId: string;
@@ -66,6 +71,18 @@ export class LeavesWriteService {
       throw new ConflictException(
         "No authorized leave approver is configured. Ask an organization administrator to assign one.",
       );
+    }
+
+    let approverMembershipId: number;
+    try {
+      const approverActor = await assertOrganizationActor(this.db, currentUser.orgId, {
+        kind: "user",
+        userId: approver.id,
+      });
+      approverMembershipId = approverActor.membershipId;
+    } catch (e) {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
     }
 
     const requestedDays = body.isHalfDay
@@ -190,6 +207,7 @@ export class LeavesWriteService {
           reason: body.reason,
           priority: body.priority,
           approverId: approver.id,
+          approverMembershipId,
           attachmentUrl: body.attachmentUrl ?? null,
           isHalfDay: body.isHalfDay,
           halfDayPeriod: body.halfDayPeriod ?? null,

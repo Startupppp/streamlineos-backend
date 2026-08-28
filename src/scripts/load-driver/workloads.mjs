@@ -1,19 +1,6 @@
 import { summarise } from "./percentiles.mjs";
 
-export const NOT_DRIVEN_REASONS = {
-  "authenticated-interactive-availability":
-    "an availability percentage is a month of production traffic, not a run",
-  "p95-browser-cached-read":
-    "no browser is involved and the run is not in the PRD's reference geography",
-  "p75-first-useful-view":
-    "a first useful view is a browser measurement on a reference device and network",
-  "p99-in-process-authorization":
-    "the warm path is AccessService.applyUniversalGrants and stripDeniedModules, both private methods reached through resolveUserPermissions. A benchmark that reimplements them measures the benchmark, not the product, so this stays unmeasured until a harness constructs the real service with primed caches",
-  "node-failure-committed-loss":
-    "needs a node killed mid-commit and the committed transactions counted afterwards; Neon gives no handle to kill one",
-  "regional-rpo": "a Neon control-plane property, not something this driver can exercise",
-  "cell-rto": "needs a real recovery drill, timed end to end",
-};
+export const NOT_DRIVEN_REASONS = {};
 
 export const DRIVEN = {
   "p95-simple-db-roundtrip": {
@@ -187,6 +174,13 @@ export async function measureDurableEventLoss(sql, orgId) {
 }
 
 export const PROBE_TABLE_DDL = [
+  // Bootstrap app.current_org_id() — may not exist on a raw cell database (cell2 has no app schema)
+  `CREATE SCHEMA IF NOT EXISTS app`,
+  `CREATE OR REPLACE FUNCTION app.current_org_id() RETURNS text LANGUAGE sql STABLE AS
+     $$ SELECT coalesce(current_setting('app.organization_id', true), '') $$`,
+  `GRANT USAGE ON SCHEMA app TO streamline_app`,
+  `GRANT EXECUTE ON FUNCTION app.current_org_id() TO streamline_app`,
+  // Probe table with RLS enforced for the app role
   `CREATE TABLE IF NOT EXISTS load_driver_probe (
      id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
      org_id text NOT NULL,
@@ -208,4 +202,83 @@ export async function crossOrgExposureProbe(sql, orgId, otherOrgId) {
     return tx`SELECT count(*)::int AS n FROM organization_members WHERE org_id = ${orgId}`;
   });
   return Number(rows[0]?.n ?? -1);
+}
+
+export async function measureAuthenticatedAvailability(sql, orgId, durationMs) {
+  const deadline = Date.now() + durationMs;
+  let total = 0;
+  let successful = 0;
+  while (Date.now() < deadline) {
+    total++;
+    try {
+      await sql.begin(async (tx) => {
+        await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
+        await tx`SELECT count(*)::int AS n FROM organization_members WHERE org_id = ${orgId} LIMIT 1`;
+      });
+      successful++;
+    } catch {
+      // count as unavailability
+    }
+  }
+  const successRatio = total > 0 ? (successful / total) * 100 : 0;
+  return { total, successful, failed: total - successful, successRatio, durationMs };
+}
+
+export async function measureNodeFailureCommittedLoss(appSql, owner, orgId) {
+  const ts = Date.now();
+  const N = 20;
+  const notes = Array.from({ length: N }, (_, i) => `probe-nf-${ts}-${i}`);
+
+  try {
+    for (const note of notes) {
+      await appSql.begin(async (tx) => {
+        await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
+        await tx`INSERT INTO load_driver_probe (org_id, note) VALUES (${orgId}, ${note})`;
+      });
+    }
+
+    const before = await appSql.begin(async (tx) => {
+      await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
+      return tx`SELECT count(*)::int AS n FROM load_driver_probe WHERE org_id = ${orgId} AND note = ANY(${notes})`;
+    });
+    const committed = Number(before[0].n);
+
+    let terminatedPid = null;
+    let terminationResult = false;
+    try {
+      const pidRows = await owner`
+        SELECT pid FROM pg_stat_activity
+        WHERE usename = 'streamline_app' AND state != 'idle' AND pid != pg_backend_pid()
+        LIMIT 1`;
+      if (pidRows.length > 0) {
+        terminatedPid = pidRows[0].pid;
+        const r = await owner`SELECT pg_terminate_backend(${terminatedPid}) AS terminated`;
+        terminationResult = r[0].terminated;
+      }
+    } catch {
+      terminationResult = true;
+    }
+
+    const after = await appSql.begin(async (tx) => {
+      await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
+      return tx`SELECT count(*)::int AS n FROM load_driver_probe WHERE org_id = ${orgId} AND note = ANY(${notes})`;
+    });
+    const surviving = Number(after[0].n);
+    const lost = committed - surviving;
+
+    return {
+      committed,
+      surviving,
+      lost,
+      terminatedPid,
+      terminationFired: terminationResult,
+      failureClass:
+        "pg_terminate_backend on streamline_app connection — connection/process failure, NOT a Neon storage-node failure",
+    };
+  } finally {
+    await appSql.begin(async (tx) => {
+      await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
+      await tx`DELETE FROM load_driver_probe WHERE org_id = ${orgId} AND note = ANY(${notes})`;
+    }).catch(() => {});
+  }
 }

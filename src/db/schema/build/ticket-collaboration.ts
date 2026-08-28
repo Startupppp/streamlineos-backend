@@ -13,7 +13,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { tickets } from "./ticket-core";
 import { customFieldDefinitions } from "../custom-field-engine";
 import { build, buildEvents } from "./namespaces";
@@ -31,6 +31,7 @@ export const ticketAssignees = build.table(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    membershipId: integer("membership_id"),
     assignedAt: timestamp("assigned_at").defaultNow().notNull(),
     assignedBy: text("assigned_by").references(() => users.id, {
       onDelete: "set null",
@@ -47,6 +48,12 @@ export const ticketAssignees = build.table(
       table.userId,
       table.ticketId,
     ),
+    index("idx_ticket_assignees_org_member_membership").on(table.orgId, table.membershipId),
+    foreignKey({
+      columns: [table.orgId, table.membershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_ticket_assignees_member_actor",
+    }).onDelete("restrict"),
   ],
 );
 

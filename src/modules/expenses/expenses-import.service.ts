@@ -2,6 +2,11 @@ import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { expenses } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../common/organization/organization-actor";
 import type { ImportInput } from "./dto/expense-import.schemas";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -93,6 +98,15 @@ export class ExpensesImportService {
   async importExpenses(orgId: string, userId: string, input: ImportInput) {
     const autoApprove = input.autoApprove === true || input.autoApprove === "true";
 
+    let importerMembershipId: number | null = null;
+    if (autoApprove) {
+      const actor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
+        if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+        throw e;
+      });
+      importerMembershipId = actor.membershipId;
+    }
+
     if (Buffer.byteLength(input.content, "utf8") > MAX_FILE_SIZE) {
       throw new BadRequestException("File too large (max 5MB)");
     }
@@ -144,6 +158,7 @@ export class ExpensesImportService {
         expenseDate: validDate,
         status: autoApprove ? "APPROVED" : "PENDING",
         approverId: autoApprove ? userId : null,
+        approverMembershipId: autoApprove ? importerMembershipId : null,
         approvedAt: autoApprove ? new Date() : null,
       });
     }

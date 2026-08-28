@@ -8,6 +8,13 @@ const SPECIAL_CASES = new Set([
   "cross-org-data-exposure",
   "permission-revocation-explicit",
   "durable-event-loss-after-ack",
+  "authenticated-interactive-availability",
+  "node-failure-committed-loss",
+  "p99-in-process-authorization",
+  "p95-browser-cached-read",
+  "p75-first-useful-view",
+  "regional-rpo",
+  "cell-rto",
 ]);
 
 function test(name, fn) {

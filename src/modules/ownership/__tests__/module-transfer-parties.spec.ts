@@ -12,6 +12,8 @@ import { OrganizationSagaService } from "../../organization/core/lifecycle/organ
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 type SelectChain = {
   from: jest.Mock;
@@ -98,6 +100,22 @@ const UNRELATED_MEMBER_ID = 99;
 const MODULE_KEY = "hr";
 const TRANSFER_ID = "tfr-parties-001";
 
+function makeActor(userId: string, membershipId: number, isOrgOwner: boolean): CurrentUserContext {
+  return {
+    orgId: ORG,
+    userId,
+    role: isOrgOwner ? "OWNER" : "MEMBER",
+    isOrgOwner,
+    sessionId: "sess-test",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(membershipId, isOrgOwner),
+  };
+}
+
+const orgOwnerActor = makeActor(ORG_OWNER_USER, ORG_OWNER_MEMBER_ID, true);
+const moduleOwnerActor = makeActor(MODULE_OWNER_USER, MODULE_OWNER_MEMBER_ID, false);
+const unrelatedActor = makeActor(UNRELATED_USER, UNRELATED_MEMBER_ID, false);
+
 describe("module transfer — three-party scenario (from ≠ initiator)", () => {
   let transfers: OwnershipTransfersService;
   let responses: OwnershipTransferResponseService;
@@ -107,6 +125,7 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
     update: jest.Mock;
     delete: jest.Mock;
     transaction: jest.Mock;
+    query: { organizationMembers: { findFirst: jest.Mock } };
   };
 
   beforeEach(async () => {
@@ -120,6 +139,11 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
       transaction: jest.fn().mockImplementation(
         async (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb),
       ),
+      query: {
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+      },
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -177,7 +201,7 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
         ORG_OWNER_USER,
         MODULE_KEY,
         { toMembershipId: TARGET_MEMBER_ID, expiresInHours: 48 },
-        true,
+        orgOwnerActor,
       );
 
       expect(result).toMatchObject({ transferId: TRANSFER_ID });
@@ -193,11 +217,13 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
     it("module owner initiating their own transfer sets both fromMembershipId and initiatedByMembershipId to themselves", async () => {
       const actorMembership = { id: MODULE_OWNER_MEMBER_ID, userId: MODULE_OWNER_USER, isOwner: false, status: "ACTIVE" };
       const currentOwnership = { ownerMembershipId: MODULE_OWNER_MEMBER_ID };
+      const ownershipForCheck = { userId: MODULE_OWNER_USER };
       const target = { id: TARGET_MEMBER_ID, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
 
       mockDb.select
         .mockReturnValueOnce(makeSelectChain([actorMembership]))
         .mockReturnValueOnce(makeSelectChain([currentOwnership]))
+        .mockReturnValueOnce(makeSelectChain([ownershipForCheck]))
         .mockReturnValueOnce(makeSelectChain([target]));
 
       const insertChain = makeInsertChain([{ id: TRANSFER_ID, expiresAt: new Date(Date.now() + 3_600_000) }]);
@@ -208,7 +234,7 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
         MODULE_OWNER_USER,
         MODULE_KEY,
         { toMembershipId: TARGET_MEMBER_ID, expiresInHours: 48 },
-        false,
+        moduleOwnerActor,
       );
 
       expect(insertChain.values).toHaveBeenCalledWith(
@@ -228,20 +254,22 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
         .mockReturnValueOnce(makeSelectChain([]));
 
       await expect(
-        transfers.initiateModuleTransfer(ORG, ORG_OWNER_USER, MODULE_KEY, { toMembershipId: TARGET_MEMBER_ID, expiresInHours: 48 }, true),
+        transfers.initiateModuleTransfer(ORG, ORG_OWNER_USER, MODULE_KEY, { toMembershipId: TARGET_MEMBER_ID, expiresInHours: 48 }, orgOwnerActor),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it("throws ForbiddenException when a non-org-owner is not the current module owner", async () => {
+    it("throws ForbiddenException when a plain member is not the current module owner", async () => {
       const actorMembership = { id: UNRELATED_MEMBER_ID, userId: UNRELATED_USER, isOwner: false, status: "ACTIVE" };
       const currentOwnership = { ownerMembershipId: MODULE_OWNER_MEMBER_ID };
+      const ownershipForCheck = { userId: MODULE_OWNER_USER };
 
       mockDb.select
         .mockReturnValueOnce(makeSelectChain([actorMembership]))
-        .mockReturnValueOnce(makeSelectChain([currentOwnership]));
+        .mockReturnValueOnce(makeSelectChain([currentOwnership]))
+        .mockReturnValueOnce(makeSelectChain([ownershipForCheck]));
 
       await expect(
-        transfers.initiateModuleTransfer(ORG, UNRELATED_USER, MODULE_KEY, { toMembershipId: TARGET_MEMBER_ID, expiresInHours: 48 }, false),
+        transfers.initiateModuleTransfer(ORG, UNRELATED_USER, MODULE_KEY, { toMembershipId: TARGET_MEMBER_ID, expiresInHours: 48 }, unrelatedActor),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -259,7 +287,7 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
           ORG_OWNER_USER,
           MODULE_KEY,
           { toMembershipId: MODULE_OWNER_MEMBER_ID, expiresInHours: 48 },
-          true,
+          orgOwnerActor,
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
@@ -441,7 +469,7 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
         .mockReturnValueOnce(makeSelectChain([{ userId: TARGET_USER }]));
       mockDb.update.mockReturnValue(makeUpdateChain());
 
-      const result = await responses.cancelTransfer(ORG, ORG_OWNER_USER, TRANSFER_ID, false);
+      const result = await responses.cancelTransfer(ORG, ORG_OWNER_USER, TRANSFER_ID, orgOwnerActor);
 
       expect(result).toMatchObject({ success: true });
     });
@@ -456,21 +484,22 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
         .mockReturnValueOnce(makeSelectChain([{ userId: TARGET_USER }]));
       mockDb.update.mockReturnValue(makeUpdateChain());
 
-      const result = await responses.cancelTransfer(ORG, ORG_OWNER_USER, TRANSFER_ID, true);
+      const result = await responses.cancelTransfer(ORG, ORG_OWNER_USER, TRANSFER_ID, orgOwnerActor);
 
       expect(result).toMatchObject({ success: true });
     });
 
-    it("an unrelated member who is neither the initiator nor an org owner cannot cancel", async () => {
+    it("an unrelated plain member who is not the initiator cannot cancel", async () => {
       const transfer = buildCancelTransfer();
       const actorMembership = { id: UNRELATED_MEMBER_ID, userId: UNRELATED_USER, isOwner: false, status: "ACTIVE" };
 
       mockDb.select
         .mockReturnValueOnce(makeSelectChain([transfer]))
-        .mockReturnValueOnce(makeSelectChain([actorMembership]));
+        .mockReturnValueOnce(makeSelectChain([actorMembership]))
+        .mockReturnValueOnce(makeSelectChain([{ userId: MODULE_OWNER_USER }]));
 
       await expect(
-        responses.cancelTransfer(ORG, UNRELATED_USER, TRANSFER_ID, false),
+        responses.cancelTransfer(ORG, UNRELATED_USER, TRANSFER_ID, unrelatedActor),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -484,7 +513,7 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
       mockDb.update.mockReturnValue(makeUpdateChain([]));
 
       await expect(
-        responses.cancelTransfer(ORG, ORG_OWNER_USER, TRANSFER_ID, false),
+        responses.cancelTransfer(ORG, ORG_OWNER_USER, TRANSFER_ID, orgOwnerActor),
       ).rejects.toBeInstanceOf(ConflictException);
     });
   });

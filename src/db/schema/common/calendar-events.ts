@@ -1,6 +1,6 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, primaryKey, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "./auth";
+import { organizations, users, organizationMembers } from "./auth";
 
 export const calendarEvents = pgTable("calendar_events", {
   id: serial("id").primaryKey(),
@@ -40,15 +40,19 @@ export const calendarEvents = pgTable("calendar_events", {
 
 export const eventAttendees = pgTable("event_attendees", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   eventId: integer("event_id").references(() => calendarEvents.id, { onDelete: "cascade" }).notNull(),
+  membershipId: integer("membership_id").references(() => organizationMembers.id, { onDelete: "restrict" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  unique("event_attendees_event_user_unique").on(table.eventId, table.userId),
-  index("idx_event_attendees_event_id").on(table.eventId),
-  index("idx_event_attendees_user_id").on(table.userId),
+  unique("event_attendees_event_membership_unique").on(table.orgId, table.eventId, table.membershipId),
+  index("idx_event_attendees_event_id").on(table.orgId, table.eventId),
+  index("idx_event_attendees_membership_id").on(table.orgId, table.membershipId),
+  foreignKey({ columns: [table.orgId, table.eventId], foreignColumns: [calendarEvents.orgId, calendarEvents.id], name: "fk_event_attendees_org_event" }),
+  foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_event_attendees_org_membership" }),
 ]);
 
 export const calendarEventsRelations = relations(calendarEvents, ({ one, many }) => ({
@@ -59,5 +63,6 @@ export const calendarEventsRelations = relations(calendarEvents, ({ one, many })
 
 export const eventAttendeesRelations = relations(eventAttendees, ({ one }) => ({
   event: one(calendarEvents, { fields: [eventAttendees.eventId], references: [calendarEvents.id] }),
+  membership: one(organizationMembers, { fields: [eventAttendees.membershipId], references: [organizationMembers.id] }),
   user: one(users, { fields: [eventAttendees.userId], references: [users.id] }),
 }));

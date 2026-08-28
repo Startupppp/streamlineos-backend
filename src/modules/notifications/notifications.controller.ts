@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   Param,
   ParseIntPipe,
@@ -69,7 +70,12 @@ export class NotificationsController {
   @Sse()
   @Public()
   @NoTenantTransaction()
-  stream(@Query("token") token: string): Observable<MessageEvent> {
+  stream(
+    @Query("token") queryToken: string | undefined,
+    @Headers("authorization") authorization: string | undefined,
+  ): Observable<MessageEvent> {
+    const token = queryToken ?? (authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined);
+    if (!token) throw new UnauthorizedException("Invalid or expired stream token");
     const user = this.notifEvents.consumeToken(token);
     if (!user) throw new UnauthorizedException("Invalid or expired stream token");
     return this.notifEvents.stream(user.userId, user.orgId);

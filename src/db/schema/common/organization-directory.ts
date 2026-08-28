@@ -24,6 +24,7 @@ export const accountOrganizationIndex = pgTable(
     membershipStatus: text("membership_status").notNull(),
     organizationStatus: text("organization_status").notNull(),
     joinedAt: timestamp("joined_at", { withTimezone: true }),
+    lastActivatedAt: timestamp("last_activated_at", { withTimezone: true }),
     projectedAt: timestamp("projected_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -36,5 +37,9 @@ export const accountOrganizationIndex = pgTable(
     index("idx_account_org_index_user").on(table.userId, table.membershipStatus),
     index("idx_account_org_index_org").on(table.orgId),
     index("idx_account_org_index_projected").on(table.projectedAt),
+    index("idx_account_org_index_last_activated").on(
+      table.userId,
+      table.lastActivatedAt,
+    ),
   ],
 );

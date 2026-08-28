@@ -116,7 +116,7 @@ export class DashboardController {
   @RequireModule("hr")
   @RequirePermission("hr:leaves:view")
   leavesToday(@CurrentUser() u: CurrentUserContext) {
-    return this.leave.getLeavesToday(u.orgId);
+    return this.leave.getLeavesToday(u);
   }
 
   @Get("my-issues")
@@ -178,7 +178,7 @@ export class DashboardController {
   @RequireModule("hr")
   @RequirePermission("hr:attendance:view")
   teamAttendance(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getTeamAttendance(u.orgId);
+    return this.hr.getTeamAttendance(u);
   }
 
   @Get("team-availability")
@@ -186,7 +186,7 @@ export class DashboardController {
   @RequireModule("hr")
   @RequirePermission("hr:attendance:view")
   teamAvailability(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getTeamAvailability(u.orgId);
+    return this.hr.getTeamAvailability(u);
   }
 
   @Get("today-activities")

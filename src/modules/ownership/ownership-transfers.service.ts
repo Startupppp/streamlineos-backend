@@ -31,6 +31,8 @@ import type {
   InitiateOrgTransferInput,
   ListTransfersInput,
 } from "./dto/ownership.schemas";
+import { canTransferModuleOwnership } from "../module-access/module-standing";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 @Injectable()
 export class OwnershipTransfersService {
@@ -150,7 +152,7 @@ export class OwnershipTransfersService {
     actorUserId: string,
     moduleKey: string,
     input: InitiateModuleTransferInput,
-    isOrgOwner: boolean,
+    actor: CurrentUserContext,
   ) {
     const actorMembership = await fetchMembershipByUser(
       this.db,
@@ -175,9 +177,10 @@ export class OwnershipTransfersService {
       throw new NotFoundException("Module ownership record not found");
     }
 
-    if (!isOrgOwner && currentOwnership.ownerMembershipId !== actorMembership.id) {
+    const canTransfer = await canTransferModuleOwnership(this.db, actor, moduleKey);
+    if (!canTransfer) {
       throw new ForbiddenException(
-        "Only the current module owner or an org owner may initiate a module ownership transfer",
+        "Only the module owner, an org admin, or the org owner may initiate a module ownership transfer",
       );
     }
 

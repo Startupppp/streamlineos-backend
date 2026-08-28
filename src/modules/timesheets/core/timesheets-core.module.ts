@@ -26,7 +26,7 @@ import { AuditController } from "./audit.controller";
 import { TeamController } from "./team.controller";
 import { TeamService } from "./team.service";
 import { ExceptionsService } from "./exceptions.service";
-import { ExceptionsController } from "./exceptions.controller";
+import { TimesheetExceptionsController } from "./exceptions.controller";
 import { ExceptionsDetectorService } from "./exceptions-detector.service";
 import { TimesheetsAiController } from "./timesheets-ai.controller";
 import { TimesheetsAiService } from "./timesheets-ai.service";
@@ -46,7 +46,7 @@ import { AiModule } from "../../ai/core/ai.module";
     BudgetsController,
     AuditController,
     TeamController,
-    ExceptionsController,
+    TimesheetExceptionsController,
     TimesheetsAiController,
   ],
   providers: [

@@ -55,6 +55,42 @@ export class AccountOrganizationIndexService {
     );
   }
 
+  async resolvePreferredOrg(
+    userId: string,
+  ): Promise<{ orgId: string; cellId: string } | null> {
+    const rows = await withIdentity(this.db, userId, (tx) =>
+      tx
+        .select({
+          orgId: accountOrganizationIndex.orgId,
+          cellId: accountOrganizationIndex.cellId,
+        })
+        .from(accountOrganizationIndex)
+        .where(eq(accountOrganizationIndex.userId, userId))
+        .orderBy(
+          sql`${accountOrganizationIndex.lastActivatedAt} DESC NULLS LAST`,
+          desc(accountOrganizationIndex.joinedAt),
+        )
+        .limit(1),
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return { orgId: row.orgId, cellId: row.cellId };
+  }
+
+  async touchLastActivated(userId: string, orgId: string): Promise<void> {
+    await withIdentity(this.db, userId, (tx) =>
+      tx
+        .update(accountOrganizationIndex)
+        .set({ lastActivatedAt: new Date() })
+        .where(
+          and(
+            eq(accountOrganizationIndex.userId, userId),
+            eq(accountOrganizationIndex.orgId, orgId),
+          ),
+        ),
+    );
+  }
+
   async refreshForUser(userId: string): Promise<void> {
     await withIdentity(this.db, userId, async (tx) => {
       const live = await tx
@@ -113,6 +149,7 @@ export class AccountOrganizationIndexService {
             projectedAt: sql`excluded.projected_at`,
           },
         });
+
 
       await tx
         .delete(accountOrganizationIndex)

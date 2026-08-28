@@ -2409,6 +2409,97 @@
       "when": 1787895905277,
       "tag": "0627_org_cell_traffic",
       "breakpoints": true
+    },
+    {
+      "idx": 349,
+      "version": "7",
+      "when": 1787895965277,
+      "tag": "0628_communication_actor_normalization",
+      "breakpoints": true
+    },
+    {
+      "idx": 351,
+      "version": "7",
+      "when": 1787896085277,
+      "tag": "0630_restore_calendar_legacy_read_column",
+      "breakpoints": true
+    },
+    {
+      "idx": 352,
+      "version": "7",
+      "when": 1787896145277,
+      "tag": "0631_chat_composite_tenant_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 353,
+      "version": "7",
+      "when": 1787939778254,
+      "tag": "0633_tenant_leading_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 354,
+      "version": "7",
+      "when": 1787939838254,
+      "tag": "0634_rbac_actor_and_module_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 355,
+      "version": "7",
+      "when": 1787939898254,
+      "tag": "0635_kb_composite_tenant_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 356,
+      "version": "7",
+      "when": 1787899958254,
+      "tag": "0636_kb_source_review_tenant_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 357,
+      "version": "7",
+      "when": 1787940128254,
+      "tag": "0637_finance_cursor_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 358,
+      "version": "7",
+      "when": 1787940188254,
+      "tag": "0638_accounting_child_tenant_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 359,
+      "version": "7",
+      "when": 1787940248254,
+      "tag": "0639_perf_reviews_cursor_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 360,
+      "version": "7",
+      "when": 1787940308254,
+      "tag": "0640_helpdesk_search_and_cursor_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 361,
+      "version": "7",
+      "when": 1787940368254,
+      "tag": "0641_financial_actor_audit_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 362,
+      "version": "7",
+      "when": 1787940428254,
+      "tag": "0645_account_org_index_last_activated",
+      "breakpoints": true
     }
   ]
 }

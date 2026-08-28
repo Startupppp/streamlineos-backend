@@ -16,6 +16,11 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../common/organization/organization-actor";
 import { EmailService } from "../email/email.service";
 import { AccessService } from "../access/access.service";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
@@ -242,6 +247,11 @@ export class ExpensesWriteService {
     }
     const body = parsed.data;
 
+    const statusActor = await assertOrganizationActor(this.db, u.orgId, { kind: "user", userId: u.userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     await this.db.transaction(async (tx) => {
       const [expense] = await tx
         .select()
@@ -260,6 +270,7 @@ export class ExpensesWriteService {
         .set({
           status: body.status,
           approverId: u.userId,
+          approverMembershipId: statusActor.membershipId,
           approvedAt: body.status === "APPROVED" || body.status === "PAID" ? new Date() : null,
           rejectionReason: body.rejectionReason ?? null,
           updatedAt: new Date(),

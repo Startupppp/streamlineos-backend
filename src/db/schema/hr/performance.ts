@@ -4,7 +4,7 @@ import {
   reviewStatusEnum, reviewCycleStatusEnum, meetingStatusEnum,
   pipStatusEnum, surveyStatusEnum, feedbackTypeEnum,
 } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizationMembers, organizations, users } from "../common/auth";
 import { hrTemplates } from "./template-engine";
 
 export const successionReadinessEnum = pgEnum("succession_readiness", ["ready_now", "1_2_years", "3_plus"]);
@@ -35,6 +35,7 @@ export const performanceReviews = pgTable("performance_reviews", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").notNull().references(() => users.id),
   reviewerId: text("reviewer_id").references(() => users.id),
+  reviewerMembershipId: integer("reviewer_membership_id"),
   cycleId: integer("cycle_id").references(() => reviewCycles.id),
   periodStart: date("period_start").notNull(),
   periodEnd: date("period_end").notNull(),
@@ -54,6 +55,12 @@ export const performanceReviews = pgTable("performance_reviews", {
   index("idx_perf_reviews_org_created_id").on(table.orgId, table.createdAt.desc(), table.id.desc()),
   index("idx_perf_reviews_org_user_created_id").on(table.orgId, table.userId, table.createdAt.desc(), table.id.desc()),
   index("idx_perf_reviews_org_period_start_id").on(table.orgId, table.periodStart.desc(), table.id.desc()),
+  index("idx_perf_reviews_org_reviewer_membership").on(table.orgId, table.reviewerMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.reviewerMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_performance_reviews_reviewer_actor",
+  }).onDelete("restrict"),
 ]);
 
 export const oneOnOneMeetings = pgTable("one_on_one_meetings", {

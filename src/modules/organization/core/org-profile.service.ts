@@ -188,13 +188,16 @@ export class OrgProfileService {
     }
 
     this.audit.log({ action: "org.switched", userId, orgId: targetOrgId });
-    void this.indexService.refreshForUser(userId).catch((error: unknown) => {
-      logger.error("[account-org-index] opportunistic refresh failed", {
-        userId,
-        targetOrgId,
-        error: error instanceof Error ? error.message : String(error),
+    void this.indexService
+      .refreshForUser(userId)
+      .then(() => this.indexService.touchLastActivated(userId, targetOrgId))
+      .catch((error: unknown) => {
+        logger.error("[account-org-index] opportunistic refresh failed", {
+          userId,
+          targetOrgId,
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
 
     return switchResult;
   }
@@ -284,9 +287,10 @@ export class OrgProfileService {
         });
 
       if (!done.has("activate-directory-projection"))
-        await this.saga.runStep(saga.sagaId, "activate-directory-projection", () =>
-          this.indexService.refreshForUser(userId),
-        );
+        await this.saga.runStep(saga.sagaId, "activate-directory-projection", async () => {
+          await this.indexService.refreshForUser(userId);
+          await this.indexService.touchLastActivated(userId, orgId);
+        });
 
       await this.saga.complete(saga.sagaId);
       await this.saga.claim("ORGANIZATION_ID", orgId);

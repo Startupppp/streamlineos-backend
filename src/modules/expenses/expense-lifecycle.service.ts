@@ -32,6 +32,11 @@ import { FinancePostingService } from "../accounting/posting/finance-posting.ser
 import type { PostJournalLine } from "../accounting/core/finance-posting.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { holdsOwnerOnly } from "../../common/rbac/owner-only-operations";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../common/organization/organization-actor";
 
 function normalizeMerchant(merchant: string | null | undefined): string {
   if (!merchant) return "";
@@ -268,6 +273,11 @@ export class ExpenseLifecycleService {
     u: CurrentUserContext,
     expenseId: number,
   ): Promise<{ success: boolean; entryId: number | null }> {
+    const approverActor = await assertOrganizationActor(this.db, u.orgId, { kind: "user", userId: u.userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     const expense = await this.db.query.expenses.findFirst({
       where: and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)),
     });
@@ -353,6 +363,7 @@ export class ExpenseLifecycleService {
         .set({
           status: "REIMBURSEMENT_PENDING",
           approverId: u.userId,
+          approverMembershipId: approverActor.membershipId,
           approvedAt: new Date(),
           postedJournalEntryId: postResult.entryId,
           updatedAt: new Date(),
@@ -401,6 +412,11 @@ export class ExpenseLifecycleService {
     expenseId: number,
     rejectionReason: string,
   ): Promise<{ success: boolean }> {
+    const rejectActor = await assertOrganizationActor(this.db, u.orgId, { kind: "user", userId: u.userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     const expense = await this.db.query.expenses.findFirst({
       where: and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)),
       columns: { id: true, status: true, userId: true, amount: true, category: true },
@@ -420,6 +436,7 @@ export class ExpenseLifecycleService {
           status: "REJECTED",
           rejectionReason,
           approverId: u.userId,
+          approverMembershipId: rejectActor.membershipId,
           updatedAt: new Date(),
         })
         .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)))

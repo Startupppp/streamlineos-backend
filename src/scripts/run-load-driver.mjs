@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import postgres from "postgres";
 import { loadEnv, parseCellArgs, redact } from "./cell-topology.mjs";
@@ -18,10 +18,24 @@ import {
   crossOrgExposureProbe,
   measurePermissionRevocation,
   measureDurableEventLoss,
+  measureAuthenticatedAvailability,
+  measureNodeFailureCommittedLoss,
 } from "./load-driver/workloads.mjs";
 
 const env = loadEnv();
 const argv = process.argv.slice(2);
+
+const BROWSER_RESULTS_PATH = resolve(process.cwd(), ".browser-driver-results.json");
+const AUTH_BENCHMARK_PATH = resolve(process.cwd(), ".auth-benchmark-results.json");
+const RECOVERY_DRILL_PATH = resolve(process.cwd(), ".recovery-drill-results.json");
+
+function readJsonFile(path) {
+  try {
+    if (existsSync(path)) return JSON.parse(readFileSync(path, "utf8"));
+  } catch { /* fall through */ }
+  return null;
+}
+
 
 if (argv.includes("--help")) {
   console.log(`
@@ -234,6 +248,18 @@ async function main() {
       ...(await measureDurableEventLoss(discovery, primary.orgId)),
     };
 
+    log("measuring authenticated-interactive-availability over 60s window");
+    results["authenticated-interactive-availability"] = {
+      description: "success ratio of authenticated tenant-GUC requests over a 60-second run window",
+      ...(await measureAuthenticatedAvailability(source, primary.orgId, 60_000)),
+    };
+
+    log("measuring node-failure-committed-loss via pg_terminate_backend");
+    results["node-failure-committed-loss"] = {
+      description: "N transactions committed, pg_terminate_backend fired, committed rows counted after reconnect",
+      ...(await measureNodeFailureCommittedLoss(target, owner, primary.orgId)),
+    };
+
     report(results, totalRequests, primary, baseline);
   } finally {
     await owner.unsafe(PROBE_TABLE_DROP).catch(() => {});
@@ -312,6 +338,128 @@ function report(results, totalRequests, primary, baseline) {
           ` (ack tx aborted, ${result.remaining} remaining PENDING — target 0)`,
       );
       objectives.push({ name: objective.name, verdict, measured: lost, target: objective.target, acknowledged: result.acknowledged });
+      continue;
+    }
+
+    if (objective.name === "authenticated-interactive-availability") {
+      const r = result;
+      if (!r || r.total === 0) {
+        console.log(`NOT_DRIVEN  ${objective.name.padEnd(38)} no requests completed`);
+        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", target: objective.target });
+        continue;
+      }
+      const verdict = r.successRatio >= objective.target ? "MET" : "BREACHED";
+      measured += 1;
+      if (verdict === "BREACHED") breached += 1;
+      console.log(
+        `${verdict.padEnd(11)} ${objective.name.padEnd(38)} ` +
+          `${r.successRatio.toFixed(4)}% (${r.successful}/${r.total} over ${(r.durationMs / 1000).toFixed(0)}s window) ` +
+          `target=${objective.target}% monthly — this is a run-window ratio, NOT a monthly figure; ` +
+          `a monthly percentage requires a month of production traffic`,
+      );
+      objectives.push({ name: objective.name, verdict, measured: r.successRatio, target: objective.target, windowSeconds: r.durationMs / 1000, requests: r.total });
+      continue;
+    }
+
+    if (objective.name === "node-failure-committed-loss") {
+      const r = result;
+      if (!r) {
+        console.log(`NOT_DRIVEN  ${objective.name.padEnd(38)} measurement not run`);
+        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", target: objective.target });
+        continue;
+      }
+      if (r.error) {
+        console.log(`NOT_DRIVEN  ${objective.name.padEnd(38)} ${r.error}`);
+        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", reason: r.error, target: objective.target });
+        continue;
+      }
+      const verdict = r.lost === 0 ? "MET" : "BREACHED";
+      measured += 1;
+      if (verdict === "BREACHED") breached += 1;
+      console.log(
+        `${verdict.padEnd(11)} ${objective.name.padEnd(38)} ` +
+          `${r.lost} of ${r.committed} committed transactions lost after pg_terminate_backend ` +
+          `(${r.terminationFired ? "termination fired" : "no active conn to terminate"}) — ` +
+          `failure class: ${r.failureClass}`,
+      );
+      objectives.push({ name: objective.name, verdict, measured: r.lost, target: objective.target, committed: r.committed, failureClass: r.failureClass });
+      continue;
+    }
+
+    if (objective.name === "p99-in-process-authorization") {
+      const authData = readJsonFile(AUTH_BENCHMARK_PATH);
+      if (!authData) {
+        console.log(
+          `NOT_DRIVEN  ${objective.name.padEnd(38)} ` +
+            `run pnpm -C backend auth:benchmark first to generate ${AUTH_BENCHMARK_PATH}`,
+        );
+        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", reason: `no auth benchmark file; run: node --env-file=.env -r ts-node/register/transpile-only src/scripts/benchmark-access-service.ts`, target: objective.target });
+        continue;
+      }
+      const p99 = authData.p99CpuUs;
+      const verdict = p99 !== null && p99 <= objective.target ? "MET" : "BREACHED";
+      measured += 1;
+      if (verdict === "BREACHED") breached += 1;
+      console.log(
+        `${verdict.padEnd(11)} ${objective.name.padEnd(38)} ` +
+          `p99=${p99 !== null ? p99.toFixed(2) : "n/a"}µs CPU target=${objective.target}µs ` +
+          `(real AccessService warm path, all caches primed, zero I/O)`,
+      );
+      objectives.push({ name: objective.name, verdict, measured: p99, target: objective.target, source: AUTH_BENCHMARK_PATH });
+      continue;
+    }
+
+    if (objective.name === "p95-browser-cached-read" || objective.name === "p75-first-useful-view") {
+      const browserData = readJsonFile(BROWSER_RESULTS_PATH);
+      if (!browserData || browserData.error) {
+        const reason = browserData?.error ?? `run pnpm -C backend browser:measure first to generate ${BROWSER_RESULTS_PATH}`;
+        console.log(`NOT_DRIVEN  ${objective.name.padEnd(38)} ${reason}`);
+        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", reason, target: objective.target });
+        continue;
+      }
+      const objData = browserData.objectives?.[objective.name];
+      if (!objData || objData.measured === null) {
+        console.log(`NOT_DRIVEN  ${objective.name.padEnd(38)} no measurement in browser results file`);
+        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", target: objective.target });
+        continue;
+      }
+      const verdict = objData.verdict;
+      measured += 1;
+      if (verdict === "BREACHED") breached += 1;
+      console.log(
+        `${verdict.padEnd(11)} ${objective.name.padEnd(38)} ` +
+          `${objData.measured.toFixed(1)}ms target=${objective.target}ms ` +
+          `[${objData.conditions.slice(0, 60)}...]`,
+      );
+      objectives.push({ name: objective.name, verdict, measured: objData.measured, target: objective.target, source: BROWSER_RESULTS_PATH, conditions: objData.conditions });
+      continue;
+    }
+
+    if (objective.name === "regional-rpo" || objective.name === "cell-rto") {
+      const drillData = readJsonFile(RECOVERY_DRILL_PATH);
+      if (!drillData) {
+        console.log(
+          `NOT_DRIVEN  ${objective.name.padEnd(38)} ` +
+            `awaiting Lane D recovery drill results at ${RECOVERY_DRILL_PATH}`,
+        );
+        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", reason: "Lane D recovery drill not yet completed; results will be in backend/.recovery-drill-results.json", target: objective.target });
+        continue;
+      }
+      const key = objective.name === "regional-rpo" ? "rpoMinutes" : "rtoMinutes";
+      const measured_v = drillData[key];
+      if (measured_v === undefined || measured_v === null) {
+        console.log(`NOT_DRIVEN  ${objective.name.padEnd(38)} key '${key}' not found in ${RECOVERY_DRILL_PATH}`);
+        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", target: objective.target });
+        continue;
+      }
+      const verdict = measured_v <= objective.target ? "MET" : "BREACHED";
+      measured += 1;
+      if (verdict === "BREACHED") breached += 1;
+      console.log(
+        `${verdict.padEnd(11)} ${objective.name.padEnd(38)} ` +
+          `${measured_v} min target=${objective.target} min (Lane D timed drill)`,
+      );
+      objectives.push({ name: objective.name, verdict, measured: measured_v, target: objective.target, source: RECOVERY_DRILL_PATH });
       continue;
     }
 

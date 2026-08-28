@@ -121,6 +121,8 @@ export class PublicController {
   }
 
   @Get("application-status/:token")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:application-status")
   applicationStatus(@Param("token") token: string) {
     return this.recruitment.getApplicationStatus(token);
   }
@@ -153,11 +155,15 @@ export class PublicController {
   }
 
   @Get("offer/:token")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:offer")
   getOffer(@Param("token") token: string) {
     return this.recruitment.getOffer(token);
   }
 
   @Patch("offer/:token/respond")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:offer-respond")
   respondToOffer(
     @Param("token") token: string,
     @Body(new ZodValidationPipe(offerRespondSchema)) body: OfferRespondInput,
@@ -179,12 +185,16 @@ export class PublicController {
   }
 
   @Get("referrals/:token")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:referrer-portal")
   getExternalReferrerPortal(@Param("token") token: string) {
     return this.recruitment.getExternalReferrerPortal(token);
   }
 
   @Post("referrals/:token/submit")
   @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:referral-submit")
   submitExternalReferral(
     @Param("token") token: string,
     @Body(new ZodValidationPipe(externalReferralSubmitSchema)) body: ExternalReferralSubmitInput,
@@ -194,6 +204,8 @@ export class PublicController {
   }
 
   @Get("vendor-portal/:token")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:vendor-portal")
   getVendorPortal(@Param("token") token: string) {
     return this.recruitment.getVendorPortal(token);
   }

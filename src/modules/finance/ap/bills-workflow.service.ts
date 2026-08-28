@@ -19,6 +19,7 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 import {
   checkApprovalPolicy,
   getApprovalRequest,
@@ -37,6 +38,7 @@ export class BillsWorkflowService {
 
   async submitForApproval(u: CurrentUserContext, billId: number, input: BillApprovalNote) {
     const { orgId, userId } = u;
+    const actor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId });
 
     const rows = await this.db
       .select()
@@ -108,6 +110,7 @@ export class BillsWorkflowService {
       action: "accounting.bill.submit_approval",
       userId,
       orgId,
+      actorMembershipId: actor.membershipId,
       resourceType: "purchase_bill",
       resourceId: String(billId),
       result: "SUCCESS",
@@ -118,6 +121,7 @@ export class BillsWorkflowService {
 
   async approveBill(u: CurrentUserContext, billId: number) {
     const { orgId, userId } = u;
+    const actor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId });
 
     const rows = await this.db
       .select()
@@ -207,6 +211,7 @@ export class BillsWorkflowService {
       action: "accounting.bill.approve",
       userId,
       orgId,
+      actorMembershipId: actor.membershipId,
       resourceType: "purchase_bill",
       resourceId: String(billId),
       result: "SUCCESS",

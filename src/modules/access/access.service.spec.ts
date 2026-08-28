@@ -1,3 +1,8 @@
+jest.mock("../../common/relocation/relocation-traffic-tracker", () => ({
+  refreshRelocationTargets: jest.fn().mockResolvedValue(undefined),
+  isRelocationTarget: jest.fn().mockReturnValue(false),
+}));
+
 import {
   AccessService,
   broadest,

@@ -218,13 +218,19 @@ export class RecruitmentService {
     return runInTenantTransaction(
       this.db,
       async (tx) => {
-        const negotiations = await tx.query.offerNegotiations.findMany({
-          where: eq(offerNegotiations.offerId, offer.id),
-          orderBy: (t, { asc: a }) => [a(t.createdAt)],
-          columns: { direction: true, proposedSalary: true, message: true, createdAt: true },
-        });
+        const [negotiations, org] = await Promise.all([
+          tx.query.offerNegotiations.findMany({
+            where: eq(offerNegotiations.offerId, offer.id),
+            orderBy: (t, { asc: a }) => [a(t.createdAt)],
+            columns: { direction: true, proposedSalary: true, message: true, createdAt: true },
+          }),
+          tx.query.organizations.findFirst({
+            where: eq(organizations.id, offer.orgId),
+            columns: { currency: true },
+          }),
+        ]);
 
-        return { ...offer, negotiations };
+        return { ...offer, negotiations, currency: org?.currency ?? "INR" };
       },
       { orgId: offer.orgId },
     );

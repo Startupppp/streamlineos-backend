@@ -11,6 +11,7 @@ import {
   index,
   uniqueIndex,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
@@ -20,7 +21,7 @@ import {
   bonusTypeEnum,
   fnfStatusEnum,
 } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { journalEntries, ledgerAccounts } from "../accounting/accounting";
 import { projects } from "../build";
 import { resignations } from "../hr/offboarding";
@@ -80,6 +81,7 @@ export const expenses = pgTable(
     approverId: text("approver_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    approverMembershipId: integer("approver_membership_id"),
     approvedAt: timestamp("approved_at"),
     rejectionReason: text("rejection_reason"),
     paidAt: timestamp("paid_at"),
@@ -106,6 +108,12 @@ export const expenses = pgTable(
     ),
     index("idx_expenses_category").on(table.categoryId),
     index("idx_expenses_org_receipt_hash").on(table.orgId, table.receiptHash),
+    index("idx_expenses_org_approver_actor").on(table.orgId, table.approverMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.approverMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_expenses_approver_actor",
+    }).onDelete("restrict"),
   ],
 );
 
@@ -128,6 +136,7 @@ export const reimbursements = pgTable(
     approvedBy: text("approved_by").references(() => users.id, {
       onDelete: "set null",
     }),
+    approvedByMembershipId: integer("approved_by_membership_id"),
     approvedAt: timestamp("approved_at"),
     paidAt: timestamp("paid_at"),
     rejectionReason: text("rejection_reason"),
@@ -141,6 +150,12 @@ export const reimbursements = pgTable(
     unique("uniq_reimbursements_org_id").on(table.orgId, table.id),
     index("idx_reimbursements_org").on(table.orgId),
     index("idx_reimbursements_user").on(table.userId),
+    index("idx_reimbursements_org_approved_actor").on(table.orgId, table.approvedByMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.approvedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_reimbursements_approved_actor",
+    }).onDelete("restrict"),
   ],
 );
 

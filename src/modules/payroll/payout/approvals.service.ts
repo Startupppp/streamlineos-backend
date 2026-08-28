@@ -7,6 +7,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -81,10 +86,14 @@ export class ApprovalsService {
     const approvalWorkflow = toggles.approvalWorkflow !== false;
 
     if (!approvalWorkflow) {
+      const approverActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
+        if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+        throw e;
+      });
       const autoResult = await this.db.transaction(async (tx) => {
         await tx
           .update(payrollRuns)
-          .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId })
+          .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId, approvedByMembershipId: approverActor.membershipId })
           .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
         await tx.insert(payrollRunEvents).values([
@@ -275,6 +284,11 @@ export class ApprovalsService {
       );
     }
 
+    const stageActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     const isLastStage = allStages.every((s) => s.id === approvalId || s.status === "APPROVED");
     const rawRunToggles = run.policyVersion?.toggles;
     const runToggles: PayrollToggles = rawRunToggles && typeof rawRunToggles === "object"
@@ -293,7 +307,7 @@ export class ApprovalsService {
     const result = await this.db.transaction(async (tx) => {
       await tx
         .update(payrollApprovals)
-        .set({ status: "APPROVED", actedBy: userId, actedAt: new Date(), comment: comment ?? null })
+        .set({ status: "APPROVED", actedBy: userId, actedByMembershipId: stageActor.membershipId, actedAt: new Date(), comment: comment ?? null })
         .where(and(eq(payrollApprovals.id, approvalId), eq(payrollApprovals.orgId, orgId)));
 
       if (isLastStage) {
@@ -306,6 +320,7 @@ export class ApprovalsService {
               lockedBy: userId,
               approvedAt: new Date(),
               approvedBy: userId,
+              approvedByMembershipId: stageActor.membershipId,
             })
             .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
@@ -318,7 +333,7 @@ export class ApprovalsService {
         } else {
           await tx
             .update(payrollRuns)
-            .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId })
+            .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId, approvedByMembershipId: stageActor.membershipId })
             .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
           await tx.insert(payrollRunEvents).values({
@@ -467,6 +482,11 @@ export class ApprovalsService {
       );
     }
 
+    const rejectActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     const allStages = await this.db
       .select({
         id: payrollApprovals.id,
@@ -485,7 +505,7 @@ export class ApprovalsService {
     const result = await this.db.transaction(async (tx) => {
       await tx
         .update(payrollApprovals)
-        .set({ status: "REJECTED", actedBy: userId, actedAt: new Date(), comment })
+        .set({ status: "REJECTED", actedBy: userId, actedByMembershipId: rejectActor.membershipId, actedAt: new Date(), comment })
         .where(and(eq(payrollApprovals.id, approvalId), eq(payrollApprovals.orgId, orgId)));
 
       await tx

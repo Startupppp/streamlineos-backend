@@ -28,6 +28,7 @@ import { JournalPostingService } from "../../accounting/posting/journal-posting.
 import { RateResolverService } from "../controls/rate-resolver.service";
 import { FxService } from "../controls/fx.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 import { systemActor } from "../../../common/auth/system-actor";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import { checkApprovalPolicy } from "./ap-approval.helper";
@@ -126,6 +127,7 @@ export class PaymentRunsService {
   }
 
   async createRun(orgId: string, userId: string, input: CreatePaymentRunInput) {
+    await assertOrganizationActor(this.db, orgId, { kind: "user", userId });
     const conds = [
       eq(purchaseBills.orgId, orgId),
       inArray(purchaseBills.status, ["POSTED", "PARTIALLY_PAID"]),
@@ -209,6 +211,7 @@ export class PaymentRunsService {
 
   async approveRun(u: CurrentUserContext, runId: number) {
     const { orgId, userId } = u;
+    await assertOrganizationActor(this.db, orgId, { kind: "user", userId });
 
     const rows = await this.db
       .select()

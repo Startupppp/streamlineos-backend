@@ -32,14 +32,46 @@ export interface RegionStorageConfig {
 export const TENANT_CLASSES = ["SHARED", "DEDICATED"] as const;
 export type TenantClassKey = (typeof TENANT_CLASSES)[number];
 
+/**
+ * Per-cell cache configuration.
+ *
+ * When `upstashUrl` and `upstashToken` differ from the primary cell's values,
+ * the cell has a dedicated Redis instance (ISOLATED). When only `keyPrefix` is
+ * set, key collisions between cells are prevented within the shared instance
+ * (NAMESPACED). Without either, the cell inherits the primary's Redis (SHARED).
+ *
+ * The cache service reads `RegionCellConfig.cacheKeyPrefix` today. Wiring it to
+ * use `upstashUrl`/`upstashToken` is the remaining code step for ISOLATED
+ * cache; it requires a second Upstash instance (a purchase, not a code change).
+ */
+export interface RegionCacheConfig {
+  /** Per-cell Redis URL. ISOLATED when this differs from the primary's URL. */
+  readonly upstashUrl?: string;
+  /** Per-cell Redis token. Required alongside `upstashUrl` for ISOLATED. */
+  readonly upstashToken?: string;
+  /**
+   * Key prefix applied to every cache key in this cell.
+   * NAMESPACED isolation when set; prevents accidental cross-cell collisions
+   * within a shared instance. Does not protect against a holder of the master
+   * Upstash token reading all cells' data.
+   */
+  readonly keyPrefix?: string;
+}
+
 export interface RegionCellConfig {
   readonly cellId: string;
   readonly databaseShard: string;
   readonly searchCluster: string;
   readonly acceptedTenantClasses: readonly TenantClassKey[];
   readonly complianceZones: readonly string[];
+  /**
+   * @deprecated Use `cache.keyPrefix` instead. Kept for backward compat.
+   * The two fields are kept in sync at parse time.
+   */
   readonly cacheKeyPrefix?: string;
   readonly searchApiKey?: string;
+  /** Per-cell cache configuration; see `RegionCacheConfig`. */
+  readonly cache: RegionCacheConfig;
 }
 
 export interface RegionDefinition {
@@ -177,6 +209,11 @@ export function resolveRegionTopology(env: NodeJS.ProcessEnv): RegionTopology {
         ),
         cacheKeyPrefix: read(env, envKey(key, "CACHE_KEY_PREFIX"), ...flat("CACHE_KEY_PREFIX")),
         searchApiKey: read(env, envKey(key, "SEARCH_API_KEY"), ...flat("SEARCH_API_KEY")),
+        cache: {
+          upstashUrl: read(env, envKey(key, "UPSTASH_REDIS_REST_URL")),
+          upstashToken: read(env, envKey(key, "UPSTASH_REDIS_REST_TOKEN")),
+          keyPrefix: read(env, envKey(key, "CACHE_KEY_PREFIX"), ...flat("CACHE_KEY_PREFIX")),
+        },
       },
       storage: {
         region: read(env, envKey(key, "R2_REGION"), ...flat("R2_REGION")) ?? "auto",

@@ -2,6 +2,7 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, uniqueIndex, unique, primaryKey, uuid } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { genderEnum, onboardingStatusEnum, onboardingDocStatusEnum, membershipStatusEnum, organizationStatusEnum, invitationStatusEnum } from "./enums";
+import { modulesCatalog } from "./modules";
 
 
 export const organizations = pgTable("organizations", {
@@ -272,7 +273,7 @@ export const roles = pgTable("roles", {
   slug: text("slug").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   isSystem: boolean("is_system").default(false).notNull(),
-  moduleKey: text("module_key"),
+  moduleKey: text("module_key").references(() => modulesCatalog.moduleKey),
   rank: integer("rank").notNull().default(40),
   description: text("description"),
   version: integer("version").notNull().default(1),
@@ -297,10 +298,18 @@ export const permissions = pgTable("permissions", {
   action: text("action").notNull(),
   description: text("description"),
   moduleKey: text("module_key"),
+  administeringModuleKey: text("administering_module_key").references(
+    () => modulesCatalog.moduleKey,
+  ),
   riskClass: text("risk_class"),
   isDelegable: boolean("is_delegable").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  unique("uniq_permissions_name_administering_module").on(
+    table.name,
+    table.administeringModuleKey,
+  ),
+]);
 
 export const onboardingSteps = pgTable("onboarding_steps", {
   id: serial("id").primaryKey(),

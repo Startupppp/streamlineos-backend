@@ -13,9 +13,10 @@ import {
 } from "../../common/org/provision-org-modules";
 import { EntitlementsService } from "../access/entitlements.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
+  accountOrganizationIndex,
   organizationMembers,
   organizations,
   subscriptions,
@@ -25,6 +26,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { runWithTenantContext, withTenant } from "../../common/tenant";
+import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
@@ -37,6 +39,7 @@ import {
   TRIAL_PLAN,
 } from "../billing/core/plan-entitlements.constants";
 import { placeOrganization } from "../../common/region/placement-lookup";
+import { LEGACY_CELL_ID } from "../../common/region/placement";
 import { chooseRegionForNewOrg } from "../../common/region/cell-admission";
 
 function slugify(name: string): string {
@@ -136,6 +139,29 @@ export class AuthService {
       }),
     );
 
+    await withIdentity(this.db, userId, (tx) =>
+      tx
+        .insert(accountOrganizationIndex)
+        .values({
+          userId,
+          orgId,
+          cellId: LEGACY_CELL_ID,
+          region,
+          organizationName: input.companyName,
+          organizationSlug: slugify(input.companyName),
+          membershipRole: ORG_MEMBER_ROLES.OWNER,
+          membershipStatus: "ACTIVE",
+          organizationStatus: "ACTIVE",
+          joinedAt: new Date(),
+          lastActivatedAt: new Date(),
+          projectedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [accountOrganizationIndex.userId, accountOrganizationIndex.orgId],
+          set: { lastActivatedAt: new Date() },
+        }),
+    );
+
     this.audit.log({
       action: "user.registered",
       userId,
@@ -158,6 +184,28 @@ export class AuthService {
     this.audit.log({ action: "auth.logout_all", userId });
   }
 
+  private async resolvePreferredOrg(
+    userId: string,
+  ): Promise<{ orgId: string; cellId: string } | null> {
+    const rows = await withIdentity(this.db, userId, (tx) =>
+      tx
+        .select({
+          orgId: accountOrganizationIndex.orgId,
+          cellId: accountOrganizationIndex.cellId,
+        })
+        .from(accountOrganizationIndex)
+        .where(eq(accountOrganizationIndex.userId, userId))
+        .orderBy(
+          sql`${accountOrganizationIndex.lastActivatedAt} DESC NULLS LAST`,
+          desc(accountOrganizationIndex.joinedAt),
+        )
+        .limit(1),
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return { orgId: row.orgId, cellId: row.cellId };
+  }
+
   async getSessionData(userId: string): Promise<{
     userId: string;
     email: string;
@@ -168,6 +216,7 @@ export class AuthService {
     role: string | null;
     isActive: boolean;
     orgId: string | null;
+    cellId: string | null;
     isOrgOwner: boolean;
     enabledModules: string[];
     orgOnboardingCompletedAt: string | null;
@@ -179,40 +228,45 @@ export class AuthService {
     return this.cache.cached(
       CACHE_KEYS.userSession(userId),
       async () => {
-        const user = await this.db.query.users
-          .findFirst({
-            where: eq(users.id, userId),
-            columns: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-              name: true,
-              image: true,
-              isActive: true,
-              onboardingCompletedAt: true,
-              lastActiveOrgId: true,
-            },
-          })
-          .catch(() => {
-            throw new HttpException(
-              "Service temporarily unavailable",
-              HttpStatus.SERVICE_UNAVAILABLE,
-            );
-          });
+        const [user, preferred] = await Promise.all([
+          this.db.query.users
+            .findFirst({
+              where: eq(users.id, userId),
+              columns: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                name: true,
+                image: true,
+                isActive: true,
+                onboardingCompletedAt: true,
+                lastActiveOrgId: true,
+              },
+            })
+            .catch(() => {
+              throw new HttpException(
+                "Service temporarily unavailable",
+                HttpStatus.SERVICE_UNAVAILABLE,
+              );
+            }),
+          this.resolvePreferredOrg(userId).catch(() => null),
+        ]);
 
         if (!user) throw new NotFoundException("User not found");
 
+        const preferredOrgId = preferred?.orgId ?? user.lastActiveOrgId ?? null;
+
         const membership = await this.authTokens.resolveActiveMembership(
           userId,
-          user.lastActiveOrgId ?? null,
+          preferredOrgId,
           { honorSuspendedPreference: true },
         );
         const suspendedMembership = membership
           ? null
           : await this.authTokens.resolveSuspendedMembership(
               userId,
-              user.lastActiveOrgId ?? null,
+              preferredOrgId,
             );
 
         let enabledModules: string[] = [];
@@ -261,6 +315,7 @@ export class AuthService {
           role: membership?.role ?? null,
           isActive: user.isActive,
           orgId: resolvedOrgId,
+          cellId: resolvedOrgId ? (preferred?.cellId ?? null) : null,
           isOrgOwner,
           enabledModules,
           orgOnboardingCompletedAt,

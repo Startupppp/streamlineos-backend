@@ -40,6 +40,9 @@ import {
 import type { DeclineTransferInput } from "./dto/ownership.schemas";
 import type { NotificationEventKey } from "../notifications/notification-events.catalog";
 import { OrganizationSagaService } from "../organization/core/lifecycle/organization-saga.service";
+import { canTransferModuleOwnership } from "../module-access/module-standing";
+import { principalIsOrgOwner } from "../../common/auth/principal";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 @Injectable()
 export class OwnershipTransferResponseService {
@@ -607,7 +610,7 @@ export class OwnershipTransferResponseService {
     orgId: string,
     actorUserId: string,
     transferId: string,
-    isOrgOwner: boolean,
+    actor: CurrentUserContext,
   ) {
     const [transfer] = await this.db
       .select({
@@ -644,9 +647,19 @@ export class OwnershipTransferResponseService {
       throw new ForbiddenException("Not a member of this organization");
 
     const initiatorId = transfer.initiatedByMembershipId;
-    if (!isOrgOwner && actorMembership.id !== initiatorId) {
+    let canCancel = actorMembership.id === initiatorId;
+
+    if (!canCancel) {
+      if (transfer.scope === "MODULE" && transfer.moduleKey !== null) {
+        canCancel = await canTransferModuleOwnership(this.db, actor, transfer.moduleKey);
+      } else {
+        canCancel = principalIsOrgOwner(actor.principal);
+      }
+    }
+
+    if (!canCancel) {
       throw new ForbiddenException(
-        "Only the initiator or an org owner may cancel this transfer",
+        "Only the initiator, the module owner, an org admin, or the org owner may cancel this transfer",
       );
     }
 

@@ -24,7 +24,12 @@ import {
   livePersonOfUser,
   primaryEmploymentOfPerson,
 } from "../directory/employment-query";
-import { leaveApprovalScope } from "../hr/time/leaves-scope";
+import {
+  leaveApprovalScope,
+  resolveLeavesViewScope,
+} from "../hr/time/leaves-scope";
+import { applyScope } from "../access/apply-scope";
+import { buildOrgDashboardCacheKey } from "./dashboard-cache-key";
 
 @Injectable()
 export class DashboardLeaveService {
@@ -34,7 +39,10 @@ export class DashboardLeaveService {
     private readonly access: AccessService,
   ) {}
 
-  getLeavesToday(orgId: string) {
+  async getLeavesToday(u: CurrentUserContext) {
+    const { orgId } = u;
+    const approvalScope = await resolveLeavesViewScope(this.access, u);
+    const scope = approvalScope === "none" ? "own" : approvalScope;
     const today = getTodayString();
     return this.db
       .select({
@@ -56,6 +64,9 @@ export class DashboardLeaveService {
           eq(leaveRequests.status, "APPROVED"),
           lte(leaveRequests.startDate, today),
           gte(leaveRequests.endDate, today),
+          applyScope(scope, orgId, u.userId, {
+            ownerColumn: leaveRequests.userId,
+          }),
         ),
       );
   }
@@ -94,7 +105,6 @@ export class DashboardLeaveService {
     }
 
     const isApprover = await this.access.holds(u, "hr:leaves:approve");
-    // Below "all" the count is per-approver, so the key carries the actor too.
     const audience = scope === "all" ? "org" : u.userId;
     const key = `dashboard:pending-approvals:${orgId}:${scope}:${audience}:${isApprover ? "approver" : "self"}`;
     const visible = leaveApprovalScope(scope, orgId, u.userId);
@@ -138,9 +148,14 @@ export class DashboardLeaveService {
     );
   }
 
-  getUpcomingHolidays(orgId: string) {
+  async getUpcomingHolidays(orgId: string) {
     const today = getTodayString();
-    const key = `dashboard:upcoming-holidays:${orgId}:${today}`;
+    const key = await buildOrgDashboardCacheKey(
+      this.access,
+      orgId,
+      "holidays",
+      today,
+    );
     return this.cache.cached(
       key,
       () =>

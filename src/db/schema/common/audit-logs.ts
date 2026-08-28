@@ -5,11 +5,12 @@ import {
   timestamp,
   boolean,
   jsonb,
+  integer,
   index,
   check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { organizations, users } from "./auth";
+import { organizations, users, organizationMembers } from "./auth";
 
 export const auditLogs = pgTable(
   "audit_logs",
@@ -23,6 +24,7 @@ export const auditLogs = pgTable(
     targetId: text("target_id"),
     targetType: text("target_type"),
     actorUserId: text("actor_user_id"),
+    actorMembershipId: integer("actor_membership_id").references(() => organizationMembers.id, { onDelete: "set null" }),
     resourceType: text("resource_type"),
     resourceId: text("resource_id"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
@@ -37,6 +39,7 @@ export const auditLogs = pgTable(
     ),
     index("idx_audit_logs_user_id").on(table.userId),
     index("idx_audit_logs_org_id").on(table.orgId),
+    index("idx_audit_logs_org_actor_membership").on(table.orgId, table.actorMembershipId),
     index("idx_audit_logs_action").on(table.action),
     index("idx_audit_logs_created_at").on(table.createdAt),
     index("idx_audit_logs_org_created").on(table.orgId, table.createdAt),

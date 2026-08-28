@@ -10,6 +10,8 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { ticketAssignees, tickets } from "../../../db/schema";
+import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
+import type { OrganizationActor } from "../../../common/organization/organization-actor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
@@ -114,8 +116,26 @@ export class ProjectsTicketsUpdateService {
     if (input.status) updateData.status = input.status;
     if (input.priority) updateData.priority = input.priority;
     const resolvedAssignee = resolveAssigneeId(input.assigneeId);
-    if (resolvedAssignee !== undefined)
+
+    const pendingActorIds = new Set<string>();
+    if (resolvedAssignee) pendingActorIds.add(resolvedAssignee);
+    if (input.assigneeIds) input.assigneeIds.forEach((uid) => pendingActorIds.add(uid));
+
+    let assigneeActors = new Map<string, OrganizationActor>();
+    if (pendingActorIds.size > 0) {
+      assigneeActors = await resolveOrganizationActorsByUserIds(this.db, orgId, [...pendingActorIds]);
+      for (const uid of pendingActorIds) {
+        if (!assigneeActors.has(uid))
+          throw new NotFoundException("Assignee is not a member of this organization");
+      }
+    }
+
+    if (resolvedAssignee !== undefined) {
       updateData.assigneeId = resolvedAssignee;
+      updateData.assigneeMembershipId = resolvedAssignee !== null
+        ? (assigneeActors.get(resolvedAssignee)?.membershipId ?? null)
+        : null;
+    }
     if (input.sprintId !== undefined) updateData.sprintId = input.sprintId;
     if (input.epicId !== undefined) updateData.epicId = input.epicId;
     if (input.moduleId !== undefined) updateData.moduleId = input.moduleId;
@@ -270,7 +290,7 @@ export class ProjectsTicketsUpdateService {
     });
 
     await Promise.all([
-      this.syncAssignees(orgId, ticketId, actingUserId, input),
+      this.syncAssignees(orgId, ticketId, actingUserId, input, assigneeActors),
       this.activity
         .logTicketFieldChanges(orgId, ticketId, actingUserId, before, {
           title: input.title,
@@ -376,6 +396,7 @@ export class ProjectsTicketsUpdateService {
     ticketId: number,
     actingUserId: string,
     input: UpdateTicketInput,
+    actorMap: Map<string, OrganizationActor>,
   ): Promise<void> {
     if (input.assigneeIds !== undefined) {
       await this.db
@@ -390,6 +411,7 @@ export class ProjectsTicketsUpdateService {
             orgId,
             ticketId,
             userId,
+            membershipId: actorMap.get(userId)?.membershipId ?? null,
             assignedBy: actingUserId,
           })),
         );
@@ -407,6 +429,7 @@ export class ProjectsTicketsUpdateService {
           orgId,
           ticketId,
           userId: newAssigneeId,
+          membershipId: actorMap.get(newAssigneeId)?.membershipId ?? null,
           assignedBy: actingUserId,
         });
       }

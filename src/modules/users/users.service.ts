@@ -40,6 +40,20 @@ import { SeatLedgerService } from "../billing/core/seat-ledger.service";
 import { OrganizationUsersReader } from "./organization-users.reader";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
 
+type GlobalUserPatch = Pick<
+  typeof users.$inferInsert,
+  | "firstName"
+  | "lastName"
+  | "name"
+  | "phone"
+  | "bio"
+  | "linkedinUrl"
+  | "twitterUrl"
+  | "githubUrl"
+  | "websiteUrl"
+  | "emergencyContact"
+>;
+
 @Injectable()
 export class UsersService {
   private readonly reader: OrganizationUsersReader;
@@ -263,7 +277,7 @@ export class UsersService {
         );
     }
 
-    const updateData: Record<string, unknown> = {};
+    const updateData: Partial<GlobalUserPatch> = {};
     if (data.firstName !== undefined) updateData.firstName = data.firstName;
     if (data.lastName !== undefined) updateData.lastName = data.lastName;
     if (data.firstName !== undefined || data.lastName !== undefined) {

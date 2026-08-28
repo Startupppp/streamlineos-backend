@@ -7,6 +7,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
+import {
   and,
   desc,
   sql,
@@ -244,6 +249,11 @@ export class ApprovalsService {
     }
     await this.assertCanActOnPeriod(u, period);
 
+    const approverActor = await assertOrganizationActor(this.db, u.orgId, { kind: "user", userId: u.userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     const settings = await this.getSettings(u.orgId);
     const lockAfterApproval = settings?.lockAfterApproval ?? true;
     const now = new Date();
@@ -255,6 +265,7 @@ export class ApprovalsService {
           status: "APPROVED",
           approvedAt: now,
           approvedBy: u.userId,
+          approvedByMembershipId: approverActor.membershipId,
           lockedAt: lockAfterApproval ? now : null,
           updatedAt: now,
         })
@@ -270,6 +281,7 @@ export class ApprovalsService {
         .set({
           status: "APPROVED",
           approvedBy: u.userId,
+          approvedByMembershipId: approverActor.membershipId,
           approvedAt: now,
           lockedAt: lockAfterApproval ? now : null,
           lockedBy: lockAfterApproval ? u.userId : null,

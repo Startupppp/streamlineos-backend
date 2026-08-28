@@ -65,6 +65,11 @@ export const roleAssignments = pgTable(
       columns: [table.orgId, table.roleId],
       foreignColumns: [roles.orgId, roles.id],
     }).onDelete("cascade"),
+    foreignKey({
+      name: "fk_role_assignments_assigner_membership",
+      columns: [table.orgId, table.assignedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }),
   ],
 );
 
@@ -137,6 +142,21 @@ export const userPermissionGrants = pgTable(
       columns: [table.orgId, table.organizationMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     }).onDelete("cascade"),
+    foreignKey({
+      name: "fk_user_permission_grants_granter_membership",
+      columns: [table.orgId, table.grantedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }),
+    foreignKey({
+      name: "fk_user_permission_grants_module",
+      columns: [table.moduleKey],
+      foreignColumns: [modulesCatalog.moduleKey],
+    }),
+    foreignKey({
+      name: "fk_user_permission_grants_permission_module",
+      columns: [table.permissionKey, table.moduleKey],
+      foreignColumns: [permissions.name, permissions.administeringModuleKey],
+    }),
   ],
 );
 
@@ -184,6 +204,11 @@ export const userModuleAccess = pgTable(
       columns: [table.orgId, table.organizationMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     }).onDelete("cascade"),
+    foreignKey({
+      name: "fk_user_module_access_module",
+      columns: [table.moduleKey],
+      foreignColumns: [modulesCatalog.moduleKey],
+    }),
   ],
 );
 

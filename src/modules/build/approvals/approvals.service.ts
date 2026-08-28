@@ -17,6 +17,12 @@ import { ChatMessagesService } from "../../chat/chat-messages.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
+import type { OrganizationActor } from "../../../common/organization/organization-actor";
 import type {
   CreateApprovalInput,
   DecideApprovalInput,
@@ -25,7 +31,7 @@ import type {
 } from "./dto/approvals.schemas";
 
 type ApprovalPatch = Partial<
-  Pick<typeof projectApprovals.$inferInsert, "approverId" | "dueAt" | "status">
+  Pick<typeof projectApprovals.$inferInsert, "approverId" | "approverMembershipId" | "dueAt" | "status">
 >;
 
 const DECIDABLE = new Set<string>(["pending", "escalated", "changes_requested"]);
@@ -149,6 +155,14 @@ export class ApprovalsService {
     }
     await this.assertProject(orgId, projectId);
 
+    let approverActor: OrganizationActor;
+    try {
+      approverActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId: input.approverId });
+    } catch (e) {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    }
+
     const existing = await this.db.query.projectApprovals.findFirst({
       where: and(
         eq(projectApprovals.orgId, orgId),
@@ -177,6 +191,7 @@ export class ApprovalsService {
         title: input.title,
         reason: input.reason ?? null,
         approverId: input.approverId,
+        approverMembershipId: approverActor.membershipId,
         dueAt: input.dueAt ?? null,
         level: input.level ?? 1,
         requestedById: userId,
@@ -256,7 +271,16 @@ export class ApprovalsService {
     await this.loadApproval(orgId, projectId, approvalId);
 
     const patch: ApprovalPatch = {};
-    if (input.approverId !== undefined) patch.approverId = input.approverId;
+    if (input.approverId !== undefined) {
+      try {
+        const actor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId: input.approverId });
+        patch.approverId = input.approverId;
+        patch.approverMembershipId = actor.membershipId;
+      } catch (e) {
+        if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+        throw e;
+      }
+    }
     if (input.dueAt !== undefined) patch.dueAt = input.dueAt ?? null;
     if (input.status !== undefined) patch.status = input.status;
 

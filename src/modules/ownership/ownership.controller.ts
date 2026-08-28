@@ -107,7 +107,7 @@ export class OwnershipController {
       u.userId,
       moduleKey,
       body,
-      u.isOrgOwner,
+      u,
     );
   }
 
@@ -169,7 +169,7 @@ export class OwnershipController {
       u.orgId,
       u.userId,
       transferId,
-      u.isOrgOwner,
+      u,
     );
   }
 }

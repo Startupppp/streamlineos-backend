@@ -7,6 +7,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, ne } from "drizzle-orm";
 import {
+  accountOrganizationIndex,
   auditLogs,
   candidateOffers,
   leaveBlackoutDates,
@@ -140,6 +141,15 @@ export class OrgLifecycleService {
           and(
             eq(users.id, memberUserId),
             eq(users.lastActiveOrgId, orgId),
+          ),
+        );
+      await db
+        .update(accountOrganizationIndex)
+        .set({ organizationStatus: "ARCHIVED" })
+        .where(
+          and(
+            eq(accountOrganizationIndex.userId, memberUserId),
+            eq(accountOrganizationIndex.orgId, orgId),
           ),
         );
     }
@@ -340,7 +350,20 @@ export class OrgLifecycleService {
       throw err;
     }
 
-    await this.bustMembersMembership(orgId, memberUserIds);
+    await Promise.all([
+      this.bustMembersMembership(orgId, memberUserIds),
+      withIdentity(this.db, userId, (tx) =>
+        tx
+          .update(accountOrganizationIndex)
+          .set({ organizationStatus: "ACTIVE", lastActivatedAt: new Date() })
+          .where(
+            and(
+              eq(accountOrganizationIndex.userId, userId),
+              eq(accountOrganizationIndex.orgId, orgId),
+            ),
+          ),
+      ),
+    ]);
 
     this.audit.log({
       action: "org.restored",

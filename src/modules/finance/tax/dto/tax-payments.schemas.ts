@@ -1,9 +1,12 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
+import { optionalPageNumberField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listTaxPaymentsQuerySchema = z.object({
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
+  page: optionalPageNumberField(),
+  pageSize: optionalPageSizeField(100),
+  limit: optionalPageSizeField(100),
+  cursor: idCursorSchema,
   taxType: z.enum(["GST", "CGST_SGST", "IGST", "VAT", "TDS", "TCS", "EXEMPT", "ZERO_RATED"]).optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),

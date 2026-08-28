@@ -50,7 +50,7 @@ const STANDING: Readonly<Record<ModuleStandingSource, ModuleStanding>> = {
     level: "admin",
     source: "org-admin",
     canManageAccess: true,
-    canTransferOwnership: false,
+    canTransferOwnership: true,
   },
   "module-role": {
     level: "admin",
@@ -174,23 +174,18 @@ export async function resolveModuleManagementStanding(
   return source ? STANDING[source] : null;
 }
 
-/**
- * The ownership-lifecycle question on its own. It asks only the two cheap
- * sources that carry transfer rights, so it costs what the duplicated checks
- * it replaces cost, while the answer still comes from the one rules table.
- */
 export async function canTransferModuleOwnership(
   db: Db,
   actor: CurrentUserContext,
   moduleKey: string,
 ): Promise<boolean> {
-  if (actor.isOrgOwner) return STANDING["org-owner"].canTransferOwnership;
+  if (principalIsOrgOwner(actor.principal))
+    return STANDING["org-owner"].canTransferOwnership;
 
-  const ownerUserId = await resolveModuleOwnerUserId(
-    db,
-    actor.orgId,
-    moduleKey,
-  );
+  if (await isStructuralOrgAdmin(db, actor))
+    return STANDING["org-admin"].canTransferOwnership;
+
+  const ownerUserId = await resolveModuleOwnerUserId(db, actor.orgId, moduleKey);
   if (ownerUserId !== null && ownerUserId === actor.userId)
     return STANDING["module-ownership"].canTransferOwnership;
 

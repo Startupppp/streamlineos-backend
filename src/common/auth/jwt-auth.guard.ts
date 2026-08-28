@@ -31,7 +31,7 @@ import {
   isModernApiToken,
   legacyApiTokenPrefix,
 } from "./api-token-hash";
-import { organizationMembers, organizations, userApiTokens, users, userSessions } from "../../db/schema";
+import { accountOrganizationIndex, organizationMembers, organizations, userApiTokens, userSessions } from "../../db/schema";
 import { MembershipStateService } from "./membership-state.service";
 
 interface OrgContext {
@@ -284,7 +284,13 @@ export class JwtAuthGuard implements CanActivate {
         })
         .from(organizationMembers)
         .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .leftJoin(
+          accountOrganizationIndex,
+          and(
+            eq(accountOrganizationIndex.userId, organizationMembers.userId),
+            eq(accountOrganizationIndex.orgId, organizationMembers.orgId),
+          ),
+        )
         .where(
           and(
             eq(organizationMembers.userId, userId),
@@ -294,7 +300,7 @@ export class JwtAuthGuard implements CanActivate {
           ),
         )
         .orderBy(
-          desc(sql`${organizationMembers.orgId} = ${users.lastActiveOrgId}`),
+          sql`${accountOrganizationIndex.lastActivatedAt} DESC NULLS LAST`,
           desc(organizationMembers.joinedAt),
           desc(organizationMembers.id),
         )
