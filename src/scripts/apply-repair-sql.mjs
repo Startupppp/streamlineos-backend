@@ -83,7 +83,8 @@ async function main() {
   console.log(
     `RESULT: ${failures.length === 0 ? "ALL STATEMENTS RAN" : "FAILURES"}` +
       ` file=${FILE} target=${TARGET} statements=${statements.length}` +
-      ` failed=${failures.length} committed=${COMMIT && failures.length === 0}`,
+      ` ran=${applied} failed=${failures.length}` +
+      ` committed=${COMMIT && failures.length === 0}`,
   );
   if (failures.length > 0) process.exitCode = 1;
 }

@@ -41,7 +41,30 @@ export function columnClause(column) {
   return parts.join(" ");
 }
 
+export class UnsupportedTableShapeError extends Error {
+  constructor(table, reason) {
+    super(`${table.schema}.${table.name}: ${reason}`);
+    this.name = "UnsupportedTableShapeError";
+  }
+}
+
+export function createSchema(schema) {
+  return `CREATE SCHEMA IF NOT EXISTS ${ident(schema.name)};`;
+}
+
 export function createTable(table, columns) {
+  if (table.kind === "p")
+    throw new UnsupportedTableShapeError(
+      table,
+      "partitioned parent. Emitting it as a plain table would silently drop the partition key" +
+        " and every partition. Add PARTITION BY support before regenerating.",
+    );
+  if (table.parent !== null && table.parent !== undefined)
+    throw new UnsupportedTableShapeError(
+      table,
+      `partition of ${table.parent}. Emitting it as a standalone table would detach it from its` +
+        " parent. Add PARTITION OF support before regenerating.",
+    );
   const body = columns
     .slice()
     .sort((a, b) => a.ord - b.ord)

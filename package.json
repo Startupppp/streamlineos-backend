@@ -126,7 +126,8 @@
     "cell:chain-repair:self-test": "node src/scripts/generate-chain-repair.mjs --self-test",
     "cell:apply-repair": "node src/scripts/apply-repair-sql.mjs",
     "cell:cost:record": "node src/scripts/run-cell-unit-cost.mjs --record-only",
-    "cell:capacity:record": "node src/scripts/run-cell-capacity.mjs --record-only"
+    "cell:capacity:record": "node src/scripts/run-cell-capacity.mjs --record-only",
+    "cell:chain-repair:verify": "node src/scripts/__tests__/chain-repair.test.mjs"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

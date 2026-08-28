@@ -14,12 +14,12 @@ import {
   createFunction,
   createIndex,
   createPolicy,
+  createSchema,
   createTable,
   createTrigger,
   createType,
   enableRls,
   grantAppRole,
-  guarded,
   ident,
   join,
   literal,
@@ -108,6 +108,7 @@ function plan(source, target, direction) {
     .filter((c) => c.type !== "t");
 
   return {
+    missingSchemas: difference(source.schemas, target.schemas),
     newTypes,
     addedLabels,
     missingTables,
@@ -115,7 +116,10 @@ function plan(source, target, direction) {
     newColumns,
     retypedColumns,
     renullableColumns,
-    dropColumns: direction === "forward" ? DROP_IN_CELL : [],
+    dropColumns:
+      direction === "forward"
+        ? DROP_IN_CELL.filter((key) => targetColumnNames.has(key))
+        : [],
     functions: difference(source.functions, target.functions),
     constraintsFirst: constraints.filter((c) => c.type !== "f" && c.type !== "n"),
     notNulls: constraints
@@ -143,6 +147,10 @@ function emit(p, header, violations = new Map()) {
     out.push(...kept);
   };
 
+  push(
+    "schemas",
+    p.missingSchemas.map((s) => createSchema(s)),
+  );
   push(
     "enum types the chain never creates",
     p.newTypes.map((t) => createType(t.type, t.labels)),
@@ -269,6 +277,7 @@ async function probeViolations(url, foreignKeys) {
 
 function counts(p) {
   return {
+    schemas: p.missingSchemas.length,
     types: p.newTypes.length,
     enumLabels: p.addedLabels.length,
     tables: p.missingTables.length,

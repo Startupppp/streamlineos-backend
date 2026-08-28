@@ -2381,6 +2381,13 @@
       "when": 1787895665277,
       "tag": "0623_workflow_variables_tenant_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 345,
+      "version": "7",
+      "when": 1787895725277,
+      "tag": "0624_inventory_sku_uniqueness_restored",
+      "breakpoints": true
     }
   ]
 }
