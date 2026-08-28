@@ -44,6 +44,7 @@ export interface RegionDefinition {
   readonly databaseUrl: string;
   readonly storage: RegionStorageConfig;
   readonly cell: RegionCellConfig;
+  readonly ablyApiKey?: string;
 }
 
 export interface RegionTopology {
@@ -155,6 +156,7 @@ export function resolveRegionTopology(env: NodeJS.ProcessEnv): RegionTopology {
     regions[key] = {
       key,
       databaseUrl,
+      ablyApiKey: read(env, envKey(key, "ABLY_API_KEY")),
       cell: {
         cellId: read(env, envKey(key, "CELL_ID"), ...flat("CELL_ID")) ?? LEGACY_CELL_ID,
         databaseShard:

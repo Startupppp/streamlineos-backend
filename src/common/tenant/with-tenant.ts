@@ -1,5 +1,10 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
 import { sql, type SQL } from "drizzle-orm";
+import { recordTargetRequest } from "../relocation/relocation-traffic";
+import {
+  isRelocationTarget,
+  refreshRelocationTargets,
+} from "../relocation/relocation-traffic-tracker";
 import type { Db, TenantTx } from "../../db/drizzle.types";
 import { withPoolBorrow } from "../../db/pool-telemetry";
 import { resolveTransactionGuards } from "../../db/pool.config";
@@ -133,12 +138,17 @@ export async function withTenant<T>(
     sql`, `,
   );
 
+  const cellId = placement === null ? null : placement.cellId;
+  void refreshRelocationTargets(db, Date.now());
+
   return withPoolBorrow((borrow) =>
     regional.transaction(async (tx) => {
       borrow.acquired();
       const rows = await tx.execute(sql`SELECT ${settings}`);
       if (fenced && placement && !fenceIsHeld(rows))
         throw new WriteFenceLostError(context.orgId, placement);
+      if (isRelocationTarget(context.orgId, cellId))
+        await recordTargetRequest(tx, context.orgId, String(cellId));
       return fn(tx);
     }),
   );

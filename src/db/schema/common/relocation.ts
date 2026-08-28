@@ -5,6 +5,7 @@ import {
   integer,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -94,4 +95,16 @@ export const organizationRelocationChecksums = pgTable(
       table.matched,
     ),
   ],
+);
+
+export const organizationCellTraffic = pgTable(
+  "organization_cell_traffic",
+  {
+    orgId: text("org_id").notNull(),
+    cellId: text("cell_id").notNull(),
+    requestCount: bigint("request_count", { mode: "number" }).notNull().default(0),
+    windowStart: timestamp("window_start", { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.orgId, table.cellId] })],
 );

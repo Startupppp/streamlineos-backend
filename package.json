@@ -132,7 +132,12 @@
     "cell:relocate-data:self-test": "node -r ts-node/register/transpile-only src/scripts/relocate-org-data.ts --self-test",
     "load:drive": "node src/scripts/run-load-driver.mjs",
     "load:drive:self-test": "node src/scripts/run-load-driver.mjs --self-test",
-    "load:drive:verify": "node src/scripts/__tests__/load-driver.test.mjs"
+    "load:drive:verify": "node src/scripts/__tests__/load-driver.test.mjs",
+    "cell:rollout": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/run-cell-rollout.ts",
+    "cell:rollout:self-test": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/run-cell-rollout.ts --self-test",
+    "cell:rollout:regressed-canary": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/run-cell-rollout.ts --regressed-canary",
+    "cell:relay": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/verify-cross-cell-relay.ts",
+    "cell:relay:self-test": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/verify-cross-cell-relay.ts --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

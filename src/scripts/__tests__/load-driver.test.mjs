@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { achievedRate, judge, percentile, summarise } from "../load-driver/percentiles.mjs";
 import { DRIVEN, NOT_DRIVEN_REASONS } from "../load-driver/workloads.mjs";
 import { LATENCY_OBJECTIVES } from "../envelope-profile.mjs";
+
+const SPECIAL_CASES = new Set([
+  "cross-org-data-exposure",
+  "permission-revocation-explicit",
+  "durable-event-loss-after-ack",
+]);
 
 function test(name, fn) {
   try {
@@ -83,7 +90,7 @@ test("every PRD latency objective is either driven or has a written reason", () 
     (o) =>
       DRIVEN[o.name] === undefined &&
       NOT_DRIVEN_REASONS[o.name] === undefined &&
-      o.name !== "cross-org-data-exposure",
+      !SPECIAL_CASES.has(o.name),
   );
   assert.deepEqual(
     unaccounted.map((o) => o.name),
@@ -92,6 +99,20 @@ test("every PRD latency objective is either driven or has a written reason", () 
   );
 });
 
+// An exemption is only safe if the runner really reports the objective. Without this, adding a
+// name to SPECIAL_CASES would silence it instead of driving it -- which is how a measurement
+// that was never taken comes to read as a pass.
+test("every special-cased objective is actually handled by the runner", () => {
+  const runner = readFileSync(
+    new URL("../run-load-driver.mjs", import.meta.url),
+    "utf8",
+  );
+  for (const name of SPECIAL_CASES)
+    assert.ok(
+      runner.includes(name),
+      `${name} is exempt from the accountability check but the runner never mentions it`,
+    );
+});
 test("every driven workload names the percentile it is judged on", () => {
   for (const [name, workload] of Object.entries(DRIVEN)) {
     assert.ok(

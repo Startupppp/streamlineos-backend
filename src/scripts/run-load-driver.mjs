@@ -16,6 +16,8 @@ import {
   PROBE_TABLE_DDL,
   PROBE_TABLE_DROP,
   crossOrgExposureProbe,
+  measurePermissionRevocation,
+  measureDurableEventLoss,
 } from "./load-driver/workloads.mjs";
 
 const env = loadEnv();
@@ -220,6 +222,18 @@ async function main() {
       rowsVisible: exposure,
     };
 
+    log("measuring permission revocation end-to-end (DB level)");
+    results["permission-revocation-explicit"] = {
+      description: "grant inserted, confirmed, revoked in one transaction, confirmed gone in next read",
+      ...(await measurePermissionRevocation(discovery, primary.orgId)),
+    };
+
+    log("measuring durable event loss after induced abort");
+    results["durable-event-loss-after-ack"] = {
+      description: "outbox events inserted PENDING, ack transaction aborted, surviving PENDING counted",
+      ...(await measureDurableEventLoss(discovery, primary.orgId)),
+    };
+
     report(results, totalRequests, primary, baseline);
   } finally {
     await owner.unsafe(PROBE_TABLE_DROP).catch(() => {});
@@ -250,6 +264,54 @@ function report(results, totalRequests, primary, baseline) {
             : `${rows} row(s) visible across the tenant boundary (target ${objective.target})`),
       );
       objectives.push({ name: objective.name, verdict, measured: rows, target: objective.target });
+      continue;
+    }
+
+    if (objective.name === "permission-revocation-explicit") {
+      if (result?.error) {
+        console.log(`NOT_DRIVEN  ${objective.name.padEnd(38)} ${result.error}`);
+        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", reason: result.error, target: objective.target });
+        continue;
+      }
+      const elapsedMs = result?.elapsedMs;
+      if (elapsedMs === undefined) {
+        console.log(`NOT_DRIVEN  ${objective.name.padEnd(38)} no measurement produced`);
+        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", target: objective.target });
+        continue;
+      }
+      const verdict = elapsedMs <= objective.target ? "MET" : "BREACHED";
+      measured += 1;
+      if (verdict === "BREACHED") breached += 1;
+      console.log(
+        `${verdict.padEnd(11)} ${objective.name.padEnd(38)} ` +
+          `${elapsedMs.toFixed(0)}ms target=${objective.target}ms` +
+          ` (DB floor: revoke tx + one confirming read; live app adds Redis and in-process cache delay)`,
+      );
+      objectives.push({ name: objective.name, verdict, measured: elapsedMs, target: objective.target });
+      continue;
+    }
+
+    if (objective.name === "durable-event-loss-after-ack") {
+      if (result?.error) {
+        console.log(`NOT_DRIVEN  ${objective.name.padEnd(38)} ${result.error}`);
+        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", reason: result.error, target: objective.target });
+        continue;
+      }
+      const lost = result?.lost;
+      if (lost === undefined) {
+        console.log(`NOT_DRIVEN  ${objective.name.padEnd(38)} no measurement produced`);
+        objectives.push({ name: objective.name, verdict: "NOT_DRIVEN", target: objective.target });
+        continue;
+      }
+      const verdict = lost === 0 ? "MET" : "BREACHED";
+      measured += 1;
+      if (verdict === "BREACHED") breached += 1;
+      console.log(
+        `${verdict.padEnd(11)} ${objective.name.padEnd(38)} ` +
+          `${lost} event(s) lost of ${result.acknowledged} acknowledged` +
+          ` (ack tx aborted, ${result.remaining} remaining PENDING — target 0)`,
+      );
+      objectives.push({ name: objective.name, verdict, measured: lost, target: objective.target, acknowledged: result.acknowledged });
       continue;
     }
 
