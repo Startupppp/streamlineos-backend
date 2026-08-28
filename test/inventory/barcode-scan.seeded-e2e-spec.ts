@@ -118,6 +118,75 @@ describe("[seeded-e2e] barcode scan resolution", () => {
     expect(result.warnings.join(" ")).toMatch(/No product variant carries GTIN/);
   });
 
+  describe("capturing a scan as a fact", () => {
+    const capturedFacts = (key: string) =>
+      runInNewTenantTransaction(app.app.get<Db>(DRIZZLE), orgId, async () =>
+        app.app.get<Db>(DRIZZLE).execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM outbox_events
+          WHERE organization_id = ${orgId}
+            AND event_type = 'inventory.scan.captured'
+            AND aggregate_id = ${key}`),
+      );
+
+    const capture = (key: string, payload: string) =>
+      runInNewTenantTransaction(app.app.get<Db>(DRIZZLE), orgId, () =>
+        app.app.get(InvBarcodeService).captureScan(orgId, userId, key, payload),
+      );
+
+    it("emits exactly one fact for one capture", async () => {
+      const key = `scan-${randomUUID()}`;
+      const result = await capture(key, `01${gtin}10LOT-${scanTag}`);
+
+      expect(result.captured).toBe(true);
+      expect(result.variant?.id).toBe(variantId);
+      expect((await capturedFacts(key))[0]!.n).toBe(1);
+    });
+
+    it("emits no second fact when the device retries the same scan", async () => {
+      // A scanner on a failing network sends the same scan several times.
+      // Three facts for one physical event corrupt a throughput count as surely
+      // as none would.
+      const key = `scan-${randomUUID()}`;
+      const payload = `01${gtin}10LOT-${scanTag}`;
+      const first = await capture(key, payload);
+      const second = await capture(key, payload);
+
+      expect(first.captured).toBe(true);
+      expect(second.captured).toBe(false);
+      expect((await capturedFacts(key))[0]!.n).toBe(1);
+    });
+
+    it("emits a separate fact for a genuinely separate scan", async () => {
+      // The control: without it the retry rule above would also pass against an
+      // implementation that recorded the first scan and nothing ever again.
+      const keyA = `scan-${randomUUID()}`;
+      const keyB = `scan-${randomUUID()}`;
+      await capture(keyA, `01${gtin}10LOT-${scanTag}`);
+      await capture(keyB, `01${gtin}10LOT-${scanTag}`);
+
+      expect((await capturedFacts(keyA))[0]!.n).toBe(1);
+      expect((await capturedFacts(keyB))[0]!.n).toBe(1);
+    });
+
+    it("records the raw payload, not only what it was taken to mean", async () => {
+      // An interpretation can later be shown to be wrong; what the scanner read
+      // cannot.
+      const key = `scan-${randomUUID()}`;
+      const payload = `01${gtin}10LOT-${scanTag}`;
+      await capture(key, payload);
+
+      const [row] = await runInNewTenantTransaction(
+        app.app.get<Db>(DRIZZLE),
+        orgId,
+        async () =>
+          app.app.get<Db>(DRIZZLE).execute<{ payload: { raw: string } }>(sql`
+            SELECT payload FROM outbox_events
+            WHERE organization_id = ${orgId} AND aggregate_id = ${key}`),
+      );
+      expect(row!.payload.raw).toBe(payload);
+    });
+  });
+
   it("falls through to the plain lookup for an ordinary barcode", async () => {
     // Most scans are not GS1, and a wedge reading a bin label must keep working.
     const result = await scan(`SC-${scanTag}-V`);

@@ -1,6 +1,9 @@
+import { createHash, randomUUID } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
-import { invProducts, invProductVariants, invLots, invSerialNumbers, invLocations, invStockLevels } from "../../../db/schema";
+import { invProducts, invProductVariants, invLots, invSerialNumbers, invLocations, invStockLevels, invIdempotencyKeys } from "../../../db/schema";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { claimIdempotencyKey } from "../stock-engine/idempotency";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { BarcodeLookupResult, ScanResult } from "./dto/inv-barcode.schemas";
@@ -174,6 +177,84 @@ export class InvBarcodeService {
     }
 
     return { parsed, variant, lot, serial, warnings };
+  }
+
+  /**
+   * INV-203 — capture a scan as a fact, before anything acts on it.
+   *
+   * `scan` reads; this one records. The phase requires the capture to exist
+   * independently of whatever stock command follows, because the two fail
+   * separately: a warehouse where the putaway was rejected still needs to know
+   * the pallet was scanned at the door, and reconstructing that from a stock
+   * movement that never happened is not possible.
+   *
+   * Idempotent on the caller's key, which is what makes it safe on a device
+   * that retries. A scanner on a failing network sends the same scan several
+   * times, and three facts for one physical event would corrupt a throughput
+   * count as surely as none would.
+   *
+   * The fact and the idempotency claim share the transaction. Emitting the
+   * event outside it would leave a fact for a capture that rolled back.
+   */
+  async captureScan(
+    orgId: string,
+    userId: string,
+    idempotencyKey: string,
+    payload: string,
+  ): Promise<ScanResult & { captured: boolean }> {
+    const requestHash = createHash("sha256").update(payload).digest("hex");
+
+    return this.db.transaction(async (tx) => {
+      const claim = await claimIdempotencyKey(tx, orgId, idempotencyKey, requestHash);
+      if (claim.kind === "replay") {
+        // The prior request already emitted the fact. Returning its stored
+        // result rather than re-resolving keeps a retry and its original
+        // answering the same thing even if the catalogue moved in between.
+        return { ...(claim.stored as ScanResult), captured: false };
+      }
+
+      const result = await this.scan(orgId, payload);
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "inv_scan",
+        aggregateId: idempotencyKey,
+        aggregateVersion: Date.now(),
+        eventType: "inventory.scan.captured",
+        payload: {
+          // The raw payload is the point of the record. What we decided it
+          // meant is an interpretation and may later be shown to be wrong.
+          raw: result.parsed.raw,
+          isGs1: result.parsed.isGs1,
+          gtin: result.parsed.gtin ?? null,
+          lotNumber: result.parsed.lotNumber ?? null,
+          serialNumber: result.parsed.serialNumber ?? null,
+          resolvedVariantId: result.variant?.id ?? null,
+          resolvedLotId: result.lot?.id ?? null,
+          resolvedSerialId: result.serial?.id ?? null,
+          warnings: result.warnings,
+          capturedBy: userId,
+        },
+        occurredAt: new Date(),
+        actorMembershipId: null,
+      });
+
+      await tx
+        .update(invIdempotencyKeys)
+        .set({
+          status: "COMPLETED",
+          response: { ...result } as Record<string, unknown>,
+        })
+        .where(
+          and(
+            eq(invIdempotencyKeys.orgId, orgId),
+            eq(invIdempotencyKeys.idempotencyKey, idempotencyKey),
+          ),
+        );
+
+      return { ...result, captured: true };
+    });
   }
 
   private async productStock(orgId: string, productId: number): Promise<string> {

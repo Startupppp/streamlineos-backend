@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Headers, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -47,5 +47,23 @@ export class InvBarcodeController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.barcodeService.scan(u.orgId, body.payload);
+  }
+
+  /**
+   * INV-203. Records the scan as a fact and emits `inventory.scan.captured`.
+   * Idempotent on the caller's key, because a scanner on a failing network
+   * retries and three facts for one physical event corrupt a throughput count
+   * as surely as none would.
+   */
+  @Post("scan/capture")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:read")
+  captureScan(
+    @Body(new ZodValidationPipe(barcodeScanSchema)) body: BarcodeScanInput,
+    @Headers("idempotency-key") idempotencyKey: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
+    return this.barcodeService.captureScan(u.orgId, u.userId, idempotencyKey, body.payload);
   }
 }
