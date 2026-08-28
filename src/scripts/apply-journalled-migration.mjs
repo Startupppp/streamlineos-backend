@@ -64,25 +64,36 @@ async function main() {
     return;
   }
 
-  for (const [i, statement] of statements.entries()) {
-    try {
-      await sql.unsafe(statement);
-      console.log(`  OK   [${i + 1}/${statements.length}] ${statement.split("\n")[0].slice(0, 90)}`);
-    } catch (error) {
-      console.error(
-        `  FAIL [${i + 1}/${statements.length}] ${error.code ?? "?"} ${error.message}`,
-      );
-      console.error(`  statement: ${statement.slice(0, 400)}`);
-      await sql.end();
-      process.exitCode = 1;
-      return;
-    }
+  try {
+    await sql.begin(async (tx) => {
+      for (const [i, statement] of statements.entries()) {
+        try {
+          await tx.unsafe(statement);
+          console.log(
+            `  OK   [${i + 1}/${statements.length}] ${statement.split("\n")[0].slice(0, 90)}`,
+          );
+        } catch (error) {
+          console.error(
+            `  FAIL [${i + 1}/${statements.length}] ${error.code ?? "?"} ${error.message}`,
+          );
+          console.error(`  statement: ${statement.slice(0, 400)}`);
+          throw error;
+        }
+      }
+      await tx`
+        INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
+        VALUES (${hash}, ${entry.when})
+      `;
+    });
+  } catch {
+    console.error(
+      `ROLLED BACK ${tag} — nothing was applied and no migration row was recorded`,
+    );
+    await sql.end();
+    process.exitCode = 1;
+    return;
   }
 
-  await sql`
-    INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
-    VALUES (${hash}, ${entry.when})
-  `;
   console.log(`RECORDED ${tag} at created_at=${entry.when}`);
   await sql.end();
 }

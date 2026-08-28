@@ -167,7 +167,8 @@
     "auth:benchmark:self-test": "node -r ts-node/register/transpile-only src/scripts/benchmark-access-service.ts --self-test",
     "browser:measure": "node --env-file-if-exists=.env src/scripts/browser-driver.mjs",
     "browser:measure:self-test": "node src/scripts/browser-driver.mjs --self-test",
-    "db:apply-one": "node --env-file=.env src/scripts/apply-journalled-migration.mjs"
+    "db:apply-one": "node --env-file=.env src/scripts/apply-journalled-migration.mjs",
+    "scan:legacy-actors:catalog": "node --env-file=.env src/scripts/scan-legacy-org-actors.mjs --catalog"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

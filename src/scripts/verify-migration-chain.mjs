@@ -84,7 +84,7 @@ function isPendingPath(tag, dir) {
   return tag.includes("/") || existsSync(join(dir, "pending", tag + ".sql"));
 }
 
-function runChecks(dir) {
+function runChecks(dir, gapsFile = CHAIN_GAPS_FILE) {
   const journal = readJournal(dir);
   const entries = journal.entries ?? [];
   const journalled = new Set(entries.map((e) => e.tag));
@@ -131,8 +131,8 @@ function runChecks(dir) {
   }
 
   // (e) chain_gaps > 0  (read from the marker file written by a recent bootstrap run)
-  if (existsSync(CHAIN_GAPS_FILE)) {
-    const raw = readFileSync(CHAIN_GAPS_FILE, "utf8").trim();
+  if (existsSync(gapsFile)) {
+    const raw = readFileSync(gapsFile, "utf8").trim();
     const gaps = Number(raw);
     if (!Number.isFinite(gaps) || gaps > 0) {
       failures.push(`(e) CHAIN GAPS  ${raw} gap(s) — cold rebuild references objects the chain never creates`);
@@ -169,8 +169,8 @@ function selfTest() {
     writeFileSync(join(tmp, name + ".sql"), content);
   }
 
-  function check(dir) {
-    return runChecks(dir);
+  function check(dir, gapsFile) {
+    return runChecks(dir, gapsFile);
   }
 
   console.log("Self-test: (a) unjournalled file");
@@ -224,19 +224,23 @@ function selfTest() {
   console.log("Self-test: (e) chain gaps marker");
   {
     const gapsFile = join(tmp, ".chain-gaps-selftest");
+
     writeFileSync(gapsFile, "42");
-    // Patch CHAIN_GAPS_FILE temporarily by writing to a temp fixture and calling directly
-    const rawCheck = () => {
-      if (existsSync(gapsFile)) {
-        const raw = readFileSync(gapsFile, "utf8").trim();
-        const gaps = Number(raw);
-        if (!Number.isFinite(gaps) || gaps > 0)
-          return [`(e) CHAIN GAPS  ${raw} gap(s)`];
-      }
-      return [];
-    };
-    const failures = rawCheck();
-    assert("chain gaps caught", failures, "(e)");
+    assert("chain gaps caught", check(tmp, gapsFile), "(e)");
+
+    writeFileSync(gapsFile, "not-a-number");
+    assert("unparseable gap count caught", check(tmp, gapsFile), "(e)");
+
+    writeFileSync(gapsFile, "0");
+    const clean = check(tmp, gapsFile);
+    if (clean.some((f) => f.includes("(e)"))) {
+      console.error("  FAIL  zero gaps must not be reported as a failure");
+      failed++;
+    } else {
+      console.log("  PASS  zero gaps is not reported as a failure");
+      passed++;
+    }
+
     rmSync(gapsFile);
   }
 

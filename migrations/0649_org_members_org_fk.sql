@@ -18,6 +18,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conname = 'organization_members_org_id_organizations_id_fk'
+      AND conrelid = 'organization_members'::regclass
   ) THEN
     ALTER TABLE "organization_members"
       ADD CONSTRAINT "organization_members_org_id_organizations_id_fk"

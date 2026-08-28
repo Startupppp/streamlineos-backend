@@ -262,6 +262,50 @@ if (args.includes("--self-test")) {
       );
     }
   }
+} else if (args.includes("--catalog")) {
+  await reportCatalogGap(entries);
 } else {
   printSummary(entries, totals);
+}
+
+/**
+ * The source scan is the CI ratchet because CI has no database, but it can only
+ * see tables that have a Drizzle declaration. Tables created by raw SQL — the
+ * accounting ap_/ar_/bank_ family and the CRM commission set among them — carry
+ * organizational users.id references the ratchet is structurally blind to, so
+ * the source count is a floor rather than the migration burden. This mode names
+ * the difference against pg_catalog so it is a known quantity, not a surprise.
+ */
+async function reportCatalogGap(sourceEntries) {
+  const { default: postgres } = await import("postgres");
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    console.error("DATABASE_URL is not set; --catalog needs a reachable database.");
+    process.exitCode = 2;
+    return;
+  }
+
+  const sql = postgres(url, { prepare: false, max: 1, ssl: "require", onnotice: () => {} });
+  try {
+    const rows = await sql`
+      SELECT t.relname AS tbl, a.attname AS col
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN unnest(c.conkey) k(attnum) ON true
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+      WHERE c.contype = 'f' AND c.confrelid = 'users'::regclass
+      ORDER BY 1, 2
+    `;
+    const known = new Set(sourceEntries.map((e) => `${e.table}.${e.column}`));
+    const invisible = [...new Set(rows.map((r) => `${r.tbl}.${r.col}`))].filter(
+      (key) => !known.has(key),
+    );
+
+    console.log(`pg_catalog users.id foreign keys : ${rows.length}`);
+    console.log(`visible to the source scan       : ${sourceEntries.length}`);
+    console.log(`INVISIBLE to the ratchet         : ${invisible.length}`);
+    for (const key of invisible) console.log(`  ${key}`);
+  } finally {
+    await sql.end();
+  }
 }
