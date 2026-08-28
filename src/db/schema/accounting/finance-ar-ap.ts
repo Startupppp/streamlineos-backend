@@ -44,6 +44,7 @@ export const creditNotes = pgTable("credit_notes", {
 
 export const creditNoteItems = pgTable("credit_note_items", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   creditNoteId: integer("credit_note_id").references(() => creditNotes.id, { onDelete: "cascade" }).notNull(),
   description: text("description").notNull(),
   hsnSacCode: text("hsn_sac_code"),
@@ -96,6 +97,7 @@ export const vendorCredits = pgTable("vendor_credits", {
 
 export const vendorCreditItems = pgTable("vendor_credit_items", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   vendorCreditId: integer("vendor_credit_id").references(() => vendorCredits.id, { onDelete: "cascade" }).notNull(),
   description: text("description").notNull(),
   hsnSacCode: text("hsn_sac_code"),
@@ -224,6 +226,7 @@ export const finPaymentRuns = pgTable("fin_payment_runs", {
 
 export const finPaymentRunItems = pgTable("fin_payment_run_items", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   runId: integer("run_id").references(() => finPaymentRuns.id, { onDelete: "cascade" }).notNull(),
   billId: integer("bill_id").references(() => purchaseBills.id).notNull(),
   vendorId: integer("vendor_id").references(() => clients.id),

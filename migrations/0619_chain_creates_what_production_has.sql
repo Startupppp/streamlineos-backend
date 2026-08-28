@@ -1749,7 +1749,7 @@ $function$
 ;
 --> statement-breakpoint
 --
--- primary keys, unique and check constraints (263)
+-- primary keys, unique and check constraints (262)
 --
 --> statement-breakpoint
 DO $repair$ BEGIN
@@ -3099,12 +3099,6 @@ END $repair$;
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'crm_commission_accrual_parts' AND k.conname = 'crm_commission_accrual_parts_pkey') THEN
     ALTER TABLE "public"."crm_commission_accrual_parts" ADD CONSTRAINT "crm_commission_accrual_parts_pkey" PRIMARY KEY (part_id);
-  END IF;
-END $repair$;
---> statement-breakpoint
-DO $repair$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'crm_commission_accrual_parts' AND k.conname = 'trg_crm_commission_accrual_parts_reconcile') THEN
-    ALTER TABLE "public"."crm_commission_accrual_parts" ADD CONSTRAINT "trg_crm_commission_accrual_parts_reconcile" TRIGGER DEFERRABLE INITIALLY DEFERRED;
   END IF;
 END $repair$;
 --> statement-breakpoint

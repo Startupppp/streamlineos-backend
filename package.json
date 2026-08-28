@@ -121,7 +121,12 @@
     "verify:multi-org-employment": "node --env-file=.env -r ts-node/register src/scripts/verify-multi-org-employment.ts",
     "check:owner-authority": "node src/scripts/check-owner-authority.mjs",
     "check:owner-authority:self-test": "node src/scripts/check-owner-authority.mjs --self-test",
-    "verify:membership-revocation": "node --env-file=.env -r ts-node/register src/scripts/verify-membership-revocation.ts"
+    "verify:membership-revocation": "node --env-file=.env -r ts-node/register src/scripts/verify-membership-revocation.ts",
+    "cell:chain-repair": "node src/scripts/generate-chain-repair.mjs",
+    "cell:chain-repair:self-test": "node src/scripts/generate-chain-repair.mjs --self-test",
+    "cell:apply-repair": "node src/scripts/apply-repair-sql.mjs",
+    "cell:cost:record": "node src/scripts/run-cell-unit-cost.mjs --record-only",
+    "cell:capacity:record": "node src/scripts/run-cell-capacity.mjs --record-only"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

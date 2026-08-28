@@ -17,6 +17,16 @@ const stopOnError = !args.includes("--continue");
 const tolerateExists = args.includes("--tolerate-exists");
 const ALREADY_EXISTS = new Set(["42P07", "42710", "42701", "42P06", "42723", "42P16"]);
 
+// Linear. The regex this replaces, /^(--[^\n]*\n?)+$/, backtracks catastrophically
+// on a chunk of many comment lines followed by SQL and hung the runner outright.
+function isOnlyComments(chunk) {
+  for (const line of chunk.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0 && !trimmed.startsWith("--")) return false;
+  }
+  return true;
+}
+
 const url = process.env.DATABASE_URL;
 if (!url) {
   process.stderr.write("DATABASE_URL is required\n");
@@ -47,7 +57,7 @@ try {
     const statements = body
       .split("--> statement-breakpoint")
       .map((s) => s.trim())
-      .filter((s) => s.length > 0 && !/^(--[^\n]*\n?)+$/.test(s));
+      .filter((s) => s.length > 0 && !isOnlyComments(s));
 
     process.stdout.write(`\n[${entry.idx}] ${entry.tag}  (${statements.length} statements)\n`);
     let failed = null;

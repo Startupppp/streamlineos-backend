@@ -146,6 +146,7 @@ export const candidates = pgTable("candidates", {
 
 export const candidateResumes = pgTable("candidate_resumes", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   candidateId: integer("candidate_id").references(() => candidates.id, { onDelete: "cascade" }).notNull(),
   resumeText: text("resume_text").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

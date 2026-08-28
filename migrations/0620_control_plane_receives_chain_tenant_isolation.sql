@@ -373,13 +373,13 @@ END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'journal_lines' AND k.conname = 'fk_journal_lines_department') THEN
-    ALTER TABLE "public"."journal_lines" ADD CONSTRAINT "fk_journal_lines_department" FOREIGN KEY (department_id) REFERENCES org_units(id) ON DELETE SET NULL NOT VALID;
+    ALTER TABLE "public"."journal_lines" ADD CONSTRAINT "fk_journal_lines_department" FOREIGN KEY (department_id) REFERENCES org_units(id) ON DELETE SET NULL;
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'fin_budget_lines' AND k.conname = 'fk_fin_budget_lines_department') THEN
-    ALTER TABLE "public"."fin_budget_lines" ADD CONSTRAINT "fk_fin_budget_lines_department" FOREIGN KEY (department_id) REFERENCES org_units(id) ON DELETE SET NULL NOT VALID;
+    ALTER TABLE "public"."fin_budget_lines" ADD CONSTRAINT "fk_fin_budget_lines_department" FOREIGN KEY (department_id) REFERENCES org_units(id) ON DELETE SET NULL;
   END IF;
 END $repair$;
 --> statement-breakpoint
@@ -445,19 +445,19 @@ END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'vendor_credit_items' AND k.conname = 'vendor_credit_items_org_id_fk') THEN
-    ALTER TABLE "public"."vendor_credit_items" ADD CONSTRAINT "vendor_credit_items_org_id_fk" FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE NOT VALID;
+    ALTER TABLE "public"."vendor_credit_items" ADD CONSTRAINT "vendor_credit_items_org_id_fk" FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE;
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'credit_note_items' AND k.conname = 'credit_note_items_org_id_fk') THEN
-    ALTER TABLE "public"."credit_note_items" ADD CONSTRAINT "credit_note_items_org_id_fk" FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE NOT VALID;
+    ALTER TABLE "public"."credit_note_items" ADD CONSTRAINT "credit_note_items_org_id_fk" FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE;
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'fin_payment_run_items' AND k.conname = 'fin_payment_run_items_org_id_fk') THEN
-    ALTER TABLE "public"."fin_payment_run_items" ADD CONSTRAINT "fin_payment_run_items_org_id_fk" FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE NOT VALID;
+    ALTER TABLE "public"."fin_payment_run_items" ADD CONSTRAINT "fin_payment_run_items_org_id_fk" FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE;
   END IF;
 END $repair$;
 --> statement-breakpoint
@@ -637,7 +637,7 @@ END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'credit_note_items' AND k.conname = 'fk_credit_note_items_credit_note_id_org') THEN
-    ALTER TABLE "public"."credit_note_items" ADD CONSTRAINT "fk_credit_note_items_credit_note_id_org" FOREIGN KEY (org_id, credit_note_id) REFERENCES credit_notes(org_id, id) NOT VALID;
+    ALTER TABLE "public"."credit_note_items" ADD CONSTRAINT "fk_credit_note_items_credit_note_id_org" FOREIGN KEY (org_id, credit_note_id) REFERENCES credit_notes(org_id, id);
   END IF;
 END $repair$;
 --> statement-breakpoint
@@ -679,25 +679,25 @@ END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'fin_payment_run_items' AND k.conname = 'fk_fin_payment_run_items_run_id_org') THEN
-    ALTER TABLE "public"."fin_payment_run_items" ADD CONSTRAINT "fk_fin_payment_run_items_run_id_org" FOREIGN KEY (org_id, run_id) REFERENCES fin_payment_runs(org_id, id) NOT VALID;
+    ALTER TABLE "public"."fin_payment_run_items" ADD CONSTRAINT "fk_fin_payment_run_items_run_id_org" FOREIGN KEY (org_id, run_id) REFERENCES fin_payment_runs(org_id, id);
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'fin_payment_run_items' AND k.conname = 'fk_fin_payment_run_items_bill_id_org') THEN
-    ALTER TABLE "public"."fin_payment_run_items" ADD CONSTRAINT "fk_fin_payment_run_items_bill_id_org" FOREIGN KEY (org_id, bill_id) REFERENCES purchase_bills(org_id, id) NOT VALID;
+    ALTER TABLE "public"."fin_payment_run_items" ADD CONSTRAINT "fk_fin_payment_run_items_bill_id_org" FOREIGN KEY (org_id, bill_id) REFERENCES purchase_bills(org_id, id);
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'fin_payment_run_items' AND k.conname = 'fk_fin_payment_run_items_vendor_id_org') THEN
-    ALTER TABLE "public"."fin_payment_run_items" ADD CONSTRAINT "fk_fin_payment_run_items_vendor_id_org" FOREIGN KEY (org_id, vendor_id) REFERENCES clients(org_id, id) NOT VALID;
+    ALTER TABLE "public"."fin_payment_run_items" ADD CONSTRAINT "fk_fin_payment_run_items_vendor_id_org" FOREIGN KEY (org_id, vendor_id) REFERENCES clients(org_id, id);
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'fin_payment_run_items' AND k.conname = 'fk_fin_payment_run_items_vendor_payment_id_org') THEN
-    ALTER TABLE "public"."fin_payment_run_items" ADD CONSTRAINT "fk_fin_payment_run_items_vendor_payment_id_org" FOREIGN KEY (org_id, vendor_payment_id) REFERENCES vendor_payments(org_id, id) NOT VALID;
+    ALTER TABLE "public"."fin_payment_run_items" ADD CONSTRAINT "fk_fin_payment_run_items_vendor_payment_id_org" FOREIGN KEY (org_id, vendor_payment_id) REFERENCES vendor_payments(org_id, id);
   END IF;
 END $repair$;
 --> statement-breakpoint
@@ -733,7 +733,7 @@ END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'vendor_credit_items' AND k.conname = 'fk_vendor_credit_items_vendor_credit_id_org') THEN
-    ALTER TABLE "public"."vendor_credit_items" ADD CONSTRAINT "fk_vendor_credit_items_vendor_credit_id_org" FOREIGN KEY (org_id, vendor_credit_id) REFERENCES vendor_credits(org_id, id) NOT VALID;
+    ALTER TABLE "public"."vendor_credit_items" ADD CONSTRAINT "fk_vendor_credit_items_vendor_credit_id_org" FOREIGN KEY (org_id, vendor_credit_id) REFERENCES vendor_credits(org_id, id);
   END IF;
 END $repair$;
 --> statement-breakpoint

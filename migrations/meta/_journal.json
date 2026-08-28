@@ -2346,6 +2346,27 @@
       "when": 1787895365277,
       "tag": "0618_cell_capacity_measurements",
       "breakpoints": true
+    },
+    {
+      "idx": 340,
+      "version": "7",
+      "when": 1787895425277,
+      "tag": "0619_chain_creates_what_production_has",
+      "breakpoints": true
+    },
+    {
+      "idx": 341,
+      "version": "7",
+      "when": 1787895485277,
+      "tag": "0620_control_plane_receives_chain_tenant_isolation",
+      "breakpoints": true
+    },
+    {
+      "idx": 342,
+      "version": "7",
+      "when": 1787895545277,
+      "tag": "0621_candidate_resumes_tenant_column",
+      "breakpoints": true
     }
   ]
 }

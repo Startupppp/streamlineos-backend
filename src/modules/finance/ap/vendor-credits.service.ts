@@ -171,6 +171,7 @@ export class VendorCreditsService {
       if (itemsWithAmounts.length > 0) {
         await tx.insert(vendorCreditItems).values(
           itemsWithAmounts.map((it) => ({
+            orgId,
             vendorCreditId: vc.id,
             description: it.description,
             hsnSacCode: it.hsnSacCode ?? null,

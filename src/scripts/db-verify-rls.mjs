@@ -307,6 +307,48 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
   for (const { tbl } of missingTenantPredicate)
     check(`Tenant predicate in RLS policy on ${tbl}`, false, "RLS is enabled but no policy references org_id — the table is implicitly deny-all or mis-predicated");
 
+  // 3. Tables that carry no tenant column at all but are tenant data by 0320's own rule:
+  //    a NOT NULL single-column foreign key to an org-bearing parent. Checks 1 and 2 cannot
+  //    see these — both require the org column to exist — so a table that lost its tenant
+  //    column entirely passes precisely because it is more broken, not less. 0320 swept the
+  //    catalogue rather than naming its tables, so which tables it covered depends on the
+  //    shape of the database at the moment it ran: it reached 66 tables in the control plane
+  //    and 69 in a cold cell.
+  const missingTenantColumn = await sql`
+    SELECT n.nspname || '.' || c.relname AS tbl,
+           (SELECT parent.relname FROM pg_constraint con
+              JOIN pg_class parent ON parent.oid = con.confrelid
+              JOIN pg_attribute ca ON ca.attrelid = con.conrelid AND ca.attnum = con.conkey[1]
+             WHERE con.conrelid = c.oid AND con.contype = 'f'
+               AND array_length(con.conkey, 1) = 1 AND ca.attnotnull
+               AND EXISTS (SELECT 1 FROM pg_attribute pa WHERE pa.attrelid = con.confrelid
+                            AND pa.attname IN ('org_id','organization_id') AND NOT pa.attisdropped)
+             LIMIT 1) AS parent
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname IN ('public','build','build_events')
+      AND c.relkind = 'r'
+      AND NOT EXISTS (
+        SELECT 1 FROM pg_attribute a
+        WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+          AND a.attname IN ('org_id','organization_id')
+      )
+    ORDER BY tbl`;
+
+  for (const { tbl, parent } of missingTenantColumn) {
+    if (parent === null) continue;
+    if (PLATFORM_GLOBAL_TABLES.has(tbl)) {
+      console.log(`SKIP  ${tbl} — registered as platform-global`);
+      continue;
+    }
+    check(
+      `tenant column on ${tbl}`,
+      false,
+      `child of org-bearing ${parent} via a NOT NULL foreign key but carries no org_id — ` +
+        "no RLS policy can be written for it, and checks 1 and 2 cannot see it",
+    );
+  }
+
   const notForced = await sql`
     SELECT DISTINCT n.nspname || '.' || c.relname AS tbl
     FROM pg_class c

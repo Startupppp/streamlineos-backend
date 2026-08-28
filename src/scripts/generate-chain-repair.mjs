@@ -104,7 +104,8 @@ function plan(source, target, direction) {
 
   const constraints = difference(source.constraints, target.constraints)
     .filter((c) => targetTableKeys.has(c.tableKey) || missingTableKeys.has(c.tableKey))
-    .filter((c) => !dependsOnSuppressedColumn(c, direction));
+    .filter((c) => !dependsOnSuppressedColumn(c, direction))
+    .filter((c) => c.type !== "t");
 
   return {
     newTypes,
@@ -244,22 +245,26 @@ export function violationQuery(constraint) {
 async function probeViolations(url, foreignKeys) {
   const sql = connect(url);
   const violations = new Map();
+  const unprobed = [];
   try {
     for (const fk of foreignKeys) {
       const query = violationQuery(fk);
-      if (query === null) continue;
+      if (query === null) {
+        unprobed.push({ key: fk.key, reason: "constraint definition is not a plain foreign key" });
+        continue;
+      }
       try {
         const rows = await sql.unsafe(query);
         const n = Number(rows[0]?.n ?? 0);
         if (n > 0) violations.set(fk.key, n);
-      } catch {
-        violations.set(fk.key, -1);
+      } catch (e) {
+        unprobed.push({ key: fk.key, reason: e instanceof Error ? e.message : String(e) });
       }
     }
   } finally {
     await sql.end();
   }
-  return violations;
+  return { violations, unprobed };
 }
 
 function counts(p) {
@@ -367,12 +372,17 @@ async function main() {
       ].join("\n");
 
   const targetUrl = forward ? topology.cell.ownerDirect : topology.controlPlane.ownerDirect;
-  const violations = await probeViolations(targetUrl, p.foreignKeys);
+  const { violations, unprobed } = await probeViolations(targetUrl, p.foreignKeys);
   for (const [key, n] of violations)
     console.log(
-      `violating rows ${key}: ${n === -1 ? "probe failed" : n} — emitted NOT VALID so the` +
-        ` constraint binds new writes without failing the migration on legacy rows`,
+      `VIOLATION ${key}: ${n} row(s) already break this constraint — emitted NOT VALID so it` +
+        ` binds new writes without failing the migration on rows that predate it`,
     );
+  console.log(
+    `foreign keys probed=${p.foreignKeys.length - unprobed.length}` +
+      ` violating=${violations.size} not-probeable=${unprobed.length}` +
+      ` (columns this same file adds cannot be probed before it runs)`,
+  );
 
   const text = emit(p, header, violations);
 

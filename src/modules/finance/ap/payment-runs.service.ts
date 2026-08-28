@@ -194,6 +194,7 @@ export class PaymentRunsService {
 
       await tx.insert(finPaymentRunItems).values(
         filteredBills.map((b) => ({
+          orgId,
           runId: run.id,
           billId: b.id,
           vendorId: b.vendorId ?? null,

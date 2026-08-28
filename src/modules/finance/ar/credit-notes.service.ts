@@ -93,6 +93,7 @@ export class CreditNotesService {
 
       await tx.insert(creditNoteItems).values(
         itemsWithAmounts.map((it) => ({
+          orgId,
           creditNoteId: inserted.id,
           description: it.description,
           hsnSacCode: it.hsnSacCode ?? null,
