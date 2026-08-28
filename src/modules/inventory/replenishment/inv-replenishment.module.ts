@@ -16,6 +16,6 @@ import { ReplenishmentSimulatorService } from "./forecast/replenishment-simulato
   imports: [InvStockEngineModule, OutboxModule, NotificationsModule],
   controllers: [InvReplenishmentController, InvForecastingController],
   providers: [InvReplenishmentService, InvStockLowConsumerService, DemandBaselineService, SafetyStockPolicyService, LeadTimeService, ReorderProposalService, ReplenishmentSimulatorService],
-  exports: [DemandBaselineService, InvReplenishmentService],
+  exports: [DemandBaselineService, InvReplenishmentService, LeadTimeService],
 })
 export class InvReplenishmentModule {}

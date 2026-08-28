@@ -4,6 +4,7 @@ import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { LeadTimeService } from "src/modules/inventory/replenishment/forecast/lead-time.service";
+import { InvVendorsService } from "src/modules/inventory/vendors/inv-vendors.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 
@@ -186,6 +187,46 @@ describe("[seeded-e2e] lead time and fill rate", () => {
       svc().fillRate(scene.orgId, scene.variantId, { from: "2026-06-01", to: "2026-07-31" }),
     );
     expect(fill.note).toMatch(/arithmetic rather than a trend/);
+  });
+
+  describe("INV-307 supplier scorecard", () => {
+    const vendors = () => app.app.get(InvVendorsService);
+
+    it("folds the measured percentiles into the scorecard", async () => {
+      // One estimator, not two. A scorecard that recomputed percentiles its own
+      // way would eventually disagree with the lead-time report beside it.
+      const card = await asTenant(() =>
+        vendors().getVendorPerformance(scene.orgId, scene.vendorId),
+      );
+      const measured = await asTenant(() =>
+        svc().vendorLeadTime(scene.orgId, scene.vendorId),
+      );
+      expect(card.leadTimeP50Days).toBe(measured.p50Days);
+      expect(card.leadTimeP90Days).toBe(measured.p90Days);
+      expect(card.leadTimeObservations).toBe(5);
+    });
+
+    it("says a vendor with no deliveries is unmeasured, not perfect", async () => {
+      // Every rate is zero either way, and the two meanings are opposite.
+      const card = await asTenant(() =>
+        vendors().getVendorPerformance(scene.orgId, scene.quietVendorId),
+      );
+      expect(card.rejectionRate).toBe(0);
+      expect(card.sampleWarning).toMatch(/not because the vendor is perfect/);
+    });
+
+    it("reports rejection and discrepancy counts beside their rates", async () => {
+      // A 50% rejection rate over two receipts is not a quality problem, it is
+      // two receipts, and only the count says so.
+      const card = await asTenant(() =>
+        vendors().getVendorPerformance(scene.orgId, scene.vendorId),
+      );
+      expect(card).toHaveProperty("receivedLines");
+      expect(card).toHaveProperty("rejectedLines");
+      expect(card).toHaveProperty("discrepantLines");
+      expect(card.rejectionRate).toBeLessThanOrEqual(1);
+      expect(card.discrepancyRate).toBeLessThanOrEqual(1);
+    });
   });
 
   it("reports no fill rate for a window with no demand", async () => {

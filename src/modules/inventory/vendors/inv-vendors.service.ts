@@ -8,12 +8,14 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import type { ListVendorsInput, CreateVendorInput, UpdateVendorInput } from "./dto/inv-vendors.schemas";
+import { LeadTimeService } from "../replenishment/forecast/lead-time.service";
 
 @Injectable()
 export class InvVendorsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly leadTime: LeadTimeService,
   ) {}
 
   async listVendors(orgId: string, filters: ListVendorsInput) {
@@ -100,6 +102,20 @@ export class InvVendorsService {
     return updated;
   }
 
+  /**
+   * INV-307 — the supplier scorecard.
+   *
+   * Extended rather than replaced, so there is one answer to "how is this
+   * vendor doing" rather than two that disagree. What INV-307 adds is the
+   * quality and discrepancy record from receiving, and lead-time percentiles
+   * from the measured estimator rather than a second copy of the arithmetic.
+   *
+   * No composite grade. A single letter hides which of five things went wrong,
+   * and the whole point of a scorecard is deciding what to say to the supplier.
+   * Every rate is reported beside the count it was computed from, because a
+   * 50% rejection rate over two receipts is not a quality problem, it is two
+   * receipts.
+   */
   async getVendorPerformance(orgId: string, vendorId: number) {
     const vendor = await this.db.query.invVendors.findFirst({
       where: and(eq(invVendors.id, vendorId), eq(invVendors.orgId, orgId)),
@@ -214,6 +230,36 @@ export class InvVendorsService {
     const receivedQty = parseFloat(receivedQtyRow?.total ?? "0");
     const returnRate = receivedQty === 0 ? 0 : returnQty / receivedQty;
 
+    // INV-307. Receiving quality: what arrived and was refused, and what
+    // arrived and did not match the order. Both come from GRN lines, and both
+    // were previously invisible in the scorecard even though receiving has
+    // recorded them since INV-201.
+    const [qualityRow] = await this.db.execute<{
+      lines: number;
+      rejected: number;
+      discrepant: number;
+    }>(sql`
+      SELECT COUNT(gl.id)::int AS lines,
+             COUNT(gl.id) FILTER (WHERE gl.quality_status = 'REJECTED')::int AS rejected,
+             COUNT(gl.id) FILTER (WHERE gl.discrepancy_reason IS NOT NULL)::int AS discrepant
+      FROM inv_grn_lines gl
+      JOIN inv_grns g ON g.org_id = gl.org_id AND g.id = gl.grn_id
+      JOIN inv_purchase_orders po ON po.org_id = g.org_id AND po.id = g.po_id
+      WHERE gl.org_id = ${orgId} AND po.vendor_id = ${vendorId}
+    `);
+
+    const receivedLines = qualityRow?.lines ?? 0;
+    const rejectedLines = qualityRow?.rejected ?? 0;
+    const discrepantLines = qualityRow?.discrepant ?? 0;
+    const rate = (numerator: number, denominator: number) =>
+      denominator === 0 ? 0 : Number((numerator / denominator).toFixed(4));
+
+    // Percentiles from the measured estimator rather than a second copy of the
+    // arithmetic. The mean above is kept because callers already read it, but
+    // p90 is the number to plan against -- a mean lead time is met about half
+    // the time.
+    const measuredLeadTime = await this.leadTime.vendorLeadTime(orgId, vendorId);
+
     return {
       vendorId,
       onTimeRate,
@@ -222,6 +268,26 @@ export class InvVendorsService {
       returnRate,
       openPoCount,
       totalSpend,
+      // INV-307 additions.
+      receivedLines,
+      rejectedLines,
+      rejectionRate: rate(rejectedLines, receivedLines),
+      discrepantLines,
+      discrepancyRate: rate(discrepantLines, receivedLines),
+      leadTimeP50Days: measuredLeadTime.p50Days,
+      leadTimeP90Days: measuredLeadTime.p90Days,
+      leadTimeObservations: measuredLeadTime.observations,
+      /**
+       * Deliberately no composite grade: a single letter hides which of five
+       * things went wrong, and the point of a scorecard is deciding what to say
+       * to the supplier. This is the honesty caveat instead.
+       */
+      sampleWarning:
+        receivedLines === 0
+          ? "This vendor has never delivered against a purchase order. Every rate here is zero because there is nothing to measure, not because the vendor is perfect."
+          : receivedLines < 10
+            ? `Rates are computed over ${receivedLines} received line(s) and describe those lines rather than a trend.`
+            : undefined,
     };
   }
 }
