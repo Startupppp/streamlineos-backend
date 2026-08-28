@@ -14,6 +14,52 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { ListInsightsInput, UpdateInsightStatusInput, InsightCandidate } from "./dto/ai-insights.schemas";
 
+export type OpsBriefSeverity = "high" | "medium" | "low" | "none";
+
+export interface OpsBriefSignal {
+  key: string;
+  label: string;
+  /** A deterministic inventory route. Never model output. */
+  href: string;
+  count: number;
+  severity: OpsBriefSeverity;
+}
+
+export interface InventoryOpsBrief {
+  generatedAt: string;
+  totalSignals: number;
+  signals: OpsBriefSignal[];
+}
+
+/**
+ * One row per detector. A signal with no route would be a dead end -- the
+ * acceptance criterion is that every figure in the brief can be opened on the
+ * screen that computed it.
+ */
+const OPS_BRIEF_SIGNALS = [
+  { insightType: "stockout_risk", label: "Stockout risk", href: "/inventory/replenishment" },
+  { insightType: "expiry_risk", label: "Expiring stock", href: "/inventory/reports/expiry" },
+  { insightType: "negative_stock", label: "Negative stock", href: "/inventory/stock" },
+  { insightType: "unusual_adjustments", label: "Unusual adjustments", href: "/inventory/stock/adjustments" },
+  { insightType: "vendor_delay", label: "Vendor delays", href: "/inventory/vendors" },
+  { insightType: "dead_stock", label: "Dead stock", href: "/inventory/reports/slow-moving" },
+] as const;
+
+const SEVERITY_RANK: Record<string, number> = { high: 3, medium: 2, low: 1 };
+
+function worstSeverity(severities: readonly string[]): OpsBriefSeverity {
+  let worst: OpsBriefSeverity = "none";
+  let rank = 0;
+  for (const severity of severities) {
+    const candidate = SEVERITY_RANK[severity] ?? 0;
+    if (candidate > rank) {
+      rank = candidate;
+      worst = severity as OpsBriefSeverity;
+    }
+  }
+  return worst;
+}
+
 @Injectable()
 export class InvAiService {
   constructor(
@@ -92,6 +138,44 @@ export class InvAiService {
 
     await this.cache.invalidate(CACHE_KEYS.invAiInsightsList(orgId));
     return updated;
+  }
+
+  /**
+   * INV-101 — the deterministic half of the Operations Brief.
+   *
+   * Every figure here is computed by the six detectors that already back the
+   * insight engine; no model is involved and nothing is charged. That split is
+   * the point: the brief renders on page load from facts, and the narrative is
+   * a separate, explicit, paid request over the same numbers. A card that
+   * quietly spent credits whenever somebody opened the dashboard would be a
+   * bill nobody authorised.
+   *
+   * Each signal carries the route that answers it, so a reader can always leave
+   * the summary for the deterministic screen that produced it.
+   */
+  async getOpsBrief(orgId: string): Promise<InventoryOpsBrief> {
+    const candidates = await this.collectCandidates(orgId);
+
+    const signals = OPS_BRIEF_SIGNALS.map((definition) => {
+      const matching = candidates.filter(
+        (candidate) => candidate.insightType === definition.insightType,
+      );
+      return {
+        key: definition.insightType,
+        label: definition.label,
+        href: definition.href,
+        count: matching.length,
+        // The worst thing present, not an average: one high-severity stockout
+        // is the headline even beside forty low-severity ones.
+        severity: worstSeverity(matching.map((candidate) => candidate.severity)),
+      };
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      totalSignals: signals.reduce((sum, signal) => sum + signal.count, 0),
+      signals,
+    };
   }
 
   private async collectCandidates(orgId: string): Promise<InsightCandidate[]> {

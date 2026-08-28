@@ -63,6 +63,7 @@ function buildService(
   confirmation?: Partial<AiConfirmationService>,
   replenishment?: Partial<InvReplenishmentService>,
   vendors?: Partial<InvVendorsService>,
+  insights?: { getOpsBrief?: unknown },
 ) {
   return new InvAiExplainService(
     db as never,
@@ -70,6 +71,7 @@ function buildService(
     (confirmation ?? {}) as AiConfirmationService,
     (replenishment ?? {}) as InvReplenishmentService,
     (vendors ?? {}) as InvVendorsService,
+    (insights ?? {}) as never,
   );
 }
 

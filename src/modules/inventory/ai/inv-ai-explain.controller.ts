@@ -46,6 +46,29 @@ export class InvAiExplainController {
     return this.explainService.explainInsight(u.orgId, u.userId, insightId);
   }
 
+  /**
+   * INV-101. Deterministic, unpaid, safe to call on page load -- which is why
+   * it is a GET and why it does not carry the ai:invoke rate limit.
+   */
+  @Get("ops-brief")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:reports:read")
+  getOpsBrief(@CurrentUser() u: CurrentUserContext) {
+    return this.explainService.getOpsBrief(u.orgId);
+  }
+
+  /**
+   * The narrative. A POST because it spends credits: a human asked for it, and
+   * no page render reaches this.
+   */
+  @Post("ops-brief/narrate")
+  @UseGuards(PermissionGuard, RateLimitGuard)
+  @UseRateLimit("ai:invoke")
+  @RequirePermission("inventory:reports:read")
+  narrateOpsBrief(@CurrentUser() u: CurrentUserContext) {
+    return this.explainService.narrateOpsBrief(u.orgId, u.userId);
+  }
+
   @Get("digest")
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")

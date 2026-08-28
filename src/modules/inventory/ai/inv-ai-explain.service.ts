@@ -8,6 +8,7 @@ import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { AiConfirmationService } from "../../ai/confirmation/ai-confirmation.service";
 import { InvReplenishmentService } from "../replenishment/inv-replenishment.service";
 import { InvVendorsService } from "../vendors/inv-vendors.service";
+import { InvAiService, type InventoryOpsBrief } from "./inv-ai.service";
 import {
   INV_AI_ACTIONS,
   INV_AI_CONTRACT_VERSION,
@@ -28,6 +29,7 @@ import {
 const FEATURE_KEY = "inv.insight-explain" as const;
 const REORDER_FEATURE_KEY = "inv.reorder-explain" as const;
 const DELAY_FEATURE_KEY = "inv.supplier-delay-briefing" as const;
+const OPS_BRIEF_FEATURE_KEY = "inv.ops-brief" as const;
 
 export type ExplainFactor = InvAiFactor;
 
@@ -219,6 +221,17 @@ function buildSystemPrompt(): string {
   ].join("\n");
 }
 
+function buildOpsBriefUserPrompt(brief: InventoryOpsBrief): string {
+  const lines = brief.signals
+    .filter((signal) => signal.count > 0)
+    .map((signal) => `- ${signal.label}: ${signal.count} (worst severity ${signal.severity})`);
+  return [
+    "These counts were computed by the inventory engine. Do not recompute or adjust them.",
+    ...lines,
+    "Write a short operational brief explaining which of these deserves attention first and why.",
+  ].join("\n");
+}
+
 function buildInsightUserPrompt(insight: {
   insightType: string;
   severity: string;
@@ -277,7 +290,87 @@ export class InvAiExplainService {
     private readonly confirmation: AiConfirmationService,
     private readonly replenishment: InvReplenishmentService,
     private readonly vendors: InvVendorsService,
+    private readonly insights: InvAiService,
   ) {}
+
+  /**
+   * INV-101. The deterministic half, passed straight through so the controller
+   * stays thin and the card has one place to ask.
+   */
+  getOpsBrief(orgId: string): Promise<InventoryOpsBrief> {
+    return this.insights.getOpsBrief(orgId);
+  }
+
+  /**
+   * The paid half, and only on request. `charge: true` means a human asked for
+   * this; nothing on this path runs because a page rendered.
+   */
+  async narrateOpsBrief(
+    orgId: string,
+    userId: string,
+  ): Promise<{ brief: InventoryOpsBrief; narration: InsightNarration }> {
+    const brief = await this.insights.getOpsBrief(orgId);
+
+    if (brief.totalSignals === 0) {
+      // Short-circuit before the provider. Paying a model to write "nothing is
+      // wrong" is money for a sentence we can write ourselves, and the gateway
+      // rules say to stop before the call when there is no eligible context.
+      return {
+        brief,
+        narration: {
+          status: "ok",
+          explanation: "No open inventory signals.",
+          factors: [],
+          actions: [],
+          evidenceSnapshot: { ...brief },
+          provenance: {
+            contractVersion: INV_AI_CONTRACT_VERSION,
+            promptKey: "inv.ops-brief",
+            promptVersion: 1,
+            model: "none",
+            correlationId: "not-invoked",
+          },
+        },
+      };
+    }
+
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: OPS_BRIEF_FEATURE_KEY,
+      tier: "fast",
+      maxTokens: 512,
+      charge: true,
+      redact: false,
+      schema: invAiNarrativeResponseSchema,
+      prompt: {
+        system: buildSystemPrompt(),
+        user: buildOpsBriefUserPrompt(brief),
+        promptKey: "inv.ops-brief",
+        promptVersion: 1,
+      },
+    });
+
+    if (!result.ok) throw new ServiceUnavailableException(result.message);
+
+    return {
+      brief,
+      // The brief is an aggregate, so there are no row ids to cite and the
+      // allowlist is empty. A model that invents one is refused by the same
+      // path that refuses one anywhere else.
+      narration: toNarration(
+        result.data,
+        [],
+        { ...brief },
+        {
+          contractVersion: INV_AI_CONTRACT_VERSION,
+          promptKey: "inv.ops-brief",
+          promptVersion: 1,
+          model: result.model,
+          correlationId: result.correlationId,
+        },
+      ),
+    };
+  }
 
   async explainInsight(orgId: string, userId: string, insightId: number): Promise<InsightNarration> {
     const insight = await this.db.query.invAiInsights.findFirst({
