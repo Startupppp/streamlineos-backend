@@ -7,6 +7,7 @@ import {
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   employeeSkills,
+  hrReportingLines,
   onboardingTasks,
   organizationMembers,
   users,
@@ -24,10 +25,12 @@ import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
 import { assertUsersInOrg } from "../../../common/tenant/org-membership";
 import { syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
 import { syncCanonicalEmploymentFields } from "../../../common/hr/sync-canonical-employment-fields";
+import { syncCanonicalReportingLine } from "../../../common/hr/sync-canonical-reporting-line";
 import { applyScope } from "../../access/apply-scope";
 import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import { resolveEmployeesManageScope } from "./employees-scope";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 @Injectable()
 export class EmployeeMutationsService {
@@ -37,6 +40,7 @@ export class EmployeeMutationsService {
     private readonly audit: AuditService,
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly access: AccessService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   async getEmployeeDetail(
@@ -62,13 +66,8 @@ export class EmployeeMutationsService {
             firstName: true,
             lastName: true,
             email: true,
-            designation: true,
-            employeeId: true,
-            orgDepartmentId: true,
             image: true,
             isActive: true,
-            joiningDate: true,
-            reportingTo: true,
             bio: true,
             linkedinUrl: true,
             twitterUrl: true,
@@ -83,47 +82,50 @@ export class EmployeeMutationsService {
     if (!member?.user) return null;
     const u = member.user;
 
-    const skillRows = await this.db
-      .select({ name: employeeSkills.skillName, level: employeeSkills.level })
-      .from(employeeSkills)
-      .where(
-        and(
-          eq(employeeSkills.orgId, orgId),
-          eq(employeeSkills.userId, targetUserId),
+    const [skillRows, employment, facts] = await Promise.all([
+      this.db
+        .select({ name: employeeSkills.skillName, level: employeeSkills.level })
+        .from(employeeSkills)
+        .where(
+          and(
+            eq(employeeSkills.orgId, orgId),
+            eq(employeeSkills.userId, targetUserId),
+          ),
         ),
-      );
-
-    const [employment] = await this.db
-      .select({
-        id: hrEmployments.id,
-        personId: hrEmployments.personId,
-        employeeNumber: hrEmployments.employeeNumber,
-        lifecycleStatus: hrEmployments.lifecycleStatus,
-        workerType: hrEmployments.workerType,
-        departmentId: hrEmployments.departmentId,
-        designation: hrEmployments.designation,
-        joiningDate: hrEmployments.joiningDate,
-        probationEndDate: hrEmployments.probationEndDate,
-        confirmationDate: hrEmployments.confirmationDate,
-      })
-      .from(hrPeople)
-      .innerJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.personId, hrPeople.id),
-          eq(hrEmployments.orgId, orgId),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
-      .where(
-        and(
-          eq(hrPeople.orgId, orgId),
-          eq(hrPeople.userId, targetUserId),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
-      .limit(1);
+      this.db
+        .select({
+          id: hrEmployments.id,
+          personId: hrEmployments.personId,
+          employeeNumber: hrEmployments.employeeNumber,
+          lifecycleStatus: hrEmployments.lifecycleStatus,
+          workerType: hrEmployments.workerType,
+          departmentId: hrEmployments.departmentId,
+          designation: hrEmployments.designation,
+          joiningDate: hrEmployments.joiningDate,
+          probationEndDate: hrEmployments.probationEndDate,
+          confirmationDate: hrEmployments.confirmationDate,
+        })
+        .from(hrPeople)
+        .innerJoin(
+          hrEmployments,
+          and(
+            eq(hrEmployments.personId, hrPeople.id),
+            eq(hrEmployments.orgId, orgId),
+            eq(hrEmployments.isPrimary, true),
+            isNull(hrEmployments.deletedAt),
+          ),
+        )
+        .where(
+          and(
+            eq(hrPeople.orgId, orgId),
+            eq(hrPeople.userId, targetUserId),
+            isNull(hrPeople.deletedAt),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+      this.employment.getFacts(orgId, targetUserId),
+    ]);
 
     return {
       id: u.id,
@@ -132,13 +134,13 @@ export class EmployeeMutationsService {
       lastName: u.lastName,
       email: u.email,
       role: member.role,
-      designation: employment?.designation ?? u.designation,
-      employeeId: employment?.employeeNumber ?? u.employeeId,
-      orgDepartmentId: employment?.departmentId ?? u.orgDepartmentId,
+      designation: employment?.designation ?? null,
+      employeeId: employment?.employeeNumber ?? null,
+      orgDepartmentId: employment?.departmentId ?? null,
       image: u.image,
       isActive: u.isActive,
-      joiningDate: employment?.joiningDate ?? u.joiningDate,
-      reportingTo: u.reportingTo,
+      joiningDate: employment?.joiningDate ?? null,
+      reportingTo: facts.managerUserId,
       bio: u.bio ?? null,
       linkedinUrl: u.linkedinUrl ?? null,
       twitterUrl: u.twitterUrl ?? null,
@@ -186,7 +188,7 @@ export class EmployeeMutationsService {
 
     const currentUser = await this.db.query.users.findFirst({
       where: eq(users.id, targetUserId),
-      columns: { firstName: true, lastName: true, name: true, joiningDate: true },
+      columns: { firstName: true, lastName: true, name: true },
     });
     if (!currentUser) {
       throw new BadRequestException("Employee record is unavailable.");
@@ -205,22 +207,45 @@ export class EmployeeMutationsService {
       await assertUsersInOrg(this.db, actor.orgId, [body.reportingTo]);
       const [cycle] = await this.db.execute<{ creates_cycle: boolean }>(sql`
         WITH RECURSIVE manager_chain AS (
-          SELECT u.id, u.reporting_to, ARRAY[u.id]::text[] AS path
-          FROM users u
+          SELECT
+            emp.id AS employment_id,
+            p.user_id,
+            ARRAY[p.user_id]::text[] AS path
+          FROM hr_employments emp
+          INNER JOIN hr_people p
+            ON p.id = emp.person_id
+            AND p.org_id = ${actor.orgId}
+            AND p.deleted_at IS NULL
           INNER JOIN organization_members om
-            ON om.user_id = u.id AND om.org_id = ${actor.orgId}
-          WHERE u.id = ${body.reportingTo}
+            ON om.user_id = p.user_id AND om.org_id = ${actor.orgId}
+          WHERE emp.org_id = ${actor.orgId}
+            AND emp.is_primary = true
+            AND emp.deleted_at IS NULL
+            AND p.user_id = ${body.reportingTo}
           UNION ALL
-          SELECT manager.id, manager.reporting_to, chain.path || manager.id
-          FROM users manager
-          INNER JOIN organization_members om
-            ON om.user_id = manager.id AND om.org_id = ${actor.orgId}
-          INNER JOIN manager_chain chain ON manager.id = chain.reporting_to
-          WHERE NOT manager.id = ANY(chain.path)
+          SELECT
+            mgr_emp.id,
+            mgr_p.user_id,
+            chain.path || mgr_p.user_id
+          FROM manager_chain chain
+          INNER JOIN hr_reporting_lines rl
+            ON rl.employment_id = chain.employment_id
+            AND rl.org_id = ${actor.orgId}
+            AND rl.line_type = 'primary'
+            AND rl.effective_to = 'infinity'::date
+          INNER JOIN hr_employments mgr_emp
+            ON mgr_emp.id = rl.manager_employment_id
+            AND mgr_emp.org_id = ${actor.orgId}
+            AND mgr_emp.deleted_at IS NULL
+          INNER JOIN hr_people mgr_p
+            ON mgr_p.id = mgr_emp.person_id
+            AND mgr_p.org_id = ${actor.orgId}
+            AND mgr_p.deleted_at IS NULL
+          WHERE NOT mgr_p.user_id = ANY(chain.path)
             AND cardinality(chain.path) < 1000
         )
         SELECT EXISTS (
-          SELECT 1 FROM manager_chain WHERE id = ${targetUserId}
+          SELECT 1 FROM manager_chain WHERE user_id = ${targetUserId}
         ) AS creates_cycle
       `);
       if (cycle?.creates_cycle) {
@@ -240,8 +265,6 @@ export class EmployeeMutationsService {
       if (!body.name) updateData.name = `${first} ${last}`.trim();
     }
     if (body.gender !== undefined) updateData.gender = body.gender;
-    if (body.designation !== undefined) updateData.designation = body.designation;
-    if (body.departmentId !== undefined) updateData.orgDepartmentId = body.departmentId;
     if (body.phone !== undefined) updateData.phone = body.phone;
     if (body.image !== undefined) updateData.image = body.image;
     if (body.isActive !== undefined) updateData.isActive = body.isActive;
@@ -250,23 +273,38 @@ export class EmployeeMutationsService {
     if (body.twitterUrl !== undefined) updateData.twitterUrl = body.twitterUrl || null;
     if (body.githubUrl !== undefined) updateData.githubUrl = body.githubUrl || null;
     if (body.websiteUrl !== undefined) updateData.websiteUrl = body.websiteUrl || null;
-    if (body.joiningDate !== undefined) updateData.joiningDate = body.joiningDate;
-    if (body.reportingTo !== undefined) updateData.reportingTo = body.reportingTo;
 
-    let canonicalJoiningDateSynced: boolean | null = null;
-    const oldJoiningDate = currentUser.joiningDate;
+    let canonicalSynced: boolean | null = null;
+    let oldJoiningDate: string | null = null;
+    if (body.joiningDate !== undefined) {
+      const facts = await this.employment.getFacts(actor.orgId, targetUserId);
+      oldJoiningDate = facts.joiningDate;
+    }
+
     await this.db.transaction(async (tx) => {
       if (Object.keys(updateData).length > 0) {
         await tx.update(users).set(updateData).where(eq(users.id, targetUserId));
       }
       await syncOrgUnitPlacement(tx, actor.orgId, targetUserId, { DEPARTMENT: body.departmentId });
-      if (body.joiningDate !== undefined) {
-        canonicalJoiningDateSynced = await syncCanonicalEmploymentFields(
+      if (
+        body.designation !== undefined ||
+        body.departmentId !== undefined ||
+        body.joiningDate !== undefined
+      ) {
+        canonicalSynced = await syncCanonicalEmploymentFields(
           tx,
           actor.orgId,
           targetUserId,
-          { joiningDate: body.joiningDate },
+          {
+            designation: body.designation,
+            departmentId: body.departmentId,
+            joiningDate: body.joiningDate,
+          },
         );
+      }
+      if (body.reportingTo !== undefined) {
+        const today = new Date().toISOString().slice(0, 10);
+        await syncCanonicalReportingLine(tx, actor.orgId, targetUserId, body.reportingTo ?? null, today, actor.userId);
       }
 
       if (body.skills !== undefined) {
@@ -324,7 +362,7 @@ export class EmployeeMutationsService {
       targetType: "employee",
       metadata: {
         changedFields: Object.keys(updateData),
-        ...(canonicalJoiningDateSynced !== null && { canonicalJoiningDateSynced }),
+        ...(canonicalSynced !== null && { canonicalSynced }),
       },
     });
 

@@ -34,6 +34,7 @@ import { bustMembershipStatusCache } from "../../common/auth/membership-state.se
 import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { syncCanonicalEmploymentFields } from "../../common/hr/sync-canonical-employment-fields";
+import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../billing/core/seat-ledger.service";
 import { OrganizationUsersReader } from "./organization-users.reader";
@@ -168,10 +169,7 @@ export class UsersService {
           firstName: trimmedFirst,
           lastName: trimmedLast,
           emailVerified: new Date(),
-          designation: designation ?? null,
           phone: phone ?? null,
-          orgDepartmentId: departmentId ?? null,
-          branchId: branchId ?? null,
           userStatus: "active",
           activatedAt: new Date(),
           isActive: true,
@@ -277,11 +275,7 @@ export class UsersService {
       const last = data.lastName ?? user?.lastName ?? "";
       updateData.name = `${first} ${last}`.trim();
     }
-    if (data.designation !== undefined)
-      updateData.designation = data.designation;
     if (data.phone !== undefined) updateData.phone = data.phone;
-    if (data.departmentId !== undefined)
-      updateData.orgDepartmentId = data.departmentId;
     if (data.bio !== undefined) updateData.bio = data.bio;
     if (data.linkedinUrl !== undefined)
       updateData.linkedinUrl = data.linkedinUrl || null;
@@ -291,17 +285,16 @@ export class UsersService {
       updateData.githubUrl = data.githubUrl || null;
     if (data.websiteUrl !== undefined)
       updateData.websiteUrl = data.websiteUrl || null;
-    if (data.reportingTo !== undefined)
-      updateData.reportingTo = data.reportingTo;
     if (data.emergencyContact !== undefined)
       updateData.emergencyContact = data.emergencyContact;
 
     const hasUserUpdates = Object.keys(updateData).length > 0;
     const hasPlacementUpdates =
       data.departmentId !== undefined || data.teamId !== undefined;
+    const hasReportingUpdate = data.reportingTo !== undefined;
 
     let canonicalEmploymentSynced: boolean | null = null;
-    if (hasUserUpdates || hasPlacementUpdates) {
+    if (hasUserUpdates || hasPlacementUpdates || hasReportingUpdate) {
       await runInTenantTransaction(
         this.db,
         async (tx) => {
@@ -325,6 +318,10 @@ export class UsersService {
                 departmentId: data.departmentId,
               },
             );
+          }
+          if (hasReportingUpdate) {
+            const today = new Date().toISOString().slice(0, 10);
+            await syncCanonicalReportingLine(tx, orgId, userId, data.reportingTo ?? null, today, actorUserId);
           }
         },
         { orgId },

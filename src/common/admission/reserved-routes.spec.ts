@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { isReserved } from "./work-class";
-import { RESERVED_ROUTES, reservedClassForPath } from "./reserved-routes";
+import { RESERVED_ROUTES, normalisePath, reservedClassForPath } from "./reserved-routes";
 
 function controllerFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -86,5 +86,39 @@ describe("path matching", () => {
     "",
   ])("%s is not reserved, so it stays sheddable", (path) => {
     expect(reservedClassForPath(path)).toBeUndefined();
+  });
+
+  it.each([
+    "/auth/../crm/deals",
+    "/auth/../../crm/deals",
+    "/billing/../crm/deals",
+    "/payroll/runs/../entities",
+    "/./auth/../crm/deals",
+  ])("%s cannot borrow reserved capacity by traversing out of a reserved prefix", (path) => {
+    expect(reservedClassForPath(path)).toBeUndefined();
+  });
+
+  it.each(["//auth/login", "/auth//login", "/auth/./login", "/auth/login/"])(
+    "%s still resolves to the reserved class it genuinely reaches",
+    (path) => {
+      expect(reservedClassForPath(path)).toBe("authentication");
+    },
+  );
+
+  it.each(["/auth%2f../crm/deals", "/auth%2e%2e/crm", "/auth./login", "/authsomething"])(
+    "%s is left alone rather than decoded into a reserved match",
+    (path) => {
+      expect(reservedClassForPath(path)).toBeUndefined();
+    },
+  );
+
+  it("clamps traversal at the root rather than emitting a path above it", () => {
+    expect(normalisePath("/../../etc/passwd")).toBe("etc/passwd");
+    expect(normalisePath("/auth/../../..")).toBe("");
+  });
+
+  it("classifies a traversal by where it actually lands, not by its prefix", () => {
+    expect(reservedClassForPath("/../auth/login")).toBe("authentication");
+    expect(reservedClassForPath("/auth/../crm/deals")).toBeUndefined();
   });
 });

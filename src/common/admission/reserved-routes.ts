@@ -1,3 +1,4 @@
+import { posix } from "node:path";
 import type { WorkClass } from "./work-class";
 
 export interface ReservedRoute {
@@ -21,7 +22,9 @@ export const RESERVED_ROUTES: readonly ReservedRoute[] = [
 
 export function normalisePath(path: string): string {
   const withoutQuery = path.split("?")[0] ?? "";
-  return withoutQuery.replace(/^\/+/, "").replace(/\/+$/, "").toLowerCase();
+  const resolved = posix.normalize(`/${withoutQuery}`);
+  if (resolved.startsWith("/..")) return "";
+  return resolved.replace(/^\/+/, "").replace(/\/+$/, "").toLowerCase();
 }
 
 export function reservedClassForPath(path: string): WorkClass | undefined {

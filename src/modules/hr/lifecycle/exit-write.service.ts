@@ -341,7 +341,7 @@ export class ExitWriteService {
 
       const submittingUser = await this.db.query.users.findFirst({
         where: eq(users.id, actorUserId),
-        columns: { email: true, name: true, designation: true },
+        columns: { email: true, name: true },
       });
 
       const adminUserIds = adminMembers.map((m) => m.userId);
@@ -355,7 +355,7 @@ export class ExitWriteService {
         entityType: "resignation",
         entityId: String(resignationId),
         message: `${submittingUser?.name ?? "Employee"} submitted a resignation.`,
-        variables: { employeeName: submittingUser?.name ?? "Employee", designation: submittingUser?.designation ?? "N/A", submissionDate, lastWorkingDate, noticePeriodDays, reason: input.reason ?? null },
+        variables: { employeeName: submittingUser?.name ?? "Employee", submissionDate, lastWorkingDate, noticePeriodDays, reason: input.reason ?? null },
       });
 
       await this.hrAutomation.emit(orgId, "resignation.submitted", {

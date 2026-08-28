@@ -18,7 +18,6 @@ import {
   salaryComponents,
   salaryLoans,
   taxDeclarations,
-  users,
   leaveBalances,
   leaveTypes,
 } from "../../../db/schema";
@@ -28,7 +27,8 @@ import { LoansService } from "../hr-payroll/loans.service";
 import { ReimbursementsService } from "../hr-payroll/reimbursements.service";
 import { TaxService } from "../hr-payroll/tax.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
-import { type BankDetails, decryptBankDetails, encryptBankDetails } from "../../hr/onboarding/core/crypto.helpers";
+import { type BankDetails } from "../../hr/onboarding/core/crypto.helpers";
+import { syncCanonicalSensitiveFields } from "../../../common/hr/sync-canonical-sensitive-fields";
 import { detectScheme, validateSchemeCode } from "../../payroll/payout/lib/bank-validation";
 import type { EssBank } from "./dto/insights.schemas";
 import { DEFAULT_PAYROLL_TOGGLES, PayrollToggles } from "../payroll.types";
@@ -460,8 +460,7 @@ export class EssService {
       bankCountry: body.bankCountry,
     };
 
-    const encrypted = encryptBankDetails(stored);
-    await this.db.update(users).set({ bankDetails: encrypted }).where(eq(users.id, userId));
+    await syncCanonicalSensitiveFields(this.db, orgId, userId, { bankDetails: stored });
     await this.db.insert(auditLogs).values({
       action: "bank_details.updated",
       userId,

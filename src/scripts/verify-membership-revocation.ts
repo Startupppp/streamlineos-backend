@@ -11,6 +11,7 @@ import {
   agentTokens,
   invitations,
   kbSpaceGrants,
+  kbSpaces,
   organizationMembers,
   organizations,
   permissions,
@@ -225,7 +226,17 @@ async function main(): Promise<void> {
         tokenPrefix: AGENT_TOKEN_PREFIX,
       });
       await tx.insert(resourceGrants).values({ orgId: ORG_ID, resourceType: "project", resourceId: "fixture-999", principalType: "user", principalId: MEM_USER_ID, level: "viewer" });
-      await tx.insert(kbSpaceGrants).values({ orgId: ORG_ID, spaceId: 999999, principalType: "user", principalId: MEM_USER_ID, permissionKey: "kb:spaces:view" });
+      const [spaceRow] = await tx
+        .insert(kbSpaces)
+        .values({
+          orgId: ORG_ID,
+          name: `Revoc Space ${TS}`,
+          slug: `revoc-space-${TS}`,
+          createdById: DEL_USER_ID,
+        })
+        .returning({ id: kbSpaces.id });
+      if (!spaceRow) throw new Error("kb space insert failed");
+      await tx.insert(kbSpaceGrants).values({ orgId: ORG_ID, spaceId: spaceRow.id, principalType: "user", principalId: MEM_USER_ID, permissionKey: "kb:spaces:view" });
       await tx.insert(invitations).values({
         id: INV_ID,
         email: MEM_EMAIL,

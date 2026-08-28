@@ -222,6 +222,43 @@ describe("the signed cache entry", () => {
     expect(lookups).toBe(2);
   });
 
+  it("drops a superseded entry ahead of its expiry, so a relocation is not invisible for the TTL", async () => {
+    let lookups = 0;
+    const registry = new RegionRegistry(
+      topology,
+      bindings(),
+      async (orgId) => {
+        lookups += 1;
+        return { ...placement(orgId), placementVersion: 4 };
+      },
+      () => Date.now(),
+      keyring,
+    );
+
+    await registry.placementForOrg("org-1");
+    expect(lookups).toBe(1);
+
+    registry.forgetVersionsBelow("org-1", 4);
+    await registry.placementForOrg("org-1");
+    expect(lookups).toBe(1);
+
+    registry.forgetVersionsBelow("org-1", 5);
+    await registry.placementForOrg("org-1");
+    expect(lookups).toBe(2);
+  });
+
+  it("leaves an organisation it has never cached alone", async () => {
+    const registry = new RegionRegistry(
+      topology,
+      bindings(),
+      async (orgId) => placement(orgId),
+      () => Date.now(),
+      keyring,
+    );
+
+    expect(() => registry.forgetVersionsBelow("org-never-seen", 9)).not.toThrow();
+  });
+
   it("hands out a token a cell can verify without the control plane", async () => {
     const registry = new RegionRegistry(
       topology,

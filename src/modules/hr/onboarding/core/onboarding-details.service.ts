@@ -17,7 +17,6 @@ import { organizationPeople } from "../../../../db/schema/directory/organization
 import {
   decrypt,
   encrypt,
-  encryptBankDetails,
 } from "./crypto.helpers";
 import { sealSensitiveJson } from "../../../../common/security/sensitive-field";
 import { readBankDetails } from "../../../../common/hr/canonical-bank-details";
@@ -207,11 +206,6 @@ export class OnboardingDetailsService {
       if (!membership) {
         throw new NotFoundException("User not found in this organization");
       }
-
-      await tx.update(users).set({
-        bankDetails: encryptBankDetails(bankDetails),
-        ...(encryptedTaxId ? { taxId: encryptedTaxId } : {}),
-      }).where(eq(users.id, userId));
 
       const [employment] = await tx
         .select({ id: hrEmployments.id })

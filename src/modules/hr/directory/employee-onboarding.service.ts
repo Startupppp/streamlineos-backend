@@ -8,6 +8,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import {
+  hrEmployeeSensitiveFields,
   hrEmployments,
   hrPeople,
   magicLinkTokens,
@@ -26,7 +27,11 @@ import { appUrl } from "../../email/app-url";
 import { AutomationService } from "../../automation/automation.service";
 import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
 import { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
-import { encrypt, encryptBankDetails, type BankDetails } from "../onboarding/core/crypto.helpers";
+import { type BankDetails } from "../onboarding/core/crypto.helpers";
+import { syncCanonicalEmploymentFields } from "../../../common/hr/sync-canonical-employment-fields";
+import { sealSensitive } from "../../../common/security/sensitive-field";
+import { sealBankDetails } from "../../../common/hr/canonical-bank-details";
+import { monthlyAmountToCents } from "../../../common/hr/sync-canonical-sensitive-fields";
 import { formatDateOnly } from "../../../common/date";
 import { seedEmployeeSalaryProfile } from "./salary-profile-seed.helper";
 import type { OnboardEmployeeInput } from "./dto/hr-directory.schemas";
@@ -139,18 +144,9 @@ export class EmployeeOnboardingService {
       const linkedUser = await runInTenantTransaction(this.db, async (tx) => {
         await this.reserveMemberSeat(tx, actor.orgId);
         const updateData: Partial<typeof users.$inferInsert> = {
-          designation: body.designation,
-          orgDepartmentId: body.departmentId,
-          employeeId: resolvedEmployeeId,
-          joiningDate: body.joiningDate ? formatDateOnly(new Date(body.joiningDate)) : undefined,
           dateOfBirth: body.dateOfBirth ? formatDateOnly(new Date(body.dateOfBirth)) : undefined,
           isActive: true,
         };
-        if (body.taxId) updateData.taxId = encrypt(body.taxId);
-        if (body.monthlySalary !== undefined) updateData.monthlySalary = body.monthlySalary.toString();
-        if (body.bankDetails?.accountNumber) {
-          updateData.bankDetails = encryptBankDetails(toBankDetails(body.bankDetails));
-        }
 
         await tx.update(users).set(updateData).where(eq(users.id, existingUser.id));
         await syncOrgUnitPlacement(tx, actor.orgId, existingUser.id, { DEPARTMENT: body.departmentId });
@@ -225,7 +221,7 @@ export class EmployeeOnboardingService {
         },
       });
 
-      await this.personEmploymentSync.ensureFromUser(actor.orgId, actor.userId, {
+      const ensuredExisting = await this.personEmploymentSync.ensureFromUser(actor.orgId, actor.userId, {
         userId: linkedUser.id,
         firstName: body.firstName,
         lastName: body.lastName,
@@ -238,6 +234,32 @@ export class EmployeeOnboardingService {
         phone: body.phone ?? null,
         lifecycleStatus: "ONBOARDING",
       });
+
+      if (body.departmentId) {
+        await syncCanonicalEmploymentFields(this.db, actor.orgId, linkedUser.id, {
+          departmentId: body.departmentId,
+        });
+      }
+
+      if (body.taxId || body.bankDetails?.accountNumber || body.monthlySalary !== undefined) {
+        const sensitiveSet: Partial<typeof hrEmployeeSensitiveFields.$inferInsert> = {};
+        if (body.monthlySalary !== undefined) {
+          sensitiveSet.salaryAmountCents = monthlyAmountToCents(body.monthlySalary);
+          sensitiveSet.salaryCurrency = "INR";
+          sensitiveSet.salaryFrequency = "MONTHLY";
+        }
+        if (body.taxId) sensitiveSet.taxId = sealSensitive(body.taxId);
+        if (body.bankDetails?.accountNumber)
+          sensitiveSet.bankDetails = sealBankDetails(toBankDetails(body.bankDetails));
+
+        await this.db
+          .insert(hrEmployeeSensitiveFields)
+          .values({ orgId: actor.orgId, employmentId: ensuredExisting.employmentId, ...sensitiveSet })
+          .onConflictDoUpdate({
+            target: hrEmployeeSensitiveFields.employmentId,
+            set: { ...sensitiveSet, updatedAt: new Date() },
+          });
+      }
 
       return { success: true, userId: linkedUser.id };
     }
@@ -257,16 +279,7 @@ export class EmployeeOnboardingService {
           phone: body.phone,
           whatsappNumber: body.whatsappSameAsPhone ? body.phone : body.whatsappNumber,
           gender: body.gender,
-          designation: body.designation,
-          orgDepartmentId: body.departmentId,
-          employeeId: resolvedEmployeeId,
-          joiningDate: body.joiningDate ? formatDateOnly(new Date(body.joiningDate)) : undefined,
           dateOfBirth: body.dateOfBirth ? formatDateOnly(new Date(body.dateOfBirth)) : undefined,
-          taxId: body.taxId ? encrypt(body.taxId) : undefined,
-          monthlySalary: body.monthlySalary?.toString(),
-          bankDetails: body.bankDetails?.accountNumber
-            ? encryptBankDetails(toBankDetails(body.bankDetails))
-            : undefined,
           isActive: true,
         })
         .returning();
@@ -347,7 +360,7 @@ export class EmployeeOnboardingService {
       },
     });
 
-    await this.personEmploymentSync.ensureFromUser(actor.orgId, actor.userId, {
+    const ensuredNew = await this.personEmploymentSync.ensureFromUser(actor.orgId, actor.userId, {
       userId: newUser.id,
       firstName: body.firstName,
       lastName: body.lastName,
@@ -360,6 +373,32 @@ export class EmployeeOnboardingService {
       phone: body.phone ?? null,
       lifecycleStatus: "ONBOARDING",
     });
+
+    if (body.departmentId) {
+      await syncCanonicalEmploymentFields(this.db, actor.orgId, newUser.id, {
+        departmentId: body.departmentId,
+      });
+    }
+
+    if (body.taxId || body.bankDetails?.accountNumber || body.monthlySalary !== undefined) {
+      const sensitiveSet: Partial<typeof hrEmployeeSensitiveFields.$inferInsert> = {};
+      if (body.monthlySalary !== undefined) {
+        sensitiveSet.salaryAmountCents = monthlyAmountToCents(body.monthlySalary);
+        sensitiveSet.salaryCurrency = "INR";
+        sensitiveSet.salaryFrequency = "MONTHLY";
+      }
+      if (body.taxId) sensitiveSet.taxId = sealSensitive(body.taxId);
+      if (body.bankDetails?.accountNumber)
+        sensitiveSet.bankDetails = sealBankDetails(toBankDetails(body.bankDetails));
+
+      await this.db
+        .insert(hrEmployeeSensitiveFields)
+        .values({ orgId: actor.orgId, employmentId: ensuredNew.employmentId, ...sensitiveSet })
+        .onConflictDoUpdate({
+          target: hrEmployeeSensitiveFields.employmentId,
+          set: { ...sensitiveSet, updatedAt: new Date() },
+        });
+    }
 
     if (newUser.email) {
       try {

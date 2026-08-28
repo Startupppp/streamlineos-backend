@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline";
 import { createReadStream } from "node:fs";
+import process from "node:process";
 
 const SEAM_ATTRIBUTE_KEY = "seam";
 

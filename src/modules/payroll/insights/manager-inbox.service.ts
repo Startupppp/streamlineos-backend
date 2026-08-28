@@ -429,7 +429,7 @@ export class ManagerInboxService {
     if (row.status !== "PENDING") {
       throw new BadRequestException(`Reimbursement is ${row.status}, not PENDING`);
     }
-    await this.assertIsDirectReport(managerUserId, row.userId);
+    await this.assertIsDirectReport(orgId, managerUserId, row.userId);
     return row;
   }
 
@@ -445,16 +445,13 @@ export class ManagerInboxService {
     if (row.status !== "PENDING") {
       throw new BadRequestException(`Loan is ${row.status}, not PENDING`);
     }
-    await this.assertIsDirectReport(managerUserId, row.userId);
+    await this.assertIsDirectReport(orgId, managerUserId, row.userId);
     return row;
   }
 
-  private async assertIsDirectReport(managerUserId: string, subjectUserId: string): Promise<void> {
-    const subject = await this.db.query.users.findFirst({
-      where: eq(users.id, subjectUserId),
-      columns: { reportingTo: true },
-    });
-    if (!subject || subject.reportingTo !== managerUserId) {
+  private async assertIsDirectReport(orgId: string, managerUserId: string, subjectUserId: string): Promise<void> {
+    const directReportIds = await this.employmentFacts.getDirectReportUserIds(orgId, managerUserId);
+    if (!directReportIds.includes(subjectUserId)) {
       throw new ForbiddenException(
         "You can only act on requests from your direct reports",
       );

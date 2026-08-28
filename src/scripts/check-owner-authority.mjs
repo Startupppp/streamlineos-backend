@@ -19,6 +19,25 @@ export const GATE_EXEMPT = new Map([
   ["src/common/rbac/owner-only-operations.ts", "the catalog and its one predicate"],
 ]);
 
+export const UNENFORCED_EXEMPT = new Map([
+  [
+    "organization.legal-hold",
+    "enforced by hr:legalhold:manage in modules/hr/governance/legal-holds, which S1 may not edit; raised as a cross-session request",
+  ],
+]);
+
+const CATALOG_FILE = "src/common/rbac/owner-only-operations.ts";
+const CATALOG_ID = /^\s{2}"([a-z0-9.-]+)":\s*\{/gm;
+const CATALOG_CALL = /(?:assertOwnerOnly|holdsOwnerOnly)\s*\(\s*[^,]+,\s*"([a-z0-9.-]+)"/g;
+
+export function catalogIds(source) {
+  return [...source.matchAll(CATALOG_ID)].map((m) => m[1]);
+}
+
+export function calledIds(source) {
+  return [...source.matchAll(CATALOG_CALL)].map((m) => m[1]);
+}
+
 function walkTs(dir) {
   const out = [];
   for (const entry of readdirSync(dir)) {
@@ -79,6 +98,15 @@ if (process.argv.includes("--self-test")) {
   const bare = findOwnerGates('if (!actor?.isOrgOwner)\n  throw new ForbiddenException("nope");');
   if (bare.gates.length !== 1) failures.push("missed an optional-chained unbraced owner gate");
 
+  const ids = catalogIds(
+    '  "organization.delete": {\n    summary: "x",\n  },\n  "organization.archive": {\n',
+  );
+  if (ids.length !== 2) failures.push("catalog id parser did not find both ids");
+  const namedInCalls = calledIds(
+    'assertOwnerOnly(u, "organization.delete");\nholdsOwnerOnly(actor, "finance.expense.grant-without-approval");',
+  );
+  if (namedInCalls.length !== 2) failures.push("call-site parser did not find both call sites");
+
   const shortcut = findOwnerGates(
     'if (!u.isOrgOwner) {\n  const perms = await resolve();\n  if (!perms.has("k")) {\n    throw new ForbiddenException("Forbidden");\n  }\n}',
   );
@@ -105,6 +133,7 @@ if (files.length < 500) {
 const fabrications = [];
 const gates = [];
 const shortcuts = [];
+const called = new Set();
 let scanned = 0;
 
 for (const file of files) {
@@ -117,16 +146,30 @@ for (const file of files) {
   const found = findOwnerGates(source);
   for (const hit of found.gates) gates.push({ ...hit, file: rel });
   for (const hit of found.shortcuts) shortcuts.push({ ...hit, file: rel });
+  for (const id of calledIds(source)) called.add(id);
 }
 
+const declared = catalogIds(readFileSync(join(BACKEND_ROOT, CATALOG_FILE), "utf8"));
+if (declared.length === 0) {
+  console.error("Parsed 0 operations out of the catalog. That is a broken parser, not an empty catalog.");
+  process.exit(2);
+}
+const unenforced = declared.filter(
+  (id) => !called.has(id) && !UNENFORCED_EXEMPT.has(id),
+);
+
 console.log(`production files scanned   ${scanned}`);
+console.log(`owner-only operations      ${declared.length} declared, ${called.size} enforced`);
+for (const [id, why] of UNENFORCED_EXEMPT) {
+  console.log(`  SKIP  ${id}  — ${why}`);
+}
 console.log(`owner shortcuts (reported) ${shortcuts.length}`);
 for (const hit of shortcuts) {
   console.log(`  SKIP  ${hit.file}:${hit.line}  owner skips a permission check, not a gate`);
 }
 console.log("");
 
-if (fabrications.length === 0 && gates.length === 0) {
+if (fabrications.length === 0 && gates.length === 0 && unenforced.length === 0) {
   console.log("OK — nothing fabricates ownership and every owner gate reads the catalog.");
   process.exit(0);
 }
@@ -141,8 +184,13 @@ for (const hit of gates) {
     `  UNCATALOGUED OWNER GATE  ${hit.file}:${hit.line}  ${hit.text}\n    Use assertOwnerOnly / holdsOwnerOnly and add the operation to common/rbac/owner-only-operations.ts.`,
   );
 }
+for (const id of unenforced) {
+  console.error(
+    `  CATALOGUED BUT UNENFORCED  ${id}\n    No assertOwnerOnly / holdsOwnerOnly call site names it. Gate it, or name it in UNENFORCED_EXEMPT with the reason.`,
+  );
+}
 console.error("");
 console.error(
-  `FAIL — ${fabrications.length} fabrication(s), ${gates.length} uncatalogued owner gate(s).`,
+  `FAIL — ${fabrications.length} fabrication(s), ${gates.length} uncatalogued owner gate(s), ${unenforced.length} unenforced operation(s).`,
 );
 process.exit(1);

@@ -22,14 +22,12 @@ export class AdmissionService {
   tryAdmit(workClass: WorkClass, orgId: string): AdmissionDecision {
     if (!this.config.enabled) return { admitted: true };
 
-    const { maxConcurrent, maxQueueDepth, orgMaxConcurrent } = this.config;
+    const { maxQueueDepth, orgMaxConcurrent } = this.config;
 
     if (this.inFlight >= maxQueueDepth)
       return { admitted: false, retryAfterSeconds: this.retryAfterSeconds() };
 
     if (isReserved(workClass)) {
-      if (this.inFlight >= maxConcurrent)
-        return { admitted: false, retryAfterSeconds: this.retryAfterSeconds() };
       this.increment(orgId);
       return { admitted: true };
     }
@@ -48,9 +46,10 @@ export class AdmissionService {
 
   release(orgId: string): void {
     if (!this.config.enabled) return;
-    this.inFlight = Math.max(0, this.inFlight - 1);
     const orgCount = this.orgInFlight.get(orgId);
     if (orgCount === undefined) return;
+
+    this.inFlight = Math.max(0, this.inFlight - 1);
     if (orgCount <= 1)
       this.orgInFlight.delete(orgId);
     else

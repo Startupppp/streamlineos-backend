@@ -56,10 +56,7 @@ type PrefetchedActiveMember = {
   lastName: string | null;
   name: string | null;
   email: string;
-  employeeId: string | null;
-  designation: string | null;
   phone: string | null;
-  joiningDate: string | null;
 };
 
 type BackfillResult = {
@@ -79,8 +76,7 @@ function toEnsureInput(
     user.lastName?.trim() ||
     user.name?.split(" ").slice(1).join(" ") ||
     "User";
-  const employeeNumber =
-    user.employeeId?.trim() || `EMP-${user.userId.slice(0, 8).toUpperCase()}`;
+  const employeeNumber = `EMP-${user.userId.slice(0, 8).toUpperCase()}`;
 
   return {
     userId: user.userId,
@@ -88,8 +84,8 @@ function toEnsureInput(
     lastName,
     workEmail: user.email,
     employeeNumber,
-    joiningDate: user.joiningDate ?? null,
-    designation: user.designation ?? null,
+    joiningDate: null,
+    designation: null,
     phone: user.phone ?? null,
     lifecycleStatus,
   };
@@ -352,10 +348,7 @@ export class PersonEmploymentSyncService {
         lastName: true,
         name: true,
         email: true,
-        employeeId: true,
-        designation: true,
         phone: true,
-        joiningDate: true,
       },
     });
     if (!user?.email) return null;
@@ -370,10 +363,7 @@ export class PersonEmploymentSyncService {
           lastName: user.lastName,
           name: user.name,
           email: user.email,
-          employeeId: user.employeeId,
-          designation: user.designation,
           phone: user.phone,
-          joiningDate: user.joiningDate,
         },
         lifecycleStatus,
       ),
@@ -465,10 +455,7 @@ export class PersonEmploymentSyncService {
           lastName: users.lastName,
           name: users.name,
           email: users.email,
-          employeeId: users.employeeId,
-          designation: users.designation,
           phone: users.phone,
-          joiningDate: users.joiningDate,
         })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))

@@ -21,8 +21,6 @@ import { HrAuditService } from "./hr-audit.service";
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
 import { HrCustomFieldsService } from "./hr-custom-fields.service";
 import { PersonEmploymentSyncService } from "./person-employment-sync.service";
-import { EmploymentBackfillService } from "./employment-backfill.service";
-import { EmploymentReconciliationService } from "./employment-reconciliation.service";
 import { EmploymentFactsModule } from "../../directory/employment-facts.module";
 
 @Module({
@@ -50,8 +48,6 @@ import { EmploymentFactsModule } from "../../directory/employment-facts.module";
     HrOrgCatalogService,
     HrCustomFieldsService,
     PersonEmploymentSyncService,
-    EmploymentBackfillService,
-    EmploymentReconciliationService,
   ],
   exports: [
     HrAuditService,
@@ -60,8 +56,6 @@ import { EmploymentFactsModule } from "../../directory/employment-facts.module";
     HrEmploymentsService,
     HrSensitiveService,
     PersonEmploymentSyncService,
-    EmploymentBackfillService,
-    EmploymentReconciliationService,
     EmploymentFactsModule,
   ],
 })

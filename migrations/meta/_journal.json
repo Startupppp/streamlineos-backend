@@ -2318,6 +2318,13 @@
       "when": 1787830407441,
       "tag": "0614_ownership_transfers_record_initiator",
       "breakpoints": true
+    },
+    {
+      "idx": 336,
+      "version": "7",
+      "when": 1787861571270,
+      "tag": "0615_users_holds_authentication_identity_only",
+      "breakpoints": true
     }
   ]
 }

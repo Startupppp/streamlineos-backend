@@ -5,6 +5,9 @@ import { createHash } from "node:crypto";
 import { dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { createInterface } from "node:readline";
+import process from "node:process";
+import { URL } from "node:url";
+import { Buffer } from "node:buffer";
 
 const REGISTRY = {
   "dead-outbox": { owner: "platform-reliability", runbookAnchor: "#dead-outbox", severity: "critical" },
@@ -179,7 +182,9 @@ if (isSelfTest) {
     req.on("end", () => {
       try {
         receivedBodies.push(JSON.parse(body));
-      } catch {}
+      } catch {
+        void 0;
+      }
       res.writeHead(200);
       res.end("ok");
     });
@@ -206,7 +211,9 @@ if (isSelfTest) {
   await new Promise((resolve) => server.close(resolve));
   try {
     unlinkSync(tempState);
-  } catch {}
+  } catch {
+    void 0;
+  }
 
   const checks = {
     case1Delivered: result1.dispatched === true,

@@ -204,7 +204,6 @@ export class BranchesService {
 
       for (const userId of [input.branchManagerId, input.branchHrId]) {
         if (!userId) continue;
-        await tx.update(users).set({ branchId: created.id }).where(eq(users.id, userId));
         await syncOrgUnitPlacement(tx, orgId, userId, { BRANCH: created.id });
       }
       return created;
@@ -276,10 +275,6 @@ export class BranchesService {
       if (!updatedBranch) return null;
 
       if (input.branchManagerId !== undefined) {
-        await tx
-          .update(users)
-          .set({ branchId: updatedBranch.id })
-          .where(eq(users.id, input.branchManagerId));
         await syncOrgUnitPlacement(tx, orgId, input.branchManagerId, {
           BRANCH: updatedBranch.id,
         });
@@ -287,10 +282,6 @@ export class BranchesService {
 
       if (input.branchHrId !== undefined) {
         if (input.branchHrId) {
-          await tx
-            .update(users)
-            .set({ branchId: updatedBranch.id })
-            .where(eq(users.id, input.branchHrId));
           await syncOrgUnitPlacement(tx, orgId, input.branchHrId, {
             BRANCH: updatedBranch.id,
           });
@@ -300,10 +291,6 @@ export class BranchesService {
           oldHrId !== input.branchHrId &&
           oldHrId !== updatedBranch.headUserId
         ) {
-          await tx
-            .update(users)
-            .set({ branchId: null })
-            .where(eq(users.id, oldHrId));
           await syncOrgUnitPlacement(tx, orgId, oldHrId, { BRANCH: null });
         }
       }
@@ -342,17 +329,9 @@ export class BranchesService {
 
     await this.db.transaction(async (tx) => {
       if (managerId) {
-        await tx
-          .update(users)
-          .set({ branchId: null })
-          .where(eq(users.id, managerId));
         await syncOrgUnitPlacement(tx, orgId, managerId, { BRANCH: null });
       }
       if (hrId && hrId !== managerId) {
-        await tx
-          .update(users)
-          .set({ branchId: null })
-          .where(eq(users.id, hrId));
         await syncOrgUnitPlacement(tx, orgId, hrId, { BRANCH: null });
       }
       await tx

@@ -35,6 +35,11 @@ export class BoundedReservoir {
   get size(): number {
     return this.samples.length;
   }
+
+  clear(): void {
+    this.samples.length = 0;
+    this.seen = 0;
+  }
 }
 
 export interface SeamSnapshot {
@@ -89,6 +94,8 @@ export class QueryTelemetryTracker {
   reset(): void {
     this.gucCount = 0;
     this.queryCount = 0;
+    this.gucReservoir.clear();
+    this.queryReservoir.clear();
   }
 
   private record(seamKey: SeamKey, durationMs: number): void {
@@ -102,9 +109,8 @@ export class QueryTelemetryTracker {
   }
 
   private wrap<T extends object>(target: T, settle: Settle): T {
-    const tracker = this;
     const proxy: T = new Proxy(target, {
-      get(raw, prop) {
+      get: (raw, prop) => {
         if (prop === "then") {
           return (onOk?: (value: unknown) => unknown, onErr?: (reason: unknown) => unknown) =>
             (raw as unknown as Thenable).then(
@@ -142,7 +148,7 @@ export class QueryTelemetryTracker {
 
         return (...args: unknown[]): unknown => {
           const result: unknown = (value as (...a: unknown[]) => unknown).apply(raw, args);
-          return result === raw ? tracker.wrap(raw, settle) : result;
+          return result === raw ? this.wrap(raw, settle) : result;
         };
       },
     });

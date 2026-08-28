@@ -1,4 +1,4 @@
-import { and, sql, type SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { hrEmployments, hrPeople, hrReportingLines, resignations } from "../../db/schema";
 import type { DataScope } from "../access/access.types";
 import { applyScope } from "../access/apply-scope";
@@ -28,13 +28,12 @@ export function resignationApprovalScope(
   switch (scope) {
     case "all":
       return sql`true`;
-    case "team":
-      return and(
-        derivedApprover,
-        applyScope(scope, orgId, actorUserId, {
-          ownerColumn: resignations.userId,
-        }),
-      )!;
+    case "team": {
+      const teammates = applyScope(scope, orgId, actorUserId, {
+        ownerColumn: resignations.userId,
+      });
+      return sql`(${derivedApprover} AND ${teammates})`;
+    }
     case "own":
       return derivedApprover;
     case "none":

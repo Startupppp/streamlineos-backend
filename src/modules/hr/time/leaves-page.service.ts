@@ -3,17 +3,18 @@ import { and, eq } from "drizzle-orm";
 import {
   leaveBalances,
   leaveTypes,
-  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { LeaveApproverService } from "./leave-approver.service";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 @Injectable()
 export class LeavesPageService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly approvers: LeaveApproverService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   async pageData(orgId: string, userId: string) {
@@ -37,13 +38,10 @@ export class LeavesPageService {
         ),
       );
 
-    const [existingBalances, allTypes, user] = await Promise.all([
+    const [existingBalances, allTypes, facts] = await Promise.all([
       balanceQuery,
       this.db.query.leaveTypes.findMany({ where: eq(leaveTypes.orgId, orgId) }),
-      this.db.query.users.findFirst({
-        where: eq(users.id, userId),
-        columns: { joiningDate: true },
-      }),
+      this.employment.getFacts(orgId, userId),
     ]);
 
     const seenTypeIds = new Set<number>();
@@ -65,7 +63,7 @@ export class LeavesPageService {
     return {
       balances,
       types,
-      joiningDate: user?.joiningDate ?? null,
+      joiningDate: facts.joiningDate,
       approvers: approver ? [approver] : [],
     };
   }

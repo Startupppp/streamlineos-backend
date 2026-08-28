@@ -19,6 +19,7 @@ import type { RegionDefinition } from "src/common/region/region.config";
 import type { Db } from "src/db/drizzle.types";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import { OrganizationService } from "./organization.service";
+import { OrganizationLegalHoldService } from "./lifecycle/organization-legal-hold.service";
 
 const SWITCH_TARGET = "placement-spec-org-1";
 
@@ -57,6 +58,12 @@ function buildRegistry(db: Db, lookup: OrgRegionLookup): RegionRegistry {
     lookup,
   );
 }
+
+const legalHoldStub = {
+  place: jest.fn(),
+  release: jest.fn(),
+  listActive: jest.fn().mockResolvedValue([]),
+};
 
 describe("POST /organization/switch — placement states (e2e)", () => {
   let app: INestApplication;
@@ -125,6 +132,7 @@ describe("Organization controller — auth and isolation (e2e)", () => {
   beforeAll(async () => {
     app = await createE2eApp({
       overrides: [
+        { provide: OrganizationLegalHoldService, useValue: legalHoldStub },
         {
           provide: OrganizationService,
           useValue: {

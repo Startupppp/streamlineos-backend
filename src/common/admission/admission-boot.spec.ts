@@ -86,6 +86,22 @@ describe("admission control resolves through real Nest DI and serves real HTTP",
   it("leaks no in-flight slot when the body parser rejects before the guard", () => {
     expect(service.snapshot().inFlight).toBe(0);
   });
+
+  it.each(["/auth/nothing-is-mounted-here", "/../auth/login", "//auth/login"])(
+    "consumes no capacity for %s, which reaches no handler",
+    async (path) => {
+      const response = await request(app.getHttpServer()).get(path);
+
+      expect(response.status).toBe(404);
+      expect(service.snapshot().inFlight).toBe(0);
+    },
+  );
+
+  it("resolves a traversal to the handler it really reaches", async () => {
+    await request(app.getHttpServer()).get("/auth/../probe").expect(200, { ok: true });
+
+    expect(service.snapshot().inFlight).toBe(0);
+  });
 });
 
 describe("admission control sheds over real HTTP", () => {
@@ -113,6 +129,17 @@ describe("admission control sheds over real HTTP", () => {
     expect(response.headers["retry-after"]).toBeDefined();
     expect(Number(response.headers["retry-after"])).toBeGreaterThan(0);
     expect(response.body.retryAfterSeconds ?? response.body.message?.retryAfterSeconds).toBeDefined();
+  });
+
+  it("refuses a traversal that only looks reserved, so a crafted path cannot jump the queue", async () => {
+    const { inFlight } = service.snapshot();
+    for (let i = 0; i < inFlight; i++) service.release(`filler-${String(i)}`);
+    for (let i = 0; i < service.snapshot().maxConcurrent; i++)
+      service.tryAdmit("authentication", `filler-${String(i)}`);
+
+    const crafted = await request(app.getHttpServer()).get("/auth/../probe");
+
+    expect(crafted.status).toBe(503);
   });
 
   it("serves the reserved route again as soon as capacity is released", async () => {

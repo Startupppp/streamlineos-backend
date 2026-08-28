@@ -104,12 +104,21 @@ describe("AdmissionService — reserved classes survive full sheddable saturatio
     }
   });
 
-  it("refuses reserved class only when maxConcurrent is fully saturated", () => {
-    const svc = makeSvc();
-    fillTo(svc, 9);
-    expect(svc.tryAdmit("authentication", "org-b")).toMatchObject({ admitted: true });
-    svc.tryAdmit("authentication", "org-b");
+  it("lets reserved work burst past maxConcurrent, which is what reserved capacity means", () => {
+    const svc = makeSvc({ maxConcurrent: 10, maxQueueDepth: 14 });
+    fillTo(svc, 10);
+
     expect(svc.snapshot().inFlight).toBe(10);
+    expect(svc.tryAdmit("ordinary-write", "org-b")).toMatchObject({ admitted: false });
+    expect(svc.tryAdmit("authentication", "org-b")).toMatchObject({ admitted: true });
+  });
+
+  it("refuses reserved class only at the queue-depth ceiling", () => {
+    const svc = makeSvc({ maxConcurrent: 10, maxQueueDepth: 12 });
+    fillTo(svc, 11);
+
+    expect(svc.tryAdmit("authentication", "org-b")).toMatchObject({ admitted: true });
+    expect(svc.snapshot().inFlight).toBe(12);
     expect(svc.tryAdmit("authentication", "org-b")).toMatchObject({ admitted: false });
   });
 
@@ -133,7 +142,7 @@ describe("AdmissionService — reserved classes survive full sheddable saturatio
   });
 
   it("refusal includes retryAfterSeconds > 0", () => {
-    const svc = makeSvc();
+    const svc = makeSvc({ maxQueueDepth: 10 });
     fillTo(svc, 10);
     const d = svc.tryAdmit("authentication", "org-b");
     expect(d.admitted).toBe(false);
@@ -180,6 +189,17 @@ describe("AdmissionService — in-flight accounting and map pruning", () => {
   it("release on an unknown orgId does not throw", () => {
     const svc = makeSvc();
     expect(() => svc.release("unknown-org")).not.toThrow();
+  });
+
+  it("release for an org that was never admitted leaves the global count untouched", () => {
+    const svc = makeSvc();
+    svc.tryAdmit("authentication", "org-a");
+    expect(svc.snapshot().inFlight).toBe(1);
+
+    svc.release("org-never-admitted");
+
+    expect(svc.snapshot().inFlight).toBe(1);
+    expect(svc.snapshot().orgMapSize).toBe(1);
   });
 
   it("release never pushes inFlight below zero", () => {

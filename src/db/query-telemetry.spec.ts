@@ -202,11 +202,32 @@ describe("instrumentation carries no unbounded label and never breaks a query", 
     expect(client.unsafe).toBe(afterFirst);
   });
 
-  it("returns the untouched query when wrapping itself fails", () => {
-    const { client, calls } = fakeClient(() => Promise.resolve([]));
+  it("hands back the driver's own object when wrapping it is impossible", async () => {
+    const unwrappable = "not-an-object-so-Proxy-refuses-it";
+    const client = { unsafe: (): object => unwrappable as unknown as object };
     instrumentPostgresClient(client);
 
-    expect(client.unsafe("select 7")).toBeDefined();
-    expect(calls).toEqual(["select 7"]);
+    const returned = client.unsafe();
+
+    expect(returned).toBe(unwrappable);
+  });
+
+  it("still records the seam when the query is wrappable", async () => {
+    const tracker = new QueryTelemetryTracker();
+    const { client } = fakeClient(() => Promise.resolve(["row"]));
+
+    await tracker.observe(client.unsafe("select 7"), "select 7");
+
+    expect(tracker.snapshot()["db.query.execute"].count).toBe(1);
+  });
+
+  it("clears its percentile window when it clears its counts", async () => {
+    const tracker = new QueryTelemetryTracker();
+    const { client } = fakeClient(() => Promise.resolve([]));
+    await tracker.observe(client.unsafe("select 1"), "select 1");
+
+    tracker.reset();
+
+    expect(tracker.snapshot()["db.query.execute"]).toEqual({ count: 0, p95Ms: 0 });
   });
 });
