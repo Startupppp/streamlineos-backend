@@ -53,7 +53,9 @@ describe("v2 user identity view", () => {
     expect(mapped.data[0]).toHaveProperty("id", "user-1");
   });
 
-  it("tolerates a payload that never carried the employment fields", () => {
-    expect(toUserIdentity({ id: "user-9" })).toEqual({ id: "user-9" });
+  it("tolerates a payload carrying only some of the employment fields", () => {
+    expect(toUserIdentity({ id: "user-9", designation: "Analyst" })).toEqual({
+      id: "user-9",
+    });
   });
 });

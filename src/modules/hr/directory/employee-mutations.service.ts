@@ -222,7 +222,8 @@ export class EmployeeMutationsService {
             ON rl.employment_id = chain.employment_id
             AND rl.org_id = ${actor.orgId}
             AND rl.line_type = 'primary'
-            AND rl.effective_to = 'infinity'::date
+            AND rl.effective_from <= CURRENT_DATE
+            AND rl.effective_to >= CURRENT_DATE
           INNER JOIN hr_employments mgr_emp
             ON mgr_emp.id = rl.manager_employment_id
             AND mgr_emp.org_id = ${actor.orgId}

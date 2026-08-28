@@ -239,6 +239,7 @@ export class UsersController {
     return toUserIdentity(await this.users.getUser(u.orgId, userId));
   }
 
+  @RequirePermission("settings:view")
   @Get(":userId")
   getUser(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.users.getUser(u.orgId, userId);

@@ -19,6 +19,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
+import { primaryEmploymentOfPerson } from "../../directory/employment-query";
 
 type TimelineEntry = {
   id: string;
@@ -354,15 +355,7 @@ export class HrTimelineService {
           eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
         ),
       )
-      .innerJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.personId, hrPeople.id),
-          eq(hrEmployments.orgId, orgId),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
+      .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .innerJoin(
         organizationMembers,
         and(
