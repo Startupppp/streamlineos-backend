@@ -6,13 +6,36 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import request from "supertest";
-import { signToken } from "test/helpers/sign-token";
+import { ALL_MODULES, signToken as signRawToken } from "test/helpers/sign-token";
+
+/**
+ * `ownership` has no module-registry entry, so it is core-by-absence in
+ * production (`isCoreModuleKey` returns true) and `ALL_MODULES` does not list
+ * it. The e2e harness resolves availability from the token alone, so without
+ * this every ownership route answers NO_MODULE and 403s before any permission
+ * is read.
+ */
+const OWNERSHIP_MODULES = [...ALL_MODULES, "ownership"];
+
+type SignTokenArgs = Parameters<typeof signRawToken>[0];
+
+function signToken(claims: SignTokenArgs = {}): Promise<string> {
+  return signRawToken({ enabledModules: OWNERSHIP_MODULES, ...claims });
+}
 import { createE2eApp } from "test/helpers/e2e-app";
 import { OwnershipService } from "../ownership.service";
 import { OwnershipTransfersService } from "../ownership-transfers.service";
 import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 import { AccessService } from "../../access/access.service";
+import type { DataScope } from "../../access/access.types";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { principalIsOrgOwner } from "../../../common/auth/principal";
+import { isCoreModuleKey } from "../../../common/rbac/module-registry";
+import type { ModuleAvailabilityResolver } from "../../../common/rbac/module-availability";
 import { MembershipStateService } from "../../../common/auth/membership-state.service";
+import { IdempotencyInterceptor } from "../../../common/idempotency/idempotency.interceptor";
+import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
+import type { CallHandler, ExecutionContext } from "@nestjs/common";
 
 const TRANSFER_ID = "c8a3e1f0-aaaa-bbbb-cccc-d9e7f0a1b2c3";
 
@@ -55,10 +78,52 @@ const mockTransferResponseService = {
   cancelTransfer: jest.fn(),
 };
 
+/**
+ * `authorize()` calls getModuleState, buildModuleAvailabilityResolver and
+ * scopeFor. Overriding AccessService with only two methods replaced the
+ * harness stub with one that answers none of them, so every route 403'd before
+ * its permission was read. This mirrors production instead: `ownership` has no
+ * module-registry entry so `isCoreModuleKey` is true, and an org owner
+ * short-circuits to "all" exactly as `membershipCapability` does.
+ */
 const mockAccessService = {
   resolveUserPermissions: jest.fn(),
   isModuleEnabled: jest.fn(),
+  getModuleState: async (): Promise<boolean | undefined> => true,
+  getUserDeniedModules: async (): Promise<Set<string>> => new Set<string>(),
+  getPlanLockedModules: async (): Promise<readonly string[]> => [],
+  buildModuleAvailabilityResolver: (
+    getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+  ): ModuleAvailabilityResolver => ({
+    isCoreModule: (moduleKey: string) => isCoreModuleKey(moduleKey),
+    getModuleMap,
+    getUserDeniedModules: async () => new Set<string>(),
+    getPlanLockedModules: async () => [],
+  }),
+  scopeFor: async (
+    user: CurrentUserContext,
+    permissionKey: string,
+  ): Promise<DataScope> => {
+    if (principalIsOrgOwner(user.principal)) return "all";
+    const resolved = await mockAccessService.resolveUserPermissions();
+    return (resolved as Map<string, DataScope>).get(permissionKey) ?? "none";
+  },
+  holds: async (user: CurrentUserContext, key: string): Promise<boolean> =>
+    (await mockAccessService.scopeFor(user, key)) !== "none",
 };
+
+/**
+ * `@Idempotent` persists the key before the handler runs, which needs tenant
+ * rows this fixture does not create. Passing through keeps the spec about
+ * authorization, which is what it is named for; idempotency has its own unit
+ * spec at common/idempotency/idempotency.interceptor.spec.ts.
+ */
+const idempotencyPassThrough = {
+  intercept: (_ctx: ExecutionContext, next: CallHandler) => next.handle(),
+};
+
+/** No Redis in this fixture; the real service throws, which masks the status under test. */
+const rateLimitAllowAll = { check: async () => ({ allowed: true }) };
 
 const membershipStateStub = {
   isAccountActive: async (): Promise<boolean> => true,
@@ -79,6 +144,8 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         { provide: OwnershipTransferResponseService, useValue: mockTransferResponseService },
         { provide: AccessService, useValue: mockAccessService },
         { provide: MembershipStateService, useValue: membershipStateStub },
+        { provide: IdempotencyInterceptor, useValue: idempotencyPassThrough },
+        { provide: RateLimitService, useValue: rateLimitAllowAll },
       ],
     });
   });
@@ -153,6 +220,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
         .set("Authorization", `Bearer ${token}`);
+        .set("Idempotency-Key", `e2e-own-1-${Date.now()}`)
       expect(res.status).toBe(403);
     });
 
@@ -161,6 +229,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .delete(`/ownership/transfers/${TRANSFER_ID}`)
         .set("Authorization", `Bearer ${token}`);
+        .set("Idempotency-Key", `e2e-own-2-${Date.now()}`)
       expect(res.status).toBe(403);
     });
 
@@ -203,6 +272,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post("/ownership/org/transfer")
         .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `e2e-own-3-${Date.now()}`)
         .send({ toMembershipId: 99 });
       expect(res.status).toBe(403);
       expect(res.body).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("org owner") });
@@ -229,6 +299,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post("/ownership/org/transfer")
         .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `e2e-own-4-${Date.now()}`)
         .send({ toMembershipId: 99 });
       expect(res.status).toBe(403);
       expect(res.body).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("org owner") });
@@ -244,6 +315,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post("/ownership/org/transfer")
         .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `e2e-own-5-${Date.now()}`)
         .send({ toMembershipId: 99 });
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("ACTIVE") });
@@ -257,6 +329,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post("/ownership/org/transfer")
         .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `e2e-own-6-${Date.now()}`)
         .send({ toMembershipId: 99 });
       expect(res.status).toBe(409);
     });
@@ -272,6 +345,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post("/ownership/modules/hr/transfer")
         .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `e2e-own-7-${Date.now()}`)
         .send({ toMembershipId: 99 });
       expect(res.status).toBe(409);
     });
@@ -287,6 +361,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
         .set("Authorization", `Bearer ${token}`);
+        .set("Idempotency-Key", `e2e-own-8-${Date.now()}`)
       expect(res.status).toBe(403);
       expect(res.body).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("recipient") });
     });
@@ -302,6 +377,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
         .set("Authorization", `Bearer ${token}`);
+        .set("Idempotency-Key", `e2e-own-9-${Date.now()}`)
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("longer the organization owner") });
     });
@@ -317,6 +393,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
         .set("Authorization", `Bearer ${token}`);
+        .set("Idempotency-Key", `e2e-own-10-${Date.now()}`)
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("expired") });
     });
@@ -394,6 +471,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
         .set("Authorization", `Bearer ${token}`);
+        .set("Idempotency-Key", `e2e-own-11-${Date.now()}`)
       expect(res.status).toBe(404);
     });
 
@@ -439,6 +517,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post("/ownership/org/transfer")
         .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `e2e-own-12-${Date.now()}`)
         .send({ toMembershipId: 0 });
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
@@ -449,6 +528,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post("/ownership/org/transfer")
         .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `e2e-own-13-${Date.now()}`)
         .send({ toMembershipId: 1, expiresInHours: 999 });
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
