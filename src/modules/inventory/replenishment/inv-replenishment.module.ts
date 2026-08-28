@@ -9,11 +9,12 @@ import { InvStockLowConsumerService } from "./inv-stock-low-consumer.service";
 import { DemandBaselineService } from "./forecast/demand-baseline.service";
 import { SafetyStockPolicyService } from "./forecast/safety-stock-policy.service";
 import { LeadTimeService } from "./forecast/lead-time.service";
+import { ReorderProposalService } from "./forecast/reorder-proposal.service";
 
 @Module({
   imports: [InvStockEngineModule, OutboxModule, NotificationsModule],
   controllers: [InvReplenishmentController, InvForecastingController],
-  providers: [InvReplenishmentService, InvStockLowConsumerService, DemandBaselineService, SafetyStockPolicyService, LeadTimeService],
+  providers: [InvReplenishmentService, InvStockLowConsumerService, DemandBaselineService, SafetyStockPolicyService, LeadTimeService, ReorderProposalService],
   exports: [DemandBaselineService, InvReplenishmentService],
 })
 export class InvReplenishmentModule {}

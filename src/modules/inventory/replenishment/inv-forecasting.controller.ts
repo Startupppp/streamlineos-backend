@@ -12,6 +12,7 @@ import { forecastingSchema, type ForecastingInput } from "./dto/replenishment.sc
 import { DemandBaselineService } from "./forecast/demand-baseline.service";
 import { SafetyStockPolicyService } from "./forecast/safety-stock-policy.service";
 import { LeadTimeService } from "./forecast/lead-time.service";
+import { ReorderProposalService } from "./forecast/reorder-proposal.service";
 
 @RequireModule("inventory")
 @Controller("inventory/forecasting")
@@ -22,7 +23,23 @@ export class InvForecastingController {
     private readonly demandBaseline: DemandBaselineService,
     private readonly safetyStockPolicy: SafetyStockPolicyService,
     private readonly leadTime: LeadTimeService,
+    private readonly reorderProposal: ReorderProposalService,
   ) {}
+
+  /**
+   * INV-305. A proposal with its working shown: every figure carries where it
+   * came from, so a planner who disagrees can find the number they disagree
+   * with.
+   */
+  @Get("reorder-proposal/:productVariantId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:replenishment:manage")
+  reorderProposalFor(
+    @Param("productVariantId", ParseIntPipe) productVariantId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reorderProposal.propose(u.orgId, productVariantId);
+  }
 
   /** INV-304. What this vendor actually takes, from receipts rather than a promise. */
   @Get("lead-time/vendor/:vendorId")

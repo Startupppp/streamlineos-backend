@@ -5,6 +5,7 @@ import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { DemandBaselineService } from "src/modules/inventory/replenishment/forecast/demand-baseline.service";
 import { SafetyStockPolicyService } from "src/modules/inventory/replenishment/forecast/safety-stock-policy.service";
+import { ReorderProposalService } from "src/modules/inventory/replenishment/forecast/reorder-proposal.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 
@@ -235,6 +236,57 @@ describe("[seeded-e2e] demand baselines", () => {
       );
       expect(result.demand.periods).toBeGreaterThan(20);
       expect(result.demand.mean).toBeGreaterThan(0);
+    });
+  });
+
+  describe("INV-305 explainable reorder proposals", () => {
+    const proposals = () => app.app.get(ReorderProposalService);
+
+    it("shows where every figure came from", async () => {
+      // The test of explainability is not that a rationale string exists, but
+      // that a planner who disagrees can find the number they disagree with.
+      const proposal = await asTenant(() =>
+        proposals().propose(scene.orgId, scene.soldVariantId, { weeks: 26 }),
+      );
+      expect(proposal.evidence.length).toBeGreaterThan(4);
+      for (const line of proposal.evidence) {
+        expect(line.source.length).toBeGreaterThan(0);
+        expect(line.label.length).toBeGreaterThan(0);
+      }
+      // The specific sources a planner would want to check.
+      const sources = proposal.evidence.map((e) => e.source).join(" ");
+      expect(sources).toMatch(/inv_stock_levels/);
+      expect(sources).toMatch(/SALE and RESERVATION_CONSUME/);
+    });
+
+    it("sends gappy demand to a human rather than inventing a quantity", async () => {
+      // A replenishment engine that always produces a number produces one for
+      // a SKU with six weeks of history too, and it looks exactly like the good
+      // ones.
+      const proposal = await asTenant(() =>
+        proposals().propose(scene.orgId, scene.soldVariantId, { weeks: 26 }),
+      );
+      expect(proposal.recommendation).toBe("review");
+      expect(proposal.suggestedQuantity).toBeNull();
+      expect(proposal.caveats.length).toBeGreaterThan(0);
+    });
+
+    it("holds on a SKU nobody has ever bought", async () => {
+      const proposal = await asTenant(() =>
+        proposals().propose(scene.orgId, scene.quietVariantId, { weeks: 26 }),
+      );
+      expect(proposal.recommendation).toBe("hold");
+      expect(proposal.suggestedQuantity).toBeNull();
+    });
+
+    it("reports the position it reasoned about even when it proposes nothing", async () => {
+      // A refusal that hides its inputs cannot be argued with.
+      const proposal = await asTenant(() =>
+        proposals().propose(scene.orgId, scene.quietVariantId, { weeks: 26 }),
+      );
+      expect(proposal.position).toHaveProperty("onHand");
+      expect(proposal.position).toHaveProperty("onOrder");
+      expect(proposal.evidence.some((e) => e.label === "On order")).toBe(true);
     });
   });
 
