@@ -3,7 +3,8 @@ import { and, eq, sql } from "drizzle-orm";
 import { invProducts, invProductVariants, invLots, invSerialNumbers, invLocations, invStockLevels } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import type { BarcodeLookupResult } from "./dto/inv-barcode.schemas";
+import type { BarcodeLookupResult, ScanResult } from "./dto/inv-barcode.schemas";
+import { parseGs1 } from "./gs1";
 
 @Injectable()
 export class InvBarcodeService {
@@ -72,6 +73,107 @@ export class InvBarcodeService {
     }
 
     return { type: "not_found" };
+  }
+
+  /**
+   * INV-203 — resolve one raw scan.
+   *
+   * A GS1 payload names several things at once, and the interesting failures
+   * are the ones where each part resolves but they disagree: a batch label
+   * scanned onto the wrong product still finds a real lot, just not that
+   * product's lot. Resolving each element separately and then checking they
+   * describe the same goods is the only way that surfaces.
+   *
+   * The raw payload travels back untouched. A traceability record has to be
+   * able to show what the scanner read, not what we decided it meant.
+   */
+  async scan(orgId: string, payload: string): Promise<ScanResult> {
+    const parsed = parseGs1(payload);
+    const warnings: string[] = [];
+
+    if (!parsed.isGs1) {
+      // Not every scan is GS1, and most are not. Falling through to the plain
+      // lookup keeps a keyboard wedge reading ordinary SKUs and bin labels.
+      return { parsed, lookup: await this.lookup(orgId, parsed.raw), warnings };
+    }
+
+    const variant = parsed.gtin
+      ? ((await this.db.query.invProductVariants.findFirst({
+          where: and(
+            eq(invProductVariants.orgId, orgId),
+            eq(invProductVariants.barcode, parsed.gtin),
+          ),
+          columns: { id: true, productId: true, name: true, sku: true, isActive: true },
+        })) ?? null)
+      : null;
+
+    if (parsed.gtin && !variant) {
+      warnings.push(`No product variant carries GTIN ${parsed.gtin}`);
+    }
+    if (variant && !variant.isActive) {
+      warnings.push(`Variant ${variant.sku} is not active`);
+    }
+
+    const lot = parsed.lotNumber
+      ? ((await this.db.query.invLots.findFirst({
+          where: and(
+            eq(invLots.orgId, orgId),
+            eq(invLots.lotNumber, parsed.lotNumber),
+          ),
+          columns: {
+            id: true,
+            productVariantId: true,
+            lotNumber: true,
+            status: true,
+            expiryDate: true,
+          },
+        })) ?? null)
+      : null;
+
+    if (parsed.lotNumber && !lot) {
+      warnings.push(`Lot ${parsed.lotNumber} is not on record`);
+    }
+    // The disagreement case: both halves exist, and they are not about the same
+    // goods. Reading either in isolation looks entirely successful.
+    if (lot && variant && lot.productVariantId !== variant.id) {
+      warnings.push(
+        `Lot ${lot.lotNumber} belongs to a different variant than GTIN ${parsed.gtin}`,
+      );
+    }
+    if (lot && lot.status !== "ACTIVE") {
+      warnings.push(`Lot ${lot.lotNumber} is ${lot.status}`);
+    }
+    // The label says one expiry and the record says another. Trusting the label
+    // would let a reprint quietly extend shelf life.
+    if (lot?.expiryDate && parsed.expiryDate && lot.expiryDate !== parsed.expiryDate) {
+      warnings.push(
+        `Label expiry ${parsed.expiryDate} does not match recorded expiry ${lot.expiryDate}`,
+      );
+    }
+
+    const serial = parsed.serialNumber
+      ? ((await this.db.query.invSerialNumbers.findFirst({
+          where: and(
+            eq(invSerialNumbers.orgId, orgId),
+            eq(invSerialNumbers.serialNumber, parsed.serialNumber),
+          ),
+          columns: {
+            id: true,
+            productVariantId: true,
+            serialNumber: true,
+            status: true,
+            currentLocationId: true,
+          },
+        })) ?? null)
+      : null;
+
+    if (serial && variant && serial.productVariantId !== variant.id) {
+      warnings.push(
+        `Serial ${serial.serialNumber} belongs to a different variant than GTIN ${parsed.gtin}`,
+      );
+    }
+
+    return { parsed, variant, lot, serial, warnings };
   }
 
   private async productStock(orgId: string, productId: number): Promise<string> {

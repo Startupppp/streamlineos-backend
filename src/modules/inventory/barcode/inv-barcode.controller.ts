@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -8,7 +8,12 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { InvBarcodeService } from "./inv-barcode.service";
-import { barcodeLookupSchema, type BarcodeLookupInput } from "./dto/inv-barcode.schemas";
+import {
+  barcodeLookupSchema,
+  barcodeScanSchema,
+  type BarcodeLookupInput,
+  type BarcodeScanInput,
+} from "./dto/inv-barcode.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/barcode")
@@ -24,5 +29,23 @@ export class InvBarcodeController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.barcodeService.lookup(u.orgId, query.code);
+  }
+
+  /**
+   * INV-203. A POST because the payload carries control characters that have no
+   * business in a query string -- FNC1 is structure the parser needs, and a URL
+   * layer that helpfully strips or re-encodes it turns a multi-element label
+   * into one long lot number.
+   *
+   * Read-only: it resolves and reports, and posts no stock.
+   */
+  @Post("scan")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:read")
+  scan(
+    @Body(new ZodValidationPipe(barcodeScanSchema)) body: BarcodeScanInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.barcodeService.scan(u.orgId, body.payload);
   }
 }
