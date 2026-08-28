@@ -12,6 +12,7 @@ import { EssService } from "./ess.service";
 import { AccountingMappingsService } from "./accounting-mappings.service";
 import { CalendarService } from "./calendar.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { withAccessResolution } from "../../../../test/helpers/access-stub";
 
 const ALL_INSIGHTS_PERMS = new Map([
   ["payroll:reports:view", "all"],
@@ -26,15 +27,17 @@ const ALL_INSIGHTS_PERMS = new Map([
   ["self:payslips", "all"],
 ]);
 
-const permittedAccess = {
+const permittedAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(ALL_INSIGHTS_PERMS),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
-const forbiddenAccess = {
+const forbiddenAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
 const mockSummary = {
   run: { month: "2026-07", status: "DRAFT", employeeCount: 0, grossTotal: "0.00", deductionTotal: "0.00", netTotal: "0.00", employerCostTotal: "0.00", exceptionCount: 0 },
@@ -142,6 +145,7 @@ const mockDrizzle = {
 
 const alwaysOnEntitlements = {
   isModuleEnabled: async (): Promise<boolean> => true,
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
   getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
   getEffectiveModuleMap: async (): Promise<Record<string, boolean>> => ({}),
 };
@@ -354,12 +358,13 @@ describe("payroll-insights RBAC — 200 for permitted caller (e2e)", () => {
 describe("payroll-insights — export requires payroll:reports:export (e2e)", () => {
   let app: INestApplication;
 
-  const exportBlockedAccess = {
+  const exportBlockedAccess = withAccessResolution({
     resolveUserPermissions: jest.fn().mockResolvedValue(new Map([
       ["payroll:reports:view", "all"],
     ])),
     isModuleEnabled: jest.fn().mockResolvedValue(true),
-  };
+    moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+  });
 
   beforeAll(async () => { app = await buildApp(exportBlockedAccess); });
   afterAll(async () => app.close());
@@ -384,12 +389,13 @@ describe("payroll-insights — export requires payroll:reports:export (e2e)", ()
 describe("payroll-insights — FnF requires payroll:fnf:view (e2e)", () => {
   let app: INestApplication;
 
-  const noFnfAccess = {
+  const noFnfAccess = withAccessResolution({
     resolveUserPermissions: jest.fn().mockResolvedValue(new Map([
       ["payroll:reports:view", "all"],
     ])),
     isModuleEnabled: jest.fn().mockResolvedValue(true),
-  };
+    moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+  });
 
   beforeAll(async () => { app = await buildApp(noFnfAccess); });
   afterAll(async () => app.close());

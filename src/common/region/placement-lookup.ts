@@ -9,12 +9,27 @@ import {
   DEFAULT_SEARCH_CLUSTER,
   LEGACY_CELL_ID,
   type OrganizationPlacement,
+  type PlacementStatus,
 } from "./placement";
-import type { OrgRegionLookup } from "./region-registry";
 import type { RegionTopology } from "./region.config";
 
 export const FENCE_LEASE_MS = 24 * 60 * 60 * 1000;
 export const FENCE_RENEW_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+export interface PlacementTransitionInput {
+  readonly orgId: string;
+  readonly from: PlacementStatus;
+  readonly to: PlacementStatus;
+  readonly currentVersion: number;
+}
+
+export interface PlacementTransitionRow {
+  readonly organizationId: string;
+  readonly placementVersion: number;
+  readonly writeFenceToken: string;
+  readonly status: PlacementStatus;
+  readonly leaseExpiresAt: Date;
+}
 
 export interface PlaceOrganizationInput {
   readonly orgId: string;
@@ -73,7 +88,7 @@ function cellOf(topology: RegionTopology, region: string): string | null {
 export function orgPlacementLookup(
   primaryDb: Db,
   topology: RegionTopology,
-): OrgRegionLookup {
+): (orgId: string) => Promise<OrganizationPlacement | null> {
   return async (orgId: string): Promise<OrganizationPlacement | null> =>
     runOutsideTenantContext(async () => {
       const rows = await primaryDb
@@ -101,13 +116,21 @@ export function orgPlacementLookup(
       if (!row) return null;
 
       if (row.legacyRegion !== null && row.legacyRegion !== row.region)
-        logger.error("[region] placement diverges from the legacy region column", {
-          orgId,
-          placementRegion: row.region,
-          legacyRegion: row.legacyRegion,
-        });
+        logger.error(
+          "[region] placement diverges from the legacy region column",
+          {
+            orgId,
+            placementRegion: row.region,
+            legacyRegion: row.legacyRegion,
+          },
+        );
 
-      const leaseExpiresAt = await renewLeaseIfDue(primaryDb, topology, orgId, row);
+      const leaseExpiresAt = await renewLeaseIfDue(
+        primaryDb,
+        topology,
+        orgId,
+        row,
+      );
 
       return {
         organizationId: orgId,
@@ -157,4 +180,54 @@ async function renewLeaseIfDue(
     .returning({ leaseExpiresAt: organizationPlacement.leaseExpiresAt });
 
   return renewed[0]?.leaseExpiresAt ?? row.leaseExpiresAt;
+}
+
+export async function fetchPlacementRow(
+  db: Db,
+  orgId: string,
+): Promise<PlacementTransitionRow | null> {
+  return runOutsideTenantContext(async () => {
+    const rows = await db
+      .select({
+        organizationId: organizationPlacement.organizationId,
+        placementVersion: organizationPlacement.placementVersion,
+        writeFenceToken: organizationPlacement.writeFenceToken,
+        status: organizationPlacement.status,
+        leaseExpiresAt: organizationPlacement.leaseExpiresAt,
+      })
+      .from(organizationPlacement)
+      .where(eq(organizationPlacement.organizationId, orgId))
+      .limit(1);
+    return rows[0] ?? null;
+  });
+}
+
+export async function transitionPlacementStatus(
+  db: Db,
+  input: PlacementTransitionInput,
+): Promise<PlacementTransitionRow | null> {
+  return runOutsideTenantContext(async () => {
+    const rows = await db
+      .update(organizationPlacement)
+      .set({
+        status: input.to,
+        placementVersion: input.currentVersion + 1,
+        writeFenceToken: newWriteFenceToken(),
+      })
+      .where(
+        and(
+          eq(organizationPlacement.organizationId, input.orgId),
+          eq(organizationPlacement.status, input.from),
+          eq(organizationPlacement.placementVersion, input.currentVersion),
+        ),
+      )
+      .returning({
+        organizationId: organizationPlacement.organizationId,
+        placementVersion: organizationPlacement.placementVersion,
+        writeFenceToken: organizationPlacement.writeFenceToken,
+        status: organizationPlacement.status,
+        leaseExpiresAt: organizationPlacement.leaseExpiresAt,
+      });
+    return rows[0] ?? null;
+  });
 }

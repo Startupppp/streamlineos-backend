@@ -37,18 +37,16 @@ export class BackgroundVerificationService {
       rows.map((row) => row.user?.id).filter((id): id is string => Boolean(id)),
     );
 
-    return rows.map((row) => {
-      if (!row.user) return { ...row, user: row.user };
-      const fact = facts.get(row.user.id);
-      return {
-        ...row,
-        user: {
-          ...row.user,
-          designation: fact?.designation ?? null,
-          employeeId: fact?.employeeNumber ?? null,
-        },
-      };
-    });
+    return rows.map((row) => ({
+      ...row,
+      user: row.user
+        ? {
+            ...row.user,
+            designation: facts.get(row.user.id)?.designation ?? null,
+            employeeId: facts.get(row.user.id)?.employeeNumber ?? null,
+          }
+        : row.user,
+    }));
   }
 
   async create(orgId: string, body: CreateBgvInput) {

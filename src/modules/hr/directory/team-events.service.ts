@@ -37,16 +37,15 @@ export class TeamEventsService {
       rows.map((row) => row.organizer?.id).filter((id): id is string => Boolean(id)),
     );
 
-    return rows.map((row) => {
-      if (!row.organizer) return row;
-      return {
-        ...row,
-        organizer: {
-          ...row.organizer,
-          designation: facts.get(row.organizer.id)?.designation ?? null,
-        },
-      };
-    });
+    return rows.map((row) => ({
+      ...row,
+      organizer: row.organizer
+        ? {
+            ...row.organizer,
+            designation: facts.get(row.organizer.id)?.designation ?? null,
+          }
+        : row.organizer,
+    }));
   }
 
   async create(orgId: string, userId: string, body: CreateTeamEventInput) {

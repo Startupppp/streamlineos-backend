@@ -7,6 +7,7 @@ import { createE2eApp } from "test/helpers/e2e-app";
 import { AccessService } from "../../access/access.service";
 import { EntitlementsService } from "../../access/entitlements.service";
 import { JournalOutboxService } from "./journal-outbox.service";
+import { withAccessResolution } from "../../../../test/helpers/access-stub";
 
 const mockBatch = {
   id: 1,
@@ -46,14 +47,17 @@ const mockOutbox = {
 
 const alwaysOnEntitlements = {
   isModuleEnabled: async (): Promise<boolean> => true,
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
   getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
   getEffectiveModuleMap: async (): Promise<Record<string, boolean>> => ({}),
 };
 
-const access = (perms: [string, string][]) => ({
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Map(perms)),
-  isModuleEnabled: jest.fn().mockResolvedValue(true),
-});
+const access = (perms: [string, string][]) =>
+  withAccessResolution({
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Map(perms)),
+    isModuleEnabled: jest.fn().mockResolvedValue(true),
+    moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+  });
 
 const fullAccess = access([
   ["payroll:accounting:view", "all"],

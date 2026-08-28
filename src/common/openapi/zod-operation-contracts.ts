@@ -2,7 +2,7 @@ import { PATH_METADATA, ROUTE_ARGS_METADATA } from "@nestjs/common/constants";
 import { RouteParamtypes } from "@nestjs/common/enums/route-paramtypes.enum";
 import type { INestApplication } from "@nestjs/common";
 import { DiscoveryService, MetadataScanner } from "@nestjs/core";
-import { z, type ZodType } from "zod";
+import { z, ZodType } from "zod";
 import {
   VALIDATION_SCHEMAS,
   type ValidationSchemas,
@@ -25,18 +25,28 @@ export interface ContractScanResult {
   unconvertible: string[];
 }
 
-function toJsonSchema(schema: ZodType): JsonSchema | undefined {
+export function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) out[key] = entry;
+  return out;
+}
+
+type JsonSchemaResult = { ok: true; schema: JsonSchema } | { ok: false; reason: string };
+
+function toJsonSchema(schema: ZodType): JsonSchemaResult {
   try {
     const converted: unknown = z.toJSONSchema(schema, {
       io: "input",
       unrepresentable: "any",
       target: "draft-7",
     });
-    if (typeof converted !== "object" || converted === null) return undefined;
-    const { $schema: _ignored, ...rest } = converted as JsonSchema;
-    return rest;
-  } catch {
-    return undefined;
+    const record = asRecord(converted);
+    if (!record) return { ok: false, reason: "z.toJSONSchema returned a non-object" };
+    const { $schema: _ignored, ...rest } = record;
+    return { ok: true, schema: rest };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -56,8 +66,8 @@ function schemaFromPipes(pipes: unknown): ZodType | undefined {
   if (!Array.isArray(pipes)) return undefined;
   for (const pipe of pipes) {
     if (pipe instanceof ZodValidationPipe) {
-      const schema: unknown = Reflect.get(pipe, "schema");
-      if (schema !== undefined && schema !== null) return schema as ZodType;
+      const raw: unknown = Reflect.get(pipe, "schema");
+      if (raw instanceof ZodType) return raw;
     }
   }
   return undefined;
@@ -122,11 +132,11 @@ export function scanOperationContracts(
       for (const part of ["body", "query", "params"] as const) {
         const zodSchema = schemas[part];
         if (!zodSchema) continue;
-        const json = toJsonSchema(zodSchema);
-        if (json) {
-          contract[part] = json;
+        const result = toJsonSchema(zodSchema);
+        if (result.ok) {
+          contract[part] = result.schema;
           converted += 1;
-        } else unconvertible.push(`${operationId}.${part}`);
+        } else unconvertible.push(`${operationId}.${part}: ${result.reason}`);
       }
 
       const command: unknown = Reflect.getMetadata(

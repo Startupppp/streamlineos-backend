@@ -48146,6 +48146,54 @@
         "description": "Exposure: public — unauthenticated"
       }
     },
+    "/cron/invitation-expiry-sweep": {
+      "get": {
+        "operationId": "CronInvitationExpiryController_getInvitationExpirySweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "CronInvitationExpiry"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated"
+      },
+      "post": {
+        "operationId": "CronInvitationExpiryController_postInvitationExpirySweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "CronInvitationExpiry"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated"
+      }
+    },
     "/cron/kb-chunk-retention-sweep": {
       "get": {
         "operationId": "CronSupportController_getKbChunkRetentionSweep",

@@ -71,10 +71,11 @@ jobs:
         run: pnpm check:navigation-permissions
 
       - name: OpenAPI contract is current
-        run: pnpm openapi:check
+        run: pnpm openapi:check:self-test && pnpm openapi:check
         env:
           NODE_ENV: test
           DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          REGION_PRIMARY_APP_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
           BACKEND_JWT_SECRET: ci-openapi-generation-secret-not-used-for-signing
           PORTAL_JWT_SECRET: ci-openapi-generation-portal-secret-not-used-here
           ENCRYPTION_KEY: ci-openapi-generation-encryption-key-unused
@@ -82,10 +83,10 @@ jobs:
           APP_URL: http://localhost:1000
 
       - name: Retryable commands are fenced
-        run: pnpm check:idempotent-commands
+        run: pnpm check:idempotent-commands:self-test && pnpm check:idempotent-commands
 
       - name: Module manifest agrees with enablement and entitlement
-        run: pnpm check:module-entitlement
+        run: pnpm check:module-entitlement:self-test && pnpm check:module-entitlement
 
       - name: Module lifecycle gates are wired
         run: pnpm check:module-lifecycle:self-test

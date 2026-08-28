@@ -201,16 +201,12 @@ export class LeavesService {
       rows.map((row) => row.user?.id).filter((id): id is string => Boolean(id)),
     );
 
-    return rows.map((row) => {
-      if (!row.user) return row;
-      return {
-        ...row,
-        user: {
-          ...row.user,
-          designation: facts.get(row.user.id)?.designation ?? null,
-        },
-      };
-    });
+    return rows.map((row) => ({
+      ...row,
+      user: row.user
+        ? { ...row.user, designation: facts.get(row.user.id)?.designation ?? null }
+        : row.user,
+    }));
   }
 
   async analytics(u: CurrentUserContext, year: number) {

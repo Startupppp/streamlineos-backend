@@ -10,6 +10,7 @@ import { PayoutBatchesService } from "./payout-batches.service";
 import { PayslipTemplatesService } from "./payslip-templates.service";
 import { PublishingService } from "./publishing.service";
 import { PayrollCommandReceiptsService } from "../command-receipts.service";
+import { withAccessResolution } from "../../../../test/helpers/access-stub";
 
 const ALL_PAYOUT_PERMS = new Map([
   ["payroll:runs:view", "all"],
@@ -22,23 +23,26 @@ const ALL_PAYOUT_PERMS = new Map([
   ["payroll:payslips:manage", "all"],
 ]);
 
-const permittedAccess = {
+const permittedAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(ALL_PAYOUT_PERMS),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
-const forbiddenAccess = {
+const forbiddenAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
-const approveOnlyAccess = {
+const approveOnlyAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(new Map([
     ["payroll:runs:view", "all"],
     ["payroll:runs:approve", "all"],
   ])),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
 const mockApproval = { id: 1, runId: 1, stage: 1, status: "PENDING" };
 const mockBatch = { id: 1, runId: 1, format: "NEFT_CSV", status: "DRAFT", totalAmount: "0.00" };
@@ -94,6 +98,7 @@ const mockCommandReceiptsService = {
 
 const alwaysOnEntitlements = {
   isModuleEnabled: async (): Promise<boolean> => true,
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
   getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
   getEffectiveModuleMap: async (): Promise<Record<string, boolean>> => ({}),
 };

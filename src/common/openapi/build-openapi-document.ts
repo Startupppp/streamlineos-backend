@@ -7,6 +7,7 @@ import {
   CONTRACT_SCHEMAS,
 } from "./contract-components";
 import {
+  asRecord,
   scanOperationContracts,
   type JsonSchema,
   type OperationContract,
@@ -58,8 +59,8 @@ function propertiesOf(schema: JsonSchema): Record<string, JsonSchema> {
   if (typeof properties !== "object" || properties === null) return {};
   const out: Record<string, JsonSchema> = {};
   for (const [name, value] of Object.entries(properties)) {
-    if (typeof value === "object" && value !== null)
-      out[name] = value as JsonSchema;
+    const record = asRecord(value);
+    if (record !== undefined) out[name] = record;
   }
   return out;
 }

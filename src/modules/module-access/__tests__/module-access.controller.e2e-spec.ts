@@ -463,6 +463,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post("/module-access/hr/ownership/transfer")
         .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", "it-hr-transfer-initiate")
         .send({ toUserId: "u-recipient" });
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ success: true });
@@ -475,7 +476,8 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .delete("/module-access/hr/ownership/transfer")
-        .set("Authorization", `Bearer ${token}`);
+        .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", "it-hr-transfer-cancel");
       expect(res.status).toBe(404);
     });
   });
@@ -506,6 +508,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post("/module-access/hr/ownership/transfer")
         .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", "it-hr-transfer-missing-user")
         .send({});
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
@@ -796,12 +799,13 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
           new ForbiddenException("Only the module owner may initiate a transfer"),
         );
         const token = await signToken({
-          sub: "modadmin_1",
+          sub: `modadmin_${moduleKey}`,
           permissions: [`${moduleKey}:access:manage`],
         });
         const res = await request(app.getHttpServer())
           .post(`/module-access/${moduleKey}/ownership/transfer`)
           .set("Authorization", `Bearer ${token}`)
+          .set("Idempotency-Key", `it-${moduleKey}-transfer-initiate`)
           .send({ toUserId: "u-new-owner" });
         expect(res.status).toBe(403);
         expect(res.body).toMatchObject({ code: "FORBIDDEN" });

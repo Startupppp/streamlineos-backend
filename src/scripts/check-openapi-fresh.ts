@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { existsSync, readFileSync } from "node:fs";
+import { asRecord } from "../common/openapi/zod-operation-contracts";
 import { OPENAPI_ARTIFACT_PATH, generateOpenApiJson } from "./generate-openapi";
 
 interface Difference {
@@ -51,23 +52,60 @@ function selfTest(): void {
   };
   const committed = JSON.stringify(base);
 
-  const renamedField = JSON.parse(committed) as typeof base;
-  renamedField.paths["/timesheets/entries"].post = {
-    operationId: "TimesheetsController_createEntry",
-  };
+  const parsed1 = asRecord(JSON.parse(committed));
+  if (!parsed1) {
+    process.stderr.write("self-test: committed is not a JSON object\n");
+    process.exit(1);
+  }
+  const paths1 = asRecord(parsed1["paths"]);
+  if (!paths1) {
+    process.stderr.write("self-test: committed.paths is not an object\n");
+    process.exit(1);
+  }
+  const entry1 = asRecord(paths1["/timesheets/entries"]);
+  if (!entry1) {
+    process.stderr.write("self-test: committed path entry is not an object\n");
+    process.exit(1);
+  }
+  entry1["post"] = { operationId: "TimesheetsController_createEntry" };
+  paths1["/timesheets/entries"] = entry1;
+  parsed1["paths"] = paths1;
+  const renamedField = JSON.stringify(parsed1);
 
-  const removedRoute = JSON.parse(committed) as { paths: Record<string, unknown> };
-  delete removedRoute.paths["/timesheets/entries"];
+  const parsed2 = asRecord(JSON.parse(committed));
+  if (!parsed2) {
+    process.stderr.write("self-test: committed is not a JSON object\n");
+    process.exit(1);
+  }
+  const paths2 = asRecord(parsed2["paths"]);
+  if (!paths2) {
+    process.stderr.write("self-test: committed.paths is not an object\n");
+    process.exit(1);
+  }
+  delete paths2["/timesheets/entries"];
+  parsed2["paths"] = paths2;
+  const removedRoute = JSON.stringify(parsed2);
 
-  const addedRoute = JSON.parse(committed) as { paths: Record<string, unknown> };
-  addedRoute.paths["/timesheets/entries/:entryId/submit"] = {
+  const parsed3 = asRecord(JSON.parse(committed));
+  if (!parsed3) {
+    process.stderr.write("self-test: committed is not a JSON object\n");
+    process.exit(1);
+  }
+  const paths3 = asRecord(parsed3["paths"]);
+  if (!paths3) {
+    process.stderr.write("self-test: committed.paths is not an object\n");
+    process.exit(1);
+  }
+  paths3["/timesheets/entries/:entryId/submit"] = {
     post: { operationId: "TimesheetsController_submit" },
   };
+  parsed3["paths"] = paths3;
+  const addedRoute = JSON.stringify(parsed3);
 
   const cases: Array<[string, string, Difference["kind"]]> = [
-    ["a changed operation", JSON.stringify(renamedField), "changed"],
-    ["a removed route", JSON.stringify(removedRoute), "removed"],
-    ["an added route", JSON.stringify(addedRoute), "added"],
+    ["a changed operation", renamedField, "changed"],
+    ["a removed route", removedRoute, "removed"],
+    ["an added route", addedRoute, "added"],
   ];
 
   const failures: string[] = [];

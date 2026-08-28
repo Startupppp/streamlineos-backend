@@ -14,6 +14,7 @@ import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 import { AccountOrganizationIndexService } from "./account-organization-index.service";
 import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
 import { OrganizationLegalHoldService } from "./lifecycle/organization-legal-hold.service";
+import { OrganizationPlacementAdminService } from "./lifecycle/organization-placement-admin.service";
 import { RealtimeModule } from "../../realtime/realtime.module";
 
 @Module({
@@ -31,6 +32,7 @@ import { RealtimeModule } from "../../realtime/realtime.module";
     AccountOrganizationIndexService,
     OrganizationSagaService,
     OrganizationLegalHoldService,
+    OrganizationPlacementAdminService,
   ],
   exports: [
     InvitationsService,
