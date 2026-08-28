@@ -10,7 +10,8 @@ export const UNIT_COSTS = [
       JOIN subscriptions s ON s.org_id = o.id
       WHERE s.status = 'ACTIVE'`,
     requiresOwnerRole: true,
-    costNote: "Quantity from DB. Dollar cost per org = total cell monthly spend / active org count; provide the cell's Neon invoice.",
+    vendorCostSource: "neon",
+    costNote: "Quantity from DB. Dollar cost per org = total cell monthly Neon spend / active org count. Set NEON_API_KEY + NEON_PROJECT_ID + NEON_COMPUTE_RATE_USD_PER_HOUR + NEON_STORAGE_RATE_USD_PER_GIB_MONTH to derive from real consumption.",
   },
   {
     id: "per-active-user",
@@ -22,21 +23,23 @@ export const UNIT_COSTS = [
       FROM users
       WHERE deleted_at IS NULL`,
     requiresOwnerRole: true,
-    costNote: "Quantity from DB. Dollar cost per user = total cell monthly spend / active user count; provide the cell's Neon invoice.",
+    vendorCostSource: "neon",
+    costNote: "Quantity from DB. Dollar cost per user = total cell monthly Neon spend / active user count. Set NEON_API_KEY + NEON_PROJECT_ID + rate env vars to derive from real consumption.",
   },
   {
     id: "per-1k-requests",
     label: "per 1,000 requests",
     denominatorPer: 1_000,
     source: "unmeasured",
-    requiredInput: "HTTP request count for this cell — collected from application request logs or an APM tool, not stored in the database.",
+    requiredInput: "HTTP request count for this cell. Primary source: .load-driver-results.json written by the load driver (Lane B) with field requestCount:number and durationMs:number. Fallback: application request logs or an APM tool.",
   },
   {
     id: "per-1k-realtime-minutes",
     label: "per 1,000 realtime minutes",
     denominatorPer: 1_000,
     source: "unmeasured",
-    requiredInput: "Channel-minutes from the Ably dashboard or billing API for this cell's Ably app — not stored in the database.",
+    vendorCostSource: "ably",
+    requiredInput: "Channel-minutes for this cell's Ably app. Set ABLY_API_KEY to fetch from the Ably REST stats API (GET /stats?unit=month). Quantity is channelMean * intervalMinutes or channelPeak * intervalMinutes.",
   },
   {
     id: "per-gb-stored",
@@ -45,7 +48,8 @@ export const UNIT_COSTS = [
     source: "measured",
     countSql: `SELECT round(pg_database_size(current_database())::numeric / 1073741824, 4) AS quantity`,
     requiresOwnerRole: false,
-    costNote: "Storage volume measured from pg_database_size(). Dollar cost per GB requires the Neon invoice (GB-month rate for this plan).",
+    vendorCostSource: "neon",
+    costNote: "DB storage from pg_database_size(). Set NEON_API_KEY + NEON_PROJECT_ID + NEON_STORAGE_RATE_USD_PER_GIB_MONTH to derive dollar cost from real consumption. R2 file storage: set CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID.",
   },
   {
     id: "per-million-chunks",
@@ -54,7 +58,8 @@ export const UNIT_COSTS = [
     source: "measured",
     countSql: `SELECT count(*)::bigint AS quantity FROM kb_article_chunks`,
     requiresOwnerRole: true,
-    costNote: "Chunk count from kb_article_chunks. Dollar cost per chunk requires embedding + HNSW storage spend (not in DB).",
+    vendorCostSource: "neon-and-r2",
+    costNote: "Chunk count from kb_article_chunks. Dollar cost requires Neon storage rate (vector HNSW index) + R2 storage rate (source files). Set NEON_API_KEY + NEON_PROJECT_ID + CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID.",
   },
   {
     id: "per-million-events",
@@ -63,7 +68,8 @@ export const UNIT_COSTS = [
     source: "measured",
     countSql: `SELECT count(*)::bigint AS quantity FROM outbox_events`,
     requiresOwnerRole: true,
-    costNote: "Event count from outbox_events (all tenants). Dollar cost per event requires the cell's infrastructure spend.",
+    vendorCostSource: "neon",
+    costNote: "Event count from outbox_events (all tenants). Dollar cost requires Neon compute + storage spend. Set NEON_API_KEY + NEON_PROJECT_ID + rate env vars.",
   },
   {
     id: "per-notification",
@@ -72,7 +78,8 @@ export const UNIT_COSTS = [
     source: "measured",
     countSql: `SELECT count(*)::bigint AS quantity FROM notifications WHERE deleted_at IS NULL`,
     requiresOwnerRole: true,
-    costNote: "Notification count from DB. Dollar cost per notification requires email delivery spend (e.g. Resend or SES invoice).",
+    vendorCostSource: "resend",
+    costNote: "Notification count from DB. Dollar cost requires RESEND_API_KEY (key presence confirms vendor; Resend has no billing cost API — apply the per-email rate from your Resend invoice to the DB count).",
   },
   {
     id: "per-ai-token",

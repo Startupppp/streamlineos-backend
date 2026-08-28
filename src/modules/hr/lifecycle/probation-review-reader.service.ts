@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gt, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, lte, or, sql, type SQL } from "drizzle-orm";
+import { livePerson, liveEmployment, livePersonOfEmployment } from "../../directory/employment-query";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
@@ -55,13 +56,7 @@ export class ProbationReviewReaderService {
         effectiveEndDate,
       })
       .from(hrProbationReviews)
-      .innerJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.orgId, hrProbationReviews.orgId),
-          eq(hrPeople.id, hrProbationReviews.personId),
-        ),
-      )
+      .innerJoin(hrPeople, and(livePerson(orgId), eq(hrPeople.id, hrProbationReviews.personId)))
       .innerJoin(
         organizationPeople,
         and(
@@ -72,7 +67,6 @@ export class ProbationReviewReaderService {
       .where(
         and(
           eq(hrProbationReviews.orgId, orgId),
-          isNull(hrPeople.deletedAt),
           or(
             eq(hrProbationReviews.status, "review_due"),
             and(
@@ -168,22 +162,8 @@ export class ProbationReviewReaderService {
         ),
       })
       .from(hrProbationReviews)
-      .innerJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.id, hrProbationReviews.employmentId),
-          eq(hrEmployments.orgId, hrProbationReviews.orgId),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
-      .innerJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.id, hrEmployments.personId),
-          eq(hrPeople.orgId, hrProbationReviews.orgId),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
+      .innerJoin(hrEmployments, and(liveEmployment(orgId), eq(hrEmployments.id, hrProbationReviews.employmentId)))
+      .innerJoin(hrPeople, livePersonOfEmployment(orgId))
       .where(and(eq(hrProbationReviews.orgId, orgId), eq(hrPeople.userId, userId)));
 
     if (!row || row.reviewCount === 0) return "no-record";

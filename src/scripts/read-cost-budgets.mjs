@@ -303,16 +303,26 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM hr_employments WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT m.user_id, e.employee_number, e.designation, e.joining_date,
-             e.department_id, e.location_id
-      FROM organization_members m
+      SELECT u.id, e.employee_number, e.designation, e.joining_date,
+             e.department_id, e.location_id, mp.user_id AS manager_user_id
+      FROM users u
       LEFT JOIN hr_people p
-        ON p.org_id = $1 AND p.user_id = m.user_id AND p.deleted_at IS NULL
+        ON p.org_id = $1 AND p.user_id = u.id AND p.deleted_at IS NULL
       LEFT JOIN hr_employments e
         ON e.org_id = $1 AND e.person_id = p.id AND e.is_primary = true AND e.deleted_at IS NULL
-      WHERE m.org_id = $1 AND m.status = 'ACTIVE'
-      ORDER BY m.joined_at DESC
-      LIMIT 100`,
+      LEFT JOIN hr_reporting_lines rl
+        ON rl.org_id = $1 AND rl.line_type = 'primary'
+       AND rl.effective_from <= CURRENT_DATE AND rl.effective_to >= CURRENT_DATE
+       AND rl.employment_id = e.id
+      LEFT JOIN hr_employments me
+        ON me.org_id = $1 AND me.id = rl.manager_employment_id AND me.deleted_at IS NULL
+      LEFT JOIN hr_people mp
+        ON mp.org_id = $1 AND mp.id = me.person_id AND mp.deleted_at IS NULL
+      WHERE u.id IN (
+        SELECT m.user_id FROM organization_members m
+        WHERE m.org_id = $1 AND m.status = 'ACTIVE'
+        ORDER BY m.joined_at DESC LIMIT 100)
+      ORDER BY e.id`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "hr_employments" },
       { kind: "forbid-seq-scan", relation: "hr_people" },
@@ -322,7 +332,7 @@ export const BUDGETS = [
     id: "employee-reporting-line-lookup",
     ceiling: 5_000,
     minRows: 1_000,
-    rowCountSql: `SELECT count(*)::int FROM hr_employments WHERE org_id = $1 AND deleted_at IS NULL`,
+    rowCountSql: `SELECT count(*)::int FROM hr_reporting_lines WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
       SELECT rl.employment_id, rl.manager_employment_id, rl.effective_from

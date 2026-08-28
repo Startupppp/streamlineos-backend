@@ -15,6 +15,7 @@ import {
 } from "../../../db/schema";
 import type { PolicyType } from "./hr-policy-types";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 
 const SCOPE_SPECIFICITY: Record<string, number> = {
   employee: 100,
@@ -167,8 +168,8 @@ export class HrPolicyEvaluationService {
         })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(
           and(
             eq(organizationMembers.orgId, orgId),

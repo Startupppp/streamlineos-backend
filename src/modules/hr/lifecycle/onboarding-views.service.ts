@@ -1,5 +1,6 @@
 import { ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { SQL, aliasedTable, and, count, desc, eq, ilike, isNull, ne, or, sql } from "drizzle-orm";
+import { SQL, aliasedTable, and, count, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
   documentAuditLogs,
   documentTypes,
@@ -129,8 +130,8 @@ export class OnboardingViewsService {
           organizationMembers,
           and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
         )
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .leftJoin(documentStats, eq(documentStats.userId, users.id))
         .innerJoin(mandatoryTotals, sql`true`)
         .where(and(...conditions))
@@ -144,8 +145,8 @@ export class OnboardingViewsService {
           organizationMembers,
           and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
         )
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .leftJoin(documentStats, eq(documentStats.userId, users.id))
         .innerJoin(mandatoryTotals, sql`true`)
         .where(and(...conditions)),

@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import {
   hrEmployments,
   hrPeople,
@@ -9,6 +9,7 @@ import {
   organizationMembers,
 } from "../../../db/schema";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { formatDdMmmYyyy, formatDdMmmYyyyTime, subMonths } from "../../../common/date";
@@ -373,8 +374,8 @@ export class ExitService {
       })
       .from(resignations)
       .innerJoin(users, eq(resignations.userId, users.id))
-      .innerJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-      .innerJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+      .innerJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .where(and(eq(resignations.orgId, orgId), isNotNull(hrEmployments.joiningDate)));
 
     const statusCounts = await this.db

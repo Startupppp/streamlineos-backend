@@ -11,10 +11,14 @@ import {
   identifyLimitingResource,
   checkAdmission,
   forecastSaturation,
+  filterWellSpacedSamples,
+  MIN_SAMPLE_SPACING_MS,
 } from "./cell-capacity-budgets.mjs";
+import { readLoadDriverResults, isDuringBulkLoad } from "./cell-cost/load-driver-reader.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HISTORY_PATH = resolve(__dirname, "../../../../.cell-capacity-history.json");
+const LOAD_DRIVER_PATH = resolve(__dirname, "../../.load-driver-results.json");
 const CELL_ID = process.env.CELL_ID ?? "legacy-1";
 
 function loadHistory() {
@@ -95,6 +99,7 @@ async function main() {
 
   const SELF_TEST = process.argv.includes("--self-test");
   const JSON_OUT = process.argv.includes("--json");
+  const RECORD_ONLY = process.argv.includes("--record-only");
 
   const validationErrors = validateCapacityBudgets(CAPACITY_BUDGETS);
   if (validationErrors.length > 0) {
@@ -221,13 +226,30 @@ async function main() {
       `Admission threshold: ${(ADMISSION_THRESHOLD * 100).toFixed(0)}% — cell is ${admitted ? "OPEN" : "CLOSED (threshold exceeded)"}\n`,
     );
 
+    const loadDriver = readLoadDriverResults(LOAD_DRIVER_PATH);
+    const duringLoad = loadDriver?.status === "ok" && isDuringBulkLoad(loadDriver.modifiedAt);
+    if (duringLoad) process.stdout.write("\nWARNING: load driver results file was modified within the last hour; this sample reflects bulk-load conditions. It will be recorded but flagged entries cannot be used for growth-rate trend fitting.\n");
+
     const history = loadHistory();
     const resourceSnapshot = {};
     for (const m of measurements)
       resourceSnapshot[m.id] = { used: m.used, limit: m.limit };
 
-    history.entries.push({ ts: nowTs, cellId: CELL_ID, resources: resourceSnapshot });
+    history.entries.push({ ts: nowTs, cellId: CELL_ID, resources: resourceSnapshot, duringBulkLoad: duringLoad || undefined });
     saveHistory(history);
+
+    const spacingDays = Math.round(MIN_SAMPLE_SPACING_MS / 86_400_000);
+    const wellSpaced = filterWellSpacedSamples(history.entries);
+    const last = wellSpaced.length > 0 ? wellSpaced[wellSpaced.length - 1] : null;
+    const nextAfter = last ? new Date(last.ts + MIN_SAMPLE_SPACING_MS).toISOString().replace("T", " ").slice(0, 19) + " UTC" : "now";
+
+    process.stdout.write(`\nSampling status: ${wellSpaced.length} well-spaced sample(s) (≥${spacingDays}d apart) of ${history.entries.length} total; need 3 to fit saturation trend.\n`);
+    if (wellSpaced.length < 3) process.stdout.write(`  Next sample must be after ${nextAfter}. Use --record-only on a daily schedule.\n`);
+
+    if (RECORD_ONLY) {
+      process.stdout.write("Sample recorded (--record-only). Re-run without --record-only after accumulating 3 well-spaced samples.\n");
+      return;
+    }
 
     const recorder = ownerDb ?? appDb;
     const perOrgCost = await measurePerOrgCost(recorder, limiting);

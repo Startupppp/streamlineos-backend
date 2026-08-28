@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
+import { writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { UNIT_COSTS, canContributeQuantity, detectAnomalousTenants } from "../cell-unit-costs.mjs";
+import { readLoadDriverResults, EXPECTED_FIELDS } from "../cell-cost/load-driver-reader.mjs";
 
 function test(name, fn) {
   try {
@@ -108,6 +112,71 @@ test("detectAnomalousTenants respects the stdDevThreshold parameter", () => {
   const lenient = detectAnomalousTenants(sample, 10.0);
   const strict = detectAnomalousTenants(sample, 0.5);
   assert.ok(lenient.anomalous.length < strict.anomalous.length, "Lenient threshold should flag fewer entries");
+});
+
+test("vendored units declare vendorCostSource", () => {
+  const vendored = UNIT_COSTS.filter((u) => u.vendorCostSource);
+  assert.ok(vendored.length >= 5, `Expected at least 5 units with vendorCostSource, got ${vendored.length}`);
+  const ids = vendored.map((u) => u.id);
+  assert.ok(ids.includes("per-active-org"), "per-active-org must declare vendorCostSource");
+  assert.ok(ids.includes("per-notification"), "per-notification must declare vendorCostSource");
+  assert.ok(ids.includes("per-1k-realtime-minutes"), "per-1k-realtime-minutes must declare vendorCostSource");
+});
+
+test("per-1k-requests requiredInput mentions .load-driver-results.json", () => {
+  const unit = UNIT_COSTS.find((u) => u.id === "per-1k-requests");
+  assert.ok(unit, "per-1k-requests unit not found");
+  assert.ok(unit.requiredInput.includes(".load-driver-results.json"), `requiredInput must mention the load driver file`);
+});
+
+test("EXPECTED_FIELDS names requestCount, durationMs, and realtimeConnectionMinutes", () => {
+  assert.ok("requestCount" in EXPECTED_FIELDS, "requestCount must be in EXPECTED_FIELDS");
+  assert.ok("durationMs" in EXPECTED_FIELDS, "durationMs must be in EXPECTED_FIELDS");
+  assert.ok("realtimeConnectionMinutes" in EXPECTED_FIELDS, "realtimeConnectionMinutes must be in EXPECTED_FIELDS");
+});
+
+test("readLoadDriverResults returns null when file does not exist", () => {
+  const result = readLoadDriverResults("/tmp/definitely-does-not-exist-xyzzy.json");
+  assert.equal(result, null);
+});
+
+test("readLoadDriverResults returns ok with correct fields when file is valid", () => {
+  const path = join(tmpdir(), `test-load-driver-${Date.now()}.json`);
+  try {
+    writeFileSync(path, JSON.stringify({ requestCount: 5000, durationMs: 60000, realtimeConnectionMinutes: 12 }));
+    const result = readLoadDriverResults(path);
+    assert.equal(result.status, "ok");
+    assert.equal(result.requestCount, 5000);
+    assert.equal(result.durationMs, 60000);
+    assert.equal(result.realtimeConnectionMinutes, 12);
+    assert.deepEqual(result.missingFields, []);
+  } finally {
+    rmSync(path, { force: true });
+  }
+});
+
+test("readLoadDriverResults reports missingFields when requestCount is absent", () => {
+  const path = join(tmpdir(), `test-load-driver-missing-${Date.now()}.json`);
+  try {
+    writeFileSync(path, JSON.stringify({ durationMs: 60000 }));
+    const result = readLoadDriverResults(path);
+    assert.equal(result.status, "ok");
+    assert.equal(result.requestCount, null);
+    assert.ok(result.missingFields.includes("requestCount"), "missingFields must include requestCount");
+  } finally {
+    rmSync(path, { force: true });
+  }
+});
+
+test("readLoadDriverResults returns parse-error for malformed JSON", () => {
+  const path = join(tmpdir(), `test-load-driver-bad-${Date.now()}.json`);
+  try {
+    writeFileSync(path, "{ not valid json");
+    const result = readLoadDriverResults(path);
+    assert.equal(result.status, "parse-error");
+  } finally {
+    rmSync(path, { force: true });
+  }
 });
 
 if (process.exitCode !== 1)

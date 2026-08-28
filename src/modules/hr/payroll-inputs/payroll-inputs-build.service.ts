@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { primaryEmploymentOfPerson, livePersonOfEmployment } from "../../directory/employment-query";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -139,14 +140,13 @@ export class PayrollInputsBuildService {
           confirmationDate: hrEmployments.confirmationDate,
           lastWorkingDay: hrEmployments.lastWorkingDay,
           exitDate: hrEmployments.exitDate,
-          isPrimary: hrEmployments.isPrimary,
           resolvedUserId: hrPeople.userId,
         })
         .from(hrEmployments)
-        .innerJoin(hrPeople, eq(hrPeople.id, hrEmployments.personId))
+        .innerJoin(hrPeople, livePersonOfEmployment(orgId))
         .where(
           and(
-            eq(hrEmployments.orgId, orgId),
+            primaryEmploymentOfPerson(orgId),
             inArray(hrPeople.userId, userIds),
           ),
         )
@@ -211,9 +211,7 @@ export class PayrollInputsBuildService {
     const employmentByUser = new Map<string, EmploymentRow>();
     for (const row of employmentRows) {
       if (!row.resolvedUserId) continue;
-      if (!employmentByUser.has(row.resolvedUserId) || row.isPrimary) {
-        employmentByUser.set(row.resolvedUserId, row);
-      }
+      employmentByUser.set(row.resolvedUserId, row);
     }
 
     const snapshotValues: (typeof hrPayrollInputSnapshots.$inferInsert)[] = [];

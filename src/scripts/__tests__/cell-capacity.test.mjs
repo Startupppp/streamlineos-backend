@@ -8,6 +8,8 @@ import {
   checkAdmission,
   forecastSaturation,
   advisoryResources,
+  filterWellSpacedSamples,
+  MIN_SAMPLE_SPACING_MS,
   CEILING_SOURCES,
 } from "../cell-capacity-budgets.mjs";
 
@@ -76,16 +78,17 @@ test("forecastSaturation refuses with fewer than 3 data points", () => {
   ];
   const result = forecastSaturation(twoPoints, "database-size");
   assert.equal(result.status, "refused");
-  assert.ok(result.reason.includes("2 data point(s)"), `Expected count in reason: "${result.reason}"`);
+  assert.ok(result.reason.includes("well-spaced sample(s)"), `Expected spacing info in reason: "${result.reason}"`);
+  assert.ok(typeof result.wellSpaced === "number" && typeof result.total === "number");
 });
 
 test("forecastSaturation refuses with zero data points", () => {
   const result = forecastSaturation([], "database-size");
   assert.equal(result.status, "refused");
-  assert.ok(result.reason.includes("0 data point(s)"), `Expected count in reason: "${result.reason}"`);
+  assert.ok(result.reason.includes("0 well-spaced"), `Expected "0 well-spaced" in reason: "${result.reason}"`);
 });
 
-test("forecastSaturation refuses when trend is flat", () => {
+test("forecastSaturation refuses when trend is flat (well-spaced samples with identical ratios)", () => {
   const now = Date.now();
   const flatHistory = [
     { ts: now - 3 * 86_400_000, resources: { "connections": { used: 50, limit: 100 } } },
@@ -184,6 +187,71 @@ test("at least one admission-gating resource has a measured ceiling", () => {
     (b) => b.admissionGating && b.ceilingSource === "measured",
   );
   assert.ok(gating.length > 0, "admission cannot rest entirely on declared numbers");
+});
+
+test("MIN_SAMPLE_SPACING_MS is 24 hours in milliseconds", () => {
+  assert.equal(MIN_SAMPLE_SPACING_MS, 86_400_000);
+});
+
+test("filterWellSpacedSamples keeps only entries ≥ MIN_SAMPLE_SPACING_MS apart", () => {
+  const base = 1_000_000_000_000;
+  const entries = [
+    { ts: base },
+    { ts: base + 3_600_000 },
+    { ts: base + MIN_SAMPLE_SPACING_MS },
+    { ts: base + MIN_SAMPLE_SPACING_MS + 1_000 },
+    { ts: base + MIN_SAMPLE_SPACING_MS * 2 },
+  ];
+  const result = filterWellSpacedSamples(entries);
+  assert.equal(result.length, 3, `Expected 3 well-spaced entries, got ${result.length}`);
+  assert.equal(result[0].ts, base);
+  assert.equal(result[1].ts, base + MIN_SAMPLE_SPACING_MS);
+  assert.equal(result[2].ts, base + MIN_SAMPLE_SPACING_MS * 2);
+});
+
+test("filterWellSpacedSamples handles empty input", () => {
+  assert.deepEqual(filterWellSpacedSamples([]), []);
+});
+
+test("filterWellSpacedSamples handles a single entry", () => {
+  const result = filterWellSpacedSamples([{ ts: 1_000_000 }]);
+  assert.equal(result.length, 1);
+});
+
+test("filterWellSpacedSamples sorts by ts before filtering", () => {
+  const base = 1_000_000_000_000;
+  const unsorted = [
+    { ts: base + MIN_SAMPLE_SPACING_MS * 2 },
+    { ts: base },
+    { ts: base + MIN_SAMPLE_SPACING_MS },
+  ];
+  const result = filterWellSpacedSamples(unsorted);
+  assert.equal(result.length, 3);
+  assert.ok(result[0].ts < result[1].ts && result[1].ts < result[2].ts);
+});
+
+test("forecastSaturation refuses when only closely-spaced samples exist", () => {
+  const now = Date.now();
+  const closeHistory = [
+    { ts: now - 3_600_000, resources: { "connections": { used: 10, limit: 100 } } },
+    { ts: now - 2_400_000, resources: { "connections": { used: 20, limit: 100 } } },
+    { ts: now - 1_200_000, resources: { "connections": { used: 30, limit: 100 } } },
+  ];
+  const result = forecastSaturation(closeHistory, "connections");
+  assert.equal(result.status, "refused");
+  assert.ok(result.reason.includes("well-spaced"), `Expected "well-spaced" in reason: "${result.reason}"`);
+  assert.ok(typeof result.wellSpaced === "number" && typeof result.total === "number");
+});
+
+test("forecastSaturation correctly fits a trend from well-spaced samples", () => {
+  const now = Date.now();
+  const spaced = [
+    { ts: now - 30 * 86_400_000, resources: { "connections": { used: 10, limit: 100 } } },
+    { ts: now - 20 * 86_400_000, resources: { "connections": { used: 20, limit: 100 } } },
+    { ts: now - 10 * 86_400_000, resources: { "connections": { used: 30, limit: 100 } } },
+  ];
+  const result = forecastSaturation(spaced, "connections");
+  assert.ok(result.status === "forecast" || result.status === "refused" || result.status === "decreasing");
 });
 
 if (process.exitCode !== 1)

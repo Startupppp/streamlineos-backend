@@ -14,6 +14,10 @@ import { CacheService } from "../../common/cache/cache.service";
 import { OrgHierarchyCacheService } from "../../common/cache/org-hierarchy-cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../directory/employment-query";
 import type {
   CreateBranchInput,
   UpdateBranchInput,
@@ -140,19 +144,8 @@ export class BranchesService {
           eq(organizationMembers.orgId, orgId),
         ),
       )
-      .leftJoin(
-        hrPeople,
-        and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, users.id), isNull(hrPeople.deletedAt)),
-      )
-      .leftJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.orgId, orgId),
-          eq(hrEmployments.personId, hrPeople.id),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .where(eq(hrEmployments.locationId, branchId));
 
     return {

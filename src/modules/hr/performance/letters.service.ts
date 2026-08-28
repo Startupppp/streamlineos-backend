@@ -11,6 +11,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { RenderLetterInput, SaveLetterInput } from "./dto/documents.schemas";
 import { z } from "zod";
+import { liveEmployment, livePersonOfEmployment } from "../../directory/employment-query";
 
 const letterTemplateContentSchema = z.object({
   bodyHtml: z.string().optional(),
@@ -42,19 +43,11 @@ export class LettersService {
       [employment] = await this.db
         .select({ employmentId: hrEmployments.id })
         .from(hrEmployments)
-        .innerJoin(
-          hrPeople,
-          and(
-            eq(hrEmployments.orgId, hrPeople.orgId),
-            eq(hrEmployments.personId, hrPeople.id),
-          ),
-        )
+        .innerJoin(hrPeople, livePersonOfEmployment(orgId))
         .where(
           and(
-            eq(hrEmployments.orgId, orgId),
+            liveEmployment(orgId),
             eq(hrPeople.userId, target.employeeUserId),
-            isNull(hrEmployments.deletedAt),
-            isNull(hrPeople.deletedAt),
           ),
         )
         .orderBy(desc(hrEmployments.isPrimary), desc(hrEmployments.createdAt))

@@ -1,5 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import {
   hrEmployments,
@@ -15,6 +15,7 @@ import {
 import { membershipStatusToUserStatus } from "../organization/core/org-membership.service";
 import type { ListUsersInput } from "./dto/users.schemas";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../directory/employment-query";
 
 export class OrganizationUsersReader {
   constructor(
@@ -139,8 +140,8 @@ export class OrganizationUsersReader {
         })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .leftJoin(teamsSubquery, eq(teamsSubquery.userId, users.id))
         .where(and(...conditions))
         .orderBy(sortExpr)
@@ -150,8 +151,8 @@ export class OrganizationUsersReader {
         .select({ total: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(and(...conditions)),
     ]);
 

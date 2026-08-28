@@ -37,6 +37,10 @@ import {
   resolveDashboardStatsFlags,
   resolvePersonalDashboardModules,
 } from "./dashboard-scope";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../directory/employment-query";
 
 export interface BirthdayEntry {
   id: string;
@@ -212,19 +216,8 @@ export class DashboardHrService {
         })
         .from(attendance)
         .innerJoin(users, eq(attendance.userId, users.id))
-        .leftJoin(
-          hrPeople,
-          and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, users.id), isNull(hrPeople.deletedAt)),
-        )
-        .leftJoin(
-          hrEmployments,
-          and(
-            eq(hrEmployments.orgId, orgId),
-            eq(hrEmployments.personId, hrPeople.id),
-            eq(hrEmployments.isPrimary, true),
-            isNull(hrEmployments.deletedAt),
-          ),
-        )
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(and(eq(attendance.orgId, orgId), eq(attendance.date, today))),
     ]);
 
@@ -318,19 +311,8 @@ export class DashboardHrService {
           organizationMembers,
           eq(organizationMembers.userId, users.id),
         )
-        .leftJoin(
-          hrPeople,
-          and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, users.id), isNull(hrPeople.deletedAt)),
-        )
-        .leftJoin(
-          hrEmployments,
-          and(
-            eq(hrEmployments.orgId, orgId),
-            eq(hrEmployments.personId, hrPeople.id),
-            eq(hrEmployments.isPrimary, true),
-            isNull(hrEmployments.deletedAt),
-          ),
-        )
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
@@ -354,19 +336,8 @@ export class DashboardHrService {
           organizationMembers,
           eq(organizationMembers.userId, users.id),
         )
-        .leftJoin(
-          hrPeople,
-          and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, users.id), isNull(hrPeople.deletedAt)),
-        )
-        .leftJoin(
-          hrEmployments,
-          and(
-            eq(hrEmployments.orgId, orgId),
-            eq(hrEmployments.personId, hrPeople.id),
-            eq(hrEmployments.isPrimary, true),
-            isNull(hrEmployments.deletedAt),
-          ),
-        )
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(
           and(
             eq(organizationMembers.orgId, orgId),

@@ -23,6 +23,11 @@ import { readBankDetails } from "../../../../common/hr/canonical-bank-details";
 import { resolveCountryRequirements } from "./onboarding-requirements.catalog";
 import type { BankDetailsInput, PersonalDetailsInput } from "./dto/onboarding.schemas";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import {
+  livePersonOfUser,
+  livePersonOfEmployment,
+  primaryEmploymentOfPerson,
+} from "../../../directory/employment-query";
 
 @Injectable()
 export class OnboardingDetailsService {
@@ -119,14 +124,7 @@ export class OnboardingDetailsService {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .leftJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.orgId, organizationMembers.orgId),
-          eq(hrPeople.userId, organizationMembers.userId),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
+      .leftJoin(hrPeople, livePersonOfUser(orgId, organizationMembers.userId))
       .leftJoin(
         organizationPeople,
         and(
@@ -210,22 +208,8 @@ export class OnboardingDetailsService {
       const [employment] = await tx
         .select({ id: hrEmployments.id })
         .from(hrEmployments)
-        .innerJoin(
-          hrPeople,
-          and(
-            eq(hrPeople.id, hrEmployments.personId),
-            eq(hrPeople.orgId, hrEmployments.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(hrEmployments.orgId, orgId),
-            eq(hrEmployments.isPrimary, true),
-            isNull(hrEmployments.deletedAt),
-            eq(hrPeople.userId, userId),
-            isNull(hrPeople.deletedAt),
-          ),
-        )
+        .innerJoin(hrPeople, livePersonOfEmployment(orgId, hrEmployments, hrPeople))
+        .where(and(primaryEmploymentOfPerson(orgId, hrPeople, hrEmployments), eq(hrPeople.userId, userId)))
         .limit(1);
 
       if (employment) {
@@ -275,23 +259,8 @@ export class OnboardingDetailsService {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .leftJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.orgId, organizationMembers.orgId),
-          eq(hrPeople.userId, organizationMembers.userId),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
-      .leftJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.orgId, organizationMembers.orgId),
-          eq(hrEmployments.personId, hrPeople.id),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
+      .leftJoin(hrPeople, livePersonOfUser(orgId, organizationMembers.userId))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId, hrPeople, hrEmployments))
       .leftJoin(
         hrEmployeeSensitiveFields,
         and(

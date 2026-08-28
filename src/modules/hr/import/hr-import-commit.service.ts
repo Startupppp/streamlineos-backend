@@ -158,7 +158,7 @@ export class HrImportCommitService {
           eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
         ),
       )
-      .where(and(eq(hrPeople.orgId, orgId), eq(organizationPeople.workEmail, row.employeeEmail)))
+      .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.employeeEmail)))
       .limit(1);
 
     const userId = person[0]?.userId;
@@ -200,7 +200,7 @@ export class HrImportCommitService {
           eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
         ),
       )
-      .where(and(eq(hrPeople.orgId, orgId), eq(organizationPeople.workEmail, row.employeeEmail)))
+      .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.employeeEmail)))
       .limit(1);
 
     const userId = person[0]?.userId;
@@ -240,7 +240,7 @@ export class HrImportCommitService {
             eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
           ),
         )
-        .where(and(eq(hrPeople.orgId, orgId), eq(organizationPeople.workEmail, row.assignedToEmail)))
+        .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.assignedToEmail)))
         .limit(1);
       assignedTo = person[0]?.userId ?? null;
     }
@@ -276,7 +276,7 @@ export class HrImportCommitService {
           eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
         ),
       )
-      .where(and(eq(hrPeople.orgId, orgId), eq(organizationPeople.workEmail, row.employeeEmail)))
+      .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.employeeEmail)))
       .limit(1);
 
     const userId = person[0]?.userId ?? null;

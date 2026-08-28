@@ -18,6 +18,10 @@ import { AuditService } from "../../common/audit/audit.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
 import { broadcastReadReceipts } from "../../db/schema";
 import type { CreateBroadcastInput, UpdateBroadcastInput, ListBroadcastsInput } from "./dto/broadcast.schemas";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../directory/employment-query";
 
 @Injectable()
 export class BroadcastsService {
@@ -249,19 +253,8 @@ export class BroadcastsService {
       this.db
         .select({ deptId: hrEmployments.departmentId })
         .from(users)
-        .leftJoin(
-          hrPeople,
-          and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, users.id), isNull(hrPeople.deletedAt)),
-        )
-        .leftJoin(
-          hrEmployments,
-          and(
-            eq(hrEmployments.orgId, orgId),
-            eq(hrEmployments.personId, hrPeople.id),
-            eq(hrEmployments.isPrimary, true),
-            isNull(hrEmployments.deletedAt),
-          ),
-        )
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(eq(users.id, userId))
         .then((rows) => rows[0]),
       this.db

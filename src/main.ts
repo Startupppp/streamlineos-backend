@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
-import type { LogLevel } from "@nestjs/common";
+import { VERSION_NEUTRAL, VersioningType, type LogLevel } from "@nestjs/common";
 import { setDefaultResultOrder } from "node:dns";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 
@@ -25,6 +25,7 @@ import {
 import { ResponseTransformInterceptor } from "./common/interceptors/response-transform.interceptor";
 import { resolveAdmissionConfig } from "./common/admission/admission.config";
 import { logger } from "./common/logger/logger.service";
+import { API_VERSION_CURRENT } from "./common/http/api-version";
 
 setDefaultResultOrder("ipv4first");
 
@@ -77,6 +78,11 @@ async function bootstrap(): Promise<void> {
   setErrorReporter(new LogErrorReporter());
   setSpanExporter(new LogSpanExporter());
   eventLoopDelayMonitor.start();
+
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: [API_VERSION_CURRENT, VERSION_NEUTRAL],
+  });
 
   app.use(helmet());
   app.use(compression());

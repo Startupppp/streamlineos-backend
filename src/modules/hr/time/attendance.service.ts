@@ -7,7 +7,7 @@ import {
   NotFoundException,
   PayloadTooLargeException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
 import {
   attendance,
@@ -39,6 +39,7 @@ import { attendanceMemberScope, resolveAttendanceScope } from "./attendance-scop
 import { randomUUID } from "node:crypto";
 import { AttendanceClockService } from "./attendance-clock.service";
 import { AttendanceReadService } from "./attendance-read.service";
+import { livePersonOfUser, orgUnitInOrg, primaryEmploymentOfPerson } from "../../directory/employment-query";
 
 type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
 const ATTENDANCE_REPORT_ROW_LIMIT = 100;
@@ -170,13 +171,13 @@ export class AttendanceService {
         })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, u.orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, u.orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(u.orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(u.orgId))
         .leftJoin(todayStatus, eq(todayStatus.userId, organizationMembers.userId))
         .leftJoin(
           orgUnits,
           and(
-            eq(orgUnits.id, hrEmployments.departmentId),
+            orgUnitInOrg(u.orgId, hrEmployments.departmentId),
             eq(orgUnits.kind, "DEPARTMENT"),
           ),
         )
@@ -191,8 +192,8 @@ export class AttendanceService {
         .select({ status: statusExpr, count: sql<number>`count(*)::int` })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, u.orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, u.orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(u.orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(u.orgId))
         .leftJoin(todayStatus, eq(todayStatus.userId, organizationMembers.userId))
         .where(and(...baseConditions))
         .groupBy(statusExpr),

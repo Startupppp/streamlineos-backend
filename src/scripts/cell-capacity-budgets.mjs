@@ -1,6 +1,19 @@
 export const ADMISSION_THRESHOLD = 0.6;
 
+export const MIN_SAMPLE_SPACING_MS = 86_400_000;
+
 export const CEILING_SOURCES = ["measured", "vendor-declared", "operational-judgment"];
+
+export function filterWellSpacedSamples(entries) {
+  if (entries.length === 0) return [];
+  const sorted = [...entries].sort((a, b) => a.ts - b.ts);
+  const kept = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].ts - kept[kept.length - 1].ts >= MIN_SAMPLE_SPACING_MS)
+      kept.push(sorted[i]);
+  }
+  return kept;
+}
 
 export const CAPACITY_BUDGETS = [
   {
@@ -108,13 +121,25 @@ export function checkAdmission(ratio) {
 }
 
 export function forecastSaturation(historyEntries, resourceId) {
-  const points = historyEntries
-    .filter((h) => h.resources[resourceId] != null && h.resources[resourceId].limit > 0)
+  const relevant = historyEntries.filter(
+    (h) => h.resources[resourceId] != null && h.resources[resourceId].limit > 0,
+  );
+  const spacedRaw = filterWellSpacedSamples(relevant);
+
+  if (spacedRaw.length < 3) {
+    const spacingDays = Math.round(MIN_SAMPLE_SPACING_MS / 86_400_000);
+    return {
+      status: "refused",
+      reason: `${spacedRaw.length} well-spaced sample(s) of ${relevant.length} total; need 3 samples each ≥${spacingDays}d apart. Run with --record-only on a daily schedule to accumulate them.`,
+      wellSpaced: spacedRaw.length,
+      total: relevant.length,
+      needed: 3,
+    };
+  }
+
+  const points = spacedRaw
     .map((h) => ({ t: h.ts, ratio: h.resources[resourceId].used / h.resources[resourceId].limit }))
     .sort((a, b) => a.t - b.t);
-
-  if (points.length < 3)
-    return { status: "refused", reason: `${points.length} data point(s) recorded; need at least 3 to fit a trend.` };
 
   const n = points.length;
   const tMean = points.reduce((s, p) => s + p.t, 0) / n;

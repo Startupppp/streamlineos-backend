@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
   holidays,
   hrEmployments,
@@ -20,6 +20,10 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
 import { resolveLeavesDashboardScope } from "./dashboard-scope";
 import { resignationApprovalScope } from "./resignation-approval-scope";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../directory/employment-query";
 import { leaveApprovalScope } from "../hr/time/leaves-scope";
 
 @Injectable()
@@ -44,19 +48,8 @@ export class DashboardLeaveService {
       })
       .from(leaveRequests)
       .innerJoin(users, eq(leaveRequests.userId, users.id))
-      .leftJoin(
-        hrPeople,
-        and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, users.id), isNull(hrPeople.deletedAt)),
-      )
-      .leftJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.orgId, orgId),
-          eq(hrEmployments.personId, hrPeople.id),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .where(
         and(
           eq(leaveRequests.orgId, orgId),

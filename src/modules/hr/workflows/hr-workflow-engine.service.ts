@@ -16,6 +16,7 @@ import { orgUnits } from "../../../db/schema/common/organization";
 import { hrEmployments, hrPeople } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 
 type HrWorkflowObjectType = typeof hrWorkflowObjectTypeEnum.enumValues[number];
 
@@ -275,8 +276,8 @@ export class HrWorkflowEngineService {
         const branchHr = await this.db
           .select({ id: users.id })
           .from(users)
-          .innerJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-          .innerJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+          .innerJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
           .where(and(
             inArray(users.id, hrApprovers.map((m) => m.userId)),
             eq(hrEmployments.locationId, facts.locationId),

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gt, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, ilike, or, sql, type SQL } from "drizzle-orm";
 import { createReadStream } from "node:fs";
 import { open, stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -23,6 +23,7 @@ import {
   serializeEmployeeExportRow,
   type EmployeeExportCsvRow,
 } from "./hr-export-csv";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 
 interface EmployeeExportCursor {
   name: string;
@@ -179,8 +180,8 @@ export class HrExportFileService {
           })
           .from(organizationMembers)
           .innerJoin(users, eq(organizationMembers.userId, users.id))
-          .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, input.orgId), isNull(hrPeople.deletedAt)))
-          .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, input.orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+          .leftJoin(hrPeople, livePersonOfUser(input.orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(input.orgId, hrPeople, hrEmployments))
           .leftJoin(
             orgUnits,
             and(

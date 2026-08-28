@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, desc, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, desc, inArray, lte, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -14,6 +14,7 @@ import type { WorkflowInstanceQueryDto } from "./dto/workflow.schemas";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 import { AccessService } from "../../access/access.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 
 interface ResolvedStep {
   stepOrder: number;
@@ -321,8 +322,8 @@ export class HrWorkflowInstancesService {
         ? this.db
             .select({ id: users.id, locationId: hrEmployments.locationId })
             .from(users)
-            .innerJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-            .innerJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+            .innerJoin(hrPeople, livePersonOfUser(orgId, users.id))
+            .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
             .where(
               and(
                 inArray(users.id, hrUserIds),

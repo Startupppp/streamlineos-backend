@@ -41,6 +41,10 @@ import {
   encodeEmployeeListCursor,
 } from "./employee-list-cursor";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../../directory/employment-query";
 
 @Injectable()
 export class EmployeesService {
@@ -174,8 +178,8 @@ export class EmployeesService {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-      .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .leftJoin(
         orgUnits,
         and(

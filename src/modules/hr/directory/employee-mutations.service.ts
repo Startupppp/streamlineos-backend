@@ -4,7 +4,7 @@ import {
   Inject,
   Injectable,
 } from "@nestjs/common";
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   employeeSkills,
   hrReportingLines,
@@ -31,6 +31,10 @@ import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import { resolveEmployeesManageScope } from "./employees-scope";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../../directory/employment-query";
 
 @Injectable()
 export class EmployeeMutationsService {
@@ -106,22 +110,8 @@ export class EmployeeMutationsService {
           confirmationDate: hrEmployments.confirmationDate,
         })
         .from(hrPeople)
-        .innerJoin(
-          hrEmployments,
-          and(
-            eq(hrEmployments.personId, hrPeople.id),
-            eq(hrEmployments.orgId, orgId),
-            eq(hrEmployments.isPrimary, true),
-            isNull(hrEmployments.deletedAt),
-          ),
-        )
-        .where(
-          and(
-            eq(hrPeople.orgId, orgId),
-            eq(hrPeople.userId, targetUserId),
-            isNull(hrPeople.deletedAt),
-          ),
-        )
+        .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+        .where(livePersonOfUser(orgId, targetUserId))
         .limit(1)
         .then((rows) => rows[0] ?? null),
       this.employment.getFacts(orgId, targetUserId),
@@ -236,6 +226,7 @@ export class EmployeeMutationsService {
           INNER JOIN hr_employments mgr_emp
             ON mgr_emp.id = rl.manager_employment_id
             AND mgr_emp.org_id = ${actor.orgId}
+            AND mgr_emp.is_primary = true
             AND mgr_emp.deleted_at IS NULL
           INNER JOIN hr_people mgr_p
             ON mgr_p.id = mgr_emp.person_id

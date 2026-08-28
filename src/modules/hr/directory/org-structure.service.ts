@@ -37,6 +37,10 @@ import {
   encodeOrgChartCursor,
 } from "./org-chart-cursor";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../../directory/employment-query";
 
 export interface HeadcountGroup {
   label: string;
@@ -231,8 +235,8 @@ export class OrgStructureService {
       where ${and(
         eq(rlVis.orgId, orgId),
         eq(rlVisEmpPpl.userId, users.id),
-        sql`${rlVis.effectiveFrom} <= current_date`,
-        or(isNull(rlVis.effectiveTo), sql`${rlVis.effectiveTo} >= current_date`),
+        sql`${rlVis.effectiveFrom} <= CURRENT_DATE`,
+        sql`${rlVis.effectiveTo} >= CURRENT_DATE`,
         eq(orgChartManagerMembers.orgId, orgId),
         eq(orgChartManagerMembers.status, "ACTIVE"),
         eq(orgChartManagerUsers.isActive, true),
@@ -269,8 +273,8 @@ export class OrgStructureService {
       where ${and(
         eq(rlChild.orgId, orgId),
         eq(rlChildMgrPpl.userId, users.id),
-        sql`${rlChild.effectiveFrom} <= current_date`,
-        or(isNull(rlChild.effectiveTo), sql`${rlChild.effectiveTo} >= current_date`),
+        sql`${rlChild.effectiveFrom} <= CURRENT_DATE`,
+        sql`${rlChild.effectiveTo} >= CURRENT_DATE`,
         eq(orgChartChildMembers.orgId, orgId),
         eq(orgChartChildMembers.status, "ACTIVE"),
         eq(orgChartChildUsers.isActive, true),
@@ -350,8 +354,8 @@ export class OrgStructureService {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-      .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .leftJoin(
         orgUnits,
         and(
@@ -421,8 +425,8 @@ export class OrgStructureService {
         })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .leftJoin(
           orgUnits,
           and(
@@ -461,8 +465,8 @@ export class OrgStructureService {
         .select({ branchName: orgUnits.name, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .leftJoin(
           orgUnits,
           and(

@@ -12,6 +12,7 @@ import { HrAuditService } from "../core/hr-audit.service";
 import { HrAutomationEngineService } from "../automations/hr-automation-engine.service";
 import { HrTemplatesService } from "../templates/hr-templates.service";
 import { HrTemplateRenderService } from "../templates/hr-template-render.service";
+import { livePersonOfEmployment, liveEmployment } from "../../directory/employment-query";
 import type {
   CreateContractInput,
   UpdateContractInput,
@@ -166,8 +167,8 @@ export class ContractsService {
       const [employment] = await this.db
         .select({ userId: hrPeople.userId })
         .from(hrEmployments)
-        .innerJoin(hrPeople, eq(hrEmployments.personId, hrPeople.id))
-        .where(and(eq(hrEmployments.id, existing.employmentId), eq(hrEmployments.orgId, orgId)))
+        .innerJoin(hrPeople, livePersonOfEmployment(orgId, hrEmployments, hrPeople))
+        .where(and(liveEmployment(orgId, hrEmployments), eq(hrEmployments.id, existing.employmentId)))
         .limit(1);
       if (!employment?.userId) return;
       await this.hrAutomation.emit(orgId, "contract.ended", {

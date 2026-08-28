@@ -4,7 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
 } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import {
@@ -40,6 +40,10 @@ import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structur
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { AccessService } from "../../access/access.service";
 import { syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
+import {
+  liveEmployment,
+  livePersonOfEmployment,
+} from "../../directory/employment-query";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
@@ -122,13 +126,12 @@ export class EmployeeOnboardingService {
       const [duplicate] = await this.db
         .select({ userId: hrPeople.userId })
         .from(hrEmployments)
-        .innerJoin(hrPeople, and(eq(hrPeople.id, hrEmployments.personId), eq(hrPeople.orgId, actor.orgId), isNull(hrPeople.deletedAt)))
+        .innerJoin(hrPeople, livePersonOfEmployment(actor.orgId))
         .where(
           and(
-            eq(hrEmployments.orgId, actor.orgId),
-            eq(hrEmployments.employeeNumber, resolvedEmployeeId),
+            liveEmployment(actor.orgId),
             eq(hrEmployments.isPrimary, true),
-            isNull(hrEmployments.deletedAt),
+            eq(hrEmployments.employeeNumber, resolvedEmployeeId),
           ),
         )
         .limit(1);

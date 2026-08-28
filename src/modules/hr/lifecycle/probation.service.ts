@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { livePerson, livePersonOfEmployment } from "../../directory/employment-query";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
@@ -67,16 +68,12 @@ export class ProbationService {
           userId: hrPeople.userId,
         })
         .from(hrEmployments)
-        .innerJoin(
-          hrPeople,
-          and(eq(hrPeople.orgId, hrEmployments.orgId), eq(hrPeople.id, hrEmployments.personId)),
-        )
+        .innerJoin(hrPeople, livePersonOfEmployment(orgId))
         .where(
           and(
             eq(hrEmployments.orgId, orgId),
             eq(hrEmployments.id, employmentId),
             isNull(hrEmployments.deletedAt),
-            isNull(hrPeople.deletedAt),
           ),
         )
         .limit(1)
@@ -183,10 +180,7 @@ export class ProbationService {
           userId: hrPeople.userId,
         })
         .from(hrProbationReviews)
-        .innerJoin(
-          hrPeople,
-          and(eq(hrPeople.orgId, hrProbationReviews.orgId), eq(hrPeople.id, hrProbationReviews.personId)),
-        )
+        .innerJoin(hrPeople, and(livePerson(orgId), eq(hrPeople.id, hrProbationReviews.personId)))
         .where(
           and(
             eq(hrProbationReviews.orgId, orgId),
@@ -281,10 +275,7 @@ export class ProbationService {
           userId: hrPeople.userId,
         })
         .from(hrProbationReviews)
-        .innerJoin(
-          hrPeople,
-          and(eq(hrPeople.orgId, hrProbationReviews.orgId), eq(hrPeople.id, hrProbationReviews.personId)),
-        )
+        .innerJoin(hrPeople, and(livePerson(orgId), eq(hrPeople.id, hrProbationReviews.personId)))
         .where(
           and(
             eq(hrProbationReviews.orgId, orgId),

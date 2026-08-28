@@ -1,5 +1,6 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
+import { livePersonOfUser, primaryEmploymentOfPerson, orgUnitInOrg } from "../../directory/employment-query";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
@@ -161,7 +162,7 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
-    const items = await getLineItemsForRun(this.db, run.id, filters);
+    const items = await getLineItemsForRun(this.db, orgId, run.id, filters);
     const empMap = new Map<string, EmployeeRegisterRow>();
 
     for (const { lineItem, runEmployee, userName, userDept } of items) {
@@ -210,24 +211,9 @@ export class ReportsService {
       })
       .from(payrollRunEmployees)
       .innerJoin(users, eq(payrollRunEmployees.userId, users.id))
-      .leftJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.orgId, payrollRunEmployees.orgId),
-          eq(hrPeople.userId, users.id),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
-        .leftJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.orgId, payrollRunEmployees.orgId),
-          eq(hrEmployments.personId, hrPeople.id),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
-        .leftJoin(orgUnits, and(eq(orgUnits.id, hrEmployments.departmentId), eq(orgUnits.kind, "DEPARTMENT")))
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+      .leftJoin(orgUnits, and(orgUnitInOrg(orgId, hrEmployments.departmentId), eq(orgUnits.kind, "DEPARTMENT")))
       .where(whereClause)
       .groupBy(orgUnits.name);
 
@@ -282,7 +268,7 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
-    const items = await getLineItemsForRun(this.db, run.id, filters);
+    const items = await getLineItemsForRun(this.db, orgId, run.id, filters);
     const { columns, rows: allRows } = pivotByEmployee(items, (cat) => cat === "EARNING" || cat === "REIMBURSEMENT");
     return { provisional, columns, rows: applyPage(allRows, pagination) };
   }
@@ -292,7 +278,7 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
-    const items = await getLineItemsForRun(this.db, run.id, filters);
+    const items = await getLineItemsForRun(this.db, orgId, run.id, filters);
     const { columns, rows: allRows } = pivotByEmployee(items, (cat) => cat === "DEDUCTION" || cat === "TAX" || cat === "ADJUSTMENT");
     return { provisional, columns, rows: applyPage(allRows, pagination) };
   }
@@ -302,7 +288,7 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
-    const items = await getLineItemsForRun(this.db, run.id, filters);
+    const items = await getLineItemsForRun(this.db, orgId, run.id, filters);
     const { columns, rows: allRows } = pivotByEmployee(items, (cat) => cat === "REIMBURSEMENT");
     return { provisional, columns, rows: applyPage(allRows, pagination) };
   }
@@ -312,7 +298,7 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
-    const items = await getLineItemsForRun(this.db, run.id, filters);
+    const items = await getLineItemsForRun(this.db, orgId, run.id, filters);
     const { columns, rows: allRows } = pivotByEmployee(items, (cat) => cat === "TAX" || cat === "EMPLOYER_CONTRIBUTION");
     return { provisional, columns, rows: applyPage(allRows, pagination) };
   }

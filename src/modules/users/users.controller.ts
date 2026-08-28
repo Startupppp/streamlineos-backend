@@ -1,6 +1,8 @@
 import {
-  Controller, Get, HttpCode, Patch, Delete, Post, Param, Query, Body, UseGuards, Res
+  Controller, Get, HttpCode, Patch, Delete, Post, Param, Query, Body, UseGuards, Res, Version
 } from "@nestjs/common";
+import { API_VERSION_NEXT } from "../../common/http/api-version";
+import { toUserIdentity, toUserIdentityPage } from "./user-identity.view";
 import type { Response } from "express";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -50,6 +52,16 @@ export class UsersController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.users.listUsers(u.orgId, query);
+  }
+
+  @RequirePermission("settings:view")
+  @Version(API_VERSION_NEXT)
+  @Get()
+  async listUsersV2(
+    @Query(new ZodValidationPipe(listUsersSchema)) query: ListUsersInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return toUserIdentityPage(await this.users.listUsers(u.orgId, query));
   }
 
   @RequirePermission("settings:view")
@@ -218,6 +230,15 @@ export class UsersController {
   // ── Parameterized :userId routes (must come after all static routes) ──
 
   @RequirePermission("settings:view")
+  @Version(API_VERSION_NEXT)
+  @Get(":userId")
+  async getUserV2(
+    @Param("userId") userId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return toUserIdentity(await this.users.getUser(u.orgId, userId));
+  }
+
   @Get(":userId")
   getUser(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.users.getUser(u.orgId, userId);

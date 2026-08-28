@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, gt, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, or, sql } from "drizzle-orm";
 import {
   employeeSkills,
   hrEmployments,
@@ -22,6 +22,10 @@ import {
   decodeEmployeeListCursor,
   encodeEmployeeListCursor,
 } from "./employee-list-cursor";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../../directory/employment-query";
 import { listBoundedEmployeeSkills } from "./employee-skills-page-query";
 
 export interface ExpertResult {
@@ -85,8 +89,8 @@ export class EmployeeSkillsService {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-      .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .innerJoin(
         employeeSkills,
         and(

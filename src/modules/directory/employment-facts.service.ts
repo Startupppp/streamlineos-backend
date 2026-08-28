@@ -13,6 +13,16 @@ import type { Db } from "../../db/drizzle.module";
 import { readBankDetails } from "../../common/hr/canonical-bank-details";
 import { readSensitive } from "../../common/security/sensitive-field";
 import {
+  liveEmployment,
+  livePerson,
+  livePersonOfEmployment,
+  livePersonOfUser,
+  managerEmploymentOfLine,
+  primaryEmploymentOfPerson,
+  reportingLineOfEmployment,
+  currentPrimaryReportingLine,
+} from "./employment-query";
+import {
   emptyEmploymentFacts,
   emptySensitiveEmploymentFacts,
   type EmploymentFactName,
@@ -42,14 +52,6 @@ type SensitiveRow = {
   taxId: string | null;
   panNumber: string | null;
 };
-
-function currentPrimaryReportingLine() {
-  return and(
-    eq(hrReportingLines.lineType, "primary"),
-    sql`${hrReportingLines.effectiveFrom} <= CURRENT_DATE`,
-    sql`${hrReportingLines.effectiveTo} >= CURRENT_DATE`,
-  );
-}
 
 
 @Injectable()
@@ -81,46 +83,16 @@ export class EmploymentFactsService {
         managerUserId: managerPerson.userId,
       })
       .from(users)
-      .leftJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.orgId, orgId),
-          eq(hrPeople.userId, users.id),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
-      .leftJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.orgId, orgId),
-          eq(hrEmployments.personId, hrPeople.id),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
-      .leftJoin(
-        hrReportingLines,
-        and(
-          eq(hrReportingLines.orgId, orgId),
-          eq(hrReportingLines.employmentId, hrEmployments.id),
-          currentPrimaryReportingLine(),
-        ),
-      )
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+      .leftJoin(hrReportingLines, reportingLineOfEmployment(orgId))
       .leftJoin(
         managerEmployment,
-        and(
-          eq(managerEmployment.orgId, orgId),
-          eq(managerEmployment.id, hrReportingLines.managerEmploymentId),
-          isNull(managerEmployment.deletedAt),
-        ),
+        managerEmploymentOfLine(orgId, hrReportingLines, managerEmployment),
       )
       .leftJoin(
         managerPerson,
-        and(
-          eq(managerPerson.orgId, orgId),
-          eq(managerPerson.id, managerEmployment.personId),
-          isNull(managerPerson.deletedAt),
-        ),
+        livePersonOfEmployment(orgId, managerEmployment, managerPerson),
       )
       .where(inArray(users.id, wanted))
       .orderBy(hrEmployments.id);
@@ -161,40 +133,26 @@ export class EmploymentFactsService {
       .from(hrReportingLines)
       .innerJoin(
         managerEmployment,
-        and(
-          eq(managerEmployment.orgId, orgId),
-          eq(managerEmployment.id, hrReportingLines.managerEmploymentId),
-          isNull(managerEmployment.deletedAt),
-        ),
+        managerEmploymentOfLine(orgId, hrReportingLines, managerEmployment),
       )
       .innerJoin(
         managerPerson,
-        and(
-          eq(managerPerson.orgId, orgId),
-          eq(managerPerson.id, managerEmployment.personId),
-          isNull(managerPerson.deletedAt),
-        ),
+        livePersonOfEmployment(orgId, managerEmployment, managerPerson),
       )
       .innerJoin(
         reportEmployment,
         and(
-          eq(reportEmployment.orgId, orgId),
+          liveEmployment(orgId, reportEmployment),
           eq(reportEmployment.id, hrReportingLines.employmentId),
-          isNull(reportEmployment.deletedAt),
         ),
       )
       .innerJoin(
         reportPerson,
-        and(
-          eq(reportPerson.orgId, orgId),
-          eq(reportPerson.id, reportEmployment.personId),
-          isNull(reportPerson.deletedAt),
-        ),
+        livePersonOfEmployment(orgId, reportEmployment, reportPerson),
       )
       .where(
         and(
-          eq(hrReportingLines.orgId, orgId),
-          currentPrimaryReportingLine(),
+          currentPrimaryReportingLine(orgId),
           eq(managerPerson.userId, managerUserId),
         ),
       );
@@ -221,15 +179,7 @@ export class EmploymentFactsService {
         panNumber: hrEmployeeSensitiveFields.panNumber,
       })
       .from(hrPeople)
-      .innerJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.orgId, orgId),
-          eq(hrEmployments.personId, hrPeople.id),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
+      .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .leftJoin(
         hrEmployeeSensitiveFields,
         and(
@@ -239,8 +189,7 @@ export class EmploymentFactsService {
       )
       .where(
         and(
-          eq(hrPeople.orgId, orgId),
-          isNull(hrPeople.deletedAt),
+          livePerson(orgId),
           inArray(hrPeople.organizationPersonId, wanted),
         ),
       );
@@ -278,23 +227,8 @@ export class EmploymentFactsService {
         panNumber: hrEmployeeSensitiveFields.panNumber,
       })
       .from(users)
-      .leftJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.orgId, orgId),
-          eq(hrPeople.userId, users.id),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
-      .leftJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.orgId, orgId),
-          eq(hrEmployments.personId, hrPeople.id),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .leftJoin(
         hrEmployeeSensitiveFields,
         and(

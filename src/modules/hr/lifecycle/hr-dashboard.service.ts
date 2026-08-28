@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
   hrEmployeeSensitiveFields,
   hrEmployments,
@@ -86,8 +87,8 @@ export class HrDashboardService {
         .select({ count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(and(eq(organizationMembers.orgId, orgId), gte(hrEmployments.joiningDate, monthStart), lte(hrEmployments.joiningDate, monthEnd))),
     ]);
 
@@ -160,18 +161,18 @@ export class HrDashboardService {
           .select({ count: count() })
           .from(organizationMembers)
           .innerJoin(users, eq(users.id, organizationMembers.userId))
-          .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-          .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
-          .leftJoin(hrEmployeeSensitiveFields, eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id))
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .leftJoin(hrEmployeeSensitiveFields, and(eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id), eq(hrEmployeeSensitiveFields.orgId, orgId)))
           .where(and(eq(organizationMembers.orgId, orgId), isNotNull(hrEmployeeSensitiveFields.bankDetails))),
 
         this.db
           .select({ count: count() })
           .from(organizationMembers)
           .innerJoin(users, eq(users.id, organizationMembers.userId))
-          .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-          .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
-          .leftJoin(hrEmployeeSensitiveFields, eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id))
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .leftJoin(hrEmployeeSensitiveFields, and(eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id), eq(hrEmployeeSensitiveFields.orgId, orgId)))
           .where(and(eq(organizationMembers.orgId, orgId), isNotNull(hrEmployeeSensitiveFields.taxId), sql`${hrEmployeeSensitiveFields.taxId} <> ''`)),
 
         this.db
@@ -184,8 +185,8 @@ export class HrDashboardService {
           .select({ count: count() })
           .from(organizationMembers)
           .innerJoin(users, eq(users.id, organizationMembers.userId))
-          .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-          .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
           .where(and(eq(organizationMembers.orgId, orgId), isNotNull(hrEmployments.joiningDate))),
 
         this.db
@@ -198,9 +199,9 @@ export class HrDashboardService {
           .select({ count: count() })
           .from(organizationMembers)
           .innerJoin(users, eq(users.id, organizationMembers.userId))
-          .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-          .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
-          .leftJoin(hrEmployeeSensitiveFields, eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id))
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .leftJoin(hrEmployeeSensitiveFields, and(eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id), eq(hrEmployeeSensitiveFields.orgId, orgId)))
           .where(
             and(
               eq(organizationMembers.orgId, orgId),

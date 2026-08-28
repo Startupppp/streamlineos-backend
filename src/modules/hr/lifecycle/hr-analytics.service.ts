@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
   hrEmployments,
   hrPeople,
@@ -69,8 +70,8 @@ export class HrAnalyticsService {
         .select({ departmentId: hrEmployments.departmentId, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
         .groupBy(hrEmployments.departmentId),
 
@@ -119,8 +120,8 @@ export class HrAnalyticsService {
         .select({ count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(and(eq(organizationMembers.orgId, orgId), gte(hrEmployments.joiningDate, monthStart))),
 
       this.db
@@ -136,8 +137,8 @@ export class HrAnalyticsService {
         })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(and(eq(organizationMembers.orgId, orgId), gte(hrEmployments.joiningDate, yearStart), lte(hrEmployments.joiningDate, yearEnd)))
         .groupBy(sql`to_char(${hrEmployments.joiningDate}::date, 'Mon')`, sql`EXTRACT(MONTH FROM ${hrEmployments.joiningDate}::date)`)
         .orderBy(sql`EXTRACT(MONTH FROM ${hrEmployments.joiningDate}::date)`),
@@ -230,8 +231,8 @@ export class HrAnalyticsService {
         .select({ departmentId: hrEmployments.departmentId, count: count() })
         .from(attendance)
         .innerJoin(users, eq(attendance.userId, users.id))
-        .leftJoin(hrPeople, and(eq(hrPeople.userId, users.id), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-        .leftJoin(hrEmployments, and(eq(hrEmployments.personId, hrPeople.id), eq(hrEmployments.orgId, orgId), eq(hrEmployments.isPrimary, true), isNull(hrEmployments.deletedAt)))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(and(eq(attendance.orgId, orgId), gte(attendance.date, startDate), lte(attendance.date, endDate)))
         .groupBy(hrEmployments.departmentId),
 

@@ -44,6 +44,13 @@ DROP TABLE IF EXISTS "project_custom_fields";
 DROP TABLE IF EXISTS "support_custom_fields";
 --> statement-breakpoint
 
+-- The regenerated 0000 baseline snapshots a pre-consolidation
+-- custom_field_definitions (no project_id, no key), so a cold replay reaches
+-- Step 3 with the old shape already present. Dropping it here is the same
+-- consolidation this migration already performs on its five siblings.
+DROP TABLE IF EXISTS "custom_field_definitions" CASCADE;
+--> statement-breakpoint
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Step 3: unified definitions table
 -- ─────────────────────────────────────────────────────────────────────────────

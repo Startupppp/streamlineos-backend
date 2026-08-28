@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull, ne, or } from "drizzle-orm";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
   hrEmployments,
   hrPeople,
@@ -78,23 +79,8 @@ export class ExperienceLetterService {
           ne(workerEngagements.status, "CANCELLED"),
         ),
       )
-      .leftJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.orgId, orgId),
-          eq(hrPeople.userId, input.userId),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
-      .leftJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.orgId, orgId),
-          eq(hrEmployments.personId, hrPeople.id),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
+      .leftJoin(hrPeople, livePersonOfUser(orgId, input.userId))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .where(
         and(
           eq(organizationMembers.orgId, orgId),
