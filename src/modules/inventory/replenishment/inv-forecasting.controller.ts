@@ -11,6 +11,7 @@ import { InvReplenishmentService } from "./inv-replenishment.service";
 import { forecastingSchema, type ForecastingInput } from "./dto/replenishment.schemas";
 import { DemandBaselineService } from "./forecast/demand-baseline.service";
 import { SafetyStockPolicyService } from "./forecast/safety-stock-policy.service";
+import { LeadTimeService } from "./forecast/lead-time.service";
 
 @RequireModule("inventory")
 @Controller("inventory/forecasting")
@@ -20,7 +21,19 @@ export class InvForecastingController {
     private readonly replenishment: InvReplenishmentService,
     private readonly demandBaseline: DemandBaselineService,
     private readonly safetyStockPolicy: SafetyStockPolicyService,
+    private readonly leadTime: LeadTimeService,
   ) {}
+
+  /** INV-304. What this vendor actually takes, from receipts rather than a promise. */
+  @Get("lead-time/vendor/:vendorId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:replenishment:manage")
+  vendorLeadTime(
+    @Param("vendorId", ParseIntPipe) vendorId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.leadTime.vendorLeadTime(u.orgId, vendorId);
+  }
 
   /**
    * INV-303. Safety stock and reorder point over measured demand and measured
