@@ -129,7 +129,10 @@
     "cell:capacity:record": "node src/scripts/run-cell-capacity.mjs --record-only",
     "cell:chain-repair:verify": "node src/scripts/__tests__/chain-repair.test.mjs",
     "cell:relocate-data": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/relocate-org-data.ts",
-    "cell:relocate-data:self-test": "node -r ts-node/register/transpile-only src/scripts/relocate-org-data.ts --self-test"
+    "cell:relocate-data:self-test": "node -r ts-node/register/transpile-only src/scripts/relocate-org-data.ts --self-test",
+    "load:drive": "node src/scripts/run-load-driver.mjs",
+    "load:drive:self-test": "node src/scripts/run-load-driver.mjs --self-test",
+    "load:drive:verify": "node src/scripts/__tests__/load-driver.test.mjs"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

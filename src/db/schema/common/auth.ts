@@ -104,6 +104,7 @@ export const organizationMembers = pgTable("organization_members", {
   index("idx_org_members_org_role").on(table.orgId, table.role),
   index("idx_org_members_owner").on(table.orgId, table.isOwner),
   index("idx_org_members_org_status").on(table.orgId, table.status),
+  index("idx_org_members_org_joined").on(table.orgId, table.joinedAt.desc()),
 ]);
 
 export const users = pgTable("users", {
