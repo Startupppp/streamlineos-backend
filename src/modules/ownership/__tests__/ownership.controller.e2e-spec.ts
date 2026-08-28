@@ -219,8 +219,8 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
-        .set("Authorization", `Bearer ${token}`);
-        .set("Idempotency-Key", `e2e-own-1-${Date.now()}`)
+        .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `e2e-own-1-${Date.now()}`);
       expect(res.status).toBe(403);
     });
 
@@ -228,8 +228,8 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .delete(`/ownership/transfers/${TRANSFER_ID}`)
-        .set("Authorization", `Bearer ${token}`);
-        .set("Idempotency-Key", `e2e-own-2-${Date.now()}`)
+        .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `e2e-own-2-${Date.now()}`);
       expect(res.status).toBe(403);
     });
 
@@ -360,8 +360,8 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
-        .set("Authorization", `Bearer ${token}`);
-        .set("Idempotency-Key", `e2e-own-8-${Date.now()}`)
+        .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `e2e-own-8-${Date.now()}`);
       expect(res.status).toBe(403);
       expect(res.body).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("recipient") });
     });
@@ -376,8 +376,8 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
-        .set("Authorization", `Bearer ${token}`);
-        .set("Idempotency-Key", `e2e-own-9-${Date.now()}`)
+        .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `e2e-own-9-${Date.now()}`);
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("longer the organization owner") });
     });
@@ -392,8 +392,8 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
-        .set("Authorization", `Bearer ${token}`);
-        .set("Idempotency-Key", `e2e-own-10-${Date.now()}`)
+        .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `e2e-own-10-${Date.now()}`);
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("expired") });
     });
@@ -470,8 +470,8 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       const token = await signToken({ sub: "member_os_1", orgId: "org-alpha" });
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
-        .set("Authorization", `Bearer ${token}`);
-        .set("Idempotency-Key", `e2e-own-11-${Date.now()}`)
+        .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `e2e-own-11-${Date.now()}`);
       expect(res.status).toBe(404);
     });
 
