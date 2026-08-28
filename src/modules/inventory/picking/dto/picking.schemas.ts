@@ -26,3 +26,32 @@ export const confirmPickSchema = z
   })
   .strict();
 export type ConfirmPickInput = z.infer<typeof confirmPickSchema>;
+
+/**
+ * INV-205. Why a line could not close as asked.
+ *
+ * A substitution has to name what went in the tote instead; the others do not,
+ * because "the shelf was empty" has no second item to record. Enforced by the
+ * schema rather than the service, so the impossible combination cannot be
+ * constructed.
+ */
+export const reportPickExceptionSchema = z
+  .discriminatedUnion("reason", [
+    z
+      .object({
+        pickLineId: z.number().int().positive(),
+        reason: z.enum(["SHORT", "NOT_FOUND", "DAMAGED"]),
+        notes: z.string().max(500).optional(),
+      })
+      .strict(),
+    z
+      .object({
+        pickLineId: z.number().int().positive(),
+        reason: z.literal("SUBSTITUTED"),
+        substituteVariantId: z.number().int().positive(),
+        quantityPicked: z.string().regex(/^\d+(\.\d{1,4})?$/),
+        notes: z.string().max(500).optional(),
+      })
+      .strict(),
+  ]);
+export type ReportPickExceptionInput = z.infer<typeof reportPickExceptionSchema>;

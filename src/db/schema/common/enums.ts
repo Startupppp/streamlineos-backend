@@ -364,6 +364,14 @@ export const invBarcodeTypeEnum = pgEnum("inv_barcode_type", ["GTIN", "EAN13", "
 export const invReasonCategoryEnum = pgEnum("inv_reason_category", ["ADJUSTMENT", "COUNT", "SCRAP", "RETURN", "TRANSFER", "OTHER"]);
 export const invVendorReturnReasonEnum = pgEnum("inv_vendor_return_reason", ["DAMAGED", "WRONG_ITEM", "EXCESS", "EXPIRED", "QUALITY_REJECTED"]);
 export const invCustomerReturnDispositionEnum = pgEnum("inv_customer_return_disposition", ["RESTOCK", "QUARANTINE", "SCRAP"]);
+/** INV-205. Why a pick line did not close the way it was asked to. */
+export const invPickExceptionEnum = pgEnum("inv_pick_exception", [
+  "SHORT",
+  "NOT_FOUND",
+  "DAMAGED",
+  "SUBSTITUTED",
+]);
+
 export const invPickListStatusEnum = pgEnum("inv_pick_list_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]);
 export const invCycleCountStatusEnum = pgEnum("inv_cycle_count_status", ["PLANNED", "COUNTING", "REVIEW", "POSTED", "CANCELLED"]);
 export const invQualityInspectionStatusEnum = pgEnum("inv_quality_inspection_status", ["PENDING", "IN_PROGRESS", "PASSED", "FAILED", "DISPOSITION_REQUIRED", "COMPLETED", "CANCELLED"]);

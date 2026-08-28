@@ -19,8 +19,10 @@ import { PickWaveService } from "./pick-wave.service";
 import {
   confirmPickSchema,
   createWaveSchema,
+  reportPickExceptionSchema,
   type ConfirmPickInput,
   type CreateWaveInput,
+  type ReportPickExceptionInput,
 } from "./dto/picking.schemas";
 
 @RequireModule("inventory")
@@ -58,5 +60,21 @@ export class PickWaveController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.waves.confirmPick(u.orgId, u.userId, pickListId, body);
+  }
+
+  /**
+   * INV-205. Records why a line could not close as asked, which is also what
+   * lets a short-picked wave finish -- a picker holding a tote the system will
+   * not let them close is exactly the situation this resolves.
+   */
+  @Post("waves/:pickListId/exception")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:ship")
+  reportException(
+    @Param("pickListId", ParseIntPipe) pickListId: number,
+    @Body(new ZodValidationPipe(reportPickExceptionSchema)) body: ReportPickExceptionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.waves.reportException(u.orgId, u.userId, pickListId, body);
   }
 }

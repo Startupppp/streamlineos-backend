@@ -12,7 +12,12 @@ import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { addDec, cmpDec } from "../stock-engine/decimal";
 import { InvBarcodeService } from "../barcode/inv-barcode.service";
-import type { CreateWaveInput, ConfirmPickInput } from "./dto/picking.schemas";
+import { loadOrderableVariants } from "../products/lib/orderable-variants";
+import type {
+  CreateWaveInput,
+  ConfirmPickInput,
+  ReportPickExceptionInput,
+} from "./dto/picking.schemas";
 
 @Injectable()
 export class PickWaveService {
@@ -172,6 +177,130 @@ export class PickWaveService {
   }
 
   /**
+   * A wave is done when every line is *closed*, and a line closes either by
+   * being picked in full or by an exception explaining the rest.
+   *
+   * Without the second half a short pick leaves the wave open forever and the
+   * picker is stuck holding a tote the system will not let them finish -- which
+   * is precisely the situation an exception exists to resolve.
+   */
+  private async waveIsComplete(
+    tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+    orgId: string,
+    pickListId: number,
+  ): Promise<boolean> {
+    const lines = await tx
+      .select({
+        toPick: invPickListLines.quantityToPick,
+        picked: invPickListLines.quantityPicked,
+        exceptionReason: invPickListLines.exceptionReason,
+      })
+      .from(invPickListLines)
+      .where(
+        and(
+          eq(invPickListLines.orgId, orgId),
+          eq(invPickListLines.pickListId, pickListId),
+        ),
+      );
+    return lines.every(
+      (l) =>
+        l.exceptionReason !== null ||
+        cmpDec(String(l.picked), String(l.toPick)) >= 0,
+    );
+  }
+
+  /**
+   * INV-205 — record why a line could not close as asked.
+   *
+   * The distinction being preserved is between a line short because the shelf
+   * was empty and a line short because the picker moved on. The first is a
+   * stock problem and the second is a process problem; a warehouse that cannot
+   * tell them apart fixes neither, and the quantity alone cannot tell them
+   * apart.
+   *
+   * A substitution is held to the same catalogue rules as any other demand: the
+   * replacement must be a live, sellable variant of this organisation. Swapping
+   * in a discontinued SKU at the shelf would route around the gate the
+   * catalogue exists to enforce.
+   */
+  async reportException(
+    orgId: string,
+    userId: string,
+    pickListId: number,
+    input: ReportPickExceptionInput,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const [line] = await tx
+        .select({
+          id: invPickListLines.id,
+          productVariantId: invPickListLines.productVariantId,
+          quantityToPick: invPickListLines.quantityToPick,
+          quantityPicked: invPickListLines.quantityPicked,
+        })
+        .from(invPickListLines)
+        .where(
+          and(
+            eq(invPickListLines.orgId, orgId),
+            eq(invPickListLines.pickListId, pickListId),
+            eq(invPickListLines.id, input.pickLineId),
+          ),
+        );
+      if (!line) throw new NotFoundException("Pick line not found");
+
+      let substituteVariantId: number | null = null;
+      let quantityPicked = String(line.quantityPicked);
+
+      if (input.reason === "SUBSTITUTED") {
+        if (input.substituteVariantId === line.productVariantId) {
+          throw new BadRequestException(
+            "A substitution has to name a different product",
+          );
+        }
+        // Same gate as a sales order line: a discontinued or archived SKU
+        // cannot be introduced at the shelf either.
+        await loadOrderableVariants(this.db, orgId, [input.substituteVariantId]);
+        substituteVariantId = input.substituteVariantId;
+        quantityPicked = addDec(quantityPicked, input.quantityPicked);
+        if (cmpDec(quantityPicked, String(line.quantityToPick)) > 0) {
+          throw new BadRequestException(
+            `Substituting ${input.quantityPicked} would exceed the ${line.quantityToPick} this line asks for`,
+          );
+        }
+      }
+
+      await tx
+        .update(invPickListLines)
+        .set({
+          exceptionReason: input.reason,
+          exceptionNotes: input.notes ?? null,
+          substituteVariantId,
+          quantityPicked,
+        })
+        .where(
+          and(
+            eq(invPickListLines.orgId, orgId),
+            eq(invPickListLines.id, input.pickLineId),
+          ),
+        );
+
+      const complete = await this.waveIsComplete(tx, orgId, pickListId);
+      await tx
+        .update(invPickLists)
+        .set({ status: complete ? "COMPLETED" : "IN_PROGRESS" })
+        .where(and(eq(invPickLists.orgId, orgId), eq(invPickLists.id, pickListId)));
+
+      return {
+        pickLineId: input.pickLineId,
+        reason: input.reason,
+        substituteVariantId,
+        quantityPicked,
+        waveComplete: complete,
+        reportedBy: userId,
+      };
+    });
+  }
+
+  /**
    * Confirm one line, optionally against a scan.
    *
    * The scan check is the reason this is a server concern rather than a UI one.
@@ -235,21 +364,7 @@ export class PickWaveService {
           ),
         );
 
-      const remaining = await tx
-        .select({
-          toPick: invPickListLines.quantityToPick,
-          picked: invPickListLines.quantityPicked,
-        })
-        .from(invPickListLines)
-        .where(
-          and(
-            eq(invPickListLines.orgId, orgId),
-            eq(invPickListLines.pickListId, pickListId),
-          ),
-        );
-      const complete = remaining.every(
-        (r) => cmpDec(String(r.picked), String(r.toPick)) >= 0,
-      );
+      const complete = await this.waveIsComplete(tx, orgId, pickListId);
 
       await tx
         .update(invPickLists)

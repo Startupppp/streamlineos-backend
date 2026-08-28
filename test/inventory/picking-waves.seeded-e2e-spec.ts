@@ -37,6 +37,9 @@ interface Scene {
   userId: string;
   variantId: number;
   variantSku: string;
+  substituteVariantId: number;
+  retiredProductId: number;
+  retiredVariantId: number;
   warehouseId: number;
   locationId: number;
 }
@@ -100,6 +103,16 @@ describe("[seeded-e2e] picking waves", () => {
       const variant = await one<{ id: number }>(sql`
         INSERT INTO inv_product_variants (org_id, product_id, name, sku)
         VALUES (${seeded.orgId}, ${product.id}, 'Default', ${sku}) RETURNING id`);
+      const substitute = await one<{ id: number }>(sql`
+        INSERT INTO inv_product_variants (org_id, product_id, name, sku)
+        VALUES (${seeded.orgId}, ${product.id}, 'Substitute', ${`${sku}-SUB`}) RETURNING id`);
+      const retiredProduct = await one<{ id: number }>(sql`
+        INSERT INTO inv_products (org_id, uom_id, name, sku, status, created_by)
+        VALUES (${seeded.orgId}, ${uom.id}, 'Retired goods', ${`PK-${tag}-R`}, 'DISCONTINUED', ${userId})
+        RETURNING id`);
+      const retiredVariant = await one<{ id: number }>(sql`
+        INSERT INTO inv_product_variants (org_id, product_id, name, sku)
+        VALUES (${seeded.orgId}, ${retiredProduct.id}, 'Retired', ${`PK-${tag}-RV`}) RETURNING id`);
       const warehouse = await one<{ id: number }>(sql`
         INSERT INTO inv_warehouses (org_id, name, code, created_by)
         VALUES (${seeded.orgId}, 'Main', ${`MN${tag}`}, ${userId}) RETURNING id`);
@@ -111,6 +124,9 @@ describe("[seeded-e2e] picking waves", () => {
         userId,
         variantId: variant.id,
         variantSku: sku,
+        substituteVariantId: substitute.id,
+        retiredProductId: retiredProduct.id,
+        retiredVariantId: retiredVariant.id,
         warehouseId: warehouse.id,
         locationId: location.id,
       };
@@ -296,5 +312,116 @@ describe("[seeded-e2e] picking waves", () => {
     );
     expect(after.lines[0]!.quantity_picked).toBe("1.0000");
     expect(after.status).toBe("COMPLETED");
+  });
+
+  describe("INV-205 exceptions and substitution", () => {
+    async function oneLineWave() {
+      const so = await confirmedOrder(5);
+      const wave = await asTenant(() =>
+        waves().createWave(scene.orgId, scene.userId, {
+          warehouseId: scene.warehouseId,
+          soIds: [so],
+        }),
+      );
+      const detail = await asTenant(() =>
+        waves().getWave(scene.orgId, scene.userId, wave.pickListId),
+      );
+      return { pickListId: wave.pickListId, lineId: detail.lines[0]!.id };
+    }
+
+    it("lets a short-picked wave finish once the shortfall is explained", async () => {
+      // Without this a picker holding a tote the system will not let them close
+      // is stuck, which is exactly what an exception exists to resolve.
+      const { pickListId, lineId } = await oneLineWave();
+      await asTenant(() =>
+        waves().confirmPick(scene.orgId, scene.userId, pickListId, {
+          pickLineId: lineId,
+          quantityPicked: "2.0000",
+        }),
+      );
+
+      const open = await asTenant(() =>
+        waves().getWave(scene.orgId, scene.userId, pickListId),
+      );
+      expect(open.status).toBe("IN_PROGRESS");
+
+      const result = await asTenant(() =>
+        waves().reportException(scene.orgId, scene.userId, pickListId, {
+          pickLineId: lineId,
+          reason: "SHORT",
+          notes: "Only two on the shelf",
+        }),
+      );
+      expect(result.waveComplete).toBe(true);
+    });
+
+    it("keeps why apart from how much", async () => {
+      // A line short because the shelf was empty and a line short because the
+      // picker moved on carry the same quantity and different meanings.
+      const { pickListId, lineId } = await oneLineWave();
+      await asTenant(() =>
+        waves().reportException(scene.orgId, scene.userId, pickListId, {
+          pickLineId: lineId,
+          reason: "NOT_FOUND",
+          notes: "Bin empty",
+        }),
+      );
+
+      const detail = await asTenant(() =>
+        waves().getWave(scene.orgId, scene.userId, pickListId),
+      );
+      const [row] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ exception_reason: string; exception_notes: string }>(sql`
+          SELECT exception_reason, exception_notes FROM inv_pick_list_lines
+          WHERE org_id = ${scene.orgId} AND id = ${lineId}`),
+      );
+      expect(row!.exception_reason).toBe("NOT_FOUND");
+      expect(row!.exception_notes).toBe("Bin empty");
+      expect(detail.status).toBe("COMPLETED");
+    });
+
+    it("records what actually went in the tote on a substitution", async () => {
+      const { pickListId, lineId } = await oneLineWave();
+      const result = await asTenant(() =>
+        waves().reportException(scene.orgId, scene.userId, pickListId, {
+          pickLineId: lineId,
+          reason: "SUBSTITUTED",
+          substituteVariantId: scene.substituteVariantId,
+          quantityPicked: "5.0000",
+        }),
+      );
+      expect(result.substituteVariantId).toBe(scene.substituteVariantId);
+      expect(result.quantityPicked).toBe("5.0000");
+    });
+
+    it("refuses to substitute in a discontinued product", async () => {
+      // Swapping at the shelf must not route around the catalogue gate a sales
+      // order line is held to.
+      const { pickListId, lineId } = await oneLineWave();
+      await expect(
+        asTenant(() =>
+          waves().reportException(scene.orgId, scene.userId, pickListId, {
+            pickLineId: lineId,
+            reason: "SUBSTITUTED",
+            substituteVariantId: scene.retiredVariantId,
+            quantityPicked: "1.0000",
+          }),
+        ),
+      ).rejects.toThrow();
+    });
+
+    it("refuses a substitution that names the same product", async () => {
+      const { pickListId, lineId } = await oneLineWave();
+      await expect(
+        asTenant(() =>
+          waves().reportException(scene.orgId, scene.userId, pickListId, {
+            pickLineId: lineId,
+            reason: "SUBSTITUTED",
+            substituteVariantId: scene.variantId,
+            quantityPicked: "1.0000",
+          }),
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 });

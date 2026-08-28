@@ -2,7 +2,7 @@ import { pgTable, text, serial, timestamp, decimal, integer, index, uniqueIndex,
 import { relations } from "drizzle-orm";
 import {
   invVendorReturnReasonEnum, invCustomerReturnDispositionEnum,
-  invPickListStatusEnum, invCycleCountStatusEnum,
+  invPickListStatusEnum, invPickExceptionEnum, invCycleCountStatusEnum,
   invReturnStatusEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
@@ -143,6 +143,16 @@ export const invPickListLines = pgTable("inv_pick_list_lines", {
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   quantityToPick: decimal("quantity_to_pick", { precision: 18, scale: 4 }).notNull(),
   quantityPicked: decimal("quantity_picked", { precision: 18, scale: 4 }).default("0").notNull(),
+  /**
+   * INV-205. Why the rest was not picked. Null means the line closed as asked,
+   * which is the common case; a short pick with no reason and a short pick
+   * because the shelf was empty are different facts and a warehouse that
+   * cannot tell them apart fixes neither.
+   */
+  exceptionReason: invPickExceptionEnum("exception_reason"),
+  exceptionNotes: text("exception_notes"),
+  /** What actually went in the tote, when the picker swapped one item for another. */
+  substituteVariantId: integer("substitute_variant_id"),
 }, (table) => [
   unique("uniq_inv_pick_list_lines_org_id").on(table.orgId, table.id),
   foreignKey({
