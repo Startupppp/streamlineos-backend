@@ -8,7 +8,6 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import {
-  invProductVariants,
   invSalesOrders,
   invSoLines,
   invStockLevels,
@@ -243,17 +242,25 @@ export class SoCoreService {
       patch.taxAmount = taxAmount;
       patch.total = total;
 
+      // INV-107. The same gate createSo carries. This lookup was left behind
+      // when that one was fixed: no tenant predicate and no lifecycle check, so
+      // editing a draft order was a way to put another organisation's variant --
+      // or a discontinued one -- onto a line that creating the order refuses.
       const variantIds = data.lines.map((l) => l.productVariantId);
-      const variants = await this.db.query.invProductVariants.findMany({
-        where: inArray(invProductVariants.id, variantIds),
-        columns: { id: true, costPrice: true },
-      });
-      variantCostMap = new Map(variants.map((v) => [v.id, v.costPrice]));
+      const orderable = await loadOrderableVariants(this.db, orgId, variantIds);
+      variantCostMap = new Map(
+        [...orderable.values()].map((v) => [v.id, v.costPrice]),
+      );
     }
 
     await this.db.transaction(async (tx) => {
       if (data.lines) {
-        await (tx as Db).delete(invSoLines).where(eq(invSoLines.soId, soId));
+        // Tenant predicate on the delete too: leaning on RLS alone is exactly
+        // what made the lookup above dangerous, and RLS is inert under the
+        // owner role.
+        await (tx as Db)
+          .delete(invSoLines)
+          .where(and(eq(invSoLines.orgId, orgId), eq(invSoLines.soId, soId)));
 
         await (tx as Db).insert(invSoLines).values(
           (data.lines ?? []).map((line) => ({

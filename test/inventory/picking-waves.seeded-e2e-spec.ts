@@ -391,7 +391,53 @@ describe("[seeded-e2e] picking waves", () => {
         }),
       );
       expect(result.substituteVariantId).toBe(scene.substituteVariantId);
-      expect(result.quantityPicked).toBe("5.0000");
+      expect(result.substituteQuantity).toBe("5.0000");
+    });
+
+    it("does not count a substitute as units of the original SKU", async () => {
+      // The line names the original variant. Folding the substitute into
+      // quantity_picked made packing -- which keys its map on
+      // product_variant_id -- believe those units of the original were in the
+      // tote: it would accept a package of the original and reject one holding
+      // what the picker actually took.
+      const { pickListId, lineId } = await oneLineWave();
+      await asTenant(() =>
+        waves().reportException(scene.orgId, scene.userId, pickListId, {
+          pickLineId: lineId,
+          reason: "SUBSTITUTED",
+          substituteVariantId: scene.substituteVariantId,
+          quantityPicked: "5.0000",
+        }),
+      );
+
+      const [row] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{
+          quantity_picked: string;
+          substitute_quantity: string;
+          substitute_variant_id: number;
+        }>(sql`
+          SELECT quantity_picked, substitute_quantity, substitute_variant_id
+          FROM inv_pick_list_lines
+          WHERE org_id = ${scene.orgId} AND id = ${lineId}`),
+      );
+      expect(row!.quantity_picked).toBe("0.0000");
+      expect(row!.substitute_quantity).toBe("5.0000");
+      expect(row!.substitute_variant_id).toBe(scene.substituteVariantId);
+    });
+
+    it("still refuses a substitution larger than the line asks for", async () => {
+      // Separating the columns must not turn the bound into a licence.
+      const { pickListId, lineId } = await oneLineWave();
+      await expect(
+        asTenant(() =>
+          waves().reportException(scene.orgId, scene.userId, pickListId, {
+            pickLineId: lineId,
+            reason: "SUBSTITUTED",
+            substituteVariantId: scene.substituteVariantId,
+            quantityPicked: "99.0000",
+          }),
+        ),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it("refuses to substitute in a discontinued product", async () => {

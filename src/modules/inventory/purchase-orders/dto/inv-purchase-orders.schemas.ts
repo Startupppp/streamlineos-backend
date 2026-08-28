@@ -1,3 +1,4 @@
+import { positiveDecimalQuantity } from "../../stock-engine/dto/quantity.schemas";
 import { z } from "zod";
 
 export const listPoSchema = z.object({
@@ -52,7 +53,7 @@ const grnLotLineSchema = z.object({
    * ledger row, and it was reaching the engine as `Number(...).toFixed(4)` --
    * float arithmetic on the one value the inventory PRD forbids it for.
    */
-  quantityReceived: z.string().regex(/^\d+(\.\d{1,4})?$/),
+  quantityReceived: positiveDecimalQuantity,
   /**
    * Why the line did not match what the purchase order still owed. Optional:
    * a routine partial delivery is not an exception and should not demand

@@ -163,6 +163,13 @@ export const invPickListLines = pgTable("inv_pick_list_lines", {
   exceptionNotes: text("exception_notes"),
   /** What actually went in the tote, when the picker swapped one item for another. */
   substituteVariantId: integer("substitute_variant_id"),
+  /**
+   * How much of the substitute went in. Separate from `quantityPicked`, which
+   * means what it says: how much of *this line's* variant was picked. Folding
+   * the substitute into it made packing believe units of the original had been
+   * picked that never were.
+   */
+  substituteQuantity: decimal("substitute_quantity", { precision: 18, scale: 4 }),
 }, (table) => [
   unique("uniq_inv_pick_list_lines_org_id").on(table.orgId, table.id),
   foreignKey({

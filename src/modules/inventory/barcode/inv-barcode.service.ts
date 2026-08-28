@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { invProducts, invProductVariants, invLots, invSerialNumbers, invLocations, invStockLevels, invIdempotencyKeys } from "../../../db/schema";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { claimIdempotencyKey } from "../stock-engine/idempotency";
@@ -24,19 +24,21 @@ export class InvBarcodeService {
       location,
     ] = await Promise.all([
       this.db.query.invProducts.findFirst({
-        where: and(eq(invProducts.orgId, orgId), eq(invProducts.barcode, code)),
+        // Archived rows must not resolve: scanning a deleted SKU at the shelf
+        // returned it as a live variant.
+        where: and(eq(invProducts.orgId, orgId), eq(invProducts.barcode, code), isNull(invProducts.deletedAt)),
         columns: { id: true, name: true, sku: true, status: true },
       }),
       this.db.query.invProductVariants.findFirst({
-        where: and(eq(invProductVariants.orgId, orgId), eq(invProductVariants.barcode, code)),
+        where: and(eq(invProductVariants.orgId, orgId), eq(invProductVariants.barcode, code), isNull(invProductVariants.deletedAt)),
         columns: { id: true, productId: true, name: true, sku: true, isActive: true },
       }),
       this.db.query.invProductVariants.findFirst({
-        where: and(eq(invProductVariants.orgId, orgId), eq(invProductVariants.sku, code)),
+        where: and(eq(invProductVariants.orgId, orgId), eq(invProductVariants.sku, code), isNull(invProductVariants.deletedAt)),
         columns: { id: true, productId: true, name: true, sku: true, isActive: true },
       }),
       this.db.query.invProducts.findFirst({
-        where: and(eq(invProducts.orgId, orgId), eq(invProducts.sku, code)),
+        where: and(eq(invProducts.orgId, orgId), eq(invProducts.sku, code), isNull(invProducts.deletedAt)),
         columns: { id: true, name: true, sku: true, status: true },
       }),
       this.db.query.invLots.findFirst({
@@ -105,6 +107,7 @@ export class InvBarcodeService {
           where: and(
             eq(invProductVariants.orgId, orgId),
             eq(invProductVariants.barcode, parsed.gtin),
+            isNull(invProductVariants.deletedAt),
           ),
           columns: { id: true, productId: true, name: true, sku: true, isActive: true },
         })) ?? null)

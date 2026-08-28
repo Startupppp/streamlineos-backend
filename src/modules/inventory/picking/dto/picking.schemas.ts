@@ -1,3 +1,4 @@
+import { positiveDecimalQuantity } from "../../stock-engine/dto/quantity.schemas";
 import { z } from "zod";
 
 /** INV-204. One walk across several orders. */
@@ -14,7 +15,7 @@ export type CreateWaveInput = z.infer<typeof createWaveSchema>;
 export const confirmPickSchema = z
   .object({
     pickLineId: z.number().int().positive(),
-    quantityPicked: z.string().regex(/^\d+(\.\d{1,4})?$/),
+    quantityPicked: positiveDecimalQuantity,
     locationId: z.number().int().positive().optional(),
     /**
      * What the scanner read, if the picker scanned. The server compares it to
@@ -49,7 +50,7 @@ export const reportPickExceptionSchema = z
         pickLineId: z.number().int().positive(),
         reason: z.literal("SUBSTITUTED"),
         substituteVariantId: z.number().int().positive(),
-        quantityPicked: z.string().regex(/^\d+(\.\d{1,4})?$/),
+        quantityPicked: positiveDecimalQuantity,
         notes: z.string().max(500).optional(),
       })
       .strict(),

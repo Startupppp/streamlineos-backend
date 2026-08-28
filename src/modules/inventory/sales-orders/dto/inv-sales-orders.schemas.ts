@@ -1,3 +1,4 @@
+import { positiveDecimalQuantity } from "../../stock-engine/dto/quantity.schemas";
 import { z } from "zod";
 
 export const listSoSchema = z.object({
@@ -66,7 +67,7 @@ const pickLineSchema = z.object({
    * INV-204. A decimal string: this quantity closes a reservation and feeds
    * the shipment, and it was being written through `Number(...).toFixed(4)`.
    */
-  quantityPicked: z.string().regex(/^\d+(\.\d{1,4})?$/),
+  quantityPicked: positiveDecimalQuantity,
 }).strict();
 
 export const pickSoSchema = z.object({

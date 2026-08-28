@@ -1,3 +1,4 @@
+import { positiveDecimalQuantity } from "../../stock-engine/dto/quantity.schemas";
 import { z } from "zod";
 
 export const listReturnsSchema = z.object({
@@ -9,7 +10,7 @@ export type ListReturnsInput = z.infer<typeof listReturnsSchema>;
 
 const vendorReturnLineSchema = z.object({
   productVariantId: z.number().int().positive(),
-  quantity: z.string().regex(/^\d+(\.\d{1,4})?$/),
+  quantity: positiveDecimalQuantity,
   reason: z.enum(["DAMAGED", "WRONG_ITEM", "EXCESS", "EXPIRED", "QUALITY_REJECTED"]),
   lotId: z.number().int().positive().optional(),
   serialId: z.number().int().positive().optional(),
@@ -32,7 +33,7 @@ export type PostVendorReturnInput = z.infer<typeof postVendorReturnSchema>;
 
 const customerReturnLineSchema = z.object({
   productVariantId: z.number().int().positive(),
-  quantity: z.string().regex(/^\d+(\.\d{1,4})?$/),
+  quantity: positiveDecimalQuantity,
   reason: z.string().max(500),
   /**
    * INV-209. Optional now. A disposition asserted before anybody opened the

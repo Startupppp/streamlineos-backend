@@ -166,6 +166,24 @@ describe("[seeded-e2e] carrier status events", () => {
     );
   });
 
+  it("does not let a late cancellation undo a delivery", async () => {
+    // CANCELLED used to rank above DELIVERED, so a voided label or a billing
+    // correction rewrote a delivered shipment -- and because nothing outranked
+    // the top, no later event could put it back.
+    const result = await post("CANCELLED", "2026-08-28T12:00:00.000Z", "evt-cancel");
+    expect(result.recorded).toBe(true);
+    expect(result.advanced).toBe(false);
+    expect(await shipmentStatus()).toBe("DELIVERED");
+  });
+
+  it("still records the cancellation it declined to act on", async () => {
+    // What the carrier claimed is worth keeping even when we do not apply it.
+    const timeline = await asTenant(() =>
+      svc().timeline(scene.orgId, scene.shipmentId),
+    );
+    expect(timeline.events.some((e) => e.status === "CANCELLED")).toBe(true);
+  });
+
   it("refuses a tracking number belonging to another tenant", async () => {
     // The carrier names a tracking number, never a shipment id, and it is
     // resolved inside the caller's tenant -- otherwise a webhook could address

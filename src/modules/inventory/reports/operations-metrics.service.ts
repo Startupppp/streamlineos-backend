@@ -15,6 +15,7 @@ export interface ThroughputMetrics {
     discrepancyRate: number;
   };
   picking: {
+    linesTotal: number;
     linesConfirmed: number;
     exceptionLines: number;
     exceptionRate: number;
@@ -78,14 +79,20 @@ export class OperationsMetricsService {
       WHERE g.org_id = ${orgId}
         AND g.received_date >= ${from}
         AND g.received_date <= ${to}
+        -- Scoped like every other half of this report. Without it a
+        -- warehouse-scoped reader saw the whole organisation's receipts, which
+        -- is the same leak INV-109 closed on listGrns.
+        AND ${scope.location(sql`g.location_id`)}
     `);
 
     const [picking] = await this.db.execute<{
+      lines_total: number;
       lines_confirmed: number;
       exception_lines: number;
       waves_completed: number;
     }>(sql`
-      SELECT COUNT(pl.id) FILTER (WHERE pl.quantity_picked > 0)::int AS lines_confirmed,
+      SELECT COUNT(pl.id)::int AS lines_total,
+             COUNT(pl.id) FILTER (WHERE pl.quantity_picked > 0)::int AS lines_confirmed,
              COUNT(pl.id) FILTER (WHERE pl.exception_reason IS NOT NULL)::int
                AS exception_lines,
              COUNT(DISTINCT p.id) FILTER (WHERE p.status = 'COMPLETED')::int
@@ -139,7 +146,13 @@ export class OperationsMetricsService {
       picking: {
         linesConfirmed: picking?.lines_confirmed ?? 0,
         exceptionLines: picking?.exception_lines ?? 0,
-        exceptionRate: rate(picking?.exception_lines ?? 0, picking?.lines_confirmed ?? 0),
+        linesTotal: picking?.lines_total ?? 0,
+        // Denominator is every pick line, not the confirmed ones. Confirmed
+        // counts only lines with a quantity picked -- which excludes the
+        // commonest exception, NOT_FOUND, and produced rates above 100% on a
+        // dashboard whose whole premise is that a rate travels with its
+        // denominator.
+        exceptionRate: rate(picking?.exception_lines ?? 0, picking?.lines_total ?? 0),
         wavesCompleted: picking?.waves_completed ?? 0,
       },
       shipping: {
@@ -158,6 +171,7 @@ export class OperationsMetricsService {
       window: { from: query.from, to: query.to },
       receiving: { receipts: 0, lines: 0, discrepancyLines: 0, discrepancyRate: 0 },
       picking: {
+        linesTotal: 0,
         linesConfirmed: 0,
         exceptionLines: 0,
         exceptionRate: 0,

@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import type { SuggestPutawayInput } from "./dto/inv-warehouses.schemas";
+import { cmpDec, subDec } from "../stock-engine/decimal";
 
 export interface PutawaySuggestion {
   locationId: number;
@@ -31,12 +32,12 @@ export class PutawayService {
    * Ranking, in order, and each rank is a real operational preference rather
    * than a tidy sort:
    *
-   *   1. Locations already holding this variant, so a SKU does not scatter
-   *      across a building one delivery at a time. Consolidation is what makes
-   *      a later pick one walk instead of three.
-   *   2. Locations where the quantity actually fits, because a suggestion that
+   *   1. Locations where the quantity actually fits, because a suggestion that
    *      cannot be accepted is worse than no suggestion — the engine will
    *      refuse the putaway and the operator has walked for nothing.
+   *   2. Among those, locations already holding this variant, so a SKU does not
+   *      scatter across a building one delivery at a time. Consolidation is
+   *      what makes a later pick one walk instead of three.
    *   3. Most remaining room first, so the building fills evenly rather than
    *      wedging every delivery into the first bin with a gap.
    *
@@ -80,10 +81,11 @@ export class PutawayService {
     `);
 
     const suggestions = rows.map((row) => {
+      // Exact, like every other quantity comparison in this module. These are
+      // numeric(18,4) values and the rest of the phase went to some trouble to
+      // stop them becoming floats on the way to a decision.
       const remaining =
-        row.capacity === null
-          ? null
-          : (Number(row.capacity) - Number(row.on_hand)).toFixed(4);
+        row.capacity === null ? null : subDec(row.capacity, row.on_hand);
       return {
         locationId: row.id,
         code: row.code,
@@ -92,17 +94,23 @@ export class PutawayService {
         onHand: row.on_hand,
         remaining,
         holdsVariant: row.holds_variant,
-        fits: remaining === null || Number(remaining) >= Number(input.quantity),
+        fits: remaining === null || cmpDec(remaining, input.quantity) >= 0,
       } satisfies PutawaySuggestion;
     });
 
+    // Order matters and the comment above is the contract: a bin that does not
+    // fit is useless whatever else is true of it, so `fits` sorts first; among
+    // bins that fit, consolidation wins. The earlier version documented
+    // consolidation as the first key and implemented it as the second, which is
+    // the kind of disagreement that survives review because both halves read
+    // reasonably on their own.
     return suggestions.sort((a, b) => {
       if (a.fits !== b.fits) return a.fits ? -1 : 1;
       if (a.holdsVariant !== b.holdsVariant) return a.holdsVariant ? -1 : 1;
       if (a.remaining === null && b.remaining === null) return 0;
       if (a.remaining === null) return 1;
       if (b.remaining === null) return -1;
-      return Number(b.remaining) - Number(a.remaining);
+      return cmpDec(b.remaining, a.remaining);
     });
   }
 }

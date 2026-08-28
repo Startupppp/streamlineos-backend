@@ -183,10 +183,25 @@ describe("[seeded-e2e] customer return inspection", () => {
     expect(row!.inspection_notes).toBe("Cracked casing");
   });
 
+  it("refuses to post a line whose disposition was merely asserted at intake", async () => {
+    // The gate that matters. A disposition declared when the return was created
+    // is a guess from the customer's description -- the exact thing that was
+    // posting stock without anybody opening the box -- so it must not count as
+    // an inspection.
+    const { returnId } = await draftReturn(true);
+    await expect(post(returnId)).rejects.toThrow(BadRequestException);
+  });
+
   it("refuses to inspect a return that has already posted", async () => {
     // Changing a disposition the ledger has already acted on would leave the
     // record disagreeing with the stock.
     const { returnId, lineId } = await draftReturn(true);
+    await asTenant(() =>
+      returns().inspectLine(scene.orgId, scene.userId, returnId, {
+        lineId,
+        disposition: "RESTOCK",
+      }),
+    );
     await post(returnId);
 
     await expect(

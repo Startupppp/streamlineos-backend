@@ -7,6 +7,7 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { PickWaveService } from "../picking/pick-wave.service";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { randomUUID } from "node:crypto";
+import { logger } from "../../../common/logger/logger.service";
 import type {
   SyncBatchInput,
   SyncBatchResult,
@@ -84,10 +85,16 @@ export class SyncBatchService {
     // request whose response was lost costs nothing.
     const key = `sync:${operation.clientOperationId}`;
 
+    // COMPLETED only. Matching on the key alone treated a *failed* prior
+    // attempt as a duplicate -- the row is left behind IN_FLIGHT or FAILED --
+    // so a device retrying an operation that genuinely did not land was told it
+    // had, and the adjustment was lost silently. That is the exact failure this
+    // whole service exists to prevent.
     const alreadyDone = await this.db.query.invIdempotencyKeys.findFirst({
       where: and(
         eq(invIdempotencyKeys.orgId, orgId),
         eq(invIdempotencyKeys.idempotencyKey, key),
+        eq(invIdempotencyKeys.status, "COMPLETED"),
       ),
       columns: { id: true },
     });
@@ -132,6 +139,35 @@ export class SyncBatchService {
           .onConflictDoNothing();
       }
 
+      // Emitted after the operation has committed, and its failure must not be
+      // reported as the operation's. Telling a device its stock movement failed
+      // when it landed is worse than a missing event: the device will send it
+      // again, and the second one will be applied.
+      await this.emitApplied(orgId, userId, operation);
+
+      return { clientOperationId: operation.clientOperationId, outcome: "applied" };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // A conflict is a fact about the world, not a bug: the shelf emptied, the
+      // line closed, somebody got there first. It is reported so the device can
+      // show it to a human, never resolved by force.
+      const isConflict =
+        error instanceof ConflictException ||
+        /insufficient|exceed|not found|closed|capacity/i.test(message);
+      return {
+        clientOperationId: operation.clientOperationId,
+        outcome: isConflict ? "conflict" : "failed",
+        reason: message,
+      };
+    }
+  }
+
+  private async emitApplied(
+    orgId: string,
+    userId: string,
+    operation: SyncOperation,
+  ): Promise<void> {
+    try {
       await this.db.transaction(async (tx) => {
         await OutboxWriter.emit(tx, {
           eventId: randomUUID(),
@@ -150,21 +186,15 @@ export class SyncBatchService {
           actorMembershipId: null,
         });
       });
-
-      return { clientOperationId: operation.clientOperationId, outcome: "applied" };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      // A conflict is a fact about the world, not a bug: the shelf emptied, the
-      // line closed, somebody got there first. It is reported so the device can
-      // show it to a human, never resolved by force.
-      const isConflict =
-        error instanceof ConflictException ||
-        /insufficient|exceed|not found|closed|capacity/i.test(message);
-      return {
+      // Swallowed deliberately and loudly: the movement is committed, and the
+      // device's view of what landed must not depend on whether we managed to
+      // announce it.
+      logger.error("inventory.sync: applied operation but failed to emit its event", {
+        orgId,
         clientOperationId: operation.clientOperationId,
-        outcome: isConflict ? "conflict" : "failed",
-        reason: message,
-      };
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }

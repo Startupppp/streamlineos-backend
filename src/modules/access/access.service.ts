@@ -97,16 +97,24 @@ function undefinedColumn(error: unknown): boolean {
   return false;
 }
 
+/**
+ * An uninstalled module, and nothing else.
+ *
+ * This used to accept any error whose message contained "does not exist", which
+ * is far too wide. It swallowed 42703 (a renamed column), 42883 (a missing
+ * function), 42704 (a missing role) -- and, once the savepoint machinery
+ * arrived, its own "savepoint access_read_N does not exist". Every one of those
+ * degraded silently into an empty permission set, so a schema drift or a bug in
+ * this file presented as "you have no permissions" with a warning that said a
+ * table was absent.
+ *
+ * 42P01 is the only code that genuinely means "this module was never installed
+ * here". Everything else is a fault, and a fault in authorization should be
+ * loud.
+ */
 function isMissingRelationError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   if ("code" in error && error.code === "42P01") return true;
-  if (
-    "message" in error &&
-    typeof error.message === "string" &&
-    error.message.includes("does not exist")
-  ) {
-    return true;
-  }
   if ("cause" in error) return isMissingRelationError(error.cause);
   return false;
 }

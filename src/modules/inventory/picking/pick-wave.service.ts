@@ -248,7 +248,13 @@ export class PickWaveService {
       if (!line) throw new NotFoundException("Pick line not found");
 
       let substituteVariantId: number | null = null;
-      let quantityPicked = String(line.quantityPicked);
+      let substituteQuantity: string | null = null;
+      // Unchanged by a substitution. `quantityPicked` means how much of *this
+      // line's* variant was picked, and folding the substitute into it made
+      // packing believe units of the original were in the tote -- it builds its
+      // map keyed on productVariantId, so it would accept a package of the
+      // original and reject one holding what the picker actually took.
+      const quantityPicked = String(line.quantityPicked);
 
       if (input.reason === "SUBSTITUTED") {
         if (input.substituteVariantId === line.productVariantId) {
@@ -260,8 +266,11 @@ export class PickWaveService {
         // cannot be introduced at the shelf either.
         await loadOrderableVariants(this.db, orgId, [input.substituteVariantId]);
         substituteVariantId = input.substituteVariantId;
-        quantityPicked = addDec(quantityPicked, input.quantityPicked);
-        if (cmpDec(quantityPicked, String(line.quantityToPick)) > 0) {
+        substituteQuantity = input.quantityPicked;
+        // Still bounded by what the line asked for: substituting twelve against
+        // a line for five is a different mistake, not a licence.
+        const covered = addDec(quantityPicked, input.quantityPicked);
+        if (cmpDec(covered, String(line.quantityToPick)) > 0) {
           throw new BadRequestException(
             `Substituting ${input.quantityPicked} would exceed the ${line.quantityToPick} this line asks for`,
           );
@@ -274,6 +283,7 @@ export class PickWaveService {
           exceptionReason: input.reason,
           exceptionNotes: input.notes ?? null,
           substituteVariantId,
+          substituteQuantity,
           quantityPicked,
         })
         .where(
@@ -293,6 +303,7 @@ export class PickWaveService {
         pickLineId: input.pickLineId,
         reason: input.reason,
         substituteVariantId,
+        substituteQuantity,
         quantityPicked,
         waveComplete: complete,
         reportedBy: userId,

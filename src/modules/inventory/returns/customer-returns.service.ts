@@ -227,10 +227,18 @@ export class CustomerReturnsService {
     if (ret.status === "POSTED") return this.get(orgId, returnId);
     if (ret.status !== "DRAFT") throw new BadRequestException("Only DRAFT customer returns can be posted");
 
-    // INV-209. Posting moves stock, so every line must have been looked at
-    // first. Reported together rather than one at a time: somebody clearing a
+    // INV-209. Posting moves stock, so every line must have been *looked at*
+    // first -- `inspectedAt`, not merely `disposition`.
+    //
+    // Gating on the disposition was the weaker test and it defeated the ticket:
+    // a disposition declared at intake is a guess from the customer's
+    // description, which is exactly the thing that was posting stock without
+    // anybody opening the box. It is still accepted at create as a statement of
+    // intent; it just no longer counts as an inspection.
+    //
+    // Reported together rather than one at a time: somebody clearing a
     // twelve-line return should not discover the gaps twelve attempts later.
-    const uninspected = ret.lines.filter((line) => line.disposition === null);
+    const uninspected = ret.lines.filter((line) => line.inspectedAt === null);
     if (uninspected.length > 0) {
       throw new BadRequestException(
         `These lines have not been inspected yet: ${uninspected.map((l) => l.id).join(", ")}`,

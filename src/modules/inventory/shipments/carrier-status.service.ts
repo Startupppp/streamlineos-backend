@@ -22,8 +22,21 @@ const PROGRESS: Record<string, number> = {
   LABEL_CREATED: 2,
   SHIPPED: 3,
   DELIVERED: 4,
-  CANCELLED: 5,
 };
+
+/**
+ * CANCELLED is deliberately absent from the ladder above.
+ *
+ * It is a terminal side branch, not a further stage: a parcel is not "more
+ * delivered than delivered" because the label was later voided. Ranking it
+ * highest -- as this did -- meant a late cancellation webhook overwrote a
+ * delivered shipment and then froze it there, because nothing outranks the top,
+ * so no subsequent event could correct it. The monotonic rule the file exists
+ * to enforce was defeated by its own ordering.
+ *
+ * A cancellation is accepted only while the goods have not arrived. After
+ * delivery it is recorded like any other late event and changes nothing.
+ */
 
 @Injectable()
 export class CarrierStatusService {
@@ -65,8 +78,9 @@ export class CarrierStatusService {
     }
 
     const currentRank = PROGRESS[shipment.status] ?? 0;
-    const incomingRank = PROGRESS[input.status];
-    if (incomingRank === undefined) {
+    const cancelling = input.status === "CANCELLED";
+    const incomingRank = cancelling ? null : PROGRESS[input.status];
+    if (!cancelling && incomingRank === undefined) {
       throw new BadRequestException(`Unsupported status ${input.status}`);
     }
 
@@ -91,7 +105,11 @@ export class CarrierStatusService {
       return { recorded: false, advanced: false, status: shipment.status };
     }
 
-    const advanced = incomingRank > currentRank;
+    // A cancellation applies only before the goods arrive; a delivered parcel
+    // stays delivered whatever the carrier's billing system says afterwards.
+    const advanced = cancelling
+      ? shipment.status !== "DELIVERED" && shipment.status !== "CANCELLED"
+      : (incomingRank ?? 0) > currentRank;
     if (advanced) {
       await this.db
         .update(invShipments)

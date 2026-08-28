@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, decimal, integer, boolean, date, jsonb, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { invShipmentStatusEnum, invPackageStatusEnum, invLoadStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { invProductVariants } from "./core";
@@ -122,6 +122,27 @@ export const invShipmentStatusEvents = pgTable("inv_shipment_status_events", {
     table.shipmentId,
     table.occurredAt,
   ),
+  /**
+   * The dedup index, declared rather than left only in migration 0525.
+   *
+   * `recordEvent` relies on it entirely via `onConflictDoNothing()`, and an
+   * index that exists in the database but not in the declaration is one
+   * `db:generate` away from being proposed for deletion -- at which point every
+   * replayed webhook inserts a new row and re-advances the shipment, silently.
+   * The parity spec compares columns only, so nothing else would catch it.
+   *
+   * NULLS NOT DISTINCT is load-bearing: a shipment with no carrier on record
+   * leaves `carrierId` null, and under the default rule two nulls never
+   * conflict.
+   */
+  uniqueIndex("uniq_inv_shipment_status_events_carrier_event")
+    .on(table.orgId, table.carrierId, table.carrierEventId)
+    .where(sql`${table.carrierEventId} IS NOT NULL`),
+  foreignKey({
+    name: "fk_inv_shipment_status_events_shipment",
+    columns: [table.orgId, table.shipmentId],
+    foreignColumns: [invShipments.orgId, invShipments.id],
+  }).onDelete("cascade"),
 ]);
 
 export const invPackages = pgTable("inv_packages", {
