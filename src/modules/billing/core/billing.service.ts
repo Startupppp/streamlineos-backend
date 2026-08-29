@@ -1,37 +1,20 @@
 ﻿import {
-  BadRequestException,
-  ConflictException,
   Inject,
   Injectable,
-  Logger,
-  ServiceUnavailableException,
 } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
-import {
-  coupons,
-  couponRedemptions,
-  subscriptionPayments,
-  subscriptions,
-  accountingSettings,
-} from "../../../db/schema";
+import { eq } from "drizzle-orm";
+import { subscriptions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { logger } from "../../../common/logger/logger.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
-import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { ProrationLedgerService } from "./proration-ledger.service";
 import { VersionedCatalogService } from "./versioned-catalog.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
-import { classifyPlanChange } from "./revenue-events";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
 import { PaymentWebhookHealthService } from "../payments/payment-webhook-health.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
-import {
-  applyDiscount,
-  couponDiscountPaise,
-} from "./coupon-pricing";
 import {
   BillingWebhookHandler,
   type WebhookResult,
@@ -45,19 +28,12 @@ import {
   type UpdateCouponInput,
   type VerifyPaymentInput,
 } from "./dto/billing.schemas";
-import {
-  PLAN_PRICES_PAISE,
-  ANNUAL_DISCOUNT_PCT,
-  buildPlanCatalog,
-  TRIAL_PLAN,
-} from "./plan-entitlements.constants";
-import {
-  ExternalEffectLedger,
-  ExternalEffectLeaseBusyError,
-} from "../../../common/outbox/external-effect-ledger";
+import { buildPlanCatalog, TRIAL_PLAN } from "./plan-entitlements.constants";
+import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
 import { BillingProfileService } from "./billing-profile.service";
 import { BillingMarketplace } from "./billing-marketplace";
 import { BillingAccountOverview } from "./billing-account-overview";
+import { BillingPaymentActivation } from "./billing-payment-activation";
 
 @Injectable()
 export class BillingService {
@@ -75,6 +51,17 @@ export class BillingService {
     private readonly paymentNotices: PaymentAnalyticsService,
     private readonly billingProfile: BillingProfileService,
   ) {
+    this.paymentActivation = new BillingPaymentActivation({
+      db: this.db,
+      audit: this.audit,
+      aiCredits: this.aiCredits,
+      planLimits: this.planLimits,
+      prorationLedger: this.prorationLedger,
+      catalog: this.catalog,
+      revenueAnalytics: this.revenueAnalytics,
+      providers: this.providers,
+      externalEffectLedger: this.externalEffectLedger,
+    });
     this.couponAdmin = new BillingCoupons(this.db);
     this.webhooks = new BillingWebhookHandler({
       db: this.db,
@@ -89,7 +76,7 @@ export class BillingService {
     this.marketplace = new BillingMarketplace(
       this.aiCredits,
       this.providers,
-      this.currencyForOrg.bind(this),
+      this.paymentActivation.currencyForOrg.bind(this.paymentActivation),
     );
     this.accountOverview = new BillingAccountOverview(
       this.db,
@@ -99,83 +86,10 @@ export class BillingService {
   }
 
   private readonly webhooks: BillingWebhookHandler;
+  private readonly paymentActivation: BillingPaymentActivation;
   private readonly couponAdmin: BillingCoupons;
   private readonly marketplace: BillingMarketplace;
   private readonly accountOverview: BillingAccountOverview;
-  private readonly logger = new Logger(BillingService.name);
-
-  private async billablePrice(orgId: string, plan: Plan, billingCycle: BillingCycle) {
-    const catalogPrice = await this.catalog.getActivePriceForPlanTier(plan);
-    const currency = await this.currencyForOrg(orgId, catalogPrice?.currency);
-    const monthlyAmount = catalogPrice?.amountMinor ?? PLAN_PRICES_PAISE[plan];
-    const amount = billingCycle === "annual"
-      ? Math.round(monthlyAmount * 12 * (1 - ANNUAL_DISCOUNT_PCT))
-      : monthlyAmount;
-    return {
-      amount,
-      currency,
-    };
-  }
-
-  private async currencyForOrg(orgId: string, fallback?: string): Promise<string> {
-    if (typeof this.db.select !== "function") {
-      return fallback ?? "INR";
-    }
-
-    const [settings] = await this.db
-      .select({ baseCurrency: accountingSettings.baseCurrency })
-      .from(accountingSettings)
-      .where(eq(accountingSettings.orgId, orgId));
-    return settings?.baseCurrency ?? fallback ?? "INR";
-  }
-
-  /** A missing price version is reported, never thrown: the payment already captured and must not roll back. */
-  private async recordProrationForPlanChange(
-    tx: DbOrTx,
-    orgId: string,
-    existing: { id: number; plan: Plan; currentPeriodStart: Date | null; currentPeriodEnd: Date | null },
-    newPlan: Plan,
-    effectiveFrom: Date,
-  ): Promise<void> {
-    if (existing.plan === newPlan) return;
-
-    const { currentPeriodStart, currentPeriodEnd } = existing;
-    if (!currentPeriodStart || !currentPeriodEnd) return;
-    if (effectiveFrom < currentPeriodStart || effectiveFrom > currentPeriodEnd) return;
-
-    const [oldPrice, newPrice] = await Promise.all([
-      this.catalog.getActivePriceForPlanTier(existing.plan),
-      this.catalog.getActivePriceForPlanTier(newPlan),
-    ]);
-
-    if (!oldPrice || !newPrice) {
-      this.logger.error("Plan change recorded no proration line: no active price version for this tier", {
-        orgId,
-        subscriptionId: existing.id,
-        from: existing.plan,
-        to: newPlan,
-        missing: !oldPrice ? existing.plan : newPlan,
-      });
-      return;
-    }
-
-    await this.prorationLedger.recordPlanChange(
-      {
-        orgId,
-        subscriptionId: existing.id,
-        idempotencyKey: `sub:${existing.id}:${newPrice.id}:${effectiveFrom.toISOString()}`,
-        oldPriceVersionId: oldPrice.id,
-        newPriceVersionId: newPrice.id,
-        oldQuantity: 1,
-        newQuantity: 1,
-        periodStart: currentPeriodStart,
-        periodEnd: currentPeriodEnd,
-        effectiveFrom,
-      },
-      tx,
-    );
-  }
-
   async getSubscription(orgId: string) {
     const subscription = await this.db.query.subscriptions.findFirst({
       where: eq(subscriptions.orgId, orgId),
@@ -204,50 +118,7 @@ export class BillingService {
     billingCycle: BillingCycle = "monthly",
     couponId?: number,
   ) {
-    const adapter = await this.providers.resolveConfigured(orgId);
-    if (adapter === undefined || !adapter.isReady()) {
-      throw new ServiceUnavailableException(
-        "Payment gateway not configured. Contact support.",
-      );
-    }
-
-    if (!PLAN_PRICES_PAISE[plan]) throw new BadRequestException("Invalid plan");
-
-    const price = await this.billablePrice(orgId, plan, billingCycle);
-    const baseAmount = price.amount;
-    let amount = baseAmount;
-    let couponDiscountAmount = 0;
-
-    if (couponId) {
-      // Without these rules checkout discounted a coupon redemption then refused.
-      const evaluation = await this.couponAdmin.evaluate(
-        couponId,
-        orgId,
-        plan,
-        baseAmount,
-      );
-      if (!evaluation.eligible)
-        throw new BadRequestException(evaluation.reason);
-      couponDiscountAmount = evaluation.discountAmount;
-      amount = applyDiscount(baseAmount, couponDiscountAmount);
-    }
-
-    const { providerOrderId } = await adapter.createOrder({
-      amount: String(amount),
-      currency: price.currency,
-      receipt: `sub_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
-      notes: { orgId, plan, userId, billingCycle },
-    });
-
-    return {
-      orderId: providerOrderId,
-      amount,
-      currency: price.currency,
-      keyId: adapter.publicKeyId(),
-      plan,
-      billingCycle,
-      discountAmount: couponDiscountAmount,
-    };
+    return this.paymentActivation.createOrder(orgId, userId, plan, billingCycle, couponId);
   }
 
   async verifyAndActivate(
@@ -255,209 +126,7 @@ export class BillingService {
     userId: string,
     input: VerifyPaymentInput,
   ) {
-    const adapter = await this.providers.resolveConfigured(orgId);
-    if (adapter === undefined || !adapter.isReady()) {
-      throw new ServiceUnavailableException(
-        "Payment gateway not configured. Contact support.",
-      );
-    }
-
-    const valid = adapter.verifyPaymentSignature({
-      orderId: input.razorpay_order_id,
-      paymentId: input.razorpay_payment_id,
-      signature: input.razorpay_signature,
-    });
-    if (!valid) {
-      throw new BadRequestException(
-        "Payment verification failed: invalid signature",
-      );
-    }
-
-    const billingCycle = input.billingCycle ?? "monthly";
-    const price = await this.billablePrice(orgId, input.plan, billingCycle);
-    const amount = price.amount;
-    const now = new Date();
-    const periodEnd = new Date(now);
-    periodEnd.setMonth(periodEnd.getMonth() + (billingCycle === "annual" ? 12 : 1));
-
-    try {
-      await this.db.transaction(async (tx) => {
-        const existing = await tx.query.subscriptions.findFirst({
-          where: eq(subscriptions.orgId, orgId),
-        });
-
-        const revenue = classifyPlanChange(
-          existing ? { plan: existing.plan, status: existing.status } : null,
-          input.plan,
-        );
-
-        let subscriptionId: number;
-        if (existing) {
-          await this.recordProrationForPlanChange(tx, orgId, existing, input.plan, now);
-          await tx
-            .update(subscriptions)
-            .set({
-              plan: input.plan,
-              status: "ACTIVE",
-              currentPeriodStart: now,
-              currentPeriodEnd: periodEnd,
-              updatedAt: now,
-            })
-            .where(eq(subscriptions.id, existing.id));
-          subscriptionId = existing.id;
-        } else {
-          const [created] = await tx
-            .insert(subscriptions)
-            .values({
-              orgId,
-              plan: input.plan,
-              status: "ACTIVE",
-              currentPeriodStart: now,
-              currentPeriodEnd: periodEnd,
-            })
-            .returning({ id: subscriptions.id });
-          subscriptionId = created.id;
-        }
-
-        await tx.insert(subscriptionPayments).values({
-          orgId,
-          subscriptionId,
-          razorpayPaymentId: input.razorpay_payment_id,
-          razorpayOrderId: input.razorpay_order_id,
-          amount: (amount / 100).toFixed(2),
-          currency: price.currency,
-          status: "captured",
-          paidAt: now,
-        });
-
-        if (input.couponId !== undefined) {
-          const [lockedCoupon] = await tx
-            .select({
-              id: coupons.id,
-              type: coupons.type,
-              value: coupons.value,
-              maxUses: coupons.maxUses,
-              usedCount: coupons.usedCount,
-            })
-            .from(coupons)
-            .where(
-              and(eq(coupons.id, input.couponId), eq(coupons.isActive, true)),
-            )
-            .for("update")
-            .limit(1);
-
-          if (lockedCoupon) {
-            if (
-              lockedCoupon.maxUses !== null &&
-              lockedCoupon.usedCount >= lockedCoupon.maxUses
-            ) {
-              throw new BadRequestException(
-                "This coupon has reached its usage limit",
-              );
-            }
-
-            await tx
-              .update(coupons)
-              .set({ usedCount: sql`${coupons.usedCount} + 1` })
-              .where(eq(coupons.id, input.couponId));
-
-            const discountPaise = couponDiscountPaise(
-              {
-                id: lockedCoupon.id,
-                type: lockedCoupon.type,
-                value: lockedCoupon.value,
-                maxUses: lockedCoupon.maxUses,
-                usedCount: lockedCoupon.usedCount,
-                applicablePlans: null,
-                expiresAt: null,
-              },
-              amount,
-            );
-
-            await tx.insert(couponRedemptions).values({
-              couponId: input.couponId,
-              orgId,
-              userId,
-              amount: (discountPaise / 100).toFixed(2),
-            });
-          }
-        }
-
-        // Inside the activating transaction, so the event and the state change commit together.
-        if (revenue) {
-          await this.revenueAnalytics.emit(tx, {
-            type: revenue.type,
-            orgId,
-            plan: input.plan,
-            previousPlan: revenue.previousPlan,
-            mrr: revenue.mrr,
-            amount: revenue.mrr,
-            metadata: {
-              paymentId: input.razorpay_payment_id,
-              source: "verify-and-activate",
-            },
-          });
-        }
-      });
-    } catch (err: unknown) {
-      const pgErr = err as { code?: string; constraint?: string };
-      if (pgErr.code === "23505") {
-        if (pgErr.constraint === "uq_coupon_redemptions_coupon_org") {
-          throw new ConflictException(
-            "This coupon has already been used by your organization",
-          );
-        }
-        return { success: true, plan: input.plan, status: "ACTIVE" };
-      }
-      throw err;
-    }
-
-    await this.planLimits.bust(orgId);
-
-    this.audit.log({
-      action: "settings.updated",
-      userId,
-      orgId,
-      targetType: "subscription",
-      metadata: { plan: input.plan, paymentId: input.razorpay_payment_id },
-    });
-
-    try {
-      await this.externalEffectLedger.execute(
-        {
-          organizationId: orgId,
-          producerEventId: input.razorpay_payment_id,
-          effectKey: `${input.razorpay_payment_id}:plan-credit-grant`,
-          effectType: "billing.plan-credit-grant",
-          providerIdempotency: "NONE",
-        },
-        () =>
-          this.aiCredits.grantPlanCredits(
-            orgId,
-            input.plan,
-            userId,
-            input.razorpay_payment_id,
-          ),
-      );
-    } catch (err: unknown) {
-      if (err instanceof ExternalEffectLeaseBusyError) {
-        logger.warn("[billing] plan credit grant already in flight", {
-          orgId,
-          plan: input.plan,
-        });
-      } else {
-        logger.error("[billing] plan credit grant failed", {
-          orgId,
-          plan: input.plan,
-          err,
-        });
-        throw new ServiceUnavailableException(
-          "Payment recorded but credits could not be granted. The system will retry automatically.",
-        );
-      }
-    }
-
-    return { success: true, plan: input.plan, status: "ACTIVE" };
+    return this.paymentActivation.verifyAndActivate(orgId, userId, input);
   }
 
   validateCoupon(code: string, orgId: string, plan: Plan) {
