@@ -20,15 +20,34 @@ function buildService(opts: {
 }) {
   const variant = opts.variant === undefined ? { id: 5, sku: "AMX-500", isActive: true, productId: 1, name: "Amoxil" } : opts.variant;
 
+  // A plain SKU barcode, not GS1 — the common case, and the path the first
+  // implementation of this missed entirely.
   const db = {
     query: {
-      invProductVariants: { findFirst: async () => variant ?? undefined },
+      invProductVariants: {
+        findFirst: async () =>
+          variant ? { ...variant, totalOnHand: "0.0000" } : undefined,
+      },
       invLots: { findFirst: async () => undefined },
       invSerialNumbers: { findFirst: async () => undefined },
       invProducts: { findFirst: async () => undefined },
+      invLocations: { findFirst: async () => undefined },
     },
     insert: () => ({ values: async () => undefined }),
     execute: async () => [],
+    // `lookup` sums on-hand for whichever entity it resolved.
+    select: () => {
+      const chain: Record<string, unknown> = {};
+      const step = () => chain;
+      chain.from = step;
+      chain.where = step;
+      chain.innerJoin = step;
+      chain.leftJoin = step;
+      chain.groupBy = step;
+      chain.limit = step;
+      chain.then = (resolve: (rows: unknown[]) => unknown) => resolve([]);
+      return chain;
+    },
   };
 
   const pharmacy = {
@@ -59,7 +78,7 @@ describe("E3 — a scan carries the pharmacy safety alerts", () => {
       ],
     });
 
-    const result = await service.scan("org1", { raw: "8901234567890" } as never);
+    const result = await service.scan("org1", "8901234567890");
 
     expect(result.warnings).toContain(
       "Look-alike/sound-alike: Amoxil is easily confused with Amoxil DT",
@@ -73,14 +92,14 @@ describe("E3 — a scan carries the pharmacy safety alerts", () => {
       alerts: [{ code: "HIGH_ALERT", disposition: "ACKNOWLEDGE", message: "High-alert medicine" }],
     });
 
-    const result = await service.scan("org1", { raw: "8901234567890" } as never);
+    const result = await service.scan("org1", "8901234567890");
 
     expect(result.warnings).toContain("Confirm before use: High-alert medicine");
   });
 
   it("adds nothing when the SKU has no alerts", async () => {
     const { service } = buildService({ alerts: [] });
-    const result = await service.scan("org1", { raw: "8901234567890" } as never);
+    const result = await service.scan("org1", "8901234567890");
     expect(result.warnings).toEqual([]);
   });
 
@@ -88,7 +107,7 @@ describe("E3 — a scan carries the pharmacy safety alerts", () => {
     // A scan of an unknown barcode has no SKU to be unsafe about, and asking
     // anyway would be a query per failed scan on the hottest path in the module.
     const { pharmacy, service } = buildService({ variant: null });
-    await service.scan("org1", { raw: "nonsense" } as never);
+    await service.scan("org1", "nonsense");
     expect(pharmacy.dispensingProfile).not.toHaveBeenCalled();
   });
 
@@ -98,6 +117,6 @@ describe("E3 — a scan carries the pharmacy safety alerts", () => {
     const { service } = buildService({
       alerts: [{ code: "HIGH_ALERT", disposition: "ACKNOWLEDGE", message: "High-alert medicine" }],
     });
-    await expect(service.scan("org1", { raw: "8901234567890" } as never)).resolves.toBeDefined();
+    await expect(service.scan("org1", "8901234567890")).resolves.toBeDefined();
   });
 });

@@ -97,6 +97,43 @@ export class InvBarcodeService {
    * The raw payload travels back untouched. A traceability record has to be
    * able to show what the scanner read, not what we decided it meant.
    */
+  /**
+   * E3 — the LASA and high-alert warnings, on the surface a person actually
+   * touches.
+   *
+   * `GET /inventory/products/variants/:variantId/pharmacy` returned these and
+   * nothing called it. A picker does not open a product page mid-walk; they
+   * scan. So a look-alike/sound-alike warning existed, was tested, and reached
+   * nobody — which for this class of warning is the difference between the pack
+   * being real and being a record that somebody thought about safety.
+   *
+   * Merged into `warnings` rather than added as a second field: the scan surface
+   * already has one channel for "read this before you act", and a second one is
+   * a channel somebody renders in only half the places.
+   *
+   * `blocksDispense` is deliberately not consulted. It is `false` by
+   * construction and a scan is not a dispense — this shows, it never refuses.
+   * A safety warning that blocks the scanner turns a caution into an outage.
+   *
+   * No variant means no SKU to be unsafe about, and asking anyway would be a
+   * query per failed scan on the hottest path in the module.
+   */
+  private async appendSafetyWarnings(
+    orgId: string,
+    productVariantId: number | null,
+    warnings: string[],
+  ): Promise<void> {
+    if (productVariantId === null) return;
+    const profile = await this.pharmacy.dispensingProfile(orgId, productVariantId);
+    for (const alert of profile.safety.alerts) {
+      warnings.push(
+        alert.disposition === "ACKNOWLEDGE"
+          ? `Confirm before use: ${alert.message}`
+          : alert.message,
+      );
+    }
+  }
+
   async scan(orgId: string, payload: string): Promise<ScanResult> {
     const parsed = parseGs1(payload);
     const warnings: string[] = [];
@@ -104,7 +141,19 @@ export class InvBarcodeService {
     if (!parsed.isGs1) {
       // Not every scan is GS1, and most are not. Falling through to the plain
       // lookup keeps a keyboard wedge reading ordinary SKUs and bin labels.
-      return { parsed, lookup: await this.lookup(orgId, parsed.raw), warnings };
+      //
+      // E3. The safety alerts belong on this path too, and this is the *common*
+      // one — a picker scanning a plain SKU barcode is the ordinary case, and a
+      // LASA warning that only fired for GS1 labels would miss most scans.
+      const lookup = await this.lookup(orgId, parsed.raw);
+      const variantId =
+        lookup.type === "variant"
+          ? lookup.variantId
+          : lookup.type === "lot" || lookup.type === "serial"
+            ? lookup.variantId
+            : null;
+      await this.appendSafetyWarnings(orgId, variantId, warnings);
+      return { parsed, lookup, warnings };
     }
 
     const variant = parsed.gtin
@@ -151,31 +200,7 @@ export class InvBarcodeService {
         `Lot ${lot.lotNumber} belongs to a different variant than GTIN ${parsed.gtin}`,
       );
     }
-    /**
-     * E3 — the LASA and high-alert warnings, on the surface a person actually
-     * touches.
-     *
-     * `GET /inventory/products/variants/:variantId/pharmacy` returned these and
-     * nothing called it. A picker does not open a product page mid-walk; they
-     * scan. So a look-alike/sound-alike warning existed, was tested, and reached
-     * nobody — which for this particular class of warning is the difference
-     * between the pack being real and being paperwork.
-     *
-     * Merged into `warnings` rather than added as a second field, because the
-     * scan surface already has one channel for "read this before you act" and a
-     * second one is a channel somebody renders in only half the places.
-     *
-     * `blocksDispense` is deliberately not consulted here: it is `false` by
-     * construction, and a scan is not a dispense. This shows; it never refuses.
-     */
-    if (variant) {
-      const profile = await this.pharmacy.dispensingProfile(orgId, variant.id);
-      for (const alert of profile.safety.alerts) {
-        warnings.push(
-          alert.disposition === "ACKNOWLEDGE" ? `Confirm before use: ${alert.message}` : alert.message,
-        );
-      }
-    }
+    await this.appendSafetyWarnings(orgId, variant?.id ?? null, warnings);
 
     if (lot && lot.status !== "ACTIVE") {
       warnings.push(`Lot ${lot.lotNumber} is ${lot.status}`);
