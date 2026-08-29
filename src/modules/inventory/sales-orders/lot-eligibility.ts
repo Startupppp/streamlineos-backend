@@ -158,12 +158,26 @@ export function verdictFor(
     lot.expiryDate !== null &&
     lot.expiryDate < nearExpiryHorizon(floorDays, today)
   ) {
-    // An already-expired lot fails every positive floor, but "expired" is not a
-    // judgement call and must not become overridable by way of the shelf-life
-    // rule. Reached only when the organisation allows expired stock at all.
-    return expired
-      ? { kind: "REFUSED", reason: "EXPIRED" }
-      : { kind: "REFUSED", reason: "SHELF_LIFE" };
+    // Always SHELF_LIFE, including for a lot that is already expired.
+    //
+    // This branch is reached only when `expiryPolicy !== "BLOCK"` -- the block
+    // above has already returned for an organisation that refuses expired stock
+    // outright. So the organisation has said expired stock may be allocated,
+    // and the only thing refusing this lot is one customer's contracted floor.
+    // That is a judgement call between a seller and a buyer, and the buyer can
+    // waive it on the day.
+    //
+    // It previously returned EXPIRED here, which `overridable()` refuses. The
+    // effect was that configuring a floor for one customer silently converted
+    // the organisation's own "expired stock is allowed" setting into a hard
+    // refusal that not even a holder of `inventory:allocation:override` could
+    // pass -- one customer's contract quietly overriding a tenant-wide policy,
+    // and the operator told "Expired stock is not an allocation decision" when
+    // their organisation had decided exactly that it was.
+    //
+    // `expiryPolicy: "BLOCK"` still means what it says; it is enforced above,
+    // where it belongs, rather than a second time by way of the floor.
+    return { kind: "REFUSED", reason: "SHELF_LIFE" };
   }
 
   if (policy.nearExpiryPolicy !== "ALLOW" && isNearExpiry(lot, policy.nearExpiryWindowDays, today)) {

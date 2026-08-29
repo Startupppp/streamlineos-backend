@@ -2372,21 +2372,21 @@
       "idx": 339,
       "version": "7",
       "when": 1788134409015,
-      "tag": "0573_shelf_life_allocation_overrides",
+      "tag": "0572_inventory_landed_cost",
       "breakpoints": true
     },
     {
       "idx": 340,
       "version": "7",
       "when": 1788134409016,
-      "tag": "0574_inventory_pharmacy_kirana_packs",
+      "tag": "0573_shelf_life_allocation_overrides",
       "breakpoints": true
     },
     {
       "idx": 341,
       "version": "7",
       "when": 1788134409017,
-      "tag": "0572_inventory_landed_cost",
+      "tag": "0574_inventory_pharmacy_kirana_packs",
       "breakpoints": true
     }
   ]

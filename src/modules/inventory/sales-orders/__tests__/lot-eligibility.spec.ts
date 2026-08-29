@@ -223,11 +223,17 @@ describe("D2 lot eligibility", () => {
       });
     });
 
-    it("does not turn an expired lot into an overridable one", () => {
-      // An expired lot fails every positive floor. If the floor reported
-      // SHELF_LIFE the override would reach it, and `expiryReservationPolicy`
-      // would become a suggestion by the back door. Reached only where the org
-      // allows expired stock at all.
+    it("leaves a customer's floor overridable even on an expired lot, where the org allows expired stock", () => {
+      // The organisation has set ALLOW: it has decided expired stock may be
+      // allocated. The only thing refusing this lot is one customer's
+      // contracted floor, which is a judgement call between a seller and a
+      // buyer and can be waived on the day.
+      //
+      // This returned EXPIRED once, which `overridable()` refuses -- so adding
+      // a floor for one customer silently converted the organisation's own
+      // ALLOW into a hard refusal nobody could pass, and the operator was told
+      // "expired stock is not an allocation decision" by a tenant that had
+      // decided exactly that it was.
       const expired = lots([[1, { expiryDate: "2026-08-01" }]]);
       const verdict = verdictFor(
         1,
@@ -235,8 +241,29 @@ describe("D2 lot eligibility", () => {
         { ...BLOCK_EXPIRED, expiryPolicy: "ALLOW", minShelfLifeDays: 30 },
         TODAY,
       );
-      expect(verdict).toEqual({ kind: "REFUSED", reason: "EXPIRED" });
-      expect(overridable(verdict)).toBe(false);
+      expect(verdict).toEqual({ kind: "REFUSED", reason: "SHELF_LIFE" });
+      expect(overridable(verdict)).toBe(true);
+    });
+
+    it("still refuses an expired lot outright under BLOCK, floor or no floor", () => {
+      // The other half of the same rule, and the one that must not have been
+      // weakened by the change above: BLOCK is enforced before the floor is
+      // ever consulted, so it says what it says whether or not the customer
+      // has a contract.
+      const expired = lots([[1, { expiryDate: "2026-08-01" }]]);
+      for (const floor of [0, 30]) {
+        const verdict = verdictFor(
+          1,
+          expired,
+          { ...BLOCK_EXPIRED, expiryPolicy: "BLOCK", minShelfLifeDays: floor },
+          TODAY,
+        );
+        expect({ floor, verdict }).toEqual({
+          floor,
+          verdict: { kind: "REFUSED", reason: "EXPIRED" },
+        });
+        expect(overridable(verdict)).toBe(false);
+      }
     });
   });
 

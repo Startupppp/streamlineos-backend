@@ -81,7 +81,12 @@ describe("INV-309 batching and approval", () => {
     vendorId: number,
     value: string,
     excess = "0",
-    site: { warehouseId?: number | null; currency?: string } = {},
+    site: {
+      warehouseId?: number | null;
+      currency?: string;
+      engineOrdered?: string;
+      override?: { requested: string; reason: string } | null;
+    } = {},
   ) => ({
     vendorId,
     vendorName: `Vendor ${vendorId}`,
@@ -92,10 +97,12 @@ describe("INV-309 batching and approval", () => {
     productName: "Thing",
     requested: "10",
     ordered: "10",
-    // A fixture line is the engine's own answer: nobody has overridden it, so
-    // engineOrdered equals ordered and there is no override to carry.
-    engineOrdered: "10",
-    override: null,
+    // Defaults to the engine's own answer -- ordered equals engineOrdered and
+    // nothing was overridden -- but both are parameters, because a fixture that
+    // pins them makes every line in the file un-overridden by construction and
+    // leaves the branch they were added for untested.
+    engineOrdered: site.engineOrdered ?? "10",
+    override: site.override ?? null,
     unitCost: value,
     lineValue: value,
     excess,
@@ -161,5 +168,31 @@ describe("INV-309 batching and approval", () => {
       { requireApproval: false, approvalThreshold: null },
     );
     expect(batches[0]!.totalExcessUnits).toBe("20.0000");
+  });
+
+  it("carries a human's override onto the batched line, beside the engine's own number", () => {
+    // po-batch.service builds its inv_proposal_overrides rows from
+    // `lines.filter(l => l.override !== null)`, so a batch that drops the field
+    // records nothing and the audit trail for "somebody overrode the engine"
+    // is silently empty. Both numbers must survive batching, distinguishable.
+    const overridden = line(1, "100", "0", {
+      engineOrdered: "10",
+      override: { requested: "25", reason: "Supplier minimum lifted this quarter" },
+    });
+    const batches = batchProposals([overridden, line(1, "50")], {
+      requireApproval: false,
+      approvalThreshold: null,
+    });
+
+    expect(batches).toHaveLength(1);
+    const carried = batches[0]!.lines.filter((l) => l.override !== null);
+    expect(carried).toHaveLength(1);
+    expect(carried[0]!.override).toEqual({
+      requested: "25",
+      reason: "Supplier minimum lifted this quarter",
+    });
+    // The engine's answer is kept beside the human's, not overwritten by it.
+    expect(carried[0]!.engineOrdered).toBe("10");
+    expect(batches[0]!.lines.filter((l) => l.override === null)).toHaveLength(1);
   });
 });
