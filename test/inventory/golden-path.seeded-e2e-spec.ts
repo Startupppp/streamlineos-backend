@@ -17,7 +17,10 @@ import { PickConfirmService } from "src/modules/inventory/picking/pick-confirm.s
 import { CustomerReturnsService } from "src/modules/inventory/returns/customer-returns.service";
 import { RecallSimulationService } from "src/modules/inventory/quality/recall-simulation.service";
 import { RecallsService } from "src/modules/inventory/quality/quality-recalls.service";
-import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
+import {
+  InvReconciliationService,
+  type DriftRow,
+} from "src/modules/inventory/reconciliation/inv-reconciliation.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 
@@ -133,11 +136,9 @@ describe("[seeded-e2e] the golden path", () => {
   /** The invariant asserted after every step: the ledger explains the projection. */
   const expectReconciled = async (step: string): Promise<void> => {
     const report = await asTenant(() =>
-      app.app.get(InvReconciliationService).report(scene.orgId, scene.userId, {
-        limit: 50,
-      }),
+      app.app.get(InvReconciliationService).report(scene.orgId, scene.userId, { limit: 50 }),
     );
-    expect({ step, drift: (report as { drift: unknown[] }).drift }).toEqual({ step, drift: [] });
+    expect({ step, drift: report.drift }).toEqual({ step, drift: [] });
   };
 
   beforeAll(async () => {
@@ -538,5 +539,78 @@ describe("[seeded-e2e] the golden path", () => {
     expect(await atp(lotVariantId)).toBe(15);
     expect(await atp()).toBe(80);
     await expectReconciled("recall executed");
+  }, SLICE_TIMEOUT_MS);
+
+  it("would have noticed: the reconciliation check can actually fail", async () => {
+    /**
+     * A calibration test, and the reason it exists is uncomfortable.
+     *
+     * Nine of the assertions above are `report().drift` equals `[]`. Every one
+     * of them passes if the report goes blind — a warehouse scope that resolves
+     * to nothing for this user, a filter that excludes every row, a query that
+     * silently returns no candidates. Nine green assertions measuring nothing,
+     * and no test in the suite would say so.
+     *
+     * `reconciliation.db.spec.ts` does prove drift is detectable, but it calls
+     * `reconciliationQueries.bucketDrift(tx, orgId, scope, cap)` and hands the
+     * scope in directly. `report()` is a higher seam: it resolves the scope
+     * itself via `warehouseScope.forUser(orgId, userId)`. Nothing exercised
+     * that layer, which is exactly where "blind for this user" would live.
+     *
+     * So: break the projection on purpose and require the instrument to say so.
+     */
+    const projectionOnly = (delta: string) =>
+      asTenant(() =>
+        db().execute(sql`
+          UPDATE inv_stock_levels
+          SET on_hand = on_hand + ${delta}::numeric
+          WHERE org_id = ${scene.orgId}
+            AND product_variant_id = ${scene.variantId}
+            AND location_id = ${scene.storageId}`),
+      );
+
+    const driftNow = async (): Promise<DriftRow[]> => {
+      const report = await asTenant(() =>
+        app.app.get(InvReconciliationService).report(scene.orgId, scene.userId, { limit: 50 }),
+      );
+      return report.drift;
+    };
+
+    // Measured, not assumed. The slices above have already established that the
+    // ledger explains the projection at this point, so whatever the shelf holds
+    // now is a figure both sides agree on -- which is what makes it a usable
+    // baseline. Writing an absolute here instead would be asserting a number I
+    // had not derived, and the first draft of this test did exactly that.
+    const shelfBefore = await onHandAt(scene.storageId);
+
+    // Move the projection without a ledger movement behind it. This is the one
+    // thing the whole reconciliation report exists to catch.
+    await projectionOnly("5");
+    try {
+      const drift = await driftNow();
+      const onHand = drift.filter((d) => d.field === "on_hand");
+      expect(onHand).toHaveLength(1);
+
+      // The 5 is the independent value: it is what this test injected, not
+      // something read back from the code under test. `expected` must still be
+      // the pre-corruption figure, because the ledger did not move; `projected`
+      // must be that figure plus the 5 nobody posted a movement for.
+      expect({
+        projected: Number(onHand[0]!.projected),
+        expected: Number(onHand[0]!.expected),
+        difference: Number(onHand[0]!.difference),
+      }).toEqual({
+        projected: shelfBefore + 5,
+        expected: shelfBefore,
+        difference: 5,
+      });
+    } finally {
+      await projectionOnly("-5");
+    }
+
+    // And it goes quiet again once the projection agrees with the ledger, so
+    // the nine assertions above are silence that means something.
+    await expectReconciled("calibration restored");
+    expect(await atp()).toBe(80);
   }, SLICE_TIMEOUT_MS);
 });
