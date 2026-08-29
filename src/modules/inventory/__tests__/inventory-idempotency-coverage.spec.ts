@@ -118,6 +118,12 @@ const MUST_TAKE_A_KEY: ReadonlyArray<[string, string]> = [
   ["sales-orders/inv-sales-orders.controller.ts", "ship"],
   ["purchase-orders/inv-purchase-orders.controller.ts", "receiveGoods"],
   ["purchase-orders/grn.controller.ts", "reverse"],
+  // Added after review: this one posts engine movements and took no key at all,
+  // so a retry raised a second recall document against the same lots. The
+  // general check above cannot see it — a handler that never asks for a key has
+  // nothing to drop — which is the limit of that check and the reason this list
+  // exists beside it.
+  ["quality/recalls.controller.ts", "create"],
 ];
 
 describe("A3 — idempotency coverage across inventory commands", () => {

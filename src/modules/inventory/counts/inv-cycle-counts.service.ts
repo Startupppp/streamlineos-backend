@@ -7,6 +7,10 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
+import {
+  INVENTORY_COMMAND_EVENTS,
+  emitInventoryCommandEvent,
+} from "../stock-engine/command-events";
 import type { ListCountsInput, CreateCycleCountInput, UpdateCountLinesInput } from "./dto/inv-counts.schemas";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 
@@ -128,9 +132,14 @@ export class InvCycleCountsService {
     if (cc.status !== "COUNTING") throw new BadRequestException("Lines can only be updated while status is COUNTING");
 
     if (data.lines.length > 0) {
+      // The id is cast as deliberately as the quantity. A bound parameter in a
+      // `VALUES` list arrives untyped, so Postgres reads it as `text` and the
+      // join below dies on `operator does not exist: integer = text` — which
+      // means recording a counted quantity has never once worked. Found by the
+      // A5 count-event probe, which is the first caller this path has had.
       const values = sql.join(
         data.lines.map(
-          (update) => sql`(${update.lineId}, ${update.countedQty.toFixed(4)}::numeric)`,
+          (update) => sql`(${update.lineId}::int, ${update.countedQty.toFixed(4)}::numeric)`,
         ),
         sql`, `,
       );
@@ -198,9 +207,41 @@ export class InvCycleCountsService {
         });
       }
 
-      await tx.update(invCycleCounts)
+      const posted = await tx.update(invCycleCounts)
         .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId })
-        .where(and(eq(invCycleCounts.orgId, orgId), eq(invCycleCounts.id, countId)));
+        .where(and(
+          eq(invCycleCounts.orgId, orgId),
+          eq(invCycleCounts.id, countId),
+          // Compare-and-set on the status read before the transaction, so a
+          // second poster of the same count changes nothing and says nothing.
+          eq(invCycleCounts.status, "REVIEW"),
+        ))
+        .returning({ id: invCycleCounts.id });
+
+      if (posted.length === 0) return;
+
+      // A5. One event for both kinds of count, discriminated by `countType`:
+      // a cycle count and a wall-to-wall audit are the same fact to anyone
+      // downstream — the books were corrected against a physical count.
+      await emitInventoryCommandEvent(tx, {
+        orgId,
+        eventType: INVENTORY_COMMAND_EVENTS.COUNT_POSTED,
+        aggregateType: "inv_cycle_count",
+        aggregateId: String(countId),
+        actorUserId: userId,
+        payload: {
+          countType: "CYCLE",
+          countId,
+          countNumber: cc.countNumber,
+          warehouseId: cc.warehouseId,
+          lineCount: lines.length,
+          // A count that found nothing is the normal outcome and still a fact
+          // worth publishing; the variance count is how a consumer tells the
+          // two apart without re-reading every line.
+          varianceLineCount: movements.length,
+          idempotencyKey,
+        },
+      });
     });
 
     await this.cache.invalidate(CACHE_KEYS.invCycleCountDetail(orgId, countId));
@@ -222,7 +263,7 @@ export class InvCycleCountsService {
   private async requireCount(orgId: string, countId: number) {
     const cc = await this.db.query.invCycleCounts.findFirst({
       where: and(eq(invCycleCounts.orgId, orgId), eq(invCycleCounts.id, countId)),
-      columns: { id: true, status: true, countNumber: true },
+      columns: { id: true, status: true, countNumber: true, warehouseId: true },
     });
     if (!cc) throw new NotFoundException("Cycle count not found");
     return cc;

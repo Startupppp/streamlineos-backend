@@ -461,13 +461,30 @@ export class StockEngineService {
       );
 
       const settings = await this.settingsService.get(orgId);
-      await this.periods.assertOpen(orgId, resolvePostingDate(commands[0]!));
-      const costing = await loadCostingContext(
-        tx,
-        orgId,
-        commands.flatMap((c) => c.movements.map((m) => m.productVariantId)),
-        resolvePostingDate(commands[0]!),
-      );
+
+      // Every command's own date, not the first one's. Taking `commands[0]`
+      // meant a batch whose first command was dated in an open period could
+      // post the rest into a **closed** one — the exact restatement the period
+      // guard exists to prevent — and resolve every later command's standard
+      // cost against the wrong date. `executeInTx` resolves once and uses that
+      // value everywhere, so only the batch path could drift.
+      const postingDates = [...new Set(commands.map((c) => resolvePostingDate(c)))];
+      for (const date of postingDates) await this.periods.assertOpen(orgId, date);
+
+      const costingByDate = new Map<string, Awaited<ReturnType<typeof loadCostingContext>>>();
+      for (const date of postingDates) {
+        costingByDate.set(
+          date,
+          await loadCostingContext(
+            tx,
+            orgId,
+            commands
+              .filter((c) => resolvePostingDate(c) === date)
+              .flatMap((c) => c.movements.map((m) => m.productVariantId)),
+            date,
+          ),
+        );
+      }
 
       type LevelKey = {
         productVariantId: number;
@@ -582,6 +599,7 @@ export class StockEngineService {
         const cmdLevels: StockEngineResult["levels"] = [];
         const decreasedVariantIds = new Set<number>();
 
+        const costing = costingByDate.get(resolvePostingDate(cmd))!;
         const derivedUnitCost: Array<string | null> = [];
 
         for (const [movementIndex, movement] of cmd.movements.entries()) {

@@ -18,6 +18,31 @@ import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { ListRecallsQueryInput, CreateRecallInput, UpdateRecallInput } from "./dto/quality.schemas";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import { isPositive } from "../stock-engine/decimal";
+import { runIdempotent } from "../stock-engine/idempotency";
+
+/**
+ * A replayed recall, rebuilt from the stored JSON. Only the identity is revived:
+ * a replay says "this recall already exists", and the caller re-reads it if it
+ * needs the rest.
+ */
+function reviveRecall(stored: unknown): {
+  recall: { id: number; recallNumber: string };
+  lines: Array<{ lotId: number | null }>;
+} {
+  const row = typeof stored === "object" && stored !== null ? (stored as Record<string, unknown>) : {};
+  const recall = typeof row.recall === "object" && row.recall !== null
+    ? (row.recall as Record<string, unknown>)
+    : {};
+  const lines = Array.isArray(row.lines) ? row.lines : [];
+  return {
+    recall: { id: Number(recall.id ?? 0), recallNumber: String(recall.recallNumber ?? "") },
+    lines: lines.map((l) => {
+      const line = typeof l === "object" && l !== null ? (l as Record<string, unknown>) : {};
+      return { lotId: line.lotId == null ? null : Number(line.lotId) };
+    }),
+  };
+}
 
 @Injectable()
 export class RecallsService {
@@ -120,8 +145,18 @@ export class RecallsService {
     return { ...recall, affectedShipments };
   }
 
-  async create(orgId: string, userId: string, input: CreateRecallInput) {
-    const { recall, lines } = await this.db.transaction(async (tx) => {
+  async create(orgId: string, userId: string, input: CreateRecallInput, idempotencyKey: string) {
+    // A3/A5. The engine claims a derived key per lot, so the quarantine
+    // movements were already replay-safe — but the recall *document* was not,
+    // so a retried request raised a second recall with a second number against
+    // the same lots.
+    const { recall, lines } = await this.db.transaction(async (tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        idempotencyKey,
+        { command: "inventory.quality.recall.create", input },
+        async () => {
       const recallNumber = await this.numSeq.next(orgId, "RECALL", tx);
       const [recall] = await tx.insert(invRecallEvents).values({
         orgId,
@@ -154,17 +189,31 @@ export class RecallsService {
         after: { recallNumber, linesCount: lines.length },
       });
       return { recall, lines };
-    });
+        },
+        (stored) => reviveRecall(stored),
+      ),
+    );
 
     const lotIds = lines
       .map(l => l.lotId)
       .filter((lotId): lotId is number => lotId !== null && lotId !== undefined);
 
     if (lotIds.length > 0) {
-      const allStockLevels = await this.db.select().from(invStockLevels)
+      // Projected, not `select()`: an unprojected read here returned every
+      // column of every matching stock row, and `parseFloat` on an 18,4 numeric
+      // is the float arithmetic the ledger rules forbid — a lot holding
+      // 0.0001 units is on the shelf and must be recalled with the rest.
+      const allStockLevels = await this.db
+        .select({
+          productVariantId: invStockLevels.productVariantId,
+          locationId: invStockLevels.locationId,
+          lotId: invStockLevels.lotId,
+          onHand: invStockLevels.onHand,
+        })
+        .from(invStockLevels)
         .where(and(eq(invStockLevels.orgId, orgId), inArray(invStockLevels.lotId, lotIds)));
 
-      const eligibleLevels = allStockLevels.filter(level => parseFloat(level.onHand) > 0);
+      const eligibleLevels = allStockLevels.filter((level) => isPositive(level.onHand));
 
       const recallCommands = eligibleLevels.flatMap(level => {
         const lotId = level.lotId;
@@ -188,6 +237,9 @@ export class RecallsService {
         await this.engine.executeMany(orgId, userId, recallCommands);
       }
 
+      // Inside the same transaction as the quarantine movements: the hold
+      // document and the stock it describes have to commit together, or a
+      // rolled-back recall leaves holds against stock nothing quarantined.
       if (eligibleLevels.length > 0) {
         await this.db.insert(invQualityHolds).values(
           eligibleLevels.map(level => ({

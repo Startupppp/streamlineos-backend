@@ -54,8 +54,8 @@ describe("ChannelsService.syncStock — publishable math", () => {
     const db = {
       query: { invChannels: { findFirst: jest.fn().mockResolvedValue(channel) } },
       select: jest.fn()
-        .mockReturnValueOnce(makeWhereChain([{ id: 1 }]))
-        .mockReturnValueOnce(makeWhereChain([{ productVariantId: 1, onHand: "10", committed: "2", blockedQty: "0", qualityHoldQty: "0" }])),
+        .mockReturnValueOnce(makeWhereChain([{ id: 1 }])),
+      execute: jest.fn().mockResolvedValue([{ product_variant_id: 1, available: "8.0000" }]),
       insert: jest.fn().mockReturnValue(makeInsertChain(insertedValues)),
     };
 
@@ -74,8 +74,8 @@ describe("ChannelsService.syncStock — publishable math", () => {
     const db = {
       query: { invChannels: { findFirst: jest.fn().mockResolvedValue(channel) } },
       select: jest.fn()
-        .mockReturnValueOnce(makeWhereChain([{ id: 1 }]))
-        .mockReturnValueOnce(makeWhereChain([{ productVariantId: 1, onHand: "5", committed: "4", blockedQty: "0", qualityHoldQty: "0" }])),
+        .mockReturnValueOnce(makeWhereChain([{ id: 1 }])),
+      execute: jest.fn().mockResolvedValue([{ product_variant_id: 1, available: "1.0000" }]),
       insert: jest.fn().mockReturnValue(makeInsertChain(insertedValues)),
     };
 
@@ -92,8 +92,8 @@ describe("ChannelsService.syncStock — publishable math", () => {
     const db = {
       query: { invChannels: { findFirst: jest.fn().mockResolvedValue(channel) } },
       select: jest.fn()
-        .mockReturnValueOnce(makeWhereChain([{ id: 1 }]))
-        .mockReturnValueOnce(makeWhereChain([{ productVariantId: 1, onHand: "2", committed: "0", blockedQty: "0", qualityHoldQty: "0" }])),
+        .mockReturnValueOnce(makeWhereChain([{ id: 1 }])),
+      execute: jest.fn().mockResolvedValue([{ product_variant_id: 1, available: "2.0000" }]),
       insert: jest.fn().mockReturnValue(makeInsertChain()),
     };
 
@@ -111,8 +111,8 @@ describe("ChannelsService.syncStock — publishable math", () => {
     const db = {
       query: { invChannels: { findFirst: jest.fn().mockResolvedValue(channel) } },
       select: jest.fn()
-        .mockReturnValueOnce(makeWhereChain([{ id: 1 }]))
-        .mockReturnValueOnce(makeWhereChain([{ productVariantId: 1, onHand: "5", committed: "0", blockedQty: "0", qualityHoldQty: "0" }])),
+        .mockReturnValueOnce(makeWhereChain([{ id: 1 }])),
+      execute: jest.fn().mockResolvedValue([{ product_variant_id: 1, available: "5.0000" }]),
       insert: jest.fn().mockReturnValue(makeInsertChain(insertedValues)),
     };
 
@@ -129,8 +129,8 @@ describe("ChannelsService.syncStock — publishable math", () => {
     const db = {
       query: { invChannels: { findFirst: jest.fn().mockResolvedValue(channel) } },
       select: jest.fn()
-        .mockReturnValueOnce(makeWhereChain([{ id: 1 }]))
-        .mockReturnValueOnce(makeWhereChain([{ productVariantId: 1, onHand: "5", committed: "0", blockedQty: "0", qualityHoldQty: "0" }])),
+        .mockReturnValueOnce(makeWhereChain([{ id: 1 }])),
+      execute: jest.fn().mockResolvedValue([{ product_variant_id: 1, available: "5.0000" }]),
       insert: jest.fn().mockReturnValue(makeInsertChain(insertedValues)),
     };
 
@@ -175,8 +175,8 @@ describe("ChannelsService.syncStock — publishable math", () => {
     const db = {
       query: { invChannels: { findFirst: jest.fn().mockResolvedValue(channel) } },
       select: jest.fn()
-        .mockReturnValueOnce(makeWhereChain([{ id: 1 }]))
-        .mockReturnValueOnce(makeWhereChain([{ productVariantId: 1, onHand: "20", committed: "2", blockedQty: "3", qualityHoldQty: "4" }])),
+        .mockReturnValueOnce(makeWhereChain([{ id: 1 }])),
+      execute: jest.fn().mockResolvedValue([{ product_variant_id: 1, available: "11.0000" }]),
       insert: jest.fn().mockReturnValue(makeInsertChain(insertedValues)),
     };
 

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { MovementsQueryInput, StockSummaryQueryInput, ReorderQueryInput } from "./dto/inv-reports.schemas";
 import {
   invStockLevels,
@@ -15,6 +15,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { InvReportsExtendedService } from "./inv-reports-extended.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import { availableQtySql } from "../stock-engine/available-sql";
 
 @Injectable()
 export class InvReportsService {
@@ -141,10 +142,56 @@ export class InvReportsService {
         ]);
 
         const total = countResult[0]?.count ?? 0;
-        return { items, total, page, totalPages: Math.ceil(total / limit) };
+        const availability = await this.availabilityByLevelId(
+          orgId,
+          items.map((item) => item.id),
+        );
+
+        return {
+          // A1. The stock-summary screen used to compute its "Available" column
+          // as `onHand - committed`: two terms of five, and no transit gate. The
+          // row it maps from does not even carry the other three, so the number
+          // could not be corrected there — it has to be computed here, by the
+          // one definition, and read verbatim by the client.
+          items: items.map((item) => ({
+            ...item,
+            // The ids came out of this same table under this same tenant filter
+            // a statement ago, so the lookup always hits; the fallback exists
+            // only because a Map says it might not.
+            availableQty: availability.get(item.id) ?? "0.0000",
+          })),
+          total,
+          page,
+          totalPages: Math.ceil(total / limit),
+        };
       },
       CACHE_TTL.MEDIUM,
     );
+  }
+
+  /**
+   * Availability for one page of stock levels, keyed by level id.
+   *
+   * A second statement rather than an expression on the relational query above:
+   * the relational query builder aliases its root table by its TypeScript name
+   * (`invStockLevels`), so an `extras` expression would have to hard-code that
+   * quoted alias and would break silently the day the schema key is renamed.
+   * The ids are the page's own primary keys, so this is one indexed lookup of
+   * at most `limit` rows, not an N+1.
+   */
+  private async availabilityByLevelId(
+    orgId: string,
+    levelIds: number[],
+  ): Promise<Map<number, string>> {
+    if (levelIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({
+        id: invStockLevels.id,
+        availableQty: sql<string>`${availableQtySql("inv_stock_levels")}::text`,
+      })
+      .from(invStockLevels)
+      .where(and(eq(invStockLevels.orgId, orgId), inArray(invStockLevels.id, levelIds)));
+    return new Map(rows.map((row) => [row.id, row.availableQty]));
   }
 
   getReorderReport(orgId: string, filters: ReorderQueryInput) {

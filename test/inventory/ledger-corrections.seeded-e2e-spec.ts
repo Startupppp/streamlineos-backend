@@ -4,7 +4,11 @@ import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { StockEngineService } from "src/modules/inventory/stock-engine/stock-engine.service";
+import { InvCycleCountsService } from "src/modules/inventory/counts/inv-cycle-counts.service";
+import { InvPhysicalAuditsService } from "src/modules/inventory/counts/inv-physical-audits.service";
+import { INVENTORY_COMMAND_EVENTS } from "src/modules/inventory/stock-engine/command-events";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
+import { outboxEventsFor } from "test/helpers/outbox-events";
 import { seedOrg } from "test/helpers/seed-builder";
 
 /**
@@ -257,5 +261,164 @@ describe("[seeded-e2e] ledger corrections and immutability", () => {
     );
     expect(row!.notes).toBe("checked against the delivery note");
     expect(Number(row!.quantity_change)).toBe(8);
+  });
+
+  /**
+   * A5, item 3 — a count posts a correction, and says so.
+   *
+   * A count is the one correction that comes from outside the system: somebody
+   * walked the aisle and the books were wrong. Posting it wrote movements and
+   * flipped a status, and told nobody — so an auditor, a finance close or a
+   * shrinkage report could not be driven off the event stream and had to poll
+   * `inv_cycle_counts` for rows that had changed.
+   *
+   * Cycle counts and wall-to-wall audits share one event type, discriminated by
+   * `countType`: to anyone downstream they are the same fact — the books were
+   * corrected against a physical count — and splitting them would make every
+   * consumer subscribe twice to hear it.
+   *
+   * Each count gets its own warehouse. `createCycleCount` snapshots every stock
+   * level in the warehouse it names, so sharing one would make the line counts
+   * depend on which other cases had run first.
+   */
+  describe("the events a count owes", () => {
+    /**
+     * Narrowed by aggregate type as well as id. A cycle count and a physical
+     * audit share one event type and live in different tables, so their ids
+     * come from different sequences and will eventually coincide — without this
+     * the two probes below would occasionally count each other's events.
+     */
+    const eventsFor = async (aggregateType: string, aggregateId: string) => {
+      const rows = await asTenant(() =>
+        outboxEventsFor(
+          app.app.get<Db>(DRIZZLE),
+          scene.orgId,
+          INVENTORY_COMMAND_EVENTS.COUNT_POSTED,
+          aggregateId,
+        ),
+      );
+      return rows.filter((row) => row.aggregateType === aggregateType);
+    };
+
+    /** A warehouse of its own, one bin, stocked through the engine. */
+    const countableWarehouse = async (label: string, qty: string) => {
+      const suffix = randomUUID().slice(0, 6);
+      const db = app.app.get<Db>(DRIZZLE);
+      const made = await asTenant(async () => {
+        const one = async <T extends Record<string, unknown>>(q: ReturnType<typeof sql>) =>
+          (await db.execute<T>(q))[0]!;
+        const warehouse = await one<{ id: number }>(sql`
+          INSERT INTO inv_warehouses (org_id, name, code, created_by)
+          VALUES (${scene.orgId}, ${label}, ${`${label}${suffix}`.slice(0, 20)}, ${scene.userId})
+          RETURNING id`);
+        const location = await one<{ id: number }>(sql`
+          INSERT INTO inv_locations (org_id, warehouse_id, name, code, location_type, is_receivable)
+          VALUES (${scene.orgId}, ${warehouse.id}, 'Bin', ${`${label}B${suffix}`.slice(0, 20)}, 'BIN', true)
+          RETURNING id`);
+        return { warehouseId: Number(warehouse.id), locationId: Number(location.id) };
+      });
+
+      await asTenant(() =>
+        engine().execute(scene.orgId, scene.userId, {
+          idempotencyKey: `count-seed-${suffix}`,
+          sourceType: "ledger-fixture",
+          sourceId: suffix,
+          movements: [
+            {
+              transactionType: "PURCHASE",
+              productVariantId: scene.variantId,
+              locationId: made.locationId,
+              quantityDelta: qty,
+              unitCost: "1.0000",
+            },
+          ],
+        }),
+      );
+      return made;
+    };
+
+    it("announces a posted cycle count once, with the variance it found", async () => {
+      const where = await countableWarehouse("CYC", "30.0000");
+      const counts = app.app.get(InvCycleCountsService);
+
+      const created = await asTenant(() =>
+        counts.createCycleCount(scene.orgId, scene.userId, {
+          warehouseId: where.warehouseId,
+        } as never),
+      );
+      const countId = (created as { id: number }).id;
+
+      await asTenant(() => counts.startCycleCount(scene.orgId, countId));
+      const lines = (created as { lines: Array<{ id: number }> }).lines;
+      expect(lines).toHaveLength(1);
+      // Counted short by two: a count that finds nothing is the normal outcome
+      // and would not prove the variance is being reported.
+      await asTenant(() =>
+        counts.updateLines(scene.orgId, countId, {
+          lines: [{ lineId: lines[0]!.id, countedQty: 28 }],
+        } as never),
+      );
+      await asTenant(() => counts.reviewCycleCount(scene.orgId, countId));
+
+      const key = `cyc-post-${randomUUID().slice(0, 8)}`;
+      await asTenant(() =>
+        counts.postCycleCount(scene.orgId, scene.userId, countId, key),
+      );
+
+      const events = await eventsFor("inv_cycle_count", String(countId));
+      expect(events).toHaveLength(1);
+      expect(events[0]!.payload.countType).toBe("CYCLE");
+      expect(events[0]!.payload.warehouseId).toBe(where.warehouseId);
+      expect(events[0]!.payload.lineCount).toBe(1);
+      expect(events[0]!.payload.varianceLineCount).toBe(1);
+      expect(events[0]!.payload.idempotencyKey).toBe(key);
+
+      // A posted count cannot be posted again — the status guard refuses before
+      // the transaction opens, so nothing announces a second correction.
+      await expect(
+        asTenant(() =>
+          counts.postCycleCount(
+            scene.orgId,
+            scene.userId,
+            countId,
+            `cyc-post-again-${randomUUID().slice(0, 8)}`,
+          ),
+        ),
+      ).rejects.toThrow();
+      expect(await eventsFor("inv_cycle_count", String(countId))).toHaveLength(1);
+    });
+
+    it("announces a posted physical audit under the same event type", async () => {
+      const where = await countableWarehouse("AUD", "40.0000");
+      const audits = app.app.get(InvPhysicalAuditsService);
+
+      const created = await asTenant(() =>
+        audits.createAudit(scene.orgId, scene.userId, {
+          warehouseId: where.warehouseId,
+        } as never),
+      );
+      const auditId = (created as { id: number }).id;
+      const lines = (created as { lines: Array<{ id: number }> }).lines;
+      expect(lines).toHaveLength(1);
+
+      await asTenant(() => audits.startAudit(scene.orgId, auditId));
+      await asTenant(() =>
+        audits.updateLines(scene.orgId, auditId, {
+          lines: [{ lineId: lines[0]!.id, countedQty: 40 }],
+        } as never),
+      );
+      await asTenant(() => audits.reviewAudit(scene.orgId, auditId));
+
+      const key = `aud-post-${randomUUID().slice(0, 8)}`;
+      await asTenant(() => audits.postAudit(scene.orgId, scene.userId, auditId, key));
+
+      const events = await eventsFor("inv_physical_audit", String(auditId));
+      expect(events).toHaveLength(1);
+      expect(events[0]!.payload.countType).toBe("PHYSICAL");
+      expect(events[0]!.payload.warehouseId).toBe(where.warehouseId);
+      // A count that agrees with the books is still a fact worth publishing —
+      // "we looked, and nothing was missing" is what an auditor is waiting for.
+      expect(events[0]!.payload.varianceLineCount).toBe(0);
+    });
   });
 });

@@ -7,7 +7,9 @@ import { StockEngineService } from "src/modules/inventory/stock-engine/stock-eng
 import { InvStockService } from "src/modules/inventory/stock/inv-stock.service";
 import { InvStockTransfersService } from "src/modules/inventory/stock/inv-stock-transfers.service";
 import { TRANSIT_LOCATION_CODE } from "src/modules/inventory/stock-engine/transit-location.service";
+import { INVENTORY_COMMAND_EVENTS } from "src/modules/inventory/stock-engine/command-events";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
+import { outboxEventsFor } from "test/helpers/outbox-events";
 import { seedOrg } from "test/helpers/seed-builder";
 
 /**
@@ -538,6 +540,161 @@ describe("[seeded-e2e] stock in transit", () => {
             AND location_id = ${transitId}`),
       );
       expect(Number(transitLevel!.on_hand)).toBe(0);
+    });
+  });
+
+  /**
+   * A5, item 3 — a transfer says what happened to it.
+   *
+   * A transfer already writes movements, and the engine's own
+   * `inventory.stock.movement.posted` says stock changed hands. What it cannot
+   * say is *why*: a dispatch, a completion and a stock correction all reach the
+   * engine as a list of quantity deltas, so a warehouse dashboard or a
+   * destination site waiting for a delivery had nothing to subscribe to and had
+   * to infer the transfer's state by polling the ledger.
+   *
+   * One transfer taken through the whole lifecycle, because the property under
+   * test is *one event per step* — not one per line, not one per movement, and
+   * not one per attempt.
+   */
+  describe("the events a transfer owes", () => {
+    const EVENT_QTY = 5;
+    let eventTransferId: number;
+    let reserveKey: string;
+    let dispatchKey: string;
+    let completeKey: string;
+
+    const eventsFor = (eventType: string, aggregateId: string) =>
+      asTenant(() =>
+        outboxEventsFor(app.app.get<Db>(DRIZZLE), scene.orgId, eventType, aggregateId),
+      );
+
+    beforeAll(async () => {
+      const transfers = app.app.get(InvStockTransfersService);
+      const suffix = randomUUID().slice(0, 8);
+      reserveKey = `ev-reserve-${suffix}`;
+      dispatchKey = `ev-dispatch-${suffix}`;
+      completeKey = `ev-complete-${suffix}`;
+
+      const transfer = await asTenant(() =>
+        transfers.createTransfer(scene.orgId, scene.userId, {
+          fromLocationId: scene.sourceLocationId,
+          toLocationId: scene.destLocationId,
+          fromWarehouseId: scene.sourceWarehouseId,
+          toWarehouseId: scene.destWarehouseId,
+          lines: [{ productVariantId: scene.variantId, quantity: EVENT_QTY }],
+        } as never),
+      );
+      eventTransferId = (transfer as { id: number }).id;
+
+      await asTenant(() =>
+        transfers.reserveTransfer(scene.orgId, scene.userId, eventTransferId, reserveKey),
+      );
+      await asTenant(() =>
+        transfers.dispatchTransfer(scene.orgId, scene.userId, eventTransferId, dispatchKey),
+      );
+
+      const lines = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ id: number }>(sql`
+          SELECT id FROM inv_stock_transfer_lines WHERE transfer_id = ${eventTransferId}`),
+      );
+      await asTenant(() =>
+        transfers.completeTransfer(
+          scene.orgId,
+          scene.userId,
+          eventTransferId,
+          { lines: [{ transferLineId: Number(lines[0]!.id), quantityReceived: EVENT_QTY }] },
+          completeKey,
+        ),
+      );
+    }, 300_000);
+
+    it("announces the reserve once, naming the reservations it raised", async () => {
+      const events = await eventsFor(
+        INVENTORY_COMMAND_EVENTS.TRANSFER_RESERVED,
+        String(eventTransferId),
+      );
+      // One line, one reservation — and still one event. A per-line event would
+      // tell a consumer a five-line transfer was partly held four times over.
+      expect(events).toHaveLength(1);
+      expect(events[0]!.aggregateType).toBe("inv_stock_transfer");
+      expect(events[0]!.payload.lineCount).toBe(1);
+      expect(events[0]!.payload.fromWarehouseId).toBe(scene.sourceWarehouseId);
+      expect(events[0]!.payload.toWarehouseId).toBe(scene.destWarehouseId);
+      expect(events[0]!.payload.idempotencyKey).toBe(reserveKey);
+      expect(events[0]!.payload.reservationIds).toHaveLength(1);
+    });
+
+    it("emits nothing further when the reserve is retried under the same key", async () => {
+      // The emit sits inside the claimed work, so a replay returns the stored
+      // transfer id without reaching it.
+      await asTenant(() =>
+        app.app
+          .get(InvStockTransfersService)
+          .reserveTransfer(scene.orgId, scene.userId, eventTransferId, reserveKey),
+      );
+      expect(
+        await eventsFor(INVENTORY_COMMAND_EVENTS.TRANSFER_RESERVED, String(eventTransferId)),
+      ).toHaveLength(1);
+    });
+
+    it("announces the dispatch once, saying where the goods are standing", async () => {
+      const events = await eventsFor(
+        INVENTORY_COMMAND_EVENTS.TRANSFER_DISPATCHED,
+        String(eventTransferId),
+      );
+      expect(events).toHaveLength(1);
+      // The waypoint is the one thing a consumer cannot work out for itself, and
+      // it is the answer to "where is my stock" for the length of the journey.
+      expect(events[0]!.payload.transitLocationId).toBe(await transitLocationId());
+      expect(events[0]!.payload.idempotencyKey).toBe(dispatchKey);
+    });
+
+    it("announces the reservations the dispatch consumed, as one set", async () => {
+      // Consumption only ever happens inside a larger command, so the event
+      // hangs off that command's key rather than any one reservation — and
+      // carries the whole set rather than one event per row.
+      const events = await eventsFor(
+        INVENTORY_COMMAND_EVENTS.RESERVATION_CONSUMED,
+        dispatchKey,
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0]!.payload.consumedBy).toBe("transfer.dispatch");
+      expect(events[0]!.payload.sourceId).toBe(String(eventTransferId));
+      expect(events[0]!.payload.reservationIds).toHaveLength(1);
+    });
+
+    it("announces the completion once, and distinguishes it from a receipt that never travelled", async () => {
+      const events = await eventsFor(
+        INVENTORY_COMMAND_EVENTS.TRANSFER_COMPLETED,
+        String(eventTransferId),
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0]!.payload.wasDispatched).toBe(true);
+      expect(events[0]!.payload.receivedLineCount).toBe(1);
+      expect(events[0]!.payload.idempotencyKey).toBe(completeKey);
+    });
+
+    it("emits nothing for a dispatch the state machine refuses", async () => {
+      // The transfer is COMPLETED, so this cannot be dispatched again. The
+      // guard throws before the transaction opens; had the emit sat outside it,
+      // a rejected command would still have told the carrier to collect.
+      await expect(
+        asTenant(() =>
+          app.app
+            .get(InvStockTransfersService)
+            .dispatchTransfer(
+              scene.orgId,
+              scene.userId,
+              eventTransferId,
+              `ev-dispatch-again-${randomUUID().slice(0, 8)}`,
+            ),
+        ),
+      ).rejects.toThrow();
+
+      expect(
+        await eventsFor(INVENTORY_COMMAND_EVENTS.TRANSFER_DISPATCHED, String(eventTransferId)),
+      ).toHaveLength(1);
     });
   });
 });

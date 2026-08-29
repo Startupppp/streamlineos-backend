@@ -6,8 +6,34 @@ import { type Db } from "../../../db/drizzle.module";
 import { InventorySettingsService } from "./inventory-settings.service";
 import { availableQty, cmpDec } from "./decimal";
 import { INV_ERRORS, type ReservationInput } from "./stock-engine.types";
+import {
+  INVENTORY_COMMAND_EVENTS,
+  emitInventoryCommandEvent,
+} from "./command-events";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/**
+ * The reservation a release actually flipped, or `null` if there was nothing to
+ * flip.
+ *
+ * A5. Releasing is deliberately a no-op on a row that is not ACTIVE, so the
+ * caller could not tell a release that happened from one that had already
+ * happened — and an event emitted on the second is a duplicate notification for
+ * work nobody did. Returned rather than re-read: the row was already selected
+ * `FOR UPDATE` here, and reading it again after the update would report the
+ * post-release state as if it were the reason for the release.
+ */
+export interface ReleasedReservation {
+  id: number;
+  sourceType: string;
+  sourceId: string;
+  productVariantId: number;
+  locationId: number | null;
+  lotId: number | null;
+  serialId: number | null;
+  reservedQty: string;
+}
 
 interface CommittedKey {
   productVariantId: number;
@@ -62,20 +88,41 @@ export class ReservationService {
       blockedQty: "0", qualityHoldQty: "0", outgoingQty: "0",
     }).onConflictDoNothing();
 
+    // A2/A5. `is_sellable` is selected because `availableQty` gates on it, and
+    // an absent field is not `false` — so omitting it made the transit gate dead
+    // code on the one path that increments `committed`. This is the last line of
+    // defence: whatever an allocator upstream decided, a reservation is the
+    // moment stock is actually promised to somebody.
     const [level] = await tx.execute<{
       id: number; on_hand: string; committed: string; blocked_qty: string;
-      quality_hold_qty: string; outgoing_qty: string;
+      quality_hold_qty: string; outgoing_qty: string; is_sellable: boolean | null;
     }>(sql`
-      SELECT id, on_hand, committed, blocked_qty, quality_hold_qty, outgoing_qty
-      FROM inv_stock_levels
-      WHERE org_id = ${orgId} AND product_variant_id = ${input.productVariantId}
-        AND location_id = ${input.locationId}
-        AND (lot_id IS NOT DISTINCT FROM ${input.lotId ?? null})
-        AND (serial_id IS NOT DISTINCT FROM ${input.serialId ?? null})
-      FOR UPDATE
+      SELECT sl.id, sl.on_hand, sl.committed, sl.blocked_qty,
+             sl.quality_hold_qty, sl.outgoing_qty, loc.is_sellable
+      FROM inv_stock_levels sl
+      JOIN inv_locations loc
+        ON loc.org_id = sl.org_id AND loc.id = sl.location_id
+      WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${input.productVariantId}
+        AND sl.location_id = ${input.locationId}
+        AND (sl.lot_id IS NOT DISTINCT FROM ${input.lotId ?? null})
+        AND (sl.serial_id IS NOT DISTINCT FROM ${input.serialId ?? null})
+      FOR UPDATE OF sl
     `);
 
     if (!level) throw new BadRequestException({ code: INV_ERRORS.LOCATION_NOT_FOUND });
+
+    // Refused whatever the backorder setting says. Allowing backorders means
+    // "you may promise stock you do not have yet"; it does not mean "you may
+    // promise stock that is on a lorry". Without this, an org with backorders on
+    // skips the availability check entirely and reserves at a transit location
+    // regardless — and the transfer's completion then issues those units away,
+    // leaving `committed` behind and availability negative for good.
+    if (level.is_sellable === false) {
+      throw new BadRequestException({
+        code: INV_ERRORS.INSUFFICIENT_STOCK,
+        message: "Stock at this location is not sellable and cannot be reserved",
+      });
+    }
 
     const available = availableQty(level);
 
@@ -102,18 +149,22 @@ export class ReservationService {
     return reservation!;
   }
 
-  async releaseReservationInTx(tx: Tx, orgId: string, userId: string, reservationId: number): Promise<void> {
+  async releaseReservationInTx(
+    tx: Tx, orgId: string, userId: string, reservationId: number,
+  ): Promise<ReleasedReservation | null> {
     const [reservation] = await tx.execute<{
-      id: number; location_id: number | null; product_variant_id: number;
+      id: number; source_type: string; source_id: string;
+      location_id: number | null; product_variant_id: number;
       lot_id: number | null; serial_id: number | null; reserved_qty: string; status: string;
     }>(sql`
-      SELECT id, location_id, product_variant_id, lot_id, serial_id, reserved_qty, status
+      SELECT id, source_type, source_id, location_id, product_variant_id,
+             lot_id, serial_id, reserved_qty, status
       FROM inv_stock_reservations
       WHERE id = ${reservationId} AND org_id = ${orgId}
       FOR UPDATE
     `);
 
-    if (!reservation || reservation.status !== "ACTIVE") return;
+    if (!reservation || reservation.status !== "ACTIVE") return null;
 
     await tx.update(invStockReservations)
       .set({ status: "RELEASED" })
@@ -128,19 +179,34 @@ export class ReservationService {
         reservedQty: reservation.reserved_qty,
       });
     }
+
+    return {
+      id: Number(reservation.id),
+      sourceType: reservation.source_type,
+      sourceId: reservation.source_id,
+      productVariantId: Number(reservation.product_variant_id),
+      locationId: reservation.location_id === null ? null : Number(reservation.location_id),
+      lotId: reservation.lot_id === null ? null : Number(reservation.lot_id),
+      serialId: reservation.serial_id === null ? null : Number(reservation.serial_id),
+      reservedQty: reservation.reserved_qty,
+    };
   }
 
-  async releaseReservation(orgId: string, userId: string, reservationId: number): Promise<void> {
+  async releaseReservation(
+    orgId: string, userId: string, reservationId: number,
+  ): Promise<ReleasedReservation | null> {
     return this.db.transaction((tx) => this.releaseReservationInTx(tx, orgId, userId, reservationId));
   }
 
   async consumeReservation(orgId: string, userId: string, reservationId: number): Promise<void> {
     return this.db.transaction(async (tx) => {
       const [reservation] = await tx.execute<{
-        id: number; location_id: number | null; product_variant_id: number;
+        id: number; source_type: string; source_id: string;
+        location_id: number | null; product_variant_id: number;
         lot_id: number | null; serial_id: number | null; reserved_qty: string; status: string;
       }>(sql`
-        SELECT id, location_id, product_variant_id, lot_id, serial_id, reserved_qty, status
+        SELECT id, source_type, source_id, location_id, product_variant_id,
+               lot_id, serial_id, reserved_qty, status
         FROM inv_stock_reservations WHERE id = ${reservationId} AND org_id = ${orgId}
         FOR UPDATE
       `);
@@ -158,9 +224,38 @@ export class ReservationService {
           reservedQty: reservation.reserved_qty,
         });
       }
+
+      // A5. Emitted here rather than left to the caller, because this entry
+      // point owns its own transaction: a caller emitting after it returns
+      // would be publishing outside the transaction that committed the change.
+      await emitInventoryCommandEvent(tx, {
+        orgId,
+        eventType: INVENTORY_COMMAND_EVENTS.RESERVATION_CONSUMED,
+        aggregateType: "inv_stock_reservation",
+        aggregateId: String(reservationId),
+        actorUserId: userId,
+        payload: {
+          reservationIds: [Number(reservation.id)],
+          sourceType: reservation.source_type,
+          sourceId: reservation.source_id,
+          // Same shape as the batch paths, so a consumer reads one payload
+          // rather than two that happen to overlap.
+          consumedBy: "reservation.consume",
+        },
+      });
     });
   }
 
+  /**
+   * Consumes a set of reservations, and reports which ones it actually flipped.
+   *
+   * A5. The `status = 'ACTIVE'` predicate means the caller's list is a request,
+   * not a result: a reservation already consumed by an earlier attempt is
+   * silently skipped. The returned ids are the ones this call is responsible
+   * for, and they are what the consuming command puts on its
+   * `inventory.reservation.consumed` event — an event naming reservations that
+   * were consumed by somebody else is evidence of nothing.
+   */
   async consumeReservationsBatch(
     tx: Tx,
     orgId: string,
@@ -173,17 +268,18 @@ export class ReservationService {
       serialId?: number | null;
       reservedQty: string;
     }>,
-  ): Promise<void> {
-    if (reservations.length === 0) return;
+  ): Promise<number[]> {
+    if (reservations.length === 0) return [];
 
     const activeIds = reservations.map((r) => r.id);
 
-    await tx.execute(sql`
+    const consumed = await tx.execute<{ id: number }>(sql`
       UPDATE inv_stock_reservations
       SET status = 'CONSUMED', updated_at = NOW()
       WHERE id = ANY(ARRAY[${sql.join(activeIds.map((id) => sql`${id}`), sql`, `)}]::int[])
         AND org_id = ${orgId}
         AND status = 'ACTIVE'
+      RETURNING id
     `);
 
     const withLocation = reservations.filter((r) => r.locationId !== null);
@@ -196,6 +292,8 @@ export class ReservationService {
         reservedQty: r.reservedQty,
       });
     }
+
+    return consumed.map((row) => Number(row.id));
   }
 
   async expireStale(orgId: string): Promise<number> {

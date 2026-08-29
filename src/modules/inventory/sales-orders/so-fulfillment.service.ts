@@ -16,6 +16,10 @@ import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
 import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import {
+  INVENTORY_COMMAND_EVENTS,
+  emitInventoryCommandEvent,
+} from "../stock-engine/command-events";
 import { SoCoreService } from "./so-core.service";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
 import { addDec, cmpDec } from "../stock-engine/decimal";
@@ -231,19 +235,19 @@ export class SoFulfillmentService {
           );
 
           // A1. `outgoing_qty` had no writer at all, so availability ignored one
-          // of its five terms. Only the portion no reservation covers is
-          // recorded: a reserved pick is already out of availability via
-          // `committed`, and counting it twice is a worse error than never.
+          // of its five terms. Recomputed from the pick lines rather than
+          // incremented, and at the row's full grain: the earlier version
+          // matched (variant, location) only and wrote the same figure to every
+          // lot row at that location.
           for (const line of data.lines) {
             const soLine = so.lines.find((l) => l.id === line.soLineId);
             if (!soLine) continue;
-            await this.projection.recordPicked(
-              tx,
-              orgId,
-              soLine.productVariantId,
-              line.locationId,
-              line.quantityPicked,
-            );
+            await this.projection.syncOutgoing(tx, orgId, {
+              productVariantId: soLine.productVariantId,
+              locationId: line.locationId,
+              lotId: line.lotId ?? null,
+              serialId: line.serialId ?? null,
+            });
           }
 
           await tx.update(invSalesOrders)
@@ -387,24 +391,6 @@ export class SoFulfillmentService {
       with: { lines: true },
     });
 
-    // A1. The goods leave, so the bucket that held them empties. Driven from
-    // the pick lines rather than the order lines: a partially picked order
-    // ships what was picked, and the bucket has to match that.
-    await this.db.transaction(async (tx) => {
-      for (const pickList of pickLists) {
-        for (const line of pickList.lines) {
-          if (line.locationId === null) continue;
-          await this.projection.shipOutgoing(
-            tx,
-            orgId,
-            line.productVariantId,
-            line.locationId,
-            String(line.quantityPicked),
-          );
-        }
-      }
-    });
-
     const reservations = await this.db.query.invStockReservations.findMany({
       where: and(
         eq(invStockReservations.orgId, orgId),
@@ -492,7 +478,7 @@ export class SoFulfillmentService {
         movements,
       });
 
-      await this.reservationService.consumeReservationsBatch(
+      const consumedReservations = await this.reservationService.consumeReservationsBatch(
         tx,
         orgId,
         userId,
@@ -503,6 +489,25 @@ export class SoFulfillmentService {
           reservedQty: r.reservedQty,
         })),
       );
+
+      // A5. Shipping is one of the two places a reservation is ever consumed,
+      // and the set is the fact — one event for the command, keyed on the
+      // command's own idempotency key, rather than one per reservation.
+      if (consumedReservations.length > 0) {
+        await emitInventoryCommandEvent(tx as Db, {
+          orgId,
+          eventType: INVENTORY_COMMAND_EVENTS.RESERVATION_CONSUMED,
+          aggregateType: "inv_stock_reservation",
+          aggregateId: idempotencyKey,
+          actorUserId: userId,
+          payload: {
+            reservationIds: consumedReservations,
+            sourceType: "inv_sales_order",
+            sourceId: String(soId),
+            consumedBy: "sales_order.ship",
+          },
+        });
+      }
 
       if (serialIds.length > 0) {
         await (tx as Db).update(invSerialNumbers)
@@ -517,6 +522,7 @@ export class SoFulfillmentService {
             .where(and(eq(invSoLines.id, lineId), eq(invSoLines.soId, soId)));
         }
       }
+
 
       const [ship] = await (tx as Db).insert(invShipments).values({
         orgId,
@@ -546,6 +552,27 @@ export class SoFulfillmentService {
         .set({ status: newStatus, shippedAt: new Date(), updatedAt: new Date() })
         .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
 
+      // A1. The goods have left, so the bucket that held them empties — last,
+      // and in the same transaction as everything it reads.
+      //
+      // This used to run in its own *earlier* transaction, which was harmless
+      // while the bucket was decremented and wrong the moment it became derived:
+      // recomputing before the shipment is recorded re-reads a world where
+      // nothing has shipped and writes the same figure back, so the tote never
+      // empties. The ordering is load-bearing now, which is exactly the kind of
+      // assumption a change of mechanism invalidates in silence.
+      for (const pickList of pickLists) {
+        for (const line of pickList.lines) {
+          if (line.locationId === null) continue;
+          await this.projection.syncOutgoing(tx, orgId, {
+            productVariantId: line.productVariantId,
+            locationId: line.locationId,
+            lotId: line.lotId,
+            serialId: line.serialId,
+          });
+        }
+      }
+
       await OutboxWriter.emit(tx as Db, {
         eventId: randomUUID(),
         organizationId: orgId,
@@ -562,6 +589,41 @@ export class SoFulfillmentService {
           actorUserId: userId,
         },
         occurredAt: new Date(),
+      });
+
+      /**
+       * A5. The shipment event, from the path that had none.
+       *
+       * There are two ways to ship in this module. `ShipmentsService.ship`
+       * emits `inventory.shipment.dispatched`; this one creates a shipment
+       * already SHIPPED and announced only that the *order* was fulfilled — so
+       * anything subscribed to shipments (a carrier integration, a customer
+       * notification) simply never heard about shipments raised this way. The
+       * existing name is reused rather than a new one invented: item 2 forbids
+       * retiring it, and two names for one shipment would collide on the
+       * outbox's `(org, aggregate_type, aggregate_id, aggregate_version)`
+       * index. The order-level event is keyed on the sales order, so the two
+       * here are different aggregates and coexist.
+       */
+      await emitInventoryCommandEvent(tx as Db, {
+        orgId,
+        eventType: INVENTORY_COMMAND_EVENTS.SHIPMENT_DISPATCHED,
+        aggregateType: "inv_shipment",
+        aggregateId: String(ship.id),
+        actorUserId: userId,
+        payload: {
+          shipmentId: ship.id,
+          shipmentNumber,
+          soId,
+          soNumber: so.soNumber,
+          warehouseId: so.warehouseId,
+          carrierId: data.carrierId ?? null,
+          trackingNumber: data.trackingNumber ?? null,
+          lineCount: movements.length,
+          isPartial,
+          shippedVia: "sales_order.ship",
+          idempotencyKey,
+        },
       });
 
       return ship;

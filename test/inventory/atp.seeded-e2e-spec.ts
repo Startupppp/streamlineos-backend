@@ -149,20 +149,23 @@ describe("[seeded-e2e] available to promise", () => {
   });
 
   it("stops promising stock that has been picked but not shipped", async () => {
-    // The defect this unit exists to close. `outgoing_qty` was in the formula
-    // in one place and in no query, and nothing ever wrote it -- so goods on
-    // the packing bench were offered to the next customer. Nothing is reserved
-    // on this fixture, so the whole pick is uncovered and lands in the bucket.
+    // The defect this unit exists to close: `outgoing_qty` was in the formula in
+    // one place and in no query, and nothing ever wrote it, so goods on the
+    // packing bench were offered to the next customer.
+    //
+    // The bucket is set directly here because these two cases are about the
+    // *formula* — that availability subtracts the term at all. The bucket is a
+    // derived quantity now, recomputed from pick documents rather than
+    // incremented, so a synthetic call to a writer would prove nothing about
+    // either. That the writer maintains it is proven where real picks happen:
+    // `picking-waves` ("takes wave-picked units out of availability") and
+    // `order-to-ship`.
     await asTenant(() =>
-      app.app
-        .get(StockProjectionService)
-        .recordPicked(
-          app.app.get<Db>(DRIZZLE) as never,
-          scene.orgId,
-          scene.variantId,
-          scene.locationId,
-          "30.0000",
-        ),
+      app.app.get<Db>(DRIZZLE).execute(sql`
+        UPDATE inv_stock_levels SET outgoing_qty = 30
+         WHERE org_id = ${scene.orgId}
+           AND product_variant_id = ${scene.variantId}
+           AND location_id = ${scene.locationId}`),
     );
 
     const after = await buckets();
@@ -177,15 +180,11 @@ describe("[seeded-e2e] available to promise", () => {
 
   it("gives the stock back when it ships", async () => {
     await asTenant(() =>
-      app.app
-        .get(StockProjectionService)
-        .shipOutgoing(
-          app.app.get<Db>(DRIZZLE) as never,
-          scene.orgId,
-          scene.variantId,
-          scene.locationId,
-          "30.0000",
-        ),
+      app.app.get<Db>(DRIZZLE).execute(sql`
+        UPDATE inv_stock_levels SET outgoing_qty = 0
+         WHERE org_id = ${scene.orgId}
+           AND product_variant_id = ${scene.variantId}
+           AND location_id = ${scene.locationId}`),
     );
     expect(Number((await buckets()).outgoing_qty)).toBe(0);
     expect((await availability()).available).toBe(100);

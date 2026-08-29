@@ -5,6 +5,10 @@ import { type Db } from "../../../db/drizzle.module";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { ReconciliationQueryInput, RepairInput } from "./dto/reconciliation.schemas";
+import {
+  EXPECTED_COMMITTED,
+  EXPECTED_OUTGOING,
+} from "../stock-engine/projection-definitions";
 
 /**
  * Ledger-to-projection reconciliation — INV-104, extended by A2.
@@ -111,27 +115,6 @@ interface DriftQueryRow extends Record<string, unknown> {
 type Executor = Pick<Db, "execute">;
 
 /**
- * The document-derived expected value of `committed` for the projection row
- * aliased `sl`.
- *
- * Written once and embedded everywhere it is needed rather than transcribed:
- * the first version of this predicate referenced `res.qty` where the column is
- * `reserved_qty`, a hand-copied spec passed anyway, and only booting the
- * service found it. A second copy is a second chance to make that mistake.
- */
-const EXPECTED_COMMITTED: SQL = sql`
-  COALESCE((
-    SELECT SUM(res.reserved_qty::numeric)
-      FROM inv_stock_reservations res
-     WHERE res.org_id = sl.org_id
-       AND res.product_variant_id = sl.product_variant_id
-       AND res.location_id IS NOT DISTINCT FROM sl.location_id
-       AND res.lot_id IS NOT DISTINCT FROM sl.lot_id
-       AND res.serial_id IS NOT DISTINCT FROM sl.serial_id
-       AND res.status = 'ACTIVE'
-  ), 0)`;
-
-/**
  * The document-derived expected value of `on_order` for the row aliased `sl`.
  *
  * Outstanding, not ordered: `quantity - quantity_received` per line, clamped at
@@ -193,34 +176,6 @@ const EXPECTED_ON_ORDER: SQL = sql`
  * exactly what `recordPicked` updates on. Narrowing it to the full natural key
  * would report drift on every lot-tracked row the writer fans out to.
  */
-const EXPECTED_OUTGOING: SQL = sql`
-  GREATEST(0, COALESCE((
-    SELECT SUM(
-             CASE WHEN pll.product_variant_id = sl.product_variant_id
-                  THEN pll.quantity_picked::numeric ELSE 0 END
-             -- A substitute is what actually went in the tote. It is tracked on
-             -- its own columns rather than folded into quantity_picked (packing
-             -- keys on product_variant_id and would otherwise accept a package
-             -- of the original), so it needs its own term here or swapping an
-             -- item leaves those units sellable.
-           + CASE WHEN pll.substitute_variant_id = sl.product_variant_id
-                  THEN COALESCE(pll.substitute_quantity, 0)::numeric ELSE 0 END
-           )
-      FROM inv_pick_list_lines pll
-      JOIN inv_pick_lists pl
-        ON pl.org_id = pll.org_id AND pl.id = pll.pick_list_id
-      JOIN inv_so_lines sol
-        ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
-      JOIN inv_sales_orders so
-        ON so.org_id = sol.org_id AND so.id = sol.so_id
-     WHERE pll.org_id = sl.org_id
-       AND (pll.product_variant_id = sl.product_variant_id
-            OR pll.substitute_variant_id = sl.product_variant_id)
-       AND pll.location_id = sl.location_id
-       AND pl.status <> 'CANCELLED'
-       AND so.status IN ('DRAFT', 'CONFIRMED', 'PARTIALLY_RESERVED', 'RESERVED', 'PICKED', 'PACKED')
-  ), 0) - ${EXPECTED_COMMITTED})`;
-
 /**
  * The six checks, as standalone queries.
  *
@@ -399,6 +354,17 @@ export const reconciliationQueries = {
           outgoing_qty = target.outgoing_qty
       FROM target
       WHERE dest.id = target.id
+        -- A negative bucket sum is a genuine ledger anomaly, and writing it
+        -- trips migration 0515's non-negative CHECK — which rolls back the whole
+        -- statement, so one poisoned grain made the repair impossible for the
+        -- entire organisation and returned a bare 500. Such a row is skipped and
+        -- keeps being reported instead: the drift stays visible, and every other
+        -- row is still repairable.
+        AND target.blocked_qty >= 0
+        AND target.quality_hold_qty >= 0
+        AND target.committed >= 0
+        AND target.on_order >= 0
+        AND target.outgoing_qty >= 0
         AND (dest.on_hand::numeric <> target.on_hand
           OR COALESCE(dest.blocked_qty, 0)::numeric <> target.blocked_qty
           OR COALESCE(dest.quality_hold_qty, 0)::numeric <> target.quality_hold_qty
@@ -414,6 +380,20 @@ export const reconciliationQueries = {
  * The tenant/warehouse/product predicate the checks share. `sl` is the
  * projection alias every one of them uses.
  */
+/** The same tenant/warehouse/product narrowing, against the ledger alias `t`. */
+export function ledgerFilters(
+  scopeSql: SQL,
+  orgId: string,
+  warehouseId: number | null,
+  productVariantId: number | null,
+): SQL {
+  const parts: SQL[] = [scopeSql];
+  if (warehouseId != null)
+    parts.push(sql`t.location_id IN (SELECT id FROM inv_locations WHERE org_id = ${orgId} AND warehouse_id = ${warehouseId})`);
+  if (productVariantId != null) parts.push(sql`t.product_variant_id = ${productVariantId}`);
+  return sql.join(parts, sql` AND `);
+}
+
 export function reconciliationFilters(
   orgId: string,
   scopeSql: SQL,
@@ -434,6 +414,11 @@ export function reconciliationFilters(
  * every quantity bucket is now derived from documents or from the ledger.
  */
 const UNRECONCILABLE = [
+  // Reported by `ledger_arithmetic` and not repairable by `rebuild`, which
+  // writes only `inv_stock_levels`. A caller computing "repairable = checked
+  // minus unreconcilable" otherwise applies a repair that returns rowsChanged
+  // 0 and leaves the same row drifting forever.
+  "ledger_arithmetic (a fact row whose own arithmetic is wrong cannot be repaired by rebuilding the projection)",
   "average_cost — a running weighted average, not a quantity bucket: it depends on the order movements arrived in, so only a sequential replay could rebuild it, and this repair is set-based",
 ];
 
@@ -453,6 +438,17 @@ export class InvReconciliationService {
     const scope = await this.warehouseScope.forUser(orgId, userId);
     const scopeSql = scope.location(sql.raw("sl.location_id"));
     const where = reconciliationFilters(orgId, scopeSql, query.warehouseId ?? null, query.productVariantId ?? null);
+    // The ledger check runs against `inv_stock_transactions`, so it needs the
+    // caller's filters restated against `t`. It previously took only the
+    // location scope, so asking about one warehouse and one variant returned
+    // ledger anomalies for every other warehouse and variant — and they
+    // consumed the shared row cap, hiding the rows that were asked for.
+    const ledgerWhere = ledgerFilters(
+      scope.location(sql.raw("t.location_id")),
+      orgId,
+      query.warehouseId ?? null,
+      query.productVariantId ?? null,
+    );
     // One extra row distinguishes "exactly at the cap" from "there is more".
     const cap = query.limit + 1;
 
@@ -461,7 +457,7 @@ export class InvReconciliationService {
       reconciliationQueries.committedDrift(this.db, orgId, where, cap),
       reconciliationQueries.onOrderDrift(this.db, orgId, where, cap),
       reconciliationQueries.outgoingDrift(this.db, orgId, where, cap),
-      reconciliationQueries.arithmeticAnomalies(this.db, orgId, scope.location(sql.raw("t.location_id")), cap),
+      reconciliationQueries.arithmeticAnomalies(this.db, orgId, ledgerWhere, cap),
       reconciliationQueries.orphanProjections(this.db, orgId, where, cap),
     ]);
 

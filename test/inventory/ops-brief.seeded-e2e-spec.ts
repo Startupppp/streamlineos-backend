@@ -16,7 +16,7 @@ import { seedOrg } from "test/helpers/seed-builder";
  *
  * The two properties worth proving here are the ones a unit test cannot: that
  * the route is actually reachable through the guard stack, and that a member
- * without `inventory:reports:read` is refused rather than served an empty
+ * without `inventory:ai:read` is refused rather than served an empty
  * brief. "No signals" and "you may not see the signals" must not be the same
  * response.
  */
@@ -36,7 +36,9 @@ describe(`${SEEDED_HARNESS} inventory operations brief`, () => {
     async () => {
       const fixture = await seedOrg(app.seedDb)
         .onPlan("PAID")
-        .addMember("reader", { permissionKeys: ["inventory:reports:read"] })
+        // A6 moved the AI surfaces onto their own key so a metered model
+        // endpoint is not gated by the same permission as a deterministic report.
+        .addMember("reader", { permissionKeys: ["inventory:reports:read", "inventory:ai:read"] })
         .addMember("outsider")
         .build();
 

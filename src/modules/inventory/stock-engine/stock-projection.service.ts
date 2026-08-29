@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { EXPECTED_OUTGOING } from "./projection-definitions";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -31,56 +32,51 @@ export class StockProjectionService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   /**
-   * Record a pick against a stock row.
+   * Bring `outgoing_qty` back in line with the documents, for one grain.
    *
-   * The tempting implementation — move the quantity from `committed` to
-   * `outgoing_qty` — is wrong here, and the reconciliation report catches it:
-   * `committed` is a *projection of ACTIVE reservations*, asserted by the
-   * `committed_vs_reservations` check, so decrementing it without consuming the
-   * reservation makes the projection disagree with its own source. Consuming
-   * the reservation at pick time is a different question (when does stock
-   * actually leave) and belongs to the unit that moves picking onto the engine.
+   * This replaces `recordPicked` and `shipOutgoing`, which incremented and
+   * decremented a running total and were wrong in three separate ways:
    *
-   * So the meaning fixed here, matching `decimal.ts`:
+   *   They filtered on `(org, variant, location)` while the projection is keyed
+   *   on `(org, variant, location, lot, serial)`. One 10-unit pick of a
+   *   lot-tracked product wrote 10 to every lot row at that location, so
+   *   availability for the variant fell by 30 where three lots were held. Two
+   *   grains on the live database already have several rows per location.
    *
-   *   `committed`     units held by an ACTIVE reservation
-   *   `outgoing_qty`  units picked that no reservation covers
+   *   The pair was asymmetric: a pick added only the part no reservation
+   *   covered, while a ship subtracted the whole picked quantity. Shipping a
+   *   reserved order therefore consumed an unreserved order's `outgoing_qty`
+   *   and re-offered stock that was standing in a tote.
    *
-   * The two are disjoint by construction, and only the uncovered excess is
-   * added — a reserved pick is already excluded from availability by
-   * `committed`, and adding it again would subtract the same units twice.
+   *   Cancelling a sales order, and picking a wave, forgot to write at all.
+   *
+   * Recomputing removes the class rather than the three instances. The value is
+   * absolute, so a writer that forgets to run is the only remaining failure and
+   * reconciliation catches exactly that; and the expression is the same one the
+   * reconciliation check uses, so the checker and the writer cannot disagree.
+   *
+   * Safe under concurrency for the same reason: two picks against one grain both
+   * recompute the same total from the same documents, where two increments could
+   * interleave.
    */
-  async recordPicked(
+  async syncOutgoing(
     tx: Tx,
     orgId: string,
-    productVariantId: number,
-    locationId: number,
-    quantity: string,
+    grain: {
+      productVariantId: number;
+      locationId: number;
+      lotId?: number | null;
+      serialId?: number | null;
+    },
   ): Promise<void> {
     await tx.execute(sql`
-      UPDATE inv_stock_levels
-         SET outgoing_qty = COALESCE(outgoing_qty, 0)
-                          + GREATEST(0, ${quantity}::numeric - committed)
-       WHERE org_id = ${orgId}
-         AND product_variant_id = ${productVariantId}
-         AND location_id = ${locationId}
-    `);
-  }
-
-  /** Shipping removes the goods, so the outgoing bucket empties with them. */
-  async shipOutgoing(
-    tx: Tx,
-    orgId: string,
-    productVariantId: number,
-    locationId: number,
-    quantity: string,
-  ): Promise<void> {
-    await tx.execute(sql`
-      UPDATE inv_stock_levels
-         SET outgoing_qty = GREATEST(0, COALESCE(outgoing_qty, 0) - ${quantity}::numeric)
-       WHERE org_id = ${orgId}
-         AND product_variant_id = ${productVariantId}
-         AND location_id = ${locationId}
+      UPDATE inv_stock_levels AS sl
+         SET outgoing_qty = ${EXPECTED_OUTGOING}
+       WHERE sl.org_id = ${orgId}
+         AND sl.product_variant_id = ${grain.productVariantId}
+         AND sl.location_id = ${grain.locationId}
+         AND sl.lot_id IS NOT DISTINCT FROM ${grain.lotId ?? null}
+         AND sl.serial_id IS NOT DISTINCT FROM ${grain.serialId ?? null}
     `);
   }
 

@@ -303,6 +303,8 @@ export class PickWaveService {
         id: invPickListLines.id,
         productVariantId: invPickListLines.productVariantId,
         locationId: invPickListLines.locationId,
+        lotId: invPickListLines.lotId,
+        serialId: invPickListLines.serialId,
         quantityToPick: invPickListLines.quantityToPick,
         quantityPicked: invPickListLines.quantityPicked,
       })
@@ -367,13 +369,12 @@ export class PickWaveService {
     // columns rather than folded into `quantityPicked`, so it needed its own
     // call — without it, swapping an item made those units sellable twice.
     if (substituteVariantId !== null && substituteQuantity !== null && line.locationId !== null) {
-      await this.projection.recordPicked(
-        tx,
-        orgId,
-        substituteVariantId,
-        line.locationId,
-        substituteQuantity,
-      );
+      await this.projection.syncOutgoing(tx, orgId, {
+        productVariantId: substituteVariantId,
+        locationId: line.locationId,
+        lotId: line.lotId,
+        serialId: line.serialId,
+      });
     }
 
     const complete = await this.waveIsComplete(tx, orgId, pickListId);
@@ -436,6 +437,8 @@ export class PickWaveService {
         id: invPickListLines.id,
         productVariantId: invPickListLines.productVariantId,
         locationId: invPickListLines.locationId,
+        lotId: invPickListLines.lotId,
+        serialId: invPickListLines.serialId,
         quantityToPick: invPickListLines.quantityToPick,
         quantityPicked: invPickListLines.quantityPicked,
       })
@@ -486,17 +489,17 @@ export class PickWaveService {
     // next customer — the same defect A1 fixed on the sales-order pick path,
     // left in place on this one. The single-order path already does this.
     //
-    // Only the increment, because the bucket is maintained relatively: two
-    // concurrent picks against one line must both count.
+    // Recomputed from the pick lines rather than incremented: the bucket is
+    // derived, and an increment is only ever as correct as its least careful
+    // writer.
     const pickedAt = input.locationId ?? line.locationId;
     if (pickedAt !== null) {
-      await this.projection.recordPicked(
-        tx,
-        orgId,
-        line.productVariantId,
-        pickedAt,
-        input.quantityPicked,
-      );
+      await this.projection.syncOutgoing(tx, orgId, {
+        productVariantId: line.productVariantId,
+        locationId: pickedAt,
+        lotId: line.lotId,
+        serialId: line.serialId,
+      });
     }
 
     const complete = await this.waveIsComplete(tx, orgId, pickListId);

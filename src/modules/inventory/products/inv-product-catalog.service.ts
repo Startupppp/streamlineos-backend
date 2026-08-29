@@ -16,6 +16,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { isUniqueViolation } from "../../../common/db/postgres-errors";
 import type {
   CreateVariantInput,
   UpdateVariantInput,
@@ -24,15 +25,6 @@ import type {
   UpdateCategoryInput,
   UpdateUomInput,
 } from "./dto/inv-products.schemas";
-
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    err.code === "23505"
-  );
-}
 
 @Injectable()
 export class InvProductCatalogService {

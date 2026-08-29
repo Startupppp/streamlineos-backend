@@ -20,7 +20,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
-import { subDec, cmpDec } from "../stock-engine/decimal";
+import { subDec, cmpDec, availableQty } from "../stock-engine/decimal";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
@@ -127,9 +127,12 @@ export class SoLifecycleService {
     const picked = await this.db.execute<{
       product_variant_id: number;
       location_id: number;
+      lot_id: number | null;
+      serial_id: number | null;
       quantity: string;
     }>(sql`
-      SELECT pll.product_variant_id, pll.location_id, pll.quantity_picked::text AS quantity
+      SELECT pll.product_variant_id, pll.location_id, pll.lot_id, pll.serial_id,
+             pll.quantity_picked::text AS quantity
         FROM inv_pick_list_lines pll
         JOIN inv_so_lines sol ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
        WHERE pll.org_id = ${orgId}
@@ -140,7 +143,8 @@ export class SoLifecycleService {
       -- A substitute is what actually went in the tote, tracked on its own
       -- columns rather than folded into quantity_picked, so it needs its own
       -- release or the swapped-in units stay unsellable.
-      SELECT pll.substitute_variant_id, pll.location_id, pll.substitute_quantity::text
+      SELECT pll.substitute_variant_id, pll.location_id, pll.lot_id, pll.serial_id,
+             pll.substitute_quantity::text
         FROM inv_pick_list_lines pll
         JOIN inv_so_lines sol ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
        WHERE pll.org_id = ${orgId}
@@ -160,22 +164,27 @@ export class SoLifecycleService {
         );
       }
 
-      for (const row of picked) {
-        await this.projection.shipOutgoing(
-          tx,
-          orgId,
-          row.product_variant_id,
-          row.location_id,
-          row.quantity,
-        );
-      }
-
+      // The status flip comes *before* the recompute, and the order is now
+      // load-bearing. `outgoing_qty` is derived from the documents, and this
+      // order is one of them: recomputing first re-reads a still-open order and
+      // writes the same figure back, so the tote never empties. An increment did
+      // not care about ordering, which is exactly the kind of assumption a
+      // change of mechanism invalidates silently.
       await (tx as Db)
         .update(invSalesOrders)
         .set({ status: "CANCELLED", updatedAt: new Date() })
         .where(
           and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
         );
+
+      for (const row of picked) {
+        await this.projection.syncOutgoing(tx, orgId, {
+          productVariantId: row.product_variant_id,
+          locationId: row.location_id,
+          lotId: row.lot_id,
+          serialId: row.serial_id,
+        });
+      }
     });
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
@@ -315,15 +324,19 @@ export class SoLifecycleService {
         eq(invStockLevels.orgId, orgId),
         eq(invStockLevels.productVariantId, variantId),
       ),
-      with: { location: { columns: { id: true, warehouseId: true } } },
+      with: {
+        location: { columns: { id: true, warehouseId: true, isSellable: true } },
+      },
       columns: {
         id: true,
         locationId: true,
         lotId: true,
+        serialId: true,
         onHand: true,
         committed: true,
         blockedQty: true,
         qualityHoldQty: true,
+        outgoingQty: true,
       },
     });
 
@@ -349,12 +362,25 @@ export class SoLifecycleService {
     const candidates = levels.filter((level) => {
       if (warehouseId && level.location?.warehouseId !== warehouseId) return false;
       if (!eligible(level.lotId)) return false;
-      // Exact: availability decides whether stock is promised, and
-      // `parseFloat` on an 18,4 numeric is the arithmetic the PRD forbids.
-      const available = subDec(
-        subDec(subDec(level.onHand, level.committed), level.blockedQty ?? "0"),
-        level.qualityHoldQty ?? "0",
-      );
+      // A2/A5. The one availability formula, not a private copy of it.
+      //
+      // This carried a four-term copy that omitted `outgoing_qty` and knew
+      // nothing of `is_sellable`, so the allocator promised two kinds of stock
+      // it must never promise: units already picked and standing on the packing
+      // bench, and units parked at a warehouse's TRANSIT location while they sat
+      // on a lorry. Reserving transit stock was the worse of the two — the
+      // transfer's completion later issues those units out of transit, `on_hand`
+      // reaches zero while `committed` stays behind, and availability at that
+      // grain is negative from then on. Reconciliation reports no drift, because
+      // the reservation really is ACTIVE.
+      const available = availableQty({
+        on_hand: level.onHand,
+        committed: level.committed,
+        blocked_qty: level.blockedQty,
+        quality_hold_qty: level.qualityHoldQty,
+        outgoing_qty: level.outgoingQty,
+        is_sellable: level.location?.isSellable ?? null,
+      });
       return cmpDec(available, qty) >= 0;
     });
 

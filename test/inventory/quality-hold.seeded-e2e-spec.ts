@@ -8,7 +8,9 @@ import { RecallsService } from "src/modules/inventory/quality/quality-recalls.se
 import { CustomerReturnsService } from "src/modules/inventory/returns/customer-returns.service";
 import { SoLifecycleService } from "src/modules/inventory/sales-orders/so-lifecycle.service";
 import { StockEngineService } from "src/modules/inventory/stock-engine/stock-engine.service";
+import { INVENTORY_COMMAND_EVENTS } from "src/modules/inventory/stock-engine/command-events";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
+import { outboxEventsFor } from "test/helpers/outbox-events";
 import { seedOrg } from "test/helpers/seed-builder";
 
 /**
@@ -319,10 +321,15 @@ describe("[seeded-e2e] quality holds and the availability formula", () => {
       expect(before.onHand).toBe("40.0000");
 
       await asTenant(() =>
-        app.app.get(RecallsService).create(scene.orgId, scene.userId, {
-          title: `Recall ${randomUUID().slice(0, 6)}`,
-          lines: [{ productVariantId: scene.variantId, lotId: lot.lotId }],
-        } as never),
+        app.app.get(RecallsService).create(
+          scene.orgId,
+          scene.userId,
+          {
+            title: `Recall ${randomUUID().slice(0, 6)}`,
+            lines: [{ productVariantId: scene.variantId, lotId: lot.lotId }],
+          } as never,
+          `recall-${randomUUID().slice(0, 8)}`,
+        ),
       );
 
       const after = await levelFor(lot.lotId);
@@ -453,6 +460,172 @@ describe("[seeded-e2e] quality holds and the availability formula", () => {
       });
       const after = await levelFor(lot.lotId);
       expect(after.qualityHold).toBe("30.0000");
+    });
+  });
+
+  /**
+   * A5, item 3 — a hold, a release and a return each announce themselves.
+   *
+   * All three already wrote an audit row, and an audit row is not an event: it
+   * records who did what for a human reading it later, and nothing subscribes
+   * to a table. So quarantining a lot — the moment a recall, a supplier claim
+   * or a customer notification most needs to start — was visible to nobody
+   * outside the database.
+   *
+   * The counts are the assertion. A hold that emits twice is two quarantine
+   * notifications for one batch of goods, and a hold that emits on a refused
+   * request is a notification about goods that were never held at all.
+   */
+  describe("the events a quality decision owes", () => {
+    const eventsFor = (eventType: string, aggregateId?: string) =>
+      asTenant(() =>
+        outboxEventsFor(app.app.get<Db>(DRIZZLE), scene.orgId, eventType, aggregateId),
+      );
+
+    it("announces a hold once, and again nothing when the same request is retried", async () => {
+      const lot = await stockedLot("evhold", "60.0000");
+      const key = `hold-event-${randomUUID().slice(0, 8)}`;
+      const request = {
+        productVariantId: scene.variantId,
+        locationId: lot.locationId,
+        lotId: lot.lotId,
+        quantity: "10.0000",
+        reason: "Damaged outer packaging",
+      };
+
+      const hold = await asTenant(() =>
+        app.app.get(HoldsService).create(scene.orgId, scene.userId, key, request as never),
+      );
+      const holdId = (hold as { id: number }).id;
+
+      const created = await eventsFor(
+        INVENTORY_COMMAND_EVENTS.QUALITY_HOLD_CREATED,
+        String(holdId),
+      );
+      expect(created).toHaveLength(1);
+      expect(created[0]!.aggregateType).toBe("inv_quality_hold");
+      expect(created[0]!.payload.quantity).toBe("10.0000");
+      expect(created[0]!.payload.lotId).toBe(lot.lotId);
+      expect(created[0]!.payload.warehouseId).toBe(scene.warehouseId);
+      expect(created[0]!.payload.idempotencyKey).toBe(key);
+
+      // The emit shares the claim with the hold document, so the retry that
+      // replays the stored hold id emits nothing — the same reason it does not
+      // raise a second hold.
+      await asTenant(() =>
+        app.app.get(HoldsService).create(scene.orgId, scene.userId, key, request as never),
+      );
+      expect(
+        await eventsFor(INVENTORY_COMMAND_EVENTS.QUALITY_HOLD_CREATED, String(holdId)),
+      ).toHaveLength(1);
+
+      // ── and the release ──────────────────────────────────────────────────
+      await asTenant(() =>
+        app.app
+          .get(HoldsService)
+          .release(scene.orgId, scene.userId, holdId, `rel-event-${randomUUID().slice(0, 8)}`),
+      );
+      const released = await eventsFor(
+        INVENTORY_COMMAND_EVENTS.QUALITY_HOLD_RELEASED,
+        String(holdId),
+      );
+      expect(released).toHaveLength(1);
+      expect(released[0]!.payload.holdId).toBe(holdId);
+      expect(released[0]!.payload.sku).toBe(created[0]!.payload.sku);
+    });
+
+    it("announces nothing for a hold the engine refused", async () => {
+      // The emit shares the transaction with the hold, so a command that rolls
+      // back leaves no event. An event published for a hold that does not exist
+      // has every consumer quarantining stock that is on sale.
+      const lot = await stockedLot("evrefused", "5.0000");
+      const before = await eventsFor(INVENTORY_COMMAND_EVENTS.QUALITY_HOLD_CREATED);
+
+      await expect(
+        asTenant(() =>
+          app.app.get(HoldsService).create(scene.orgId, scene.userId, `ev-over-${randomUUID().slice(0, 8)}`, {
+            productVariantId: scene.variantId,
+            locationId: lot.locationId,
+            lotId: lot.lotId,
+            quantity: "500.0000",
+            reason: "More than exists",
+          } as never),
+        ),
+      ).rejects.toMatchObject({ response: { code: "HOLD_EXCEEDS_ON_HAND" } });
+
+      expect(await eventsFor(INVENTORY_COMMAND_EVENTS.QUALITY_HOLD_CREATED)).toHaveLength(
+        before.length,
+      );
+    });
+
+    it("announces a customer return once, with what was decided about the goods", async () => {
+      const lot = await stockedLot("evreturn", "20.0000");
+      const returns = app.app.get(CustomerReturnsService);
+      const created = await asTenant(() =>
+        returns.create(scene.orgId, scene.userId, {
+          lines: [
+            {
+              productVariantId: scene.variantId,
+              lotId: lot.lotId,
+              quantity: "5.0000",
+              reason: "Arrived scratched",
+              targetLocationId: lot.locationId,
+            },
+          ],
+        } as never),
+      );
+      const returnId = (created as { id: number }).id;
+
+      const detail = (await asTenant(() => returns.get(scene.orgId, returnId))) as {
+        lines: Array<{ id: number }>;
+      };
+      for (const line of detail.lines) {
+        await asTenant(() =>
+          returns.inspectLine(scene.orgId, scene.userId, returnId, {
+            lineId: line.id,
+            disposition: "RESTOCK",
+          }),
+        );
+      }
+
+      await asTenant(() =>
+        returns.post(
+          scene.orgId,
+          returnId,
+          scene.userId,
+          `ret-event-${randomUUID().slice(0, 8)}`,
+          {} as never,
+        ),
+      );
+
+      const events = await eventsFor(
+        INVENTORY_COMMAND_EVENTS.RETURN_POSTED,
+        String(returnId),
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0]!.aggregateType).toBe("inv_customer_return");
+      // One event type covers both directions; which way the goods went is a
+      // field, because "goods came back" is one thing to subscribe to.
+      expect(events[0]!.payload.returnType).toBe("CUSTOMER");
+      expect(events[0]!.payload.lineCount).toBe(1);
+      // A restock and a scrap are the same document and opposite outcomes.
+      expect(events[0]!.payload.dispositions).toEqual([
+        { lineId: detail.lines[0]!.id, productVariantId: scene.variantId, disposition: "RESTOCK" },
+      ]);
+
+      // Posting an already-POSTED return short-circuits, so no second event.
+      await asTenant(() =>
+        returns.post(
+          scene.orgId,
+          returnId,
+          scene.userId,
+          `ret-event-again-${randomUUID().slice(0, 8)}`,
+          {} as never,
+        ),
+      );
+      expect(
+        await eventsFor(INVENTORY_COMMAND_EVENTS.RETURN_POSTED, String(returnId)),
+      ).toHaveLength(1);
     });
   });
 });

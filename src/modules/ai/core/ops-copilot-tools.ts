@@ -13,6 +13,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { availableQtySumSql } from "../../inventory/stock-engine/available-sql";
 import { ToolAccessService } from "./tool-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { DataScope } from "../../access/access.types";
@@ -94,15 +95,22 @@ export class OpsCopilotTools {
                 return { ...product, stock: [] };
               }
 
+              // A1. `available` was `onHand - committed` here: two terms of
+              // five, ignoring blocked, quality-held and picked-but-unshipped
+              // stock, and offering goods sitting in a transit location. The
+              // copilot quotes this number back to a human, so it is computed
+              // by the one definition of availability, in the same aggregate.
               const stockRows = await this.db.execute<{
                 variant_id: number;
                 on_hand: string;
                 committed: string;
+                available: string;
               }>(sql`
                 SELECT
                   product_variant_id AS variant_id,
                   COALESCE(SUM(on_hand::numeric), 0)::text AS on_hand,
-                  COALESCE(SUM(committed::numeric), 0)::text AS committed
+                  COALESCE(SUM(committed::numeric), 0)::text AS committed,
+                  ${availableQtySumSql("inv_stock_levels")}::text AS available
                 FROM ${invStockLevels}
                 WHERE org_id = ${orgId}
                   AND product_variant_id = ANY(ARRAY[${sql.join(variantIds.map((id) => sql`${id}`), sql`, `)}]::int[])
@@ -112,20 +120,24 @@ export class OpsCopilotTools {
               const stockByVariant = new Map(
                 stockRows.map((r) => [
                   Number(r.variant_id),
-                  { onHand: Number(r.on_hand), committed: Number(r.committed) },
+                  {
+                    onHand: Number(r.on_hand),
+                    committed: Number(r.committed),
+                    available: Number(r.available),
+                  },
                 ]),
               );
 
               return {
                 ...product,
                 stock: variants.map((v) => {
-                  const s = stockByVariant.get(v.id) ?? { onHand: 0, committed: 0 };
+                  const s = stockByVariant.get(v.id) ?? { onHand: 0, committed: 0, available: 0 };
                   return {
                     variantId: v.id,
                     variantName: v.name,
                     onHand: s.onHand,
                     committed: s.committed,
-                    available: s.onHand - s.committed,
+                    available: s.available,
                   };
                 }),
               };

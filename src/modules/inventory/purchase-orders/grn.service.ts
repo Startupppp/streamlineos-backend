@@ -36,6 +36,10 @@ import type {
   ReverseGrnInput,
 } from "./dto/inv-purchase-orders.schemas";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import {
+  INVENTORY_COMMAND_EVENTS,
+  emitInventoryCommandEvent,
+} from "../stock-engine/command-events";
 import { PoService } from "./po.service";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
 
@@ -443,6 +447,42 @@ export class GrnService {
             actorUserId: userId,
           },
           occurredAt: new Date(),
+        });
+
+        /**
+         * A5. The receipt itself, beside the order-level event above.
+         *
+         * The existing event is keyed on the purchase order, and a purchase
+         * order is received many times — so it answers "this order has had
+         * goods against it" and cannot answer "this delivery arrived". A
+         * consumer reconciling a supplier's advice note needs the second
+         * question, and had nothing to subscribe to. Both are emitted: item 2
+         * forbids retiring a name anything may already be listening on, and the
+         * two key different aggregates so they do not collide on the outbox's
+         * per-aggregate version index.
+         */
+        await emitInventoryCommandEvent(tx, {
+          orgId,
+          eventType: INVENTORY_COMMAND_EVENTS.RECEIVING_POSTED,
+          aggregateType: "inv_grn",
+          aggregateId: String(grn.id),
+          actorUserId: userId,
+          payload: {
+            grnId: grn.id,
+            grnNumber,
+            poId,
+            poNumber: po.poNumber,
+            vendorId: po.vendorId,
+            locationId,
+            warehouseId: po.warehouseId,
+            receivedDate: data.receivedDate,
+            lineCount: data.lines.length,
+            acceptedLineCount: data.lines.filter((l) => l.qualityStatus === "ACCEPTED").length,
+            // The order is closed by this receipt, or it is not. A consumer
+            // chasing the supplier needs that without re-reading the order.
+            purchaseOrderStatus: allReceived ? "RECEIVED" : "PARTIAL",
+            idempotencyKey,
+          },
         });
 
         return grn.id;

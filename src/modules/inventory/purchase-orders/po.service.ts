@@ -1,5 +1,5 @@
 import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import {
@@ -313,11 +313,30 @@ export class PoService {
     // shortfall ordered it again the following week. Sending is the moment the
     // goods become expected.
     const [sent] = await this.db.transaction(async (tx) => {
+      // The status predicate belongs in the UPDATE, not only in the read above.
+      // Two concurrent sends — a double click, or a client retry after a
+      // timeout — both read DRAFT, both passed the guard, and both ran
+      // `addOnOrder`, so a 500-unit order booked 1000 as inbound. `addOnOrder`
+      // clamps at zero only downward, so the over-booking was unbounded, and
+      // replenishment then under-ordered that variant every cycle.
       const updated = await tx
         .update(invPurchaseOrders)
         .set({ status: "SENT", sentAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
+        .where(and(
+          eq(invPurchaseOrders.id, poId),
+          eq(invPurchaseOrders.orgId, orgId),
+          eq(invPurchaseOrders.status, "DRAFT"),
+        ))
         .returning();
+
+      // Lost the race: another request already sent this order and booked its
+      // inbound quantity. Returning what is there is the honest answer to "send
+      // this", and it must not book a second time.
+      if (updated.length === 0) {
+        return this.db.query.invPurchaseOrders.findFirst({
+          where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
+        }).then((row) => (row ? [row] : []));
+      }
 
       if (po.warehouseId !== null) {
         const lines = await tx
@@ -413,12 +432,21 @@ export class PoService {
 
     const [closed] = await this.db.transaction(async (tx) => {
       // A PARTIAL order closes with a remainder nobody will ever deliver.
-      await this.releaseOnOrder(tx, orgId, poId, po.warehouseId);
-      return tx
+      // Conditional, for the same reason as `sendPo`: two concurrent closes
+      // would each release the outstanding quantity, taking it out of `on_order`
+      // twice.
+      const rows = await tx
         .update(invPurchaseOrders)
         .set({ status: "CLOSED", updatedAt: new Date() })
-        .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
+        .where(and(
+          eq(invPurchaseOrders.id, poId),
+          eq(invPurchaseOrders.orgId, orgId),
+          inArray(invPurchaseOrders.status, ["RECEIVED", "PARTIAL"]),
+        ))
         .returning();
+      if (rows.length === 0) return rows;
+      await this.releaseOnOrder(tx, orgId, poId, po.warehouseId);
+      return rows;
     });
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
@@ -446,13 +474,20 @@ export class PoService {
 
     const [cancelled] = await this.db.transaction(async (tx) => {
       // Only a SENT order ever booked anything; a DRAFT was never expected.
-      if (po.status === "SENT")
-        await this.releaseOnOrder(tx, orgId, poId, po.warehouseId);
-      return tx
+      const rows = await tx
         .update(invPurchaseOrders)
         .set({ status: "CANCELLED", updatedAt: new Date() })
-        .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
+        .where(and(
+          eq(invPurchaseOrders.id, poId),
+          eq(invPurchaseOrders.orgId, orgId),
+          inArray(invPurchaseOrders.status, ["DRAFT", "SENT"]),
+        ))
         .returning();
+      if (rows.length === 0) return rows;
+      // Only a SENT order ever booked anything; a DRAFT was never expected.
+      if (po.status === "SENT")
+        await this.releaseOnOrder(tx, orgId, poId, po.warehouseId);
+      return rows;
     });
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));

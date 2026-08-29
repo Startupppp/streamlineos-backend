@@ -62,6 +62,38 @@ describe("[seeded-e2e] product restore and retired-SKU demand", () => {
     return row!;
   };
 
+  const setStatusOf = (productId: number, status: string) =>
+    asTenant(() =>
+      db().execute(sql`
+        UPDATE inv_products SET status = ${status}::inv_product_status
+        WHERE org_id = ${scene.orgId} AND id = ${productId}`),
+    );
+
+  /**
+   * A product of its own, so a case that deletes one is independent of what the
+   * shared fixture is holding by the time it runs — `deleteProduct` refuses
+   * while any stock exists, and the write-off case below leaves some behind.
+   */
+  const makeProduct = async (
+    label: string,
+    variantSku?: string,
+  ): Promise<{ productId: number; variantId: number; sku: string; variantSku: string }> =>
+    asTenant(async () => {
+      const suffix = randomUUID().slice(0, 6);
+      const [uom] = await db().execute<{ uom_id: number }>(sql`
+        SELECT uom_id FROM inv_products WHERE org_id = ${scene.orgId} AND id = ${scene.productId}`);
+      const sku = `${label}-${suffix}`;
+      const vSku = variantSku ?? `${sku}-V`;
+      const [product] = await db().execute<{ id: number }>(sql`
+        INSERT INTO inv_products (org_id, uom_id, name, sku, created_by)
+        VALUES (${scene.orgId}, ${uom!.uom_id}, ${`Fixture ${label}`}, ${sku}, ${scene.userId})
+        RETURNING id`);
+      const [variant] = await db().execute<{ id: number }>(sql`
+        INSERT INTO inv_product_variants (org_id, product_id, name, sku)
+        VALUES (${scene.orgId}, ${product!.id}, 'Default', ${vSku}) RETURNING id`);
+      return { productId: product!.id, variantId: variant!.id, sku, variantSku: vSku };
+    });
+
   const setStatus = (status: string) =>
     asTenant(() =>
       db().execute(sql`
@@ -318,5 +350,118 @@ describe("[seeded-e2e] product restore and retired-SKU demand", () => {
         ),
       ),
     ).rejects.toThrow(/No such product variant|can no longer be adjusted/i);
+  });
+
+  /**
+   * B1 — the variant-level SKU clash.
+   *
+   * The pre-check only ever asked `inv_products`. Restore then cleared
+   * `deleted_at` on every variant with no check at all, against the live partial
+   * unique index `uniq_inv_product_variants_org_sku_live`, so the ordinary
+   * sequence below came back a 500 from the endpoint standing right next to a
+   * friendly 409.
+   */
+  it("refuses to restore when a variant SKU has been taken since, with a conflict and not a crash", async () => {
+    const retired = await makeProduct("VC");
+    await asTenant(() => products().deleteProduct(scene.orgId, retired.productId, scene.userId));
+
+    // Legal, and the normal reason the product was deleted: the live-SKU index
+    // on variants is partial, so a deleted variant's SKU is free for reuse.
+    await makeProduct("VD", retired.variantSku);
+
+    await expect(
+      asTenant(() => products().restoreProduct(scene.orgId, retired.productId, scene.userId)),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      asTenant(() => products().restoreProduct(scene.orgId, retired.productId, scene.userId)),
+    ).rejects.toThrow(new RegExp(`Variant SKU ${retired.variantSku}`, "i"));
+
+    // The refusal happened before anything was written, so nothing half-restored.
+    const row = await productRow(retired.productId);
+    expect(row.deleted_at).not.toBeNull();
+    expect(Number(row.live_variants)).toBe(0);
+  });
+
+  it("answers a conflict even when the clash is only visible to the index", async () => {
+    // Two deleted variants of one product holding the same SKU. The partial
+    // index permits that -- neither is live -- so no pre-check can see a clash,
+    // and restoring both at once is the case that reaches 23505 itself.
+    const twinned = await makeProduct("VT");
+    await asTenant(() =>
+      db().execute(sql`
+        UPDATE inv_product_variants SET deleted_at = now()
+        WHERE org_id = ${scene.orgId} AND id = ${twinned.variantId}`),
+    );
+    await asTenant(() =>
+      db().execute(sql`
+        INSERT INTO inv_product_variants (org_id, product_id, name, sku)
+        VALUES (${scene.orgId}, ${twinned.productId}, 'Second', ${twinned.variantSku})`),
+    );
+    await asTenant(() => products().deleteProduct(scene.orgId, twinned.productId, scene.userId));
+
+    await expect(
+      asTenant(() => products().restoreProduct(scene.orgId, twinned.productId, scene.userId)),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  /**
+   * B2 — the two-step path around the gate A4 exists to enforce.
+   */
+  it("does not launder a discontinued product back to ACTIVE through delete and restore", async () => {
+    const retired = await makeProduct("DL");
+    await setStatusOf(retired.productId, "DISCONTINUED");
+    await asTenant(() => products().deleteProduct(scene.orgId, retired.productId, scene.userId));
+    await asTenant(() => products().restoreProduct(scene.orgId, retired.productId, scene.userId));
+
+    const row = await productRow(retired.productId);
+    expect(row.deleted_at).toBeNull();
+    expect(Number(row.live_variants)).toBe(1);
+    // Restore used to write ACTIVE unconditionally, so discontinue, sell to
+    // zero, delete, restore made the SKU orderable again in two clicks that
+    // never asked anyone to un-retire it. `deleteProduct` writes only
+    // `deleted_at`, so this status was never lost -- it was overwritten.
+    expect(row.status).toBe("DISCONTINUED");
+
+    // And the gate the status exists for still holds on the restored product.
+    await expect(
+      asTenant(() =>
+        app.app.get(InvStockReservationsService).createReservation(
+          scene.orgId,
+          scene.userId,
+          {
+            sourceType: "manual",
+            sourceId: "laundered",
+            productVariantId: retired.variantId,
+            locationId: scene.locationId,
+            qty: "1.0000",
+          } as never,
+          `laundered-${randomUUID().slice(0, 8)}`,
+        ),
+      ),
+    ).rejects.toThrow(/can no longer be ordered/i);
+  });
+
+  it("still lifts an archive, which is the other thing restore undoes", async () => {
+    const shelved = await makeProduct("AR");
+    await asTenant(() => products().archiveProduct(scene.orgId, shelved.productId, scene.userId));
+    expect((await productRow(shelved.productId)).status).toBe("INACTIVE");
+
+    await asTenant(() => products().restoreProduct(scene.orgId, shelved.productId, scene.userId));
+    expect((await productRow(shelved.productId)).status).toBe("ACTIVE");
+  });
+
+  it("undoes one step per restore when a product was archived and then deleted", async () => {
+    const shelved = await makeProduct("AD");
+    await asTenant(() => products().archiveProduct(scene.orgId, shelved.productId, scene.userId));
+    await asTenant(() => products().deleteProduct(scene.orgId, shelved.productId, scene.userId));
+
+    await asTenant(() => products().restoreProduct(scene.orgId, shelved.productId, scene.userId));
+    const undeleted = await productRow(shelved.productId);
+    expect(undeleted.deleted_at).toBeNull();
+    // The delete is undone. The archive is still an archive.
+    expect(undeleted.status).toBe("INACTIVE");
+
+    await asTenant(() => products().restoreProduct(scene.orgId, shelved.productId, scene.userId));
+    expect((await productRow(shelved.productId)).status).toBe("ACTIVE");
   });
 });

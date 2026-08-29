@@ -4,6 +4,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
@@ -41,10 +42,11 @@ export class RecallsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:recall")
   create(
+    @IdempotencyKey() idempotencyKey: string,
     @Body(new ZodValidationPipe(createRecallSchema)) body: CreateRecallInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.create(u.orgId, u.userId, body);
+    return this.svc.create(u.orgId, u.userId, body, idempotencyKey);
   }
 
   @Patch(":recallId")

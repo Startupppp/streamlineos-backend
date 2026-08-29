@@ -12,7 +12,26 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { availableQtySumSql } from "../stock-engine/available-sql";
+import { cmpDec, isNegative, isPositive } from "../stock-engine/decimal";
 import type { ListInsightsInput, UpdateInsightStatusInput, InsightCandidate } from "./dto/ai-insights.schemas";
+
+/**
+ * Two decimal places for a sentence a human reads, rounded half-up on the
+ * digits rather than through `Math.round(x * 100) / 100`. Quantities reach here
+ * as exact 18,4 decimal strings and there is no reason to put one through a
+ * float on the way to a paragraph.
+ */
+function displayQty(value: string): string {
+  const negative = value.startsWith("-");
+  const body = negative ? value.slice(1) : value;
+  const [whole = "0", frac = ""] = body.split(".");
+  const digits = (frac + "000").slice(0, 3);
+  let hundredths = BigInt(whole || "0") * 100n + BigInt(digits.slice(0, 2) || "0");
+  if (Number(digits[2]) >= 5) hundredths += 1n;
+  const text = `${hundredths / 100n}.${(hundredths % 100n).toString().padStart(2, "0")}`;
+  return negative && hundredths !== 0n ? `-${text}` : text;
+}
 
 export type OpsBriefSeverity = "high" | "medium" | "low" | "none";
 
@@ -199,9 +218,11 @@ export class InvAiService {
       .select({
         variantId: invStockLevels.productVariantId,
         variantSku: invProductVariants.sku,
-        onHand: sql<string>`COALESCE(SUM(${invStockLevels.onHand}::numeric), 0)::text`,
-        committed: sql<string>`COALESCE(SUM(${invStockLevels.committed}::numeric), 0)::text`,
-        outgoing: sql<string>`COALESCE(SUM(${invStockLevels.outgoingQty}::numeric), 0)::text`,
+        // A1. This used to be `parseFloat(onHand) - parseFloat(committed) -
+        // parseFloat(outgoing)`: three of the five terms, no transit gate, and
+        // float arithmetic on 18,4 ledger quantities. It is the engine's
+        // expression now, summed in Postgres and read out as an exact decimal.
+        available: sql<string>`${availableQtySumSql("inv_stock_levels")}::text`,
         weeklySales: sql<string>`COALESCE((
           SELECT SUM(ABS(t.quantity_change::numeric)) / 13.0
           FROM inv_stock_transactions t
@@ -217,23 +238,17 @@ export class InvAiService {
       .groupBy(invStockLevels.productVariantId, invProductVariants.id);
 
     return rows
-      .filter((r) => {
-        const available = parseFloat(r.onHand) - parseFloat(r.committed) - parseFloat(r.outgoing);
-        const weekly = parseFloat(r.weeklySales);
-        return weekly > 0 && available < weekly;
-      })
-      .map((r) => {
-        const available = parseFloat(r.onHand) - parseFloat(r.committed) - parseFloat(r.outgoing);
-        const weekly = parseFloat(r.weeklySales);
-        return {
-          insightType: "stockout_risk" as const,
-          severity: available < 0 ? ("high" as const) : ("medium" as const),
-          title: `Stockout risk: ${r.variantSku}`,
-          body: `Available qty (${Math.round(available * 100) / 100}) is below weekly demand (${Math.round(weekly * 100) / 100}).`,
-          sourceRefs: { variantId: r.variantId, variantSku: r.variantSku },
-          sourceKey: String(r.variantId),
-        };
-      });
+      // Exact decimal comparison, not float: `0.1 + 0.2 > 0.3` decides whether
+      // an operator is told a SKU is about to run out.
+      .filter((r) => isPositive(r.weeklySales) && cmpDec(r.available, r.weeklySales) < 0)
+      .map((r) => ({
+        insightType: "stockout_risk" as const,
+        severity: isNegative(r.available) ? ("high" as const) : ("medium" as const),
+        title: `Stockout risk: ${r.variantSku}`,
+        body: `Available qty (${displayQty(r.available)}) is below weekly demand (${displayQty(r.weeklySales)}).`,
+        sourceRefs: { variantId: r.variantId, variantSku: r.variantSku },
+        sourceKey: String(r.variantId),
+      }));
   }
 
   private async detectDeadStock(orgId: string): Promise<InsightCandidate[]> {

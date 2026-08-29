@@ -2192,6 +2192,13 @@
       "when": 1787976854500,
       "tag": "0532_inventory_ai_read_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 314,
+      "version": "7",
+      "when": 1788048000000,
+      "tag": "0533_ledger_correction_objects_relocked",
+      "breakpoints": true
     }
   ]
 }

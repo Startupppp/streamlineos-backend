@@ -12,6 +12,10 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
+import {
+  INVENTORY_COMMAND_EVENTS,
+  emitInventoryCommandEvent,
+} from "../stock-engine/command-events";
 import type {
   ListReturnsInput,
   CreateCustomerReturnInput,
@@ -329,9 +333,46 @@ export class CustomerReturnsService {
           .where(inArray(invSerialNumbers.id, ids));
       }
 
-      await tx.update(invCustomerReturns)
+      const posted = await tx.update(invCustomerReturns)
         .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId, updatedAt: new Date() })
-        .where(and(eq(invCustomerReturns.id, returnId), eq(invCustomerReturns.orgId, orgId), eq(invCustomerReturns.status, "DRAFT")));
+        .where(and(eq(invCustomerReturns.id, returnId), eq(invCustomerReturns.orgId, orgId), eq(invCustomerReturns.status, "DRAFT")))
+        .returning({ id: invCustomerReturns.id });
+
+      // A5. Gated on the compare-and-set above rather than on the status read
+      // before the transaction: two concurrent posts both see DRAFT, and only
+      // one of them changes a row. The other must not announce a posting it did
+      // not perform.
+      if (posted.length > 0) {
+        await emitInventoryCommandEvent(tx, {
+          orgId,
+          eventType: INVENTORY_COMMAND_EVENTS.RETURN_POSTED,
+          aggregateType: "inv_customer_return",
+          aggregateId: String(returnId),
+          actorUserId: userId,
+          payload: {
+            // One event type for both directions, because "goods came back" is
+            // one thing a consumer subscribes to; which way they went is a
+            // field, not a separate contract.
+            returnType: "CUSTOMER",
+            returnId,
+            returnNumber: ret.returnNumber,
+            soId: ret.soId,
+            shipmentId: ret.shipmentId,
+            clientId: ret.clientId,
+            lineCount: ret.lines.length,
+            // What was decided about the goods. A restock and a scrap are the
+            // same document and opposite outcomes, and a consumer that has to
+            // re-read the lines to tell them apart has been told nothing.
+            dispositions: ret.lines.map((line) => ({
+              lineId: line.id,
+              productVariantId: line.productVariantId,
+              disposition: line.disposition,
+            })),
+            reason: data.reason ?? null,
+            idempotencyKey,
+          },
+        });
+      }
     });
 
     await this.engine.invalidateCaches(orgId);

@@ -8,6 +8,11 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
+import {
+  INVENTORY_COMMAND_EVENTS,
+  describeGrain,
+  emitInventoryCommandEvent,
+} from "../stock-engine/command-events";
 import type { ListHoldsQueryInput, CreateHoldInput } from "./dto/quality.schemas";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 
@@ -138,6 +143,31 @@ export class HoldsService {
             resourceType: "quality_hold", resourceId: String(hold.id),
             after: { productVariantId: input.productVariantId, quantity: input.quantity },
           });
+
+          // A5. The audit row records who did it; it is not an event and
+          // nothing subscribes to a table. Emitted inside the claim, so the
+          // retry that already replayed the hold id emits nothing.
+          const grain = await describeGrain(tx, orgId, input.productVariantId, input.locationId);
+          await emitInventoryCommandEvent(tx, {
+            orgId,
+            eventType: INVENTORY_COMMAND_EVENTS.QUALITY_HOLD_CREATED,
+            aggregateType: "inv_quality_hold",
+            aggregateId: String(hold.id),
+            actorUserId: userId,
+            payload: {
+              holdId: hold.id,
+              productVariantId: input.productVariantId,
+              sku: grain.sku,
+              locationId: input.locationId,
+              warehouseId: grain.warehouseId,
+              lotId: input.lotId ?? null,
+              serialId: input.serialId ?? null,
+              quantity: input.quantity,
+              reason: input.reason,
+              idempotencyKey,
+            },
+          });
+
           return hold.id;
         },
         // The stored id has been through jsonb and may come back as a string,
@@ -200,13 +230,52 @@ export class HoldsService {
       ],
     });
 
-    await this.db.update(invQualityHolds)
-      .set({ status: "RELEASED", releasedBy: userId, releasedAt: new Date() })
-      .where(and(eq(invQualityHolds.id, holdId), eq(invQualityHolds.orgId, orgId)));
-    await this.audit.insert(this.db, {
-      orgId, actorUserId: userId, action: "quality_hold.released",
-      resourceType: "quality_hold", resourceId: String(holdId),
+    // A5. The status flip, its audit row and its event now share a transaction.
+    // They were three independent writes, so a release could be recorded with
+    // no audit trail; and an event written outside the transaction that
+    // committed the release is an announcement that may outlive the fact.
+    await this.db.transaction(async (tx) => {
+      const released = await tx.update(invQualityHolds)
+        .set({ status: "RELEASED", releasedBy: userId, releasedAt: new Date() })
+        .where(and(
+          eq(invQualityHolds.id, holdId),
+          eq(invQualityHolds.orgId, orgId),
+          // Compare-and-set on the status the caller read above. Two concurrent
+          // releases both pass that read; only one of them changes a row, and
+          // only that one is entitled to say the hold was released.
+          eq(invQualityHolds.status, "ACTIVE"),
+        ))
+        .returning({ id: invQualityHolds.id });
+
+      if (released.length === 0) return;
+
+      await this.audit.insert(tx, {
+        orgId, actorUserId: userId, action: "quality_hold.released",
+        resourceType: "quality_hold", resourceId: String(holdId),
+      });
+
+      const grain = await describeGrain(tx, orgId, hold.productVariantId, locationId);
+      await emitInventoryCommandEvent(tx, {
+        orgId,
+        eventType: INVENTORY_COMMAND_EVENTS.QUALITY_HOLD_RELEASED,
+        aggregateType: "inv_quality_hold",
+        aggregateId: String(holdId),
+        actorUserId: userId,
+        payload: {
+          holdId,
+          productVariantId: hold.productVariantId,
+          sku: grain.sku,
+          locationId,
+          warehouseId: grain.warehouseId,
+          lotId: hold.lotId,
+          serialId: hold.serialId,
+          quantity: hold.quantity,
+          reason: hold.reason,
+          idempotencyKey,
+        },
+      });
     });
+
     await this.cache.invalidateNamespace(CACHE_KEYS.invQualityHoldsNamespace(orgId));
     return this.db.query.invQualityHolds.findFirst({
       where: and(eq(invQualityHolds.id, holdId), eq(invQualityHolds.orgId, orgId)),

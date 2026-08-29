@@ -7,6 +7,11 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { ReservationService } from "../stock-engine/reservation.service";
+import {
+  INVENTORY_COMMAND_EVENTS,
+  describeGrain,
+  emitInventoryCommandEvent,
+} from "../stock-engine/command-events";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import type { ListReservationsInput, CreateReservationInput, ReleaseReservationInput, OpeningStockInput } from "./dto/inv-stock.schemas";
@@ -114,6 +119,36 @@ export class InvStockReservationsService {
             qty: input.qty,
             expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
           });
+
+          // A5. Inside the claim, so a retry replays the stored id and emits
+          // nothing — an event outside it would fire again on every retry and
+          // tell every consumer that a second reservation had been taken.
+          const grain = await describeGrain(
+            tx, orgId, created.productVariantId, created.locationId,
+          );
+          await emitInventoryCommandEvent(tx, {
+            orgId,
+            eventType: INVENTORY_COMMAND_EVENTS.RESERVATION_CREATED,
+            aggregateType: "inv_stock_reservation",
+            aggregateId: String(created.id),
+            actorUserId: userId,
+            payload: {
+              reservationId: created.id,
+              sourceType: created.sourceType,
+              sourceId: created.sourceId,
+              sourceLineId: created.sourceLineId,
+              productVariantId: created.productVariantId,
+              sku: grain.sku,
+              locationId: created.locationId,
+              warehouseId: created.warehouseId ?? grain.warehouseId,
+              lotId: created.lotId,
+              serialId: created.serialId,
+              reservedQty: created.reservedQty,
+              expiresAt: created.expiresAt?.toISOString() ?? null,
+              idempotencyKey,
+            },
+          });
+
           return created.id;
         },
         revivedId,
@@ -154,9 +189,40 @@ export class InvStockReservationsService {
         idempotencyKey,
         { command: "inventory.stock.release-reservation", input },
         async () => {
-          await this.reservationService.releaseReservationInTx(
+          const released = await this.reservationService.releaseReservationInTx(
             tx, orgId, userId, input.reservationId,
           );
+
+          // A5. Only a release that actually released anything is an event.
+          // `releaseReservationInTx` is a no-op on a row that is not ACTIVE, so
+          // emitting unconditionally would announce a release nobody performed
+          // every time a stale request arrived.
+          if (released) {
+            const grain = await describeGrain(
+              tx, orgId, released.productVariantId, released.locationId,
+            );
+            await emitInventoryCommandEvent(tx, {
+              orgId,
+              eventType: INVENTORY_COMMAND_EVENTS.RESERVATION_RELEASED,
+              aggregateType: "inv_stock_reservation",
+              aggregateId: String(released.id),
+              actorUserId: userId,
+              payload: {
+                reservationId: released.id,
+                sourceType: released.sourceType,
+                sourceId: released.sourceId,
+                productVariantId: released.productVariantId,
+                sku: grain.sku,
+                locationId: released.locationId,
+                warehouseId: grain.warehouseId,
+                lotId: released.lotId,
+                serialId: released.serialId,
+                releasedQty: released.reservedQty,
+                idempotencyKey,
+              },
+            });
+          }
+
           return { released: input.reservationId };
         },
         () => ({ released: input.reservationId }),

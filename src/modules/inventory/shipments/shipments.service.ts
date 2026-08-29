@@ -201,6 +201,11 @@ export class ShipmentsService {
               shipmentId,
               shipmentNumber: rows[0]?.shipmentNumber ?? shipment.shipmentNumber,
               soId: shipment.soId,
+              // A5. Purely additive. The sales-order fulfilment path now emits
+              // this same event for the shipments it raises, so a consumer that
+              // cares which command shipped can tell without inferring it from
+              // the absence of a field.
+              shippedVia: "shipment.ship",
               actorUserId: userId,
             },
             occurredAt: new Date(),

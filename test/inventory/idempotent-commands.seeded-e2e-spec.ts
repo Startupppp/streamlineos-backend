@@ -5,7 +5,9 @@ import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { StockEngineService } from "src/modules/inventory/stock-engine/stock-engine.service";
 import { InvStockReservationsService } from "src/modules/inventory/stock/inv-stock-reservations.service";
+import { INVENTORY_COMMAND_EVENTS } from "src/modules/inventory/stock-engine/command-events";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
+import { outboxEventsFor } from "test/helpers/outbox-events";
 import { seedOrg } from "test/helpers/seed-builder";
 
 /**
@@ -27,6 +29,7 @@ interface Scene {
   orgId: string;
   userId: string;
   variantId: number;
+  sku: string;
   locationId: number;
   warehouseId: number;
 }
@@ -103,6 +106,7 @@ describe("[seeded-e2e] stock commands are idempotent", () => {
         orgId: seeded.orgId,
         userId,
         variantId: variant.id,
+        sku: `ID-${tag}-V`,
         locationId: location.id,
         warehouseId: warehouse.id,
       };
@@ -220,5 +224,101 @@ describe("[seeded-e2e] stock commands are idempotent", () => {
 
     await release();
     expect(await position()).toEqual(once);
+  });
+
+  /**
+   * A5, item 3 — the events a reservation owes.
+   *
+   * Reserving and releasing changed `committed` and told nobody: an allocation
+   * engine, a customer-facing availability page or a marketplace listing had no
+   * way to hear that stock had been promised away, and the only record was a
+   * row in a table nothing subscribes to.
+   *
+   * Counted rather than eyeballed, because the failure mode that matters is a
+   * duplicate. Both commands claim an idempotency key, so the emit sits inside
+   * the claimed work — an emit outside it fires again on every retry, which is
+   * the duplicate notification the claim exists to prevent.
+   */
+  describe("the events a reservation owes", () => {
+    const eventsFor = (eventType: string, aggregateId: string) =>
+      asTenant(() =>
+        outboxEventsFor(app.app.get<Db>(DRIZZLE), scene.orgId, eventType, aggregateId),
+      );
+
+    it("announces a reservation exactly once, and says nothing more on a retry", async () => {
+      const key = `reserve-event-${randomUUID().slice(0, 8)}`;
+      const input = reserveInput("9.0000", key);
+
+      const created = await asTenant(() =>
+        reservations().createReservation(scene.orgId, scene.userId, input, key),
+      );
+
+      const events = await eventsFor(
+        INVENTORY_COMMAND_EVENTS.RESERVATION_CREATED,
+        String(created.id),
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0]!.aggregateType).toBe("inv_stock_reservation");
+      expect(events[0]!.payload.reservationId).toBe(created.id);
+      expect(events[0]!.payload.reservedQty).toBe("9.0000");
+      expect(events[0]!.payload.actorUserId).toBe(scene.userId);
+      expect(events[0]!.payload.idempotencyKey).toBe(key);
+      // Evidence, not a second ledger: the SKU and the warehouse are on the
+      // event so a consumer holding a variant id does not have to join two
+      // tables to learn what was promised away.
+      expect(events[0]!.payload.sku).toBe(scene.sku);
+      expect(events[0]!.payload.warehouseId).toBe(scene.warehouseId);
+
+      await asTenant(() =>
+        reservations().createReservation(scene.orgId, scene.userId, input, key),
+      );
+      expect(
+        await eventsFor(INVENTORY_COMMAND_EVENTS.RESERVATION_CREATED, String(created.id)),
+      ).toHaveLength(1);
+    });
+
+    it("announces a release once, and not at all for a release that released nothing", async () => {
+      const reserveKey = `release-event-${randomUUID().slice(0, 8)}`;
+      const created = await asTenant(() =>
+        reservations().createReservation(
+          scene.orgId,
+          scene.userId,
+          reserveInput("4.0000", reserveKey),
+          reserveKey,
+        ),
+      );
+
+      await asTenant(() =>
+        reservations().releaseReservation(
+          scene.orgId,
+          scene.userId,
+          { reservationId: created.id },
+          `${reserveKey}-rel-1`,
+        ),
+      );
+      const released = await eventsFor(
+        INVENTORY_COMMAND_EVENTS.RESERVATION_RELEASED,
+        String(created.id),
+      );
+      expect(released).toHaveLength(1);
+      expect(released[0]!.payload.releasedQty).toBe("4.0000");
+      expect(released[0]!.payload.sku).toBe(scene.sku);
+
+      // A *different* key, so the idempotency claim cannot be what suppresses
+      // the second event. The reservation is no longer ACTIVE, so nothing is
+      // released and there is nothing to announce — the event tracks the state
+      // change, not the arrival of a request.
+      await asTenant(() =>
+        reservations().releaseReservation(
+          scene.orgId,
+          scene.userId,
+          { reservationId: created.id },
+          `${reserveKey}-rel-2`,
+        ),
+      );
+      expect(
+        await eventsFor(INVENTORY_COMMAND_EVENTS.RESERVATION_RELEASED, String(created.id)),
+      ).toHaveLength(1);
+    });
   });
 });

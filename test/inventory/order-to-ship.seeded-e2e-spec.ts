@@ -9,7 +9,9 @@ import { SoCoreService } from "src/modules/inventory/sales-orders/so-core.servic
 import { SoFulfillmentService } from "src/modules/inventory/sales-orders/so-fulfillment.service";
 import { SoLifecycleService } from "src/modules/inventory/sales-orders/so-lifecycle.service";
 import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
+import { INVENTORY_COMMAND_EVENTS } from "src/modules/inventory/stock-engine/command-events";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
+import { outboxEventsFor } from "test/helpers/outbox-events";
 import { seedOrg } from "test/helpers/seed-builder";
 
 /**
@@ -54,6 +56,9 @@ describe("[seeded-e2e] purchase order to shipment", () => {
   let app: SeededE2eApp;
   let scene: Scene;
   let teardown: () => Promise<void>;
+  /** Carried out of the main flow so the event probes below can address it. */
+  let shippedSoId: number;
+  let shipKey: string;
 
   const asTenant = <T>(work: () => Promise<T>): Promise<T> =>
     runInNewTenantTransaction(app.app.get<Db>(DRIZZLE), scene.orgId, work);
@@ -234,8 +239,10 @@ describe("[seeded-e2e] purchase order to shipment", () => {
       await expectReconciled();
 
       // ── ship ───────────────────────────────────────────────────────────────
+      shippedSoId = so.id;
+      shipKey = `ship-${so.id}`;
       await asTenant(() =>
-        app.app.get(SoFulfillmentService).shipSo(scene.orgId, so.id, scene.userId, `ship-${so.id}`, {
+        app.app.get(SoFulfillmentService).shipSo(scene.orgId, so.id, scene.userId, shipKey, {
           shipDate: "2026-06-04",
         }),
       );
@@ -252,6 +259,81 @@ describe("[seeded-e2e] purchase order to shipment", () => {
     },
     600_000,
   );
+
+  /**
+   * A5, item 3 — the shipping path that announced nothing.
+   *
+   * There are two ways to ship in this module. `ShipmentsService.ship` has
+   * always emitted `inventory.shipment.dispatched`; this one — the one the
+   * whole order-to-ship flow actually uses — created a shipment already SHIPPED
+   * and announced only that the *sales order* was fulfilled. So a carrier
+   * integration or a customer despatch notification subscribed to shipments
+   * simply never heard about shipments raised this way, and the gap was
+   * invisible because the order-level event looked like coverage.
+   *
+   * The existing name is reused rather than a second one invented: item 2
+   * forbids retiring it, and two names for one shipment would collide on the
+   * outbox's `(org, aggregate_type, aggregate_id, aggregate_version)` unique
+   * index — two events about one aggregate in the same millisecond.
+   */
+  describe("the events shipping owes", () => {
+    const eventsFor = (eventType: string, aggregateId?: string) =>
+      asTenant(() =>
+        outboxEventsFor(app.app.get<Db>(DRIZZLE), scene.orgId, eventType, aggregateId),
+      );
+
+    const shipmentIdForSo = async (soId: number) => {
+      const [row] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ id: number }>(sql`
+          SELECT id FROM inv_shipments
+          WHERE org_id = ${scene.orgId} AND so_id = ${soId}
+          ORDER BY id`),
+      );
+      return Number(row!.id);
+    };
+
+    it("announces the shipment once, from the sales-order path", async () => {
+      const shipmentId = await shipmentIdForSo(shippedSoId);
+      const events = await eventsFor(
+        INVENTORY_COMMAND_EVENTS.SHIPMENT_DISPATCHED,
+        String(shipmentId),
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0]!.aggregateType).toBe("inv_shipment");
+      expect(events[0]!.payload.soId).toBe(shippedSoId);
+      expect(events[0]!.payload.warehouseId).toBe(scene.warehouseId);
+      expect(events[0]!.payload.isPartial).toBe(false);
+      // Which command shipped it, so a consumer can tell the two paths apart
+      // without inferring it from a missing field.
+      expect(events[0]!.payload.shippedVia).toBe("sales_order.ship");
+      expect(events[0]!.payload.idempotencyKey).toBe(shipKey);
+    });
+
+    it("keeps the sales-order event alongside it rather than replacing it", async () => {
+      // Item 2. The order-level event predates this change and something may be
+      // subscribed to it; the two key different aggregates, so both survive.
+      const fulfilled = await eventsFor(
+        "inventory.sales_order.fulfilled",
+        String(shippedSoId),
+      );
+      expect(fulfilled).toHaveLength(1);
+    });
+
+    it("announces the reservations the shipment consumed, as one set", async () => {
+      // Shipping is one of only two places a reservation is ever consumed, and
+      // the set is the fact: the event hangs off the ship command's own
+      // idempotency key rather than any one reservation, and one event covers
+      // however many the order held.
+      const events = await eventsFor(
+        INVENTORY_COMMAND_EVENTS.RESERVATION_CONSUMED,
+        shipKey,
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0]!.payload.consumedBy).toBe("sales_order.ship");
+      expect(events[0]!.payload.sourceId).toBe(String(shippedSoId));
+      expect((events[0]!.payload.reservationIds as unknown[]).length).toBeGreaterThan(0);
+    });
+  });
 
   it("partially reserves when the order asks for more than is on the shelf", async () => {
     const so = await asTenant(() =>

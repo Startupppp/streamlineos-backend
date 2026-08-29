@@ -6,7 +6,10 @@ import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { PoService } from "src/modules/inventory/purchase-orders/po.service";
 import { GrnService } from "src/modules/inventory/purchase-orders/grn.service";
+import { VendorReturnsService } from "src/modules/inventory/returns/vendor-returns.service";
+import { INVENTORY_COMMAND_EVENTS } from "src/modules/inventory/stock-engine/command-events";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
+import { outboxEventsFor } from "test/helpers/outbox-events";
 import { seedOrg } from "test/helpers/seed-builder";
 
 /**
@@ -347,6 +350,140 @@ describe("[seeded-e2e] goods receipt discrepancies and exact quantities", () => 
         app.app.get(PoService).closePo(scene.orgId, poId, scene.userId),
       );
       expect(await onOrder()).toBe(before);
+    });
+  });
+
+  /**
+   * A5, item 3 — a receipt, and a return to the supplier, each announce
+   * themselves.
+   *
+   * Receiving already emitted `inventory.purchase_order.received`, which is
+   * keyed on the purchase order — so it answers "this order has had goods
+   * against it" and cannot answer "this delivery arrived". A purchase order is
+   * received many times, and a consumer reconciling one supplier advice note
+   * had nothing to subscribe to. `inventory.receiving.posted` is the receipt
+   * itself; the order-level event keeps its name, because something may already
+   * be listening on it and a silently dead webhook is worse than a missing one.
+   */
+  describe("the events a receipt owes", () => {
+    const eventsFor = (eventType: string, aggregateId?: string) =>
+      asTenant(() =>
+        outboxEventsFor(app.app.get<Db>(DRIZZLE), scene.orgId, eventType, aggregateId),
+      );
+
+    const receiveWithKey = (poId: number, key: string, line: Record<string, unknown>) =>
+      asTenant(() =>
+        app.app.get(GrnService).receiveGoods(scene.orgId, poId, scene.userId, key, {
+          receivedDate: "2026-08-02",
+          locationId: scene.locationId,
+          lines: [line],
+        } as never),
+      );
+
+    it("announces the receipt once, keyed on the delivery rather than the order", async () => {
+      const { poId, poLineId } = await sentOrder(40);
+      const key = `grn-event-${randomUUID()}`;
+      const line = { poLineId, quantityReceived: "25.0000", qualityStatus: "ACCEPTED" };
+
+      const grn = (await receiveWithKey(poId, key, line)) as { id: number };
+
+      const events = await eventsFor(
+        INVENTORY_COMMAND_EVENTS.RECEIVING_POSTED,
+        String(grn.id),
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0]!.aggregateType).toBe("inv_grn");
+      expect(events[0]!.payload.poId).toBe(poId);
+      expect(events[0]!.payload.locationId).toBe(scene.locationId);
+      expect(events[0]!.payload.warehouseId).toBe(scene.warehouseId);
+      expect(events[0]!.payload.lineCount).toBe(1);
+      expect(events[0]!.payload.acceptedLineCount).toBe(1);
+      // 25 of 40, so the order is not closed by this delivery — the thing a
+      // consumer chasing the supplier would otherwise re-read the order for.
+      expect(events[0]!.payload.purchaseOrderStatus).toBe("PARTIAL");
+      expect(events[0]!.payload.idempotencyKey).toBe(key);
+
+      // Item 2: the order-level event that existed before this change is still
+      // emitted. Renaming or dropping it would kill a webhook silently.
+      const orderLevel = await eventsFor(
+        "inventory.purchase_order.received",
+        String(poId),
+      );
+      expect(orderLevel).toHaveLength(1);
+      expect(orderLevel[0]!.payload.grnId).toBe(grn.id);
+
+      // Both sit inside the receipt's claim, so a retry replays the stored GRN
+      // id and neither fires again.
+      await receiveWithKey(poId, key, line);
+      expect(
+        await eventsFor(INVENTORY_COMMAND_EVENTS.RECEIVING_POSTED, String(grn.id)),
+      ).toHaveLength(1);
+      expect(
+        await eventsFor("inventory.purchase_order.received", String(poId)),
+      ).toHaveLength(1);
+    });
+
+    it("announces a return to the vendor once, under the same event as a customer return", async () => {
+      // Goods going back to a supplier and goods coming back from a customer
+      // are one subscription — "stock left or arrived on a return" — so they
+      // share an event type and are told apart by `returnType`.
+      const { poId, poLineId } = await sentOrder(12);
+      await receiveWithKey(poId, `grn-for-return-${randomUUID()}`, {
+        poLineId,
+        quantityReceived: "12.0000",
+        qualityStatus: "ACCEPTED",
+      });
+
+      const returns = app.app.get(VendorReturnsService);
+      const created = await asTenant(() =>
+        returns.create(scene.orgId, scene.userId, {
+          vendorId: scene.vendorId,
+          poId,
+          lines: [
+            {
+              productVariantId: scene.variantId,
+              quantity: "3.0000",
+              reason: "DAMAGED",
+            },
+          ],
+        } as never),
+      );
+      const returnId = (created as { id: number }).id;
+
+      await asTenant(() =>
+        returns.post(
+          scene.orgId,
+          returnId,
+          scene.userId,
+          `vret-${randomUUID().slice(0, 8)}`,
+          {} as never,
+        ),
+      );
+
+      const events = await eventsFor(
+        INVENTORY_COMMAND_EVENTS.RETURN_POSTED,
+        String(returnId),
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0]!.aggregateType).toBe("inv_vendor_return");
+      expect(events[0]!.payload.returnType).toBe("VENDOR");
+      expect(events[0]!.payload.vendorId).toBe(scene.vendorId);
+      expect(events[0]!.payload.poId).toBe(poId);
+      expect(events[0]!.payload.lineCount).toBe(1);
+
+      // A second post of a POSTED return short-circuits before the transaction.
+      await asTenant(() =>
+        returns.post(
+          scene.orgId,
+          returnId,
+          scene.userId,
+          `vret-again-${randomUUID().slice(0, 8)}`,
+          {} as never,
+        ),
+      );
+      expect(
+        await eventsFor(INVENTORY_COMMAND_EVENTS.RETURN_POSTED, String(returnId)),
+      ).toHaveLength(1);
     });
   });
 });

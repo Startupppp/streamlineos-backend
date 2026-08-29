@@ -11,6 +11,10 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
+import {
+  INVENTORY_COMMAND_EVENTS,
+  emitInventoryCommandEvent,
+} from "../stock-engine/command-events";
 import type { ListReturnsInput, CreateVendorReturnInput, PostVendorReturnInput } from "./dto/inv-returns.schemas";
 
 @Injectable()
@@ -184,9 +188,40 @@ export class VendorReturnsService {
           .where(inArray(invSerialNumbers.id, serialLines.map((l) => l.serialId)));
       }
 
-      await tx.update(invVendorReturns)
+      const posted = await tx.update(invVendorReturns)
         .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId, updatedAt: new Date() })
-        .where(and(eq(invVendorReturns.id, returnId), eq(invVendorReturns.orgId, orgId), eq(invVendorReturns.status, "DRAFT")));
+        .where(and(eq(invVendorReturns.id, returnId), eq(invVendorReturns.orgId, orgId), eq(invVendorReturns.status, "DRAFT")))
+        .returning({ id: invVendorReturns.id });
+
+      // A5. Same event as a customer return, discriminated by `returnType`:
+      // goods leaving on an RMA and goods coming back from a customer are one
+      // subscription, not two. Gated on the compare-and-set so a concurrent
+      // loser announces nothing.
+      if (posted.length > 0) {
+        await emitInventoryCommandEvent(tx, {
+          orgId,
+          eventType: INVENTORY_COMMAND_EVENTS.RETURN_POSTED,
+          aggregateType: "inv_vendor_return",
+          aggregateId: String(returnId),
+          actorUserId: userId,
+          payload: {
+            returnType: "VENDOR",
+            returnId,
+            returnNumber: ret.returnNumber,
+            vendorId: ret.vendorId,
+            poId: ret.poId,
+            grnId: ret.grnId,
+            lineCount: ret.lines.length,
+            lines: ret.lines.map((line) => ({
+              lineId: line.id,
+              productVariantId: line.productVariantId,
+              reason: line.reason,
+            })),
+            reason: data.reason ?? null,
+            idempotencyKey,
+          },
+        });
+      }
     });
 
     await this.engine.invalidateCaches(orgId);

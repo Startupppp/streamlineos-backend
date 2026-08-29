@@ -9,6 +9,10 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
+import {
+  INVENTORY_COMMAND_EVENTS,
+  emitInventoryCommandEvent,
+} from "../stock-engine/command-events";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
@@ -184,7 +188,7 @@ export class InvStockTransfersService {
         orgId,
         idempotencyKey,
         { command: "inventory.transfers.reserve", transferId },
-        () => this.reserveTransferInTx(tx, orgId, userId, transferId),
+        () => this.reserveTransferInTx(tx, orgId, userId, transferId, idempotencyKey),
         revivedId,
       ),
     );
@@ -192,11 +196,16 @@ export class InvStockTransfersService {
     return this.getTransfer(orgId, transfer);
   }
 
-  private async reserveTransferInTx(tx: Tx, orgId: string, userId: string, transferId: number) {
+  private async reserveTransferInTx(
+    tx: Tx, orgId: string, userId: string, transferId: number, idempotencyKey: string,
+  ) {
     const [locked] = await tx.execute<{
-      id: number; status: string; from_location_id: number; org_id: string;
+      id: number; status: string; reference_number: string;
+      from_location_id: number; to_location_id: number;
+      from_warehouse_id: number | null; to_warehouse_id: number | null; org_id: string;
     }>(sql`
-      SELECT id, status, from_location_id, org_id
+      SELECT id, status, reference_number, from_location_id, to_location_id,
+             from_warehouse_id, to_warehouse_id, org_id
       FROM inv_stock_transfers
       WHERE id = ${transferId} AND org_id = ${orgId}
       FOR UPDATE
@@ -209,8 +218,9 @@ export class InvStockTransfersService {
       where: eq(invStockTransferLines.transferId, transferId),
     });
 
+    const reservationIds: number[] = [];
     for (const line of lines) {
-      await this.reservationService.createReservationInTx(tx, orgId, userId, {
+      const reservation = await this.reservationService.createReservationInTx(tx, orgId, userId, {
         sourceType: "inv_transfer",
         sourceId: transferId.toString(),
         sourceLineId: line.id.toString(),
@@ -220,11 +230,36 @@ export class InvStockTransfersService {
         serialId: line.serialId ?? undefined,
         qty: line.quantity,
       });
+      reservationIds.push(reservation.id);
     }
 
     await tx.update(invStockTransfers)
       .set({ status: "RESERVED", reservedAt: new Date() })
       .where(and(eq(invStockTransfers.orgId, orgId), eq(invStockTransfers.id, transferId)));
+
+    // A5. One event for the reserve, not one per line: reserving a transfer is
+    // a single decision about a single document, and a consumer that saw four
+    // of five line events would think the transfer was partly held. The
+    // reservation ids ride along so a consumer tracking reservations still
+    // learns about the ones this command raised.
+    await emitInventoryCommandEvent(tx, {
+      orgId,
+      eventType: INVENTORY_COMMAND_EVENTS.TRANSFER_RESERVED,
+      aggregateType: "inv_stock_transfer",
+      aggregateId: String(transferId),
+      actorUserId: userId,
+      payload: {
+        transferId,
+        referenceNumber: locked.reference_number,
+        fromLocationId: Number(locked.from_location_id),
+        toLocationId: Number(locked.to_location_id),
+        fromWarehouseId: locked.from_warehouse_id === null ? null : Number(locked.from_warehouse_id),
+        toWarehouseId: locked.to_warehouse_id === null ? null : Number(locked.to_warehouse_id),
+        lineCount: lines.length,
+        reservationIds,
+        idempotencyKey,
+      },
+    });
 
     return transferId;
   }
@@ -306,12 +341,58 @@ export class InvStockTransfersService {
             eq(invStockReservations.status, "ACTIVE"),
           ));
 
-        await this.reservationService.consumeReservationsBatch(tx, orgId, userId, activeReservations);
+        const consumed = await this.reservationService.consumeReservationsBatch(
+          tx, orgId, userId, activeReservations,
+        );
+
+        // A5. Reservations are only ever consumed as part of a larger command,
+        // so the event hangs off the command's idempotency key rather than any
+        // one reservation: the set is the fact, and a per-reservation event
+        // would be one per row.
+        if (consumed.length > 0) {
+          await emitInventoryCommandEvent(tx, {
+            orgId,
+            eventType: INVENTORY_COMMAND_EVENTS.RESERVATION_CONSUMED,
+            aggregateType: "inv_stock_reservation",
+            aggregateId: idempotencyKey,
+            actorUserId: userId,
+            payload: {
+              reservationIds: consumed,
+              sourceType: "inv_transfer",
+              sourceId: String(transferId),
+              consumedBy: "transfer.dispatch",
+            },
+          });
+        }
       }
 
       await tx.update(invStockTransfers)
         .set({ status: "IN_TRANSIT", dispatchedAt: new Date() })
         .where(and(eq(invStockTransfers.orgId, orgId), eq(invStockTransfers.id, transferId)));
+
+      // A5. The status guard above refuses anything that is not PENDING or
+      // RESERVED, so a replayed dispatch throws before it reaches here and the
+      // event lands exactly once per accepted dispatch.
+      await emitInventoryCommandEvent(tx, {
+        orgId,
+        eventType: INVENTORY_COMMAND_EVENTS.TRANSFER_DISPATCHED,
+        aggregateType: "inv_stock_transfer",
+        aggregateId: String(transferId),
+        actorUserId: userId,
+        payload: {
+          transferId,
+          referenceNumber: transfer.referenceNumber,
+          fromLocationId: transfer.fromLocationId,
+          toLocationId: transfer.toLocationId,
+          fromWarehouseId: sourceWarehouseId,
+          toWarehouseId: transfer.toWarehouseId,
+          // Where the goods are standing until they arrive. Without it a
+          // consumer cannot answer "where is my stock" during the journey.
+          transitLocationId,
+          lineCount: transfer.lines.length,
+          idempotencyKey,
+        },
+      });
     });
 
     await Promise.all([
@@ -464,9 +545,11 @@ export class InvStockTransfersService {
         movements,
       });
 
+      let receivedLineCount = 0;
       for (const completion of data.lines) {
         const line = transfer.lines.find((l) => l.id === completion.transferLineId);
         if (!line) continue;
+        receivedLineCount += 1;
         await tx.update(invStockTransferLines)
           .set({ quantityReceived: completion.quantityReceived.toString() })
           .where(and(
@@ -478,6 +561,31 @@ export class InvStockTransfersService {
       await tx.update(invStockTransfers)
         .set({ status: "COMPLETED", completedAt: new Date() })
         .where(and(eq(invStockTransfers.orgId, orgId), eq(invStockTransfers.id, transferId)));
+
+      // A5. As with dispatch, the status guard makes this once-per-acceptance:
+      // a completed transfer can no longer be completed.
+      await emitInventoryCommandEvent(tx, {
+        orgId,
+        eventType: INVENTORY_COMMAND_EVENTS.TRANSFER_COMPLETED,
+        aggregateType: "inv_stock_transfer",
+        aggregateId: String(transferId),
+        actorUserId: userId,
+        payload: {
+          transferId,
+          referenceNumber: transfer.referenceNumber,
+          fromLocationId: transfer.fromLocationId,
+          toLocationId: transfer.toLocationId,
+          fromWarehouseId: transfer.fromWarehouseId,
+          toWarehouseId: transfer.toWarehouseId,
+          lineCount: transfer.lines.length,
+          receivedLineCount,
+          // A completion that never went through transit is a different event
+          // in substance — nothing was ever dispatched — and a consumer
+          // reconciling against a dispatch needs to know which it is holding.
+          wasDispatched,
+          idempotencyKey,
+        },
+      });
     });
 
     await this.engine.invalidateCaches(orgId);

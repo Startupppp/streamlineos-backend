@@ -8,6 +8,10 @@ import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
+import {
+  INVENTORY_COMMAND_EVENTS,
+  emitInventoryCommandEvent,
+} from "../stock-engine/command-events";
 import type { ListCountsInput, CreateAuditInput, UpdateCountLinesInput } from "./dto/inv-counts.schemas";
 
 const PA_LIST_NAMESPACE = (orgId: string) => `inv:physical-audits:list:${orgId}`;
@@ -122,9 +126,12 @@ export class InvPhysicalAuditsService {
     if (audit.status !== "COUNTING") throw new BadRequestException("Lines can only be updated while status is COUNTING");
 
     if (data.lines.length > 0) {
+      // Same untyped-parameter defect as the cycle-count path: a bound value in
+      // a `VALUES` list is `text` until it is cast, so the join to an `integer`
+      // id failed outright and no audit line could ever record what was counted.
       const values = sql.join(
         data.lines.map(
-          (update) => sql`(${update.lineId}, ${update.countedQty.toFixed(4)}::numeric)`,
+          (update) => sql`(${update.lineId}::int, ${update.countedQty.toFixed(4)}::numeric)`,
         ),
         sql`, `,
       );
@@ -191,9 +198,39 @@ export class InvPhysicalAuditsService {
       });
     }
 
-    await this.db.update(invPhysicalAudits)
-      .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId })
-      .where(and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)));
+    // A5. The status flip and its event share a transaction, so the event
+    // cannot survive a posting that rolled back. The movements above are the
+    // engine's own transaction, and carry the engine's own event; this one is
+    // about the document.
+    await this.db.transaction(async (tx) => {
+      const posted = await tx.update(invPhysicalAudits)
+        .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId })
+        .where(and(
+          eq(invPhysicalAudits.orgId, orgId),
+          eq(invPhysicalAudits.id, auditId),
+          eq(invPhysicalAudits.status, "REVIEW"),
+        ))
+        .returning({ id: invPhysicalAudits.id });
+
+      if (posted.length === 0) return;
+
+      await emitInventoryCommandEvent(tx, {
+        orgId,
+        eventType: INVENTORY_COMMAND_EVENTS.COUNT_POSTED,
+        aggregateType: "inv_physical_audit",
+        aggregateId: String(auditId),
+        actorUserId: userId,
+        payload: {
+          countType: "PHYSICAL",
+          countId: auditId,
+          countNumber: audit.auditNumber,
+          warehouseId: audit.warehouseId,
+          lineCount: lines.length,
+          varianceLineCount: movements.length,
+          idempotencyKey,
+        },
+      });
+    });
 
     await this.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
     await this.cache.invalidateNamespace(PA_LIST_NAMESPACE(orgId));
@@ -214,7 +251,7 @@ export class InvPhysicalAuditsService {
   private async requireAudit(orgId: string, auditId: number) {
     const audit = await this.db.query.invPhysicalAudits.findFirst({
       where: and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)),
-      columns: { id: true, status: true, auditNumber: true },
+      columns: { id: true, status: true, auditNumber: true, warehouseId: true },
     });
     if (!audit) throw new NotFoundException("Physical audit not found");
     return audit;
