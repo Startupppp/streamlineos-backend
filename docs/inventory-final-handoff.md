@@ -492,21 +492,40 @@ abstract.
    migrated — it counts only when it is in the Drizzle journal AND `db:migrate`
    reproduces it on an EMPTY DB.* Every one was applied by hand.
 
-   Reproduce with — note the filter is on the **definition**, not the name:
+   Reproduce with — the filter must be on the **definition**, and must not
+   restrict the schema:
 
    ```sql
-   SELECT conrelid::regclass::text AS tbl, conname, pg_get_constraintdef(oid)
-   FROM pg_constraint
-   WHERE contype = 'f'
-     AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (org_id,%'
-   ORDER BY 1;
+   SELECT n.nspname, c.conname, pg_get_constraintdef(c.oid)
+   FROM pg_constraint c
+   JOIN pg_class t ON t.oid = c.conrelid
+   JOIN pg_namespace n ON n.oid = t.relnamespace
+   WHERE c.contype = 'f'
+     AND pg_get_constraintdef(c.oid) LIKE 'FOREIGN KEY (org_id,%'
+   ORDER BY 1, 2;
    ```
 
-   then grep `migrations/` for each `conname`. A name filter
-   (`conname LIKE 'fk\_%\_org'`) over-counts: it caught 7 constraints on
-   `inv_*` that are not `(org_id, …)` composites, which is where this entry's
-   earlier figure of 126 came from. `0575` is the worked example for authoring
-   the rest.
+   then grep `migrations/` for each `conname`. **Both axes were got wrong once,
+   in opposite directions**, which is why the query is pinned here:
+
+   - filtering by *name* (`conname LIKE 'fk\_%\_org'`) **over-counts** — it
+     caught 7 constraints on `inv_*` that are not `(org_id, …)` composites,
+     which is where this entry's earlier figure of 126 came from;
+   - filtering to `nspname = 'public'` **under-counts by 132** — `build` (129)
+     and `build_events` (3) are real application tables from migrations `0431`
+     and `0432`, not partition internals.
+
+   **Whoever authors the remaining 635 has a wrinkle `0575` did not: 123 of them
+   are outside `public`** (120 `build`, 3 `build_events`; the other 512 are
+   `public`). Inventory is entirely `public`, so `0575`'s guards are
+   `to_regclass('public.…')` throughout and a generator copied from it will be
+   wrong for those 123 — and wrong *silently*: `to_regclass('public.x')` on a
+   `build` table returns `NULL`, the guard decides the table does not exist,
+   and the constraint is never created on a fresh build. That is the guard's
+   own protection inverted, and it produces exactly the state this risk
+   describes. Schema-qualify both the `to_regclass` probe and the `ALTER TABLE`.
+
+   `0575` is the worked example for everything else about the shape.
 
 5. **The seeded suites share one Neon dev branch.** Coverage is not thin: a
    little over 100 seeded e2e assertions currently run green against a real
