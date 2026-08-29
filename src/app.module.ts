@@ -87,6 +87,13 @@ import { RendererModule } from "./modules/renderer/renderer.module";
 import { ComplianceModule } from "./modules/compliance/compliance.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
 import { RelationshipsModule } from "./modules/relationships/relationships.module";
+import { CallsModule } from "./modules/calls/calls.module";
+import { CommissionModule } from "./modules/commission/commission.module";
+import { LifecycleModule } from "./modules/lifecycle/lifecycle.module";
+import { LifecycleTriggersModule } from "./modules/lifecycle/lifecycle-triggers.module";
+import { ReportingModule } from "./modules/reporting/reporting.module";
+import { SequenceReplyExitModule } from "./modules/autonomy/sequences/sequence-reply-exit.module";
+import { CrmMcpModule } from "./modules/crm/mcp/crm-mcp.module";
 import { IngressModule } from "./modules/ingress/ingress.module";
 import { AutonomyModule } from "./modules/autonomy/autonomy.module";
 import { CrmImportModule } from "./modules/crm/import/crm-import.module";
@@ -160,6 +167,21 @@ import { IssuesModule } from "./modules/issues/issues.module";
     DataQualityModule,
     ActivitiesModule,
     RelationshipsModule,
+    /*
+      Phase 5. Registered here and nowhere else, because a module that exists and
+      is not registered is code the router never sees — every route it declares
+      404s and every workflow step it registers never runs. The build agents were
+      told to leave this file alone so six of them could work the same tree at
+      once, which means this list is the single place their work becomes
+      reachable at all.
+    */
+    CallsModule,
+    CommissionModule,
+    LifecycleModule,
+    LifecycleTriggersModule,
+    ReportingModule,
+    SequenceReplyExitModule,
+    CrmMcpModule,
     IngressModule,
     AutonomyModule,
     CrmImportModule,
