@@ -2570,6 +2570,13 @@
       "when": 1787940788254,
       "tag": "0651_drop_calendar_attendee_json",
       "breakpoints": true
+    },
+    {
+      "idx": 367,
+      "version": "7",
+      "when": 1787940848254,
+      "tag": "0652_repair_chat_reaction_backfill",
+      "breakpoints": true
     }
   ]
 }

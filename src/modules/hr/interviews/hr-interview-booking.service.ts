@@ -1,6 +1,20 @@
-import { BadRequestException, GoneException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
-import { calendarEvents, candidates, interviewBookingLinks, interviews, users } from "../../../db/schema";
+import {
+  BadRequestException,
+  GoneException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { and, eq, inArray } from "drizzle-orm";
+import {
+  calendarEvents,
+  candidates,
+  eventAttendees,
+  interviewBookingLinks,
+  interviews,
+  organizationMembers,
+  users,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
@@ -39,21 +53,38 @@ export class HrInterviewBookingService {
           with: { interviewers: { columns: { userId: true } } },
         });
         if (!link) throw new NotFoundException("Booking link not found.");
-        if (link.status !== "pending") throw new GoneException("This booking link has already been used.");
-        if (new Date() > link.expiresAt) throw new GoneException("This booking link has expired.");
+        if (link.status !== "pending")
+          throw new GoneException("This booking link has already been used.");
+        if (new Date() > link.expiresAt)
+          throw new GoneException("This booking link has expired.");
 
         const slotStart = new Date(input.slotStart);
-        const validSlot = link.availableSlots.some((s) => new Date(s.start).getTime() === slotStart.getTime());
-        if (!validSlot) throw new BadRequestException("Selected slot is not available.");
+        const validSlot = link.availableSlots.some(
+          (s) => new Date(s.start).getTime() === slotStart.getTime(),
+        );
+        if (!validSlot)
+          throw new BadRequestException("Selected slot is not available.");
 
-        const endDate = new Date(slotStart.getTime() + link.durationMinutes * 60_000);
+        const endDate = new Date(
+          slotStart.getTime() + link.durationMinutes * 60_000,
+        );
 
         const [claimed] = await tx
           .update(interviewBookingLinks)
-          .set({ status: "booked", selectedSlot: slotStart, updatedAt: new Date() })
-          .where(and(eq(interviewBookingLinks.id, link.id), eq(interviewBookingLinks.status, "pending")))
+          .set({
+            status: "booked",
+            selectedSlot: slotStart,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(interviewBookingLinks.id, link.id),
+              eq(interviewBookingLinks.status, "pending"),
+            ),
+          )
           .returning({ id: interviewBookingLinks.id });
-        if (!claimed) throw new GoneException("This booking link has already been used.");
+        if (!claimed)
+          throw new GoneException("This booking link has already been used.");
 
         const [created] = await tx
           .insert(interviews)
@@ -70,23 +101,56 @@ export class HrInterviewBookingService {
             remindersSent: {},
           })
           .returning({ id: interviews.id });
-        if (!created) throw new BadRequestException("Failed to create the interview.");
+        if (!created)
+          throw new BadRequestException("Failed to create the interview.");
 
-        await tx.insert(calendarEvents).values({
-          orgId: link.orgId,
-          title: "Interview (self-scheduled)",
-          description: link.notes ?? `Self-scheduled ${link.interviewType} interview`,
-          startDate: slotStart,
-          endDate,
-          allDay: false,
-          category: "interview",
-          entityType: "interview",
-          entityId: String(created.id),
-          createdBy: link.createdBy,
-          attendeeIds: link.interviewers.map((i) => i.userId),
-        });
+        const [calendarEvent] = await tx
+          .insert(calendarEvents)
+          .values({
+            orgId: link.orgId,
+            title: "Interview (self-scheduled)",
+            description:
+              link.notes ?? `Self-scheduled ${link.interviewType} interview`,
+            startDate: slotStart,
+            endDate,
+            allDay: false,
+            category: "interview",
+            entityType: "interview",
+            entityId: String(created.id),
+            createdBy: link.createdBy,
+          })
+          .returning({ id: calendarEvents.id });
+        const memberships = await tx
+          .select({
+            id: organizationMembers.id,
+            userId: organizationMembers.userId,
+          })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.orgId, link.orgId),
+              inArray(
+                organizationMembers.userId,
+                link.interviewers.map((interviewer) => interviewer.userId),
+              ),
+            ),
+          );
+        if (calendarEvent && memberships.length > 0)
+          await tx.insert(eventAttendees).values(
+            memberships.map((membership) => ({
+              orgId: link.orgId,
+              eventId: calendarEvent.id,
+              membershipId: membership.id,
+              userId: membership.userId,
+            })),
+          );
 
-        void this.notifyCreator(link.orgId, link.candidateId, link.createdBy, slotStart).catch(() => undefined);
+        void this.notifyCreator(
+          link.orgId,
+          link.candidateId,
+          link.createdBy,
+          slotStart,
+        ).catch(() => undefined);
 
         return { success: true, interviewId: created.id };
       },
@@ -105,17 +169,25 @@ export class HrInterviewBookingService {
         where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
         columns: { firstName: true, lastName: true },
       }),
-      this.db.query.users.findFirst({ where: eq(users.id, creatorId), columns: { email: true } }),
+      this.db.query.users.findFirst({
+        where: eq(users.id, creatorId),
+        columns: { email: true },
+      }),
     ]);
     if (!creator?.email) return;
 
-    const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}` : "Candidate";
+    const candidateName = candidate
+      ? `${candidate.firstName} ${candidate.lastName}`
+      : "Candidate";
     const slotLabel = slotStart.toLocaleString("en-IN", {
       dateStyle: "full",
       timeStyle: "short",
       timeZone: "Asia/Kolkata",
     });
-    const { subject, html } = getBookingConfirmationEmail(candidateName, slotLabel);
+    const { subject, html } = getBookingConfirmationEmail(
+      candidateName,
+      slotLabel,
+    );
     await this.email.sendEmail({ to: creator.email, subject, html });
   }
 }

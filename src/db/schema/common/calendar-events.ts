@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, primaryKey, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, index, unique, primaryKey, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "./auth";
 
@@ -18,7 +18,6 @@ export const calendarEvents = pgTable("calendar_events", {
   entityType: text("entity_type"),
   entityId: text("entity_id"),
   createdBy: text("created_by").references(() => users.id).notNull(),
-  attendeeIds: jsonb("attendee_ids").$type<string[]>().default([]).notNull(),
   agenda: text("agenda"),
   postMeetingNotes: text("post_meeting_notes"),
   linkedDealId: integer("linked_deal_id"),

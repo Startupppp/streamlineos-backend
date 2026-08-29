@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gt, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
-import { calendarEvents, calendarEventExceptions, eventAttendees, organizationMembers } from "../../db/schema";
+import { calendarEvents, calendarEventExceptions, eventAttendees } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../db/drizzle.types";
 import {
@@ -108,12 +108,10 @@ export class CalendarConflictService {
     const attendeeRows = await tx
       .select({ eventId: eventAttendees.eventId, status: eventAttendees.status })
       .from(eventAttendees)
-      .innerJoin(organizationMembers, eq(eventAttendees.membershipId, organizationMembers.id))
       .where(
         and(
           eq(eventAttendees.orgId, orgId),
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, userId),
+          eq(eventAttendees.userId, userId),
           inArray(eventAttendees.eventId, eventIds),
         ),
       );

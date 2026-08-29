@@ -70,6 +70,9 @@ CREATE TABLE IF NOT EXISTS chat_message_reactions (
     FOREIGN KEY (org_id, membership_id) REFERENCES organization_members (org_id, id) ON DELETE CASCADE NOT VALID
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_chat_message_reaction_actor_emoji
+  ON chat_message_reactions (org_id, message_id, membership_id, emoji);
+
 INSERT INTO chat_message_reactions (org_id, message_id, membership_id, emoji)
 SELECT message.org_id, message.id, member.id, reaction.emoji
 FROM chat_messages message
@@ -91,8 +94,6 @@ HAVING COUNT(*) > 1;
 
 ALTER TABLE chat_message_reactions VALIDATE CONSTRAINT fk_chat_message_reactions_org_message;
 ALTER TABLE chat_message_reactions VALIDATE CONSTRAINT fk_chat_message_reactions_org_membership;
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_chat_message_reaction_actor_emoji
-  ON chat_message_reactions (org_id, message_id, membership_id, emoji);
 CREATE INDEX IF NOT EXISTS idx_chat_message_reactions_message
   ON chat_message_reactions (org_id, message_id);
 CREATE INDEX IF NOT EXISTS idx_chat_message_reactions_membership

@@ -381,7 +381,7 @@ export class CalendarService {
     if (!event) return null;
 
     return this.db.query.eventAttendees.findMany({
-      where: eq(eventAttendees.eventId, id),
+      where: and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, id)),
       limit: 100,
       with: {
         user: { columns: { id: true, name: true, email: true, image: true } },
