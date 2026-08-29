@@ -10,7 +10,7 @@ import {
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizationMembers, organizations, users } from "../common/auth";
 import { kbPages } from "./pages";
 
 export const kbPageReviews = pgTable(
@@ -30,6 +30,8 @@ export const kbPageReviews = pgTable(
       .default("pending"),
     requestedById: text("requested_by_id").references(() => users.id, { onDelete: "set null" }),
     reviewerId: text("reviewer_id").references(() => users.id, { onDelete: "set null" }),
+    requestedByMembershipId: integer("requested_by_membership_id"),
+    reviewerMembershipId: integer("reviewer_membership_id"),
     dueAt: timestamp("due_at", { withTimezone: true }),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     decisionNote: text("decision_note"),
@@ -42,8 +44,12 @@ export const kbPageReviews = pgTable(
   (table) => [
     index("idx_kb_page_reviews_org_status_due").on(table.orgId, table.status, table.dueAt),
     index("idx_kb_page_reviews_org_page").on(table.orgId, table.pageId),
+    index("idx_kb_page_reviews_org_reviewer_status_due").on(table.orgId, table.reviewerMembershipId, table.status, table.dueAt),
+    index("idx_kb_page_reviews_org_requester_status_due").on(table.orgId, table.requestedByMembershipId, table.status, table.dueAt),
     unique("uniq_kb_page_reviews_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_reviews_org_page" }),
+    foreignKey({ columns: [table.orgId, table.requestedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_reviews_org_requester_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.reviewerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_reviews_org_reviewer_membership" }).onDelete("set null"),
   ],
 );
 
@@ -127,6 +133,16 @@ export const kbPageReviewsRelations = relations(kbPageReviews, ({ one }) => ({
     fields: [kbPageReviews.reviewerId],
     references: [users.id],
     relationName: "review_reviewer",
+  }),
+  requestedByMembership: one(organizationMembers, {
+    fields: [kbPageReviews.requestedByMembershipId],
+    references: [organizationMembers.id],
+    relationName: "kb_review_requester_membership",
+  }),
+  reviewerMembership: one(organizationMembers, {
+    fields: [kbPageReviews.reviewerMembershipId],
+    references: [organizationMembers.id],
+    relationName: "kb_review_reviewer_membership",
   }),
 }));
 

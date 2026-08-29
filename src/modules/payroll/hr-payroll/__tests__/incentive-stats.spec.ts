@@ -1,5 +1,17 @@
 import { IncentivesService } from "../incentives.service";
 
+const access = { resolveUserPermissions: jest.fn() };
+
+const memberActor = {
+  userId: "user-1",
+  orgId: "org-1",
+  role: "MEMBER",
+  isOrgOwner: false,
+  sessionId: "session-1",
+  tokenScopes: null,
+  principal: { kind: "human-session" as const, membershipId: 1, isOrgOwner: false },
+};
+
 function makeDb(statsRow: { totalRevenue: string; approvedCount: string; pendingCount: string; thisMonth: string }) {
   const where = jest.fn().mockResolvedValue([statsRow]);
   const from = jest.fn().mockReturnValue({ where });
@@ -8,9 +20,13 @@ function makeDb(statsRow: { totalRevenue: string; approvedCount: string; pending
 }
 
 describe("IncentivesService.getIncentiveStats", () => {
+  beforeEach(() => {
+    access.resolveUserPermissions.mockReset();
+  });
+
   it("returns zero stats when no incentives exist", async () => {
     const db = makeDb({ totalRevenue: "0", approvedCount: "0", pendingCount: "0", thisMonth: "0" });
-    const service = new IncentivesService(db as never);
+    const service = new IncentivesService(db as never, access as never);
 
     const result = await service.getIncentiveStats("org-1");
 
@@ -24,7 +40,7 @@ describe("IncentivesService.getIncentiveStats", () => {
 
   it("computes avgPerConversion from approved count", async () => {
     const db = makeDb({ totalRevenue: "30000", approvedCount: "3", pendingCount: "1", thisMonth: "10000" });
-    const service = new IncentivesService(db as never);
+    const service = new IncentivesService(db as never, access as never);
 
     const result = await service.getIncentiveStats("org-1");
 
@@ -42,11 +58,20 @@ describe("IncentivesService.getIncentiveStats", () => {
     (db as unknown as { query: { incentives: { findMany: jest.Mock } } }).query = {
       incentives: { findMany: queryFindMany },
     };
-    const service = new IncentivesService(db as never);
+    const service = new IncentivesService(db as never, access as never);
 
     await service.getIncentiveStats("org-1");
 
     expect(queryFindMany).not.toHaveBeenCalled();
     expect(db.select).toHaveBeenCalledTimes(1);
+  });
+
+  it("denies an incentive configuration mutation without payroll approval", async () => {
+    access.resolveUserPermissions.mockResolvedValue(new Set<string>());
+    const service = new IncentivesService({} as never, access as never);
+
+    await expect(service.createConfig(memberActor, "5")).rejects.toThrow(
+      "Missing permission hr:payroll:approve",
+    );
   });
 });
