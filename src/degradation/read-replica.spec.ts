@@ -1,3 +1,4 @@
+import postgres from "postgres";
 import { poolEnvShape, resolvePoolConfig } from "../db/pool.config";
 import { shedRank, isReserved } from "../common/admission/work-class";
 import {
@@ -160,12 +161,94 @@ describe("Read replica degraded — correctness-sensitive reads go to primary", 
 
   describe("lag simulation — no physical replica is available", () => {
     it.skip(
-      "PHYSICAL REPLICA NOT PROVISIONED. To complete this row: provision a Neon read-replica endpoint, " +
-        "set DB_REPLICA_URL to its connection string, point a FaultServer at that endpoint to simulate lag, " +
-        "and assert that reads through the replica carry REPEATABLE READ staleness matching the injected delay. " +
-        "Without a physical replica the routing seam is exercised only at the pool-selection level (above), " +
-        "not at the data-staleness level.",
+      "PHYSICAL REPLICA NOT PROVISIONED. The staleness behaviour below is proved against a REPEATABLE READ " +
+        "snapshot, which is real lag but not replication lag. To close this row fully: provision a Neon " +
+        "read-replica endpoint, set DB_REPLICA_URL to its connection string, and re-run the staleness " +
+        "assertions against that endpoint so the lag measured is the replica's own.",
       () => {},
     );
   });
+});
+
+const ownerDatabaseUrl = process.env.DATABASE_URL;
+const describeAgainstOwner = ownerDatabaseUrl ? describe : describe.skip;
+
+/**
+ * A REPEATABLE READ transaction takes its snapshot at first read and cannot see
+ * anything committed afterwards. That is genuine, measurable staleness against a
+ * real database, so the declared behaviour can be tested without provisioning a
+ * replica: what it does NOT reproduce is replication delay itself, which is why
+ * the skip above is still open.
+ */
+describeAgainstOwner("replica staleness — a lagging snapshot is real, and routing respects it", () => {
+  const PROBE = "s7_replica_lag_probe";
+  let primary: ReturnType<typeof postgres>;
+  let lagging: ReturnType<typeof postgres>;
+
+  beforeAll(async () => {
+    primary = postgres(ownerDatabaseUrl ?? "", {
+      prepare: false,
+      max: 1,
+      ssl: "require",
+      onnotice: () => {},
+    });
+    lagging = postgres(ownerDatabaseUrl ?? "", {
+      prepare: false,
+      max: 1,
+      ssl: "require",
+      onnotice: () => {},
+    });
+    await primary.unsafe(`CREATE TABLE IF NOT EXISTS ${PROBE} (id bigint primary key)`);
+    await primary.unsafe(`TRUNCATE ${PROBE}`);
+  }, 60_000);
+
+  afterAll(async () => {
+    if (primary) {
+      await primary.unsafe(`DROP TABLE IF EXISTS ${PROBE}`);
+      await primary.end();
+    }
+    if (lagging) await lagging.end();
+  }, 60_000);
+
+  it(
+    "a replica-safe read served from a lagging snapshot misses a committed write, " +
+      "while the same read on the primary sees it — the staleness is real, not asserted",
+    async () => {
+      await primary.unsafe(`INSERT INTO ${PROBE} (id) VALUES (1)`);
+
+      const staleness = await lagging.begin(async (snapshot) => {
+        await snapshot.unsafe("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+        const before = await snapshot.unsafe(`SELECT count(*)::int AS n FROM ${PROBE}`);
+
+        await primary.unsafe(`INSERT INTO ${PROBE} (id) VALUES (2)`);
+        const onPrimary = await primary.unsafe(`SELECT count(*)::int AS n FROM ${PROBE}`);
+
+        const after = await snapshot.unsafe(`SELECT count(*)::int AS n FROM ${PROBE}`);
+        return {
+          snapshotBefore: before[0]?.n,
+          snapshotAfter: after[0]?.n,
+          primaryAfter: onPrimary[0]?.n,
+        };
+      });
+
+      expect(routingStrategyFor("analytics-refresh")).toBe("replica-safe");
+      expect(staleness.snapshotBefore).toBe(1);
+      expect(staleness.snapshotAfter).toBe(1);
+      expect(staleness.primaryAfter).toBe(2);
+    },
+    120_000,
+  );
+
+  it(
+    "a read-after-write path is primary-required, so the write it just made is visible to it",
+    async () => {
+      expect(routingStrategyFor("billing-ledger")).toBe("primary-required");
+
+      await primary.unsafe(`INSERT INTO ${PROBE} (id) VALUES (3)`);
+      const rows = await primary.unsafe(`SELECT count(*)::int AS n FROM ${PROBE} WHERE id = 3`);
+
+      expect(rows[0]?.n).toBe(1);
+    },
+    120_000,
+  );
 });

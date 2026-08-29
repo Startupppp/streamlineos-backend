@@ -7,6 +7,11 @@ import postgres from "postgres";
 const databaseUrl = process.env.DATABASE_URL;
 const describeWithDb = databaseUrl ? describe : describe.skip;
 import { FaultServer } from "./fault-server";
+import {
+  cellCapabilityGlob,
+  cellPrefixed,
+} from "../common/cell-transport/cell-channel-namespace";
+import { LEGACY_CELL_ID } from "../common/region/placement";
 
 function makeAbly(apiKey: string | undefined): AblyService {
   return new AblyService({ ABLY_API_KEY: apiKey });
@@ -74,18 +79,27 @@ describe("Realtime channel naming — clients reconnect to the same channel from
     service = makeAbly(undefined);
   });
 
-  it("chat channel name encodes orgId and channelId so clients can reconnect deterministically", () => {
+  it("chat channel name is cell-prefixed and encodes orgId and channelId so clients reconnect deterministically", () => {
     const name = service.channelName("org-1", 42);
-    expect(name).toBe("chat:org-1:42");
+    expect(name).toBe(cellPrefixed(LEGACY_CELL_ID, "chat:org-1:42"));
     expect(name).toContain("org-1");
     expect(name).toContain("42");
   });
 
-  it("support channel name encodes orgId and ticketId", () => {
+  it("support channel name is cell-prefixed and encodes orgId and ticketId", () => {
     const name = service.supportChannelName("org-1", 99);
-    expect(name).toBe("support:org-1:99");
+    expect(name).toBe(cellPrefixed(LEGACY_CELL_ID, "support:org-1:99"));
     expect(name).toContain("org-1");
     expect(name).toContain("99");
+  });
+
+  // The prefix is not cosmetic: tokens are minted against cellCapabilityGlob, so a
+  // channel published without it is unreachable by every subscriber in that cell.
+  it("every channel name falls inside the cell capability glob its tokens are scoped to", () => {
+    const glob = cellCapabilityGlob(LEGACY_CELL_ID);
+    const prefix = glob.replace(/\*$/, "");
+    expect(service.channelName("org-1", 42).startsWith(prefix)).toBe(true);
+    expect(service.supportChannelName("org-1", 99).startsWith(prefix)).toBe(true);
   });
 
   it("channel names are stable — the same inputs always produce the same name", () => {

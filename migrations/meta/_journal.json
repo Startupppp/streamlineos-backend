@@ -2257,6 +2257,13 @@
       "breakpoints": true
     },
     {
+      "idx": 370,
+      "version": "7",
+      "when": 1787830393442,
+      "tag": "0489_chain_creates_early",
+      "breakpoints": true
+    },
+    {
       "idx": 322,
       "version": "7",
       "when": 1787830394441,
@@ -2576,6 +2583,20 @@
       "version": "7",
       "when": 1787940848254,
       "tag": "0652_repair_chat_reaction_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 368,
+      "version": "7",
+      "when": 1787940908254,
+      "tag": "0653_kb_remaining_composite_tenant_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 369,
+      "version": "7",
+      "when": 1787940968254,
+      "tag": "0654_calendar_exception_tenant_fk",
       "breakpoints": true
     }
   ]

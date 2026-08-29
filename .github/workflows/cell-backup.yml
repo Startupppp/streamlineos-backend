@@ -1,0 +1,84 @@
+name: Cell backup
+
+# The recovery drill measured an RPO of 47,468 s (~13 h) against a 5-minute target.
+# The cause was not slow recovery: backups were manual, so the recovery point was
+# whenever somebody last remembered to run one. This bounds it by a schedule.
+#
+# A logical dump CANNOT reach the PRD's 5-minute recovery point — it reads every
+# table. This job makes the recovery point bounded and known; Neon PITR is the
+# mechanism that reaches 5 minutes, and it needs NEON_API_KEY. Do not read a green
+# run here as the objective being met.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      region:
+        description: Cell region key to back up
+        required: false
+        default: cell-2
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.inputs.region || 'cell-2' }}
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check credentials
+        id: check-creds
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Backup Skipped::CI_DATABASE_URL is not set, so no backup was taken and the recovery point is unbounded."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+
+      - uses: pnpm/action-setup@v4
+        if: steps.check-creds.outputs.configured == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.check-creds.outputs.configured == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - name: Install
+        if: steps.check-creds.outputs.configured == 'true'
+        working-directory: backend
+        run: pnpm install --frozen-lockfile
+
+      - name: Take backup
+        if: steps.check-creds.outputs.configured == 'true'
+        working-directory: backend
+        run: pnpm cell:backup --region=${{ github.event.inputs.region || 'cell-2' }} --backup
+        env:
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
+
+      # A backup nobody reads back is a file, not a backup.
+      - name: Verify the backup reads back
+        if: steps.check-creds.outputs.configured == 'true'
+        working-directory: backend
+        run: pnpm cell:backup --region=${{ github.event.inputs.region || 'cell-2' }} --verify
+        env:
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
+
+      - name: Upload backup artifact
+        if: steps.check-creds.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cell-backup-${{ github.event.inputs.region || 'cell-2' }}-${{ github.run_id }}
+          path: backend/backups/*.ndjson
+          retention-days: 14

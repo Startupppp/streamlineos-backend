@@ -107,6 +107,7 @@ if (isSelfTest) {
     rto_target_seconds: 3600,
     rpo_met: true,
     rto_met: true,
+    unhealthy_after_recovery: [],
     phases: {
       backup_ms: 5000,
       bootstrap_ms: 80000,
@@ -142,7 +143,7 @@ if (isSelfTest) {
   };
 
   const keys = [
-    "failure_class", "rpo_seconds", "rto_seconds", "rpo_met", "rto_met",
+    "failure_class", "rpo_seconds", "rto_seconds", "rpo_met", "rto_met", "unhealthy_after_recovery",
     "phases", "integrity", "timestamps", "control_plane_during_recovery", "notes",
   ];
   const missing = keys.filter((k) => !(k in mockResult));
@@ -165,6 +166,7 @@ timestamps.drill_started_iso = new Date(T_DRILL_START).toISOString();
 
 let disturbed = false;
 let disturbedReason = null;
+let unhealthyAfterRecovery = [];
 
 log("phase 1: backup");
 const backupResult = run("backup", [
@@ -197,10 +199,28 @@ if (isDryRun) {
     "--i-mean-it",
   ]);
 
+  // A bootstrap that never applied the chain and one that applied it fully but
+  // failed a later health check are different failures, and only the first makes
+  // recovery time unmeasurable. Conflating them reports "RTO unknown" when the
+  // real answer is "RTO measured, and the recovered cell is not healthy" — which
+  // is a worse thing to know less precisely.
   if (bootstrapResult.exitCode !== 0) {
-    process.stderr.write(`DRILL FAILED: bootstrap exited ${bootstrapResult.exitCode}\n`);
-    disturbed = true;
-    disturbedReason = `bootstrap exited ${bootstrapResult.exitCode}`;
+    const reachedHead = /RESULT: REACHED_HEAD (\d+)\/\1\b/.test(bootstrapResult.stdout);
+    if (reachedHead) {
+      const failedChecks = bootstrapResult.stdout
+        .split("\n")
+        .filter((line) => line.startsWith("FAIL "))
+        .map((line) => line.slice(5).trim());
+      unhealthyAfterRecovery = failedChecks.length > 0 ? failedChecks : ["bootstrap exited non-zero after reaching head"];
+      process.stderr.write(
+        `DRILL WARNING: the chain reached head, so recovery time is measurable, but ` +
+          `${unhealthyAfterRecovery.length} post-recovery check(s) failed — the cell is restored, not healthy.\n`,
+      );
+    } else {
+      process.stderr.write(`DRILL FAILED: bootstrap exited ${bootstrapResult.exitCode} without reaching head\n`);
+      disturbed = true;
+      disturbedReason = `bootstrap exited ${bootstrapResult.exitCode} without reaching head`;
+    }
   }
 }
 const T_BOOTSTRAP_DONE = Date.now();
@@ -249,7 +269,9 @@ if (!disturbed) {
     rpo_target_seconds: RPO_TARGET_SECONDS,
     rto_target_seconds: RTO_TARGET_SECONDS,
     rpo_met: rpo_seconds <= RPO_TARGET_SECONDS,
-    rto_met: rto_seconds <= RTO_TARGET_SECONDS,
+    rto_met: rto_seconds <= RTO_TARGET_SECONDS && unhealthyAfterRecovery.length === 0,
+    rto_elapsed_within_target: rto_seconds <= RTO_TARGET_SECONDS,
+    unhealthy_after_recovery: unhealthyAfterRecovery,
     phases: {
       backup_ms: backupResult.elapsed_ms,
       bootstrap_ms: bootstrapResult.elapsed_ms,
@@ -308,6 +330,7 @@ if (!disturbed) {
     rto_seconds: null,
     rpo_met: false,
     rto_met: false,
+    unhealthy_after_recovery: unhealthyAfterRecovery,
     disturbed: true,
     disturbed_reason: disturbedReason,
     timestamps,
