@@ -73,6 +73,10 @@ import type {
 } from "./dto/module-access.schemas";
 import { ModuleAccessGroupPolicyService } from "./module-access-group-policy.service";
 import {
+  ModuleAccessGroupMembersService,
+  type ModuleGroupMember,
+} from "./module-access-group-members.service";
+import {
   ModuleAccessOwnershipService,
   type ModuleOwnership,
 } from "./module-access-ownership.service";
@@ -87,12 +91,7 @@ export interface ModuleRoleGroup {
   permissions: { permissionKey: string; scope: DataScope }[];
 }
 
-export interface ModuleGroupMember {
-  userId: string;
-  displayName: string;
-  email: string;
-  avatarUrl: string | null;
-}
+export type { ModuleGroupMember } from "./module-access-group-members.service";
 
 export interface ModuleMemberCandidate {
   userId: string;
@@ -127,9 +126,16 @@ export class ModuleAccessGroupsService {
     private readonly groupPolicy: ModuleAccessGroupPolicyService,
   ) {
     this.ownership = new ModuleAccessOwnershipService(this.db, this.cache);
+    this.groupMembers = new ModuleAccessGroupMembersService(
+      this.db,
+      this.cache,
+      this.audit,
+      this.groupPolicy,
+    );
   }
 
   private readonly ownership: ModuleAccessOwnershipService;
+  private readonly groupMembers: ModuleAccessGroupMembersService;
 
   private async assertAccess(
     actor: CurrentUserContext,
@@ -567,46 +573,9 @@ export class ModuleAccessGroupsService {
     const version = await this.access.getPermissionsVersion(actor.orgId);
     return this.cache.cached(
       CACHE_KEYS.moduleGroupMembers(actor.orgId, moduleKey, groupId, version),
-      () => this.fetchGroupMembers(actor.orgId, groupId),
+      () => this.groupMembers.fetchGroupMembers(actor.orgId, groupId),
       CACHE_TTL.VERY_LONG,
     );
-  }
-
-  private async fetchGroupMembers(
-    orgId: string,
-    groupId: number,
-  ): Promise<ModuleGroupMember[]> {
-    const rows = await this.db
-      .select({
-        userId: organizationMembers.userId,
-        name: users.name,
-        email: users.email,
-        image: users.image,
-      })
-      .from(roleAssignments)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.orgId, roleAssignments.orgId),
-          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
-        ),
-      )
-      .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(
-        and(
-          eq(roleAssignments.orgId, orgId),
-          eq(roleAssignments.roleId, groupId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .limit(100);
-
-    return rows.map((r) => ({
-      userId: r.userId,
-      displayName: r.name ?? r.email ?? r.userId,
-      email: r.email ?? "",
-      avatarUrl: r.image,
-    }));
   }
 
   async addGroupMember(
@@ -618,64 +587,7 @@ export class ModuleAccessGroupsService {
     await this.assertAccess(actor, moduleKey, "manage");
     await this.assertGroupBelongsToModule(actor.orgId, moduleKey, groupId);
 
-    if (!actor.isOrgOwner && input.userId === actor.userId) {
-      throw new ForbiddenException("You cannot add yourself to a module group");
-    }
-
-    const ownerUserId = await this.resolveModuleOwnerUserId(
-      actor.orgId,
-      moduleKey,
-    );
-    if (ownerUserId !== null && input.userId === ownerUserId) {
-      if (!actor.isOrgOwner && actor.userId !== ownerUserId) {
-        throw new ForbiddenException(
-          "Only the module owner, an org owner, or a platform admin may modify the module owner's group memberships",
-        );
-      }
-    }
-
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, actor.orgId),
-        eq(organizationMembers.userId, input.userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-      columns: { id: true, status: true },
-    });
-    if (!member || member.status !== "ACTIVE") {
-      throw new BadRequestException(
-        "User must be an active member of this organization",
-      );
-    }
-
-    await runInTenantTransaction(
-      this.db,
-      async (tx): Promise<void> => {
-        await tx
-          .insert(roleAssignments)
-          .values({
-            orgId: actor.orgId,
-            organizationMembershipId: member.id,
-            roleId: groupId,
-            assignedByMembershipId: null,
-          })
-          .onConflictDoNothing();
-        await bumpPermissionsVersion(tx, actor.orgId);
-      },
-      { orgId: actor.orgId },
-    );
-
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    await this.cache.invalidate(CACHE_KEYS.userSession(input.userId));
-    this.audit.log({
-      action: "module_access.group_member_added",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: String(groupId),
-      targetType: "role",
-      metadata: { moduleKey, targetUserId: input.userId },
-    });
-    return { success: true };
+    return this.groupMembers.addGroupMember(actor, moduleKey, groupId, input);
   }
 
   async removeGroupMember(
@@ -687,63 +599,7 @@ export class ModuleAccessGroupsService {
     await this.assertAccess(actor, moduleKey, "manage");
     await this.assertGroupBelongsToModule(actor.orgId, moduleKey, groupId);
 
-    const ownerUserId = await this.resolveModuleOwnerUserId(
-      actor.orgId,
-      moduleKey,
-    );
-
-    if (ownerUserId !== null && userId === ownerUserId) {
-      if (!actor.isOrgOwner && actor.userId !== ownerUserId) {
-        throw new ForbiddenException(
-          "Only the module owner, an org owner, or a platform admin may modify the module owner's group memberships",
-        );
-      }
-    }
-
-    if (!actor.isOrgOwner && userId === actor.userId && actor.userId !== ownerUserId) {
-      throw new ForbiddenException(
-        "You cannot remove yourself from a module group",
-      );
-    }
-
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, actor.orgId),
-        eq(organizationMembers.userId, userId),
-      ),
-      columns: { id: true },
-    });
-
-    if (member) {
-      await runInTenantTransaction(
-        this.db,
-        async (tx): Promise<void> => {
-          await tx
-            .delete(roleAssignments)
-            .where(
-              and(
-                eq(roleAssignments.orgId, actor.orgId),
-                eq(roleAssignments.roleId, groupId),
-                eq(roleAssignments.organizationMembershipId, member.id),
-              ),
-            );
-          await bumpPermissionsVersion(tx, actor.orgId);
-        },
-        { orgId: actor.orgId },
-      );
-      await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-      await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-      this.audit.log({
-        action: "module_access.group_member_removed",
-        userId: actor.userId,
-        orgId: actor.orgId,
-        targetId: String(groupId),
-        targetType: "role",
-        metadata: { moduleKey, targetUserId: userId },
-      });
-    }
-
-    return { success: true };
+    return this.groupMembers.removeGroupMember(actor, moduleKey, groupId, userId);
   }
 
   async listMemberCandidates(
