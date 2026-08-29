@@ -20,7 +20,15 @@ function isPgClassDuplicate(error) {
   const constraint = error?.constraint_name ?? error?.fields?.n ?? "";
   const detail = error?.detail ?? error?.message ?? "";
   return constraint === "pg_class_relname_nsp_index" ||
-    detail.includes("pg_class_relname_nsp_index");
+    constraint === "pg_type_typname_nsp_index" ||
+    detail.includes("pg_class_relname_nsp_index") ||
+    detail.includes("pg_type_typname_nsp_index");
+}
+
+function isAlreadyPresentSchemaError(error) {
+  const code = typeof error?.code === "string" ? error.code : "";
+  const message = typeof error?.message === "string" ? error.message : "";
+  return code === "42P16" && message.includes("multiple primary keys");
 }
 
 const MISSING_CODES = new Set(["42704", "42P01", "42703"]);
@@ -66,6 +74,12 @@ function isConnectionError(error) {
   );
 }
 
+function isTransientDdlError(error) {
+  const code = typeof error?.code === "string" ? error.code : "";
+  const message = typeof error?.message === "string" ? error.message : "";
+  return code === "XX000" && /tuple concurrently updated|could not serialize/i.test(message);
+}
+
 function makeConnection() {
   return postgres(url, {
     max: 1,
@@ -78,6 +92,7 @@ function makeConnection() {
 
 const started = Date.now();
 const log = (msg) => console.log(`[${((Date.now() - started) / 1000).toFixed(1)}s] ${msg}`);
+const MAX_TRANSIENT_DDL_RETRIES = 5;
 
 async function readApplied(sql) {
   const rows = await sql`SELECT hash FROM drizzle.__drizzle_migrations`;
@@ -137,11 +152,25 @@ async function main() {
       while (!migrationCompleted) {
         try {
           for (; statementIdx < statements.length; statementIdx++) {
-            try {
-              await sql.unsafe(statements[statementIdx]);
-            } catch (error) {
+            let transientAttempts = 0;
+            while (true) {
+              try {
+                await sql.unsafe(statements[statementIdx]);
+                break;
+              } catch (error) {
+                if (isTransientDdlError(error) && transientAttempts < MAX_TRANSIENT_DDL_RETRIES) {
+                  transientAttempts++;
+                  log(
+                    `TRANSIENT_DDL [${entry.tag}] stmt ${statementIdx + 1} ` +
+                    `retry ${transientAttempts}/${MAX_TRANSIENT_DDL_RETRIES}`,
+                  );
+                  await new Promise((resolveAfterDelay) =>
+                    setTimeout(resolveAfterDelay, 1000 * transientAttempts),
+                  );
+                  continue;
+                }
               const code = typeof error?.code === "string" ? error.code : "";
-              if (DUPLICATE_CODES.has(code) || isPgClassDuplicate(error)) {
+              if (DUPLICATE_CODES.has(code) || isPgClassDuplicate(error) || isAlreadyPresentSchemaError(error)) {
                 presentHere++;
                 alreadyPresent++;
                 if (VERBOSE)
@@ -157,6 +186,7 @@ async function main() {
                 continue;
               }
               throw error;
+              }
             }
           }
 

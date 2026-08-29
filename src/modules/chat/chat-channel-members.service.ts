@@ -11,6 +11,7 @@ import {
   chatChannelMembers,
   chatChannels,
   chatMessages,
+  organizationMembers,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -27,6 +28,19 @@ export class ChatChannelMembersService {
     private readonly cache: CacheService,
     private readonly entities: EntityReferenceService,
   ) {}
+
+  private async resolveMembership(orgId: string, userId: string): Promise<number> {
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    if (!membership) throw new ForbiddenException("User is not an active organization member");
+    return membership.id;
+  }
 
   private async assertMember(channelId: number, userId: string) {
     const member = await this.db.query.chatChannelMembers.findFirst({
@@ -90,6 +104,7 @@ export class ChatChannelMembersService {
     });
     if (!channel) throw new NotFoundException("Channel not found");
     await assertUsersInOrg(this.db, channel.orgId, [targetUserId]);
+    const targetMembershipId = await this.resolveMembership(channel.orgId, targetUserId);
 
     const existing = await this.db.query.chatChannelMembers.findFirst({
       where: and(
@@ -104,6 +119,7 @@ export class ChatChannelMembersService {
       orgId: channel.orgId,
       channelId,
       userId: targetUserId,
+      membershipId: targetMembershipId,
       role: "MEMBER",
     });
 
@@ -166,6 +182,7 @@ export class ChatChannelMembersService {
     });
 
     if (!channel) throw new NotFoundException("Channel not found");
+    const actorMembershipId = await this.resolveMembership(actor.orgId, actor.userId);
 
     if (channel.type !== "PUBLIC") {
       if (!channel.entityType || !channel.entityId)
@@ -190,6 +207,7 @@ export class ChatChannelMembersService {
       orgId: actor.orgId,
       channelId,
       userId: actor.userId,
+      membershipId: actorMembershipId,
       role: "MEMBER",
     });
 

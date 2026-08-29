@@ -84,11 +84,13 @@ export const chatChannelMembers = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_channel_member").on(table.channelId, table.userId),
+    uniqueIndex("uniq_chat_channel_member_membership").on(table.orgId, table.channelId, table.membershipId),
     index("idx_chat_members_user").on(table.userId),
     index("idx_chat_members_channel").on(table.channelId),
     index("idx_chat_channel_members_org").on(table.orgId),
     unique("uniq_chat_channel_members_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_channel_members_org_channel" }),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_channel_members_org_membership" }),
   ],
 );
 
@@ -324,6 +326,10 @@ export const chatChannelMembersRelations = relations(
     user: one(users, {
       fields: [chatChannelMembers.userId],
       references: [users.id],
+    }),
+    membership: one(organizationMembers, {
+      fields: [chatChannelMembers.membershipId],
+      references: [organizationMembers.id],
     }),
   }),
 );
