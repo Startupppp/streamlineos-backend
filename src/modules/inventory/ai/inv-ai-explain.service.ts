@@ -7,7 +7,10 @@ import type { Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { AiConfirmationService } from "../../ai/confirmation/ai-confirmation.service";
 import { InvReplenishmentService } from "../replenishment/inv-replenishment.service";
-import { InvVendorsService } from "../vendors/inv-vendors.service";
+import {
+  VendorScorecardService,
+  type VendorScorecard,
+} from "../vendors/vendor-scorecard.service";
 import { InvAiService, type InventoryOpsBrief } from "./inv-ai.service";
 import {
   INV_AI_ACTIONS,
@@ -165,23 +168,13 @@ export interface ReorderProposalResult {
   proposal: { proposalId: number; token: string; expiresAt: Date };
 }
 
-interface VendorPerformance {
-  vendorId: number;
-  onTimeRate: number;
-  fillRate: number;
-  avgLeadTimeDays: number;
-  returnRate: number;
-  openPoCount: number;
-  totalSpend: string;
-}
-
 export interface SupplierDelayBriefingResult {
   vendors: Array<{
     vendorId: number;
     vendorName: string;
     insightCount: number;
     insights: Array<{ id: number; title: string; body: string; severity: string }>;
-    performance: VendorPerformance;
+    performance: VendorScorecard;
   }>;
   narration: string;
   generatedAt: Date;
@@ -272,7 +265,7 @@ function buildReorderUserPrompt(evidence: Record<string, unknown>): string {
   ].join("\n");
 }
 
-function buildDelayBriefingUserPrompt(vendors: Array<{ vendorId: number; vendorName: string; insightCount: number; performance: VendorPerformance }>): string {
+function buildDelayBriefingUserPrompt(vendors: Array<{ vendorId: number; vendorName: string; insightCount: number; performance: VendorScorecard }>): string {
   return [
     "Supplier delay briefing — all performance figures are pre-computed (do not invent or modify any numbers):",
     JSON.stringify(vendors, null, 2),
@@ -289,7 +282,7 @@ export class InvAiExplainService {
     private readonly gateway: AiGatewayService,
     private readonly confirmation: AiConfirmationService,
     private readonly replenishment: InvReplenishmentService,
-    private readonly vendors: InvVendorsService,
+    private readonly scorecards: VendorScorecardService,
     private readonly insights: InvAiService,
   ) {}
 
@@ -689,23 +682,28 @@ export class InvAiExplainService {
       vendorMap.set(vId, entry);
     }
 
-    const vendors = await Promise.all(
-      Array.from(vendorMap.entries()).map(async ([vId, entry]) => {
-        const performance = await this.vendors.getVendorPerformance(orgId, vId);
-        return {
-          vendorId: vId,
-          vendorName: entry.vendorName,
-          insightCount: entry.insights.length,
-          insights: entry.insights.map((i) => ({
-            id: i.id,
-            title: i.title,
-            body: i.body,
-            severity: i.severity,
-          })),
-          performance,
-        };
-      }),
+    // C4. One batched read rather than a scorecard per vendor: the old shape ran
+    // seven queries for every delayed supplier in the briefing.
+    const scorecards = await this.scorecards.scorecardsFor(
+      orgId,
+      Array.from(vendorMap.keys()),
     );
+    const vendors = Array.from(vendorMap.entries()).flatMap(([vId, entry]) => {
+      const performance = scorecards.get(vId);
+      if (!performance) return [];
+      return [{
+        vendorId: vId,
+        vendorName: entry.vendorName,
+        insightCount: entry.insights.length,
+        insights: entry.insights.map((i) => ({
+          id: i.id,
+          title: i.title,
+          body: i.body,
+          severity: i.severity,
+        })),
+        performance,
+      }];
+    });
 
     const narration =
       vendors.length === 0

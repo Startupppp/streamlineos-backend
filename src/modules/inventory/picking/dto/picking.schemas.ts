@@ -12,6 +12,39 @@ export const createWaveSchema = z
   .strict();
 export type CreateWaveInput = z.infer<typeof createWaveSchema>;
 
+/**
+ * B4, item 5. The workbench's own query — the waves waiting for a picker and
+ * the ones this picker is already walking.
+ *
+ * `assignment` is a view rather than a user id: a client that could name the
+ * picker could name somebody else's queue, and "whose waves am I looking at" is
+ * answered from the token, never from the body.
+ */
+export const listWavesSchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+    status: z.enum(["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]).optional(),
+    warehouseId: z.coerce.number().int().positive().optional(),
+    assignment: z.enum(["ANY", "MINE", "UNCLAIMED"]).default("ANY"),
+  })
+  .strict();
+export type ListWavesInput = z.infer<typeof listWavesSchema>;
+
+/**
+ * B4, item 3. Handing a wave to somebody else.
+ *
+ * The only picking body that names a person, and it names the *other* person —
+ * claiming and abandoning both derive the actor from the token, because a body
+ * that could say who claimed a wave could claim one on somebody else's behalf.
+ */
+export const reassignWaveSchema = z
+  .object({
+    assigneeUserId: z.string().min(1).max(255),
+  })
+  .strict();
+export type ReassignWaveInput = z.infer<typeof reassignWaveSchema>;
+
 export const confirmPickSchema = z
   .object({
     pickLineId: z.number().int().positive(),

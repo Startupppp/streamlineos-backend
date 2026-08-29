@@ -210,6 +210,12 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     description: "Export inventory data",
   },
   {
+    name: "inventory:audit:export",
+    resource: "inventory:audit",
+    action: "export",
+    description: "Take an immutable, checksummed audit export of the inventory ledger and audit trail",
+  },
+  {
     name: "inventory:webhooks:manage",
     resource: "inventory:webhooks",
     action: "manage",

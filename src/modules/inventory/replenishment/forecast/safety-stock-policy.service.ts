@@ -1,9 +1,7 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { sql } from "drizzle-orm";
-import { DRIZZLE } from "../../../../db/drizzle.constants";
-import type { Db } from "../../../../db/drizzle.module";
+import { Injectable } from "@nestjs/common";
 import { DemandBaselineService } from "./demand-baseline.service";
 import { classifyDemand, type DemandCategory } from "./demand-shape";
+import { LeadTimeService } from "./lead-time.service";
 import { describe as summarise, safetyStock, type SafetyStockResult } from "./safety-stock";
 
 export interface SafetyStockPolicyResult {
@@ -30,8 +28,8 @@ export interface SafetyStockPolicyResult {
 @Injectable()
 export class SafetyStockPolicyService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
     private readonly baselines: DemandBaselineService,
+    private readonly leadTimes: LeadTimeService,
   ) {}
 
   /**
@@ -39,22 +37,13 @@ export class SafetyStockPolicyService {
    * Measured rather than configured: a vendor's promised lead time is a
    * marketing number, and the gap between it and the observed one is the whole
    * reason safety stock exists.
+   *
+   * C4 moved the derivation into `LeadTimeService`, which is where the same
+   * observation is defined for the vendor scorecard. A second copy here drifted
+   * the moment one of them learned to ignore an abandoned receipt.
    */
-  async observedLeadTimeDays(orgId: string, productVariantId: number): Promise<number[]> {
-    const rows = await this.db.execute<{ days: string }>(sql`
-      SELECT EXTRACT(EPOCH FROM (g.received_date::timestamp - po.order_date::timestamp)) / 86400
-             AS days
-      FROM inv_grn_lines gl
-      JOIN inv_grns g ON g.org_id = gl.org_id AND g.id = gl.grn_id
-      JOIN inv_po_lines pol ON pol.org_id = gl.org_id AND pol.id = gl.po_line_id
-      JOIN inv_purchase_orders po ON po.org_id = pol.org_id AND po.id = pol.po_id
-      WHERE gl.org_id = ${orgId}
-        AND pol.product_variant_id = ${productVariantId}
-        AND g.received_date >= po.order_date
-      ORDER BY g.received_date DESC
-      LIMIT 50
-    `);
-    return rows.map((r) => Number(r.days)).filter((d) => Number.isFinite(d) && d >= 0);
+  observedLeadTimeDays(orgId: string, productVariantId: number): Promise<number[]> {
+    return this.leadTimes.variantLeadTimeDays(orgId, productVariantId);
   }
 
   async policyFor(

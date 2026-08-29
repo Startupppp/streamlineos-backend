@@ -3,7 +3,7 @@ import { InvAiExplainService, hashReorderEvidence } from "./inv-ai-explain.servi
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { AiConfirmationService } from "../../ai/confirmation/ai-confirmation.service";
 import type { InvReplenishmentService } from "../replenishment/inv-replenishment.service";
-import type { InvVendorsService } from "../vendors/inv-vendors.service";
+import type { VendorScorecardService } from "../vendors/vendor-scorecard.service";
 
 const MOCK_INSIGHT = {
   id: 1,
@@ -62,7 +62,7 @@ function buildService(
   gateway: Partial<AiGatewayService>,
   confirmation?: Partial<AiConfirmationService>,
   replenishment?: Partial<InvReplenishmentService>,
-  vendors?: Partial<InvVendorsService>,
+  scorecards?: Partial<VendorScorecardService>,
   insights?: { getOpsBrief?: unknown },
 ) {
   return new InvAiExplainService(
@@ -70,7 +70,7 @@ function buildService(
     gateway as AiGatewayService,
     (confirmation ?? {}) as AiConfirmationService,
     (replenishment ?? {}) as InvReplenishmentService,
-    (vendors ?? {}) as InvVendorsService,
+    (scorecards ?? {}) as VendorScorecardService,
     (insights ?? {}) as never,
   );
 }
@@ -708,13 +708,76 @@ const MOCK_DELAY_INSIGHT_V2B = {
   sourceRefs: { vendorId: 2, vendorName: "BestVend" },
 };
 
-const MOCK_VENDOR_PERFORMANCE = {
+/**
+ * C4. Every rate arrives beside the sample it was computed from, so the
+ * briefing can say "72% over 25 orders" rather than a bare percentage.
+ */
+const MOCK_VENDOR_SCORECARD = {
+  vendorId: 1,
+  leadTime: {
+    observations: 9,
+    meanDays: 9,
+    stdDevDays: 2,
+    p50Days: 8,
+    p90Days: 14,
+    reliable: true,
+  },
+  onTime: {
+    percent: "72.00",
+    numerator: "18",
+    denominator: "25",
+    sampleSize: 25,
+    sufficient: true,
+  },
+  lineFill: {
+    percent: "87.00",
+    numerator: "87",
+    denominator: "100",
+    sampleSize: 100,
+    sufficient: true,
+  },
+  unitFill: {
+    percent: "87.00",
+    numerator: "870.0000",
+    denominator: "1000.0000",
+    sampleSize: 100,
+    sufficient: true,
+  },
+  returns: {
+    percent: "1.00",
+    numerator: "10.0000",
+    denominator: "1000.0000",
+    sampleSize: 2,
+    sufficient: false,
+  },
+  rejection: {
+    percent: "2.00",
+    numerator: "2",
+    denominator: "100",
+    sampleSize: 100,
+    sufficient: true,
+  },
+  discrepancy: {
+    percent: "3.00",
+    numerator: "3",
+    denominator: "100",
+    sampleSize: 100,
+    sufficient: true,
+  },
   openPoCount: 3,
-  totalSpend: "12000",
-  fillRate: 0.87,
-  onTimeRate: 0.72,
-  avgLeadTimeDays: 9,
+  spend: { amount: "12000.0000", currency: "INR", excludedCurrencies: [] },
+  notes: [],
 };
+
+const scorecardStub = (...vendorIds: number[]) => ({
+  scorecardsFor: jest
+    .fn()
+    .mockResolvedValue(
+      new Map(
+        vendorIds.map((id) => [id, { ...MOCK_VENDOR_SCORECARD, vendorId: id }]),
+      ),
+    ),
+});
 
 describe("InvAiExplainService - stale evidence on confirm", () => {
   const material = {
@@ -817,11 +880,7 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
         .fn()
         .mockResolvedValue({ ok: true, data: "Vendor ACME has shown delays." }),
     };
-    const vendors = {
-      getVendorPerformance: jest
-        .fn()
-        .mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
-    };
+    const vendors = scorecardStub(1, 2);
 
     const service = buildService(db, gateway, undefined, undefined, vendors);
     const result = await service.getSupplierDelayBriefing("org-1", "user-1");
@@ -845,20 +904,19 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
     const gateway = {
       invokeText: jest.fn().mockResolvedValue({ ok: true, data: aiNarration }),
     };
-    const vendors = {
-      getVendorPerformance: jest
-        .fn()
-        .mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
-    };
+    const vendors = scorecardStub(1, 2);
 
     const service = buildService(db, gateway, undefined, undefined, vendors);
     const result = await service.getSupplierDelayBriefing("org-1", "user-1");
 
     expect(result.narration).toBe(aiNarration);
-    expect(result.vendors[0]!.performance).toEqual(MOCK_VENDOR_PERFORMANCE);
+    expect(result.vendors[0]!.performance).toEqual({
+      ...MOCK_VENDOR_SCORECARD,
+      vendorId: result.vendors[0]!.vendorId,
+    });
   });
 
-  it("should have performance figures from getVendorPerformance, not from invokeText", async () => {
+  it("should have performance figures from the scorecard service, not from invokeText", async () => {
     const db = {
       query: {
         invAiInsights: {
@@ -872,17 +930,14 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
       data: "Some narrative with no computed numbers.",
     });
     const gateway = { invokeText };
-    const vendors = {
-      getVendorPerformance: jest
-        .fn()
-        .mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
-    };
+    const vendors = scorecardStub(1, 2);
 
     const service = buildService(db, gateway, undefined, undefined, vendors);
     const result = await service.getSupplierDelayBriefing("org-1", "user-1");
 
-    expect(result.vendors[0]!.performance["onTimeRate"]).toBe(0.72);
-    expect(result.vendors[0]!.performance["avgLeadTimeDays"]).toBe(9);
+    expect(result.vendors[0]!.performance.onTime.percent).toBe("72.00");
+    expect(result.vendors[0]!.performance.onTime.sampleSize).toBe(25);
+    expect(result.vendors[0]!.performance.leadTime.p90Days).toBe(14);
     const invokeTextReturn = (
       invokeText.mock.results[0] as {
         value: Promise<{ ok: boolean; data: string }>;
@@ -905,11 +960,7 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
     const gateway = {
       invokeText: jest.fn().mockResolvedValue({ ok: true, data: "Narrative." }),
     };
-    const vendors = {
-      getVendorPerformance: jest
-        .fn()
-        .mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
-    };
+    const vendors = scorecardStub(1, 2);
 
     const service = buildService(db, gateway, undefined, undefined, vendors);
     await service.getSupplierDelayBriefing("org-1", "user-1");
@@ -936,11 +987,7 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
         correlationId: "z",
       }),
     };
-    const vendors = {
-      getVendorPerformance: jest
-        .fn()
-        .mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
-    };
+    const vendors = scorecardStub(1, 2);
 
     const service = buildService(db, gateway, undefined, undefined, vendors);
     await expect(
@@ -959,7 +1006,7 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
     };
     const invokeText = jest.fn();
     const gateway = { invokeText };
-    const vendors = { getVendorPerformance: jest.fn() };
+    const vendors = scorecardStub();
 
     const service = buildService(db, gateway, undefined, undefined, vendors);
     const result = await service.getSupplierDelayBriefing("org-1", "user-1");
@@ -989,11 +1036,7 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
         .fn()
         .mockResolvedValue({ ok: true, data: "Only ACME narrative." }),
     };
-    const vendors = {
-      getVendorPerformance: jest
-        .fn()
-        .mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
-    };
+    const vendors = scorecardStub(1, 2);
 
     const service = buildService(db, gateway, undefined, undefined, vendors);
     const result = await service.getSupplierDelayBriefing("org-1", "user-1", 1);

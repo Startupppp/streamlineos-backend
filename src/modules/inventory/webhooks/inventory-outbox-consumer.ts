@@ -74,6 +74,12 @@ export const INVENTORY_WEBHOOK_ROUTES: Readonly<Record<string, WebhookEventType 
   "inventory.quality.hold.created": null,
   "inventory.quality.hold.released": null,
   "inventory.count.posted": null,
+  // B4. Routed to nothing on purpose. Giving a completed pick wave a
+  // subscriber-facing name means adding to `WEBHOOK_EVENTS`, which changes what
+  // a customer may register for — a contract decision, not a side effect of
+  // adding a producer. Written down rather than omitted: an unrouted type is
+  // retried and dead-lettered rather than ignored.
+  "inventory.pick.completed": null,
 };
 
 @Injectable()
@@ -110,11 +116,21 @@ export class InventoryOutboxConsumer implements OnModuleInit {
         ? (event.payload as Record<string, unknown>)
         : {};
 
-    await this.emitter.emit(event.organizationId, webhookType, {
-      ...payload,
-      // The producer's own name, so a subscriber can tell which command raised a
-      // shared subscription type without guessing from the payload's shape.
-      outboxEventType: event.eventType,
-    });
+    await this.emitter.emit(
+      event.organizationId,
+      webhookType,
+      {
+        ...payload,
+        // The producer's own name, so a subscriber can tell which command raised a
+        // shared subscription type without guessing from the payload's shape.
+        outboxEventType: event.eventType,
+      },
+      // E7. Dispatch is at-least-once: `OutboxPublisher` marks the producing row
+      // DELIVERED in a transaction separate from the one that ran this handler, so
+      // a crash between the two replays it. Carrying the producer's event id makes
+      // that replay re-enqueue nothing instead of sending the subscriber a second
+      // copy of an event that already went out.
+      { dedupeKey: event.eventId },
+    );
   }
 }

@@ -150,6 +150,16 @@ export const invPackages = pgTable("inv_packages", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   packageNumber: text("package_number").notNull(),
   shipmentId: integer("shipment_id").references(() => invShipments.id, { onDelete: "set null" }),
+  /**
+   * B6. Which order's goods are in the carton.
+   *
+   * A shipment does not exist until the order ships, so `shipmentId` is null for
+   * every package that is still being packed — which is the only moment the
+   * contents can be reconciled against what was picked. Attributed to the order
+   * directly, the bench can check a scan, and the queue can be read off the
+   * cartons rather than off the sales order's status.
+   */
+  soId: integer("so_id"),
   weight: decimal("weight", { precision: 18, scale: 4 }),
   dimensionsL: decimal("dimensions_l", { precision: 10, scale: 2 }),
   dimensionsW: decimal("dimensions_w", { precision: 10, scale: 2 }),
@@ -164,6 +174,7 @@ export const invPackages = pgTable("inv_packages", {
   uniqueIndex("uniq_inv_packages_org_number").on(table.orgId, table.packageNumber),
   unique("uniq_inv_packages_org_id").on(table.orgId, table.id),
   index("idx_inv_packages_org_status").on(table.orgId, table.status),
+  index("idx_inv_packages_org_so").on(table.orgId, table.soId).where(sql`${table.soId} IS NOT NULL`),
 ]);
 
 export const invPackageLines = pgTable("inv_package_lines", {

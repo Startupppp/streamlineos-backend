@@ -484,6 +484,20 @@ const INVENTORY = [
     "Adjustment approval requested",
     { defaultPriority: "HIGH", defaultChannels: IA_EMAIL },
   ),
+  /**
+   * E7. Raised when an outbound webhook has failed every attempt across the whole
+   * retry window, while it is still enabled — the warning that precedes this
+   * module disabling a customer's integration for them.
+   *
+   * Email as well as in-app, because the audience for "your integration stopped
+   * working" is not reliably looking at the product when it happens, and the
+   * whole point of the alert is that it lands before the disable does.
+   */
+  e("inventory.webhook.failing", "inventory", "INVENTORY", "Webhook delivery failing", {
+    defaultPriority: "HIGH",
+    defaultType: "WARNING",
+    defaultChannels: IA_EMAIL,
+  }),
 ];
 
 const SURVEYS = [

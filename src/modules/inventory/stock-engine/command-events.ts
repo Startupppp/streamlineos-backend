@@ -58,6 +58,15 @@ export const INVENTORY_COMMAND_EVENTS = {
   QUALITY_HOLD_RELEASED: "inventory.quality.hold.released",
   COUNT_POSTED: "inventory.count.posted",
   /**
+   * B4, item 2 — the walk is over.
+   *
+   * Emitted on the transition into COMPLETED rather than on every confirm that
+   * arrives after it, so packing hears once that a wave's goods are in totes and
+   * waiting. Keyed on the pick list, which is the aggregate: a wave spanning
+   * twelve orders is one walk finishing, not twelve.
+   */
+  PICK_COMPLETED: "inventory.pick.completed",
+  /**
    * The shipping event, under the name it has always had. Renaming it to
    * `inventory.shipment.shipped` would silently kill every webhook already
    * subscribed to it, and dual-writing both names for one shipment would

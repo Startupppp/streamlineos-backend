@@ -383,13 +383,47 @@ export class SoFulfillmentService {
       throw new BadRequestException("Sales order must be PACKED before shipping (packageRequiredForShipping is enabled)");
     }
 
-    const pickLists = await this.db.query.invPickLists.findMany({
-      where: and(
-        eq(invPickLists.orgId, orgId),
-        eq(invPickLists.soId, soId),
-      ),
-      with: { lines: true },
-    });
+    /**
+     * B4. Found through the *lines*, not through `inv_pick_lists.so_id`.
+     *
+     * A wave's header carries a null `so_id` — that is what distinguishes it
+     * from a single-order pick — so this lookup returned nothing for a
+     * wave-picked order and shipping fell through to the reservation branch,
+     * issuing from the bin the order reserved rather than the one the picker
+     * actually took the goods from. Once picking consumes its reservations
+     * (`PickConfirmService`) that branch has nothing left to read at all, and a
+     * wave-picked order could not be shipped.
+     *
+     * Every line still reaches this the same way for a single-order pick, which
+     * sets both `so_id` and `so_line_id`; cancelled pick lists are excluded, as
+     * they are everywhere else this quantity is read.
+     */
+    const pickedLines = await this.db.execute<{
+      id: number;
+      so_line_id: number;
+      product_variant_id: number;
+      location_id: number | null;
+      lot_id: number | null;
+      serial_id: number | null;
+      quantity_picked: string;
+    }>(sql`
+      SELECT pll.id,
+             pll.so_line_id,
+             pll.product_variant_id,
+             pll.location_id,
+             pll.lot_id,
+             pll.serial_id,
+             pll.quantity_picked
+        FROM inv_pick_list_lines pll
+        JOIN inv_pick_lists pl
+          ON pl.org_id = pll.org_id AND pl.id = pll.pick_list_id
+        JOIN inv_so_lines sol
+          ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
+       WHERE pll.org_id = ${orgId}
+         AND sol.so_id = ${soId}
+         AND pl.status <> 'CANCELLED'
+       ORDER BY pll.id
+    `);
 
     const reservations = await this.db.query.invStockReservations.findMany({
       where: and(
@@ -410,28 +444,33 @@ export class SoFulfillmentService {
       quantityDelta: string;
     }> = [];
 
-    if (pickLists.length > 0) {
-      for (const pickList of pickLists) {
-        for (const line of pickList.lines) {
-          const locId = line.locationId;
-          if (locId === null || locId === undefined) {
-            throw new BadRequestException(`Pick list line ${line.id} is missing a location`);
-          }
-          if (line.soLineId === null) {
-            throw new BadRequestException(`Pick list line ${line.id} is missing a sales order line`);
-          }
-          movements.push({
-            transactionType: "SALE",
-            productVariantId: line.productVariantId,
-            soLineId: line.soLineId,
-            locationId: locId,
-            lotId: line.lotId ?? undefined,
-            serialId: line.serialId ?? undefined,
-            quantityDelta: `-${line.quantityPicked}`,
-          });
+    if (pickedLines.length > 0) {
+      for (const line of pickedLines) {
+        // A line closed by an exception can hold zero, and a zero movement is
+        // refused by the ledger's non-zero CHECK rather than ignored. Nothing
+        // left that shelf, so there is nothing to issue.
+        if (Number(line.quantity_picked) === 0) continue;
+        const locId = line.location_id;
+        if (locId === null) {
+          throw new BadRequestException(`Pick list line ${line.id} is missing a location`);
         }
+        movements.push({
+          transactionType: "SALE",
+          productVariantId: Number(line.product_variant_id),
+          soLineId: Number(line.so_line_id),
+          locationId: Number(locId),
+          lotId: line.lot_id === null ? undefined : Number(line.lot_id),
+          serialId: line.serial_id === null ? undefined : Number(line.serial_id),
+          quantityDelta: `-${line.quantity_picked}`,
+        });
       }
-    } else {
+    }
+
+    // Nothing was picked: ship straight off the reservations. Keyed on the
+    // movement list rather than on the pick-list lookup, so an order whose only
+    // pick lines were closed by exceptions still reaches this rather than
+    // shipping an empty shipment.
+    if (movements.length === 0) {
       for (const line of so.lines) {
         const reservation = reservations.find((r) => r.sourceLineId === String(line.id));
         const locationId = reservation?.locationId;
@@ -561,16 +600,14 @@ export class SoFulfillmentService {
       // nothing has shipped and writes the same figure back, so the tote never
       // empties. The ordering is load-bearing now, which is exactly the kind of
       // assumption a change of mechanism invalidates in silence.
-      for (const pickList of pickLists) {
-        for (const line of pickList.lines) {
-          if (line.locationId === null) continue;
-          await this.projection.syncOutgoing(tx, orgId, {
-            productVariantId: line.productVariantId,
-            locationId: line.locationId,
-            lotId: line.lotId,
-            serialId: line.serialId,
-          });
-        }
+      for (const line of pickedLines) {
+        if (line.location_id === null) continue;
+        await this.projection.syncOutgoing(tx, orgId, {
+          productVariantId: Number(line.product_variant_id),
+          locationId: Number(line.location_id),
+          lotId: line.lot_id === null ? null : Number(line.lot_id),
+          serialId: line.serial_id === null ? null : Number(line.serial_id),
+        });
       }
 
       await OutboxWriter.emit(tx as Db, {

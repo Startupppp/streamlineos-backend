@@ -4,7 +4,7 @@ import { invIdempotencyKeys } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
-import { PickWaveService } from "../picking/pick-wave.service";
+import { PickConfirmService } from "../picking/pick-confirm.service";
 import { runIdempotent } from "../stock-engine/idempotency";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { randomUUID } from "node:crypto";
@@ -21,7 +21,7 @@ export class SyncBatchService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly engine: StockEngineService,
-    private readonly picking: PickWaveService,
+    private readonly picking: PickConfirmService,
   ) {}
 
   /**

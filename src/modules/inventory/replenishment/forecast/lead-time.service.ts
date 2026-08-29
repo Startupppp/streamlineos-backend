@@ -34,12 +34,52 @@ export interface FillRateEstimate {
   note?: string;
 }
 
+/** The most recent receipts any one estimate is built from. */
+const OBSERVATION_WINDOW = 200;
+
+/**
+ * Three receipts is not a distribution. Below that the deviation is noise and
+ * the p90 is just the slowest of a tiny sample.
+ */
+const MIN_RELIABLE_OBSERVATIONS = 3;
+
 function percentile(sorted: readonly number[], p: number): number {
   if (sorted.length === 0) return 0;
   // Nearest-rank. With a handful of observations, interpolating between two of
   // them invents precision the sample does not have.
   const rank = Math.ceil(p * sorted.length);
   return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))]!;
+}
+
+function estimateFrom(vendorId: number, days: readonly number[]): LeadTimeEstimate {
+  if (days.length === 0) {
+    return {
+      vendorId,
+      observations: 0,
+      meanDays: 0,
+      stdDevDays: 0,
+      p50Days: 0,
+      p90Days: 0,
+      reliable: false,
+      note: "No receipts on record for this vendor. Any lead time used for planning is a configured assumption, not a measurement.",
+    };
+  }
+
+  const sorted = [...days].sort((a, b) => a - b);
+  const stats = summarise(sorted);
+  return {
+    vendorId,
+    observations: sorted.length,
+    meanDays: stats.mean,
+    stdDevDays: stats.stdDev,
+    p50Days: percentile(sorted, 0.5),
+    p90Days: percentile(sorted, 0.9),
+    reliable: sorted.length >= MIN_RELIABLE_OBSERVATIONS,
+    note:
+      sorted.length < MIN_RELIABLE_OBSERVATIONS
+        ? `Only ${sorted.length} receipt(s); the spread here is noise rather than a measured distribution.`
+        : undefined,
+  };
 }
 
 /**
@@ -49,58 +89,107 @@ function percentile(sorted: readonly number[], p: number): number {
  * A vendor record's lead time is a promise; the receipts are the evidence, and
  * planning against the promise is how a warehouse discovers its supplier is
  * three days slower than the contract only when it stocks out.
+ *
+ * C4 made this the only place a lead-time observation is defined. There were
+ * three derivations of the same idea: this one, a per-variant copy inside
+ * `SafetyStockPolicyService`, and a third inside the vendor scorecard that
+ * measured from `sent_at` to the first receipt rather than from the order date,
+ * so the scorecard and the lead-time report answered the same question with
+ * different numbers. One observation, one definition:
+ *
+ *   an observation is `received_date - order_date`, in days, on a receipt that
+ *   was not abandoned.
+ *
+ * A CANCELLED receipt is excluded because it is not a delivery — the row is
+ * kept as a record of a delivery somebody walked away from. Everything short of
+ * POSTED *is* counted: the goods physically arrived, and gating on POSTED would
+ * make a supplier's measured lead time depend on how fast our own warehouse
+ * does its paperwork.
  */
 @Injectable()
 export class LeadTimeService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async vendorLeadTime(orgId: string, vendorId: number): Promise<LeadTimeEstimate> {
+    const byVendor = await this.vendorLeadTimes(orgId, [vendorId]);
+    return byVendor.get(vendorId) ?? estimateFrom(vendorId, []);
+  }
+
+  /**
+   * Every vendor's lead time in one round trip.
+   *
+   * The scorecard reads this for a page of vendors at a time, and calling
+   * `vendorLeadTime` in a loop is the N+1 that shape invites. The window is
+   * applied per vendor inside the query, so one slow supplier with a thousand
+   * receipts cannot crowd another out of its own sample.
+   */
+  async vendorLeadTimes(
+    orgId: string,
+    vendorIds: readonly number[],
+  ): Promise<Map<number, LeadTimeEstimate>> {
+    const byVendor = new Map<number, LeadTimeEstimate>();
+    if (vendorIds.length === 0) return byVendor;
+
+    const ids = sql.join(
+      vendorIds.map((id) => sql`${id}`),
+      sql`, `,
+    );
+    const rows = await this.db.execute<{ vendor_id: number; days: string }>(sql`
+      SELECT vendor_id, days
+      FROM (
+        SELECT po.vendor_id AS vendor_id,
+               EXTRACT(EPOCH FROM (g.received_date::timestamp - po.order_date::timestamp)) / 86400
+                 AS days,
+               ROW_NUMBER() OVER (
+                 PARTITION BY po.vendor_id ORDER BY g.received_date DESC, g.id DESC
+               ) AS recency
+        FROM inv_grns g
+        JOIN inv_purchase_orders po ON po.org_id = g.org_id AND po.id = g.po_id
+        WHERE g.org_id = ${orgId}
+          AND po.vendor_id = ANY(ARRAY[${ids}]::int[])
+          AND g.status <> 'CANCELLED'
+          AND g.received_date >= po.order_date
+      ) observed
+      WHERE recency <= ${OBSERVATION_WINDOW}
+    `);
+
+    const daysByVendor = new Map<number, number[]>();
+    for (const row of rows) {
+      const days = Number(row.days);
+      if (!Number.isFinite(days) || days < 0) continue;
+      const bucket = daysByVendor.get(Number(row.vendor_id));
+      if (bucket) bucket.push(days);
+      else daysByVendor.set(Number(row.vendor_id), [days]);
+    }
+
+    for (const vendorId of vendorIds)
+      byVendor.set(vendorId, estimateFrom(vendorId, daysByVendor.get(vendorId) ?? []));
+
+    return byVendor;
+  }
+
+  /**
+   * The same observation, grouped by what was bought rather than by who sold
+   * it. Safety stock needs the spread of lead times for one SKU across every
+   * supplier that ships it, which is a different sample from any one vendor's.
+   * It is the same definition of an observation, which is why it lives here.
+   */
+  async variantLeadTimeDays(orgId: string, productVariantId: number): Promise<number[]> {
     const rows = await this.db.execute<{ days: string }>(sql`
       SELECT EXTRACT(EPOCH FROM (g.received_date::timestamp - po.order_date::timestamp)) / 86400
              AS days
-      FROM inv_grns g
-      JOIN inv_purchase_orders po ON po.org_id = g.org_id AND po.id = g.po_id
-      WHERE g.org_id = ${orgId}
-        AND po.vendor_id = ${vendorId}
+      FROM inv_grn_lines gl
+      JOIN inv_grns g ON g.org_id = gl.org_id AND g.id = gl.grn_id
+      JOIN inv_po_lines pol ON pol.org_id = gl.org_id AND pol.id = gl.po_line_id
+      JOIN inv_purchase_orders po ON po.org_id = pol.org_id AND po.id = pol.po_id
+      WHERE gl.org_id = ${orgId}
+        AND pol.product_variant_id = ${productVariantId}
+        AND g.status <> 'CANCELLED'
         AND g.received_date >= po.order_date
       ORDER BY g.received_date DESC
-      LIMIT 200
+      LIMIT 50
     `);
-
-    const days = rows
-      .map((r) => Number(r.days))
-      .filter((d) => Number.isFinite(d) && d >= 0)
-      .sort((a, b) => a - b);
-
-    if (days.length === 0) {
-      return {
-        vendorId,
-        observations: 0,
-        meanDays: 0,
-        stdDevDays: 0,
-        p50Days: 0,
-        p90Days: 0,
-        reliable: false,
-        note: "No receipts on record for this vendor. Any lead time used for planning is a configured assumption, not a measurement.",
-      };
-    }
-
-    const stats = summarise(days);
-    return {
-      vendorId,
-      observations: days.length,
-      meanDays: stats.mean,
-      stdDevDays: stats.stdDev,
-      p50Days: percentile(days, 0.5),
-      p90Days: percentile(days, 0.9),
-      // Three receipts is not a distribution. Below that the deviation is
-      // noise and the p90 is just the slowest of a tiny sample.
-      reliable: days.length >= 3,
-      note:
-        days.length < 3
-          ? `Only ${days.length} receipt(s); the spread here is noise rather than a measured distribution.`
-          : undefined,
-    };
+    return rows.map((r) => Number(r.days)).filter((d) => Number.isFinite(d) && d >= 0);
   }
 
   /**
@@ -111,6 +200,10 @@ export class LeadTimeService {
    * short one item is a short order. Unit fill rate is what the warehouse
    * moved. A month where 99% of units shipped but 40% of orders were incomplete
    * is a bad month, and only the line rate says so.
+   *
+   * This is the *customer* fill rate: did we meet demand. The supplier fill
+   * rate — did the vendor ship what we ordered — is a different measurement over
+   * purchase order lines and lives on the vendor scorecard.
    */
   async fillRate(
     orgId: string,

@@ -2206,6 +2206,48 @@
       "when": 1788134400000,
       "tag": "0534_grn_receiving_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 316,
+      "version": "7",
+      "when": 1788134401000,
+      "tag": "0535_pick_wave_assignment",
+      "breakpoints": true
+    },
+    {
+      "idx": 317,
+      "version": "7",
+      "when": 1788134402000,
+      "tag": "0536_putaway_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 318,
+      "version": "7",
+      "when": 1788134403000,
+      "tag": "0537_return_approval",
+      "breakpoints": true
+    },
+    {
+      "idx": 319,
+      "version": "7",
+      "when": 1788134404000,
+      "tag": "0538_inventory_webhook_delivery_durability",
+      "breakpoints": true
+    },
+    {
+      "idx": 320,
+      "version": "7",
+      "when": 1788134405000,
+      "tag": "0539_inventory_audit_export",
+      "breakpoints": true
+    },
+    {
+      "idx": 321,
+      "version": "7",
+      "when": 1788134406000,
+      "tag": "0540_package_sales_order_link",
+      "breakpoints": true
     }
   ]
 }

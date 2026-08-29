@@ -18,9 +18,11 @@ import { InvQualityModule } from "./quality/inv-quality.module";
 import { InvShipmentsModule } from "./shipments/inv-shipments.module";
 import { InvChannelsModule } from "./channels/inv-channels.module";
 import { InvImportExportModule } from "./import-export/inv-import-export.module";
+import { InvAuditExportModule } from "./audit-export/inv-audit-export.module";
 import { InvWebhooksModule } from "./webhooks/inv-webhooks.module";
 import { InvSettingsModule } from "./settings/inv-settings.module";
 import { InvPickingModule } from "./picking/inv-picking.module";
+import { InvPutawayModule } from "./putaway/inv-putaway.module";
 import { InvSyncModule } from "./sync/inv-sync.module";
 
 const INVENTORY_MODULES = [
@@ -43,9 +45,11 @@ const INVENTORY_MODULES = [
   InvShipmentsModule,
   InvChannelsModule,
   InvImportExportModule,
+  InvAuditExportModule,
   InvWebhooksModule,
   InvSettingsModule,
   InvPickingModule,
+  InvPutawayModule,
   InvSyncModule,
 ];
 

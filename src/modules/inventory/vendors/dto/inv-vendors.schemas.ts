@@ -9,6 +9,13 @@ export const listVendorsSchema = z.object({
 }).strict();
 export type ListVendorsInput = z.infer<typeof listVendorsSchema>;
 
+/** C4 — the drill-through behind the scorecard's rates. Capped like every list. */
+export const vendorDeliveriesSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+}).strict();
+export type VendorDeliveriesInput = z.infer<typeof vendorDeliveriesSchema>;
+
 export const createVendorSchema = z.object({
   name: z.string().trim().min(1).max(255),
   code: z.string().trim().min(1).max(50).optional(),

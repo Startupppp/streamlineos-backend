@@ -26,6 +26,9 @@ export type ListPackagesQueryInput = z.infer<typeof listPackagesQuerySchema>;
 
 export const createPackageSchema = z.object({
   shipmentId: z.number().int().optional(),
+  /** B6. Which order's goods go in the carton; a shipment does not exist yet. */
+  soId: z.number().int().positive().optional(),
+  cartonTypeId: z.number().int().positive().optional(),
   weight: z.string().optional(),
   dimensionsL: z.string().optional(),
   dimensionsW: z.string().optional(),
@@ -38,6 +41,42 @@ export const createPackageSchema = z.object({
   }).strict()).optional().default([]),
 }).strict();
 export type CreatePackageInput = z.infer<typeof createPackageSchema>;
+
+/**
+ * B6 — one scan at the packing bench.
+ *
+ * `scannedPayload` is the raw thing the wedge read, resolved the way picking
+ * resolves it; `productVariantId` is the keyboard fallback for a label that will
+ * not read. One or the other, never neither — a scan endpoint that accepts an
+ * empty body is a button that adds a unit nobody scanned.
+ */
+export const scanIntoPackageSchema = z.object({
+  scannedPayload: z.string().min(1).max(500).optional(),
+  productVariantId: z.number().int().positive().optional(),
+  quantity: z.string().regex(/^\d+(\.\d+)?$/).optional().default("1"),
+}).strict().refine(
+  (v) => v.scannedPayload !== undefined || v.productVariantId !== undefined,
+  { message: "Provide a scannedPayload or a productVariantId" },
+);
+export type ScanIntoPackageInput = z.infer<typeof scanIntoPackageSchema>;
+
+/**
+ * The carton is named at close rather than at create because the packer knows
+ * which box the goods went into only once they are in it. Recorded on the
+ * package so a closed parcel can be re-checked, and refused when the contents
+ * demonstrably do not fit.
+ */
+export const closePackageSchema = z.object({
+  cartonTypeId: z.number().int().positive().optional(),
+}).strict().optional().default({});
+export type ClosePackageInput = z.infer<typeof closePackageSchema>;
+
+export const packingQueueQuerySchema = z.object({
+  warehouseId: z.coerce.number().int().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+}).strict();
+export type PackingQueueQueryInput = z.infer<typeof packingQueueQuerySchema>;
 
 export const updatePackageLinesSchema = z.object({
   lines: z.array(z.object({

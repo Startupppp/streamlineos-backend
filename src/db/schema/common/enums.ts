@@ -175,7 +175,15 @@ export const invGrnDiscrepancyEnum = pgEnum("inv_grn_discrepancy", [
   "WRONG_ITEM",
 ]);
 export const invAdjustmentStatusEnum = pgEnum("inv_adjustment_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "PENDING_POST", "POSTED", "CANCELLED"]);
-export const invReturnStatusEnum = pgEnum("inv_return_status", ["DRAFT", "POSTED", "CANCELLED"]);
+/**
+ * B9. `APPROVED` sits between the draft and the ledger.
+ *
+ * A return used to go from DRAFT straight to POSTED, so the act of moving stock
+ * and the act of agreeing to move it were the same click. The inspection
+ * recorded by INV-209 had nobody signing it off, and a cancellation had exactly
+ * one moment it could happen in.
+ */
+export const invReturnStatusEnum = pgEnum("inv_return_status", ["DRAFT", "APPROVED", "POSTED", "CANCELLED"]);
 
 export const appInstallStatusEnum = pgEnum("app_install_status", [
   "TRIALING",
@@ -381,7 +389,16 @@ export const invSerialStatusEnum = pgEnum("inv_serial_status", ["IN_STOCK", "RES
 export const invBarcodeTypeEnum = pgEnum("inv_barcode_type", ["GTIN", "EAN13", "UPC", "CODE128", "QR", "OTHER"]);
 export const invReasonCategoryEnum = pgEnum("inv_reason_category", ["ADJUSTMENT", "COUNT", "SCRAP", "RETURN", "TRANSFER", "OTHER"]);
 export const invVendorReturnReasonEnum = pgEnum("inv_vendor_return_reason", ["DAMAGED", "WRONG_ITEM", "EXCESS", "EXPIRED", "QUALITY_REJECTED"]);
-export const invCustomerReturnDispositionEnum = pgEnum("inv_customer_return_disposition", ["RESTOCK", "QUARANTINE", "SCRAP"]);
+/**
+ * B9. `RETURN_TO_VENDOR` is the fourth answer an inspector can give.
+ *
+ * The goods are faulty but they are the supplier's fault, so they arrive, they
+ * are not sellable, and they are not written off either — they wait for a vendor
+ * RMA to take them away. Modelled as `BLOCKED` stock rather than a status flag:
+ * they are physically on the shelf, and availability already subtracts
+ * `blocked_qty`.
+ */
+export const invCustomerReturnDispositionEnum = pgEnum("inv_customer_return_disposition", ["RESTOCK", "QUARANTINE", "SCRAP", "RETURN_TO_VENDOR"]);
 /** INV-205. Why a pick line did not close the way it was asked to. */
 export const invPickExceptionEnum = pgEnum("inv_pick_exception", [
   "SHORT",
@@ -391,6 +408,17 @@ export const invPickExceptionEnum = pgEnum("inv_pick_exception", [
 ]);
 
 export const invPickListStatusEnum = pgEnum("inv_pick_list_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]);
+/** B3. Where a putaway task is between the receiving dock and the shelf. */
+export const invPutawayStatusEnum = pgEnum("inv_putaway_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]);
+/**
+ * B3. Where a putaway line is allowed to end up.
+ *
+ * `STORAGE` is the ordinary case and the destination is the operator's, chosen
+ * from the suggestions. `QUARANTINE` is not a preference: it is set from the
+ * quality state of the goods, and the destination is the warehouse's quarantine
+ * location whatever the operator scans.
+ */
+export const invPutawayDispositionEnum = pgEnum("inv_putaway_disposition", ["STORAGE", "QUARANTINE"]);
 export const invCycleCountStatusEnum = pgEnum("inv_cycle_count_status", ["PLANNED", "COUNTING", "REVIEW", "POSTED", "CANCELLED"]);
 export const invQualityInspectionStatusEnum = pgEnum("inv_quality_inspection_status", ["PENDING", "IN_PROGRESS", "PASSED", "FAILED", "DISPOSITION_REQUIRED", "COMPLETED", "CANCELLED"]);
 export const invQualityHoldStatusEnum = pgEnum("inv_quality_hold_status", ["ACTIVE", "RELEASED"]);

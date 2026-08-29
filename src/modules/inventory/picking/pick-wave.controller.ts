@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -17,12 +18,17 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PickWaveService } from "./pick-wave.service";
+import { PickConfirmService } from "./pick-confirm.service";
 import {
   confirmPickSchema,
   createWaveSchema,
+  listWavesSchema,
+  reassignWaveSchema,
   reportPickExceptionSchema,
   type ConfirmPickInput,
   type CreateWaveInput,
+  type ListWavesInput,
+  type ReassignWaveInput,
   type ReportPickExceptionInput,
 } from "./dto/picking.schemas";
 
@@ -30,7 +36,10 @@ import {
 @Controller("inventory/picking")
 @UseGuards(JwtAuthGuard, ModuleGuard)
 export class PickWaveController {
-  constructor(private readonly waves: PickWaveService) {}
+  constructor(
+    private readonly waves: PickWaveService,
+    private readonly picks: PickConfirmService,
+  ) {}
 
   @Post("waves")
   @UseGuards(PermissionGuard)
@@ -40,6 +49,17 @@ export class PickWaveController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.waves.createWave(u.orgId, u.userId, body);
+  }
+
+  /** B4, item 5. The workbench queue: waves waiting, and waves this picker holds. */
+  @Get("waves")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:read")
+  listWaves(
+    @Query(new ZodValidationPipe(listWavesSchema)) query: ListWavesInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.waves.listWaves(u.orgId, u.userId, query);
   }
 
   @Get("waves/:pickListId")
@@ -52,6 +72,44 @@ export class PickWaveController {
     return this.waves.getWave(u.orgId, u.userId, pickListId);
   }
 
+  /**
+   * B4, item 3. Claim, abandon and reassign take no idempotency key on purpose:
+   * each is a single conditional update against the current assignment, so a
+   * repeat is the same state rather than a second effect. A key would imply a
+   * fence these do not need, and an unused key is worse than none because the
+   * client believes it is protected.
+   */
+  @Post("waves/:pickListId/claim")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:ship")
+  claimWave(
+    @Param("pickListId", ParseIntPipe) pickListId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.waves.claimWave(u.orgId, u.userId, pickListId);
+  }
+
+  @Post("waves/:pickListId/abandon")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:ship")
+  abandonWave(
+    @Param("pickListId", ParseIntPipe) pickListId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.waves.abandonWave(u.orgId, u.userId, pickListId);
+  }
+
+  @Post("waves/:pickListId/reassign")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:ship")
+  reassignWave(
+    @Param("pickListId", ParseIntPipe) pickListId: number,
+    @Body(new ZodValidationPipe(reassignWaveSchema)) body: ReassignWaveInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.waves.reassignWave(u.orgId, u.userId, pickListId, body);
+  }
+
   @Post("waves/:pickListId/confirm")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
@@ -61,7 +119,7 @@ export class PickWaveController {
     @Body(new ZodValidationPipe(confirmPickSchema)) body: ConfirmPickInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.waves.confirmPick(u.orgId, u.userId, pickListId, body, idempotencyKey);
+    return this.picks.confirmPick(u.orgId, u.userId, pickListId, body, idempotencyKey);
   }
 
   /**
@@ -78,6 +136,6 @@ export class PickWaveController {
     @Body(new ZodValidationPipe(reportPickExceptionSchema)) body: ReportPickExceptionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.waves.reportException(u.orgId, u.userId, pickListId, body, idempotencyKey);
+    return this.picks.reportException(u.orgId, u.userId, pickListId, body, idempotencyKey);
   }
 }

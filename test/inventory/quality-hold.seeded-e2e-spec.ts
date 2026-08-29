@@ -381,6 +381,11 @@ describe("[seeded-e2e] quality holds and the availability formula", () => {
         );
       }
 
+      // B9. The ledger moves on an approval, not on a draft.
+      await asTenant(() =>
+        returns.approve(scene.orgId, returnId, scene.userId, {}),
+      );
+
       await asTenant(() =>
         returns.post(
           scene.orgId,
@@ -587,6 +592,11 @@ describe("[seeded-e2e] quality holds and the availability formula", () => {
           }),
         );
       }
+
+      // B9. The ledger moves on an approval, not on a draft.
+      await asTenant(() =>
+        returns.approve(scene.orgId, returnId, scene.userId, {}),
+      );
 
       await asTenant(() =>
         returns.post(

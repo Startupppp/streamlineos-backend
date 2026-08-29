@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, bigint, date, boolean, jsonb, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   invReservationStrategyEnum, invCostingMethodEnum, invExpiryPolicyEnum,
@@ -179,6 +179,23 @@ export const invWebhooks = pgTable("inv_webhooks", {
   isActive: boolean("is_active").default(true).notNull(),
   lastDeliveryAt: timestamp("last_delivery_at"),
   lastDeliveryStatus: text("last_delivery_status"),
+  /**
+   * E7. Health of the endpoint, in *dead-lettered events* rather than in failed
+   * attempts: one dead letter already means this URL refused every attempt over
+   * the whole retry window, so counting attempts would disable a subscriber for a
+   * single bad afternoon.
+   *
+   * `alertedAt` is what makes "alert before disable" a property of the data and
+   * not of the order two statements happen to run in — it is stamped at the alert
+   * threshold and the disable threshold is strictly higher, so a webhook can never
+   * be disabled without an alert row already existing. All three reset on the next
+   * successful delivery.
+   */
+  consecutiveFailures: integer("consecutive_failures").default(0).notNull(),
+  failingSince: timestamp("failing_since"),
+  alertedAt: timestamp("alerted_at"),
+  disabledAt: timestamp("disabled_at"),
+  disabledReason: text("disabled_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -192,13 +209,47 @@ export const invWebhookEvents = pgTable("inv_webhook_events", {
   webhookId: integer("webhook_id").references(() => invWebhooks.id, { onDelete: "set null" }),
   eventType: text("event_type").notNull(),
   payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  /**
+   * E7. `status` carries three meanings and no fourth was added, because the
+   * `inv_webhook_event_status` pgEnum is also the frontend's union and a new label
+   * cannot be used in the transaction that adds it (drizzle runs every pending
+   * migration in one):
+   *
+   *   PENDING   — queued or between retries; `nextAttemptAt` says when it is due
+   *   DELIVERED — a 2xx was received
+   *   FAILED    — terminal. `deadLetteredAt` is set and no worker will pick it up
+   *
+   * So "is it dead-lettered" is `deadLetteredAt is not null`, never a status probe.
+   */
   status: invWebhookEventStatusEnum("status").default("PENDING").notNull(),
   attempts: integer("attempts").default(0).notNull(),
   deliveredAt: timestamp("delivered_at"),
+  /**
+   * The producing outbox event id. Delivery is at-least-once by construction — the
+   * publisher marks an outbox row DELIVERED in a transaction separate from the one
+   * that ran the consumer — so a crash in between replays the emit. Unique per
+   * (org, webhook), this turns that replay into a no-op instead of a second
+   * customer-visible webhook.
+   */
+  dedupeKey: text("dedupe_key"),
+  nextAttemptAt: timestamp("next_attempt_at"),
+  leaseExpiresAt: timestamp("lease_expires_at"),
+  lastAttemptAt: timestamp("last_attempt_at"),
+  lastError: text("last_error"),
+  deadLetteredAt: timestamp("dead_lettered_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_inv_webhook_events_org_id").on(table.orgId, table.id),
   index("idx_inv_whe_org_status").on(table.orgId, table.status),
+  uniqueIndex("uniq_inv_whe_org_webhook_dedupe")
+    .on(table.orgId, table.webhookId, table.dedupeKey)
+    .where(sql`dedupe_key is not null`),
+  index("idx_inv_whe_due")
+    .on(table.orgId, table.nextAttemptAt)
+    .where(sql`status = 'PENDING'`),
+  index("idx_inv_whe_dead")
+    .on(table.orgId, table.deadLetteredAt)
+    .where(sql`dead_lettered_at is not null`),
 ]);
 
 export const invAuditEvents = pgTable("inv_audit_events", {
@@ -275,4 +326,54 @@ export const invWebhookEventsRelations = relations(invWebhookEvents, ({ one }) =
 export const invAuditEventsRelations = relations(invAuditEvents, ({ one }) => ({
   organization: one(organizations, { fields: [invAuditEvents.orgId], references: [organizations.id] }),
   actor: one(users, { fields: [invAuditEvents.actorUserId], references: [users.id] }),
+}));
+
+/**
+ * D7. A taken audit export, as a manifest rather than a blob.
+ *
+ * The body is never stored: it is a deterministic function of the pinned
+ * evidence version, the resolved warehouse scope and the date filters, all of
+ * which are columns here, so `download` re-derives byte-identical output on
+ * demand and an organisation's whole ledger never has to fit in a text column
+ * the way `inv_export_jobs.result_url` requires.
+ *
+ * `pinned_xmax` is the transaction id boundary observed when the ceilings were
+ * read. `serial` hands out ids before commit, so a lower id can still commit
+ * after a higher one is visible; until `pg_snapshot_xmin(pg_current_snapshot())`
+ * has passed this value, the set of rows at or below the ceilings can still
+ * grow and no checksum over it would be reproducible.
+ */
+export const invAuditExportJobs = pgTable("inv_audit_export_jobs", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  status: invJobStatusEnum("status").default("PENDING").notNull(),
+  schemaVersion: integer("schema_version").notNull(),
+  evidenceVersion: text("evidence_version").notNull(),
+  ledgerCeilingId: integer("ledger_ceiling_id").notNull(),
+  auditCeilingId: integer("audit_ceiling_id").notNull(),
+  pinnedXmax: decimal("pinned_xmax", { precision: 20, scale: 0 }).notNull(),
+  /** `null` means the creator held the org-wide warehouse scope. */
+  scopeWarehouseIds: jsonb("scope_warehouse_ids").$type<number[]>(),
+  sections: jsonb("sections").$type<string[]>().notNull(),
+  filterFrom: date("filter_from"),
+  filterTo: date("filter_to"),
+  ledgerRowCount: integer("ledger_row_count"),
+  auditRowCount: integer("audit_row_count"),
+  /** Lowercase hex SHA-256 of the whole document, set once the job completes. */
+  checksum: text("checksum"),
+  byteLength: bigint("byte_length", { mode: "number" }),
+  settledAt: timestamp("settled_at"),
+  failureReason: text("failure_reason"),
+  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  unique("uniq_inv_audit_export_jobs_org_id").on(table.orgId, table.id),
+  index("idx_inv_audit_export_jobs_org_created").on(table.orgId, table.createdAt),
+  index("idx_inv_audit_export_jobs_org_status").on(table.orgId, table.status),
+]);
+
+export const invAuditExportJobsRelations = relations(invAuditExportJobs, ({ one }) => ({
+  organization: one(organizations, { fields: [invAuditExportJobs.orgId], references: [organizations.id] }),
+  creator: one(users, { fields: [invAuditExportJobs.createdBy], references: [users.id] }),
 }));

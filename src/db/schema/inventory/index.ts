@@ -6,6 +6,7 @@ export * from "./sales-orders";
 export * from "./reservations";
 export * from "./traceability";
 export * from "./operations";
+export * from "./putaway";
 export * from "./valuation";
 export * from "./quality";
 export * from "./shipping";

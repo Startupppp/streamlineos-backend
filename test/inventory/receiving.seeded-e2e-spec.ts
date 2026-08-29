@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
@@ -32,6 +32,10 @@ interface Scene {
   orgId: string;
   userId: string;
   variantId: number;
+  /** A LOT-tracked SKU, for the expiry gate. */
+  lotVariantId: number;
+  /** A unit of twelve on the plain SKU, for the conversion snapshot. */
+  caseUomId: number;
   warehouseId: number;
   locationId: number;
   vendorId: number;
@@ -46,7 +50,7 @@ describe("[seeded-e2e] goods receipt discrepancies and exact quantities", () => 
     runInNewTenantTransaction(app.app.get<Db>(DRIZZLE), scene.orgId, work);
 
   /** A sent order for `ordered` units, and the id of its single line. */
-  async function sentOrder(ordered: number) {
+  async function sentOrder(ordered: number, variantId?: number) {
     const po = await asTenant(() =>
       app.app.get(PoService).createPo(scene.orgId, scene.userId, {
         vendorId: scene.vendorId,
@@ -55,7 +59,7 @@ describe("[seeded-e2e] goods receipt discrepancies and exact quantities", () => 
         currency: "INR",
         lines: [
           {
-            productVariantId: scene.variantId,
+            productVariantId: variantId ?? scene.variantId,
             quantity: ordered,
             unitCost: "10.0000",
             taxRate: "0",
@@ -136,10 +140,28 @@ describe("[seeded-e2e] goods receipt discrepancies and exact quantities", () => 
       const vendor = await one<{ id: number }>(sql`
         INSERT INTO inv_vendors (org_id, name, code, created_by)
         VALUES (${seeded.orgId}, 'Perf vendor', ${`VN${tag}`}, ${userId}) RETURNING id`);
+
+      const lotProduct = await one<{ id: number }>(sql`
+        INSERT INTO inv_products (org_id, uom_id, name, sku, tracking_method, created_by)
+        VALUES (${seeded.orgId}, ${uom.id}, 'Batched goods', ${`LT-${tag}`}, 'LOT', ${userId})
+        RETURNING id`);
+      const lotVariant = await one<{ id: number }>(sql`
+        INSERT INTO inv_product_variants (org_id, product_id, name, sku)
+        VALUES (${seeded.orgId}, ${lotProduct.id}, 'Default', ${`LT-${tag}-V`}) RETURNING id`);
+
+      const caseUom = await one<{ id: number }>(sql`
+        INSERT INTO inv_uom (org_id, name, abbreviation, is_base)
+        VALUES (${seeded.orgId}, ${`Case ${tag}`}, ${`C${tag}`}, false) RETURNING id`);
+      await db.execute(sql`
+        INSERT INTO inv_product_uom_conversions (org_id, product_id, uom_id, factor_to_base)
+        VALUES (${seeded.orgId}, ${product.id}, ${caseUom.id}, '12.00000000')`);
+
       return {
         orgId: seeded.orgId,
         userId,
         variantId: variant.id,
+        lotVariantId: lotVariant.id,
+        caseUomId: caseUom.id,
         warehouseId: warehouse.id,
         locationId: location.id,
         vendorId: vendor.id,
@@ -450,6 +472,11 @@ describe("[seeded-e2e] goods receipt discrepancies and exact quantities", () => 
       );
       const returnId = (created as { id: number }).id;
 
+      // B9. The ledger moves on an approval, not on a draft.
+      await asTenant(() =>
+        returns.approve(scene.orgId, returnId, scene.userId, {}),
+      );
+
       await asTenant(() =>
         returns.post(
           scene.orgId,
@@ -471,7 +498,8 @@ describe("[seeded-e2e] goods receipt discrepancies and exact quantities", () => 
       expect(events[0]!.payload.poId).toBe(poId);
       expect(events[0]!.payload.lineCount).toBe(1);
 
-      // A second post of a POSTED return short-circuits before the transaction.
+      // B9. A second post of a POSTED return short-circuits under the row lock,
+      // announcing nothing.
       await asTenant(() =>
         returns.post(
           scene.orgId,
@@ -484,6 +512,281 @@ describe("[seeded-e2e] goods receipt discrepancies and exact quantities", () => 
       expect(
         await eventsFor(INVENTORY_COMMAND_EVENTS.RETURN_POSTED, String(returnId)),
       ).toHaveLength(1);
+    });
+  });
+
+  /**
+   * B1 — a goods receipt has a life before it posts stock.
+   *
+   * `inv_grns` had no status column at all, so recording a delivery and posting
+   * it to the ledger were one act: there was nowhere to put a pallet that had
+   * arrived and not been counted, and no moment between "it is on the dock" and
+   * "it is stock" in which anybody could look at it. These probes are the
+   * difference: a draft that moves nothing, a post that moves everything at
+   * once, and a retry that moves it once.
+   */
+  describe("a delivery counted before it is posted", () => {
+    const grns = () => app.app.get(GrnService);
+
+    const draftFor = (poId: number, lines: Array<Record<string, unknown>>, at = "2026-08-02") =>
+      asTenant(() =>
+        grns().createDraft(scene.orgId, scene.userId, `grn-draft-${randomUUID()}`, {
+          poId,
+          receivedDate: at,
+          locationId: scene.locationId,
+          lines,
+        } as never),
+      ) as Promise<{ id: number; status: string }>;
+
+    const post = (grnId: number, key: string) =>
+      asTenant(() => grns().postGrn(scene.orgId, grnId, scene.userId, key)) as Promise<{
+        id: number;
+        status: string;
+      }>;
+
+    const ledgerRows = async (variantId: number) => {
+      const [row] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM inv_stock_transactions
+          WHERE org_id = ${scene.orgId} AND product_variant_id = ${variantId}`),
+      );
+      return row!.n;
+    };
+
+    const receivedOnLine = async (poLineId: number) => {
+      const [row] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ quantity_received: string }>(sql`
+          SELECT quantity_received FROM inv_po_lines
+          WHERE org_id = ${scene.orgId} AND id = ${poLineId}`),
+      );
+      return row!.quantity_received;
+    };
+
+    it("leaves the ledger untouched until it posts, then moves stock once", async () => {
+      const { poId, poLineId } = await sentOrder(60);
+      const before = await ledgerRows(scene.variantId);
+
+      const draft = await draftFor(poId, [
+        { poLineId, quantityReceived: "25.0000", qualityStatus: "ACCEPTED" },
+      ]);
+      expect(draft.status).toBe("DRAFT");
+      // The whole point: a recorded delivery that has moved nothing. The
+      // purchase order has not been credited either — goods nobody has accepted
+      // are still owed by the supplier.
+      expect(await ledgerRows(scene.variantId)).toBe(before);
+      expect(await receivedOnLine(poLineId)).toBe("0.0000");
+
+      const counting = await asTenant(() =>
+        grns().startCounting(scene.orgId, draft.id, scene.userId),
+      );
+      expect((counting as { status: string }).status).toBe("COUNTING");
+      expect(await ledgerRows(scene.variantId)).toBe(before);
+
+      const reviewing = await asTenant(() =>
+        grns().submitForQualityReview(scene.orgId, draft.id, scene.userId),
+      );
+      expect((reviewing as { status: string }).status).toBe("QUALITY_REVIEW");
+      expect(await ledgerRows(scene.variantId)).toBe(before);
+
+      const key = `grn-post-${randomUUID()}`;
+      const posted = await post(draft.id, key);
+      expect(posted.status).toBe("POSTED");
+      expect(posted.id).toBe(draft.id);
+      expect(await ledgerRows(scene.variantId)).toBe(before + 1);
+      expect(await receivedOnLine(poLineId)).toBe("25.0000");
+
+      // The retry. One movement, one credited quantity, and the same document —
+      // the claim spans the whole post, not the engine call inside it.
+      const replayed = await post(draft.id, key);
+      expect(replayed.id).toBe(draft.id);
+      expect(await ledgerRows(scene.variantId)).toBe(before + 1);
+      expect(await receivedOnLine(poLineId)).toBe("25.0000");
+    });
+
+    it("refuses a second post under a fresh key", async () => {
+      // The idempotency claim answers a retry. It cannot answer a *different*
+      // request that happens to post the same receipt, which is what a second
+      // operator clicking Post looks like — that is the status predicate's job.
+      const { poId, poLineId } = await sentOrder(20);
+      const draft = await draftFor(poId, [
+        { poLineId, quantityReceived: "20.0000", qualityStatus: "ACCEPTED" },
+      ]);
+      await post(draft.id, `grn-post-${randomUUID()}`);
+
+      await expect(post(draft.id, `grn-post-${randomUUID()}`)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(await receivedOnLine(poLineId)).toBe("20.0000");
+    });
+
+    it("keeps a cancelled receipt out of the ledger for good", async () => {
+      const { poId, poLineId } = await sentOrder(15);
+      const before = await ledgerRows(scene.variantId);
+      const draft = await draftFor(poId, [
+        { poLineId, quantityReceived: "15.0000", qualityStatus: "ACCEPTED" },
+      ]);
+
+      const cancelled = await asTenant(() =>
+        grns().cancelGrn(scene.orgId, draft.id, scene.userId, { reason: "Truck sent back" } as never),
+      );
+      expect((cancelled as { status: string }).status).toBe("CANCELLED");
+
+      await expect(post(draft.id, `grn-post-${randomUUID()}`)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(await ledgerRows(scene.variantId)).toBe(before);
+      expect(await receivedOnLine(poLineId)).toBe("0.0000");
+    });
+
+    it("recounts an open receipt without touching stock", async () => {
+      const { poId, poLineId } = await sentOrder(30);
+      const before = await ledgerRows(scene.variantId);
+      const draft = await draftFor(poId, [
+        { poLineId, quantityReceived: "30.0000", qualityStatus: "ACCEPTED" },
+      ]);
+
+      // What actually came off the truck was 28, and the receiver says why.
+      await asTenant(() =>
+        grns().updateDraft(scene.orgId, draft.id, scene.userId, {
+          lines: [
+            {
+              poLineId,
+              quantityReceived: "28.0000",
+              qualityStatus: "ACCEPTED",
+              discrepancyReason: "SHORT",
+            },
+          ],
+        } as never),
+      );
+      expect(await ledgerRows(scene.variantId)).toBe(before);
+
+      await post(draft.id, `grn-post-${randomUUID()}`);
+      const [grnLine] = await grnLinesFor(poLineId);
+      expect(grnLine!.quantity_received).toBe("28.0000");
+      expect(grnLine!.quantity_expected).toBe("30.0000");
+      expect(grnLine!.discrepancy_reason).toBe("SHORT");
+      expect(await ledgerRows(scene.variantId)).toBe(before + 1);
+    });
+
+    it("refuses to edit a receipt that has already posted", async () => {
+      const { poId, poLineId } = await sentOrder(10);
+      const draft = await draftFor(poId, [
+        { poLineId, quantityReceived: "10.0000", qualityStatus: "ACCEPTED" },
+      ]);
+      await post(draft.id, `grn-post-${randomUUID()}`);
+
+      await expect(
+        asTenant(() =>
+          grns().updateDraft(scene.orgId, draft.id, scene.userId, { notes: "too late" } as never),
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it("converts an entered quantity and keeps the factor on the line", async () => {
+      // Two cases of twelve is twenty-four units in the ledger, and the line
+      // remembers both halves — a later correction to the case size must not
+      // rewrite what this receipt meant.
+      const { poId, poLineId } = await sentOrder(24);
+      const draft = await draftFor(poId, [
+        {
+          poLineId,
+          quantityReceived: "2.0000",
+          uomId: scene.caseUomId,
+          qualityStatus: "ACCEPTED",
+        },
+      ]);
+      await post(draft.id, `grn-post-${randomUUID()}`);
+
+      const [row] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{
+          quantity_received: string;
+          quantity_entered: string;
+          uom_factor: string;
+        }>(sql`
+          SELECT quantity_received, quantity_entered, uom_factor
+          FROM inv_grn_lines WHERE org_id = ${scene.orgId} AND po_line_id = ${poLineId}`),
+      );
+      expect(row!.quantity_received).toBe("24.0000");
+      expect(row!.quantity_entered).toBe("2.0000");
+      expect(Number(row!.uom_factor)).toBe(12);
+      expect(await receivedOnLine(poLineId)).toBe("24.0000");
+    });
+
+    it("refuses an expired batch at the door when the policy is BLOCK", async () => {
+      // The allocator has always refused to ship an expired lot. Nothing
+      // refused to receive one, so expired goods entered stock and were
+      // permanently unsellable from the moment they arrived.
+      const { poId, poLineId } = await sentOrder(5, scene.lotVariantId);
+      const before = await ledgerRows(scene.lotVariantId);
+
+      const draft = await draftFor(poId, [
+        {
+          poLineId,
+          quantityReceived: "5.0000",
+          qualityStatus: "ACCEPTED",
+          lotNumber: `EXP-${randomUUID().slice(0, 6)}`,
+          expiryDate: "2026-07-01",
+        },
+      ]);
+
+      await expect(post(draft.id, `grn-post-${randomUUID()}`)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(await ledgerRows(scene.lotVariantId)).toBe(before);
+      // And the draft survives the refusal, so the receiver can correct the
+      // expiry date they mistyped rather than starting the count again.
+      const [grn] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ status: string }>(sql`
+          SELECT status FROM inv_grns WHERE org_id = ${scene.orgId} AND id = ${draft.id}`),
+      );
+      expect(grn!.status).toBe("DRAFT");
+    });
+
+    it("accepts a batch that is still in date", async () => {
+      // The control. Without it the refusal above would also pass against a
+      // guard that blocked every lot it was ever shown.
+      const { poId, poLineId } = await sentOrder(5, scene.lotVariantId);
+      const before = await ledgerRows(scene.lotVariantId);
+      const lotNumber = `OK-${randomUUID().slice(0, 6)}`;
+
+      const draft = await draftFor(poId, [
+        { poLineId, quantityReceived: "5.0000", qualityStatus: "ACCEPTED", lotNumber, expiryDate: "2027-01-01" },
+      ]);
+      await post(draft.id, `grn-post-${randomUUID()}`);
+
+      expect(await ledgerRows(scene.lotVariantId)).toBe(before + 1);
+      const [lot] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM inv_lots
+          WHERE org_id = ${scene.orgId} AND lot_number = ${lotNumber}`),
+      );
+      expect(lot!.n).toBe(1);
+    });
+
+    it("announces the receipt on the post and not on the draft", async () => {
+      const { poId, poLineId } = await sentOrder(12);
+      const draft = await draftFor(poId, [
+        { poLineId, quantityReceived: "12.0000", qualityStatus: "ACCEPTED" },
+      ]);
+
+      const eventsFor = () =>
+        asTenant(() =>
+          outboxEventsFor(
+            app.app.get<Db>(DRIZZLE),
+            scene.orgId,
+            INVENTORY_COMMAND_EVENTS.RECEIVING_POSTED,
+            String(draft.id),
+          ),
+        );
+
+      // A consumer told "received" by a draft would reconcile a supplier advice
+      // note against goods still standing on the dock.
+      expect(await eventsFor()).toHaveLength(0);
+
+      await post(draft.id, `grn-post-${randomUUID()}`);
+      const events = await eventsFor();
+      expect(events).toHaveLength(1);
+      expect(events[0]!.payload.purchaseOrderStatus).toBe("RECEIVED");
     });
   });
 });

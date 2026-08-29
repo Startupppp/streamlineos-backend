@@ -12,6 +12,7 @@ import { VendorReturnsService } from "./vendor-returns.service";
 import {
   listReturnsSchema, createVendorReturnSchema, postVendorReturnSchema,
   type ListReturnsInput, type CreateVendorReturnInput, type PostVendorReturnInput,
+  approveReturnSchema, type ApproveReturnInput,
 } from "./dto/inv-returns.schemas";
 
 @RequireModule("inventory")
@@ -48,6 +49,19 @@ export class VendorReturnsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.create(u.orgId, u.userId, body);
+  }
+
+  /** B9, item 1. The sign-off before the goods leave. See the customer half. */
+  @Post(":returnId/approve")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:vendor-returns:manage")
+  @HttpCode(HttpStatus.OK)
+  approve(
+    @Param("returnId", ParseIntPipe) returnId: number,
+    @Body(new ZodValidationPipe(approveReturnSchema)) body: ApproveReturnInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.service.approve(u.orgId, returnId, u.userId, body);
   }
 
   @Post(":returnId/post")

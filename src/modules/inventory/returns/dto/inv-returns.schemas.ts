@@ -2,11 +2,26 @@ import { positiveDecimalQuantity } from "../../stock-engine/dto/quantity.schemas
 import { z } from "zod";
 
 export const listReturnsSchema = z.object({
-  status: z.enum(["DRAFT", "POSTED", "CANCELLED"]).optional(),
+  status: z.enum(["DRAFT", "APPROVED", "POSTED", "CANCELLED"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 }).strict();
 export type ListReturnsInput = z.infer<typeof listReturnsSchema>;
+
+/**
+ * B9, items 1 and 5 — the sign-off, and the credit it expects.
+ *
+ * `creditReference` is an opaque pointer into whatever system issues credit
+ * notes or refunds. It is recorded and carried on the posted event so an
+ * accounting adapter can reconcile against it; nothing in the stock path reads
+ * it, because a credit that has not been raised yet is not a reason to leave
+ * the goods off the shelf. There is no payments integration here and this field
+ * is not the beginning of one.
+ */
+export const approveReturnSchema = z.object({
+  creditReference: z.string().trim().min(1).max(200).optional(),
+}).strict();
+export type ApproveReturnInput = z.infer<typeof approveReturnSchema>;
 
 const vendorReturnLineSchema = z.object({
   productVariantId: z.number().int().positive(),
@@ -31,6 +46,18 @@ export const postVendorReturnSchema = z.object({
 }).strict();
 export type PostVendorReturnInput = z.infer<typeof postVendorReturnSchema>;
 
+/**
+ * B9. `RETURN_TO_VENDOR` is the fourth verdict: faulty, and the supplier's
+ * fault. Declared once so the intake guess and the inspection decision cannot
+ * offer different sets.
+ */
+const customerReturnDisposition = z.enum([
+  "RESTOCK",
+  "QUARANTINE",
+  "SCRAP",
+  "RETURN_TO_VENDOR",
+]);
+
 const customerReturnLineSchema = z.object({
   productVariantId: z.number().int().positive(),
   quantity: positiveDecimalQuantity,
@@ -40,7 +67,7 @@ const customerReturnLineSchema = z.object({
    * box is a guess, and it used to be the guess that posted stock. Omit it and
    * the line waits for inspection.
    */
-  disposition: z.enum(["RESTOCK", "QUARANTINE", "SCRAP"]).optional(),
+  disposition: customerReturnDisposition.optional(),
   targetLocationId: z.number().int().positive().optional(),
   lotId: z.number().int().positive().optional(),
   serialId: z.number().int().positive().optional(),
@@ -64,7 +91,7 @@ export type PostCustomerReturnInput = z.infer<typeof postCustomerReturnSchema>;
 export const inspectReturnLineSchema = z
   .object({
     lineId: z.number().int().positive(),
-    disposition: z.enum(["RESTOCK", "QUARANTINE", "SCRAP"]),
+    disposition: customerReturnDisposition,
     inspectionNotes: z.string().max(1000).optional(),
   })
   .strict();

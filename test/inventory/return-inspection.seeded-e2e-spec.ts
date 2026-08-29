@@ -56,6 +56,13 @@ describe("[seeded-e2e] customer return inspection", () => {
     return { returnId: id, lineId: line!.id };
   }
 
+  // B9. Approval is now the step between the inspection and the ledger, so the
+  // walk-through is inspect -> approve -> post. `post` on a DRAFT return refuses
+  // on the state machine before it ever reaches the inspection gate, which is
+  // why the gate is exercised through `approve` below.
+  const approve = (returnId: number) =>
+    asTenant(() => returns().approve(scene.orgId, returnId, scene.userId, {}));
+
   const post = (returnId: number) =>
     asTenant(() =>
       returns().post(
@@ -137,10 +144,11 @@ describe("[seeded-e2e] customer return inspection", () => {
 
   it("refuses to post a return nobody has looked at", async () => {
     const { returnId } = await draftReturn();
+    await expect(approve(returnId)).rejects.toThrow(BadRequestException);
     await expect(post(returnId)).rejects.toThrow(BadRequestException);
   });
 
-  it("posts once every line has been inspected", async () => {
+  it("posts once every line has been inspected and the return is approved", async () => {
     // The control. Without it the refusal above would also pass against a
     // service that refused every return.
     const { returnId, lineId } = await draftReturn();
@@ -151,6 +159,7 @@ describe("[seeded-e2e] customer return inspection", () => {
         inspectionNotes: "Unopened, resaleable",
       }),
     );
+    await approve(returnId);
     await expect(post(returnId)).resolves.toBeDefined();
   });
 
@@ -183,12 +192,13 @@ describe("[seeded-e2e] customer return inspection", () => {
     expect(row!.inspection_notes).toBe("Cracked casing");
   });
 
-  it("refuses to post a line whose disposition was merely asserted at intake", async () => {
+  it("refuses to approve a line whose disposition was merely asserted at intake", async () => {
     // The gate that matters. A disposition declared when the return was created
     // is a guess from the customer's description -- the exact thing that was
     // posting stock without anybody opening the box -- so it must not count as
     // an inspection.
     const { returnId } = await draftReturn(true);
+    await expect(approve(returnId)).rejects.toThrow(BadRequestException);
     await expect(post(returnId)).rejects.toThrow(BadRequestException);
   });
 
@@ -202,6 +212,7 @@ describe("[seeded-e2e] customer return inspection", () => {
         disposition: "RESTOCK",
       }),
     );
+    await approve(returnId);
     await post(returnId);
 
     await expect(

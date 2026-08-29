@@ -17,6 +17,7 @@ import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import type { ListRulesInput, CreateRuleInput, UpdateRuleInput, GeneratePoInput, ForecastingInput, SuggestionsQueryInput } from "./dto/replenishment.schemas";
 import { applyOrderPolicy } from "./forecast/order-policy";
 import { runIdempotent } from "../stock-engine/idempotency";
+import { ReorderProposalService } from "./forecast/reorder-proposal.service";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -32,6 +33,7 @@ export class InvReplenishmentService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly numSeq: NumberSequenceService,
+    private readonly reorderProposals: ReorderProposalService,
   ) {}
 
   async listRules(orgId: string, filters: ListRulesInput) {
@@ -338,10 +340,36 @@ export class InvReplenishmentService {
             ),
           );
 
-        // No live suggestion means the shortfall has already been met — by a
-        // receipt, a transfer, or another order. Ordering anyway is how a
-        // warehouse buys the same shortfall twice.
-        const engineQty = suggestion?.suggestedQty ?? 0;
+        // C2 item 4. The forecast engine is the default brain; a min/max rule is
+        // a policy override, not the source of truth.
+        //
+        // `getSuggestionForVariant` reads `inv_reorder_rules` — a static
+        // min/max per (variant, warehouse) that knows nothing about demand,
+        // lead time or variability. The proposal service does, and states its
+        // evidence and its caveats. So the proposal wins where it will commit to
+        // a number, and the rule answers only where it will not: a variant with
+        // gappy demand, no demand, or too little history, where a forecast would
+        // be a guess dressed as arithmetic.
+        //
+        // The proposal service is org-and-variant scoped; it takes forecast
+        // options, not a warehouse. Said rather than passed-and-ignored: a
+        // per-warehouse forecast is a real gap, and a parameter that silently
+        // does nothing would hide it.
+        const proposal = await this.reorderProposals.propose(orgId, s.productVariantId);
+
+        // `hold` means two different things and collapsing them is a regression
+        // that looks like the engine working. A **null** reorder point says the
+        // model could not describe this demand at all — no history, or a shape
+        // it does not fit — and that is the one case a static rule legitimately
+        // answers. A **numeric** reorder point with a hold says the engine
+        // looked and the position is already covered; buying against that
+        // because a rule says so is precisely what this unit removes.
+        const engineModelled = proposal.reorderPoint !== null;
+        const engineQty = engineModelled
+          ? proposal.suggestedQuantity ?? 0
+          : suggestion?.suggestedQty ?? 0;
+
+        const decidedBy = engineModelled ? "forecast" : "min/max policy override";
         const rounded = applyOrderPolicy(engineQty, {
           minOrderQty: policy?.minOrderQty === null || policy?.minOrderQty === undefined
             ? null
@@ -356,7 +384,13 @@ export class InvReplenishmentService {
           productVariantId: s.productVariantId,
           suggestedQty: rounded.ordered,
           unitCost: s.unitCost ?? 0,
-          policyReasons: rounded.reasons,
+          // Said out loud on the line, so a buyer reading the order can tell a
+          // forecast from a static rule without re-deriving either.
+          policyReasons: [
+            ...rounded.reasons,
+            ...(engineQty > 0 ? [`Quantity decided by the ${decidedBy}.`] : []),
+            ...proposal.caveats,
+          ],
         };
       }),
     );

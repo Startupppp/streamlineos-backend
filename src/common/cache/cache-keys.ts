@@ -150,6 +150,7 @@ export const CACHE_KEYS = {
   inv3plList: (orgId: string) => `inv:3pl:list:${orgId}`,
   invImportJobsNamespace: (orgId: string) => `inv:import-jobs:list:${orgId}`,
   invExportJobsNamespace: (orgId: string) => `inv:export-jobs:list:${orgId}`,
+  invAuditExportJobsNamespace: (orgId: string) => `inv:audit-export-jobs:list:${orgId}`,
   invSettings: (orgId: string) => `inv:settings:${orgId}`,
   invNumberSequences: (orgId: string) => `inv:numseq:${orgId}`,
   invAiInsightsList: (orgId: string) => `inv:ai-insights:${orgId}`,

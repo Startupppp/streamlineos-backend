@@ -14,6 +14,8 @@ import {
   type ListReturnsInput, type CreateCustomerReturnInput, type PostCustomerReturnInput,
   inspectReturnLineSchema,
   type InspectReturnLineInput,
+  approveReturnSchema,
+  type ApproveReturnInput,
 } from "./dto/inv-returns.schemas";
 
 @RequireModule("inventory")
@@ -65,6 +67,23 @@ export class CustomerReturnsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.inspectLine(u.orgId, u.userId, returnId, body);
+  }
+
+  /**
+   * B9, item 1. The sign-off between the inspection and the ledger. No
+   * idempotency key: this writes no stock, and the compare-and-set on DRAFT
+   * makes a retry a no-op on its own.
+   */
+  @Post(":returnId/approve")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:customer-returns:manage")
+  @HttpCode(HttpStatus.OK)
+  approve(
+    @Param("returnId", ParseIntPipe) returnId: number,
+    @Body(new ZodValidationPipe(approveReturnSchema)) body: ApproveReturnInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.service.approve(u.orgId, returnId, u.userId, body);
   }
 
   @Post(":returnId/post")

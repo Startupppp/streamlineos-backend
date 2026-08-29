@@ -5,8 +5,8 @@ import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
 import { InvPickingModule } from "../picking/inv-picking.module";
 
 @Module({
-  // The engine and the picking service are both injected; Nest resolves these
-  // at runtime and typecheck cannot see a missing import.
+  // The engine and the pick-confirm service are both injected; Nest resolves
+  // these at runtime and typecheck cannot see a missing import.
   imports: [InvStockEngineModule, InvPickingModule],
   controllers: [SyncBatchController],
   providers: [SyncBatchService],
