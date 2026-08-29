@@ -8,6 +8,9 @@ import { GrnService } from "src/modules/inventory/purchase-orders/grn.service";
 import { InvStockService } from "src/modules/inventory/stock/inv-stock.service";
 import { PutawayTaskService } from "src/modules/inventory/putaway/putaway-task.service";
 import { PutawayCompleteService } from "src/modules/inventory/putaway/putaway-complete.service";
+import { SoCoreService } from "src/modules/inventory/sales-orders/so-core.service";
+import { SoLifecycleService } from "src/modules/inventory/sales-orders/so-lifecycle.service";
+import { SoFulfillmentService } from "src/modules/inventory/sales-orders/so-fulfillment.service";
 import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
@@ -66,6 +69,7 @@ describe("[seeded-e2e] the golden path", () => {
   let scene: Scene;
   let teardown: () => Promise<void>;
   let grnId: number;
+  let soId: number;
 
   const asTenant = <T>(work: () => Promise<T>): Promise<T> =>
     runInNewTenantTransaction(app.app.get<Db>(DRIZZLE), scene.orgId, work);
@@ -258,5 +262,50 @@ describe("[seeded-e2e] the golden path", () => {
     expect(await onHandAt(scene.storageId)).toBe(100);
     expect(await atp()).toBe(100);
     await expectReconciled("putaway");
+  });
+
+  it("promises 30 to a customer and holds them against the shelf", async () => {
+    const so = await asTenant(() =>
+      app.app.get(SoCoreService).createSo(scene.orgId, scene.userId, {
+        orderDate: "2026-08-03",
+        warehouseId: scene.warehouseId,
+        currency: "INR",
+        lines: [
+          {
+            productVariantId: scene.variantId,
+            quantity: 30,
+            unitPrice: "9.0000",
+            taxRate: "0",
+            lineOrder: 0,
+          },
+        ],
+      } as never),
+    );
+    soId = (so as { id: number }).id;
+
+    await asTenant(() =>
+      app.app
+        .get(SoLifecycleService)
+        .confirmSo(scene.orgId, soId, scene.userId, `gp-confirm-${scene.tag}`),
+    );
+
+    // `auto_reserve_on_confirm` defaults to true, so confirming IS the reserving
+    // step on a default tenant — and `autoReserve` swallows its own failures with
+    // a log line, so the only honest way to know it ran is to ask what is still
+    // promisable. A silent no-op leaves ATP at 100 and fails here.
+    const [reservation] = await asTenant(() =>
+      db().execute<{ qty: string }>(sql`
+        SELECT COALESCE(SUM(reserved_qty), 0)::text AS qty FROM inv_stock_reservations
+        WHERE org_id = ${scene.orgId} AND source_type = 'inv_sales_order'
+          AND source_id = ${String(soId)} AND status = 'ACTIVE'`),
+    );
+    expect(Number(reservation!.qty)).toBe(30);
+
+    // The 30 are still on the shelf but are no longer anyone else's to promise.
+    // This is the seam where a private copy of the availability formula silently
+    // strands `committed` above `on_hand`, so it is asserted rather than assumed.
+    expect(await onHandAt(scene.storageId)).toBe(100);
+    expect(await atp()).toBe(70);
+    await expectReconciled("reserved");
   });
 });
