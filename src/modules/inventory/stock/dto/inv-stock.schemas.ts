@@ -69,6 +69,15 @@ export const createReservationSchema = z.object({
   serialId: z.number().int().positive().optional(),
   qty: z.string().regex(/^\d+(\.\d+)?$/, "must be a positive decimal"),
   expiresAt: z.string().datetime().optional(),
+  /**
+   * D2. Deliberately taking a lot the allocator would not have chosen.
+   *
+   * A reason, not a boolean: an override that records only that somebody clicked
+   * past a rule tells the next person nothing, and this is the row a quality
+   * investigation reads. Requires `inventory:allocation:override`, and it never
+   * reaches an expired, recalled or blocked lot — those are not judgement calls.
+   */
+  overrideReason: z.string().min(3).max(500).optional(),
 }).strict();
 export type CreateReservationInput = z.infer<typeof createReservationSchema>;
 

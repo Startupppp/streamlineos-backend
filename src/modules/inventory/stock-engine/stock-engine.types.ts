@@ -131,7 +131,14 @@ export interface InvSettingsRow {
    * query at the moment a document line is priced.
    */
   gstMode: InvGstMode;
+  /** D2. What the allocator does with short-dated stock, and where "short" starts. */
+  nearExpiryPolicy: InvNearExpiryPolicy;
+  nearExpiryWindowDays: number;
 }
+
+/** D2 — short-dated, not expired. See `invNearExpiryPolicyEnum`. */
+export type InvNearExpiryPolicy = "ALLOW" | "DEPRIORITIZE" | "BLOCK";
+
 
 /** E1 — the four packs. Warehouse is the core product; the rest are opt-in. */
 export interface InvPackFlags {

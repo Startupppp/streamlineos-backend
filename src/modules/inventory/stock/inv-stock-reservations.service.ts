@@ -1,6 +1,6 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, sql, type SQL } from "drizzle-orm";
-import { invStockReservations } from "../../../db/schema";
+import { invLots, invStockReservations } from "../../../db/schema";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -16,6 +16,17 @@ import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import type { ListReservationsInput, CreateReservationInput, ReleaseReservationInput, OpeningStockInput } from "./dto/inv-stock.schemas";
 import { loadOrderableVariants, loadCorrectableVariants } from "../products/lib/orderable-variants";
+import { AccessService } from "../../access/access.service";
+import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
+import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
+import {
+  assertMayOverrideAllocation,
+  overridable,
+  refusalMessage,
+  verdictFor,
+  type EligibilityPolicy,
+  type LotFacts,
+} from "../sales-orders/lot-eligibility";
 
 @Injectable()
 export class InvStockReservationsService {
@@ -25,7 +36,77 @@ export class InvStockReservationsService {
     private readonly reservationService: ReservationService,
     private readonly engine: StockEngineService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly access: AccessService,
+    private readonly settingsService: InventorySettingsService,
+    private readonly audit: InventoryAuditService,
   ) {}
+
+  /**
+   * D2 — the gate on choosing a lot the allocator would not have.
+   *
+   * Runs before the reservation is opened, and answers three ways:
+   *
+   *   * the lot is fine → nothing happens, and an `overrideReason` on a lot that
+   *     needed no override is refused rather than silently recorded, because a
+   *     row saying "overridden" about an ordinary allocation is a false trail
+   *     through the audit log;
+   *   * the lot is short-dated → needs `inventory:allocation:override` **and** a
+   *     reason, and the pair is audited;
+   *   * the lot is expired, recalled, blocked or consumed → refused outright.
+   *     No permission reaches it: making those overridable would turn
+   *     `expiryReservationPolicy: BLOCK` into a suggestion.
+   */
+  private async assertLotChoiceAllowed(
+    orgId: string,
+    userId: string,
+    input: CreateReservationInput,
+  ): Promise<{ overridden: boolean }> {
+    if (input.lotId === undefined) {
+      if (input.overrideReason !== undefined) {
+        throw new BadRequestException(
+          "An override reason was given for a reservation that names no lot — there is nothing to override.",
+        );
+      }
+      return { overridden: false };
+    }
+
+    const settings = await this.settingsService.get(orgId);
+    const lot = await this.db.query.invLots.findFirst({
+      where: and(eq(invLots.orgId, orgId), eq(invLots.id, input.lotId)),
+      columns: { id: true, expiryDate: true, status: true },
+    });
+    // A lot id from another tenant resolves to nothing here, and 404 is the
+    // answer §4 requires — a 403 would confirm the row exists.
+    if (!lot) throw new NotFoundException("Lot not found");
+
+    const lotById: ReadonlyMap<number, LotFacts> = new Map([[lot.id, lot]]);
+    const policy: EligibilityPolicy = {
+      expiryPolicy: settings.expiryReservationPolicy,
+      nearExpiryPolicy: settings.nearExpiryPolicy,
+      nearExpiryWindowDays: settings.nearExpiryWindowDays,
+    };
+    const verdict = verdictFor(lot.id, lotById, policy);
+
+    if (verdict.kind === "ELIGIBLE") {
+      if (input.overrideReason !== undefined) {
+        throw new BadRequestException(
+          "That lot needs no override — the allocator would have chosen it.",
+        );
+      }
+      return { overridden: false };
+    }
+
+    if (!overridable(verdict)) throw new BadRequestException(refusalMessage(verdict));
+
+    if (!input.overrideReason) {
+      throw new BadRequestException(
+        `${refusalMessage(verdict)} Supply overrideReason to take it deliberately.`,
+      );
+    }
+
+    await assertMayOverrideAllocation(this.access, orgId, userId);
+    return { overridden: true };
+  }
 
   async listReservations(orgId: string, userId: string, filters: ListReservationsInput) {
     const { sourceType, status, variantId, warehouseId, page, limit } = filters;
@@ -100,6 +181,11 @@ export class InvStockReservationsService {
     // product must not strand an order already taken.
     await loadOrderableVariants(this.db, orgId, [input.productVariantId]);
 
+    // D2. Before the claim, so a request that is going to be refused never
+    // consumes its idempotency key — a caller fixing a missing reason and
+    // retrying with the same key must not replay a stored refusal.
+    const { overridden } = await this.assertLotChoiceAllowed(orgId, userId, input);
+
     const reservationId = await this.db.transaction((tx) =>
       runIdempotent(
         tx,
@@ -119,6 +205,27 @@ export class InvStockReservationsService {
             qty: input.qty,
             expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
           });
+
+          // D2. The override is audited inside the claim, beside the reservation
+          // it justifies. Outside it, a retry would write a second audit row for
+          // one decision and the trail would over-count deliberate overrides —
+          // which is the number a quality investigation is actually counting.
+          if (overridden) {
+            await this.audit.insert(tx, {
+              orgId,
+              actorUserId: userId,
+              action: "reservation.allocation_override",
+              resourceType: "inv_stock_reservation",
+              resourceId: String(created.id),
+              after: {
+                lotId: created.lotId,
+                productVariantId: created.productVariantId,
+                locationId: created.locationId,
+                reservedQty: created.reservedQty,
+                reason: input.overrideReason,
+              },
+            });
+          }
 
           // A5. Inside the claim, so a retry replays the stored id and emits
           // nothing — an event outside it would fire again on every retry and

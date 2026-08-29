@@ -21,6 +21,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { subDec, cmpDec, availableQty } from "../stock-engine/decimal";
+import { verdictFor, type EligibilityPolicy, type LotFacts } from "./lot-eligibility";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
@@ -318,6 +319,11 @@ export class SoLifecycleService {
     qty: string,
     strategy: string,
     expiryPolicy: string,
+    /**
+     * D2. Short-dated stock. Optional so every existing caller keeps its
+     * behaviour — omitted, it reads as `ALLOW` and nothing is deprioritized.
+     */
+    nearExpiry?: { policy: EligibilityPolicy["nearExpiryPolicy"]; windowDays: number },
   ): Promise<{ locationId: number; lotId?: number } | null> {
     const levels = await this.db.query.invStockLevels.findMany({
       where: and(
@@ -344,24 +350,20 @@ export class SoLifecycleService {
       where: and(eq(invLots.orgId, orgId), eq(invLots.productVariantId, variantId)),
       columns: { id: true, expiryDate: true, status: true },
     });
-    const lotById = new Map(lots.map((lot) => [lot.id, lot]));
-    const today = new Date().toISOString().slice(0, 10);
+    const lotById: ReadonlyMap<number, LotFacts> = new Map(lots.map((lot) => [lot.id, lot]));
 
-    /** Whether this lot may be given to a customer at all. */
-    const eligible = (lotId: number | null): boolean => {
-      if (lotId === null) return true;
-      const lot = lotById.get(lotId);
-      if (!lot) return false;
-      // CONSUMED, BLOCKED, RECALLED and EXPIRED are refused whatever the expiry
-      // policy says. A recall is not a warning.
-      if (lot.status !== "ACTIVE") return false;
-      if (expiryPolicy === "BLOCK" && lot.expiryDate !== null && lot.expiryDate <= today) return false;
-      return true;
+    // D2. Eligibility is now three answers, not two: eligible, deprioritized and
+    // refused. `lot-eligibility.ts` owns the rules so the reserve path and the
+    // override path cannot drift into two opinions about the same lot.
+    const policy: EligibilityPolicy = {
+      expiryPolicy,
+      nearExpiryPolicy: nearExpiry?.policy ?? "ALLOW",
+      nearExpiryWindowDays: nearExpiry?.windowDays ?? 0,
     };
 
     const candidates = levels.filter((level) => {
       if (warehouseId && level.location?.warehouseId !== warehouseId) return false;
-      if (!eligible(level.lotId)) return false;
+      if (verdictFor(level.lotId, lotById, policy).kind === "REFUSED") return false;
       // A2/A5. The one availability formula, not a private copy of it.
       //
       // This carried a four-term copy that omitted `outgoing_qty` and knew
@@ -386,8 +388,20 @@ export class SoLifecycleService {
 
     if (candidates.length === 0) return null;
 
-    /** The strategy orders what is already eligible; it never widens it. */
+    /**
+     * The strategy orders what is already eligible; it never widens it.
+     *
+     * D2 adds a tier above the strategy: a short-dated lot sorts after every lot
+     * that is not short-dated, whatever the strategy says. FEFO wants the
+     * soonest-expiring first and near-expiry policy wants it last, and both get
+     * what they asked for — near-expiry decides the tier, FEFO the order inside it.
+     */
+    const tier = (lotId: number | null): number =>
+      verdictFor(lotId, lotById, policy).kind === "DEPRIORITIZED" ? 1 : 0;
+
     const ordered = [...candidates].sort((a, b) => {
+      const tierDelta = tier(a.lotId) - tier(b.lotId);
+      if (tierDelta !== 0) return tierDelta;
       if (strategy === "FEFO") {
         const aExpiry = a.lotId === null ? null : (lotById.get(a.lotId)?.expiryDate ?? null);
         const bExpiry = b.lotId === null ? null : (lotById.get(b.lotId)?.expiryDate ?? null);
@@ -427,6 +441,7 @@ export class SoLifecycleService {
           line.quantity,
           settings.reservationStrategy,
           settings.expiryReservationPolicy,
+          { policy: settings.nearExpiryPolicy, windowDays: settings.nearExpiryWindowDays },
         ),
       ),
     );

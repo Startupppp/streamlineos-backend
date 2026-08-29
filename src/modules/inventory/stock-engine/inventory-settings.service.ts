@@ -32,6 +32,8 @@ const toSettingsRow = (row: InvSettingsSelect | InvSettingsInsert): InvSettingsR
     gst: row.packGst ?? false,
   },
   gstMode: row.gstMode ?? "REGULAR",
+  nearExpiryPolicy: row.nearExpiryPolicy ?? "DEPRIORITIZE",
+  nearExpiryWindowDays: row.nearExpiryWindowDays ?? 30,
 });
 
 const buildDefaults = (orgId: string): InvSettingsInsert => ({
@@ -55,6 +57,8 @@ const buildDefaults = (orgId: string): InvSettingsInsert => ({
   packPharmacy: false,
   packGst: false,
   gstMode: "REGULAR",
+  nearExpiryPolicy: "DEPRIORITIZE",
+  nearExpiryWindowDays: 30,
 });
 
 @Injectable()

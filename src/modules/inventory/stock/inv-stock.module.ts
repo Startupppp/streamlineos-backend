@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AccessModule } from "../../access/access.module";
 import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
 import { InvStockController } from "./inv-stock.controller";
 import { InvStockAdjustmentsController } from "./inv-stock-adjustments.controller";
@@ -15,7 +16,7 @@ import { TransitExitService } from "./transit-exit.service";
 // Nest resolves those at runtime; typecheck cannot see a missing import and the
 // application simply fails to boot.
 @Module({
-  imports: [InvStockEngineModule],
+  imports: [InvStockEngineModule, AccessModule],
   controllers: [
     InvStockController,
     InvStockAdjustmentsController,

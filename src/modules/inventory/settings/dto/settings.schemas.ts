@@ -38,6 +38,13 @@ export const updateSettingsSchema = z.object({
    * rule that silently does nothing is worse than one that will not save.
    */
   gstMode: z.enum(["REGULAR", "COMPOSITION"]).optional(),
+  /**
+   * D2. Short-dated stock. The window is capped at a year because one wider than
+   * the shelf life it describes silently blocks the whole catalogue, which reads
+   * as "allocation is broken" rather than as a setting somebody chose.
+   */
+  nearExpiryPolicy: z.enum(["ALLOW", "DEPRIORITIZE", "BLOCK"]).optional(),
+  nearExpiryWindowDays: z.number().int().min(0).max(365).optional(),
 }).strict();
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

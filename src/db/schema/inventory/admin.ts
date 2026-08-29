@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, decimal, integer, bigint, date, boolean, jsonb, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { desc, relations, sql } from "drizzle-orm";
 import {
-  invReservationStrategyEnum, invCostingMethodEnum, invExpiryPolicyEnum,
+  invReservationStrategyEnum, invCostingMethodEnum, invExpiryPolicyEnum, invNearExpiryPolicyEnum,
   invIdempotencyStatusEnum, invJobStatusEnum, invWebhookEventStatusEnum,
   invReasonCategoryEnum, invImportRowStatusEnum, invGstModeEnum,
 } from "../common/enums";
@@ -50,6 +50,19 @@ export const invSettings = pgTable("inv_settings", {
   packKirana: boolean("pack_kirana").default(false).notNull(),
   packPharmacy: boolean("pack_pharmacy").default(false).notNull(),
   packGst: boolean("pack_gst").default(false).notNull(),
+  /**
+   * D2 — short-dated stock is a different question from expired stock.
+   *
+   * `expiry_reservation_policy` decides whether an already-expired lot may be
+   * promised at all. These two decide what happens to a lot that is still good
+   * but close: `DEPRIORITIZE` keeps it allocatable and takes it last,
+   * `BLOCK` refuses it automatically and leaves it for somebody holding
+   * `inventory:allocation:override` to choose on purpose. The window is the same
+   * one G3's expiry sweep notifies on, so "you were warned" and "the allocator
+   * stopped offering it" line up instead of being two opinions about one lot.
+   */
+  nearExpiryPolicy: invNearExpiryPolicyEnum("near_expiry_policy").default("DEPRIORITIZE").notNull(),
+  nearExpiryWindowDays: integer("near_expiry_window_days").default(30).notNull(),
   /**
    * E2 — how this organisation is registered, and therefore whether it may
    * collect tax from a customer at all.

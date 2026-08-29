@@ -515,6 +515,17 @@ export const invImportRowStatusEnum = pgEnum("inv_import_row_status", ["PENDING"
 export const invWebhookEventStatusEnum = pgEnum("inv_webhook_event_status", ["PENDING", "DELIVERED", "FAILED"]);
 export const invReservationStrategyEnum = pgEnum("inv_reservation_strategy", ["MANUAL", "AUTO_ON_CONFIRM", "FEFO", "FIFO"]);
 export const invExpiryPolicyEnum = pgEnum("inv_expiry_policy", ["BLOCK", "WARN", "ALLOW"]);
+/**
+ * D2 — what the allocator does with stock that is close to expiry but not expired.
+ *
+ * Distinct from `invExpiryPolicyEnum`, which decides whether *already expired*
+ * stock may be promised at all. This one is about short-dated stock: physically
+ * fine, saleable, and often refused on arrival by the customer. `DEPRIORITIZE`
+ * keeps it allocatable but takes it last; `BLOCK` refuses it automatically and
+ * leaves it for a person holding `inventory:allocation:override` to choose
+ * deliberately.
+ */
+export const invNearExpiryPolicyEnum = pgEnum("inv_near_expiry_policy", ["ALLOW", "DEPRIORITIZE", "BLOCK"]);
 export const invAiInsightStatusEnum = pgEnum("inv_ai_insight_status", ["NEW", "ACKNOWLEDGED", "DISMISSED"]);
 
 export const partyTypeEnum = pgEnum("party_type", ["CUSTOMER", "VENDOR", "PARTNER", "BOTH"]);

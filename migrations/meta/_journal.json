@@ -2332,6 +2332,20 @@
       "when": 1788134409009,
       "tag": "0552_inventory_valuation_gl_recon_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 334,
+      "version": "7",
+      "when": 1788134409010,
+      "tag": "0562_replenishment_proposal_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 335,
+      "version": "7",
+      "when": 1788134409011,
+      "tag": "0563_near_expiry_allocation_policy",
+      "breakpoints": true
     }
   ]
 }
