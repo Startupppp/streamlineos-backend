@@ -38,7 +38,7 @@ export class InvAiExplainController {
   @Post("insights/:insightId/explain")
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
-  @RequirePermission("inventory:reports:read")
+  @RequirePermission("inventory:ai:read")
   explainInsight(
     @Param("insightId", ParseIntPipe) insightId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -52,7 +52,7 @@ export class InvAiExplainController {
    */
   @Get("ops-brief")
   @UseGuards(PermissionGuard)
-  @RequirePermission("inventory:reports:read")
+  @RequirePermission("inventory:ai:read")
   getOpsBrief(@CurrentUser() u: CurrentUserContext) {
     return this.explainService.getOpsBrief(u.orgId);
   }
@@ -64,7 +64,7 @@ export class InvAiExplainController {
   @Post("ops-brief/narrate")
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
-  @RequirePermission("inventory:reports:read")
+  @RequirePermission("inventory:ai:read")
   narrateOpsBrief(@CurrentUser() u: CurrentUserContext) {
     return this.explainService.narrateOpsBrief(u.orgId, u.userId);
   }
@@ -72,7 +72,7 @@ export class InvAiExplainController {
   @Get("digest")
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
-  @RequirePermission("inventory:reports:read")
+  @RequirePermission("inventory:ai:read")
   getDigest(
     @Query(new ZodValidationPipe(digestQuerySchema)) query: DigestQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -109,7 +109,7 @@ export class InvAiExplainController {
   @Get("supplier-delay")
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
-  @RequirePermission("inventory:reports:read")
+  @RequirePermission("inventory:ai:read")
   getSupplierDelayBriefing(
     @Query(new ZodValidationPipe(supplierDelayQuerySchema)) query: SupplierDelayQueryInput,
     @CurrentUser() u: CurrentUserContext,

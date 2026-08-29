@@ -25,7 +25,7 @@ export class InvAiController {
 
   @Get("insights")
   @UseGuards(PermissionGuard)
-  @RequirePermission("inventory:reports:read")
+  @RequirePermission("inventory:ai:read")
   listInsights(
     @Query(new ZodValidationPipe(listInsightsSchema)) filters: ListInsightsInput,
     @CurrentUser() u: CurrentUserContext,

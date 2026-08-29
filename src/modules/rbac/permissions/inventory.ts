@@ -276,6 +276,13 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     description: "Manage reorder rules and replenishment",
   },
   {
+    name: "inventory:ai:read",
+    resource: "inventory:ai",
+    action: "read",
+    description:
+      "Read AI-assisted inventory surfaces: the operations brief, the digest, insight explanations and supplier-delay signals",
+  },
+  {
     name: "inventory:ai:propose",
     resource: "inventory:ai",
     action: "propose",
