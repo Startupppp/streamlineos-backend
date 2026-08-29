@@ -39,7 +39,10 @@ export class ChatSavedController {
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
   save(@Param("messageId", ParseIntPipe) messageId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.saved.save(u.userId, messageId);
+    return this.saved.save(
+      { orgId: u.orgId, userId: u.userId, isOrgOwner: u.isOrgOwner },
+      messageId,
+    );
   }
 
   @ApiOperation({ summary: "Remove a message from the current user's saved list" })
@@ -47,6 +50,9 @@ export class ChatSavedController {
   @Delete(":messageId")
   @RequirePermission("chat:messages:write")
   unsave(@Param("messageId", ParseIntPipe) messageId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.saved.unsave(u.userId, messageId);
+    return this.saved.unsave(
+      { orgId: u.orgId, userId: u.userId, isOrgOwner: u.isOrgOwner },
+      messageId,
+    );
   }
 }

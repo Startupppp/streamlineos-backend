@@ -13,18 +13,25 @@ export class ChatPinsService {
     private readonly entities: EntityReferenceService,
   ) {}
 
-  private async assertMember(channelId: number, userId: string) {
+  private async assertMember(channelId: number, actor: EntityActor) {
     const member = await this.db.query.chatChannelMembers.findFirst({
-      where: and(eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, userId)),
+      where: and(
+        eq(chatChannelMembers.orgId, actor.orgId),
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.userId, actor.userId),
+      ),
     });
     if (!member) throw new ForbiddenException("You are not a member of this channel");
     return member;
   }
 
   async listPins(channelId: number, actor: EntityActor) {
-    await this.assertMember(channelId, actor.userId);
+    await this.assertMember(channelId, actor);
     const rows = await this.db.query.chatPinnedMessages.findMany({
-      where: eq(chatPinnedMessages.channelId, channelId),
+      where: and(
+        eq(chatPinnedMessages.orgId, actor.orgId),
+        eq(chatPinnedMessages.channelId, channelId),
+      ),
       orderBy: [desc(chatPinnedMessages.pinnedAt)],
       limit: 100,
       with: {
@@ -45,19 +52,33 @@ export class ChatPinsService {
     return rows.map((row, index) => ({ ...row, message: resolved[index] }));
   }
 
-  async pin(channelId: number, messageId: number, userId: string) {
-    await this.assertMember(channelId, userId);
+  async pin(channelId: number, messageId: number, actor: EntityActor) {
+    await this.assertMember(channelId, actor);
     const message = await this.db.query.chatMessages.findFirst({
-      where: and(eq(chatMessages.id, messageId), eq(chatMessages.channelId, channelId), eq(chatMessages.isDeleted, false)),
+      where: and(
+        eq(chatMessages.orgId, actor.orgId),
+        eq(chatMessages.id, messageId),
+        eq(chatMessages.channelId, channelId),
+        eq(chatMessages.isDeleted, false),
+      ),
     });
     if (!message) throw new NotFoundException("Message not found");
-    await this.db.insert(chatPinnedMessages).values({ orgId: message.orgId, channelId, messageId, pinnedBy: userId }).onConflictDoNothing();
+    await this.db.insert(chatPinnedMessages).values({
+      orgId: actor.orgId,
+      channelId,
+      messageId,
+      pinnedBy: actor.userId,
+    }).onConflictDoNothing();
     return { ok: true };
   }
 
-  async unpin(channelId: number, messageId: number, userId: string) {
-    await this.assertMember(channelId, userId);
-    await this.db.delete(chatPinnedMessages).where(and(eq(chatPinnedMessages.channelId, channelId), eq(chatPinnedMessages.messageId, messageId)));
+  async unpin(channelId: number, messageId: number, actor: EntityActor) {
+    await this.assertMember(channelId, actor);
+    await this.db.delete(chatPinnedMessages).where(and(
+      eq(chatPinnedMessages.orgId, actor.orgId),
+      eq(chatPinnedMessages.channelId, channelId),
+      eq(chatPinnedMessages.messageId, messageId),
+    ));
     return { ok: true };
   }
 }

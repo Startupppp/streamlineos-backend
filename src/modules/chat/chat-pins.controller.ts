@@ -40,7 +40,11 @@ export class ChatPinsController {
     @Body(new ZodValidationPipe(pinMessageSchema)) body: PinMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pins.pin(channelId, body.messageId, u.userId);
+    return this.pins.pin(channelId, body.messageId, {
+      orgId: u.orgId,
+      userId: u.userId,
+      isOrgOwner: u.isOrgOwner,
+    });
   }
 
   @ApiOperation({ summary: "Unpin a message from a channel" })
@@ -53,6 +57,10 @@ export class ChatPinsController {
     @Param("messageId", ParseIntPipe) messageId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pins.unpin(channelId, messageId, u.userId);
+    return this.pins.unpin(channelId, messageId, {
+      orgId: u.orgId,
+      userId: u.userId,
+      isOrgOwner: u.isOrgOwner,
+    });
   }
 }
