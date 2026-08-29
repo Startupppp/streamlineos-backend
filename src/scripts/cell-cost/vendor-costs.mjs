@@ -30,10 +30,22 @@ export async function fetchNeonConsumption(env) {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
     const p = data.project ?? {};
+    // Neon names these compute_time_seconds and data_storage_bytes_hour. Reading
+    // compute_time and storage_bytes_hour returned undefined, so the two largest
+    // cost drivers reported as "unavailable" while the API was returning them —
+    // a null that looks like a vendor limitation and is really a typo. The older
+    // names are kept as fallbacks in case the field set differs by plan.
+    const computeTimeSeconds = p.compute_time_seconds ?? p.compute_time ?? null;
+    const storageBytesHour = p.data_storage_bytes_hour ?? p.storage_bytes_hour ?? null;
     return {
       status: "ok",
-      computeTimeSeconds: p.compute_time ?? null,
-      storageGibHours: p.storage_bytes_hour != null ? p.storage_bytes_hour / (1024 ** 3) : null,
+      computeTimeSeconds,
+      activeTimeSeconds: p.active_time_seconds ?? null,
+      syntheticStorageGib:
+        p.synthetic_storage_size != null ? p.synthetic_storage_size / 1024 ** 3 : null,
+      consumptionPeriodStart: p.consumption_period_start ?? null,
+      consumptionPeriodEnd: p.consumption_period_end ?? null,
+      storageGibHours: storageBytesHour != null ? storageBytesHour / 1024 ** 3 : null,
       dataTransferGib: p.data_transfer_bytes != null ? p.data_transfer_bytes / (1024 ** 3) : null,
       writtenDataGib: p.written_data_bytes != null ? p.written_data_bytes / (1024 ** 3) : null,
       rateEnvVars: ["NEON_COMPUTE_RATE_USD_PER_HOUR", "NEON_STORAGE_RATE_USD_PER_GIB_MONTH", "NEON_TRANSFER_RATE_USD_PER_GIB"],
