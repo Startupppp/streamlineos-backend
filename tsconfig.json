@@ -24,6 +24,15 @@
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "evals/**/*"],
+  // `test/**/*` is here because it was the last blind spot. tsconfig.build.json
+  // excludes `test` and `**/*spec.ts`, and this file used to include only `src`
+  // and `evals` — so between them, no gate in the repo ever typechecked a spec,
+  // while ts-jest's `isolatedModules` compiles specs without checking them. A
+  // spec could therefore rot against a signature that moved underneath it and
+  // stay green in every gate: 32 such errors had accumulated, and a seeded e2e
+  // importing a class by a name nothing exports ran all the way to a runtime
+  // "provider does not exist" before anything noticed. Adding this cost zero
+  // errors to turn on, which is the argument for having done it sooner.
+  "include": ["src/**/*", "evals/**/*", "test/**/*"],
   "exclude": ["node_modules", "dist", "drizzle.config.ts"]
 }
