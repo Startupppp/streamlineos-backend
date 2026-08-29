@@ -240,14 +240,27 @@ describeAgainstOwner("replica staleness — a lagging snapshot is real, and rout
   );
 
   it(
-    "a read-after-write path is primary-required, so the write it just made is visible to it",
+    "routing a read-after-write class to the lagging snapshot would lose its own write — " +
+      "which is why billing-ledger is primary-required, demonstrated rather than asserted",
     async () => {
+      const seen = await lagging.begin(async (snapshot) => {
+        await snapshot.unsafe("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+        await snapshot.unsafe(`SELECT count(*) FROM ${PROBE}`);
+
+        await primary.unsafe(`INSERT INTO ${PROBE} (id) VALUES (3)`);
+
+        const throughReplica = await snapshot.unsafe(
+          `SELECT count(*)::int AS n FROM ${PROBE} WHERE id = 3`,
+        );
+        const throughPrimary = await primary.unsafe(
+          `SELECT count(*)::int AS n FROM ${PROBE} WHERE id = 3`,
+        );
+        return { replica: throughReplica[0]?.n, primary: throughPrimary[0]?.n };
+      });
+
+      expect(seen.replica).toBe(0);
+      expect(seen.primary).toBe(1);
       expect(routingStrategyFor("billing-ledger")).toBe("primary-required");
-
-      await primary.unsafe(`INSERT INTO ${PROBE} (id) VALUES (3)`);
-      const rows = await primary.unsafe(`SELECT count(*)::int AS n FROM ${PROBE} WHERE id = 3`);
-
-      expect(rows[0]?.n).toBe(1);
     },
     120_000,
   );

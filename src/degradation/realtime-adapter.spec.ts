@@ -79,18 +79,18 @@ describe("Realtime channel naming — clients reconnect to the same channel from
     service = makeAbly(undefined);
   });
 
+  // Expected values are literals, not another call to cellPrefixed: comparing the
+  // helper against itself passes even if the helper returns "" for every input.
   it("chat channel name is cell-prefixed and encodes orgId and channelId so clients reconnect deterministically", () => {
-    const name = service.channelName("org-1", 42);
-    expect(name).toBe(cellPrefixed(LEGACY_CELL_ID, "chat:org-1:42"));
-    expect(name).toContain("org-1");
-    expect(name).toContain("42");
+    expect(service.channelName("org-1", 42)).toBe("cell:legacy-1:chat:org-1:42");
   });
 
   it("support channel name is cell-prefixed and encodes orgId and ticketId", () => {
-    const name = service.supportChannelName("org-1", 99);
-    expect(name).toBe(cellPrefixed(LEGACY_CELL_ID, "support:org-1:99"));
-    expect(name).toContain("org-1");
-    expect(name).toContain("99");
+    expect(service.supportChannelName("org-1", 99)).toBe("cell:legacy-1:support:org-1:99");
+  });
+
+  it("the literals above match the helper the service actually uses", () => {
+    expect(cellPrefixed(LEGACY_CELL_ID, "chat:org-1:42")).toBe("cell:legacy-1:chat:org-1:42");
   });
 
   // The prefix is not cosmetic: tokens are minted against cellCapabilityGlob, so a

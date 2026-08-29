@@ -11,8 +11,17 @@
  *
  * Failure classes covered:
  *   CELL_DB_FAILURE — cell database destroyed; rebuild from logical backup.
- *     RPO: seconds between backup completion and disaster start (zero in this drill).
- *     RTO: time from disaster declaration to cell verified.
+ *     RPO is reported twice, because one number flatters and the other is true.
+ *       rpo_seconds             — backup-to-disaster in THIS run, which is seconds.
+ *                                 It proves the restore itself loses nothing.
+ *       rpo_operational_seconds — the backup interval, which is what an operator
+ *                                 actually loses. This is what rpo_met judges.
+ *     RTO: time from disaster declaration to cell verified. rto_met judges elapsed
+ *       time against the objective as written. Whether the recovered cell is HEALTHY
+ *       is reported beside it as recovered_cell_healthy / unhealthy_after_recovery,
+ *       not folded into it — the checks that fail there fail identically on a fresh
+ *       cold build, so they are chain defects, and charging them to a timing
+ *       objective would bury a cross-tenant finding under a latency heading.
  *
  * NOT covered (no NEON_API_KEY, no scripted branch-restore):
  *   REGIONAL_DISASTER — Neon PITR provides 5-minute RPO at the control-plane layer.
@@ -20,13 +29,15 @@
  *
  * Metrics written to .recovery-drill-results.json are consumed by the load driver
  * (workload-objectives verification).  Key names are stable:
- *   rpo_seconds, rto_seconds, phases.backup_ms, phases.bootstrap_ms,
- *   phases.restore_ms, phases.verify_ms, integrity.ok, integrity.tables,
- *   integrity.rows, failure_class, timestamps, disturbed, notes.
+ *   rpo_seconds, rpo_operational_seconds, rto_seconds, recovered_cell_healthy,
+ *   unhealthy_after_recovery,
+ *   phases.backup_ms, phases.bootstrap_ms, phases.restore_ms, phases.verify_ms,
+ *   integrity.ok, integrity.tables, integrity.rows, failure_class, timestamps,
+ *   disturbed, notes.
  */
 
 import { spawnSync } from "node:child_process";
-import { writeFileSync, statSync } from "node:fs";
+import { writeFileSync, statSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -74,6 +85,32 @@ function parseLine(output, pattern) {
   return match ?? null;
 }
 
+/**
+ * The operational recovery point is the backup cadence, so it is read out of the
+ * backup workflow's cron rather than restated here. A hard-coded 6 h would keep
+ * reporting 6 h after someone changed the schedule to hourly, and an RPO figure
+ * that silently disagrees with the schedule producing it is worse than none.
+ * Throws rather than guessing if the cron cannot be read.
+ */
+function backupIntervalSeconds() {
+  const override = process.env.BACKUP_INTERVAL_SECONDS;
+  if (override !== undefined) return Number(override);
+
+  const workflow = resolve(BACKEND_DIR, ".github/workflows/cell-backup.yml");
+  const text = readFileSync(workflow, "utf8");
+  const cron = text.match(/cron:\s*"([^"]+)"/)?.[1];
+  if (cron === undefined) throw new Error(`no cron schedule found in ${workflow}`);
+
+  const hourField = cron.trim().split(/\s+/)[1];
+  const everyN = hourField?.match(/^\*\/(\d+)$/)?.[1];
+  if (everyN !== undefined) return Number(everyN) * 60 * 60;
+  if (hourField === "*") return 60 * 60;
+
+  throw new Error(
+    `cannot derive a backup interval from cron "${cron}" — set BACKUP_INTERVAL_SECONDS explicitly`,
+  );
+}
+
 function parseIntFromLine(output, pattern) {
   const line = parseLine(output, pattern);
   if (!line) return null;
@@ -81,7 +118,14 @@ function parseIntFromLine(output, pattern) {
   return m ? Number(m[0]) : null;
 }
 
-function parseVerifyResult(verifyOutput) {
+/**
+ * The verify step prints only `tables=N`; the row total lives in the backup step's
+ * `RESULT: BACKUP OK … rows=N`. Reading rows out of the verify line captured the
+ * table count instead and reported it as a row count, so integrity.rows read 3 for
+ * a 66-row backup. Rows come from the backup, tables from the verify, and each is
+ * null rather than guessed if its line is absent.
+ */
+function parseVerifyResult(verifyOutput, backupOutput) {
   const lines = verifyOutput.split("\n").filter(Boolean);
   const tableLines = lines.filter((l) => /^(PASS|FAIL)\s/.test(l));
   const failures = tableLines.filter((l) => l.startsWith("FAIL"));
@@ -90,8 +134,8 @@ function parseVerifyResult(verifyOutput) {
   const resultLine = parseLine(verifyOutput, /RESULT:/);
   const ok = resultLine !== null && /RESTORE VERIFIED/.test(resultLine);
 
-  const rowsMatch = verifyOutput.match(/RESTORE VERIFIED.*tables=(\d+)/);
-  const rows = rowsMatch ? Number(rowsMatch[1]) : tables;
+  const rowsMatch = (backupOutput ?? "").match(/RESULT: BACKUP OK.*\brows=(\d+)/);
+  const rows = rowsMatch?.[1] !== undefined ? Number(rowsMatch[1]) : null;
 
   return { ok, tables, rows, failures: failures.map((l) => l.trim()) };
 }
@@ -105,8 +149,10 @@ if (isSelfTest) {
     rto_seconds: 99,
     rpo_target_seconds: 300,
     rto_target_seconds: 3600,
-    rpo_met: true,
+    rpo_operational_seconds: 21600,
+    rpo_met: false,
     rto_met: true,
+    recovered_cell_healthy: true,
     unhealthy_after_recovery: [],
     phases: {
       backup_ms: 5000,
@@ -143,7 +189,7 @@ if (isSelfTest) {
   };
 
   const keys = [
-    "failure_class", "rpo_seconds", "rto_seconds", "rpo_met", "rto_met", "unhealthy_after_recovery",
+    "failure_class", "rpo_seconds", "rpo_operational_seconds", "rto_seconds", "rpo_met", "rto_met", "recovered_cell_healthy", "unhealthy_after_recovery",
     "phases", "integrity", "timestamps", "control_plane_during_recovery", "notes",
   ];
   const missing = keys.filter((k) => !(k in mockResult));
@@ -254,9 +300,16 @@ if (!disturbed) {
   timestamps.cell_verified_iso = new Date(T_VERIFY_DONE).toISOString();
   log(`verify completed in ${verifyResult.elapsed_ms}ms`);
 
-  const integrity = parseVerifyResult(verifyResult.stdout);
+  const integrity = parseVerifyResult(verifyResult.stdout, backupResult.stdout);
 
+  // The drill takes its backup immediately before declaring the disaster, so this
+  // figure is a BEST CASE: it proves the restore itself loses nothing, not how much
+  // an operator would actually lose. What they would lose is the backup interval,
+  // because the recovery point is the age of the most recent backup. Publishing the
+  // drill figure as "the RPO" would report 0 for a platform that takes a dump every
+  // six hours, so both are emitted and the objective is judged on the operational one.
   const rpo_seconds = Math.round((T_DISASTER - T_BACKUP_DONE) / 1000);
+  const rpo_operational_seconds = backupIntervalSeconds();
   const rto_seconds = Math.round((T_VERIFY_DONE - T_DISASTER) / 1000);
 
   const RPO_TARGET_SECONDS = 300;
@@ -268,9 +321,19 @@ if (!disturbed) {
     rto_seconds,
     rpo_target_seconds: RPO_TARGET_SECONDS,
     rto_target_seconds: RTO_TARGET_SECONDS,
-    rpo_met: rpo_seconds <= RPO_TARGET_SECONDS,
-    rto_met: rto_seconds <= RTO_TARGET_SECONDS && unhealthyAfterRecovery.length === 0,
-    rto_elapsed_within_target: rto_seconds <= RTO_TARGET_SECONDS,
+    rpo_operational_seconds,
+    rpo_basis:
+      "rpo_seconds is the drill's best case — the backup precedes the disaster by seconds, so it proves the restore loses nothing. rpo_operational_seconds is the backup interval, which is what an operator would actually lose, and is the figure the objective is judged on.",
+    rpo_met: rpo_operational_seconds <= RPO_TARGET_SECONDS,
+    rpo_restore_lossless: rpo_seconds <= RPO_TARGET_SECONDS,
+    // rto_met judges the objective as the PRD writes it — "cell recovery time <= 60
+    // minutes, validated by exercise". Health is reported beside it, not folded into
+    // it: the checks that fail here fail identically on a fresh cold build, so they
+    // are chain defects rather than recovery defects, and charging them to the timing
+    // objective would file a cross-tenant finding under a latency heading where
+    // nobody looking for it would find it.
+    rto_met: rto_seconds <= RTO_TARGET_SECONDS,
+    recovered_cell_healthy: unhealthyAfterRecovery.length === 0,
     unhealthy_after_recovery: unhealthyAfterRecovery,
     phases: {
       backup_ms: backupResult.elapsed_ms,

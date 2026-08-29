@@ -31,35 +31,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check credentials
-        id: check-creds
+      # A backup job that takes no backup must NOT report success. Skipping every
+      # step behind a `configured` flag turns a missing secret into a green run
+      # every six hours forever, and the only signal is a warning annotation that
+      # never appears in a status check — so the recovery point silently goes
+      # unbounded while the schedule looks healthy. Fail instead.
+      - name: Require credentials
         run: |
           if [ -z "$DATABASE_URL" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Backup Skipped::CI_DATABASE_URL is not set, so no backup was taken and the recovery point is unbounded."
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "::error title=Backup impossible::CI_DATABASE_URL is not set. No backup can be taken, so the recovery point is unbounded. Set the secret or disable this schedule deliberately."
+            exit 1
           fi
         env:
           DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
 
       - uses: pnpm/action-setup@v4
-        if: steps.check-creds.outputs.configured == 'true'
 
       - uses: actions/setup-node@v4
-        if: steps.check-creds.outputs.configured == 'true'
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: backend/pnpm-lock.yaml
 
       - name: Install
-        if: steps.check-creds.outputs.configured == 'true'
         working-directory: backend
         run: pnpm install --frozen-lockfile
 
       - name: Take backup
-        if: steps.check-creds.outputs.configured == 'true'
         working-directory: backend
         run: pnpm cell:backup --region=${{ github.event.inputs.region || 'cell-2' }} --backup
         env:
@@ -68,7 +66,6 @@ jobs:
 
       # A backup nobody reads back is a file, not a backup.
       - name: Verify the backup reads back
-        if: steps.check-creds.outputs.configured == 'true'
         working-directory: backend
         run: pnpm cell:backup --region=${{ github.event.inputs.region || 'cell-2' }} --verify
         env:
@@ -76,7 +73,6 @@ jobs:
           DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
 
       - name: Upload backup artifact
-        if: steps.check-creds.outputs.configured == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: cell-backup-${{ github.event.inputs.region || 'cell-2' }}-${{ github.run_id }}

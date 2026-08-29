@@ -450,7 +450,11 @@ function report(results, totalRequests, primary, baseline) {
         });
         continue;
       }
-      const key = objective.name === "regional-rpo" ? "rpo_seconds" : "rto_seconds";
+      // rpo_operational_seconds, not rpo_seconds: the drill backs up seconds before
+      // the disaster it declares, so rpo_seconds is a best case that proves the
+      // restore is lossless. What an operator loses is the backup interval.
+      const key =
+        objective.name === "regional-rpo" ? "rpo_operational_seconds" : "rto_seconds";
       const seconds = drillData[key];
       if (seconds === undefined || seconds === null) {
         console.log(
@@ -468,11 +472,22 @@ function report(results, totalRequests, primary, baseline) {
       }
       const measured_v = seconds / 60;
       const verdict = measured_v <= objective.target ? "MET" : "BREACHED";
+      // The drill can recover a cell inside its time budget and hand back a cell that
+      // is not healthy. That is not a timing failure, but it must not vanish from the
+      // objectives feed either, so it rides along with the verdict rather than only
+      // living in the drill's own JSON.
+      const unhealthy = Array.isArray(drillData.unhealthy_after_recovery)
+        ? drillData.unhealthy_after_recovery
+        : [];
+      const healthNote =
+        objective.name === "cell-rto" && unhealthy.length > 0
+          ? ` — WARNING: the recovered cell failed ${unhealthy.length} health check(s), tracked separately: ${unhealthy.join("; ")}`
+          : "";
       measured += 1;
       if (verdict === "BREACHED") breached += 1;
       console.log(
         `${verdict.padEnd(11)} ${objective.name.padEnd(38)} ` +
-          `${measured_v.toFixed(1)} min target=${objective.target} min (timed drill, ${drillData.failure_class ?? "unclassified"})`,
+          `${measured_v.toFixed(1)} min target=${objective.target} min (timed drill, ${drillData.failure_class ?? "unclassified"})${healthNote}`,
       );
       objectives.push({
         name: objective.name,
@@ -480,6 +495,9 @@ function report(results, totalRequests, primary, baseline) {
         measured: measured_v,
         target: objective.target,
         failureClass: drillData.failure_class ?? null,
+        recoveredCellHealthy:
+          objective.name === "cell-rto" ? unhealthy.length === 0 : undefined,
+        unhealthyAfterRecovery: objective.name === "cell-rto" ? unhealthy : undefined,
         source: RECOVERY_DRILL_PATH,
       });
       continue;
