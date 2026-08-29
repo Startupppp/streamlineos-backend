@@ -3,7 +3,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { forEachOrg } from "../../../common/tenant";
+import { forEachOrg, runWithTenantContext, withTenant, type TenantTx } from "../../../common/tenant";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 
 /**
@@ -48,13 +48,56 @@ export class InvExpirySweepService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   /**
-   * Raises `inventory.lot.expiring` for every lot that has entered a window and
-   * still holds stock. Returns how many events it wrote, for the caller's log.
+   * Raises `inventory.lot.expiring` for one organisation's lots.
+   *
+   * Split from `sweepAll` because the two have different authority. A tenant's
+   * inventory administrator may sweep their own organisation; nobody holding a
+   * tenant-scoped permission may drive work across every tenant on the platform.
+   * The endpoint calls this one.
    */
-  async sweep(): Promise<{ organizations: number; events: number }> {
+  async sweepOrg(orgId: string): Promise<{ events: number }> {
+    let events = 0;
+    await withTenant(this.db, { orgId, audience: "INTERNAL" }, (tx) =>
+      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, () =>
+        this.sweepWithin(tx, orgId, () => {
+          events += 1;
+        }),
+      ),
+    );
+    this.logger.log(`inventory expiry sweep for ${orgId}: ${events} lot(s)`);
+    return { events };
+  }
+
+  /**
+   * Every organisation, for the background scheduler.
+   *
+   * **Not reachable over HTTP.** It writes into every tenant, so exposing it
+   * behind a tenant-scoped permission would let one organisation's administrator
+   * drive work in organisations they have no relationship with — and the
+   * `{ organizations }` count alone discloses the size of the platform.
+   */
+  async sweepAll(): Promise<{ organizations: number; events: number }> {
     let events = 0;
 
     const result = await forEachOrg(this.db, "inventory:expiry", async (tx, orgId) => {
+      await this.sweepWithin(tx, orgId, () => {
+        events += 1;
+      });
+    });
+
+    this.logger.log(
+      `inventory expiry sweep: ${events} lot(s) across ${result.succeeded}/${result.organizations} organisation(s), ${result.failed} failed`,
+    );
+    return { organizations: result.organizations, events };
+  }
+
+  /** The sweep itself, for one organisation, inside a tenant transaction. */
+  private async sweepWithin(
+    tx: TenantTx,
+    orgId: string,
+    onEvent: () => void,
+  ): Promise<void> {
+    {
       // The narrowest window a lot has entered — not every window it has passed.
       // A lot 20 days out has crossed 90, 60 and 30, and telling somebody about
       // all three at once is three notifications for one fact. `LEAST` picks the
@@ -121,13 +164,8 @@ export class InvExpirySweepService {
           },
           occurredAt: new Date(),
         });
-        events += 1;
+        onEvent();
       }
-    });
-
-    this.logger.log(
-      `inventory expiry sweep: ${events} lot(s) across ${result.succeeded}/${result.organizations} organisation(s), ${result.failed} failed`,
-    );
-    return { organizations: result.organizations, events };
+    }
   }
 }

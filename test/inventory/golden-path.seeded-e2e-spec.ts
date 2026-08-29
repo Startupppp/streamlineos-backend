@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
+import { availableQtySumSql } from "src/modules/inventory/stock-engine/available-sql";
 import { PoService } from "src/modules/inventory/purchase-orders/po.service";
 import { GrnService } from "src/modules/inventory/purchase-orders/grn.service";
 import { InvStockService } from "src/modules/inventory/stock/inv-stock.service";
@@ -93,21 +94,28 @@ describe("[seeded-e2e] the golden path", () => {
 
   const db = () => app.app.get<Db>(DRIZZLE);
 
-  /** What the business can promise, through the one availability formula. */
+  /**
+   * What the business can promise — through `availableQtySumSql`, not a copy of it.
+   *
+   * This spec spent one revision asserting against a hand-written subtraction,
+   * which made it the seventh copy of a formula whose own module doc records
+   * that none of the previous six subtracted `outgoing_qty`. A copy stays
+   * correct only until somebody adds a term to the original, and then this
+   * suite would go on asserting 100/70/80 against the old arithmetic while
+   * every ATP figure in the product had moved -- green, and measuring nothing.
+   *
+   * The copy was not even equivalent. It joined `inv_locations` and filtered
+   * `is_sellable IS NOT FALSE`, which drops a row whose location cannot be read
+   * at all; the canonical form treats that row as sellable, matching the
+   * column's `true` default rather than silently zeroing a warehouse.
+   */
   const atp = async (variantId?: number): Promise<number> => {
     const [row] = await asTenant(() =>
       db().execute<{ available: string }>(sql`
-        SELECT COALESCE(SUM(
-          sl.on_hand::numeric - sl.committed::numeric
-          - COALESCE(sl.blocked_qty, 0)::numeric
-          - COALESCE(sl.quality_hold_qty, 0)::numeric
-          - COALESCE(sl.outgoing_qty, 0)::numeric
-        ), 0)::text AS available
+        SELECT ${availableQtySumSql("sl")}::text AS available
         FROM inv_stock_levels sl
-        JOIN inv_locations loc ON loc.org_id = sl.org_id AND loc.id = sl.location_id
         WHERE sl.org_id = ${scene.orgId}
-          AND sl.product_variant_id = ${variantId ?? scene.variantId}
-          AND loc.is_sellable IS NOT FALSE`),
+          AND sl.product_variant_id = ${variantId ?? scene.variantId}`),
     );
     return Number(row!.available);
   };
@@ -127,7 +135,7 @@ describe("[seeded-e2e] the golden path", () => {
     const report = await asTenant(() =>
       app.app.get(InvReconciliationService).report(scene.orgId, scene.userId, {
         limit: 50,
-      } as never),
+      }),
     );
     expect({ step, drift: (report as { drift: unknown[] }).drift }).toEqual({ step, drift: [] });
   };
@@ -208,7 +216,7 @@ describe("[seeded-e2e] the golden path", () => {
             lineOrder: 0,
           },
         ],
-      } as never),
+      }),
     );
     const poId = (po as { id: number }).id;
     await asTenant(() => app.app.get(PoService).sendPo(scene.orgId, poId, scene.userId));
@@ -233,7 +241,7 @@ describe("[seeded-e2e] the golden path", () => {
           lines: [
             { poLineId: line!.id, quantityReceived: "100.0000", qualityStatus: "ACCEPTED" },
           ],
-        } as never,
+        },
       ),
     );
 
@@ -296,7 +304,7 @@ describe("[seeded-e2e] the golden path", () => {
             lineOrder: 0,
           },
         ],
-      } as never),
+      }),
     );
     soId = (so as { id: number }).id;
 
@@ -360,7 +368,7 @@ describe("[seeded-e2e] the golden path", () => {
     await asTenant(() =>
       app.app
         .get(SoFulfillmentService)
-        .packSo(scene.orgId, soId, scene.userId, {} as never, `gp-pack-${scene.tag}`),
+        .packSo(scene.orgId, soId, scene.userId, {}, `gp-pack-${scene.tag}`),
     );
 
     await asTenant(() =>
@@ -368,7 +376,7 @@ describe("[seeded-e2e] the golden path", () => {
         .get(SoFulfillmentService)
         .shipSo(scene.orgId, soId, scene.userId, `gp-ship-${scene.tag}`, {
           shipDate: "2026-08-04",
-        } as never),
+        }),
     );
 
     // Shipping turns a promise into a departure. The 30 leave the shelf and the
@@ -391,7 +399,7 @@ describe("[seeded-e2e] the golden path", () => {
             reason: "Customer changed their mind",
           },
         ],
-      } as never),
+      }),
     );
     const returnId = (ret as { id: number }).id;
 
@@ -409,17 +417,17 @@ describe("[seeded-e2e] the golden path", () => {
       app.app.get(CustomerReturnsService).inspectLine(scene.orgId, scene.userId, returnId, {
         lineId: line!.id,
         disposition: "RESTOCK",
-      } as never),
+      }),
     );
     await asTenant(() =>
       app.app
         .get(CustomerReturnsService)
-        .approve(scene.orgId, returnId, scene.userId, {} as never),
+        .approve(scene.orgId, returnId, scene.userId, {}),
     );
     await asTenant(() =>
       app.app
         .get(CustomerReturnsService)
-        .post(scene.orgId, returnId, scene.userId, `gp-return-${scene.tag}`, {} as never),
+        .post(scene.orgId, returnId, scene.userId, `gp-return-${scene.tag}`, {}),
     );
 
     // Inspected RESTOCK, so the 10 rejoin sellable stock and are promisable again.
@@ -461,7 +469,7 @@ describe("[seeded-e2e] the golden path", () => {
             lineOrder: 0,
           },
         ],
-      } as never),
+      }),
     );
     const poId = (po as { id: number }).id;
     await asTenant(() => app.app.get(PoService).sendPo(scene.orgId, poId, scene.userId));
@@ -489,7 +497,7 @@ describe("[seeded-e2e] the golden path", () => {
               expiryDate: expiry,
             },
           ],
-        } as never),
+        }),
       );
     await receiveBatch("a", "25.0000", `L-A-${scene.tag}`, "2027-01-31");
     await receiveBatch("b", "15.0000", `L-B-${scene.tag}`, "2027-06-30");
@@ -520,7 +528,7 @@ describe("[seeded-e2e] the golden path", () => {
           title: `Golden recall ${scene.tag}`,
           selection: { lotIds: [badLot!.id] },
           evidenceVersion: impact.evidenceVersion,
-        } as never,
+        },
         `gp-recall-${scene.tag}`,
       ),
     );

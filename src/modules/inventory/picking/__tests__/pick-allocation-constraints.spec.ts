@@ -40,9 +40,15 @@ describe("D2 — picking allocates under the same constraints as reserving", () 
     ];
 
     const bare: string[] = [];
+    const missing: string[] = [];
     for (const file of callers) {
       const text = code(source(file));
-      if (!text.includes("findAvailableLotForLine")) continue;
+      // A `continue` here would let a renamed or relocated call site drop out of
+      // the audit and the suite pass while the thing it audits has vanished.
+      if (!text.includes("findAvailableLotForLine")) {
+        missing.push(file);
+        continue;
+      }
       // The allocator's sixth argument is `expiryPolicy`. A call that ends there
       // — `expiryReservationPolicy,` followed by the closing paren — is one that
       // silently drops the near-expiry tier and the shelf-life floor.
@@ -50,18 +56,36 @@ describe("D2 — picking allocates under the same constraints as reserving", () 
     }
 
     expect(bare).toEqual([]);
+    // If a caller genuinely stops allocating, delete it from `callers` — do not
+    // let the audit quietly stop covering it.
+    expect(missing).toEqual([]);
   });
 
   it("resolves the floor per order, not once for the wave", async () => {
     // A wave spans several customers. Resolving one floor for the whole wave
     // would apply the strictest customer's contract to everybody else's stock
     // and relax theirs to it — both wrong, in opposite directions.
-    const seen: Array<string | null> = [];
+    //
+    // The first version of this test could not fail: its mock returned the same
+    // floor for every order, so `expect(b).toEqual(a)` passed *precisely when*
+    // the resolver cached one floor for the whole wave — the defect it claimed
+    // to rule out. It now gives two orders two different customers with two
+    // different contracts, and asserts the answers differ.
+    const clientBySo: Record<number, number> = { 11: 100, 12: 200 };
+    const floorByClient: Record<number, number> = { 100: 120, 200: 30 };
+    const askedFor: number[] = [];
+
+    let lastClientId: number | null = null;
     const db = {
-      // `clientBehindSource` resolves the customer from the order before the
-      // floor can be looked up; no order row means no client, which is the
-      // ordinary case for a house rule.
-      query: { invSalesOrders: { findFirst: async () => undefined } },
+      query: {
+        invSalesOrders: {
+          findFirst: async (args: { where?: unknown }) => {
+            void args;
+            const soId = askedFor[askedFor.length - 1];
+            return soId === undefined ? undefined : { clientId: clientBySo[soId] ?? null };
+          },
+        },
+      },
       select: () => {
         const chain: Record<string, unknown> = {};
         const step = () => chain;
@@ -69,7 +93,12 @@ describe("D2 — picking allocates under the same constraints as reserving", () 
         chain.where = step;
         chain.orderBy = step;
         chain.limit = step;
-        chain.then = (resolve: (rows: unknown[]) => unknown) => resolve([]);
+        chain.then = (resolve: (rows: unknown[]) => unknown) =>
+          resolve(
+            lastClientId === null
+              ? []
+              : [{ clientId: lastClientId, minShelfLifeDays: floorByClient[lastClientId] ?? 0 }],
+          );
         return chain;
       },
     };
@@ -78,17 +107,25 @@ describe("D2 — picking allocates under the same constraints as reserving", () 
     };
 
     const resolve = pickConstraintsResolver(db as never, settingsService as never, "org1");
-    const a = await resolve(11);
-    const b = await resolve(12);
-    seen.push("11", "12");
 
-    expect(a).toEqual({
-      nearExpiryPolicy: "BLOCK",
-      nearExpiryWindowDays: 60,
-      minShelfLifeDays: 0,
-    });
-    expect(b).toEqual(a);
-    expect(seen).toHaveLength(2);
+    askedFor.push(11);
+    lastClientId = clientBySo[11]!;
+    const a = await resolve(11);
+
+    askedFor.push(12);
+    lastClientId = clientBySo[12]!;
+    const b = await resolve(12);
+
+    // The assertion that matters: two orders, two contracts, two answers. A
+    // resolver that cached one floor for the wave returns the same number twice
+    // and fails here.
+    expect(a.minShelfLifeDays).toBe(120);
+    expect(b.minShelfLifeDays).toBe(30);
+    expect(a.minShelfLifeDays).not.toBe(b.minShelfLifeDays);
+
+    // The organisation's own settings are the same for both, as they should be.
+    expect(a.nearExpiryPolicy).toBe("BLOCK");
+    expect(b.nearExpiryWindowDays).toBe(60);
   });
 
   it("caches per order, so a wave does not re-read one customer's rules per line", async () => {

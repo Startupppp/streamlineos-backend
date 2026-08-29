@@ -225,7 +225,7 @@ describeIfAppRole("[seeded-e2e] CRM tenant isolation, as the application role", 
       [CRM_TABLE_PATTERN],
     );
     const unproven = enabled
-      .map((row: { table: string }) => row.table)
+      .map((row) => (row as unknown as { table: string }).table)
       .filter((table: string) => !TENANT_TABLES.includes(table as (typeof TENANT_TABLES)[number]));
     expect(unproven).toEqual([]);
   });

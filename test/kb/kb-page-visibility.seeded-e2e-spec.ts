@@ -16,7 +16,6 @@ const asMember = (userId: string, orgId: string): CurrentUserContext => ({
   orgId,
   isOrgOwner: false,
   role: "MEMBER",
-  permissions: [],
   sessionId: `seeded-${userId}`,
   tokenScopes: null,
 });

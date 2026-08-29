@@ -137,6 +137,24 @@ exhaustion prints nothing and greps as zero errors. It needs 8GB.
 
 ### Two traps this branch taught
 
+**243 of 341 journalled migrations have no bookkeeping row.** Their objects
+exist; the rows do not. `scripts/apply-migration-file.mjs` applied files without
+recording the hash — fixed now, it records on every apply — but everything
+applied by hand before that fix is invisibly "pending", including migrations
+predating this programme.
+
+`scripts/check-migrations-applied.mjs` reports the list. It compares the sha256
+of each journalled `.sql` against `drizzle.__drizzle_migrations` and is the only
+tool that can see this state. **It was deleted by an over-broad `git add -A`
+during this work and has been restored** — with it gone, nothing could detect
+the problem it exists for.
+
+⚠ **The 243 have deliberately not been bulk-recorded.** Inserting hashes would
+assert that each migration's objects are present, and for the payroll and CRM
+entries in that list nobody here has checked. Reconciling them needs somebody
+who can verify object-by-object; recording them blind would replace a visible
+problem with an invisible one.
+
 **`pnpm db:migrate` cannot be used to repair this database.** Drizzle wraps every
 pending migration in one transaction, so with 239 reported pending it attempts
 the lot and a single failure rolls back everything. It exits `1` with the error

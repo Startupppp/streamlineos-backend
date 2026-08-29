@@ -87,8 +87,33 @@ function exportedServices(dir: string): string[] {
   return [...new Set(names)];
 }
 
-function hasController(dir: string): boolean {
-  return walk(dir).some((f) => f.endsWith(".controller.ts"));
+/**
+ * A controller file is not a route until a module registers it.
+ *
+ * The first version accepted any directory containing a `*.controller.ts`, so an
+ * unregistered controller — which serves nothing — satisfied the gate. That is
+ * not hypothetical: the sweep this spec caught needed its controller added to
+ * `inv-notifications.module.ts` by hand, and had the file existed first the gate
+ * would have gone quiet a commit early.
+ */
+function hasRegisteredController(dir: string): boolean {
+  const controllers = walk(dir)
+    .filter((f) => f.endsWith(".controller.ts") && !f.includes(".spec.ts"))
+    .flatMap((f) => [...readFileSync(f, "utf8").matchAll(/export class (\w+Controller)/g)])
+    .map((m) => m[1])
+    .filter((name): name is string => name !== undefined);
+  if (controllers.length === 0) return false;
+
+  // Registration may live in this module or in a parent that imports it, so the
+  // whole source tree is searched for a `controllers: [...]` naming the class.
+  for (const file of ALL_SOURCES) {
+    if (!file.endsWith(".module.ts")) continue;
+    const source = readFileSync(file, "utf8");
+    const block = /controllers:\s*\[([\s\S]*?)\]/.exec(source);
+    if (!block?.[1]) continue;
+    if (controllers.some((name) => new RegExp(`\\b${name}\\b`).test(block[1]!))) return true;
+  }
+  return false;
 }
 
 /** Whether anything outside `dir` names one of these symbols. */
@@ -122,11 +147,11 @@ describe("inventory features are reachable, not merely committed", () => {
     for (const name of subModules) {
       if (name in LIBRARY_MODULES) continue;
       const dir = join(INVENTORY_DIR, name);
-      if (hasController(dir)) continue;
+      if (hasRegisteredController(dir)) continue;
       const caller = calledFromOutside(dir, exportedServices(dir));
       if (caller === null) {
         unreachable.push(
-          `${name} — no controller, and nothing outside src/modules/inventory/${name}/ names any class it exports`,
+          `${name} — no *registered* controller, and nothing outside src/modules/inventory/${name}/ names any class it exports`,
         );
       }
     }
