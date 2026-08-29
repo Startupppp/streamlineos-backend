@@ -4,15 +4,12 @@
   Inject,
   Injectable,
   Logger,
-  NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import {
   coupons,
   couponRedemptions,
-  invoices,
-  organizationMembers,
   subscriptionPayments,
   subscriptions,
   accountingSettings,
@@ -59,6 +56,8 @@ import {
   ExternalEffectLeaseBusyError,
 } from "../../../common/outbox/external-effect-ledger";
 import { BillingProfileService } from "./billing-profile.service";
+import { BillingMarketplace } from "./billing-marketplace";
+import { BillingAccountOverview } from "./billing-account-overview";
 
 @Injectable()
 export class BillingService {
@@ -87,10 +86,22 @@ export class BillingService {
       paymentWebhooks: this.paymentWebhooks,
       paymentNotices: this.paymentNotices,
     });
+    this.marketplace = new BillingMarketplace(
+      this.aiCredits,
+      this.providers,
+      this.currencyForOrg.bind(this),
+    );
+    this.accountOverview = new BillingAccountOverview(
+      this.db,
+      this.planLimits,
+      this.providers,
+    );
   }
 
   private readonly webhooks: BillingWebhookHandler;
   private readonly couponAdmin: BillingCoupons;
+  private readonly marketplace: BillingMarketplace;
+  private readonly accountOverview: BillingAccountOverview;
   private readonly logger = new Logger(BillingService.name);
 
   private async billablePrice(orgId: string, plan: Plan, billingCycle: BillingCycle) {
@@ -496,41 +507,11 @@ export class BillingService {
   }
 
   getMarketplace() {
-    return { apps: [], addons: [] };
+    return this.marketplace.getMarketplace();
   }
 
   async purchaseAddon(orgId: string, addonId: string, quantity: number) {
-    if (addonId.startsWith("ai_pack_")) {
-      const packId = parseInt(addonId.replace("ai_pack_", ""), 10);
-      const packs = await this.aiCredits.listPacks();
-      const pack = packs.find((p) => p.id === packId);
-      if (!pack) throw new BadRequestException("AI credit pack not found");
-      const addonAdapter = await this.providers.resolveConfigured(orgId);
-      if (addonAdapter === undefined || !addonAdapter.isReady()) {
-        throw new ServiceUnavailableException(
-          "Payment gateway not configured. Contact support.",
-        );
-      }
-      const currency = await this.currencyForOrg(orgId);
-      const { providerOrderId: addonOrderId } = await addonAdapter.createOrder({
-        amount: String(pack.priceInPaise * quantity),
-        currency,
-        receipt: `aip_${packId}_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
-        notes: {
-          orgId: String(orgId),
-          packId: String(packId),
-          quantity: String(quantity),
-        },
-      });
-      return {
-        orderId: addonOrderId,
-        amount: pack.priceInPaise * quantity,
-        currency,
-        keyId: addonAdapter.publicKeyId(),
-        pack,
-      };
-    }
-    throw new BadRequestException("Unknown addon type");
+    return this.marketplace.purchaseAddon(orgId, addonId, quantity);
   }
 
   async getBillingProfile(orgId: string) {
@@ -543,89 +524,7 @@ export class BillingService {
 
 
   listAddons() {
-    return {
-      addons: [
-        {
-          id: "ai_credits",
-          name: "AI Credit Packs",
-          description: "Purchase additional AI processing credits",
-          icon: "Zap",
-          available: true,
-          href: "/billing/ai-credits",
-        },
-        {
-          id: "extra_storage",
-          name: "Extra Storage",
-          description: "Add 100GB of document and file storage",
-          icon: "HardDrive",
-          priceInPaise: 49900,
-          available: true,
-        },
-        {
-          id: "whatsapp",
-          name: "WhatsApp Messaging",
-          description: "1000 WhatsApp messages/month",
-          icon: "MessageSquare",
-          priceInPaise: 199900,
-          available: false,
-          comingSoon: true,
-        },
-        {
-          id: "sms_credits",
-          name: "SMS Credits",
-          description: "Bulk SMS for notifications and alerts",
-          icon: "Phone",
-          priceInPaise: 99900,
-          available: false,
-          comingSoon: true,
-        },
-        {
-          id: "voice_ai",
-          name: "Voice AI",
-          description: "AI-powered voice calling and transcription",
-          icon: "Mic",
-          priceInPaise: 499900,
-          available: false,
-          comingSoon: true,
-        },
-        {
-          id: "white_label",
-          name: "White Label",
-          description: "Remove StreamlineOS branding",
-          icon: "Tag",
-          priceInPaise: 999900,
-          available: false,
-          comingSoon: true,
-        },
-        {
-          id: "custom_domain",
-          name: "Custom Domain",
-          description: "Use your own domain for the platform",
-          icon: "Globe",
-          priceInPaise: 299900,
-          available: false,
-          comingSoon: true,
-        },
-        {
-          id: "premium_support",
-          name: "Premium Support",
-          description: "24/7 dedicated support with SLA guarantees",
-          icon: "HeadphonesIcon",
-          priceInPaise: 1999900,
-          available: false,
-          comingSoon: true,
-        },
-        {
-          id: "api_capacity",
-          name: "API Capacity",
-          description: "Higher API rate limits and throughput",
-          icon: "Server",
-          priceInPaise: 149900,
-          available: false,
-          comingSoon: true,
-        },
-      ],
-    };
+    return this.marketplace.listAddons();
   }
 
   /**
@@ -639,109 +538,14 @@ export class BillingService {
    * show WHERE the seats went rather than a single opaque total.
    */
   async getSeatInfo(orgId: string) {
-    const [{ seatLimit }, memberRows, invitationRows] = await Promise.all([
-      this.planLimits.getEntitlements(orgId),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(organizationMembers)
-        .where(eq(organizationMembers.orgId, orgId)),
-      this.db.execute(sql`
-        SELECT COUNT(*)::int AS count FROM invitations
-        WHERE org_id = ${orgId}
-          AND status = 'PENDING'
-          AND accepted_at IS NULL
-          AND expires_at > NOW()
-      `),
-    ]);
-
-    const activeMembers = Number(memberRows[0]?.count ?? 0);
-    const pendingInvitations = Number(invitationRows[0]?.["count"] ?? 0);
-    const used = activeMembers + pendingInvitations;
-    const total = seatLimit;
-
-    return {
-      total,
-      used,
-      available: total === null ? null : Math.max(0, total - used),
-      activeMembers,
-      pendingInvitations,
-    };
+    return this.accountOverview.getSeatInfo(orgId);
   }
 
   async requestAffiliatePayoutRequest(orgId: string) {
-    const affiliate = await this.db.query.affiliates.findFirst({
-      where: (a, { eq }) => eq(a.orgId, orgId),
-    });
-    if (!affiliate) throw new NotFoundException("Affiliate not found");
-    if (affiliate.pendingPayout === 0)
-      throw new BadRequestException("No pending payout available");
-    return {
-      success: true,
-      amount: affiliate.pendingPayout,
-      message:
-        "Payout request submitted. Our team will process it within 5-7 business days.",
-    };
+    return this.accountOverview.requestAffiliatePayoutRequest(orgId);
   }
 
   async getSummary(orgId: string) {
-    const [subscription, invoiceStats] = await Promise.all([
-      this.db.query.subscriptions.findFirst({
-        where: eq(subscriptions.orgId, orgId),
-        columns: {
-          plan: true,
-          status: true,
-          trialEndsAt: true,
-          currentPeriodEnd: true,
-        },
-      }),
-      this.db
-        .select({
-          totalPaid: sql<string>`coalesce(sum(case when ${invoices.status} = 'PAID' then ${invoices.total}::numeric else 0 end), 0)::text`,
-          totalOutstanding: sql<string>`coalesce(sum(case when ${invoices.status} in ('ISSUED','FAILED') then ${invoices.total}::numeric else 0 end), 0)::text`,
-          draft: sql<number>`count(case when ${invoices.status} = 'DRAFT' then 1 end)::int`,
-          issued: sql<number>`count(case when ${invoices.status} = 'ISSUED' then 1 end)::int`,
-          paid: sql<number>`count(case when ${invoices.status} = 'PAID' then 1 end)::int`,
-          failed: sql<number>`count(case when ${invoices.status} = 'FAILED' then 1 end)::int`,
-          voided: sql<number>`count(case when ${invoices.status} = 'VOIDED' then 1 end)::int`,
-        })
-        .from(invoices)
-        .where(eq(invoices.orgId, orgId)),
-    ]);
-
-    const now = Date.now();
-    const trialDaysRemaining =
-      subscription?.status === "TRIAL" && subscription.trialEndsAt
-        ? Math.max(
-            0,
-            Math.ceil(
-              (new Date(subscription.trialEndsAt).getTime() - now) / 86_400_000,
-            ),
-          )
-        : null;
-
-    return {
-      subscription: subscription
-        ? {
-            plan: subscription.plan,
-            status: subscription.status,
-            trialEndsAt: subscription.trialEndsAt ?? null,
-            trialDaysRemaining,
-            currentPeriodEnd: subscription.currentPeriodEnd ?? null,
-            isActive: subscription.status === "ACTIVE",
-            isTrial: subscription.status === "TRIAL",
-          }
-        : null,
-      invoiceStats: invoiceStats[0] ?? {
-        totalPaid: "0",
-        totalOutstanding: "0",
-        draft: 0,
-        issued: 0,
-        paid: 0,
-        failed: 0,
-        voided: 0,
-      },
-      isConfigured:
-        (await this.providers.resolveConfigured(orgId))?.isReady() ?? false,
-    };
+    return this.accountOverview.getSummary(orgId);
   }
 }
