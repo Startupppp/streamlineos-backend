@@ -91,7 +91,11 @@ interface Ctx {
   tag: string;
 }
 
-async function one<T extends Record<string, unknown>>(db: Db, query: ReturnType<typeof sql>): Promise<T> {
+// No explicit `Promise<T>`: drizzle's `execute<T>` yields `Assume<T, Row>`, which
+// is not assignable to a bare `T` even though it resolves to one at every call
+// site. Letting the return type be inferred keeps callers correctly typed
+// without a cast that would paper over a genuine mismatch later.
+async function one<T extends Record<string, unknown>>(db: Db, query: ReturnType<typeof sql>) {
   const rows = await db.execute<T>(query);
   const row = rows[0];
   if (!row) throw new Error("fixture insert returned no row");
