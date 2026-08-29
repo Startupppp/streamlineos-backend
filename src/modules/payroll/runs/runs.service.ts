@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, Inject } from "@nestjs/common";
-import { and, eq, desc, ilike, or, count, lt, sql, inArray, isNull, type SQL } from "drizzle-orm";
+import { and, eq, desc, ilike, or, count, isNull, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -23,6 +23,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { PayrollEntitiesService } from "../entities/entities.service";
 import { describeCountryPack } from "../../hr/global/lib/country-pack-registry";
 import { getIndiaBundleForMonth } from "./lib/statutory-registry";
+import { PayrollRunVarianceService } from "./payroll-run-variance.service";
 
 @Injectable()
 export class RunsService {
@@ -30,6 +31,7 @@ export class RunsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly entities: PayrollEntitiesService,
+    private readonly variance: PayrollRunVarianceService,
   ) {}
 
   async setEmployeeHold(
@@ -338,7 +340,7 @@ export class RunsService {
 
     const [toggles, varianceSummary, payoutHealth] = await Promise.all([
       this.getTogglesForRun(orgId, run[0].policyVersionId),
-      this.buildVarianceSummary(orgId, run[0].id, run[0].month, run[0].netTotal),
+      this.variance.buildSummary(orgId, run[0].id, run[0].month, run[0].netTotal),
       this.getPayoutHealth(orgId, run[0].id, run[0].status),
     ]);
 
@@ -472,75 +474,7 @@ export class RunsService {
   }
 
   async getVariance(orgId: string, runId: number) {
-    const run = await this.db
-      .select({ id: payrollRuns.id, month: payrollRuns.month, grossTotal: payrollRuns.grossTotal, netTotal: payrollRuns.netTotal })
-      .from(payrollRuns)
-      .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)))
-      .limit(1);
-
-    if (!run[0]) return null;
-
-    const prevRun = await this.db
-      .select({ id: payrollRuns.id, month: payrollRuns.month, grossTotal: payrollRuns.grossTotal, netTotal: payrollRuns.netTotal })
-      .from(payrollRuns)
-      .where(and(
-        eq(payrollRuns.orgId, orgId),
-        sql`${payrollRuns.month} < ${run[0].month}`,
-        inArray(payrollRuns.status, [...PAYROLL_LOCKED_STATUSES]),
-      ))
-      .orderBy(desc(payrollRuns.month))
-      .limit(1);
-
-    const topMovers = await this.db
-      .select({
-        userId: payrollRunEmployees.userId,
-        net: payrollRunEmployees.net,
-        userName: users.name,
-        calculationSnapshot: payrollRunEmployees.calculationSnapshot,
-        paidDays: payrollRunEmployees.paidDays,
-        lopDays: payrollRunEmployees.lopDays,
-      })
-      .from(payrollRunEmployees)
-      .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
-      .orderBy(desc(payrollRunEmployees.net))
-      .limit(10);
-
-    const withBaselines = topMovers.map((m) => {
-      const snap = m.calculationSnapshot as {
-        variance?: {
-          baselineSource?: string | null;
-          inputBaseline?: {
-            lockedPaidDays: string | null;
-            lockedLopDays: string | null;
-            paidDaysDelta: number | null;
-            lopDaysDelta: number | null;
-          } | null;
-          netDeltaPercent?: number | null;
-        } | null;
-      } | null;
-      return {
-        userId: m.userId,
-        net: m.net,
-        userName: m.userName,
-        paidDays: m.paidDays,
-        lopDays: m.lopDays,
-        baselineSource: snap?.variance?.baselineSource ?? (prevRun[0] ? "PREVIOUS_RUN" : null),
-        inputBaseline: snap?.variance?.inputBaseline ?? null,
-        netDeltaPercent: snap?.variance?.netDeltaPercent ?? null,
-      };
-    });
-
-    return {
-      currentRun: run[0],
-      previousRun: prevRun[0] ?? null,
-      topMovers: withBaselines,
-      lockedInputBaselinesUsed: withBaselines.some(
-        (m) =>
-          m.baselineSource === "LOCKED_INPUT_SNAPSHOT" ||
-          m.baselineSource === "PREVIOUS_RUN_AND_LOCKED_INPUTS",
-      ),
-    };
+    return this.variance.getVariance(orgId, runId);
   }
 
   async buildVarianceSummary(
@@ -549,55 +483,7 @@ export class RunsService {
     currentMonth: string,
     currentNetTotal: string | null,
   ): Promise<VarianceSummary | null> {
-    const [[prevRun], currentEmps] = await Promise.all([
-      this.db
-        .select({ id: payrollRuns.id, month: payrollRuns.month, netTotal: payrollRuns.netTotal })
-        .from(payrollRuns)
-        .where(and(
-          eq(payrollRuns.orgId, orgId),
-          lt(payrollRuns.month, currentMonth),
-          inArray(payrollRuns.status, [...PAYROLL_LOCKED_STATUSES]),
-        ))
-        .orderBy(desc(payrollRuns.month))
-        .limit(1),
-      this.db
-        .select({ userId: payrollRunEmployees.userId, net: payrollRunEmployees.net })
-        .from(payrollRunEmployees)
-        .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId))),
-    ]);
-
-    if (!prevRun) return null;
-
-    const prevEmps = await this.db
-      .select({ userId: payrollRunEmployees.userId, net: payrollRunEmployees.net })
-      .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, prevRun.id), eq(payrollRunEmployees.orgId, orgId)));
-
-    const currentUserIds = new Set(currentEmps.map(e => e.userId));
-    const prevNetMap = new Map(prevEmps.map(e => [e.userId, e.net]));
-
-    const newJoiners = currentEmps.filter(e => !prevNetMap.has(e.userId)).length;
-    const exited = prevEmps.filter(e => !currentUserIds.has(e.userId)).length;
-    const changedEmployees = currentEmps.filter(e => {
-      const prevNet = prevNetMap.get(e.userId);
-      return prevNet != null && prevNet !== e.net;
-    }).length;
-
-    const currentNetPaise = toPaise(currentNetTotal ?? "0");
-    const prevNetPaise = toPaise(prevRun.netTotal ?? "0");
-    const netDeltaPaise = currentNetPaise - prevNetPaise;
-    const netDeltaPercent = prevNetPaise !== 0 ? (netDeltaPaise / prevNetPaise) * 100 : 0;
-
-    return {
-      previousMonth: prevRun.month,
-      currentNet: (currentNetPaise / 100).toFixed(2),
-      previousNet: (prevNetPaise / 100).toFixed(2),
-      netDelta: fromPaise(netDeltaPaise),
-      netDeltaPercent: Math.round(netDeltaPercent * 100) / 100,
-      newJoiners,
-      exited,
-      changedEmployees,
-    };
+    return this.variance.buildSummary(orgId, runId, currentMonth, currentNetTotal);
   }
 
   private async getTogglesForRun(orgId: string, policyVersionId: number | null): Promise<PayrollToggles | null> {

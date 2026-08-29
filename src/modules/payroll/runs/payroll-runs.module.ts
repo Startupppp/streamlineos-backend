@@ -23,6 +23,7 @@ import { CommandCenterService } from "./command-center.service";
 import { PayrollCommandReceiptsService } from "../command-receipts.service";
 import { PayrollRunLockService } from "../run-lock.service";
 import { PayrollRunCalculationGuardsService } from "./payroll-run-calculation-guards.service";
+import { PayrollRunVarianceService } from "./payroll-run-variance.service";
 
 @Module({
   imports: [AccessModule, PayrollInsightsModule, PayrollEntitiesModule, DirectoryModule],
@@ -49,6 +50,7 @@ import { PayrollRunCalculationGuardsService } from "./payroll-run-calculation-gu
     PayrollCommandReceiptsService,
     PayrollRunLockService,
     PayrollRunCalculationGuardsService,
+    PayrollRunVarianceService,
   ],
   exports: [GenerateService, PayrollCommandReceiptsService, PayrollRunLockService],
 })
