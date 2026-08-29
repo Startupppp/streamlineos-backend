@@ -62,6 +62,48 @@ jobs:
         run: pnpm exec knip --no-progress
         continue-on-error: true
 
+  # The golden path, on every pull request.
+  #
+  # It proves the one thing no unit test can: that buy -> receive -> put away ->
+  # promise -> pick -> pack -> ship -> return -> recall agrees end to end across
+  # the ledger, the documents, the reservations and the events. Every step
+  # asserts ATP through the shared availability formula and an empty
+  # reconciliation drift, so a step that silently does nothing shows up as stock
+  # that did not move.
+  #
+  # It was running only on `schedule` and `workflow_dispatch`, folded into the
+  # tenant-isolation job, while the PR gate ran `pnpm test` — whose jest config
+  # carries `testPathIgnorePatterns: ["e2e-spec", ...]`. So a change that broke
+  # the whole chain merged green. A suite that proves the chain and cannot block
+  # a merge is a suite that rots.
+  #
+  # Its own job, and only this spec rather than the whole seeded suite: the
+  # seeded suites share one database and contend when run together, which shows
+  # up as timeouts rather than failures. One focused suite, run in band, is the
+  # version that stays trustworthy.
+  #
+  # Without the secrets the spec skips itself loudly rather than passing on an
+  # empty database — a fork PR therefore reports "skipped", not "green".
+  golden-path:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Golden path (buy -> receive -> ship -> return -> recall)
+        run: pnpm test:e2e:seeded -- --testPathPattern="golden-path"
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          BACKEND_JWT_SECRET: ${{ secrets.CI_BACKEND_JWT_SECRET }}
+
   # Tenant isolation, against a real database as the real application role.
   #
   # Its own job because it needs credentials CI cannot fabricate, and because a
