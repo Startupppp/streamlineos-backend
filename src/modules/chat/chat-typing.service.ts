@@ -1,7 +1,7 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { Redis } from "@upstash/redis";
-import { eq } from "drizzle-orm";
-import { users } from "../../db/schema";
+import { and, eq } from "drizzle-orm";
+import { chatChannelMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { REDIS } from "../../common/cache/cache.service";
@@ -25,7 +25,19 @@ export class ChatTypingService {
     return `chat:typing:${channelId}`;
   }
 
+  private async assertChannelMember(channelId: number, userId: string): Promise<void> {
+    const membership = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.userId, userId),
+      ),
+      columns: { id: true },
+    });
+    if (!membership) throw new ForbiddenException("You are not a member of this channel");
+  }
+
   async setTyping(channelId: number, userId: string): Promise<void> {
+    await this.assertChannelMember(channelId, userId);
     if (!this.redis) return;
 
     const me = await this.db.query.users.findFirst({
@@ -48,6 +60,7 @@ export class ChatTypingService {
   }
 
   async getTyping(channelId: number, currentUserId: string) {
+    await this.assertChannelMember(channelId, currentUserId);
     if (!this.redis) return [];
 
     let state: Record<string, TypingEntry> | null;
