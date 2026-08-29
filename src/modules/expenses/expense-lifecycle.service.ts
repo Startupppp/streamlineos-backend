@@ -2,10 +2,11 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { createHash, randomUUID } from "crypto";
+import { createHash } from "crypto";
 import {
   expenses,
   finExpensePolicies,
@@ -19,12 +20,10 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { compareDecimals, formatDecimal } from "../accounting/core/money.util";
-import { OutboxWriter } from "../../common/outbox/outbox-writer";
+import { emitExpenseOutboxEvent } from "./expense-outbox-emitter";
 import {
-  EXPENSE_AGGREGATE_TYPE,
   EXPENSE_DECIDED_EVENT,
   EXPENSE_SUBMITTED_EVENT,
-  expenseAggregateVersion,
   expenseDecidedPayloadSchema,
   expenseSubmittedPayloadSchema,
 } from "./dto/expense-outbox.schemas";
@@ -216,7 +215,11 @@ export class ExpenseLifecycleService {
           updatedAt: new Date(),
         })
         .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)))
-        .returning({ updatedAt: expenses.updatedAt });
+        .returning({ id: expenses.id });
+
+      if (!updated) {
+        throw new InternalServerErrorException("Expense was concurrently modified.");
+      }
 
       if (approvalResult.needsApproval) {
         await tx.insert(finApprovalRequests).values({
@@ -230,12 +233,9 @@ export class ExpenseLifecycleService {
 
       if (!approvalResult.approverUserId) return;
 
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: u.orgId,
-        aggregateType: EXPENSE_AGGREGATE_TYPE,
-        aggregateId: String(expenseId),
-        aggregateVersion: expenseAggregateVersion(updated ?? {}),
+      await emitExpenseOutboxEvent(tx, {
+        orgId: u.orgId,
+        expenseId,
         eventType: EXPENSE_SUBMITTED_EVENT,
         payload: expenseSubmittedPayloadSchema.parse({
           expenseId,
@@ -247,7 +247,6 @@ export class ExpenseLifecycleService {
           recipients: { mode: "EXPLICIT", userIds: [approvalResult.approverUserId] },
           runAutomations: false,
         }),
-        occurredAt: new Date(),
       });
     });
 
@@ -369,14 +368,15 @@ export class ExpenseLifecycleService {
           updatedAt: new Date(),
         })
         .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)))
-        .returning({ updatedAt: expenses.updatedAt });
+        .returning({ id: expenses.id });
 
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: u.orgId,
-        aggregateType: EXPENSE_AGGREGATE_TYPE,
-        aggregateId: String(expenseId),
-        aggregateVersion: expenseAggregateVersion(updated ?? {}),
+      if (!updated) {
+        throw new InternalServerErrorException("Expense was concurrently modified.");
+      }
+
+      await emitExpenseOutboxEvent(tx, {
+        orgId: u.orgId,
+        expenseId,
         eventType: EXPENSE_DECIDED_EVENT,
         payload: expenseDecidedPayloadSchema.parse({
           expenseId,
@@ -389,7 +389,6 @@ export class ExpenseLifecycleService {
           rejectionReason: null,
           journalEntryId: postResult.entryId,
         }),
-        occurredAt: new Date(),
       });
     });
 
@@ -440,7 +439,11 @@ export class ExpenseLifecycleService {
           updatedAt: new Date(),
         })
         .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)))
-        .returning({ updatedAt: expenses.updatedAt });
+        .returning({ id: expenses.id });
+
+      if (!updated) {
+        throw new InternalServerErrorException("Expense was concurrently modified.");
+      }
 
       await tx
         .update(finApprovalRequests)
@@ -454,12 +457,9 @@ export class ExpenseLifecycleService {
           ),
         );
 
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: u.orgId,
-        aggregateType: EXPENSE_AGGREGATE_TYPE,
-        aggregateId: String(expenseId),
-        aggregateVersion: expenseAggregateVersion(updated ?? {}),
+      await emitExpenseOutboxEvent(tx, {
+        orgId: u.orgId,
+        expenseId,
         eventType: EXPENSE_DECIDED_EVENT,
         payload: expenseDecidedPayloadSchema.parse({
           expenseId,
@@ -472,7 +472,6 @@ export class ExpenseLifecycleService {
           rejectionReason,
           journalEntryId: null,
         }),
-        occurredAt: new Date(),
       });
     });
 

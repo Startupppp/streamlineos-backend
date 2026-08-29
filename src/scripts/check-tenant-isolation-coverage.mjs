@@ -20,7 +20,7 @@
  */
 
 import { readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
-import { join, resolve, relative, dirname } from "node:path";
+import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
@@ -99,33 +99,27 @@ function isTenantOwned(src) {
   );
 }
 
-function serviceBaseName(filePath) {
-  return filePath
-    .split(/[\\/]/)
-    .pop()
-    .replace(/\.service\.ts$/, "");
-}
-
 function serviceClassName(src) {
   const match = src.match(/export\s+class\s+([A-Za-z0-9_]+Service)/);
   return match ? match[1] : null;
 }
 
 function hasIsolationTest(serviceFile, allSpecFiles) {
-  const name = serviceBaseName(serviceFile);
-  const className = serviceClassName(readFileSync(serviceFile, "utf8"));
-  const serviceDir = dirname(serviceFile);
+  const src = readFileSync(serviceFile, "utf8");
+  const className = serviceClassName(src);
+  const relPath = relative(BACKEND_ROOT, serviceFile).replace(/\\/g, "/");
+  const classNameRe = className ? new RegExp(`\\b${className}\\b`) : null;
 
   for (const specFile of allSpecFiles) {
     const specSrc = readFileSync(specFile, "utf8");
 
     const referencesService =
-      specSrc.includes(name) || (className && specSrc.includes(className));
+      (classNameRe !== null && classNameRe.test(specSrc)) ||
+      specSrc.includes(relPath);
 
     if (!referencesService) continue;
 
-    const hasIsolationPattern = ISOLATION_PATTERNS.some((re) => re.test(specSrc));
-    if (hasIsolationPattern) return true;
+    if (ISOLATION_PATTERNS.some((re) => re.test(specSrc))) return true;
   }
   return false;
 }

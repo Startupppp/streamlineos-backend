@@ -24,12 +24,15 @@
  *   1 = at least one drill failed in execute mode
  *   2 = configuration error
  */
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import * as dotenv from "dotenv";
 
-dotenv.config({ path: resolve(process.cwd(), ".env") });
+const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
+const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
+dotenv.config({ path: join(BACKEND_ROOT, ".env") });
 
 const args = process.argv.slice(2);
 const isDryRun = !args.includes("--execute");
@@ -75,8 +78,8 @@ async function drillProviderOutage(execute) {
   const outboxSelfTest = await import("node:child_process").then(({ execSync }) => {
     try {
       const out = execSync(
-        "node src/scripts/alert-dead-outbox.mjs --self-test",
-        { cwd: resolve(process.cwd()), encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
+        `node "${join(SCRIPT_DIR, "alert-dead-outbox.mjs")}" --self-test`,
+        { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
       );
       const parsed = JSON.parse(out.trim().split("\n").pop());
       return parsed;
@@ -203,8 +206,8 @@ async function drillDatabaseCellFailure(execute) {
   let poolSelfTest = null;
   try {
     const out = execSync(
-      "node src/scripts/alert-pool-saturation.mjs --self-test",
-      { cwd: resolve(process.cwd()), encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
+      `node "${join(SCRIPT_DIR, "alert-pool-saturation.mjs")}" --self-test`,
+      { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
     );
     poolSelfTest = JSON.parse(out.trim().split("\n").pop());
   } catch (err) {
@@ -224,49 +227,11 @@ async function drillBadRelease(execute) {
     return drillResult("bad-release", "dry-run", DRILL_DESCRIPTIONS["bad-release"]);
   }
 
-  const originalRelease = process.env["APP_RELEASE"];
-  process.env["APP_RELEASE"] = "bad-release-drill-sha";
-
-  const capturedLines = [];
-  const { runWithObservabilityContext, enrichObservabilityContext } = await import(
-    "../common/observability/observability-context.js"
-  ).catch(() => import("./observability-context-shim.mjs"));
-
-  const { currentRelease } = await import(
-    "../common/observability/release.js"
-  ).catch(() => ({ currentRelease: () => process.env["APP_RELEASE"] ?? "unknown" }));
-
-  const origWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = (chunk, ...rest) => {
-    try { capturedLines.push(JSON.parse(String(chunk))); } catch { void 0; }
-    return origWrite(chunk, ...rest);
-  };
-
-  try {
-    const release = currentRelease();
-    runWithObservabilityContext(
-      { correlationId: "drill-cid", cellId: "drill-cell", release, method: "GET", route: "/drill" },
-      () => {
-        enrichObservabilityContext({ orgId: "org-drill", actorId: "usr-drill" });
-        const { logger } = require ? (() => { throw new Error("cjs"); })() : null;
-      },
-    );
-  } catch {
-    void 0;
-  } finally {
-    process.stdout.write = origWrite;
-    if (originalRelease === undefined) delete process.env["APP_RELEASE"];
-    else process.env["APP_RELEASE"] = originalRelease;
-  }
-
-  const releaseInLog = capturedLines.find((l) => l?.release === "bad-release-drill-sha");
-  const passed = process.env["APP_RELEASE"] !== "bad-release-drill-sha";
-
-  return drillResult("bad-release", passed ? "pass" : "fail", {
-    envRestored: process.env["APP_RELEASE"] !== "bad-release-drill-sha",
-    note:
-      "The logger is a compiled TypeScript module loaded at boot. To fully prove log propagation, " +
-      "set APP_RELEASE before starting the API and inspect structured log output. " +
+  return drillResult("bad-release", "blocked", {
+    reason:
+      "The production logger is a compiled NestJS service that cannot be imported from a " +
+      ".mjs script without the full application runtime. Verify manually: start the API with " +
+      "APP_RELEASE=bad-release-drill-sha and confirm every log line carries the release field. " +
       "The log-context-completeness.spec.ts unit test asserts this path deterministically.",
   });
 }
@@ -282,11 +247,15 @@ if (isSelfTest) {
 
   const allDryRun = dryResults.every((r) => r.outcome === "dry-run");
   const allNamed = ALL_DRILLS.every((name) => dryResults.some((r) => r.drill === name));
+  const badReleaseExecResult = await drillBadRelease(true);
+  const cacheLossExecResult = drillCacheLoss(true);
 
   const checks = {
     allFiveDrillsPresent: allNamed,
     allDrillsReturnDryRunWithoutExecuteFlag: allDryRun,
-    cacheLossBlockedInExecuteMode: drillCacheLoss(true).outcome === "blocked",
+    cacheLossBlockedInExecuteMode: cacheLossExecResult.outcome === "blocked",
+    badReleaseBlockedInExecuteMode: badReleaseExecResult.outcome === "blocked",
+    badReleaseNotFakePass: badReleaseExecResult.outcome !== "pass",
   };
 
   const pass = Object.values(checks).every(Boolean);

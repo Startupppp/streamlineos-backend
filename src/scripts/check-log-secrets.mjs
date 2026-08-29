@@ -85,7 +85,9 @@ function stripStringLiterals(line) {
   return line
     .replace(/"(?:[^"\\]|\\.)*"/g, '""')
     .replace(/'(?:[^'\\]|\\.)*'/g, "''")
-    .replace(/`(?:[^`\\]|\\.)*`/g, "``");
+    .replace(/`(?:[^`\\]|\\.)*`/g, (tpl) =>
+      [...tpl.matchAll(/\$\{([^}]*)\}/g)].map((m) => " " + m[1] + " ").join("") || " "
+    );
 }
 
 export function findSecretLogLines(src, filePath) {
@@ -147,12 +149,25 @@ if (SELF_TEST) {
     : "";
   const tiers = parseTiers(tiersRaw);
 
+  const knownBadTemplateLiteral = `
+    async loginUser(password: string) {
+      this.logger.error(\`Auth failed with password \${password}\`);
+    }
+  `;
+  const knownSafeTemplateLiteral = `
+    async loginUser(userId: string) {
+      this.logger.log(\`User \${userId} logged in successfully\`);
+    }
+  `;
+
   const badLogFindings = findSecretLogLines(knownBadLog, "synthetic/bad.ts");
   const goodLogFindings = findSecretLogLines(knownGoodLog, "synthetic/good.ts");
   const goodActionFindings = findSecretLogLines(
     knownGoodAction,
     "synthetic/action.ts",
   );
+  const badTplFindings = findSecretLogLines(knownBadTemplateLiteral, "synthetic/tpl-leak.ts");
+  const safeTplFindings = findSecretLogLines(knownSafeTemplateLiteral, "synthetic/tpl-safe.ts");
   const badTierFindings = findMissingRateLimitTiers(
     knownBadTier,
     "synthetic/bad.ts",
@@ -171,6 +186,8 @@ if (SELF_TEST) {
     catchesSecretInLogLine: badLogFindings.length === 1,
     missesRedactedLogLine: goodLogFindings.length === 0,
     missesLogLineWithoutSensitiveName: goodActionFindings.length === 0,
+    catchesTemplateLiteralSecretLeak: badTplFindings.length === 1,
+    missesTemplateLiteralSafeInterpolation: safeTplFindings.length === 0,
     catchesMissingTierKey: badTierFindings.length === 1,
     missesPresentTierKey: goodTierFindings.length === 0,
   };

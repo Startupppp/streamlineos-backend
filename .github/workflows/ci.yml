@@ -145,7 +145,7 @@ jobs:
           pnpm alert:dispatch:self-test
           pnpm failure-drill:self-test
 
-      # Cross-tenant negative-test coverage. Reported, not enforced: coverage is 27% (209/773
+      # Cross-tenant negative-test coverage. Reported, not enforced: coverage is 18% (136/773
       # tenant-owned services) and failing the build on a number nobody can move in one commit
       # would train people to ignore it. Flip continue-on-error off once the baseline is raised
       # and the check compares against a recorded floor rather than demanding completeness.

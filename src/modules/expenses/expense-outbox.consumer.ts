@@ -19,12 +19,26 @@ import {
   decisionEventKey,
   expenseDecidedPayloadSchema,
   expenseSubmittedPayloadSchema,
+  type ExpenseDecidedPayload,
 } from "./dto/expense-outbox.schemas";
 
 const SUBMITTED_CONSUMER = "expenses:submitted";
 const DECIDED_CONSUMER = "expenses:decided";
 
 const EXPENSE_APPROVE_PERMISSION = "hr:expenses:approve";
+
+/**
+ * Supplied explicitly because `NotificationDispatchService` falls back to the catalog
+ * definition's description, which for these four keys is the display name — so omitting it
+ * renders a body identical to the title.
+ */
+function decisionMessage(payload: ExpenseDecidedPayload): string {
+  if (payload.status === "REJECTED") {
+    return `Your ${payload.category} expense was rejected: ${payload.rejectionReason ?? "No reason provided"}`;
+  }
+  const verb = payload.status === "PAID" ? "paid" : "approved";
+  return `Your ${payload.category} expense of ${payload.amount} was ${verb}.`;
+}
 
 @Injectable()
 export class ExpenseSubmittedConsumer implements OutboxEventConsumer, OnModuleInit {
@@ -56,14 +70,14 @@ export class ExpenseSubmittedConsumer implements OutboxEventConsumer, OnModuleIn
 
     const parsed = expenseSubmittedPayloadSchema.safeParse(event.payload);
     if (!parsed.success) {
-      await inbox.markProcessed(SUBMITTED_CONSUMER, event.eventId, "FAILED", parsed.error.message);
+      await inbox.markProcessed(SUBMITTED_CONSUMER, event.eventId, "SKIPPED", parsed.error.message);
       return;
     }
     if (parsed.data.orgId !== event.organizationId) {
       await inbox.markProcessed(
         SUBMITTED_CONSUMER,
         event.eventId,
-        "FAILED",
+        "SKIPPED",
         "expense payload organization does not match the outbox event",
       );
       return;
@@ -99,6 +113,7 @@ export class ExpenseSubmittedConsumer implements OutboxEventConsumer, OnModuleIn
         dedupeKey: outboxEffectIdempotencyKey(event, SUBMITTED_CONSUMER),
         entityType: "expense",
         entityId: String(payload.expenseId),
+        message: `${actorName ?? "An employee"} submitted ${payload.category} for ${payload.amount}.`,
         variables: {
           employeeName: actorName ?? "Employee",
           amount: payload.amount,
@@ -168,14 +183,14 @@ export class ExpenseDecidedConsumer implements OutboxEventConsumer, OnModuleInit
 
     const parsed = expenseDecidedPayloadSchema.safeParse(event.payload);
     if (!parsed.success) {
-      await inbox.markProcessed(DECIDED_CONSUMER, event.eventId, "FAILED", parsed.error.message);
+      await inbox.markProcessed(DECIDED_CONSUMER, event.eventId, "SKIPPED", parsed.error.message);
       return;
     }
     if (parsed.data.orgId !== event.organizationId) {
       await inbox.markProcessed(
         DECIDED_CONSUMER,
         event.eventId,
-        "FAILED",
+        "SKIPPED",
         "expense payload organization does not match the outbox event",
       );
       return;
@@ -192,11 +207,11 @@ export class ExpenseDecidedConsumer implements OutboxEventConsumer, OnModuleInit
         dedupeKey: outboxEffectIdempotencyKey(event, DECIDED_CONSUMER),
         entityType: "expense",
         entityId: String(payload.expenseId),
+        message: decisionMessage(payload),
         variables: {
           amount: payload.amount,
           category: payload.category,
           rejectionReason: payload.rejectionReason,
-          reason: payload.rejectionReason,
           journalEntryId: payload.journalEntryId,
         },
       });

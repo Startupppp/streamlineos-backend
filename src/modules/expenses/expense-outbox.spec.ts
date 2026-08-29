@@ -21,7 +21,6 @@ import {
   EXPENSE_DECIDED_EVENT,
   EXPENSE_SUBMITTED_EVENT,
   decisionEventKey,
-  expenseAggregateVersion,
 } from "./dto/expense-outbox.schemas";
 
 const ORG = "org-a";
@@ -33,6 +32,7 @@ interface RecordedInsert {
   table: string;
   values: Record<string, unknown>;
   handle: unknown;
+  txOpen: boolean;
 }
 
 function tableName(table: unknown): string {
@@ -44,16 +44,25 @@ function tableName(table: unknown): string {
 function buildWriteDb(options: { failOutboxInsert?: boolean } = {}) {
   const inserts: RecordedInsert[] = [];
   const transactionCalls: unknown[] = [];
+  const state = { txOpen: false, maxVersion: 0 };
 
   const makeHandle = (): Record<string, unknown> => {
     const handle: Record<string, unknown> = {};
+    handle.select = () => ({
+      from: () => ({
+        where: () => Promise.resolve([{ maxVersion: state.maxVersion }]),
+      }),
+    });
     handle.insert = (table: unknown) => ({
       values: (values: Record<string, unknown>) => {
         const name = tableName(table);
-        if (name === "outbox_events" && options.failOutboxInsert) {
-          throw new Error("outbox insert failed");
+        if (name === "outbox_events") {
+          inserts.push({ table: name, values, handle, txOpen: state.txOpen });
+          if (options.failOutboxInsert) throw new Error("outbox insert failed");
+          state.maxVersion = Number(values.aggregateVersion);
+        } else {
+          inserts.push({ table: name, values, handle, txOpen: state.txOpen });
         }
-        inserts.push({ table: name, values, handle });
         const row = {
           id: 42,
           amount: "100.00",
@@ -79,11 +88,16 @@ function buildWriteDb(options: { failOutboxInsert?: boolean } = {}) {
     transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
       const handle = makeHandle();
       transactionCalls.push(handle);
-      return await fn(handle);
+      state.txOpen = true;
+      try {
+        return await fn(handle);
+      } finally {
+        state.txOpen = false;
+      }
     },
   };
 
-  return { db, inserts, transactionCalls };
+  return { db, inserts, transactionCalls, makeHandle };
 }
 
 function buildConsumerDb(seed: { claimOutcome: "NEW" | "DUPLICATE" | "RETRY_FAILED" }) {
@@ -213,6 +227,21 @@ describe("expense outbox — atomicity", () => {
     expect(inserts.map((i) => i.table)).toEqual(["expenses", "outbox_events"]);
     expect(inserts[0]?.handle).toBe(inserts[1]?.handle);
     expect(inserts[1]?.handle).toBe(transactionCalls[0]);
+    // Moving the emit outside db.transaction would leave txOpen false here.
+    expect(inserts[0]?.txOpen).toBe(true);
+    expect(inserts[1]?.txOpen).toBe(true);
+  });
+
+  it("the txOpen assertion discriminates — a write outside a transaction records false", async () => {
+    const { inserts, makeHandle } = buildWriteDb();
+    const handle = makeHandle();
+    const insert = handle.insert;
+    if (typeof insert !== "function") throw new Error("fake handle has no insert");
+
+    await insert(expenses).values({ orgId: ORG });
+
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]?.txOpen).toBe(false);
   });
 
   it("emits the submitted event type with an approver-resolution payload", async () => {
@@ -242,7 +271,10 @@ describe("expense outbox — atomicity", () => {
     await expect(service.create(ORG, SUBMITTER, CREATE_INPUT)).rejects.toThrow(
       "outbox insert failed",
     );
-    expect(inserts.map((i) => i.table)).toEqual(["expenses"]);
+    // The outbox insert was attempted inside the transaction and threw, so the
+    // expense insert made in the same transaction is rolled back with it.
+    expect(inserts.map((i) => i.table)).toEqual(["expenses", "outbox_events"]);
+    expect(inserts[1]?.txOpen).toBe(true);
   });
 });
 
@@ -340,7 +372,10 @@ describe("expense outbox — consumers", () => {
     await consumer.handle(event);
 
     expect(dispatch.emit).not.toHaveBeenCalled();
-    expect(updates.some((u) => u.status === "FAILED")).toBe(true);
+    // Terminal, not retriable: a mismatched organization is baked into the committed event
+    // and would fail identically on all eight relay retries before dead-lettering.
+    expect(updates.some((u) => u.status === "SKIPPED")).toBe(true);
+    expect(updates.some((u) => u.status === "FAILED")).toBe(false);
   });
 
   it("marks a delivery FAILED and rethrows so the publisher retries then dead-letters", async () => {
@@ -382,16 +417,20 @@ describe("expense outbox — consumers", () => {
 });
 
 describe("expense outbox — aggregate version", () => {
-  it("prefers the post-write updatedAt so a later transition supersedes an earlier one", () => {
-    const created = expenseAggregateVersion({
-      createdAt: new Date("2026-08-29T10:00:00.000Z"),
-      updatedAt: null,
-    });
-    const updated = expenseAggregateVersion({
-      createdAt: new Date("2026-08-29T10:00:00.000Z"),
-      updatedAt: new Date("2026-08-29T10:05:00.000Z"),
-    });
-    expect(updated).toBeGreaterThan(created);
+  it("derives a monotonic per-aggregate version from the outbox, not from the clock", async () => {
+    const { db, inserts } = buildWriteDb();
+    const service = await buildWriteService(db);
+
+    await service.create(ORG, SUBMITTER, CREATE_INPUT);
+    await service.create(ORG, SUBMITTER, CREATE_INPUT);
+
+    const versions = inserts
+      .filter((i) => i.table === "outbox_events")
+      .map((i) => i.values.aggregateVersion);
+
+    // Two transitions of one expense inside the same millisecond would collide on a
+    // timestamp version and roll the business write back on uniq_outbox_events_org_agg_version.
+    expect(versions).toEqual([1, 2]);
   });
 });
 

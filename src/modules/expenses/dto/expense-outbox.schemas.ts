@@ -52,13 +52,3 @@ export function decisionEventKey(
 ): (typeof DECISION_EVENT_KEYS)[ExpenseDecisionStatus] {
   return DECISION_EVENT_KEYS[status];
 }
-
-export function expenseAggregateVersion(row: {
-  updatedAt?: Date | string | null;
-  createdAt?: Date | string | null;
-}): number {
-  const stamp = row.updatedAt ?? row.createdAt;
-  if (stamp === null || stamp === undefined) return Date.now();
-  const parsed = stamp instanceof Date ? stamp.getTime() : new Date(stamp).getTime();
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : Date.now();
-}

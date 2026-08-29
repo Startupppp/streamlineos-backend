@@ -47,7 +47,7 @@ function evaluateRows(rows) {
   let globalTotalRetries = 0;
 
   for (const row of rows) {
-    const ageMs = row.oldest_pending_at ? now - new Date(row.oldest_pending_at).getTime() : 0;
+    const ageMs = row.oldest_queued_at ? now - new Date(row.oldest_queued_at).getTime() : 0;
     const ageSecs = Math.floor(ageMs / 1000);
     const retries = Number(row.total_retries ?? 0);
     if (ageSecs > globalMaxAgeSecs) globalMaxAgeSecs = ageSecs;
@@ -56,7 +56,7 @@ function evaluateRows(rows) {
       org_id: row.org_id,
       pending_count: Number(row.pending_count ?? 0),
       in_flight_count: Number(row.in_flight_count ?? 0),
-      oldest_pending_at: row.oldest_pending_at ? new Date(row.oldest_pending_at).toISOString() : null,
+      oldest_queued_at: row.oldest_queued_at ? new Date(row.oldest_queued_at).toISOString() : null,
       oldest_age_secs: ageSecs,
       total_retries: retries,
       high_retry_count: Number(row.high_retry_count ?? 0),
@@ -74,7 +74,7 @@ if (args.includes("--self-test")) {
   const now = Date.now();
   const freshRow = {
     org_id: "org_fresh",
-    oldest_pending_at: new Date(now - 10_000).toISOString(),
+    oldest_queued_at: new Date(now - 10_000).toISOString(),
     pending_count: "1",
     in_flight_count: "0",
     total_retries: "2",
@@ -82,7 +82,7 @@ if (args.includes("--self-test")) {
   };
   const staleRow = {
     org_id: "org_stale",
-    oldest_pending_at: new Date(now - (thresholdSecs + 60) * 1_000).toISOString(),
+    oldest_queued_at: new Date(now - (thresholdSecs + 60) * 1_000).toISOString(),
     pending_count: "5",
     in_flight_count: "2",
     total_retries: "8",
@@ -90,7 +90,7 @@ if (args.includes("--self-test")) {
   };
   const highRetryRow = {
     org_id: "org_retries",
-    oldest_pending_at: new Date(now - 30_000).toISOString(),
+    oldest_queued_at: new Date(now - 30_000).toISOString(),
     pending_count: "200",
     in_flight_count: "50",
     total_retries: String(retryPressureThreshold + 100),
@@ -136,7 +136,7 @@ try {
   const rows = await sql`
     SELECT
       organization_id                                            AS org_id,
-      MIN(created_at)                                            AS oldest_pending_at,
+      MIN(created_at)                                            AS oldest_queued_at,
       COUNT(*) FILTER (WHERE delivery_state = 'PENDING')        AS pending_count,
       COUNT(*) FILTER (WHERE delivery_state = 'IN_FLIGHT')      AS in_flight_count,
       SUM(retry_count)                                           AS total_retries,

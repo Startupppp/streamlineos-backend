@@ -7,7 +7,6 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, like, lte, or, sql } from "drizzle-orm";
-import { randomUUID } from "crypto";
 import { z } from "zod";
 import { expenses, organizationMembers, organizations } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -24,12 +23,10 @@ import {
 import { EmailService } from "../email/email.service";
 import { AccessService } from "../access/access.service";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
-import { OutboxWriter } from "../../common/outbox/outbox-writer";
+import { emitExpenseOutboxEvent } from "./expense-outbox-emitter";
 import {
-  EXPENSE_AGGREGATE_TYPE,
   EXPENSE_DECIDED_EVENT,
   EXPENSE_SUBMITTED_EVENT,
-  expenseAggregateVersion,
   expenseDecidedPayloadSchema,
   expenseSubmittedPayloadSchema,
 } from "./dto/expense-outbox.schemas";
@@ -108,12 +105,9 @@ export class ExpensesWriteService {
         throw new InternalServerErrorException("Failed to create expense.");
       }
 
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: EXPENSE_AGGREGATE_TYPE,
-        aggregateId: String(row.id),
-        aggregateVersion: expenseAggregateVersion(row),
+      await emitExpenseOutboxEvent(tx, {
+        orgId,
+        expenseId: row.id,
         eventType: EXPENSE_SUBMITTED_EVENT,
         payload: expenseSubmittedPayloadSchema.parse({
           expenseId: row.id,
@@ -125,7 +119,6 @@ export class ExpensesWriteService {
           recipients: { mode: "EXPENSE_APPROVERS" },
           runAutomations: true,
         }),
-        occurredAt: new Date(),
       });
 
       return row;
@@ -276,16 +269,17 @@ export class ExpensesWriteService {
           updatedAt: new Date(),
         })
         .where(eq(expenses.id, expenseId))
-        .returning({ updatedAt: expenses.updatedAt });
+        .returning({ id: expenses.id });
+
+      if (!updated) {
+        throw new InternalServerErrorException("Expense was concurrently modified.");
+      }
 
       if (!expense.userId) return;
 
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: u.orgId,
-        aggregateType: EXPENSE_AGGREGATE_TYPE,
-        aggregateId: String(expenseId),
-        aggregateVersion: expenseAggregateVersion(updated ?? {}),
+      await emitExpenseOutboxEvent(tx, {
+        orgId: u.orgId,
+        expenseId,
         eventType: EXPENSE_DECIDED_EVENT,
         payload: expenseDecidedPayloadSchema.parse({
           expenseId,
@@ -298,7 +292,6 @@ export class ExpensesWriteService {
           rejectionReason: body.rejectionReason ?? null,
           journalEntryId: null,
         }),
-        occurredAt: new Date(),
       });
     });
 

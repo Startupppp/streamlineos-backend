@@ -64,27 +64,10 @@ function log(msg) {
 
 function fail(msg) {
   process.stderr.write("FAIL  " + msg + "\n");
-  process.exit(1);
+  throw new Error(msg);
 }
 
-async function assertAuditRow(sql, orgId, action, stepLabel) {
-  const rows = await sql`
-    SELECT id, action, user_id, created_at, metadata
-    FROM audit_logs
-    WHERE org_id = ${orgId}
-      AND action = ${action}
-    ORDER BY created_at DESC
-    LIMIT 1
-  `;
-  if (rows.length === 0) {
-    log(`  MISSING AUDIT ROW  ${action}  (${stepLabel})`);
-    return false;
-  }
-  log(`  AUDIT OK  ${action}  id=${rows[0].id}  at=${rows[0].created_at?.toISOString?.() ?? rows[0].created_at}`);
-  return true;
-}
-
-function writeAuditLog(sql, tx, entry) {
+function writeAuditLog(tx, entry) {
   return tx`
     INSERT INTO audit_logs (action, user_id, org_id, target_id, target_type, metadata, is_platform_event)
     VALUES (
@@ -143,7 +126,7 @@ async function runDrill(tx, dryRun) {
     RETURNING id
   `;
   const exportId = exportReq.id;
-  await writeAuditLog(tx, tx, {
+  await writeAuditLog(tx, {
     action: "hr_data_request.created",
     userId,
     orgId,
@@ -160,7 +143,7 @@ async function runDrill(tx, dryRun) {
     RETURNING id
   `;
   const holdId = hold.id;
-  await writeAuditLog(tx, tx, {
+  await writeAuditLog(tx, {
     action: "hr_legal_hold.placed",
     userId,
     orgId,
@@ -189,7 +172,7 @@ async function runDrill(tx, dryRun) {
     VALUES (${orgId}, ${userId}, 'delete', 'rejected', ${userId}, 'Rejected: subject under legal hold')
     RETURNING id
   `;
-  await writeAuditLog(tx, tx, {
+  await writeAuditLog(tx, {
     action: "hr_data_request.rejected_legal_hold",
     userId,
     orgId,
@@ -205,7 +188,7 @@ async function runDrill(tx, dryRun) {
     SET status = 'released', released_by = ${userId}, released_at = now(), updated_at = now()
     WHERE id = ${holdId}
   `;
-  await writeAuditLog(tx, tx, {
+  await writeAuditLog(tx, {
     action: "hr_legal_hold.released",
     userId,
     orgId,
@@ -223,7 +206,7 @@ async function runDrill(tx, dryRun) {
     RETURNING id
   `;
   const policyId = policy?.id ?? null;
-  await writeAuditLog(tx, tx, {
+  await writeAuditLog(tx, {
     action: "hr_retention_policy.created",
     userId,
     orgId,
@@ -239,7 +222,7 @@ async function runDrill(tx, dryRun) {
     VALUES (${orgId}, ${userId}, 'delete', 'approved', ${userId}, 'Compliance drill erasure request')
     RETURNING id
   `;
-  await writeAuditLog(tx, tx, {
+  await writeAuditLog(tx, {
     action: "hr_data_request.created",
     userId,
     orgId,
@@ -259,7 +242,7 @@ async function runDrill(tx, dryRun) {
         purge_reason = 'Compliance drill — synthetic org'
     WHERE id = ${orgId}
   `;
-  await writeAuditLog(tx, tx, {
+  await writeAuditLog(tx, {
     action: "org.purge_scheduled",
     userId,
     orgId,
@@ -321,6 +304,7 @@ async function main() {
     log("To commit and observe real evidence, run with --execute.");
     log("");
 
+    let dryRunFailed = false;
     try {
       await db.begin(async (tx) => {
         const result = await runDrill(tx, true);
@@ -330,35 +314,38 @@ async function main() {
     } catch (err) {
       if (err.message !== "DRY_RUN_ROLLBACK") {
         process.stderr.write(`Dry-run error: ${err.message}\n`);
-        process.exit(1);
+        dryRunFailed = true;
+      } else {
+        log("\nDry run complete — transaction rolled back. No data was committed.");
       }
-      log("\nDry run complete — transaction rolled back. No data was committed.");
+    } finally {
+      await db.end({ timeout: 5 });
     }
-    await db.end({ timeout: 5 });
-    process.exit(0);
+    process.exit(dryRunFailed ? 1 : 0);
   }
 
   log("EXECUTE mode — drill will commit real rows.");
   log("");
 
   let result;
+  let executeFailed = false;
   try {
     await db.begin(async (tx) => {
       result = await runDrill(tx, false);
     });
+    log(`\nDrill complete.  org=${result.orgId}  user=${result.userId}  run=${result.runId}`);
+    log(`${result.auditRowCount} audit rows verified and cleaned up.`);
   } catch (err) {
     process.stderr.write(`Drill failed: ${err.message}\n${err.stack ?? ""}\n`);
+    executeFailed = true;
+  } finally {
     await db.end({ timeout: 5 });
-    process.exit(1);
   }
-
-  log(`\nDrill complete.  org=${result.orgId}  user=${result.userId}  run=${result.runId}`);
-  log(`${result.auditRowCount} audit rows verified and cleaned up.`);
-  await db.end({ timeout: 5 });
-  process.exit(0);
+  process.exit(executeFailed ? 1 : 0);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   process.stderr.write(`Fatal: ${err.message}\n`);
+  try { await db.end({ timeout: 5 }); } catch { void 0; }
   process.exit(2);
 });
