@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ModuleAccessService } from "../module-access.service";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
+import { ModuleAccessGroupPolicyService } from "../module-access-group-policy.service";
 import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -206,6 +207,7 @@ describe("ModuleAccessGroupsService.listMembers — access guard", () => {
     const m = await Test.createTestingModule({
       providers: [
         ModuleAccessGroupsService,
+        ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
@@ -241,6 +243,7 @@ describe("ModuleAccessGroupsService.listMembers — access guard", () => {
     const m = await Test.createTestingModule({
       providers: [
         ModuleAccessGroupsService,
+        ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { cached: jest.fn(), invalidate: jest.fn() } },
@@ -277,6 +280,7 @@ describe("ModuleAccessGroupsService.listMemberCandidates — access guard", () =
     const m = await Test.createTestingModule({
       providers: [
         ModuleAccessGroupsService,
+        ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { cached: jest.fn(), invalidate: jest.fn() } },
@@ -307,6 +311,7 @@ describe("ModuleAccessGroupsService.removeMember — module owner protection", (
     const m = await Test.createTestingModule({
       providers: [
         ModuleAccessGroupsService,
+        ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
@@ -339,6 +344,7 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
     const m = await Test.createTestingModule({
       providers: [
         ModuleAccessGroupsService,
+        ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
@@ -391,6 +397,7 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
     const m = await Test.createTestingModule({
       providers: [
         ModuleAccessGroupsService,
+        ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
@@ -447,6 +454,7 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
     const m = await Test.createTestingModule({
       providers: [
         ModuleAccessGroupsService,
+        ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         {
           provide: AccessService,
@@ -516,6 +524,7 @@ describe("ModuleAccessGroupsService ownership authority", () => {
     const m = await Test.createTestingModule({
       providers: [
         ModuleAccessGroupsService,
+        ModuleAccessGroupPolicyService,
         {
           provide: DRIZZLE,
           useValue: {
