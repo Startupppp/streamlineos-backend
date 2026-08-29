@@ -2,7 +2,16 @@
 
 **Decision: do not partition `inv_stock_transactions` or `inv_audit_events` yet.**
 
-Measured on the Neon branch behind `DATABASE_URL` on 2026-08-29.
+Measured on the Neon branch behind `DATABASE_URL` on 2026-08-29 at ~20:00.
+
+> ⚠ **The measurement no longer reproduces on that URL.** Re-checked at ~21:20 the
+> same day, `DATABASE_URL` resolves to the same Neon endpoint but to an *empty*
+> database: 749 public tables, **zero rows in every one of them** (`organizations`
+> included), `pg_stat_user_tables.n_tup_ins = 0` and `reltuples = -1` — never
+> inserted into, not deleted from. Somebody rebuilt the branch cold between the
+> two readings. The numbers below are a real reading of a real ledger and the
+> decision they support is unchanged, but re-run the query at the bottom before
+> citing them again.
 
 | Table | Exact rows | Planner estimate | Total size | Oldest row | Newest row |
 |---|---:|---:|---:|---|---|
