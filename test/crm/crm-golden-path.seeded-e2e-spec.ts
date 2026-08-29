@@ -1,11 +1,12 @@
 import request from "supertest";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   activities,
   autonomousDecisions,
   autonomyHolds,
   autonomySettings,
   businessParties,
+  contactPartyMap,
   crmOutboundMessages,
   deals,
   organizations,
@@ -36,6 +37,7 @@ import {
 } from "src/modules/ingress/adapters/whatsapp-webhook.fixture";
 import type { InboundCommunicationEvent } from "src/modules/ingress/inbound-event";
 import { isWithinWorkingHours } from "src/modules/autonomy/working-hours";
+import { resolveLegacyParty } from "src/modules/party/party-legacy-seam";
 
 /**
  * G1 — the golden path, driven end to end with nothing stubbed.
@@ -110,6 +112,7 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
   let seeded: SeededE2eApp;
   let fixture: SeededFixture;
   let token: string;
+  let outsiderToken: string;
   let repUserId: string;
   let dealId: number;
 
@@ -128,8 +131,13 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
           "crm:autonomy:manage",
           "crm:autonomy:view",
           "crm:autonomy:reverse",
+          "party:parties:view",
+          "party:merges:manage",
         ],
       })
+      // Holds nothing. `pending.md` G2: a denied read must be a refusal, not an
+      // empty list, and that has to be checked with somebody who is refused.
+      .addMember("outsider")
       .build();
 
     // The entitlement the permission does not carry: `PermissionGuard` answers
@@ -176,6 +184,10 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
       .where(eq(users.id, rep.userId));
 
     token = await signSeededToken(rep.userId, fixture.orgId);
+
+    const outsider = fixture.members["outsider"];
+    if (!outsider) throw new Error("fixture member 'outsider' missing");
+    outsiderToken = await signSeededToken(outsider.userId, fixture.orgId);
   }, 180_000);
 
   afterAll(async () => {
@@ -562,4 +574,129 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
     },
     180_000,
   );
+
+  /**
+   * G1's three extras, which the unit itself lists after the main path:
+   * "duplicate merge reverse; denied list; legacy contact id resolves after
+   * DROP". The last is also P2-08b's own Done-when.
+   */
+  it(
+    "still resolves a legacy contact id to a party, with the table long gone",
+    async () => {
+      const [party] = await seeded.seedDb
+        .select({ partyId: businessParties.partyId })
+        .from(businessParties)
+        .where(eq(businessParties.organizationId, fixture.orgId));
+      if (!party) throw new Error("no party to map");
+
+      // The id a customer bookmarked. `contacts` was dropped by 0278; the map
+      // row IS the record now, and `contacts_id_seq` still mints the number.
+      const [mapped] = await seeded.seedDb
+        .insert(contactPartyMap)
+        .values({ organizationId: fixture.orgId, partyId: party.partyId })
+        .returning({ contactId: contactPartyMap.contactId });
+      if (!mapped) throw new Error("could not mint a legacy contact id");
+
+      const resolved = await resolveLegacyParty(seeded.seedDb, fixture.orgId, {
+        kind: "CONTACT",
+        legacyId: mapped.contactId,
+      });
+
+      expect(resolved.status).toBe("resolved");
+      expect(resolved.status === "resolved" && resolved.party.partyId).toBe(party.partyId);
+
+      // And the table it used to name is genuinely not there.
+      const [survivor] = await seeded.seedDb.execute(
+        sql`SELECT to_regclass('public.contacts') AS present`,
+      );
+      expect((survivor as { present: string | null }).present).toBeNull();
+    },
+    180_000,
+  );
+
+  it(
+    "reverses a duplicate merge, putting the loser back",
+    async () => {
+      const suffix = String(Date.now());
+      const [left] = await seeded.seedDb
+        .insert(businessParties)
+        .values({
+          organizationId: fixture.orgId,
+          name: `Acme Trading ${suffix}`,
+          partyType: "CUSTOMER",
+          email: `merge-left-${suffix}@example.test`,
+        })
+        .returning({ partyId: businessParties.partyId });
+      const [right] = await seeded.seedDb
+        .insert(businessParties)
+        .values({
+          organizationId: fixture.orgId,
+          name: `Acme Trading Ltd ${suffix}`,
+          partyType: "CUSTOMER",
+          email: `merge-right-${suffix}@example.test`,
+        })
+        .returning({ partyId: businessParties.partyId });
+      if (!left || !right) throw new Error("could not seed a duplicate pair");
+
+      const merged = await request(seeded.app.getHttpServer())
+        .post("/party/merges")
+        .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `golden-path-merge-${suffix}`)
+        .send({ leftPartyId: left.partyId, rightPartyId: right.partyId });
+      expect(merged.status).toBeLessThan(300);
+
+      const mergeId = (merged.body as { partyMergeId?: string }).partyMergeId;
+      if (!mergeId) throw new Error(`merge returned no id: ${JSON.stringify(merged.body)}`);
+
+      // The loser is gone as a record and still resolves through the merge walk,
+      // which is what makes a bookmarked id survive a merge.
+      const afterMerge = await resolveLegacyParty(seeded.seedDb, fixture.orgId, {
+        kind: "PARTY",
+        legacyId: right.partyId,
+      });
+      expect(afterMerge.status).toBe("resolved");
+
+      const reverted = await request(seeded.app.getHttpServer())
+        .post(`/party/merges/${mergeId}/revert`)
+        .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", `golden-path-unmerge-${suffix}`)
+        .send({});
+      expect(reverted.status).toBeLessThan(300);
+
+      // Both stand again, separately.
+      const [restored] = await seeded.seedDb
+        .select({ deletedAt: businessParties.deletedAt })
+        .from(businessParties)
+        .where(
+          and(
+            eq(businessParties.organizationId, fixture.orgId),
+            eq(businessParties.partyId, right.partyId),
+          ),
+        );
+      expect(restored?.deletedAt).toBeNull();
+    },
+    180_000,
+  );
+
+  /**
+   * G2 at the seam the frontend cannot fake.
+   *
+   * `NoPermissionState` is only honest if the server actually refuses. A 200
+   * with an empty array here would make "denied is not empty" a frontend
+   * convention rather than a fact.
+   */
+  it("refuses a denied reader rather than handing back an empty list", async () => {
+    const denied = await request(seeded.app.getHttpServer())
+      .get("/crm/autonomy/decisions")
+      .set("Authorization", `Bearer ${outsiderToken}`);
+
+    expect(denied.status).toBe(403);
+    expect(denied.body).not.toMatchObject({ data: [] });
+
+    // The same route, for somebody who holds the key.
+    const allowed = await request(seeded.app.getHttpServer())
+      .get("/crm/autonomy/decisions")
+      .set("Authorization", `Bearer ${token}`);
+    expect(allowed.status).toBe(200);
+  }, 180_000);
 });
