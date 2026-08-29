@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, jsonb, timestamp, index, unique, foreignKey } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
 import { kbSpaces } from "./spaces";
 
@@ -28,5 +28,6 @@ export const kbResearchBriefs = pgTable(
     index("idx_kb_research_briefs_org_user").on(table.orgId, table.userId),
     index("idx_kb_research_briefs_job").on(table.jobId),
     unique("uniq_kb_research_briefs_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.spaceId], foreignColumns: [kbSpaces.orgId, kbSpaces.id], name: "fk_kb_research_briefs_org_space" }).onDelete("set null"),
   ],
 );

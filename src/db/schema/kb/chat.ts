@@ -1,4 +1,4 @@
-import { pgTable, serial, text, jsonb, timestamp, index, integer, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, jsonb, timestamp, index, integer, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 
@@ -50,6 +50,7 @@ export const kbChatMessages = pgTable(
     index("idx_kb_chat_messages_org_user_id").on(table.orgId, table.userId, table.id),
     index("idx_kb_chat_messages_conversation_id").on(table.conversationId),
     unique("uniq_kb_chat_messages_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.conversationId], foreignColumns: [kbChatConversations.orgId, kbChatConversations.id], name: "fk_kb_chat_messages_org_conversation" }).onDelete("cascade"),
   ],
 );
 

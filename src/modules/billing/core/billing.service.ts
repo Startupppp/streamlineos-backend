@@ -16,6 +16,7 @@ import {
   organizationMembers,
   subscriptionPayments,
   subscriptions,
+  accountingSettings,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -34,10 +35,6 @@ import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import {
   applyDiscount,
   couponDiscountPaise,
-  evaluateCoupon,
-  planBaseAmountPaise,
-  COUPON_NOT_FOUND,
-  type CouponEvaluation,
 } from "./coupon-pricing";
 import {
   BillingWebhookHandler,
@@ -53,7 +50,6 @@ import {
   type VerifyPaymentInput,
 } from "./dto/billing.schemas";
 import {
-  PLAN_LIMITS,
   PLAN_PRICES_PAISE,
   ANNUAL_DISCOUNT_PCT,
   buildPlanCatalog,
@@ -95,6 +91,31 @@ export class BillingService {
   private readonly webhooks: BillingWebhookHandler;
   private readonly couponAdmin: BillingCoupons;
   private readonly logger = new Logger(BillingService.name);
+
+  private async billablePrice(orgId: string, plan: Plan, billingCycle: BillingCycle) {
+    const catalogPrice = await this.catalog.getActivePriceForPlanTier(plan);
+    const currency = await this.currencyForOrg(orgId, catalogPrice?.currency);
+    const monthlyAmount = catalogPrice?.amountMinor ?? PLAN_PRICES_PAISE[plan];
+    const amount = billingCycle === "annual"
+      ? Math.round(monthlyAmount * 12 * (1 - ANNUAL_DISCOUNT_PCT))
+      : monthlyAmount;
+    return {
+      amount,
+      currency,
+    };
+  }
+
+  private async currencyForOrg(orgId: string, fallback?: string): Promise<string> {
+    if (typeof this.db.select !== "function") {
+      return fallback ?? "INR";
+    }
+
+    const [settings] = await this.db
+      .select({ baseCurrency: accountingSettings.baseCurrency })
+      .from(accountingSettings)
+      .where(eq(accountingSettings.orgId, orgId));
+    return settings?.baseCurrency ?? fallback ?? "INR";
+  }
 
   /** A missing price version is reported, never thrown: the payment already captured and must not roll back. */
   private async recordProrationForPlanChange(
@@ -180,11 +201,8 @@ export class BillingService {
 
     if (!PLAN_PRICES_PAISE[plan]) throw new BadRequestException("Invalid plan");
 
-    const baseAmount = planBaseAmountPaise(
-      plan,
-      billingCycle,
-      ANNUAL_DISCOUNT_PCT,
-    );
+    const price = await this.billablePrice(orgId, plan, billingCycle);
+    const baseAmount = price.amount;
     let amount = baseAmount;
     let couponDiscountAmount = 0;
 
@@ -204,7 +222,7 @@ export class BillingService {
 
     const { providerOrderId } = await adapter.createOrder({
       amount: String(amount),
-      currency: "INR",
+      currency: price.currency,
       receipt: `sub_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
       notes: { orgId, plan, userId, billingCycle },
     });
@@ -212,7 +230,7 @@ export class BillingService {
     return {
       orderId: providerOrderId,
       amount,
-      currency: "INR",
+      currency: price.currency,
       keyId: adapter.publicKeyId(),
       plan,
       billingCycle,
@@ -244,7 +262,8 @@ export class BillingService {
     }
 
     const billingCycle = input.billingCycle ?? "monthly";
-    const amount = planBaseAmountPaise(input.plan, billingCycle, ANNUAL_DISCOUNT_PCT);
+    const price = await this.billablePrice(orgId, input.plan, billingCycle);
+    const amount = price.amount;
     const now = new Date();
     const periodEnd = new Date(now);
     periodEnd.setMonth(periodEnd.getMonth() + (billingCycle === "annual" ? 12 : 1));
@@ -294,7 +313,7 @@ export class BillingService {
           razorpayPaymentId: input.razorpay_payment_id,
           razorpayOrderId: input.razorpay_order_id,
           amount: (amount / 100).toFixed(2),
-          currency: "INR",
+          currency: price.currency,
           status: "captured",
           paidAt: now,
         });
@@ -491,9 +510,10 @@ export class BillingService {
           "Payment gateway not configured. Contact support.",
         );
       }
+      const currency = await this.currencyForOrg(orgId);
       const { providerOrderId: addonOrderId } = await addonAdapter.createOrder({
         amount: String(pack.priceInPaise * quantity),
-        currency: "INR",
+        currency,
         receipt: `aip_${packId}_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
         notes: {
           orgId: String(orgId),
@@ -504,7 +524,7 @@ export class BillingService {
       return {
         orderId: addonOrderId,
         amount: pack.priceInPaise * quantity,
-        currency: "INR",
+        currency,
         keyId: addonAdapter.publicKeyId(),
         pack,
       };

@@ -184,10 +184,6 @@ export class NotificationTimeSweepsService {
     }
   }
 
-  /**
-   * `attendeeIds` is a JSONB array of user ids, so the membership test has to happen in
-   * SQL rather than by loading every event and filtering in JS.
-   */
   private async sweepEventsStartingSoon(
     tx: Db,
     orgId: string,

@@ -82,6 +82,8 @@ export const kbPages = pgTable(
     unique("uniq_kb_pages_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.spaceId], foreignColumns: [kbSpaces.orgId, kbSpaces.id], name: "fk_kb_pages_org_space" }),
     foreignKey({ columns: [table.orgId, table.parentPageId], foreignColumns: [table.orgId, table.id], name: "fk_kb_pages_org_parent" }),
+    foreignKey({ columns: [table.orgId, table.sourceArticleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_pages_org_source_article" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_kb_pages_org_project" }).onDelete("set null"),
   ],
 );
 

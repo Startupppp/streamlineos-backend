@@ -7,6 +7,7 @@ import {
   uniqueIndex,
   primaryKey,
   unique,
+  index,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";

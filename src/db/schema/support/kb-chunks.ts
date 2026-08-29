@@ -7,6 +7,7 @@ import {
   index,
   vector,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { relations } from "drizzle-orm";
@@ -71,6 +72,10 @@ export const kbArticleChunks = pgTable(
       table.embedding.op("vector_cosine_ops"),
     ),
     unique("uniq_kb_article_chunks_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.articleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_chunks_org_article" }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_chunks_org_page" }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.attachmentId], foreignColumns: [kbArticleAttachments.orgId, kbArticleAttachments.id], name: "fk_kb_chunks_org_attachment" }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.sourceId], foreignColumns: [kbSources.orgId, kbSources.id], name: "fk_kb_chunks_org_source" }).onDelete("cascade"),
   ],
 );
 

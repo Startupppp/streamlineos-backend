@@ -7,6 +7,7 @@ import {
   index,
   uniqueIndex,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
@@ -30,6 +31,7 @@ export const kbArticleVersions = pgTable(
     uniqueIndex("uniq_kb_article_versions").on(table.articleId, table.versionNumber),
     index("idx_kb_article_versions_org_article").on(table.orgId, table.articleId),
     unique("uniq_kb_article_versions_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.articleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_article_versions_org_article" }).onDelete("cascade"),
   ],
 );
 

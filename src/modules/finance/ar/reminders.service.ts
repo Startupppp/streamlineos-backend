@@ -136,7 +136,7 @@ export class RemindersService {
     const memberRows = await this.db
       .select({ orgId: organizationMembers.orgId, userId: organizationMembers.userId })
       .from(organizationMembers)
-      .where(orgId ? eq(organizationMembers.orgId, orgId) : sql`true`);
+      .where(and(eq(organizationMembers.status, "ACTIVE"), orgId ? eq(organizationMembers.orgId, orgId) : sql`true`));
     const membersByOrg = new Map<string, string[]>();
     for (const member of memberRows) {
       const members = membersByOrg.get(member.orgId) ?? [];
@@ -190,7 +190,7 @@ export class RemindersService {
             .onConflictDoUpdate({
               target: [finReminderLog.orgId, finReminderLog.invoiceId, finReminderLog.offsetDays],
               set: { status: "PENDING" },
-              where: eq(finReminderLog.status, "FAILED"),
+              where: inArray(finReminderLog.status, ["FAILED", "PENDING"]),
             })
             .returning({ id: finReminderLog.id });
           if (insertResult.length === 0) continue;

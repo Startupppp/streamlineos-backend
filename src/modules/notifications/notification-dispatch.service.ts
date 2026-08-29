@@ -1,6 +1,6 @@
 import { Inject, Injectable, BadRequestException } from "@nestjs/common";
 import { randomUUID } from "crypto";
-import { inArray, eq, and } from "drizzle-orm";
+import { inArray, eq, and, sql } from "drizzle-orm";
 import { notifications, notificationDeliveries, notificationQueue, notificationOutbox, notificationPreferences, notificationTemplates, userPreferences, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -413,7 +413,12 @@ export class NotificationDispatchService {
         if (notificationId) {
           await tx
             .update(notificationDeliveries)
-            .set({ notificationId, notificationCreatedAt })
+            .set({
+              notificationId,
+              notificationCreatedAt: sql`(
+                select created_at from notifications where id = ${notificationId}
+              )`,
+            })
             .where(eq(notificationDeliveries.id, inAppDelivery.id));
         }
       }
@@ -432,7 +437,9 @@ export class NotificationDispatchService {
           .insert(notificationDeliveries)
           .values({
             notificationId,
-            notificationCreatedAt,
+            notificationCreatedAt: notificationId
+              ? sql`(select created_at from notifications where id = ${notificationId})`
+              : null,
             orgId: input.orgId,
             userId,
             eventKey: input.eventKey,

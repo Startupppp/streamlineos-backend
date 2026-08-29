@@ -7,6 +7,7 @@ import {
   timestamp,
   uniqueIndex,
   index,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 import { calendarEvents } from "../common/calendar-events";
@@ -41,5 +42,10 @@ export const calendarEventExceptions = pgTable(
       table.occurrenceStart,
     ),
     index("idx_cal_exc_org_event").on(table.orgId, table.eventId),
+    foreignKey({
+      columns: [table.orgId, table.eventId],
+      foreignColumns: [calendarEvents.orgId, calendarEvents.id],
+      name: "fk_calendar_event_exceptions_org_event",
+    }),
   ],
 );

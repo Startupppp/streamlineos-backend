@@ -105,6 +105,7 @@ export const kbExportJobs = pgTable(
   (table) => [
     index("idx_kb_export_jobs_org_created").on(table.orgId, table.createdAt),
     unique("uniq_kb_export_jobs_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.scopeId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_export_jobs_org_page" }).onDelete("cascade"),
   ],
 );
 
