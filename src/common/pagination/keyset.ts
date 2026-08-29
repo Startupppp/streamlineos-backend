@@ -72,8 +72,7 @@ export function keysetBefore(
  * A caller using this projects the boundary column as text at full precision —
  * `to_char(col, 'YYYY-MM-DD"T"HH24:MI:SS.US')` — and hands the result straight
  * back. It is bound through `sql.param` as text and cast in SQL; it is never
- * rebuilt as a `Date`,
- * because rebuilding is the truncation. Decode the cursor with
+ * rebuilt as a `Date`, because rebuilding is the truncation. Decode the cursor with
  * `decodeTimestampCursor`, which is what checks the text is a timestamp at all:
  * an unvalidated one would reach Postgres and come back as a 500 rather than as
  * page one.
