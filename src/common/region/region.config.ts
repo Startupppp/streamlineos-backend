@@ -136,6 +136,25 @@ function parseTenantClasses(
   return values.filter(isTenantClassKey);
 }
 
+function parseCacheConfig(
+  region: string,
+  env: NodeJS.ProcessEnv,
+  flat: (...names: string[]) => string[],
+): RegionCacheConfig {
+  const upstashUrl = read(env, envKey(region, "UPSTASH_REDIS_REST_URL"));
+  const upstashToken = read(env, envKey(region, "UPSTASH_REDIS_REST_TOKEN"));
+  if ((upstashUrl === undefined) !== (upstashToken === undefined))
+    throw new Error(
+      `[region] region "${region}" must configure both ${envKey(region, "UPSTASH_REDIS_REST_URL")} and ${envKey(region, "UPSTASH_REDIS_REST_TOKEN")}.`,
+    );
+
+  return {
+    upstashUrl: upstashUrl ?? read(env, ...flat("UPSTASH_REDIS_REST_URL")),
+    upstashToken: upstashToken ?? read(env, ...flat("UPSTASH_REDIS_REST_TOKEN")),
+    keyPrefix: read(env, envKey(region, "CACHE_KEY_PREFIX"), ...flat("CACHE_KEY_PREFIX")),
+  };
+}
+
 function parseKeys(env: NodeJS.ProcessEnv, primary: string): string[] {
   const raw = read(env, "REGION_KEYS");
   if (!raw) return [primary];
@@ -209,11 +228,7 @@ export function resolveRegionTopology(env: NodeJS.ProcessEnv): RegionTopology {
         ),
         cacheKeyPrefix: read(env, envKey(key, "CACHE_KEY_PREFIX"), ...flat("CACHE_KEY_PREFIX")),
         searchApiKey: read(env, envKey(key, "SEARCH_API_KEY"), ...flat("SEARCH_API_KEY")),
-        cache: {
-          upstashUrl: read(env, envKey(key, "UPSTASH_REDIS_REST_URL")),
-          upstashToken: read(env, envKey(key, "UPSTASH_REDIS_REST_TOKEN")),
-          keyPrefix: read(env, envKey(key, "CACHE_KEY_PREFIX"), ...flat("CACHE_KEY_PREFIX")),
-        },
+        cache: parseCacheConfig(key, env, flat),
       },
       storage: {
         region: read(env, envKey(key, "R2_REGION"), ...flat("R2_REGION")) ?? "auto",

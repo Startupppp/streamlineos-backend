@@ -9,6 +9,7 @@ export const REDIS = "REDIS";
 @Injectable()
 export class CacheService {
   private readonly inFlight = new Map<string, Promise<unknown>>();
+  private readonly regionalRedis = new Map<string, Redis>();
 
   private static readonly FILL_LEASE_SECONDS = 10;
   private static readonly FILL_WAIT_MS = 2_000;
@@ -17,10 +18,19 @@ export class CacheService {
   constructor(@Inject(REDIS) private readonly redis: Redis | null) {}
 
   async cached<T>(key: string, fetcher: () => Promise<T>, ttlSeconds = 300): Promise<T> {
+    return this.cachedWithRedis(this.redis, key, fetcher, ttlSeconds);
+  }
+
+  private async cachedWithRedis<T>(
+    redis: Redis | null,
+    key: string,
+    fetcher: () => Promise<T>,
+    ttlSeconds: number,
+  ): Promise<T> {
     const existing = this.inFlight.get(key);
     if (existing) return existing as Promise<T>;
 
-    const request = this.loadOrFetch(key, fetcher, ttlSeconds);
+    const request = this.loadOrFetch(redis, key, fetcher, ttlSeconds);
     this.inFlight.set(key, request);
     try {
       return await request;
@@ -39,8 +49,8 @@ export class CacheService {
     fetcher: () => Promise<T>,
     ttlSeconds = 300,
   ): Promise<T> {
-    const version = await this.namespaceVersion(namespace);
-    return this.cached(`${namespace}:v${version}:${key}`, fetcher, ttlSeconds);
+    const version = await this.namespaceVersionWithRedis(this.redis, namespace);
+    return this.cachedWithRedis(this.redis, `${namespace}:v${version}:${key}`, fetcher, ttlSeconds);
   }
 
   async invalidateNamespace(namespace: string): Promise<void> {
@@ -54,11 +64,11 @@ export class CacheService {
   }
 
   private async loadOrFetch<T>(
+    redis: Redis | null,
     key: string,
     fetcher: () => Promise<T>,
     ttlSeconds: number,
   ): Promise<T> {
-    const redis = this.redis;
     if (!redis) return fetcher();
     try {
       const hit = await this.timedRedis(() => redis.get<T>(key));
@@ -117,8 +127,7 @@ export class CacheService {
     return `cache:namespace:${namespace}:version`;
   }
 
-  private async namespaceVersion(namespace: string): Promise<number> {
-    const redis = this.redis;
+  private async namespaceVersionWithRedis(redis: Redis | null, namespace: string): Promise<number> {
     if (!redis) return 0;
     try {
       return (await this.timedRedis(() => redis.get<number>(this.namespaceVersionKey(namespace)))) ?? 0;
@@ -182,15 +191,31 @@ export class CacheService {
     }
   }
 
+  private async redisForOrg(orgId: string): Promise<Redis | null> {
+    if (!hasRegionRegistry()) return this.redis;
+    try {
+      const config = await getRegionRegistry().cacheConfigForOrg(orgId);
+      if (!config.upstashUrl || !config.upstashToken) return this.redis;
+      const existing = this.regionalRedis.get(config.upstashUrl);
+      if (existing) return existing;
+      const client = new Redis({ url: config.upstashUrl, token: config.upstashToken });
+      this.regionalRedis.set(config.upstashUrl, client);
+      return client;
+    } catch {
+      return this.redis;
+    }
+  }
+
   async cachedForOrg<T>(
     orgId: string,
     localKey: string,
     fetcher: () => Promise<T>,
     baseTtl = 300,
   ): Promise<T> {
+    const redis = await this.redisForOrg(orgId);
     const prefix = await this.cellPrefixForOrg(orgId);
     const key = prefix ? `${prefix}:${orgId}:${localKey}` : `${orgId}:${localKey}`;
-    return this.cached(key, fetcher, this.applyJitter(baseTtl));
+    return this.cachedWithRedis(redis, key, fetcher, this.applyJitter(baseTtl));
   }
 
   async cachedVersionedForOrg<T>(
@@ -200,21 +225,35 @@ export class CacheService {
     fetcher: () => Promise<T>,
     baseTtl = 300,
   ): Promise<T> {
+    const redis = await this.redisForOrg(orgId);
     const prefix = await this.cellPrefixForOrg(orgId);
     const ns = prefix ? `${prefix}:${orgId}:${namespace}` : `${orgId}:${namespace}`;
-    return this.cachedVersioned(ns, localKey, fetcher, this.applyJitter(baseTtl));
+    const version = await this.namespaceVersionWithRedis(redis, ns);
+    return this.cachedWithRedis(redis, `${ns}:v${version}:${localKey}`, fetcher, this.applyJitter(baseTtl));
   }
 
   async invalidateNamespaceForOrg(orgId: string, namespace: string): Promise<void> {
+    const redis = await this.redisForOrg(orgId);
     const prefix = await this.cellPrefixForOrg(orgId);
     const ns = prefix ? `${prefix}:${orgId}:${namespace}` : `${orgId}:${namespace}`;
-    return this.invalidateNamespace(ns);
+    if (!redis) return;
+    try {
+      await this.timedRedis(() => redis.incr(this.namespaceVersionKey(ns)));
+    } catch {
+      return;
+    }
   }
 
   async invalidateForOrg(orgId: string, localKey: string): Promise<void> {
+    const redis = await this.redisForOrg(orgId);
     const prefix = await this.cellPrefixForOrg(orgId);
     const key = prefix ? `${prefix}:${orgId}:${localKey}` : `${orgId}:${localKey}`;
-    return this.invalidate(key);
+    if (!redis) return;
+    try {
+      await this.timedRedis(() => redis.del(key));
+    } catch {
+      return;
+    }
   }
 
 }

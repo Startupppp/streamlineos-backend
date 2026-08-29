@@ -10,6 +10,12 @@ CREATE TABLE IF NOT EXISTS communication_backfill_issues (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE communication_backfill_issues ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS communication_backfill_issues_tenant_isolation ON communication_backfill_issues;
+CREATE POLICY communication_backfill_issues_tenant_isolation ON communication_backfill_issues
+  USING (org_id = app.current_org_id())
+  WITH CHECK (org_id = app.current_org_id());
+
 ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS org_id TEXT;
 ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS membership_id INTEGER;
 
@@ -69,6 +75,12 @@ CREATE TABLE IF NOT EXISTS chat_message_reactions (
   CONSTRAINT fk_chat_message_reactions_org_membership
     FOREIGN KEY (org_id, membership_id) REFERENCES organization_members (org_id, id) ON DELETE CASCADE NOT VALID
 );
+
+ALTER TABLE chat_message_reactions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS chat_message_reactions_tenant_isolation ON chat_message_reactions;
+CREATE POLICY chat_message_reactions_tenant_isolation ON chat_message_reactions
+  USING (org_id = app.current_org_id())
+  WITH CHECK (org_id = app.current_org_id());
 
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_chat_message_reaction_actor_emoji
   ON chat_message_reactions (org_id, message_id, membership_id, emoji);

@@ -288,7 +288,7 @@ async function reportCatalogGap(sourceEntries) {
   const sql = postgres(url, { prepare: false, max: 1, ssl: "require", onnotice: () => {} });
   try {
     const rows = await sql`
-      SELECT t.relname AS tbl, a.attname AS col
+      SELECT DISTINCT t.relname AS tbl, a.attname AS col
       FROM pg_constraint c
       JOIN pg_class t ON t.oid = c.conrelid
       JOIN unnest(c.conkey) k(attnum) ON true
@@ -296,14 +296,17 @@ async function reportCatalogGap(sourceEntries) {
       WHERE c.contype = 'f' AND c.confrelid = 'users'::regclass
       ORDER BY 1, 2
     `;
-    const known = new Set(sourceEntries.map((e) => `${e.table}.${e.column}`));
-    const invisible = [...new Set(rows.map((r) => `${r.tbl}.${r.col}`))].filter(
-      (key) => !known.has(key),
-    );
+    const catalogKeys = new Set(rows.map((r) => `${r.tbl}.${r.col}`));
+    const sourceKeys = new Set(sourceEntries.map((e) => `${e.table}.${e.column}`));
+    const invisible = [...catalogKeys].filter((key) => !sourceKeys.has(key));
+    const sourceOnly = [...sourceKeys].filter((key) => !catalogKeys.has(key));
+    const union = new Set([...catalogKeys, ...sourceKeys]);
 
-    console.log(`pg_catalog users.id foreign keys : ${rows.length}`);
+    console.log(`pg_catalog users.id foreign keys : ${catalogKeys.size}`);
     console.log(`visible to the source scan       : ${sourceEntries.length}`);
     console.log(`INVISIBLE to the ratchet         : ${invisible.length}`);
+    console.log(`source-only declarations         : ${sourceOnly.length}`);
+    console.log(`combined distinct burden         : ${union.size}`);
     for (const key of invisible) console.log(`  ${key}`);
   } finally {
     await sql.end();

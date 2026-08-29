@@ -176,7 +176,12 @@ export class RegionRegistry {
 
   async cacheKeyPrefixForOrg(orgId: string): Promise<string | null> {
     const region = await this.regionForOrg(orgId);
-    return this.bindingFor(region).definition.cell.cacheKeyPrefix ?? null;
+    return this.bindingFor(region).definition.cell.cache.keyPrefix ?? null;
+  }
+
+  async cacheConfigForOrg(orgId: string): Promise<RegionDefinition["cell"]["cache"]> {
+    const region = await this.regionForOrg(orgId);
+    return this.bindingFor(region).definition.cell.cache;
   }
 
   /** Call when an organisation is placed or moved. */

@@ -71,7 +71,7 @@ BEGIN
       ('kb_chat_messages', 'fk_kb_chat_messages_org_conversation', 'FOREIGN KEY (org_id, conversation_id) REFERENCES kb_chat_conversations (org_id, id) ON DELETE CASCADE'),
       ('kb_export_jobs', 'fk_kb_export_jobs_org_page', 'FOREIGN KEY (org_id, scope_id) REFERENCES kb_pages (org_id, id) ON DELETE CASCADE'),
       ('kb_pages', 'fk_kb_pages_org_source_article', 'FOREIGN KEY (org_id, source_article_id) REFERENCES kb_articles (org_id, id) ON DELETE SET NULL'),
-      ('kb_pages', 'fk_kb_pages_org_project', 'FOREIGN KEY (org_id, project_id) REFERENCES projects (org_id, id) ON DELETE SET NULL')
+      ('kb_pages', 'fk_kb_pages_org_project', 'FOREIGN KEY (org_id, project_id) REFERENCES build.projects (org_id, id) ON DELETE SET NULL')
     ) AS constraints(table_name, constraint_name, definition)
   LOOP
     IF NOT EXISTS (

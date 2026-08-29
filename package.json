@@ -35,6 +35,7 @@
     "cell:unit-cost": "node src/scripts/run-cell-unit-cost.mjs",
     "cell:unit-cost:self-test": "node src/scripts/run-cell-unit-cost.mjs --self-test",
     "cell:unit-cost:verify": "node src/scripts/__tests__/cell-unit-cost.test.mjs",
+    "s7:evidence": "node src/scripts/collect-s7-evidence.mjs",
     "cell:admission": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/verify-cell-admission.ts",
     "cell:admission:self-test": "node -r ts-node/register/transpile-only src/scripts/verify-cell-admission.ts --self-test",
     "cell:relocate": "node src/scripts/relocate-org.mjs",

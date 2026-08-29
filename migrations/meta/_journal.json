@@ -2605,6 +2605,13 @@
       "when": 1787940968254,
       "tag": "0654_calendar_exception_tenant_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 373,
+      "version": "7",
+      "when": 1787941028254,
+      "tag": "0656_communication_tenant_rls",
+      "breakpoints": true
     }
   ]
 }
