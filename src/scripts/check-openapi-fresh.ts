@@ -144,6 +144,17 @@ async function main(): Promise<void> {
   const committed = readFileSync(OPENAPI_ARTIFACT_PATH, "utf8");
   const generated = await generateOpenApiJson();
 
+  if (generated.unconvertible.length > 0) {
+    process.stderr.write(
+      `OpenAPI validation contract conversion failed for ${String(generated.unconvertible.length)} schema(s):\n`,
+    );
+    for (const failure of generated.unconvertible.slice(0, 50))
+      process.stderr.write(`  ${failure}\n`);
+    if (generated.unconvertible.length > 50)
+      process.stderr.write(`  ... and ${String(generated.unconvertible.length - 50)} more\n`);
+    process.exit(1);
+  }
+
   if (committed === generated.json) {
     process.stdout.write(
       `openapi.json is current — ${String(generated.operations)} operations, ${String(generated.contractsApplied)} carrying a zod contract\n`,

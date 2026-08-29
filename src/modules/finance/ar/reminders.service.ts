@@ -4,18 +4,18 @@ import { finReminderPolicies, finReminderLog, invoices, organizationMembers } fr
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { randomUUID } from "node:crypto";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { INVOICE_REMINDER_EVENT, invoiceReminderPayloadSchema } from "./dto/reminder-outbox.schemas";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type { CreateReminderPolicyInput, UpdateReminderPolicyInput, ListReminderPoliciesQuery, ListReminderLogQuery } from "./dto/finance-ar.schemas";
-import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { boundedMap } from "../../../common/async/bounded-map";
 
 @Injectable()
 export class RemindersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly dispatch: NotificationDispatchService,
     private readonly audit: AuditService,
   ) {}
 
@@ -187,50 +187,46 @@ export class RemindersService {
       }
     }
     const results = await boundedMap(work, 8, async ({ policy, inv, offsetDays }) => {
-          const insertResult = await this.db
-            .insert(finReminderLog)
-            .values({
-              orgId: inv.orgId,
-              invoiceId: inv.id,
-              channel: policy.channel,
-              offsetDays,
-              status: "PENDING",
-            })
-            .onConflictDoUpdate({
-              target: [finReminderLog.orgId, finReminderLog.invoiceId, finReminderLog.offsetDays],
-              set: { status: "PENDING" },
-              where: inArray(finReminderLog.status, ["FAILED", "PENDING"]),
-            })
-            .returning({ id: finReminderLog.id });
-          if (insertResult.length === 0) return 0;
-
           const targetUserIds = inv.collectionOwnerId
             ? [inv.collectionOwnerId]
             : (membersByOrg.get(inv.orgId) ?? []);
 
-          if (targetUserIds.length === 0) {
-            await this.db.update(finReminderLog).set({ status: "FAILED" }).where(eq(finReminderLog.id, insertResult[0]!.id));
-            return 0;
-          }
+          if (targetUserIds.length === 0) return 0;
 
-          let delivered = false;
-          await this.dispatch.emit({
-              eventKey: "accounting.invoice.overdue",
+          const queued = await this.db.transaction(async (tx) => {
+            const insertResult = await tx
+              .insert(finReminderLog)
+              .values({ orgId: inv.orgId, invoiceId: inv.id, channel: policy.channel, offsetDays, status: "PENDING" })
+              .onConflictDoUpdate({
+                target: [finReminderLog.orgId, finReminderLog.invoiceId, finReminderLog.offsetDays],
+                set: { status: "PENDING" },
+                where: inArray(finReminderLog.status, ["FAILED", "PENDING"]),
+              })
+              .returning({ id: finReminderLog.id });
+            const reminderLogId = insertResult[0]?.id;
+            if (reminderLogId === undefined) return false;
+            const payload = invoiceReminderPayloadSchema.parse({
               orgId: inv.orgId,
-              dedupeKey: `invoice-reminder:${inv.orgId}:${inv.id}:${policy.id}:${offsetDays}`,
+              reminderLogId,
+              invoiceId: inv.id,
+              invoiceNumber: inv.invoiceNumber,
+              channel: policy.channel,
+              offsetDays,
               targetUserIds,
-              entityType: "invoice",
-              entityId: String(inv.id),
-              title: "Invoice payment reminder",
-              message: `Reminder: Invoice ${inv.invoiceNumber} ${offsetDays >= 0 ? `is due in ${offsetDays} days` : `was due ${Math.abs(offsetDays)} days ago`}`,
-          }).then(async () => {
-            await this.db.update(finReminderLog).set({ status: "SENT" }).where(eq(finReminderLog.id, insertResult[0]!.id));
-            delivered = true;
-          }).catch(async (error: unknown) => {
-            await this.db.update(finReminderLog).set({ status: "FAILED" }).where(eq(finReminderLog.id, insertResult[0]!.id));
-            logSideEffectFailure("invoice reminder notification dispatch", { orgId: inv.orgId, invoiceId: inv.id })(error);
+            });
+            await OutboxWriter.emit(tx, {
+              eventId: randomUUID(),
+              organizationId: inv.orgId,
+              aggregateType: "fin_reminder_log",
+              aggregateId: String(reminderLogId),
+              aggregateVersion: 1,
+              eventType: INVOICE_REMINDER_EVENT,
+              payload,
+              occurredAt: new Date(),
+            });
+            return true;
           });
-          return delivered ? 1 : 0;
+          return queued ? 1 : 0;
     });
     return results.reduce((total, result) => total + (result.status === "fulfilled" ? result.value : 0), 0);
   }
