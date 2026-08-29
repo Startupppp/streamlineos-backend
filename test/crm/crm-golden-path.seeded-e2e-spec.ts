@@ -1,5 +1,5 @@
 import request from "supertest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   activities,
   autonomousDecisions,
@@ -8,7 +8,10 @@ import {
   businessParties,
   crmOutboundMessages,
   deals,
+  organizations,
   orgModules,
+  relationshipStates,
+  users,
   workflowRuns,
 } from "src/db/schema";
 import {
@@ -32,6 +35,7 @@ import {
   webhookBody,
 } from "src/modules/ingress/adapters/whatsapp-webhook.fixture";
 import type { InboundCommunicationEvent } from "src/modules/ingress/inbound-event";
+import { isWithinWorkingHours } from "src/modules/autonomy/working-hours";
 
 /**
  * G1 — the golden path, driven end to end with nothing stubbed.
@@ -94,6 +98,9 @@ const CRON_SECRET = process.env.CRON_SECRET;
 /** The floor `clampHoldWindow` enforces. Anything lower is raised to this. */
 const HOLD_WINDOW_SECONDS = 10;
 
+/** The zone the working-hours rule is judged in for this fixture. */
+const ORG_TIMEZONE = "Asia/Kolkata";
+
 interface TickResult {
   readonly ok: boolean;
   readonly claimed?: number;
@@ -103,6 +110,7 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
   let seeded: SeededE2eApp;
   let fixture: SeededFixture;
   let token: string;
+  let repUserId: string;
   let dealId: number;
 
   beforeAll(async () => {
@@ -131,6 +139,18 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
       .insert(orgModules)
       .values({ orgId: fixture.orgId, moduleKey: "crm", enabled: true });
 
+    /**
+     * A known timezone, because the send window is judged in it.
+     *
+     * `send-guardrails` resolves the party's zone and falls back to the
+     * organisation's; leaving it to a fallback would make which arm of the last
+     * test runs depend on a default rather than on something this file states.
+     */
+    await seeded.seedDb
+      .update(organizations)
+      .set({ timezone: ORG_TIMEZONE })
+      .where(eq(organizations.id, fixture.orgId));
+
     // Ten seconds instead of sixty, so the release leg is a wait and not a nap.
     await seeded.seedDb.insert(autonomySettings).values({
       organizationId: fixture.orgId,
@@ -139,6 +159,22 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
 
     const rep = fixture.members["rep"];
     if (!rep) throw new Error("fixture member 'rep' missing");
+    repUserId = rep.userId;
+
+    /**
+     * A name, because the draft is written as somebody.
+     *
+     * `composeAndHold` refuses before it spends anything when the deal has no
+     * salesperson to write as — `judgeDraft`'s `no-sender-name`, checked early
+     * so a sweep over unowned parties is not billed for drafts nobody may send.
+     * `SeedBuilder` leaves `users.name` null, so without this the compose is a
+     * refusal and the hold path is never reached.
+     */
+    await seeded.seedDb
+      .update(users)
+      .set({ name: "Riya Sharma" })
+      .where(eq(users.id, rep.userId));
+
     token = await signSeededToken(rep.userId, fixture.orgId);
   }, 180_000);
 
@@ -174,6 +210,15 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
     if (!normalised.ok) throw new Error(`adapter skipped the fixture: ${normalised.reason}`);
 
     return normalised.event;
+  }
+
+  /** A refusal is a 201 too, so the reason has to be the failure message. */
+  function expectHeld(body: unknown): void {
+    const outcome = body as { held?: boolean; stage?: string; reason?: string };
+    if (!outcome.held)
+      throw new Error(
+        `composeAndHold refused at ${outcome.stage ?? "?"}: ${outcome.reason ?? JSON.stringify(body)}`,
+      );
   }
 
   async function tick(): Promise<TickResult> {
@@ -255,6 +300,85 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
         .where(eq(businessParties.organizationId, fixture.orgId));
       if (!party) throw new Error("the first test did not leave a party to write to");
 
+      /**
+       * An address to reach them at.
+       *
+       * The party arrived over WhatsApp, so identity resolution gave it a phone
+       * number and nothing else; outbound composes email, and `judgeOutbound`
+       * refuses at eligibility without one rather than drafting a message it
+       * cannot send. Filling it in is what the rep does on the record — the
+       * inbound channel and the outbound channel are not obliged to be the same
+       * one, and this file is about the hold, not about identity resolution.
+       */
+      await seeded.seedDb
+        .update(businessParties)
+        .set({ email: "ops@acme.example" })
+        .where(
+          and(
+            eq(businessParties.organizationId, fixture.orgId),
+            eq(businessParties.partyId, party.partyId),
+          ),
+        );
+
+      /**
+       * The rep does the thing, and says so.
+       *
+       * `judgeOutbound` refuses while the outstanding next step is ours — "the
+       * outstanding next step is ours, so chasing them would be wrong", which is
+       * the rule working, not an obstacle. The first test's extraction filed
+       * exactly such a task ("send pricing"), so without closing it this file
+       * would be asking the system to nag a customer it owes an answer.
+       *
+       * Closed here rather than never created, because the sequence is the
+       * point: the message arrives, a task comes out of it, somebody does the
+       * task, and only then does the follow-up loop have anything to say.
+       */
+      await seeded.seedDb
+        .update(activities)
+        .set({ completedAt: new Date() })
+        .where(
+          and(
+            eq(activities.organizationId, fixture.orgId),
+            eq(activities.kind, "task"),
+            isNull(activities.completedAt),
+          ),
+        );
+
+      /**
+       * The relationship the follow-up loop is for: we spoke last, and they have
+       * gone quiet.
+       *
+       * `judgeOutbound` refuses everything else, and each refusal is the rule
+       * working. It will not write while the ball is ours (`awaiting_reply_since`
+       * null), will not chase somebody who has just replied
+       * (`last_inbound_at > last_outbound_at`), and will not nudge an open deal
+       * that has been quiet for less than ten days. So the state is set to the
+       * one the ticket describes — a fortnight of silence on an open deal after
+       * our own last message — rather than to whatever the inbound fixture
+       * happened to leave.
+       *
+       * Set directly because this file is about the hold contract. That the
+       * judgement itself is right is `outbound-eligibility.spec.ts`, which is
+       * pure and covers every branch of it.
+       */
+      const day = 86_400_000;
+      const [tuned] = await seeded.seedDb
+        .update(relationshipStates)
+        .set({
+          lastInboundAt: new Date(Date.now() - 20 * day),
+          lastOutboundAt: new Date(Date.now() - 15 * day),
+          awaitingReplySince: new Date(Date.now() - 15 * day),
+        })
+        .where(
+          and(
+            eq(relationshipStates.organizationId, fixture.orgId),
+            eq(relationshipStates.partyId, party.partyId),
+          ),
+        )
+        .returning({ id: relationshipStates.relationshipStateId });
+      if (!tuned)
+        throw new Error("the inbound run did not materialise a relationship to tune");
+
       // The rep opens the deal. Nothing opens one autonomously -- see the file
       // docblock; this is the leg `pending.md` specifies and the branch lacks.
       const [opened] = await seeded.seedDb
@@ -263,6 +387,8 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
           orgId: fixture.orgId,
           name: "40 seats — inbound",
           partyId: party.partyId,
+          // Owned, so there is somebody to write as. See the note in `beforeAll`.
+          assignedToId: repUserId,
         })
         .returning({ id: deals.id });
       if (!opened) throw new Error("could not open the deal");
@@ -274,6 +400,11 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
         .set("Idempotency-Key", `golden-path-stop-${fixture.orgId}`)
         .send({ partyId: party.partyId, dealId: String(dealId) });
       expect(composed.status).toBe(201);
+      // Asserted on the body, not only the status: a refusal is also a 201, and
+      // `reason` is the difference between "the hold path is broken" and "the
+      // fixture gave it nothing to write". Thrown rather than `expect`ed so the
+      // reason itself is the failure message.
+      expectHeld(composed.body);
 
       const [held] = await seeded.seedDb
         .select({
@@ -290,7 +421,9 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
       const cancelled = await request(seeded.app.getHttpServer())
         .post(`/crm/autonomy/holds/${held.holdId}/cancel`)
         .set("Authorization", `Bearer ${token}`)
-        .send({});
+        // `@Idempotent`: a retried stop must not become a second cancellation.
+        .set("Idempotency-Key", `golden-path-cancel-${held.holdId}`)
+        .send({ reason: "Not while we owe them a proposal." });
       expect(cancelled.status).toBeLessThan(300);
 
       // Let the window pass and drive the runtime anyway: a cancelled hold that
@@ -332,9 +465,14 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
         .set("Idempotency-Key", `golden-path-release-${fixture.orgId}`)
         .send({ partyId: party.partyId, dealId: String(dealId) });
       expect(composed.status).toBe(201);
+      expectHeld(composed.body);
 
       const [held] = await seeded.seedDb
-        .select({ holdId: autonomyHolds.autonomyHoldId, runId: autonomyHolds.workflowRunId })
+        .select({
+          holdId: autonomyHolds.autonomyHoldId,
+          runId: autonomyHolds.workflowRunId,
+          holdUntil: autonomyHolds.holdUntil,
+        })
         .from(autonomyHolds)
         .where(
           and(
@@ -344,17 +482,69 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
         );
       if (!held) throw new Error("composing did not place a second hold");
 
-      await new Promise((resolve) => setTimeout(resolve, (HOLD_WINDOW_SECONDS + 3) * 1000));
-      if (held.runId) await settle(held.runId);
-      else {
-        await tick();
-        await tick();
-      }
+      /**
+       * Waited out against the hold's own `hold_until`, not against the number
+       * this file asked for.
+       *
+       * `resolveHold` refuses to send before the window is up — correctly, since
+       * a send cannot be taken back — so a test that guessed short would read a
+       * still-sleeping run as a failure to send. Reading the deadline the server
+       * actually stamped is both shorter to wait for when the setting applied and
+       * correct when it did not.
+       */
+      const waitMs = held.holdUntil.getTime() - Date.now() + 2_000;
+      if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+      if (!held.runId) throw new Error("the hold was placed without a workflow run to release it");
+
+      const outcome = await settle(held.runId);
+
+      /**
+       * Which of the two right answers this is depends on the clock, and both
+       * are asserted.
+       *
+       * `OUTBOUND_WORKING_HOURS` is a constant and explicitly "not a setting" —
+       * a tenant cannot ask to mail its customers at midnight. So a run whose
+       * window elapses outside 09:00–17:00 local, Monday to Friday, is deferred
+       * to the next opening rather than sent, and a test that only asserted the
+       * send would fail every evening and every weekend for a reason that is the
+       * product working.
+       *
+       * Asserting both arms is what makes this deterministic, and the second arm
+       * is the one `pending.md` asks for in as many words: "3am local is not
+       * sent". Nothing else in the seeded suite covers it.
+       */
+      const sendable = isWithinWorkingHours(new Date(), ORG_TIMEZONE);
 
       const [after] = await seeded.seedDb
         .select({ status: autonomyHolds.status, sentAt: autonomyHolds.sentAt })
         .from(autonomyHolds)
         .where(eq(autonomyHolds.autonomyHoldId, held.holdId));
+
+      if (!sendable) {
+        // Deferred, not dropped: still held, nothing sent, and the run is asleep
+        // waiting for the window rather than finished.
+        expect(after?.status).toBe("held");
+        expect(after?.sentAt).toBeNull();
+
+        const [run] = await seeded.seedDb
+          .select({ status: workflowRuns.status, runAfter: workflowRuns.runAfter })
+          .from(workflowRuns)
+          .where(eq(workflowRuns.workflowRunId, held.runId));
+        expect(run?.status).toBe("SLEEPING");
+        // It wakes inside working hours, which is the whole point of deferring.
+        expect(isWithinWorkingHours(run?.runAfter ?? new Date(0), ORG_TIMEZONE)).toBe(true);
+        return;
+      }
+
+      if (outcome !== "COMPLETED") {
+        const [run] = await seeded.seedDb
+          .select({ status: workflowRuns.status, lastError: workflowRuns.lastError })
+          .from(workflowRuns)
+          .where(eq(workflowRuns.workflowRunId, held.runId));
+        throw new Error(
+          `the hold's run did not complete: settle=${outcome} status=${run?.status ?? "GONE"} — ${run?.lastError ?? "no error recorded"}`,
+        );
+      }
 
       // The send is recorded, and recorded once.
       expect(after?.status).toBe("sent");
