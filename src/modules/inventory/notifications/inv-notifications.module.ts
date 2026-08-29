@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { AccessModule } from "../../access/access.module";
+import { InvExpirySweepController } from "./inv-expiry-sweep.controller";
 import { InvExpirySweepService } from "./inv-expiry-sweep.service";
 import {
   InvAdjustmentApprovalConsumerService,
@@ -22,6 +23,7 @@ import {
  */
 @Module({
   imports: [OutboxModule, NotificationsModule, AccessModule],
+  controllers: [InvExpirySweepController],
   providers: [
     InvExpirySweepService,
     InvLotExpiringConsumerService,
