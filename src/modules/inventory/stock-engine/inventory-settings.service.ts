@@ -25,6 +25,12 @@ const toSettingsRow = (row: InvSettingsSelect | InvSettingsInsert): InvSettingsR
   allowPartialShipment: row.allowPartialShipment ?? true,
   packageRequiredForShipping: row.packageRequiredForShipping ?? false,
   channelPublishPolicy: row.channelPublishPolicy ?? null,
+  packs: {
+    warehouse: row.packWarehouse ?? true,
+    kirana: row.packKirana ?? false,
+    pharmacy: row.packPharmacy ?? false,
+    gst: row.packGst ?? false,
+  },
 });
 
 const buildDefaults = (orgId: string): InvSettingsInsert => ({
@@ -43,6 +49,10 @@ const buildDefaults = (orgId: string): InvSettingsInsert => ({
   allowPartialShipment: true,
   packageRequiredForShipping: false,
   channelPublishPolicy: null,
+  packWarehouse: true,
+  packKirana: false,
+  packPharmacy: false,
+  packGst: false,
 });
 
 @Injectable()

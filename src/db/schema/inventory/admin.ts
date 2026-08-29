@@ -31,6 +31,25 @@ export const invSettings = pgTable("inv_settings", {
   allowPartialShipment: boolean("allow_partial_shipment").default(true).notNull(),
   packageRequiredForShipping: boolean("package_required_for_shipping").default(false).notNull(),
   channelPublishPolicy: text("channel_publish_policy"),
+  /**
+   * E1 — the four packs, and which of them this organisation is running.
+   *
+   * A pack is a bundle of domain rules that only some organisations want: HSN
+   * codes and tax treatment (`gst`), MRP and LASA handling (`pharmacy`), loose
+   * versus packed selling units (`kirana`). Warehouse is the core product and is
+   * on by default; the other three are off, because a field that is mandatory
+   * for a pharmacy is noise for a distributor, and a validation rule nobody asked
+   * for is a bug from the operator's side of the screen.
+   *
+   * Flags rather than a plan entitlement: these are how the organisation works,
+   * not what it has paid for. Turning one off hides its navigation, its fields
+   * and its validation — it does not delete the data already captured, so a pack
+   * switched off and on again finds its rows intact.
+   */
+  packWarehouse: boolean("pack_warehouse").default(true).notNull(),
+  packKirana: boolean("pack_kirana").default(false).notNull(),
+  packPharmacy: boolean("pack_pharmacy").default(false).notNull(),
+  packGst: boolean("pack_gst").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

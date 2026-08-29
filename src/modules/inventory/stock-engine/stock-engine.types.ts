@@ -119,4 +119,18 @@ export interface InvSettingsRow {
   allowPartialShipment: boolean;
   packageRequiredForShipping: boolean;
   channelPublishPolicy: string | null;
+  /**
+   * E1. Which packs this organisation runs. Carried on the row every engine and
+   * service already reads, so a pack check never needs a second query — and a
+   * rule that must not fire when its pack is off cannot forget to look.
+   */
+  packs: InvPackFlags;
+}
+
+/** E1 — the four packs. Warehouse is the core product; the rest are opt-in. */
+export interface InvPackFlags {
+  warehouse: boolean;
+  kirana: boolean;
+  pharmacy: boolean;
+  gst: boolean;
 }

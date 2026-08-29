@@ -2297,6 +2297,20 @@
       "when": 1788134409004,
       "tag": "0548_inventory_pending_one_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 329,
+      "version": "7",
+      "when": 1788134409005,
+      "tag": "0553_inventory_pack_flags",
+      "breakpoints": true
+    },
+    {
+      "idx": 330,
+      "version": "7",
+      "when": 1788134409006,
+      "tag": "0550_recall_evidence",
+      "breakpoints": true
     }
   ]
 }

@@ -28,6 +28,18 @@ export class SettingsController {
     return this.svc.getSettings(u.orgId);
   }
 
+  /**
+   * E1. Read-only, and behind the read key every inventory role holds rather
+   * than the administration key, because the packs decide which fields the form
+   * renders for the person filling it in.
+   */
+  @Get("packs")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:read")
+  getPacks(@CurrentUser() u: CurrentUserContext) {
+    return this.svc.getPacks(u.orgId);
+  }
+
   @Patch()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")

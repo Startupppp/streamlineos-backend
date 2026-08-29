@@ -36,7 +36,39 @@ export class SettingsService {
     return this.invSettings.get(orgId);
   }
 
+  /**
+   * E1 — which packs this organisation runs, for every inventory user rather
+   * than only the ones who may change them.
+   *
+   * Navigation, form fields and validation all have to know, and gating that
+   * behind `inventory:settings:manage` would show a pharmacy's MRP field to the
+   * one person who administers the module and hide it from everyone who receives
+   * stock. It carries no configuration, no thresholds and no policy — four
+   * booleans saying which fields exist — so it sits behind the read key every
+   * inventory role template holds.
+   */
+  async getPacks(orgId: string) {
+    const settings = await this.invSettings.get(orgId);
+    return settings.packs;
+  }
+
   async updateSettings(orgId: string, userId: string, input: UpdateSettingsInput) {
+    const current = await this.invSettings.get(orgId);
+    const nextPacks = {
+      warehouse: input.packWarehouse ?? current.packs.warehouse,
+      kirana: input.packKirana ?? current.packs.kirana,
+      pharmacy: input.packPharmacy ?? current.packs.pharmacy,
+      gst: input.packGst ?? current.packs.gst,
+    };
+    // E1. Every pack off leaves an inventory module with no domain rules and no
+    // fields beyond the bare ledger — reachable through the API, indistinguishable
+    // from a broken deployment from the operator's side. Refuse it here rather
+    // than discover it in support.
+    if (!nextPacks.warehouse && !nextPacks.kirana && !nextPacks.pharmacy && !nextPacks.gst) {
+      throw new BadRequestException(
+        "At least one inventory pack must stay enabled — warehouse, kirana, pharmacy or gst",
+      );
+    }
     const updated = await this.invSettings.update(orgId, input, userId);
     await this.cache.invalidate(CACHE_KEYS.invSettings(orgId));
     return updated;

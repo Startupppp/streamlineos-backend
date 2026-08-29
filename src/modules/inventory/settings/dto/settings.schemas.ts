@@ -21,6 +21,17 @@ export const updateSettingsSchema = z.object({
   allowPartialShipment: z.boolean().optional(),
   packageRequiredForShipping: z.boolean().optional(),
   channelPublishPolicy: z.string().nullable().optional(),
+  /**
+   * E1. The packs, sent as the columns they are. `packWarehouse` is accepted so
+   * an organisation that genuinely does not run a warehouse can say so, but the
+   * service refuses to leave every pack off — an inventory module with no pack
+   * has no fields and no rules, which is a support ticket rather than a
+   * configuration.
+   */
+  packWarehouse: z.boolean().optional(),
+  packKirana: z.boolean().optional(),
+  packPharmacy: z.boolean().optional(),
+  packGst: z.boolean().optional(),
 }).strict();
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
