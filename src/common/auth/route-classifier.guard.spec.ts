@@ -47,7 +47,10 @@ function makeGuard(instances: object[]): RouteClassifierGuard {
       return names;
     },
   } as never;
-  return new RouteClassifierGuard(reflector, discovery, scanner);
+  const flag = process.env["REQUIRE_ROUTE_CLASSIFICATION"];
+  return new RouteClassifierGuard(reflector, discovery, scanner, {
+    REQUIRE_ROUTE_CLASSIFICATION: flag === "true" || flag === "false" ? flag : undefined,
+  });
 }
 
 function executionContext(

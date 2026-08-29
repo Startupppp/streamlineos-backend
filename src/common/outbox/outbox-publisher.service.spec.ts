@@ -387,7 +387,7 @@ describe("OutboxPublisherService.metrics", () => {
     const db = makeDb("ACTIVE");
     let transactionCalls = 0;
     mockRunInNewTenantTransaction.mockImplementation(
-      async (_db: unknown, _orgId: string, fn: (tx: any) => Promise<unknown>) => {
+      async (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => {
         transactionCalls++;
         if (transactionCalls === 3) {
           const returning = jest.fn().mockResolvedValue([]);

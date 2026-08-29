@@ -2,6 +2,7 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   OnApplicationBootstrap,
@@ -11,6 +12,11 @@ import { DiscoveryService, MetadataScanner, Reflector } from "@nestjs/core";
 import { IS_PUBLIC } from "./public.decorator";
 import { IS_UNIVERSAL } from "./universal.decorator";
 import { REQUIRE_PERMISSION } from "../../modules/access/require-permission.decorator";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
+
+/** Exactly what `Reflector` accepts as a metadata target — a class or a handler. */
+type ReflectTarget = Parameters<Reflector["getAllAndOverride"]>[1][number];
 
 /**
  * Every HTTP route must carry exactly one classification:
@@ -34,8 +40,6 @@ import { REQUIRE_PERMISSION } from "../../modules/access/require-permission.deco
  * REQUIRE_ROUTE_CLASSIFICATION=true turns absence into a hard failure — at
  * boot in CI, and at request time. Flip it once the report reaches zero.
  */
-const ENFORCE = () => process.env.REQUIRE_ROUTE_CLASSIFICATION === "true";
-
 @Injectable()
 export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap {
   private readonly logger = new Logger(RouteClassifierGuard.name);
@@ -45,9 +49,15 @@ export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap
     private readonly reflector: Reflector,
     private readonly discovery: DiscoveryService,
     private readonly scanner: MetadataScanner,
+    @Inject(APP_CONFIG)
+    private readonly config: Pick<AppConfig, "REQUIRE_ROUTE_CLASSIFICATION">,
   ) {}
 
-  private isDeclared(handler: Function, classRef: Function): boolean {
+  private enforce(): boolean {
+    return this.config.REQUIRE_ROUTE_CLASSIFICATION === "true";
+  }
+
+  private isDeclared(handler: ReflectTarget, classRef: ReflectTarget): boolean {
     if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [handler, classRef])) return true;
     if (this.reflector.getAllAndOverride<boolean>(IS_UNIVERSAL, [handler, classRef])) return true;
     const key = this.reflector.getAllAndOverride<string | undefined>(REQUIRE_PERMISSION, [handler, classRef]);
@@ -79,7 +89,7 @@ export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap
     const list = [...this.undeclared].sort().join("\n  ");
     const msg = `RouteClassifierGuard: ${this.undeclared.size} route(s) carry no exposure declaration (@Public / @Universal / @RequirePermission):\n  ${list}`;
 
-    if (ENFORCE()) throw new Error(msg);
+    if (this.enforce()) throw new Error(msg);
     this.logger.warn(msg);
   }
 
@@ -87,7 +97,7 @@ export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap
     if (this.isDeclared(context.getHandler(), context.getClass())) return true;
 
     const label = `${context.getClass().name}#${context.getHandler().name}`;
-    if (!ENFORCE()) {
+    if (!this.enforce()) {
       this.logger.warn(`Undeclared route allowed (classification not enforced): ${label}`);
       return true;
     }

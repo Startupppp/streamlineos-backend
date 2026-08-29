@@ -2,6 +2,11 @@ import postgres from 'postgres';
 import type { MediaCompressionService } from "../../../common/media/media-compression.service";
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { and, eq, inArray, count } from 'drizzle-orm';
+// Drizzle driver config: the whole schema object is passed to
+// `drizzle(client, { schema })` to register relational queries. This resolves no
+// legacy identity table; the Party seam is for code that reads
+// leads/clients/contacts/crmOrganizations, which this does not.
+// eslint-disable-next-line no-restricted-imports -- see above
 import * as schema from '../../../db/schema';
 import {
   organizations,

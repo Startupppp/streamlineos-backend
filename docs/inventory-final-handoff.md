@@ -137,11 +137,11 @@ exhaustion prints nothing and greps as zero errors. It needs 8GB.
 
 ### Two traps this branch taught
 
-**243 of 341 journalled migrations have no bookkeeping row.** Their objects
-exist; the rows do not. `scripts/apply-migration-file.mjs` applied files without
-recording the hash — fixed now, it records on every apply — but everything
-applied by hand before that fix is invisibly "pending", including migrations
-predating this programme.
+**341 journalled migrations; 243 once had no bookkeeping row.** Their objects
+existed; the rows did not. `scripts/apply-migration-file.mjs` applied files
+without recording the hash — fixed now, it records on every apply — but
+everything applied by hand before that fix was invisibly "pending", including
+migrations predating this programme.
 
 `scripts/check-migrations-applied.mjs` reports the list. It compares the sha256
 of each journalled `.sql` against `drizzle.__drizzle_migrations` and is the only
@@ -149,11 +149,24 @@ tool that can see this state. **It was deleted by an over-broad `git add -A`
 during this work and has been restored** — with it gone, nothing could detect
 the problem it exists for.
 
-⚠ **The 243 have deliberately not been bulk-recorded.** Inserting hashes would
-assert that each migration's objects are present, and for the payroll and CRM
-entries in that list nobody here has checked. Reconciling them needs somebody
-who can verify object-by-object; recording them blind would replace a visible
-problem with an invisible one.
+**Reconciled, by verification rather than by bulk insert.**
+`scripts/reconcile-migration-bookkeeping.mjs` parses each journalled `.sql` for
+the objects it claims to create (`CREATE TABLE/TYPE/INDEX`, `ALTER TABLE … ADD
+COLUMN`, comments stripped first) and checks `pg_class` / `pg_attribute` /
+`pg_type` / `pg_indexes` before recording anything. Recording blind would have
+asserted presence nobody had checked; this asserts only what the catalog
+confirms. Result:
+
+| | count |
+|---|---|
+| recorded (was already, or verified applied then recorded) | 210 |
+| genuinely not applied — all payroll/CRM/build, **zero inventory** | 36 |
+| claim no checkable object (backfill/grant only) — left alone | 95 |
+
+Five inventory migrations were found genuinely unapplied and were applied:
+`0542`, `0547`, `0549`, `0552`, `0574`. **No inventory migration is unapplied.**
+The remaining 36 need somebody who owns payroll/CRM to verify object-by-object;
+they are listed by `check-migrations-applied.mjs` and are outside this programme.
 
 **`pnpm db:migrate` cannot be used to repair this database.** Drizzle wraps every
 pending migration in one transaction, so with 239 reported pending it attempts

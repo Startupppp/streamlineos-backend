@@ -12,6 +12,11 @@ import postgres from "postgres";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { resolvePoolConfig } from "../../db/pool.config";
+// Drizzle driver config: the whole schema object is passed to
+// `drizzle(client, { schema })` to register relational queries. This resolves no
+// legacy identity table; the Party seam is for code that reads
+// leads/clients/contacts/crmOrganizations, which this does not.
+// eslint-disable-next-line no-restricted-imports -- see above
 import * as schema from "../../db/schema";
 import { organizations } from "../../db/schema";
 import { runOutsideTenantContext } from "../tenant/tenant-context";

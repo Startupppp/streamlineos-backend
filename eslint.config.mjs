@@ -80,6 +80,10 @@ export default tseslint.config(
       "src/common/cache/cache.module.ts",
       "src/common/portal-auth/portal-jwt-auth.guard.ts",
       "src/common/security/secret-encryption.util.ts",
+      // Region topology reads dynamic REGION_<KEY>_* variables parsed at runtime,
+      // so the key set cannot exist in a fixed AppConfig schema. Both
+      // resolveRegionTopology and resolvePoolConfig validate their env bag and throw.
+      "src/common/region/region.module.ts",
       "src/common/tenant/with-tenant.ts",
       "src/modules/ai/confirmation/ai-confirmation.service.ts",
       "src/modules/ai/core/providers/embeddings.service.ts",
@@ -101,7 +105,7 @@ export default tseslint.config(
       "src/modules/hr/import/hr-export-jobs.service.ts",
       "src/modules/hr/interviews/hr-interview-scheduling.service.ts",
       "src/modules/hr/onboarding/core/crypto.helpers.ts",
-      "src/modules/hr/payroll/lib/encryption.ts",
+      "src/modules/payroll/hr-payroll/lib/encryption.ts",
       "src/modules/hr/recruitment/recruitment-jobs.service.ts",
       "src/modules/mfa/mfa.service.ts",
       "src/modules/organization/setup/org-setup.service.ts",

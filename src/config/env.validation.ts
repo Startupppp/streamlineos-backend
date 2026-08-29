@@ -204,6 +204,11 @@ const baseSchema = z
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
     ),
+    /** Turns an undeclared route from a logged warning into a hard failure. */
+    REQUIRE_ROUTE_CLASSIFICATION: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
     /** Override default STARTER trial length (days). Defaults to 14 when unset. */
     TRIAL_DAYS: z.preprocess(
       emptyToUndefined,
