@@ -2565,6 +2565,13 @@
       "breakpoints": true
     },
     {
+      "idx": 371,
+      "version": "7",
+      "when": 1787940668255,
+      "tag": "0655_chain_creates_remaining_catalog_objects",
+      "breakpoints": true
+    },
+    {
       "idx": 357,
       "version": "7",
       "when": 1787940728254,

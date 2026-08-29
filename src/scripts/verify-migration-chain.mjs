@@ -7,10 +7,13 @@
  *   c) A journal entry's `when` timestamp is not strictly greater than the one before it.
  *   d) A journal entry names a file that does not exist on disk.
  *   e) The last reported chain_gaps count (read from the chain-gaps marker file) is > 0.
+ *   f) The applied watermark in drizzle.__drizzle_migrations is ahead of every journal
+ *      entry, which silently disables the migrator for everyone. Checked only when a
+ *      database is reachable.
  *
- * Self-test mode (--self-test) creates a temp fixture tree, exercises all five failure
- * modes against it, asserts each one is caught, then removes the fixture. A guard that
- * has never failed is not a guard.
+ * Self-test mode (--self-test) creates a temp fixture tree, exercises every failure mode
+ * against the real check function, asserts each one is caught AND that the clean case is
+ * not reported, then removes the fixture. A guard that has never failed is not a guard.
  *
  * Usage:
  *   node src/scripts/verify-migration-chain.mjs [--migrations=migrations] [--self-test]
@@ -69,6 +72,29 @@ function numericPrefix(tag) {
   return tag.split("_")[0] ?? tag;
 }
 
+/**
+ * Returns the highest created_at in drizzle.__drizzle_migrations, or null when no
+ * database is reachable — CI runs this guard without one, and an absent database
+ * must skip check (f) rather than fail it.
+ */
+async function readAppliedWatermark() {
+  const url = process.env.DATABASE_URL;
+  if (!url) return null;
+  try {
+    const { default: postgres } = await import("postgres");
+    const sql = postgres(url, { prepare: false, max: 1, ssl: "require", onnotice: () => {} });
+    try {
+      const rows = await sql`SELECT max(created_at) AS mx FROM drizzle.__drizzle_migrations`;
+      const mx = rows[0]?.mx;
+      return mx === null || mx === undefined ? null : Number(mx);
+    } finally {
+      await sql.end();
+    }
+  } catch {
+    return null;
+  }
+}
+
 function readJournal(dir) {
   return JSON.parse(readFileSync(join(dir, "meta", "_journal.json"), "utf8"));
 }
@@ -84,7 +110,7 @@ function isPendingPath(tag, dir) {
   return tag.includes("/") || existsSync(join(dir, "pending", tag + ".sql"));
 }
 
-function runChecks(dir, gapsFile = CHAIN_GAPS_FILE) {
+function runChecks(dir, gapsFile = CHAIN_GAPS_FILE, appliedWatermark = null) {
   const journal = readJournal(dir);
   const entries = journal.entries ?? [];
   const journalled = new Set(entries.map((e) => e.tag));
@@ -130,6 +156,26 @@ function runChecks(dir, gapsFile = CHAIN_GAPS_FILE) {
     }
   }
 
+  // (f) The applied watermark is ahead of the journal.
+  //
+  // Drizzle decides what to run by comparing each entry's `when` against the highest
+  // created_at already in drizzle.__drizzle_migrations. A row recorded with a
+  // timestamp above every journal entry therefore disables the migrator for everyone:
+  // db:migrate keeps reporting success while applying nothing, and the tables those
+  // migrations were meant to create or protect never appear. This is checked only
+  // when a database is reachable, because CI has none.
+  if (appliedWatermark !== null && entries.length > 0) {
+    const journalMax = Math.max(...entries.map((e) => e.when));
+    if (appliedWatermark > journalMax) {
+      failures.push(
+        `(f) WATERMARK AHEAD OF JOURNAL  applied max created_at=${appliedWatermark} ` +
+          `(${new Date(appliedWatermark).toISOString()}) exceeds the newest journal entry ` +
+          `when=${journalMax} (${new Date(journalMax).toISOString()}) — every entry below it is ` +
+          `silently skipped and db:migrate still reports success`,
+      );
+    }
+  }
+
   // (e) chain_gaps > 0  (read from the marker file written by a recent bootstrap run)
   if (existsSync(gapsFile)) {
     const raw = readFileSync(gapsFile, "utf8").trim();
@@ -169,8 +215,8 @@ function selfTest() {
     writeFileSync(join(tmp, name + ".sql"), content);
   }
 
-  function check(dir, gapsFile) {
-    return runChecks(dir, gapsFile);
+  function check(dir, gapsFile, appliedWatermark) {
+    return runChecks(dir, gapsFile, appliedWatermark);
   }
 
   console.log("Self-test: (a) unjournalled file");
@@ -221,6 +267,29 @@ function selfTest() {
     writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
   }
 
+  console.log("Self-test: (f) applied watermark ahead of the journal");
+  {
+    writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
+    writeSql("0001_alpha");
+    assert("watermark ahead of journal caught", check(tmp, undefined, 9999), "(f)");
+    const level = check(tmp, undefined, 1000);
+    if (level.some((x) => x.includes("(f)"))) {
+      console.error("  FAIL  a watermark equal to the newest entry must not be reported");
+      failed++;
+    } else {
+      console.log("  PASS  a watermark equal to the newest entry is not reported");
+      passed++;
+    }
+    const none = check(tmp, undefined, null);
+    if (none.some((x) => x.includes("(f)"))) {
+      console.error("  FAIL  check (f) must be skipped when no database is reachable");
+      failed++;
+    } else {
+      console.log("  PASS  check (f) is skipped when no database is reachable");
+      passed++;
+    }
+  }
+
   console.log("Self-test: (e) chain gaps marker");
   {
     const gapsFile = join(tmp, ".chain-gaps-selftest");
@@ -262,7 +331,7 @@ async function main() {
     return;
   }
 
-  const failures = runChecks(MIGRATIONS_DIR);
+  const failures = runChecks(MIGRATIONS_DIR, CHAIN_GAPS_FILE, await readAppliedWatermark());
 
   if (failures.length === 0) {
     console.log("PASS  migration chain verified — no issues found");
