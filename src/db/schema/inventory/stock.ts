@@ -65,8 +65,13 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   index("idx_inv_txn_org_type").on(table.orgId, table.transactionType),
   index("idx_inv_txn_reference").on(table.referenceType, table.referenceId),
   index("idx_inv_txn_idempotency").on(table.orgId, table.idempotencyKey),
-  index("idx_inv_txn_created").on(table.createdAt),
-  index("idx_inv_txn_org_created").on(table.orgId, table.createdAt),
+  // G1. The keyset every movements page walks: `(created_at, id) < (cursor)`
+  // ordered `created_at DESC, id DESC`. `created_at` alone is not a total order
+  // -- one posting writes a dozen ledger rows inside one transaction and they
+  // all carry the same `now()` -- so the cursor carries `id` as the tie-break
+  // and the index has to carry it too, or the scan re-sorts the tenant.
+  // Supersedes `idx_inv_txn_org_created`, which was its exact prefix.
+  index("idx_inv_txn_org_created_id").on(table.orgId, desc(table.createdAt), desc(table.id)),
   index("idx_inv_txn_org_variant_type_created").on(table.orgId, table.productVariantId, table.transactionType, table.createdAt),
   index("idx_inv_txn_org_posting_date").on(table.orgId, table.postingDate),
   // D1. The genealogy walk's three access paths. Before 0542 nothing indexed

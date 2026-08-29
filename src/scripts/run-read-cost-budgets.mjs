@@ -199,7 +199,29 @@ async function main() {
         WHERE org_id = ${ORG} AND accrual_type = 'MONTHLY' AND is_active = true`;
       const leaveTypeIds = leaveTypePolicies.map((r) => r.leave_type_id);
 
+      // G1. Page two of a keyset walk starts where page one ended, so the
+      // fixture is the 51st row in the list's own order. The timestamp is read
+      // as text at full precision, exactly as the endpoint projects it -- a
+      // boundary that went through a JS Date would name a different instant.
+      const [ledgerCursor] = await tx`
+        SELECT to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS cursor_at, id
+        FROM inv_stock_transactions
+        WHERE org_id = ${ORG}
+        ORDER BY created_at DESC, id DESC
+        OFFSET 50 LIMIT 1`;
+
+      const [auditCursor] = await tx`
+        SELECT to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS cursor_at, id
+        FROM inv_audit_events
+        WHERE org_id = ${ORG}
+        ORDER BY created_at DESC, id DESC
+        OFFSET 10 LIMIT 1`;
+
       return {
+        ledgerCursorAt: ledgerCursor?.cursor_at ?? null,
+        ledgerCursorId: ledgerCursor?.id ?? null,
+        auditCursorAt: auditCursor?.cursor_at ?? null,
+        auditCursorId: auditCursor?.id ?? null,
         orgId: ORG,
         projectId: project?.project_id ?? null,
         projectTickets: project?.n ?? 0,
@@ -221,7 +243,9 @@ async function main() {
           ` · participant ${fixtures.userId} (${fixtures.participationOrgWide} rows)` +
           ` · channel ${fixtures.channelId} (${fixtures.channelMessages} msgs)` +
           ` · space ${fixtures.spaceId} · payroll run ${fixtures.payrollRunId}` +
-          ` · leave types ${fixtures.leaveTypeIds.length} (period ${fixtures.period})`,
+          ` · leave types ${fixtures.leaveTypeIds.length} (period ${fixtures.period})` +
+          ` · ledger cursor ${fixtures.ledgerCursorId ?? "none"}` +
+          ` · audit cursor ${fixtures.auditCursorId ?? "none"}`,
       );
       console.log(`\nRunning ${budgets.length} budgets…\n`);
     }

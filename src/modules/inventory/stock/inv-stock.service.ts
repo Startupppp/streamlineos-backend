@@ -7,6 +7,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { buildCursorPage, decodeTimestampCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeMicros, microsecondCursorValue } from "../../../common/pagination/keyset";
 import { WarehouseScopeService, type WarehouseScope } from "../stock-engine/warehouse-scope.service";
 import { CostVisibilityService, stripCostFields } from "../stock-engine/cost-visibility";
 import { availableQtySql, availableQtySumSql } from "../stock-engine/available-sql";
@@ -117,8 +119,25 @@ export class InvStockService {
     }, CACHE_TTL.SHORT);
   }
 
+  /**
+   * G1. The ledger list, keyset-paginated.
+   *
+   * `created_at` alone is not a total order here: one posting writes every line
+   * of a receipt inside a single transaction, so a dozen rows share a `now()` to
+   * the microsecond. A cursor on the timestamp would land mid-group and either
+   * repeat those rows or step over them, which on an append-only ledger reads as
+   * stock that was never received. The cursor is therefore `(created_at, id)`,
+   * `id` being unique per tenant by `uniq_inv_stock_transactions_org_id`.
+   *
+   * No ceiling id is pinned, and it would be wrong to pin one. D7's export needs
+   * a set that cannot grow, because it checksums it; a reader scrolling
+   * backwards through time needs the opposite — rows written above the cursor
+   * are newer than everything the reader has seen, sit on the far side of the
+   * `<` bound, and are simply not on any page the reader has left to turn.
+   */
   async listTransactions(orgId: string, userId: string, filters: ListTransactionsInput) {
-    const { productVariantId, warehouseId, locationId, transactionType, direction, search, fromDate, toDate, page, limit } = filters;
+    const { productVariantId, warehouseId, locationId, transactionType, direction, search, fromDate, toDate, page, limit, cursor } = filters;
+    const position = decodeTimestampCursor(cursor);
     const offset = (page - 1) * limit;
     const conditions: SQL[] = [eq(invStockTransactions.orgId, orgId)];
     const scoped = this.warehouseScope.locationPredicate(
@@ -142,29 +161,49 @@ export class InvStockService {
 
     const showCost = await this.costVisibility.canSeeCost(orgId, userId);
     const where = and(...conditions);
-    const [items, countResult] = await Promise.all([
-      this.db.query.invStockTransactions.findMany({
-        where,
-        orderBy: [desc(invStockTransactions.createdAt)],
-        limit,
-        offset,
-        with: {
-          productVariant: { with: { product: { columns: { id: true, name: true, sku: true } } } },
-          location: {
-            columns: { id: true, name: true, code: true },
-            with: { warehouse: { columns: { id: true, name: true } } },
-          },
-          creator: { columns: { id: true, name: true } },
+
+    const rowsPromise = this.db.query.invStockTransactions.findMany({
+      where: position
+        ? and(where, keysetBeforeMicros(invStockTransactions.createdAt, invStockTransactions.id, position))
+        : where,
+      orderBy: [desc(invStockTransactions.createdAt), desc(invStockTransactions.id)],
+      limit: limit + 1,
+      offset: position ? 0 : offset,
+      extras: {
+        cursorAt: microsecondCursorValue(invStockTransactions.createdAt).as("cursor_at"),
+      },
+      with: {
+        productVariant: { with: { product: { columns: { id: true, name: true, sku: true } } } },
+        location: {
+          columns: { id: true, name: true, code: true },
+          with: { warehouse: { columns: { id: true, name: true } } },
         },
-      }),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransactions).where(where),
-    ]);
+        creator: { columns: { id: true, name: true } },
+      },
+    });
+    // `count(*)` over a tenant's ledger is the other half of what offset costs,
+    // and a cursor walk has no use for it — there is no "page 7 of 92" to render.
+    const totalPromise: Promise<number | null> = position
+      ? Promise.resolve(null)
+      : this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(invStockTransactions)
+          .where(where)
+          .then((rows) => rows[0]?.count ?? 0);
+    const [rows, total] = await Promise.all([rowsPromise, totalPromise]);
+
+    const cursorPage = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.cursorAt,
+      id: String(row.id),
+    }));
+    const items = cursorPage.data.map(({ cursorAt: _cursorAt, ...row }) => row);
 
     return {
       items: showCost ? items : stripCostFields(items),
-      total: countResult[0]?.count ?? 0,
+      total,
       page,
-      totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
+      totalPages: total === null ? null : Math.ceil(total / limit),
+      ...cursorPage.pagination,
     };
   }
 

@@ -18,6 +18,7 @@ import { InvQualityModule } from "./quality/inv-quality.module";
 import { InvShipmentsModule } from "./shipments/inv-shipments.module";
 import { InvChannelsModule } from "./channels/inv-channels.module";
 import { InvImportExportModule } from "./import-export/inv-import-export.module";
+import { InvAuditModule } from "./audit/inv-audit.module";
 import { InvAuditExportModule } from "./audit-export/inv-audit-export.module";
 import { InvWebhooksModule } from "./webhooks/inv-webhooks.module";
 import { InvSettingsModule } from "./settings/inv-settings.module";
@@ -45,6 +46,7 @@ const INVENTORY_MODULES = [
   InvShipmentsModule,
   InvChannelsModule,
   InvImportExportModule,
+  InvAuditModule,
   InvAuditExportModule,
   InvWebhooksModule,
   InvSettingsModule,

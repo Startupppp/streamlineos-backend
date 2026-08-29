@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, decimal, integer, bigint, date, boolean, jsonb, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
-import { relations, sql } from "drizzle-orm";
+import { desc, relations, sql } from "drizzle-orm";
 import {
   invReservationStrategyEnum, invCostingMethodEnum, invExpiryPolicyEnum,
   invIdempotencyStatusEnum, invJobStatusEnum, invWebhookEventStatusEnum,
@@ -266,7 +266,11 @@ export const invAuditEvents = pgTable("inv_audit_events", {
 }, (table) => [
   unique("uniq_inv_audit_events_org_id").on(table.orgId, table.id),
   index("idx_inv_audit_org_type_created").on(table.orgId, table.resourceType, table.createdAt),
-  index("idx_inv_audit_org_created").on(table.orgId, table.createdAt),
+  // G1. Same keyset as the ledger's, for the same reason: one posting writes
+  // several audit rows in one transaction, so `created_at` alone repeats and a
+  // cursor on it would skip or duplicate at every page boundary.
+  // Supersedes `idx_inv_audit_org_created`, which was its exact prefix.
+  index("idx_inv_audit_org_created_id").on(table.orgId, desc(table.createdAt), desc(table.id)),
 ]);
 
 export const invSettingsRelations = relations(invSettings, ({ one }) => ({

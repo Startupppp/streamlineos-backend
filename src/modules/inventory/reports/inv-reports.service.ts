@@ -13,6 +13,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { buildCursorPage, decodeTimestampCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeMicros, microsecondCursorValue } from "../../../common/pagination/keyset";
 import { InvReportsExtendedService } from "./inv-reports-extended.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { availableQtySql } from "../stock-engine/available-sql";
@@ -203,8 +205,14 @@ export class InvReportsService {
     );
   }
 
+  /**
+   * G1. The same ledger and the same `(created_at, id)` cursor as
+   * `InvStockService.listTransactions` — the reasoning is written out there.
+   * Offset stays for callers that only know `page`; a `cursor` supersedes it.
+   */
   async getMovementsReport(orgId: string, userId: string, query: MovementsQueryInput) {
-    const { fromDate, toDate, page, limit } = query;
+    const { fromDate, toDate, warehouseId, transactionType, page, limit, cursor } = query;
+    const position = decodeTimestampCursor(cursor);
     const offset = (page - 1) * limit;
     const conditions = [eq(invStockTransactions.orgId, orgId)];
     conditions.push(
@@ -219,28 +227,57 @@ export class InvReportsService {
     if (toDate) {
       conditions.push(lte(invStockTransactions.createdAt, new Date(toDate)));
     }
+    if (transactionType) {
+      conditions.push(eq(invStockTransactions.transactionType, transactionType));
+    }
+    if (warehouseId) {
+      conditions.push(
+        sql`${invStockTransactions.locationId} IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})`,
+      );
+    }
     const where = and(...conditions);
 
-    const [items, countResult] = await Promise.all([
-      this.db.query.invStockTransactions.findMany({
-        where,
-        orderBy: [desc(invStockTransactions.createdAt)],
-        limit,
-        offset,
-        with: {
-          productVariant: {
-            with: { product: { columns: { id: true, name: true, sku: true } } },
-          },
-          location: {
-            columns: { id: true, name: true, code: true },
-            with: { warehouse: { columns: { id: true, name: true } } },
-          },
-          creator: { columns: { id: true, name: true } },
+    const rowsPromise = this.db.query.invStockTransactions.findMany({
+      where: position
+        ? and(where, keysetBeforeMicros(invStockTransactions.createdAt, invStockTransactions.id, position))
+        : where,
+      orderBy: [desc(invStockTransactions.createdAt), desc(invStockTransactions.id)],
+      limit: limit + 1,
+      offset: position ? 0 : offset,
+      extras: {
+        cursorAt: microsecondCursorValue(invStockTransactions.createdAt).as("cursor_at"),
+      },
+      with: {
+        productVariant: {
+          with: { product: { columns: { id: true, name: true, sku: true } } },
         },
-      }),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransactions).where(where),
-    ]);
+        location: {
+          columns: { id: true, name: true, code: true },
+          with: { warehouse: { columns: { id: true, name: true } } },
+        },
+        creator: { columns: { id: true, name: true } },
+      },
+    });
+    const totalPromise: Promise<number | null> = position
+      ? Promise.resolve(null)
+      : this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(invStockTransactions)
+          .where(where)
+          .then((rows) => rows[0]?.count ?? 0);
+    const [rows, total] = await Promise.all([rowsPromise, totalPromise]);
 
-    return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
+    const cursorPage = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.cursorAt,
+      id: String(row.id),
+    }));
+
+    return {
+      items: cursorPage.data.map(({ cursorAt: _cursorAt, ...row }) => row),
+      total,
+      page,
+      totalPages: total === null ? null : Math.ceil(total / limit),
+      ...cursorPage.pagination,
+    };
   }
 }

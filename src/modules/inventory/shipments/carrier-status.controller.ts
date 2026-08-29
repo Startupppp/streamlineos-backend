@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -41,5 +41,26 @@ export class CarrierStatusController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.carrierStatus.timeline(u.orgId, shipmentId);
+  }
+
+  /**
+   * B7, item 2 — ask the carrier where the parcel is, through the adapter
+   * contract.
+   *
+   * Answers rather than throws when there is nobody to ask or the courier is
+   * unreachable, because the caller has already shipped the goods and neither
+   * fact changes that. `polled: false` is the manual adapter's normal answer and
+   * the sheet renders it as "manual tracking", which is the truth this surface
+   * used to state as "coming soon".
+   */
+  @Post(":shipmentId/refresh-tracking")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:shipments:manage")
+  @HttpCode(HttpStatus.OK)
+  refreshTracking(
+    @Param("shipmentId", ParseIntPipe) shipmentId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.carrierStatus.refreshTracking(u.orgId, u.userId, shipmentId);
   }
 }

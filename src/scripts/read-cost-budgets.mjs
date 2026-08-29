@@ -560,21 +560,70 @@ export const BUDGETS = [
       { kind: "forbid-seq-scan", relation: "inv_stock_levels" },
     ],
   },
+  /**
+   * G1 — the three shapes the movements and audit lists actually issue.
+   *
+   * The ordering carries `id` because `created_at` alone is not unique on this
+   * table, and the cursor pages carry the boundary as text at microsecond
+   * precision because that is what the endpoint sends. Measured as
+   * `streamline_app` with the tenant GUC on the seed organisation's 4,200-row
+   * ledger, before 0547: page one cost 849 blocks — the planner reached for
+   * `idx_inv_txn_created`, which cannot supply `org_id` and so cannot answer the
+   * tenant qual from the index — and a deep page fell back to a bitmap scan of
+   * the whole tenant plus a sort, 94 blocks and rising with the tenant. After:
+   * single digits, and flat at any depth.
+   *
+   * The ceilings sit far above that and far below one tenant scan, so they fire
+   * when the plan falls off `idx_inv_txn_org_created_id` and not before.
+   */
   {
     id: "inv-stock-transactions",
-    ceiling: 15_000,
+    ceiling: 60,
     minRows: 100,
     rowCountSql: `SELECT count(*)::int FROM inv_stock_transactions WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, product_variant_id, transaction_type, quantity_change, posting_date, created_at
+      SELECT id, product_variant_id, transaction_type, quantity_change, posting_date, created_at,
+             to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS cursor_at
       FROM inv_stock_transactions
       WHERE org_id = $1
-      ORDER BY created_at DESC
-      LIMIT 50`,
+      ORDER BY created_at DESC, id DESC
+      LIMIT 51`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "inv_stock_transactions" },
     ],
+  },
+  {
+    id: "inv-stock-transactions-cursor",
+    ceiling: 60,
+    minRows: 100,
+    rowCountSql: `SELECT count(*)::int FROM inv_stock_transactions WHERE org_id = $1`,
+    params: (f) => (f.ledgerCursorId ? [f.orgId, f.ledgerCursorAt, f.ledgerCursorId] : null),
+    sql: `
+      SELECT id, product_variant_id, transaction_type, quantity_change, posting_date, created_at,
+             to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS cursor_at
+      FROM inv_stock_transactions
+      WHERE org_id = $1 AND (created_at, id) < ($2::timestamp, $3::int)
+      ORDER BY created_at DESC, id DESC
+      LIMIT 51`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "inv_stock_transactions" },
+    ],
+  },
+  {
+    id: "inv-audit-events-cursor",
+    ceiling: 60,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM inv_audit_events WHERE org_id = $1`,
+    params: (f) => (f.auditCursorId ? [f.orgId, f.auditCursorAt, f.auditCursorId] : null),
+    sql: `
+      SELECT id, action, resource_type, resource_id, actor_user_id, created_at,
+             to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS cursor_at
+      FROM inv_audit_events
+      WHERE org_id = $1 AND (created_at, id) < ($2::timestamp, $3::int)
+      ORDER BY created_at DESC, id DESC
+      LIMIT 51`,
+    planAssertions: [],
   },
   {
     id: "inv-purchase-orders",

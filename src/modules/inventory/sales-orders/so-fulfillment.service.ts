@@ -22,9 +22,13 @@ import {
 } from "../stock-engine/command-events";
 import { SoCoreService } from "./so-core.service";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
-import { addDec, cmpDec } from "../stock-engine/decimal";
+import { addDec, cmpDec, mulDec } from "../stock-engine/decimal";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
 import { runIdempotent, revivedScalar } from "../stock-engine/idempotency";
+import { type ShelfLine, shelfLines } from "../shipments/packing-reconciliation";
+
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+type InventorySettings = Awaited<ReturnType<InventorySettingsService["get"]>>;
 
 /** The pick result as it comes back from the idempotency row's stored JSON. */
 function revivePickResult(stored: unknown): {
@@ -38,6 +42,62 @@ function revivePickResult(stored: unknown): {
     pickNumber: String(row.pickNumber ?? ""),
     allPicked: row.allPicked === true,
   };
+}
+
+export interface ShipSoResult {
+  shipmentId: number;
+  shipmentNumber: string;
+  status: "SHIPPED" | "PARTIALLY_SHIPPED";
+  isPartial: boolean;
+}
+
+/** The ship result as it comes back from the idempotency row's stored JSON. */
+function reviveShipResult(stored: unknown): ShipSoResult {
+  const row = typeof stored === "object" && stored !== null ? (stored as Record<string, unknown>) : {};
+  const isPartial = row.isPartial === true;
+  return {
+    shipmentId: Number(row.shipmentId ?? 0),
+    shipmentNumber: String(row.shipmentNumber ?? ""),
+    // Derived from the one stored fact rather than stored twice: two fields that
+    // can disagree is how a replay starts answering something the first run
+    // never said.
+    status: isPartial ? "PARTIALLY_SHIPPED" : "SHIPPED",
+    isPartial,
+  };
+}
+
+/** One issue the ship command is about to post, at the grain it comes off. */
+interface ShipMovement {
+  productVariantId: number;
+  soLineId: number;
+  locationId: number;
+  lotId: number | null;
+  serialId: number | null;
+  quantity: string;
+}
+
+interface OutgoingGrain {
+  productVariantId: number;
+  locationId: number;
+  lotId: number | null;
+  serialId: number | null;
+}
+
+function grainKey(grain: OutgoingGrain): string {
+  return `${grain.productVariantId}|${grain.locationId}|${grain.lotId ?? ""}|${grain.serialId ?? ""}`;
+}
+
+/**
+ * Everything the COGS entry needs, carried out of the transaction.
+ *
+ * The journal is posted **after** the commit and only on the run that did the
+ * work: `postJournalEntry` opens its own connection, so posting it inside would
+ * leave an entry behind for a shipment that rolled back, and posting it
+ * unconditionally would post it again on every replay of the same key.
+ */
+interface DeferredCogs {
+  total: string;
+  soNumber: string;
 }
 
 @Injectable()
@@ -324,31 +384,13 @@ export class SoFulfillmentService {
              * three units holds none, closed, and shipped on. B4 found and fixed
              * the identical defect in `shipSo`; this is the same join.
              *
-             * Every line still reaches this the same way for a single-order
-             * pick, which sets both `so_id` and `so_line_id`; cancelled pick
-             * lists are excluded, as they are everywhere else this quantity is
-             * read.
+             * B7. It is now literally the same join — the one `shelfLines` owns
+             * — rather than a third copy of it. The copies had already drifted:
+             * this one, like shipping's, read `quantity_picked` alone and so
+             * packed nothing for a substituted line, putting the swapped-in
+             * units in no carton at all.
              */
-            const pickedLines = await tx.execute<{
-              product_variant_id: number;
-              lot_id: number | null;
-              serial_id: number | null;
-              quantity_picked: string;
-            }>(sql`
-              SELECT pll.product_variant_id,
-                     pll.lot_id,
-                     pll.serial_id,
-                     pll.quantity_picked
-                FROM inv_pick_list_lines pll
-                JOIN inv_pick_lists pl
-                  ON pl.org_id = pll.org_id AND pl.id = pll.pick_list_id
-                JOIN inv_so_lines sol
-                  ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
-               WHERE pll.org_id = ${orgId}
-                 AND sol.so_id = ${soId}
-                 AND pl.status <> 'CANCELLED'
-               ORDER BY pll.id
-            `);
+            const pickedLines = await shelfLines(tx, orgId, soId);
 
             const [pkg] = await tx.insert(invPackages).values({
               orgId,
@@ -370,14 +412,14 @@ export class SoFulfillmentService {
             const packageLinesValues = pickedLines
               // A line closed by an exception can hold zero, and a carton line
               // for nothing is a manifest entry nobody can act on.
-              .filter((line) => Number(line.quantity_picked) !== 0)
+              .filter((line) => cmpDec(line.quantity, "0") !== 0)
               .map((line) => ({
                 orgId,
                 packageId: pkg!.id,
-                productVariantId: Number(line.product_variant_id),
-                lotId: line.lot_id === null ? null : Number(line.lot_id),
-                serialId: line.serial_id === null ? null : Number(line.serial_id),
-                quantity: String(line.quantity_picked),
+                productVariantId: line.productVariantId,
+                lotId: line.lotId,
+                serialId: line.serialId,
+                quantity: line.quantity,
               }));
 
             if (packageLinesValues.length > 0) {
@@ -404,14 +446,101 @@ export class SoFulfillmentService {
     return { soId, status: "PACKED", packageId: packageId ?? undefined };
   }
 
-  async shipSo(orgId: string, soId: number, userId: string, idempotencyKey: string, data: ShipSoInput) {
-    const so = await this.db.query.invSalesOrders.findFirst({
+  /**
+   * B7 — the one command that moves stock out of the building.
+   *
+   * Three things were true of this method and are no longer:
+   *
+   *   **It was not idempotent.** The `Idempotency-Key` reached only
+   *   `engine.executeInTx`, which claims it for the *ledger*. Everything else —
+   *   the shipment row, its lines, `quantity_shipped`, the serial flips, both
+   *   outbox events and the COGS journal — sat outside any claim, so a client
+   *   retrying after a timeout on a ship that had already committed got a
+   *   replayed (no-op) stock posting wrapped in a **second** shipment, a second
+   *   dispatch event and a second set of shipped quantities. The whole command
+   *   is claimed now, with the engine handed a derived `:stock` key so its own
+   *   claim cannot collide with the command's.
+   *
+   *   **It was not atomic.** The order, the pick lines and the reservations were
+   *   all read on `this.db` *before* the transaction opened. Two concurrent
+   *   ships of one order therefore both read the same ACTIVE reservations and
+   *   both handed them to `consumeReservationsBatch`, which calls
+   *   `releaseCommitted` for every reservation it is *given* rather than every
+   *   one it flipped — so `committed` was subtracted twice for the same units.
+   *   Every read is inside the transaction now and the reservations are taken
+   *   `FOR UPDATE`, which is the guard `PickCompletionService` already uses: the
+   *   second ship blocks on the row, re-evaluates `status = 'ACTIVE'` after the
+   *   lock, and finds nothing to consume.
+   *
+   *   **The status guard sat outside the claim** — `packSo`'s sibling bug, where
+   *   a retry after a committed pack was refused on the status its own first run
+   *   had set. It is inside the claim, so a replay answers before it is reached.
+   */
+  async shipSo(
+    orgId: string,
+    soId: number,
+    userId: string,
+    idempotencyKey: string,
+    data: ShipSoInput,
+  ): Promise<ShipSoResult> {
+    const settings = await this.settingsService.get(orgId);
+    const cogs: DeferredCogs = { total: "0", soNumber: "" };
+
+    const result = await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        idempotencyKey,
+        { command: "inventory.sales-orders.ship", soId, data },
+        () => this.shipSoInTx(tx, orgId, soId, userId, idempotencyKey, data, settings, cogs),
+        (stored) => reviveShipResult(stored),
+      ),
+    );
+
+    await this.engine.invalidateCaches(orgId);
+
+    // Only reachable when `work()` ran, so a replay posts nothing; and after the
+    // commit, so a rolled-back shipment leaves no entry behind.
+    const cogsTotal = Number(cogs.total);
+    if (cogsTotal > 0) {
+      await this.journalPosting.postJournalEntry({
+        orgId,
+        entryDate: data.shipDate,
+        description: `COGS: ${cogs.soNumber}`,
+        sourceType: "inv_sales_order",
+        sourceId: soId.toString(),
+        sourceEvent: "ship",
+        status: "POSTED",
+        createdBy: userId,
+        lines: [
+          { accountCode: "5000", debit: cogsTotal, credit: 0, description: `COGS - SO ${cogs.soNumber}` },
+          { accountCode: "1300", debit: 0, credit: cogsTotal, description: `Inventory deducted - ${cogs.soNumber}` },
+        ],
+      });
+    }
+
+    await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
+    await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
+
+    return result;
+  }
+
+  private async shipSoInTx(
+    tx: Tx,
+    orgId: string,
+    soId: number,
+    userId: string,
+    idempotencyKey: string,
+    data: ShipSoInput,
+    settings: InventorySettings,
+    cogs: DeferredCogs,
+  ): Promise<ShipSoResult> {
+    const so = await tx.query.invSalesOrders.findFirst({
       where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
+      columns: { id: true, soNumber: true, status: true, warehouseId: true },
       with: {
         lines: {
-          with: {
-            productVariant: { with: { product: { columns: { id: true, trackingMethod: true } } } },
-          },
+          columns: { id: true, productVariantId: true, quantity: true, costAtTime: true },
         },
       },
     });
@@ -421,94 +550,57 @@ export class SoFulfillmentService {
     if (!allowedStatuses.includes(so.status)) {
       throw new BadRequestException(`Sales order must be in one of ${allowedStatuses.join(", ")} to ship`);
     }
-
-    const settings = await this.settingsService.get(orgId);
-
     if (settings.packageRequiredForShipping && so.status !== "PACKED") {
       throw new BadRequestException("Sales order must be PACKED before shipping (packageRequiredForShipping is enabled)");
     }
 
+    const shelf = await shelfLines(tx, orgId, soId);
+
     /**
-     * B4. Found through the *lines*, not through `inv_pick_lists.so_id`.
+     * Locked, not merely selected.
      *
-     * A wave's header carries a null `so_id` — that is what distinguishes it
-     * from a single-order pick — so this lookup returned nothing for a
-     * wave-picked order and shipping fell through to the reservation branch,
-     * issuing from the bin the order reserved rather than the one the picker
-     * actually took the goods from. Once picking consumes its reservations
-     * (`PickConfirmService`) that branch has nothing left to read at all, and a
-     * wave-picked order could not be shipped.
-     *
-     * Every line still reaches this the same way for a single-order pick, which
-     * sets both `so_id` and `so_line_id`; cancelled pick lists are excluded, as
-     * they are everywhere else this quantity is read.
+     * `consumeReservationsBatch` releases `committed` for every reservation it
+     * is handed and reports back only the ones it actually flipped — so the list
+     * this command hands it has to be a list nobody else can be holding. The
+     * `FOR UPDATE` plus the `ACTIVE` predicate is that guarantee: a second ship
+     * blocks here, re-reads after the lock and finds the rows CONSUMED.
      */
-    const pickedLines = await this.db.execute<{
+    const reservations = await tx.execute<{
       id: number;
-      so_line_id: number;
-      product_variant_id: number;
+      source_line_id: string | null;
       location_id: number | null;
+      product_variant_id: number;
       lot_id: number | null;
       serial_id: number | null;
-      quantity_picked: string;
+      reserved_qty: string;
     }>(sql`
-      SELECT pll.id,
-             pll.so_line_id,
-             pll.product_variant_id,
-             pll.location_id,
-             pll.lot_id,
-             pll.serial_id,
-             pll.quantity_picked
-        FROM inv_pick_list_lines pll
-        JOIN inv_pick_lists pl
-          ON pl.org_id = pll.org_id AND pl.id = pll.pick_list_id
-        JOIN inv_so_lines sol
-          ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
-       WHERE pll.org_id = ${orgId}
-         AND sol.so_id = ${soId}
-         AND pl.status <> 'CANCELLED'
-       ORDER BY pll.id
+      SELECT id, source_line_id, location_id, product_variant_id, lot_id, serial_id, reserved_qty
+        FROM inv_stock_reservations
+       WHERE org_id = ${orgId}
+         AND source_type = 'inv_sales_order'
+         AND source_id = ${String(soId)}
+         AND status = 'ACTIVE'
+       ORDER BY id
+       FOR UPDATE
     `);
 
-    const reservations = await this.db.query.invStockReservations.findMany({
-      where: and(
-        eq(invStockReservations.orgId, orgId),
-        eq(invStockReservations.sourceType, "inv_sales_order"),
-        eq(invStockReservations.sourceId, String(soId)),
-        eq(invStockReservations.status, "ACTIVE"),
-      ),
-    });
-
-    const movements: Array<{
-      transactionType: string;
-      productVariantId: number;
-      soLineId: number;
-      locationId: number;
-      lotId?: number;
-      serialId?: number;
-      quantityDelta: string;
-    }> = [];
-
-    if (pickedLines.length > 0) {
-      for (const line of pickedLines) {
-        // A line closed by an exception can hold zero, and a zero movement is
-        // refused by the ledger's non-zero CHECK rather than ignored. Nothing
-        // left that shelf, so there is nothing to issue.
-        if (Number(line.quantity_picked) === 0) continue;
-        const locId = line.location_id;
-        if (locId === null) {
-          throw new BadRequestException(`Pick list line ${line.id} is missing a location`);
-        }
-        movements.push({
-          transactionType: "SALE",
-          productVariantId: Number(line.product_variant_id),
-          soLineId: Number(line.so_line_id),
-          locationId: Number(locId),
-          lotId: line.lot_id === null ? undefined : Number(line.lot_id),
-          serialId: line.serial_id === null ? undefined : Number(line.serial_id),
-          quantityDelta: `-${line.quantity_picked}`,
-        });
+    const movements: ShipMovement[] = [];
+    for (const line of shelf) {
+      // A line closed by an exception can hold zero, and a zero movement is
+      // refused by the ledger's non-zero CHECK rather than ignored. Nothing left
+      // that shelf, so there is nothing to issue.
+      if (cmpDec(line.quantity, "0") === 0) continue;
+      if (line.locationId === null) {
+        throw new BadRequestException(`Pick list line ${line.pickLineId} is missing a location`);
       }
+      movements.push({
+        productVariantId: line.productVariantId,
+        soLineId: line.soLineId,
+        locationId: line.locationId,
+        lotId: line.lotId,
+        serialId: line.serialId,
+        quantity: line.quantity,
+      });
     }
 
     // Nothing was picked: ship straight off the reservations. Keyed on the
@@ -517,227 +609,243 @@ export class SoFulfillmentService {
     // shipping an empty shipment.
     if (movements.length === 0) {
       for (const line of so.lines) {
-        const reservation = reservations.find((r) => r.sourceLineId === String(line.id));
-        const locationId = reservation?.locationId;
-        if (!locationId) throw new BadRequestException(`No pick list or reservation for SO line ${line.id}`);
-
+        const reservation = reservations.find((r) => r.source_line_id === String(line.id));
+        const locationId = reservation?.location_id;
+        if (locationId === undefined || locationId === null) {
+          throw new BadRequestException(`No pick list or reservation for SO line ${line.id}`);
+        }
         movements.push({
-          transactionType: "SALE",
           productVariantId: line.productVariantId,
           soLineId: line.id,
-          locationId,
-          lotId: reservation?.lotId ?? undefined,
-          serialId: reservation?.serialId ?? undefined,
-          quantityDelta: `-${line.quantity}`,
+          locationId: Number(locationId),
+          lotId: reservation?.lot_id === null || reservation?.lot_id === undefined ? null : Number(reservation.lot_id),
+          serialId: reservation?.serial_id === null || reservation?.serial_id === undefined ? null : Number(reservation.serial_id),
+          quantity: line.quantity,
         });
       }
     }
 
-    const totalOrderedQty = so.lines.reduce((sum, l) => sum + parseFloat(l.quantity), 0);
-    const totalShippingQty = movements.reduce((sum, m) => sum + Math.abs(parseFloat(m.quantityDelta)), 0);
-    const isPartial = totalShippingQty < totalOrderedQty;
+    // Exact, like the pick's own completeness test. Deciding whether a whole
+    // order has shipped on the strength of float comparisons is how an order is
+    // marked SHIPPED one unit short and nothing notices.
+    const totalOrdered = so.lines.reduce((sum, l) => addDec(sum, l.quantity), "0");
+    const totalShipping = movements.reduce((sum, m) => addDec(sum, m.quantity), "0");
+    const isPartial = cmpDec(totalShipping, totalOrdered) < 0;
 
     if (isPartial && !settings.allowPartialShipment) {
       throw new BadRequestException({ code: INV_ERRORS.INSUFFICIENT_STOCK, message: "Partial shipment is not allowed" });
     }
 
-    const shipmentNumber = await this.numSeq.next(orgId, "SHIPMENT");
-
+    // Drawn inside the claim, so a refused retry does not burn a shipment
+    // number, and a rolled-back one gives its number back with the rest.
+    const shipmentNumber = await this.numSeq.next(orgId, "SHIPMENT", tx);
     const newStatus = isPartial ? "PARTIALLY_SHIPPED" : "SHIPPED";
 
-    const serialIds = movements.flatMap((m) => m.serialId !== undefined ? [m.serialId] : []);
-
-    const lineShippedQtyMap = new Map<number, number>();
-    for (const m of movements) {
-      const qty = Math.abs(parseFloat(m.quantityDelta));
-      lineShippedQtyMap.set(m.soLineId, (lineShippedQtyMap.get(m.soLineId) ?? 0) + qty);
-    }
-
-    const shipment = await this.db.transaction(async (tx) => {
-      await this.engine.executeInTx(tx, orgId, userId, {
-        idempotencyKey,
-        sourceType: "inv_sales_order",
-        sourceId: String(soId),
-        reason: `Shipment for SO ${so.soNumber}`,
-        movements,
-      });
-
-      const consumedReservations = await this.reservationService.consumeReservationsBatch(
-        tx,
-        orgId,
-        userId,
-        reservations.map((r) => ({
-          id: r.id,
-          locationId: r.locationId,
-          productVariantId: r.productVariantId,
-          reservedQty: r.reservedQty,
-        })),
-      );
-
-      // A5. Shipping is one of the two places a reservation is ever consumed,
-      // and the set is the fact — one event for the command, keyed on the
-      // command's own idempotency key, rather than one per reservation.
-      if (consumedReservations.length > 0) {
-        await emitInventoryCommandEvent(tx as Db, {
-          orgId,
-          eventType: INVENTORY_COMMAND_EVENTS.RESERVATION_CONSUMED,
-          aggregateType: "inv_stock_reservation",
-          aggregateId: idempotencyKey,
-          actorUserId: userId,
-          payload: {
-            reservationIds: consumedReservations,
-            sourceType: "inv_sales_order",
-            sourceId: String(soId),
-            consumedBy: "sales_order.ship",
-          },
-        });
-      }
-
-      if (serialIds.length > 0) {
-        await (tx as Db).update(invSerialNumbers)
-          .set({ status: "SHIPPED" })
-          .where(inArray(invSerialNumbers.id, serialIds));
-      }
-
-      if (lineShippedQtyMap.size > 0) {
-        for (const [lineId, shippedQty] of lineShippedQtyMap) {
-          await (tx as Db).update(invSoLines)
-            .set({ quantityShipped: sql`${invSoLines.quantityShipped} + ${shippedQty}` })
-            .where(and(eq(invSoLines.id, lineId), eq(invSoLines.soId, soId)));
-        }
-      }
-
-
-      const [ship] = await (tx as Db).insert(invShipments).values({
-        orgId,
-        shipmentNumber,
-        soId,
-        warehouseId: so.warehouseId,
-        carrierId: data.carrierId,
-        trackingNumber: data.trackingNumber,
-        status: "SHIPPED",
-        shippedAt: new Date(),
-        createdBy: userId,
-      }).returning();
-
-      await (tx as Db).insert(invShipmentLines).values(
-        movements.map((m) => ({
-          orgId,
-          shipmentId: ship.id,
-          soLineId: m.soLineId,
-          productVariantId: m.productVariantId,
-          quantity: Math.abs(parseFloat(m.quantityDelta)).toFixed(4),
-          lotId: m.lotId,
-          serialId: m.serialId,
-        }))
-      );
-
-      await (tx as Db).update(invSalesOrders)
-        .set({ status: newStatus, shippedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
-
-      // A1. The goods have left, so the bucket that held them empties — last,
-      // and in the same transaction as everything it reads.
-      //
-      // This used to run in its own *earlier* transaction, which was harmless
-      // while the bucket was decremented and wrong the moment it became derived:
-      // recomputing before the shipment is recorded re-reads a world where
-      // nothing has shipped and writes the same figure back, so the tote never
-      // empties. The ordering is load-bearing now, which is exactly the kind of
-      // assumption a change of mechanism invalidates in silence.
-      for (const line of pickedLines) {
-        if (line.location_id === null) continue;
-        await this.projection.syncOutgoing(tx, orgId, {
-          productVariantId: Number(line.product_variant_id),
-          locationId: Number(line.location_id),
-          lotId: line.lot_id === null ? null : Number(line.lot_id),
-          serialId: line.serial_id === null ? null : Number(line.serial_id),
-        });
-      }
-
-      await OutboxWriter.emit(tx as Db, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "inv_sales_order",
-        aggregateId: String(soId),
-        aggregateVersion: Date.now(),
-        eventType: "inventory.sales_order.fulfilled",
-        payload: {
-          soId,
-          soNumber: so.soNumber,
-          shipmentId: ship.id,
-          shipmentNumber,
-          isPartial,
-          actorUserId: userId,
-        },
-        occurredAt: new Date(),
-      });
-
-      /**
-       * A5. The shipment event, from the path that had none.
-       *
-       * There are two ways to ship in this module. `ShipmentsService.ship`
-       * emits `inventory.shipment.dispatched`; this one creates a shipment
-       * already SHIPPED and announced only that the *order* was fulfilled — so
-       * anything subscribed to shipments (a carrier integration, a customer
-       * notification) simply never heard about shipments raised this way. The
-       * existing name is reused rather than a new one invented: item 2 forbids
-       * retiring it, and two names for one shipment would collide on the
-       * outbox's `(org, aggregate_type, aggregate_id, aggregate_version)`
-       * index. The order-level event is keyed on the sales order, so the two
-       * here are different aggregates and coexist.
-       */
-      await emitInventoryCommandEvent(tx as Db, {
-        orgId,
-        eventType: INVENTORY_COMMAND_EVENTS.SHIPMENT_DISPATCHED,
-        aggregateType: "inv_shipment",
-        aggregateId: String(ship.id),
-        actorUserId: userId,
-        payload: {
-          shipmentId: ship.id,
-          shipmentNumber,
-          soId,
-          soNumber: so.soNumber,
-          warehouseId: so.warehouseId,
-          carrierId: data.carrierId ?? null,
-          trackingNumber: data.trackingNumber ?? null,
-          lineCount: movements.length,
-          isPartial,
-          shippedVia: "sales_order.ship",
-          idempotencyKey,
-        },
-      });
-
-      return ship;
+    await this.engine.executeInTx(tx, orgId, userId, {
+      // Derived rather than shared: the command's own key is already claimed by
+      // `runIdempotent` above, and handing the engine the same string would make
+      // it collide with that live claim.
+      idempotencyKey: `${idempotencyKey}:stock`,
+      sourceType: "inv_sales_order",
+      sourceId: String(soId),
+      reason: `Shipment for SO ${so.soNumber}`,
+      movements: movements.map((m) => ({
+        transactionType: "SALE",
+        productVariantId: m.productVariantId,
+        locationId: m.locationId,
+        lotId: m.lotId ?? undefined,
+        serialId: m.serialId ?? undefined,
+        quantityDelta: `-${m.quantity}`,
+      })),
     });
 
-    await this.engine.invalidateCaches(orgId);
+    const consumedReservations = await this.reservationService.consumeReservationsBatch(
+      tx,
+      orgId,
+      userId,
+      reservations.map((r) => ({
+        id: Number(r.id),
+        locationId: r.location_id === null ? null : Number(r.location_id),
+        productVariantId: Number(r.product_variant_id),
+        // Carried through, where they were dropped: `releaseCommitted` matches
+        // on the reservation's full grain, so omitting them decremented the
+        // no-lot row at that location and left the lot's own `committed`
+        // standing for good.
+        lotId: r.lot_id === null ? null : Number(r.lot_id),
+        serialId: r.serial_id === null ? null : Number(r.serial_id),
+        reservedQty: r.reserved_qty,
+      })),
+    );
 
-    const cogsTotal = so.lines.reduce((sum, l) => {
-      const shippedQty = lineShippedQtyMap.get(l.id) ?? 0;
-      return sum + shippedQty * parseFloat(l.costAtTime);
-    }, 0);
-
-    if (cogsTotal > 0) {
-      await this.journalPosting.postJournalEntry({
+    // A5. Shipping is one of the two places a reservation is ever consumed, and
+    // the set is the fact — one event for the command, keyed on the command's
+    // own idempotency key, rather than one per reservation.
+    if (consumedReservations.length > 0) {
+      await emitInventoryCommandEvent(tx, {
         orgId,
-        entryDate: data.shipDate,
-        description: `COGS: ${so.soNumber}`,
-        sourceType: "inv_sales_order",
-        sourceId: soId.toString(),
-        sourceEvent: "ship",
-        status: "POSTED",
-        createdBy: userId,
-        lines: [
-          { accountCode: "5000", debit: cogsTotal, credit: 0, description: `COGS - SO ${so.soNumber}` },
-          { accountCode: "1300", debit: 0, credit: cogsTotal, description: `Inventory deducted - ${so.soNumber}` },
-        ],
+        eventType: INVENTORY_COMMAND_EVENTS.RESERVATION_CONSUMED,
+        aggregateType: "inv_stock_reservation",
+        aggregateId: idempotencyKey,
+        actorUserId: userId,
+        payload: {
+          reservationIds: consumedReservations,
+          sourceType: "inv_sales_order",
+          sourceId: String(soId),
+          consumedBy: "sales_order.ship",
+        },
       });
     }
 
-    await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
+    const serialIds = movements.flatMap((m) => (m.serialId === null ? [] : [m.serialId]));
+    if (serialIds.length > 0) {
+      await tx.update(invSerialNumbers)
+        .set({ status: "SHIPPED" })
+        .where(and(eq(invSerialNumbers.orgId, orgId), inArray(invSerialNumbers.id, serialIds)));
+    }
 
-    return { shipmentId: shipment.id, shipmentNumber, status: newStatus, isPartial };
+    const lineShippedQty = new Map<number, string>();
+    for (const m of movements)
+      lineShippedQty.set(m.soLineId, addDec(lineShippedQty.get(m.soLineId) ?? "0", m.quantity));
+
+    for (const [lineId, shippedQty] of lineShippedQty) {
+      await tx.update(invSoLines)
+        .set({ quantityShipped: sql`${invSoLines.quantityShipped} + ${shippedQty}::numeric` })
+        .where(and(eq(invSoLines.orgId, orgId), eq(invSoLines.id, lineId), eq(invSoLines.soId, soId)));
+    }
+
+    const [ship] = await tx.insert(invShipments).values({
+      orgId,
+      shipmentNumber,
+      soId,
+      warehouseId: so.warehouseId,
+      carrierId: data.carrierId,
+      trackingNumber: data.trackingNumber,
+      status: "SHIPPED",
+      shippedAt: new Date(),
+      createdBy: userId,
+    }).returning();
+
+    await tx.insert(invShipmentLines).values(
+      movements.map((m) => ({
+        orgId,
+        shipmentId: ship!.id,
+        soLineId: m.soLineId,
+        productVariantId: m.productVariantId,
+        quantity: m.quantity,
+        lotId: m.lotId ?? undefined,
+        serialId: m.serialId ?? undefined,
+      })),
+    );
+
+    await tx.update(invSalesOrders)
+      .set({ status: newStatus, shippedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
+
+    /**
+     * A1. The goods have left, so the bucket that held them empties — last, and
+     * in the same transaction as everything it reads.
+     *
+     * This used to run in its own *earlier* transaction, which was harmless
+     * while the bucket was decremented and wrong the moment it became derived:
+     * recomputing before the shipment is recorded re-reads a world where nothing
+     * has shipped and writes the same figure back, so the tote never empties.
+     *
+     * Every grain the order stands on, not only the ones that produced a
+     * movement. `EXPECTED_OUTGOING` drops the whole order out of its sum once
+     * the status leaves the open list, so a grain holding a zero-quantity line
+     * of a now-SHIPPED order has to be recomputed too. Substituted rows carry
+     * the substitute's variant, which is the row the projection actually credits
+     * — the old loop recomputed the *original* variant at the substitute's bin,
+     * a row that generally does not exist, and left the swapped-in units
+     * outgoing for ever.
+     */
+    const grains = new Map<string, OutgoingGrain>();
+    for (const line of shelf) {
+      if (line.locationId === null) continue;
+      const grain = {
+        productVariantId: line.productVariantId,
+        locationId: line.locationId,
+        lotId: line.lotId,
+        serialId: line.serialId,
+      };
+      grains.set(grainKey(grain), grain);
+    }
+    for (const m of movements) {
+      const grain = {
+        productVariantId: m.productVariantId,
+        locationId: m.locationId,
+        lotId: m.lotId,
+        serialId: m.serialId,
+      };
+      grains.set(grainKey(grain), grain);
+    }
+    for (const grain of grains.values())
+      await this.projection.syncOutgoing(tx, orgId, grain);
+
+    await OutboxWriter.emit(tx, {
+      eventId: randomUUID(),
+      organizationId: orgId,
+      aggregateType: "inv_sales_order",
+      aggregateId: String(soId),
+      aggregateVersion: Date.now(),
+      eventType: "inventory.sales_order.fulfilled",
+      payload: {
+        soId,
+        soNumber: so.soNumber,
+        shipmentId: ship!.id,
+        shipmentNumber,
+        isPartial,
+        actorUserId: userId,
+      },
+      occurredAt: new Date(),
+    });
+
+    /**
+     * A5. The shipment event, from the path that had none.
+     *
+     * There are two ways to ship in this module. `ShipmentsService.ship` emits
+     * `inventory.shipment.dispatched`; this one creates a shipment already
+     * SHIPPED and announced only that the *order* was fulfilled — so anything
+     * subscribed to shipments (a carrier integration, a customer notification)
+     * simply never heard about shipments raised this way. The existing name is
+     * reused rather than a new one invented: item 2 forbids retiring it, and two
+     * names for one shipment would collide on the outbox's `(org,
+     * aggregate_type, aggregate_id, aggregate_version)` index. The order-level
+     * event is keyed on the sales order, so the two here are different
+     * aggregates and coexist.
+     */
+    await emitInventoryCommandEvent(tx, {
+      orgId,
+      eventType: INVENTORY_COMMAND_EVENTS.SHIPMENT_DISPATCHED,
+      aggregateType: "inv_shipment",
+      aggregateId: String(ship!.id),
+      actorUserId: userId,
+      payload: {
+        shipmentId: ship!.id,
+        shipmentNumber,
+        soId,
+        soNumber: so.soNumber,
+        warehouseId: so.warehouseId,
+        carrierId: data.carrierId ?? null,
+        trackingNumber: data.trackingNumber ?? null,
+        lineCount: movements.length,
+        isPartial,
+        shippedVia: "sales_order.ship",
+        idempotencyKey,
+      },
+    });
+
+    cogs.soNumber = so.soNumber;
+    cogs.total = so.lines.reduce(
+      (sum, l) => addDec(sum, mulDec(lineShippedQty.get(l.id) ?? "0", l.costAtTime)),
+      "0",
+    );
+
+    return {
+      shipmentId: ship!.id,
+      shipmentNumber,
+      status: newStatus,
+      isPartial,
+    };
   }
 }

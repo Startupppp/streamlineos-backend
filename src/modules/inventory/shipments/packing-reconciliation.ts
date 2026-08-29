@@ -21,33 +21,72 @@ function accumulate(
 }
 
 /**
- * B6 — what this order actually has in totes, per variant.
+ * B7 — one row for every distinct thing standing in this order's totes, at the
+ * grain it stands on.
  *
- * Found through `inv_so_lines`, **not** through `inv_pick_lists.so_id`.
+ * This is the single answer to "what came off the shelf for this order", and
+ * packing, shipping and the reconciliation above all read it. Three commands
+ * carried three hand-copied versions of the same join, which is how the
+ * substitution below stayed invisible in two of them.
  *
- * A wave's header carries a null `so_id` — that is what distinguishes it from a
- * single-order pick — so the header lookup returned nothing for a wave-picked
- * order, and every quantity here came back zero. Reconciling a package against
- * zero picked units is not a strict check: `close` compared each package line
- * against a missing entry and refused nothing at all, because the map had no
- * key to compare against. Shipping had the identical defect and was fixed the
- * same way in B4.
+ * **A pick line can yield two rows, and that is the point.** A picker who swaps
+ * one SKU for another records the swap on `substitute_variant_id` /
+ * `substitute_quantity` and leaves `quantity_picked` at zero, because that
+ * column means how much of *this line's own* variant was picked and B5 was
+ * right to keep it that way — `pickedAgainstSoLine`, the second-substitution
+ * guard and `consumeCoveredReservations` all read it with that meaning. So the
+ * substitute is a *second* row here rather than a rewrite of the first, exactly
+ * as `EXPECTED_OUTGOING` already treats it: same pick line, same bin, different
+ * variant and quantity. Reading only `quantity_picked` is why a mixed order —
+ * some lines picked, one substituted — shipped everything except the swapped
+ * line and went out PARTIALLY_SHIPPED.
  *
- * Every line still reaches this the same way for a single-order pick, which sets
- * both `so_id` and `so_line_id`. Cancelled pick lists are excluded, as they are
- * everywhere else this quantity is read.
+ * Found through `inv_so_lines`, **not** through `inv_pick_lists.so_id`. A wave's
+ * header carries a null `so_id` — that is what distinguishes it from a
+ * single-order pick — so a header lookup returns nothing for a wave-picked
+ * order. Every line still arrives the same way for a single-order pick, which
+ * sets both. Cancelled pick lists are excluded, as they are everywhere else this
+ * quantity is read.
+ *
+ * Zero-quantity rows are kept rather than filtered: a line closed by an
+ * exception holds nothing, but its grain still has to be recomputed when the
+ * order ships, and a caller that wants only movable units says so itself.
  */
-export async function pickedQuantities(
+export interface ShelfLine {
+  pickLineId: number;
+  soLineId: number;
+  /** The variant actually in the tote — the substitute, where one went in. */
+  productVariantId: number;
+  locationId: number | null;
+  lotId: number | null;
+  serialId: number | null;
+  quantity: string;
+  substituted: boolean;
+}
+
+export async function shelfLines(
   db: DbOrTx,
   orgId: string,
   soId: number,
-): Promise<QuantityByVariant> {
+): Promise<ShelfLine[]> {
   const rows = await db.execute<{
+    pick_line_id: number;
+    so_line_id: number;
     product_variant_id: number;
-    quantity_picked: string;
+    location_id: number | null;
+    lot_id: number | null;
+    serial_id: number | null;
+    quantity: string;
+    substituted: boolean;
   }>(sql`
-    SELECT pll.product_variant_id,
-           SUM(pll.quantity_picked)::text AS quantity_picked
+    SELECT pll.id            AS pick_line_id,
+           pll.so_line_id    AS so_line_id,
+           pll.product_variant_id,
+           pll.location_id,
+           pll.lot_id,
+           pll.serial_id,
+           pll.quantity_picked::text AS quantity,
+           false             AS substituted
       FROM inv_pick_list_lines pll
       JOIN inv_pick_lists pl
         ON pl.org_id = pll.org_id AND pl.id = pll.pick_list_id
@@ -56,12 +95,57 @@ export async function pickedQuantities(
      WHERE pll.org_id = ${orgId}
        AND sol.so_id = ${soId}
        AND pl.status <> 'CANCELLED'
-     GROUP BY pll.product_variant_id
+    UNION ALL
+    SELECT pll.id,
+           pll.so_line_id,
+           pll.substitute_variant_id,
+           pll.location_id,
+           pll.lot_id,
+           pll.serial_id,
+           pll.substitute_quantity::text,
+           true
+      FROM inv_pick_list_lines pll
+      JOIN inv_pick_lists pl
+        ON pl.org_id = pll.org_id AND pl.id = pll.pick_list_id
+      JOIN inv_so_lines sol
+        ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
+     WHERE pll.org_id = ${orgId}
+       AND sol.so_id = ${soId}
+       AND pl.status <> 'CANCELLED'
+       AND pll.substitute_variant_id IS NOT NULL
+       AND COALESCE(pll.substitute_quantity, 0)::numeric <> 0
+     ORDER BY pick_line_id, substituted
   `);
 
+  return rows.map((row) => ({
+    pickLineId: Number(row.pick_line_id),
+    soLineId: Number(row.so_line_id),
+    productVariantId: Number(row.product_variant_id),
+    locationId: row.location_id === null ? null : Number(row.location_id),
+    lotId: row.lot_id === null ? null : Number(row.lot_id),
+    serialId: row.serial_id === null ? null : Number(row.serial_id),
+    quantity: String(row.quantity),
+    substituted: row.substituted === true,
+  }));
+}
+
+/**
+ * B6 — what this order actually has in totes, per variant.
+ *
+ * The per-variant view of `shelfLines`, so packing and shipping cannot disagree
+ * about what came off the shelf. It used to be its own copy of the join reading
+ * `quantity_picked` alone, which meant a substituted order reconciled against a
+ * picked figure of zero for the SKU actually in the carton — `assertWithinPicked`
+ * then refused to pack the very units the picker had put there.
+ */
+export async function pickedQuantities(
+  db: DbOrTx,
+  orgId: string,
+  soId: number,
+): Promise<QuantityByVariant> {
   const picked: QuantityByVariant = new Map();
-  for (const row of rows)
-    accumulate(picked, Number(row.product_variant_id), String(row.quantity_picked));
+  for (const line of await shelfLines(db, orgId, soId))
+    accumulate(picked, line.productVariantId, line.quantity);
   return picked;
 }
 

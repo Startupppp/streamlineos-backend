@@ -1,9 +1,10 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { invShipments, invShipmentStatusEvents } from "../../../db/schema";
+import { invCarriers, invShipments, invShipmentStatusEvents } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
+import { CarrierAdapterRegistry, runCarrierCall } from "./carrier-adapter";
 import type { CarrierStatusInput } from "./dto/carrier-status.schemas";
 
 /**
@@ -38,11 +39,26 @@ const PROGRESS: Record<string, number> = {
  * delivery it is recorded like any other late event and changes nothing.
  */
 
+/** What a shipment refresh did, as a value the UI can render verbatim. */
+export interface CarrierRefreshResult {
+  shipmentId: number;
+  carrier: string;
+  /** False when there is nobody to ask — the manual adapter's normal answer. */
+  polled: boolean;
+  /** Events the carrier returned that we had not already recorded. */
+  recorded: number;
+  status: string;
+  deadLettered: boolean;
+  /** Present only on a dead letter, for an operator reading a log. */
+  error?: string;
+}
+
 @Injectable()
 export class CarrierStatusService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: InventoryAuditService,
+    private readonly adapters: CarrierAdapterRegistry,
   ) {}
 
   /**
@@ -76,7 +92,114 @@ export class CarrierStatusService {
     if (!shipment) {
       throw new NotFoundException("No shipment carries that tracking number");
     }
+    return this.applyEvent(orgId, userId, shipment, input);
+  }
 
+  /**
+   * B7, item 2 — ask the carrier where this parcel is, through the adapter
+   * contract.
+   *
+   * Every answer this can give is a value, including "the courier is down".
+   * Nothing here may throw at a caller who has already shipped goods: the stock
+   * left the building on the internal ship command and a courier's API being
+   * unreachable does not un-ship it. That is B7's item 3 stated as code rather
+   * than as a promise.
+   *
+   * With no real adapter registered this reports `polled: false` and changes
+   * nothing, which is the truthful description of manual tracking and is what
+   * the shipment sheet renders instead of "coming soon".
+   */
+  async refreshTracking(
+    orgId: string,
+    userId: string,
+    shipmentId: number,
+  ): Promise<CarrierRefreshResult> {
+    const [shipment] = await this.db
+      .select({
+        id: invShipments.id,
+        status: invShipments.status,
+        carrierId: invShipments.carrierId,
+        trackingNumber: invShipments.trackingNumber,
+        carrierCode: invCarriers.code,
+      })
+      .from(invShipments)
+      .leftJoin(
+        invCarriers,
+        and(eq(invCarriers.orgId, orgId), eq(invCarriers.id, invShipments.carrierId)),
+      )
+      .where(and(eq(invShipments.orgId, orgId), eq(invShipments.id, shipmentId)))
+      .limit(1);
+    if (!shipment) throw new NotFoundException("Shipment not found");
+
+    const adapter = this.adapters.forCarrier(shipment.carrierCode);
+    const base = {
+      shipmentId,
+      carrier: adapter.code,
+      status: shipment.status,
+      deadLettered: false,
+    };
+
+    // No tracking number is not an error either. A shipment handed to a driver
+    // before the courier has issued one is an ordinary morning in a warehouse.
+    if (!adapter.canPoll || !shipment.trackingNumber) {
+      return { ...base, polled: false, recorded: 0 };
+    }
+
+    const call = await runCarrierCall(() =>
+      adapter.fetchTracking({
+        trackingNumber: shipment.trackingNumber!,
+        carrierCode: shipment.carrierCode ?? adapter.code,
+      }),
+    );
+
+    if (!call.ok) {
+      // Dead letters are worth an audit row precisely because nothing else
+      // records them: the shipment is unchanged, so without this the only
+      // evidence a courier was unreachable is a log line nobody keeps.
+      await this.audit.insert(this.db, {
+        orgId,
+        actorUserId: userId,
+        action: "shipment.carrier-poll-dead-lettered",
+        resourceType: "shipment",
+        resourceId: String(shipmentId),
+        metadata: {
+          carrier: adapter.code,
+          attempts: call.attempts,
+          reason: call.reason,
+          error: call.error,
+        },
+      });
+      return { ...base, polled: true, recorded: 0, deadLettered: true, error: call.error };
+    }
+
+    let recorded = 0;
+    let status: string = shipment.status;
+    for (const event of call.value) {
+      // The carrier's own account of which parcel this is, checked against ours
+      // rather than trusted: an adapter that returns an event for a tracking
+      // number we did not ask about is naming somebody else's shipment.
+      if (event.trackingNumber !== shipment.trackingNumber) continue;
+      const applied = await this.applyEvent(orgId, userId, shipment, event);
+      if (applied.recorded) recorded += 1;
+      status = applied.status;
+    }
+
+    return { ...base, polled: true, recorded, status };
+  }
+
+  /**
+   * The dedupe and monotonicity rules, in one place.
+   *
+   * Shared by the in-app POST and by anything an adapter returns, so a real
+   * carrier integration cannot quietly acquire a second set of rules — and so
+   * the properties `carrier-status.seeded-e2e-spec.ts` pins hold for both.
+   */
+  private async applyEvent(
+    orgId: string,
+    userId: string,
+    shipment: { id: number; status: string; carrierId: number | null },
+    input: CarrierStatusInput,
+  ) {
     const currentRank = PROGRESS[shipment.status] ?? 0;
     const cancelling = input.status === "CANCELLED";
     const incomingRank = cancelling ? null : PROGRESS[input.status];

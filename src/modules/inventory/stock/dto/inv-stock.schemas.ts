@@ -32,6 +32,13 @@ export const listTransactionsSchema = z.object({
   toDate: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  /**
+   * G1. Opaque `(created_at, id)` position. Present, it replaces `page`: the
+   * ledger is append-only and a reader who scrolls it while the engine posts
+   * loses or repeats a row at every offset boundary. Absent, the offset path is
+   * unchanged, so callers that only know `page` keep working.
+   */
+  cursor: z.string().min(1).max(512).optional(),
 }).strict();
 export type ListTransactionsInput = z.infer<typeof listTransactionsSchema>;
 

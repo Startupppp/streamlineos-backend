@@ -44,10 +44,20 @@ const VARIANT = 5;
 
 const closedPkg = { id: PKG_ID, orgId: ORG, status: "CLOSED", lines: [] };
 
-/** A picked/packed row exactly as `db.execute` hands one back. */
+/**
+ * A shelf row exactly as `db.execute` hands one back from `shelfLines`, which
+ * `pickedQuantities` is now the per-variant view of. It used to be the old
+ * `(product_variant_id, quantity_picked)` pair from a private copy of the join.
+ */
 const pickedRow = (productVariantId: number, quantity: string) => ({
+  pick_line_id: 100 + productVariantId,
+  so_line_id: 1,
   product_variant_id: productVariantId,
-  quantity_picked: quantity,
+  location_id: 1,
+  lot_id: null,
+  serial_id: null,
+  quantity,
+  substituted: false,
 });
 const packedRow = (productVariantId: number, quantity: string) => ({
   product_variant_id: productVariantId,
