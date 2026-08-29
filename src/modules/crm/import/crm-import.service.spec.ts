@@ -25,6 +25,8 @@ interface Statement {
   where: SQL | undefined;
   /** The savepoint it ran in. 0 is the step's own transaction. */
   savepoint: number;
+  /** `SELECT ... FOR UPDATE`, which is how a row is claimed. */
+  locking?: boolean;
   rolledBack: boolean;
 }
 
@@ -124,6 +126,7 @@ class FakeDb {
       set: null,
       where: undefined,
       savepoint,
+      locking: false,
       rolledBack: false,
     };
 
@@ -134,6 +137,19 @@ class FakeDb {
       },
       where: (condition: SQL) => {
         statement.where = condition;
+        return self;
+      },
+      /**
+       * `SELECT ... FOR UPDATE` is the claim now.
+       *
+       * `commitRow` used to claim by stamping `committed_at` and returning the
+       * row, which marked it done before it had done anything and failed
+       * `chk_crm_import_rows_outcome` on its own first statement. The lock does
+       * the same job — block a second claimer, then re-evaluate against
+       * committed truth — without asserting an outcome that has not happened.
+       */
+      for: () => {
+        statement.locking = true;
         return self;
       },
       set: (payload: Record<string, unknown>) => {
@@ -149,7 +165,6 @@ class FakeDb {
       onConflictDoUpdate: () => self,
       orderBy: () => self,
       limit: () => self,
-      for: () => self,
       then: (resolve: (value: unknown) => void, reject: (error: unknown) => void) =>
         Promise.resolve()
           .then(() => this.run(statement))
@@ -204,7 +219,18 @@ class FakeDb {
             revertDeadlineAt: this.options.revertDeadlineAt ?? null,
           },
         ];
-      if (statement.table === crmImportRows) return this.options.rows ?? [];
+      if (statement.table === crmImportRows) {
+        // The batch's own listing of the window: every row, unlocked.
+        if (!statement.locking) return this.options.rows ?? [];
+
+        // The claim. Modelled exactly as Postgres resolves it: a row another
+        // claimer already holds is not returned, so the caller does nothing.
+        const rowId = this.rowIdIn(statement);
+        if (!rowId) return this.options.rows ?? [];
+        if (this.committedRows.has(rowId)) return [];
+        this.committedRows.set(rowId, statement.savepoint);
+        return [this.rowById(rowId) ?? []].flat();
+      }
       if (statement.table === businessParties) return this.options.parties ?? [];
     }
 
@@ -225,15 +251,17 @@ class FakeDb {
       const rowId = this.rowIdIn(statement);
       if (!rowId) return [];
 
-      const claimsCommit =
-        statement.set?.committedAt !== undefined && statement.set.error === undefined;
       const claimsRevert =
         statement.set?.revertedAt !== undefined && statement.set.error === undefined;
 
-      if (claimsCommit) {
-        if (this.committedRows.has(rowId)) return [];
+      /**
+       * `committed_at` is written by `stamp()` at the end of a row, together
+       * with the column that says what the row did — never on its own, and never
+       * as the claim. The claim is the locking select above.
+       */
+      if (statement.set?.committedAt !== undefined) {
         this.committedRows.set(rowId, statement.savepoint);
-        return [this.rowById(rowId) ?? []].flat();
+        return [];
       }
 
       if (claimsRevert) {
