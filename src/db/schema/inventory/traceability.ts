@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, date, jsonb, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, date, jsonb, integer, bigint, index, uniqueIndex, unique, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { invLotStatusEnum, invSerialStatusEnum } from "../common/enums";
 import { organizations } from "../common/auth";
@@ -13,6 +13,24 @@ export const invLots = pgTable("inv_lots", {
   manufactureDate: date("manufacture_date"),
   expiryDate: date("expiry_date"),
   supplierLotNumber: text("supplier_lot_number"),
+  /**
+   * E3 — the maximum retail price printed on the packs in *this* batch, in
+   * integer paise.
+   *
+   * This is the snapshot, and `inv_products.mrp_paise` is not. The catalogue
+   * column is the SKU's current printed price and moves when the manufacturer
+   * reprints; this one is a fact about a physical batch and is written once, in
+   * the receipt's post transaction, from what the counter read off the carton.
+   * It is never updated afterwards, because the ceiling that binds a sale is the
+   * one printed on the pack the customer is handed — two batches of the same
+   * medicine standing side by side on the same shelf routinely carry different
+   * MRPs, and the older one may not be sold at the newer one's price.
+   *
+   * Nullable, and stays null for every batch received before E3, in
+   * organisations not running the `pharmacy` pack, and for goods with no printed
+   * price. "Not recorded" has to stay distinguishable from "recorded as zero".
+   */
+  mrpPaise: bigint("mrp_paise", { mode: "number" }),
   status: invLotStatusEnum("status").default("ACTIVE").notNull(),
   qualityStatus: text("quality_status"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
@@ -26,6 +44,8 @@ export const invLots = pgTable("inv_lots", {
   index("idx_inv_lots_expiry").on(table.expiryDate),
   index("idx_inv_lots_status").on(table.orgId, table.status),
   index("idx_inv_lots_lot_number_trgm").using("gin", table.lotNumber.op("gin_trgm_ops")),
+  // E3. A ceiling of zero is not a ceiling; NULL already says "not recorded".
+  check("chk_inv_lots_mrp_paise_positive", sql`${table.mrpPaise} IS NULL OR ${table.mrpPaise} > 0`),
 ]);
 
 export const invSerialNumbers = pgTable("inv_serial_numbers", {

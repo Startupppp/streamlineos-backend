@@ -10,6 +10,7 @@ import { assertNoBarcodeConflict } from "./lib/barcode-conflict";
 import {
   invProducts,
   invProductVariants,
+  invProductUomConversions,
   invUom,
   invStockLevels,
   invVendors,
@@ -27,7 +28,12 @@ import type { DataScope } from "../../access/access.types";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { CostVisibilityService, stripCostFields } from "../stock-engine/cost-visibility";
-import { PRODUCT_TAX_FIELD_KEYS } from "./dto/inv-products.schemas";
+import {
+  PRODUCT_TAX_FIELD_KEYS,
+  PRODUCT_PHARMACY_FIELD_KEYS,
+  PRODUCT_KIRANA_FIELD_KEYS,
+} from "./dto/inv-products.schemas";
+import { assertCaptureRulesCoherent, assertUnitConvertible, PACKED_WHOLE } from "./lib/quantity-capture";
 import type {
   CreateProductInput,
   UpdateProductInput,
@@ -56,29 +62,48 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 const TAX_FIELD_SET: ReadonlySet<string> = new Set(PRODUCT_TAX_FIELD_KEYS);
+const PHARMACY_FIELD_SET: ReadonlySet<string> = new Set(PRODUCT_PHARMACY_FIELD_KEYS);
+const KIRANA_FIELD_SET: ReadonlySet<string> = new Set(PRODUCT_KIRANA_FIELD_KEYS);
 
 /**
- * E1/E2. Removes the `gst` pack's fields from a payload, at any nesting depth.
+ * E1/E2/E3/E4. Removes a pack's fields from a payload, at any nesting depth.
  *
  * Stripped from the response rather than hidden in the UI, for the same reason
- * cost fields are: a distributor that does not run the pack must not receive an
- * `hsnCode: null` it then has to explain, and a client that never sees the field
- * cannot start depending on it. Same shape as `stripCostFields` deliberately —
- * one idea, two gates.
+ * cost fields are: a distributor that does not run the `gst` pack must not
+ * receive an `hsnCode: null` it then has to explain, a warehouse must not
+ * receive a `drugSchedule`, and a client that never sees a field cannot start
+ * depending on it. Same shape as `stripCostFields` deliberately — one idea, now
+ * four gates.
  */
-function stripTaxValue(value: unknown, depth: number): unknown {
+function stripKeys(value: unknown, hidden: ReadonlySet<string>, depth: number): unknown {
   if (depth > 6 || value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map((v) => stripTaxValue(v, depth + 1));
+  if (Array.isArray(value)) return value.map((v) => stripKeys(v, hidden, depth + 1));
   const out: Record<string, unknown> = {};
   for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
-    if (TAX_FIELD_SET.has(key)) continue;
-    out[key] = stripTaxValue(inner, depth + 1);
+    if (hidden.has(key)) continue;
+    out[key] = stripKeys(inner, hidden, depth + 1);
   }
   return out;
 }
 
-export function stripProductTaxFields<T>(payload: T): T {
-  return stripTaxValue(payload, 0) as T;
+/**
+ * Which packs are on, in the one shape the list cache key and every stripper
+ * read. Carried together so a caller cannot strip for one pack and key for
+ * another — that mismatch is invisible until a cached payload is served to the
+ * wrong organisation's screen.
+ */
+export interface ProductPackVisibility {
+  gst: boolean;
+  pharmacy: boolean;
+  kirana: boolean;
+}
+
+export function stripProductPackFields<T>(payload: T, visible: ProductPackVisibility): T {
+  let out = payload;
+  if (!visible.gst) out = stripKeys(out, TAX_FIELD_SET, 0) as T;
+  if (!visible.pharmacy) out = stripKeys(out, PHARMACY_FIELD_SET, 0) as T;
+  if (!visible.kirana) out = stripKeys(out, KIRANA_FIELD_SET, 0) as T;
+  return out;
 }
 
 @Injectable()
@@ -100,23 +125,94 @@ export class InvProductCrudService {
    * network tab, and then the organisation has classification data it cannot see
    * or correct.
    */
-  private async assertGstPackForTaxFields(
+  private async assertPacksForFields(
     orgId: string,
     data: CreateProductInput | UpdateProductInput,
   ): Promise<void> {
-    const supplied = PRODUCT_TAX_FIELD_KEYS.filter((key) => key in data);
-    if (supplied.length === 0) return;
+    const gates = [
+      { keys: PRODUCT_TAX_FIELD_KEYS, on: "gst", code: "GST_PACK_DISABLED", label: "GST" },
+      { keys: PRODUCT_PHARMACY_FIELD_KEYS, on: "pharmacy", code: "PHARMACY_PACK_DISABLED", label: "pharmacy" },
+      { keys: PRODUCT_KIRANA_FIELD_KEYS, on: "kirana", code: "KIRANA_PACK_DISABLED", label: "kirana" },
+    ] as const;
+    const touched = gates
+      .map((gate) => ({ gate, supplied: gate.keys.filter((key) => key in data) }))
+      .filter(({ supplied }) => supplied.length > 0);
+    if (touched.length === 0) return;
+
     const settings = await this.settings.get(orgId);
-    if (settings.packs.gst) return;
-    throw new BadRequestException({
-      code: "GST_PACK_DISABLED",
-      message: `The GST pack is not enabled for this organisation, so ${supplied.join(", ")} cannot be set. Enable it in inventory settings first.`,
-    });
+    for (const { gate, supplied } of touched) {
+      if (settings.packs[gate.on]) continue;
+      throw new BadRequestException({
+        code: gate.code,
+        message: `The ${gate.label} pack is not enabled for this organisation, so ${supplied.join(", ")} cannot be set. Enable it in inventory settings first.`,
+      });
+    }
   }
 
-  private async gstPackEnabled(orgId: string): Promise<boolean> {
+  private async packVisibility(orgId: string): Promise<ProductPackVisibility> {
     const settings = await this.settings.get(orgId);
-    return settings.packs.gst;
+    return {
+      gst: settings.packs.gst,
+      pharmacy: settings.packs.pharmacy,
+      kirana: settings.packs.kirana,
+    };
+  }
+
+  /**
+   * E4. The entry contract has to stay coherent whichever half of it the patch
+   * touched — a request that sets `saleMode: "LOOSE"` and nothing else has to be
+   * checked against the modes already stored, not against its own two keys.
+   */
+  private async assertCaptureConfig(
+    orgId: string,
+    productId: number | null,
+    data: CreateProductInput | UpdateProductInput,
+  ): Promise<void> {
+    const touched = PRODUCT_KIRANA_FIELD_KEYS.some((key) => key in data);
+    if (!touched) return;
+
+    const stored = productId
+      ? await this.db.query.invProducts.findFirst({
+          where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
+          columns: {
+            saleMode: true, quantityInputMode: true, quantityPrecision: true,
+            uomId: true, salesUomId: true,
+          },
+        })
+      : null;
+
+    const saleMode = data.saleMode ?? stored?.saleMode ?? PACKED_WHOLE.saleMode;
+    assertCaptureRulesCoherent({
+      saleMode,
+      inputMode: data.quantityInputMode ?? stored?.quantityInputMode ?? PACKED_WHOLE.inputMode,
+      precision: data.quantityPrecision ?? stored?.quantityPrecision ?? PACKED_WHOLE.precision,
+    });
+
+    // A loose SKU that sells in a unit other than the one it is stocked in needs
+    // the factor between them, or every sale of 500 g removes 500 kg. Checked
+    // before the write, against the state the patch would leave behind — and only
+    // where the product already exists, because a product and its conversion rows
+    // cannot be written in one request.
+    if (saleMode !== "LOOSE" || !productId) return;
+    const uomId = data.uomId ?? stored?.uomId ?? null;
+    const salesUomId = data.salesUomId ?? stored?.salesUomId ?? null;
+    if (salesUomId === null || salesUomId === uomId) return;
+
+    const [unit, conversion] = await Promise.all([
+      this.db.query.invUom.findFirst({
+        where: and(eq(invUom.id, salesUomId), eq(invUom.orgId, orgId)),
+        columns: { abbreviation: true },
+      }),
+      this.db.query.invProductUomConversions.findFirst({
+        where: and(
+          eq(invProductUomConversions.orgId, orgId),
+          eq(invProductUomConversions.productId, productId),
+          eq(invProductUomConversions.uomId, salesUomId),
+        ),
+        columns: { uomId: true },
+      }),
+    ]);
+    assertUnitConvertible(unit?.abbreviation ?? `unit ${salesUomId}`, "salesUomId", Boolean(conversion));
   }
 
   private async assertNoStockForVariants(
@@ -192,9 +288,14 @@ export class InvProductCrudService {
     // list is cached per org, so one payload cannot be both the version that
     // carries HSN and the version that does not. Keying it also means turning the
     // pack on needs no cross-module cache invalidation from settings.
-    const showTax = await this.gstPackEnabled(orgId);
+    // E1. The packs are part of the key, not a post-filter on a shared entry:
+    // this list is cached per org, so one payload cannot be both the version that
+    // carries HSN and the version that does not. Keying them also means turning a
+    // pack on needs no cross-module cache invalidation from settings.
+    const packs = await this.packVisibility(orgId);
+    const packKey = `${packs.gst ? "gst" : "nogst"}:${packs.pharmacy ? "rx" : "norx"}:${packs.kirana ? "kir" : "nokir"}`;
     const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
-    const hash = `${showCost ? "cost" : "nocost"}:${showTax ? "gst" : "nogst"}:${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${includeDeleted ? "withdeleted" : "live"}:${limit}:${offset}${scopeSuffix}`;
+    const hash = `${showCost ? "cost" : "nocost"}:${packKey}:${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${includeDeleted ? "withdeleted" : "live"}:${limit}:${offset}${scopeSuffix}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.invProductsNamespace(orgId),
       hash,
@@ -245,7 +346,7 @@ export class InvProductCrudService {
 
         const visible = showCost ? items : stripCostFields(items);
         return {
-          items: showTax ? visible : stripProductTaxFields(visible),
+          items: stripProductPackFields(visible, packs),
           total: countResult[0]?.count ?? 0,
           page,
           totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
@@ -262,7 +363,7 @@ export class InvProductCrudService {
    */
   async getProduct(orgId: string, productId: number, userId?: string, includeDeleted = false) {
     const showCost = userId ? await this.costVisibility.canSeeCost(orgId, userId) : false;
-    const showTax = await this.gstPackEnabled(orgId);
+    const packs = await this.packVisibility(orgId);
     const product = await this.db.query.invProducts.findFirst({
       where: and(
         eq(invProducts.id, productId),
@@ -278,7 +379,7 @@ export class InvProductCrudService {
     });
     if (!product) throw new NotFoundException("Product not found");
     const visible = showCost ? product : stripCostFields(product);
-    return showTax ? visible : stripProductTaxFields(visible);
+    return stripProductPackFields(visible, packs);
   }
 
   private async generateNextSku(orgId: string): Promise<string> {
@@ -299,7 +400,8 @@ export class InvProductCrudService {
   }
 
   async createProduct(orgId: string, userId: string, data: CreateProductInput) {
-    await this.assertGstPackForTaxFields(orgId, data);
+    await this.assertPacksForFields(orgId, data);
+    await this.assertCaptureConfig(orgId, null, data);
     if (data.barcode) await assertNoBarcodeConflict(this.db, orgId, data.barcode);
     if (data.purchaseUomId)
       await this.assertUomBelongsToOrg(
@@ -378,7 +480,8 @@ export class InvProductCrudService {
     productId: number,
     data: UpdateProductInput,
   ) {
-    await this.assertGstPackForTaxFields(orgId, data);
+    await this.assertPacksForFields(orgId, data);
+    await this.assertCaptureConfig(orgId, productId, data);
     const existing = await this.db.query.invProducts.findFirst({
       where: and(
         eq(invProducts.id, productId),

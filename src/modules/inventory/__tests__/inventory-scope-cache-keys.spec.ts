@@ -51,6 +51,16 @@ describe("inventory scoped lists", () => {
     expect(offenders).toEqual([]);
   });
 
+  /**
+   * The allowlist is names, not shapes, and that is a deliberate trade.
+   *
+   * A guard that accepted "the scope value is passed to something" would accept
+   * passing it to a logger. Naming the predicate builders means a genuinely new
+   * one has to be added here — which is the moment somebody reads what it does.
+   * `anomalyVisibilityPredicate` (F3) was added after that reading: it returns
+   * `FALSE` for an empty scope rather than `TRUE`, so a user scoped to no
+   * warehouse sees nothing rather than everything.
+   */
   it("never resolves a scope it then fails to apply to a query", () => {
     const unused: string[] = [];
     for (const path of files) {
@@ -58,7 +68,7 @@ describe("inventory scoped lists", () => {
       if (!RESOLVES_SCOPE.test(source)) continue;
       const applies =
         /\.(warehouse|location|anyOf)\(/.test(source) ||
-        /warehousePredicate|locationPredicate|warehouseIdList|assertLocationsInScope|assertWarehouseVisible|assertLocationVisible|scopeFragment|stockScope/.test(
+        /warehousePredicate|locationPredicate|warehouseIdList|assertLocationsInScope|assertWarehouseVisible|assertLocationVisible|scopeFragment|stockScope|anomalyVisibilityPredicate/.test(
           source,
         );
       if (!applies) unused.push(path.replace(MODULE_ROOT + "/", ""));

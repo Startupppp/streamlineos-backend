@@ -16,6 +16,9 @@ import type {
 import { InvProductCrudService } from "./inv-product-crud.service";
 import { InvProductCatalogService } from "./inv-product-catalog.service";
 import { InvTaxTreatmentService, type LineTaxSnapshot } from "./inv-tax-treatment.service";
+import { InvPharmacyService } from "./inv-pharmacy.service";
+import { InvQuantityCaptureService } from "./inv-quantity-capture.service";
+import type { QuantityCaptureQuery, H1RegisterQuery } from "./dto/inv-products.schemas";
 
 @Injectable()
 export class InvProductsService {
@@ -23,7 +26,29 @@ export class InvProductsService {
     private readonly crud: InvProductCrudService,
     private readonly catalog: InvProductCatalogService,
     private readonly tax: InvTaxTreatmentService,
+    private readonly pharmacy: InvPharmacyService,
+    private readonly quantityCaptureService: InvQuantityCaptureService,
   ) {}
+
+  /** E3 — the dispensing-safety answer for one SKU. See `InvPharmacyService`. */
+  pharmacyProfile(orgId: string, productVariantId: number) {
+    return this.pharmacy.dispensingProfile(orgId, productVariantId);
+  }
+
+  /** E3 — what a receipt line for this SKU has to carry. */
+  receiptRequirements(orgId: string, productVariantId: number) {
+    return this.pharmacy.receiptRequirements(orgId, productVariantId);
+  }
+
+  /** E3 — the Schedule H1 register scope export, behind its jurisdiction flag. */
+  h1Register(orgId: string, query: H1RegisterQuery) {
+    return this.pharmacy.h1Register(orgId, query);
+  }
+
+  /** E4 — the quantity entry contract and the conversion snapshot for one SKU. */
+  quantityCapture(orgId: string, productVariantId: number, query: QuantityCaptureQuery) {
+    return this.quantityCaptureService.captureContract(orgId, productVariantId, query);
+  }
 
   resolveLineTax(
     orgId: string,

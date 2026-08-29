@@ -14,6 +14,7 @@ import {
   businessParties,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import type { InvNearExpiryPolicy } from "../stock-engine/stock-engine.types";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
@@ -420,6 +421,19 @@ export class SoCoreService {
     qty: string,
     strategy: string,
     expiryPolicy: string,
+    /**
+     * D2. Forwarded rather than dropped. This delegation used to stop at
+     * `expiryPolicy`, so every caller reaching the allocator through here — the
+     * reserve button, pick waves, pick substitution — allocated with no
+     * near-expiry tier and no customer shelf-life floor, whatever the
+     * organisation and the contract said. A parameter silently not forwarded is
+     * the same defect as a rule not written.
+     */
+    constraints?: {
+      nearExpiryPolicy: InvNearExpiryPolicy;
+      nearExpiryWindowDays: number;
+      minShelfLifeDays: number;
+    },
   ) {
     return this.lifecycle.findAvailableLotForLine(
       orgId,
@@ -428,6 +442,7 @@ export class SoCoreService {
       qty,
       strategy,
       expiryPolicy,
+      constraints,
     );
   }
 }

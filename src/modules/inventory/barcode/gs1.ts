@@ -168,3 +168,76 @@ export function parseGs1(payload: string): Gs1ParseResult {
     ...(unparsed ? { unparsed } : {}),
   };
 }
+
+/** The elements a printed label may carry, before they become an element string. */
+export interface Gs1LabelElements {
+  /** GTIN as held on the variant. Shorter forms are zero-padded to 14. */
+  gtin?: string | null;
+  lotNumber?: string | null;
+  /** ISO `YYYY-MM-DD`. */
+  expiryDate?: string | null;
+  serialNumber?: string | null;
+}
+
+/**
+ * G4 — the inverse of `parseGs1`, for the label this module has to print.
+ *
+ * Written here rather than in the label module for one reason: an encoder and a
+ * decoder that live apart drift apart, and the failure is silent both ways — a
+ * label the warehouse's own scanner cannot read, or worse, one it reads as a
+ * different lot. Sitting beside the parser, the round trip is a unit test rather
+ * than a hope.
+ *
+ * Two rules from the standard decide the ordering, and both are the ones usually
+ * got wrong:
+ *
+ *   **Fixed-length AIs are emitted first and carry no separator.** `01` is always
+ *   14 digits and `17` always 6, so a reader consumes them by count. Putting a
+ *   variable-length element between two fixed ones would force a separator where
+ *   readers do not expect one.
+ *
+ *   **Variable-length AIs are separated by FNC1, except the last.** A trailing
+ *   separator is legal but pointless, and some encoders emit it as literal data.
+ *
+ * Returns null when there is no GTIN: without one this is not a GS1 element
+ * string, and `parseGs1` would rightly refuse to read it as one — printing
+ * `10LOT-1` alone would produce a label that scans as the plain text "10LOT-1".
+ */
+export function formatGs1(elements: Gs1LabelElements): string | null {
+  const gtin = normaliseGtin(elements.gtin);
+  if (!gtin) return null;
+
+  let out = `01${gtin}`;
+
+  const expiry = formatGs1Date(elements.expiryDate);
+  if (expiry) out += `17${expiry}`;
+
+  const variable: string[] = [];
+  const lot = (elements.lotNumber ?? "").trim();
+  if (lot) variable.push(`10${lot.slice(0, 20)}`);
+  const serial = (elements.serialNumber ?? "").trim();
+  if (serial) variable.push(`21${serial.slice(0, 20)}`);
+
+  return out + variable.join(GS);
+}
+
+/** ISO `YYYY-MM-DD` to the `YYMMDD` the standard transmits. */
+export function formatGs1Date(iso: string | null | undefined): string | undefined {
+  if (!iso) return undefined;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!match) return undefined;
+  return `${match[1]!.slice(2)}${match[2]}${match[3]}`;
+}
+
+/**
+ * A GTIN is 14 digits in an element string, whatever length it is printed at.
+ * An EAN-13 or a UPC-A is the same number with leading zeros, so padding is the
+ * conversion rather than an approximation of one. Anything non-numeric is not a
+ * GTIN — a SKU sitting in the barcode column is common and must not be dressed
+ * up as one.
+ */
+function normaliseGtin(raw: string | null | undefined): string | null {
+  const digits = (raw ?? "").trim();
+  if (!/^\d{8,14}$/.test(digits)) return null;
+  return digits.padStart(14, "0");
+}

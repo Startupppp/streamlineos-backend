@@ -2353,6 +2353,41 @@
       "when": 1788134409012,
       "tag": "0564_india_compliance_adapters",
       "breakpoints": true
+    },
+    {
+      "idx": 337,
+      "version": "7",
+      "when": 1788134409013,
+      "tag": "0570_channel_snapshot_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 338,
+      "version": "7",
+      "when": 1788134409014,
+      "tag": "0571_inventory_ai_review_and_feedback",
+      "breakpoints": true
+    },
+    {
+      "idx": 339,
+      "version": "7",
+      "when": 1788134409015,
+      "tag": "0573_shelf_life_allocation_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 340,
+      "version": "7",
+      "when": 1788134409016,
+      "tag": "0574_inventory_pharmacy_kirana_packs",
+      "breakpoints": true
+    },
+    {
+      "idx": 341,
+      "version": "7",
+      "when": 1788134409017,
+      "tag": "0572_inventory_landed_cost",
+      "breakpoints": true
     }
   ]
 }

@@ -5,7 +5,11 @@ import type { AiGatewayService } from "../../../ai/core/gateway/ai-gateway.servi
 function serviceWithCandidates(
   candidates: Array<{ insightType: string; severity: string }>,
 ) {
-  const service = new InvAiService({} as never, {} as never);
+  // F3. The third argument is `WarehouseScopeService`: the insights list and
+  // status route now carry the same warehouse gate as the anomaly queue. The
+  // ops brief itself does not consult it — it is a count, not a row list — so an
+  // inert stand-in is enough here.
+  const service = new InvAiService({} as never, {} as never, {} as never);
   jest
     .spyOn(service as unknown as { collectCandidates: () => Promise<unknown> }, "collectCandidates")
     .mockResolvedValue(candidates);
@@ -82,11 +86,11 @@ describe("INV-101 the brief does not spend credits on its own", () => {
   };
 
   function build(brief: unknown, gateway: Partial<AiGatewayService>) {
+    // F4. Four dependencies now: the confirmation, replenishment and access
+    // services left with the reorder proposal (`proposals/`).
     return new InvAiExplainService(
       {} as never,
       gateway as AiGatewayService,
-      {} as never,
-      {} as never,
       {} as never,
       { getOpsBrief: jest.fn().mockResolvedValue(brief) } as never,
     );

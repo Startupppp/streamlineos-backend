@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -21,9 +20,14 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { InvAiExplainService } from "./inv-ai-explain.service";
+import { InvAiProposalService } from "./proposals/inv-ai-proposal.service";
+import {
+  invAiConfirmProposalSchema,
+  invAiReorderProposalSchema,
+  type InvAiConfirmProposalInput,
+  type InvAiReorderProposalInput,
+} from "./proposals/dto/inv-ai-proposal.schemas";
 
-const reorderProposalBodySchema = z.object({ variantId: z.number().int().positive(), warehouseId: z.number().int().positive().optional() });
-const confirmProposalBodySchema = z.object({ proposalId: z.number().int().positive(), token: z.string().min(1) });
 const digestQuerySchema = z.object({ narrate: z.enum(["true", "false"]).optional() });
 const supplierDelayQuerySchema = z.object({ vendorId: z.coerce.number().int().positive().optional() });
 type DigestQueryInput = z.infer<typeof digestQuerySchema>;
@@ -33,7 +37,10 @@ type SupplierDelayQueryInput = z.infer<typeof supplierDelayQuerySchema>;
 @Controller("inventory/ai")
 @UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvAiExplainController {
-  constructor(private readonly explainService: InvAiExplainService) {}
+  constructor(
+    private readonly explainService: InvAiExplainService,
+    private readonly proposals: InvAiProposalService,
+  ) {}
 
   @Post("insights/:insightId/explain")
   @UseGuards(PermissionGuard, RateLimitGuard)
@@ -80,17 +87,21 @@ export class InvAiExplainController {
     return this.explainService.getDigest(u.orgId, u.userId, query.narrate === "true");
   }
 
+  /**
+   * F4. The proposal is a **persisted C2 proposal**, narrated. The body names a
+   * variant and at most a site; it cannot name a quantity or a supplier, because
+   * `invAiReorderProposalSchema` has no field for either.
+   */
   @Post("reorder-proposal")
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
   getReorderProposal(
-    @Body() rawBody: unknown,
+    @Body(new ZodValidationPipe(invAiReorderProposalSchema))
+    body: InvAiReorderProposalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsed = reorderProposalBodySchema.safeParse(rawBody);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.explainService.getReorderProposal(u.orgId, u.userId, parsed.data.variantId, parsed.data.warehouseId);
+    return this.proposals.propose(u, body);
   }
 
   /**
@@ -107,12 +118,11 @@ export class InvAiExplainController {
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
   confirmReorderProposal(
-    @Body() rawBody: unknown,
+    @Body(new ZodValidationPipe(invAiConfirmProposalSchema))
+    body: InvAiConfirmProposalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsed = confirmProposalBodySchema.safeParse(rawBody);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.explainService.confirmReorderProposal(u, parsed.data.proposalId, parsed.data.token);
+    return this.proposals.confirm(u, body);
   }
 
   @Get("supplier-delay")

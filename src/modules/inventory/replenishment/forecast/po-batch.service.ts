@@ -95,6 +95,34 @@ export class PoBatchService {
     private readonly access: AccessService,
   ) {}
 
+  /**
+   * One persisted proposal, resolved exactly as the batchable list resolves it.
+   *
+   * F4 needs a single proposal rather than a page of them, and it must be the
+   * *same* resolution — the same reorder point, the same live position, the same
+   * `applyOrderPolicy` rounding, the same duplicate check. A caller that
+   * assembled its own version of this would be a second answer to "how much
+   * would we order", and the AI surface is the last place that should hold one.
+   *
+   * `null` rather than a throw for an id that resolves to nothing: a proposal
+   * belonging to another organisation and a proposal that has been superseded
+   * are indistinguishable from outside, and §4 requires the caller to render
+   * both as 404 rather than confirming which it was.
+   */
+  async proposalById(
+    orgId: string,
+    userId: string,
+    proposalId: number,
+  ): Promise<BatchableProposal | null> {
+    const [row] = await this.resolve(orgId, [proposalId]);
+    if (!row) return null;
+    // The same warehouse gate `resolveForBatching` applies before an order is
+    // raised. Reading a proposal for a site the caller cannot open would be a
+    // way to read that site's position by asking the AI about it.
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, row.warehouseId);
+    return toBatchableProposal(row);
+  }
+
   /** The persisted proposals a buyer could act on, newest version per site. */
   async batchable(
     orgId: string,

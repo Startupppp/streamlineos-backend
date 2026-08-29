@@ -139,7 +139,7 @@ export class AiGatewayRunnerHelper {
       costUsd,
     };
 
-    return { ok: true, data: result.data, aiUsage };
+    return { ok: true, data: result.data, aiUsage, correlationId };
   }
 
   async runStructuredWithImage<T>(
@@ -355,6 +355,6 @@ export class AiGatewayRunnerHelper {
       costUsd,
     };
 
-    return { ok: true, data: result.data, aiUsage };
+    return { ok: true, data: result.data, aiUsage, correlationId };
   }
 }

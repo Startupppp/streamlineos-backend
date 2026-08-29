@@ -1,28 +1,22 @@
 import { InvAiService } from "./inv-ai.service";
-import { InvValuationService } from "../valuation/inv-valuation.service";
-import { InvReplenishmentService } from "../replenishment/inv-replenishment.service";
 
 const mockCache = { cached: jest.fn((_, fn) => fn()), invalidate: jest.fn(), invalidatePattern: jest.fn() };
-const mockNumSeq = { next: jest.fn() };
+
+// F3. `null` is the org-wide scope, which is what these dedup and detector tests
+// are about — the gate itself is asserted in `__tests__/inv-anomaly-queue.spec.ts`
+// and in the eval suite, against a genuinely restricted fixture.
+const mockWarehouseScope = { resolve: jest.fn(async () => null) };
 
 function buildAiService(db: object) {
-  return new InvAiService(db as never, mockCache as never);
+  return new InvAiService(db as never, mockCache as never, mockWarehouseScope as never);
 }
 
-const mockWarehouseScope = {
-  resolve: jest.fn(async () => null),
-  locationPredicate: jest.fn(() => ({}) as never),
-  warehousePredicate: jest.fn(() => ({}) as never),
-  warehouseIdList: jest.fn(() => null),
-};
-
-function _buildValuationService(db: object) {
-  return new InvValuationService(db as never, mockCache as never, mockWarehouseScope as never);
-}
-
-function _buildReplenishmentService(db: object) {
-  return new InvReplenishmentService(db as never, mockCache as never, mockNumSeq as never);
-}
+// F3. The `_buildValuationService` and `_buildReplenishmentService` helpers that
+// used to sit here constructed two services from other modules and were never
+// called — the `InvValuationService` and `InvReplenishmentService` describes
+// below re-implement the arithmetic inline rather than exercising either class.
+// They were dead weight that broke this file's typecheck every time one of those
+// constructors changed, which is a build failure with no test behind it.
 
 describe("InvAiService - insight deduplication", () => {
   beforeEach(() => jest.clearAllMocks());

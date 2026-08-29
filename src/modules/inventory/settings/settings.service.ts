@@ -79,6 +79,18 @@ export class SettingsService {
         "The GST composition scheme needs the gst pack enabled — enable it in the same change or leave the mode as REGULAR",
       );
     }
+    // E3. The same shape of rule, for the same reason. With the pharmacy pack
+    // off no product carries a drug schedule, so a Schedule H1 register would be
+    // a permanently empty screen calling itself a register — and it would come
+    // to life months later when somebody turned the pack on, without anyone
+    // deciding it should. Refused in both directions, so turning the pack off
+    // underneath an enabled register is refused too.
+    const nextH1 = input.pharmacyH1RegisterEnabled ?? current.pharmacyH1RegisterEnabled;
+    if (nextH1 && !nextPacks.pharmacy) {
+      throw new BadRequestException(
+        "The Schedule H1 register export needs the pharmacy pack enabled — enable it in the same change, or turn the register off",
+      );
+    }
     const updated = await this.invSettings.update(orgId, input, userId);
     await this.cache.invalidate(CACHE_KEYS.invSettings(orgId));
     return updated;

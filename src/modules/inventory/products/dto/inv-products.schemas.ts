@@ -40,6 +40,55 @@ export const productTaxFields = {
 /** The keys the `gst` pack owns, named once so the gate and the stripper agree. */
 export const PRODUCT_TAX_FIELD_KEYS = ["hsnCode", "taxTreatment", "gstRate"] as const;
 
+export const DRUG_SCHEDULES = ["OTC", "H", "H1", "X", "NARCOTIC"] as const;
+export const SALE_MODES = ["PACKED", "LOOSE"] as const;
+export const QTY_INPUT_MODES = ["WHOLE", "DECIMAL", "SCALE"] as const;
+
+/**
+ * E3. MRP in integer paise, never rupees and never a float. A ceiling that
+ * arrives as 12550 and leaves as 125.49999999999999 is the class of error nobody
+ * can argue with afterwards, and JSON has one number type, so the unit has to be
+ * the minor one. Capped an order of magnitude above anything real so a rupee
+ * figure pasted into a paise field is refused rather than stored as ₹1.25.
+ */
+const mrpPaiseSchema = z
+  .number()
+  .int("MRP must be a whole number of paise")
+  .positive("MRP must be greater than zero — leave it unset if there is no printed price")
+  .max(1_000_000_000, "MRP is in paise, not rupees");
+
+/**
+ * E3 — the pharmacy inputs, accepted only while the `pharmacy` pack is on. The
+ * service refuses them otherwise rather than writing a column the organisation
+ * cannot see. `null` clears, `undefined` leaves alone.
+ */
+export const productPharmacyFields = {
+  mrpPaise: mrpPaiseSchema.nullable().optional(),
+  mrpRequired: z.boolean().optional(),
+  drugSchedule: z.enum(DRUG_SCHEDULES).nullable().optional(),
+  isHighAlert: z.boolean().optional(),
+  lasaGroup: z.string().trim().min(1).max(100).nullable().optional(),
+};
+
+export const PRODUCT_PHARMACY_FIELD_KEYS = [
+  "mrpPaise", "mrpRequired", "drugSchedule", "isHighAlert", "lasaGroup",
+] as const;
+
+/**
+ * E4 — the kirana inputs, accepted only while the `kirana` pack is on. Not
+ * nullable: all three are NOT NULL with a default, so there is no "unset" state
+ * to return them to — a SKU is always either packed or loose.
+ */
+export const productKiranaFields = {
+  saleMode: z.enum(SALE_MODES).optional(),
+  quantityInputMode: z.enum(QTY_INPUT_MODES).optional(),
+  quantityPrecision: z.number().int().min(0).max(4).optional(),
+};
+
+export const PRODUCT_KIRANA_FIELD_KEYS = [
+  "saleMode", "quantityInputMode", "quantityPrecision",
+] as const;
+
 export const listProductsSchema = z.object({
   status: z.enum(["ACTIVE", "INACTIVE", "DISCONTINUED"]).optional(),
   /**
@@ -95,6 +144,8 @@ export const createProductSchema = z.object({
   imageUrl: z.string().url().optional(),
   customFields: z.record(z.string(), z.unknown()).optional(),
   ...productTaxFields,
+  ...productPharmacyFields,
+  ...productKiranaFields,
 }).strict();
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
@@ -218,3 +269,26 @@ export const resolveLineTaxSchema = z.object({
   taxRate: gstRateSchema.optional(),
 }).strict();
 export type ResolveLineTaxQuery = z.infer<typeof resolveLineTaxSchema>;
+
+/**
+ * E4 — what a quantity for this SKU may look like, and, when one is supplied,
+ * the conversion snapshot a document line would record for it.
+ *
+ * The quantity arrives as a **string**. A scale reading routed through a JSON
+ * number has already been through a float by the time this schema sees it, and
+ * `2.995` × 1000 in floating point is 2994.9999999999995 grams — a permanent
+ * discrepancy that no stock count will ever explain.
+ */
+export const quantityCaptureSchema = z.object({
+  quantity: z.string().trim().regex(DECIMAL_PATTERN, "quantity must be a decimal with up to 4 places").optional(),
+  /** The unit the quantity was entered in. Absent means the product's own stock unit. */
+  uomId: z.coerce.number().int().positive().optional(),
+}).strict();
+export type QuantityCaptureQuery = z.infer<typeof quantityCaptureSchema>;
+
+/** E3 — the Schedule H1 register scope. A list, so it pages like every other list. */
+export const h1RegisterSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+}).strict();
+export type H1RegisterQuery = z.infer<typeof h1RegisterSchema>;

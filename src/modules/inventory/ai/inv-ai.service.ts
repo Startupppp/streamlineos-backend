@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import {
   invAiInsights,
@@ -14,7 +15,32 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { availableQtySumSql } from "../stock-engine/available-sql";
 import { cmpDec, isNegative, isPositive } from "../stock-engine/decimal";
+import { ANOMALY_WINDOWS, INV_ANOMALY_DETECTORS } from "./anomalies/inv-anomaly-detectors";
+import { anomalyVisibilityPredicate } from "./anomalies/inv-anomaly-visibility";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ListInsightsInput, UpdateInsightStatusInput, InsightCandidate } from "./dto/ai-insights.schemas";
+
+/**
+ * F3. The fingerprint of the figures a finding was raised on.
+ *
+ * A finding is a claim about a moment. Between raising "SKU-7 is short" and a
+ * human reading it, a receipt can land and the claim can stop being true — and
+ * the row would still read exactly the same. Hashing the material figures at
+ * detection time is what lets the queue answer "is this still true?" without
+ * re-running the detector, and it is what makes F6's `STALE` verdict a
+ * different fact from `WRONG` rather than a shade of it.
+ *
+ * Only figures that would change the decision go in. A cosmetic field would
+ * make every finding look stale the moment a product was renamed, and an alarm
+ * that cries wolf gets clicked through.
+ */
+function hashAnomalyEvidence(parts: readonly unknown[]): string {
+  return createHash("sha256")
+    .update(parts.map((value) => String(value ?? "")).join("|"))
+    .digest("hex")
+    .slice(0, 32);
+}
 
 /**
  * Two decimal places for a sentence a human reads, rounded half-up on the
@@ -54,14 +80,18 @@ export interface InventoryOpsBrief {
  * One row per detector. A signal with no route would be a dead end -- the
  * acceptance criterion is that every figure in the brief can be opened on the
  * screen that computed it.
+ *
+ * F3. The label and the route now come from the detector registry rather than
+ * from a second list here. Two lists is how a detector ends up described one way
+ * on the brief and another way in the queue.
  */
 const OPS_BRIEF_SIGNALS = [
-  { insightType: "stockout_risk", label: "Stockout risk", href: "/inventory/replenishment" },
-  { insightType: "expiry_risk", label: "Expiring stock", href: "/inventory/reports/expiry" },
-  { insightType: "negative_stock", label: "Negative stock", href: "/inventory/stock" },
-  { insightType: "unusual_adjustments", label: "Unusual adjustments", href: "/inventory/stock/adjustments" },
-  { insightType: "vendor_delay", label: "Vendor delays", href: "/inventory/vendors" },
-  { insightType: "dead_stock", label: "Dead stock", href: "/inventory/reports/slow-moving" },
+  INV_ANOMALY_DETECTORS.stockout_risk,
+  INV_ANOMALY_DETECTORS.expiry_risk,
+  INV_ANOMALY_DETECTORS.negative_stock,
+  INV_ANOMALY_DETECTORS.unusual_adjustments,
+  INV_ANOMALY_DETECTORS.vendor_delay,
+  INV_ANOMALY_DETECTORS.dead_stock,
 ] as const;
 
 const SEVERITY_RANK: Record<string, number> = { high: 3, medium: 2, low: 1 };
@@ -84,12 +114,24 @@ export class InvAiService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async listInsights(orgId: string, filters: ListInsightsInput) {
+  /**
+   * F3. The older insights list, now behind the same gate as the queue.
+   *
+   * These two routes and the anomaly queue read the same table. Before F3 the
+   * queue was warehouse-scoped and this pair were not, which is the worst
+   * possible arrangement: a gate a second route walks around only makes the
+   * audit look better. Both now call `anomalyVisibilityPredicate`, so there is
+   * one definition of who may see a finding and no second one to forget.
+   */
+  async listInsights(user: CurrentUserContext, filters: ListInsightsInput) {
+    const { orgId, userId } = user;
     const { status, type, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const conditions = [eq(invAiInsights.orgId, orgId)];
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    const conditions = [eq(invAiInsights.orgId, orgId), anomalyVisibilityPredicate(scope)];
     if (status) conditions.push(eq(invAiInsights.status, status));
     if (type) conditions.push(eq(invAiInsights.insightType, type));
 
@@ -136,6 +178,11 @@ export class InvAiService {
         body: c.body,
         sourceRefs: { ...c.sourceRefs, _key: c.sourceKey },
         status: "NEW" as const,
+        // F3. Stored on the row, not re-derived on read: what the detector
+        // meant *then* survives a threshold change made later.
+        warehouseId: c.warehouseId,
+        windowDays: c.windowDays,
+        evidenceHash: c.evidenceHash,
       })),
     );
 
@@ -143,17 +190,43 @@ export class InvAiService {
     return { generated: newCandidates.length };
   }
 
-  async updateInsightStatus(orgId: string, insightId: number, body: UpdateInsightStatusInput) {
-    const insight = await this.db.query.invAiInsights.findFirst({
-      where: and(eq(invAiInsights.id, insightId), eq(invAiInsights.orgId, orgId)),
-    });
-    if (!insight) throw new NotFoundException("Insight not found");
+  /**
+   * F3. Acknowledging or dismissing through the older route.
+   *
+   * Two changes, and both are about the write rather than the read. The scope
+   * predicate is applied to the `UPDATE` itself, so an id learned some other way
+   * — a stale tab, a link from a colleague at another site — is not a capability;
+   * and the actor and time are recorded, because a status with nobody's name on
+   * it is a queue nobody is accountable for.
+   *
+   * The pre-read is gone. It was a `findFirst` followed by an id-only update,
+   * which is a check that does not gate the write it precedes; the affected-row
+   * count does, and it is one statement rather than two.
+   */
+  async updateInsightStatus(
+    user: CurrentUserContext,
+    insightId: number,
+    body: UpdateInsightStatusInput,
+  ) {
+    const { orgId, userId } = user;
+    const scope = await this.warehouseScope.resolve(orgId, userId);
 
     const [updated] = await this.db
       .update(invAiInsights)
-      .set({ status: body.status })
-      .where(and(eq(invAiInsights.id, insightId), eq(invAiInsights.orgId, orgId)))
+      .set({ status: body.status, acknowledgedBy: userId, acknowledgedAt: new Date() })
+      .where(
+        and(
+          eq(invAiInsights.id, insightId),
+          eq(invAiInsights.orgId, orgId),
+          anomalyVisibilityPredicate(scope),
+        ),
+      )
       .returning();
+
+    // A miss is a miss, whatever caused it — wrong tenant, wrong site, or no such
+    // row. §4's existence-oracle rule: the caller learns this id is not theirs
+    // to act on and nothing more.
+    if (!updated) throw new NotFoundException("Not found");
 
     await this.cache.invalidate(CACHE_KEYS.invAiInsightsList(orgId));
     return updated;
@@ -177,10 +250,10 @@ export class InvAiService {
 
     const signals = OPS_BRIEF_SIGNALS.map((definition) => {
       const matching = candidates.filter(
-        (candidate) => candidate.insightType === definition.insightType,
+        (candidate) => candidate.insightType === definition.type,
       );
       return {
-        key: definition.insightType,
+        key: definition.type,
         label: definition.label,
         href: definition.href,
         count: matching.length,
@@ -212,7 +285,10 @@ export class InvAiService {
 
   private async detectStockoutRisk(orgId: string): Promise<InsightCandidate[]> {
     const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    // F3. The window is the registry's, and the registry is what the queue
+    // shows the reader. One number, so the caption cannot describe a window
+    // the query did not use.
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - ANOMALY_WINDOWS.demandHistoryDays);
 
     const rows = await this.db
       .select({
@@ -246,14 +322,25 @@ export class InvAiService {
         severity: isNegative(r.available) ? ("high" as const) : ("medium" as const),
         title: `Stockout risk: ${r.variantSku}`,
         body: `Available qty (${displayQty(r.available)}) is below weekly demand (${displayQty(r.weeklySales)}).`,
-        sourceRefs: { variantId: r.variantId, variantSku: r.variantSku },
+        sourceRefs: {
+          variantId: r.variantId,
+          variantSku: r.variantSku,
+          available: r.available,
+          weeklySales: r.weeklySales,
+        },
         sourceKey: String(r.variantId),
+        // The demand series is summed across every site, so this figure belongs
+        // to the organisation and not to a warehouse. Saying so is what keeps it
+        // out of a site operator's queue.
+        warehouseId: null,
+        windowDays: ANOMALY_WINDOWS.demandHistoryDays,
+        evidenceHash: hashAnomalyEvidence([r.variantId, r.available, r.weeklySales]),
       }));
   }
 
   private async detectDeadStock(orgId: string): Promise<InsightCandidate[]> {
     const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - ANOMALY_WINDOWS.deadStockDays);
 
     const rows = await this.db
       .select({
@@ -285,9 +372,12 @@ export class InvAiService {
         insightType: "dead_stock" as const,
         severity: "medium" as const,
         title: `Dead stock: ${r.variantSku}`,
-        body: `No sales or outbound movement in 90 days. Stock value: ${Math.round(parseFloat(r.value) * 100) / 100}.`,
-        sourceRefs: { variantId: r.variantId, variantSku: r.variantSku, value: r.value },
+        body: `No sales or outbound movement in ${ANOMALY_WINDOWS.deadStockDays} days. Stock value: ${Math.round(parseFloat(r.value) * 100) / 100}.`,
+        sourceRefs: { variantId: r.variantId, variantSku: r.variantSku, value: r.value, onHand: r.onHand },
         sourceKey: String(r.variantId),
+        warehouseId: null,
+        windowDays: ANOMALY_WINDOWS.deadStockDays,
+        evidenceHash: hashAnomalyEvidence([r.variantId, r.onHand, r.value]),
       }));
   }
 
@@ -303,9 +393,6 @@ export class InvAiService {
       limit: 50,
     });
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
     return rows.map((po) => {
       const expectedDate = po.expectedDeliveryDate ? new Date(po.expectedDeliveryDate) : null;
       const daysDelayed = expectedDate ? Math.floor((Date.now() - expectedDate.getTime()) / 86400000) : 0;
@@ -316,6 +403,11 @@ export class InvAiService {
         body: `PO ${po.poNumber} from ${po.vendor.name} is ${daysDelayed} day(s) past expected delivery.`,
         sourceRefs: { poId: po.id, poNumber: po.poNumber, vendorId: po.vendorId, vendorName: po.vendor.name, daysDelayed },
         sourceKey: String(po.id),
+        // F3. A purchase order names exactly one destination, so this finding
+        // does belong to a site and a site operator should see it.
+        warehouseId: po.warehouseId ?? null,
+        windowDays: ANOMALY_WINDOWS.vendorDelayDays,
+        evidenceHash: hashAnomalyEvidence([po.id, po.status, po.expectedDeliveryDate]),
       };
     });
   }
@@ -339,14 +431,19 @@ export class InvAiService {
       body: `Stock on hand is negative (${r.onHand}). Investigate overselling or missing receipts.`,
       sourceRefs: { variantId: r.variantId, variantSku: r.variantSku, onHand: r.onHand },
       sourceKey: String(r.variantId),
+      // Summed across every location the SKU sits in, so the figure is org-wide
+      // even when only one site is negative — the sum is what was measured.
+      warehouseId: null,
+      windowDays: ANOMALY_WINDOWS.negativeStockDays,
+      evidenceHash: hashAnomalyEvidence([r.variantId, r.onHand]),
     }));
   }
 
   private async detectUnusualAdjustments(orgId: string): Promise<InsightCandidate[]> {
     const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - ANOMALY_WINDOWS.adjustmentRecentDays);
     const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - ANOMALY_WINDOWS.adjustmentBaselineDays);
 
     const rows = await this.db
       .select({
@@ -371,19 +468,22 @@ export class InvAiService {
       insightType: "unusual_adjustments" as const,
       severity: "medium" as const,
       title: `Unusual adjustments: ${r.variantSku}`,
-      body: `${r.recentCount} adjustments in the last 7 days vs ${Math.round((r.trailingAvg ?? 0) * 10) / 10} weekly average.`,
-      sourceRefs: { variantId: r.variantId, variantSku: r.variantSku, recentCount: r.recentCount },
+      body: `${r.recentCount} adjustments in the last ${ANOMALY_WINDOWS.adjustmentRecentDays} days vs ${Math.round((r.trailingAvg ?? 0) * 10) / 10} weekly average.`,
+      sourceRefs: { variantId: r.variantId, variantSku: r.variantSku, recentCount: r.recentCount, trailingAvg: r.trailingAvg },
       sourceKey: String(r.variantId),
+      warehouseId: null,
+      windowDays: ANOMALY_WINDOWS.adjustmentRecentDays,
+      evidenceHash: hashAnomalyEvidence([r.variantId, r.recentCount, r.trailingAvg]),
     }));
   }
 
   private async detectExpiryRisk(orgId: string): Promise<InsightCandidate[]> {
-    const fourteenDaysOut = new Date();
-    fourteenDaysOut.setDate(fourteenDaysOut.getDate() + 14);
-    const cutoff = fourteenDaysOut.toISOString().slice(0, 10);
-    const sevenDaysOut = new Date();
-    sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
-    const urgentCutoff = sevenDaysOut.toISOString().slice(0, 10);
+    const horizon = new Date();
+    horizon.setDate(horizon.getDate() + ANOMALY_WINDOWS.expiryHorizonDays);
+    const cutoff = horizon.toISOString().slice(0, 10);
+    const urgent = new Date();
+    urgent.setDate(urgent.getDate() + ANOMALY_WINDOWS.expiryUrgentDays);
+    const urgentCutoff = urgent.toISOString().slice(0, 10);
 
     const rows = await this.db
       .select({
@@ -397,6 +497,23 @@ export class InvAiService {
           FROM inv_stock_levels sl
           WHERE sl.lot_id = ${invLots.id} AND sl.org_id = ${orgId}
         ), 0)::text`,
+        /**
+         * F3. The site, but only when there is exactly one.
+         *
+         * A lot's stock can sit in several warehouses, and attributing the whole
+         * quantity to one of them would put a figure on a site it was not
+         * computed for. `NULL` when it spans sites is the honest answer, and the
+         * queue reads that as org-wide information.
+         */
+        soleWarehouseId: sql<number | null>`(
+          SELECT CASE WHEN COUNT(DISTINCT loc.warehouse_id) = 1
+                      THEN MIN(loc.warehouse_id) END
+          FROM inv_stock_levels sl
+          JOIN inv_locations loc ON loc.id = sl.location_id
+          WHERE sl.lot_id = ${invLots.id}
+            AND sl.org_id = ${orgId}
+            AND sl.on_hand::numeric > 0
+        )`,
       })
       .from(invLots)
       .innerJoin(invProductVariants, eq(invLots.productVariantId, invProductVariants.id))
@@ -414,8 +531,18 @@ export class InvAiService {
       severity: (r.expiryDate ?? "") <= urgentCutoff ? ("high" as const) : ("medium" as const),
       title: `Expiry risk: ${r.variantSku} lot ${r.lotNumber}`,
       body: `Lot ${r.lotNumber} (${r.variantSku}) expires on ${r.expiryDate} with ${r.onHand} units remaining.`,
-      sourceRefs: { lotId: r.lotId, lotNumber: r.lotNumber, variantId: r.variantId, expiryDate: r.expiryDate, onHand: r.onHand },
+      sourceRefs: {
+        lotId: r.lotId,
+        lotNumber: r.lotNumber,
+        variantId: r.variantId,
+        expiryDate: r.expiryDate,
+        onHand: r.onHand,
+        warehouseId: r.soleWarehouseId ?? null,
+      },
       sourceKey: String(r.lotId),
+      warehouseId: r.soleWarehouseId ?? null,
+      windowDays: ANOMALY_WINDOWS.expiryHorizonDays,
+      evidenceHash: hashAnomalyEvidence([r.lotId, r.expiryDate, r.onHand]),
     }));
   }
 }

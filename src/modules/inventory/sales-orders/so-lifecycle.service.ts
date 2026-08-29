@@ -22,6 +22,7 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { subDec, cmpDec, availableQty } from "../stock-engine/decimal";
 import { verdictFor, type EligibilityPolicy, type LotFacts } from "./lot-eligibility";
+import { clientBehindSource, resolveShelfLifeFloor } from "../settings/min-shelf-life";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
@@ -320,10 +321,19 @@ export class SoLifecycleService {
     strategy: string,
     expiryPolicy: string,
     /**
-     * D2. Short-dated stock. Optional so every existing caller keeps its
-     * behaviour — omitted, it reads as `ALLOW` and nothing is deprioritized.
+     * D2. The two constraints that are not about the lot alone.
+     *
+     * Optional so every existing caller keeps its behaviour — omitted, near
+     * expiry reads as `ALLOW` and the shelf-life floor as none, which is exactly
+     * what those callers did before. `minShelfLifeDays` is the destination's
+     * contracted floor and belongs to the *customer*, so only a caller that
+     * knows which customer it is allocating for can supply it.
      */
-    nearExpiry?: { policy: EligibilityPolicy["nearExpiryPolicy"]; windowDays: number },
+    constraints?: {
+      nearExpiryPolicy: EligibilityPolicy["nearExpiryPolicy"];
+      nearExpiryWindowDays: number;
+      minShelfLifeDays: number;
+    },
   ): Promise<{ locationId: number; lotId?: number } | null> {
     const levels = await this.db.query.invStockLevels.findMany({
       where: and(
@@ -357,8 +367,9 @@ export class SoLifecycleService {
     // override path cannot drift into two opinions about the same lot.
     const policy: EligibilityPolicy = {
       expiryPolicy,
-      nearExpiryPolicy: nearExpiry?.policy ?? "ALLOW",
-      nearExpiryWindowDays: nearExpiry?.windowDays ?? 0,
+      nearExpiryPolicy: constraints?.nearExpiryPolicy ?? "ALLOW",
+      nearExpiryWindowDays: constraints?.nearExpiryWindowDays ?? 0,
+      minShelfLifeDays: constraints?.minShelfLifeDays ?? 0,
     };
 
     const candidates = levels.filter((level) => {
@@ -430,6 +441,17 @@ export class SoLifecycleService {
     warehouseId: number | null | undefined,
   ) {
     const settings = await this.settingsService.get(orgId);
+
+    // D2. The customer's contracted minimum shelf life, resolved once for the
+    // whole order rather than per line — it is a term of one agreement, not a
+    // property of a product. When it removes every candidate the order lands
+    // PARTIALLY_RESERVED, which is the right answer: there is stock, and none of
+    // it is stock this customer agreed to accept. Somebody holding
+    // `inventory:allocation:override` then chooses a lot on purpose, with a
+    // reason, and that choice is recorded.
+    const clientId = await clientBehindSource(this.db, orgId, "inv_sales_order", String(soId));
+    const floor = await resolveShelfLifeFloor(this.db, orgId, clientId);
+
     let allReserved = true;
 
     const availabilities = await Promise.all(
@@ -441,7 +463,11 @@ export class SoLifecycleService {
           line.quantity,
           settings.reservationStrategy,
           settings.expiryReservationPolicy,
-          { policy: settings.nearExpiryPolicy, windowDays: settings.nearExpiryWindowDays },
+          {
+            nearExpiryPolicy: settings.nearExpiryPolicy,
+            nearExpiryWindowDays: settings.nearExpiryWindowDays,
+            minShelfLifeDays: floor.days,
+          },
         ),
       ),
     );

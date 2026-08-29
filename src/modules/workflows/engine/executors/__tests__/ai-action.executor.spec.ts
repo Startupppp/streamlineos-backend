@@ -36,7 +36,8 @@ const stubUsage: AiUsageMeta = {
 };
 
 function ok(data: string): AiInvokeWithUsageResult<string> {
-  return { ok: true, data, aiUsage: stubUsage };
+  // F6. The with-usage success branch carries the gateway's correlation id.
+  return { ok: true, data, aiUsage: stubUsage, correlationId: "corr-stub" };
 }
 
 function fail(

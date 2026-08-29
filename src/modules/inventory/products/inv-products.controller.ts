@@ -14,7 +14,9 @@ import {
   listProductsSchema, createProductSchema, updateProductSchema,
   createVariantSchema, updateVariantSchema, createCategorySchema, createUomSchema, listVariantsSchema,
   updateCategorySchema, updateUomSchema, resolveLineTaxSchema,
+  quantityCaptureSchema, h1RegisterSchema,
   type ListProductsInput, type CreateProductInput, type UpdateProductInput, type ResolveLineTaxQuery,
+  type QuantityCaptureQuery, type H1RegisterQuery,
   type CreateVariantInput, type UpdateVariantInput, type CreateCategoryInput, type CreateUomInput, type ListVariantsInput,
   type UpdateCategoryInput, type UpdateUomInput,
 } from "./dto/inv-products.schemas";
@@ -126,6 +128,80 @@ export class InvProductsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.products.resolveLineTax(u.orgId, variantId, query);
+  }
+
+  /**
+   * E3 — everything the person holding the pack needs, at the moment they are
+   * holding it: the LASA and high-alert warnings, what this product is
+   * confusable with, and the MRP printed on each batch.
+   *
+   * Nothing here refuses a dispense; `safety.blocksDispense` says so in the
+   * payload. The one thing the pharmacy pack blocks is a receipt missing an MRP
+   * — see `receipt-requirements` below.
+   *
+   * ⚠ This is only a safety feature where it is called. A warning delivered on a
+   * catalogue page nobody has open during a pick is decoration: the caller that
+   * makes it real is whatever the picker touches at the shelf, which in this
+   * codebase is `POST /inventory/barcode/scan`.
+   */
+  @Get("variants/:variantId/pharmacy")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:read")
+  pharmacyProfile(
+    @Param("variantId", ParseIntPipe) variantId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.products.pharmacyProfile(u.orgId, variantId);
+  }
+
+  /**
+   * E3 — what a receipt line for this SKU has to carry before it may be posted.
+   *
+   * Read by the receiving screen so the operator is told at the door rather than
+   * at post, and by the same service the post transaction calls, so the two
+   * cannot disagree about what is required.
+   */
+  @Get("variants/:variantId/receipt-requirements")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:read")
+  receiptRequirements(
+    @Param("variantId", ParseIntPipe) variantId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.products.receiptRequirements(u.orgId, variantId);
+  }
+
+  /**
+   * E4 — what a quantity for this SKU may look like, and what a document line
+   * would record for the one supplied.
+   *
+   * A GET with the quantity in the query: it reads a configuration, applies a
+   * stored conversion factor and writes nothing.
+   */
+  @Get("variants/:variantId/quantity-capture")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:read")
+  quantityCapture(
+    @Param("variantId", ParseIntPipe) variantId: number,
+    @Query(new ZodValidationPipe(quantityCaptureSchema)) query: QuantityCaptureQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.products.quantityCapture(u.orgId, variantId, query);
+  }
+
+  /**
+   * E3 — the Schedule H1 register export, behind its own jurisdiction flag and
+   * default off. A stub: it names the products in scope and states that the
+   * dispensing rows are not held here. It makes no compliance claim.
+   */
+  @Get("pharmacy/h1-register")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:read")
+  h1Register(
+    @Query(new ZodValidationPipe(h1RegisterSchema)) query: H1RegisterQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.products.h1Register(u.orgId, query);
   }
 
   @Post(":productId/archive")

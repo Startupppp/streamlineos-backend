@@ -32,6 +32,10 @@ import { ForecastPersistenceService } from "./forecast/forecast-persistence.serv
     InvForecastDriftController,
   ],
   providers: [InvReplenishmentService, InvStockLowConsumerService, DemandBaselineService, SafetyStockPolicyService, LeadTimeService, ReorderProposalService, ReplenishmentSimulatorService, TransferRecommendationService, TransferApprovalService, PoBatchService, ForecastDriftService, DriftMonitorService, ForecastPersistenceService],
-  exports: [DemandBaselineService, InvReplenishmentService, LeadTimeService, ForecastPersistenceService],
+  // F4. `PoBatchService` is exported because the AI proposal surface must reach
+  // the *same* quantity the buyer's own batching screen would raise, not a
+  // second derivation of it. Exporting the service is what makes "call it,
+  // don't reimplement it" possible from `inventory/ai/`.
+  exports: [DemandBaselineService, InvReplenishmentService, LeadTimeService, ForecastPersistenceService, PoBatchService],
 })
 export class InvReplenishmentModule {}

@@ -30,7 +30,7 @@ export class InvAiController {
     @Query(new ZodValidationPipe(listInsightsSchema)) filters: ListInsightsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.aiService.listInsights(u.orgId, filters);
+    return this.aiService.listInsights(u, filters);
   }
 
   @Post("insights/generate")
@@ -50,6 +50,6 @@ export class InvAiController {
     @Body(new ZodValidationPipe(updateInsightStatusSchema)) body: UpdateInsightStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.aiService.updateInsightStatus(u.orgId, insightId, body);
+    return this.aiService.updateInsightStatus(u, insightId, body);
   }
 }

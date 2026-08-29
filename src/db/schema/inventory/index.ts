@@ -8,6 +8,7 @@ export * from "./traceability";
 export * from "./operations";
 export * from "./putaway";
 export * from "./valuation";
+export * from "./landed-cost";
 export * from "./quality";
 export * from "./shipping";
 export * from "./channels";

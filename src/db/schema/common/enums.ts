@@ -413,6 +413,50 @@ export const invTaxTreatmentEnum = pgEnum("inv_tax_treatment", [
  */
 export const invGstModeEnum = pgEnum("inv_gst_mode", ["REGULAR", "COMPOSITION"]);
 
+/**
+ * E3 — the schedule a medicine is sold under, behind the `pharmacy` pack.
+ *
+ * Recorded because it decides what a counter is allowed to do, not because
+ * inventory files anything: Schedule H and H1 need a prescription, H1 and X
+ * additionally need an entry in a bound register, and narcotics are counted and
+ * reconciled separately. `OTC` is stated rather than left as NULL where the
+ * organisation has actually classified the SKU — "over the counter" and "nobody
+ * has looked at this yet" are different facts, and only the second is a reason
+ * to stop a dispense and ask.
+ *
+ * Deliberately not a jurisdiction-neutral abstraction. These are the Indian
+ * Drugs and Cosmetics Rules schedules, and a set that pretended otherwise would
+ * be a set nobody could map their labels onto.
+ */
+export const invDrugScheduleEnum = pgEnum("inv_drug_schedule", [
+  "OTC", "H", "H1", "X", "NARCOTIC",
+]);
+
+/**
+ * E4 — whether a SKU leaves the shop as a sealed pack or is measured out of one.
+ *
+ * A packed SKU is handed over in the unit it was received in. A loose SKU is
+ * broken out of bulk: rice received in 25 kg sacks and sold in 500 g scoops is
+ * one product, one stock balance, and two units of measure with a conversion
+ * between them. The distinction is what decides whether a sale may name a
+ * different unit from the stock the ledger holds — not a cosmetic label.
+ */
+export const invSaleModeEnum = pgEnum("inv_sale_mode", ["PACKED", "LOOSE"]);
+
+/**
+ * E4 — how a quantity may be entered for this SKU.
+ *
+ * `WHOLE` is countable goods: three tins, not 3.25 tins. `DECIMAL` is a measure
+ * somebody types. `SCALE` is a measure a weighing scale sends, which differs
+ * from `DECIMAL` in exactly one way that matters — the operator did not choose
+ * the digits, so the number arrives at the scale's own precision and must not be
+ * silently re-rounded to something tidier on the way in.
+ *
+ * All three describe *entry*. The ledger stores base units at scale 4 whichever
+ * one is set; this decides what is allowed to reach it, not what it holds.
+ */
+export const invQtyInputModeEnum = pgEnum("inv_qty_input_mode", ["WHOLE", "DECIMAL", "SCALE"]);
+
 export const invProductTypeEnum = pgEnum("inv_product_type", ["STOCKABLE", "CONSUMABLE", "SERVICE"]);
 export const invTrackingMethodEnum = pgEnum("inv_tracking_method", ["NONE", "LOT", "SERIAL"]);
 export const invCostingMethodEnum = pgEnum("inv_costing_method", ["STANDARD", "WEIGHTED_AVERAGE", "FIFO"]);
@@ -507,6 +551,34 @@ export const invChannelTypeEnum = pgEnum("inv_channel_type", ["INTERNAL", "SHOPI
 export const invChannelStatusEnum = pgEnum("inv_channel_status", ["ACTIVE", "PAUSED"]);
 export const invChannelPubStatusEnum = pgEnum("inv_channel_pub_status", ["PENDING", "PUBLISHED", "FAILED"]);
 export const inv3plStatusEnum = pgEnum("inv_3pl_status", ["DISCONNECTED", "CONNECTED", "ERROR"]);
+
+/**
+ * E6 — the lifecycle of one inbound delivery from a sales channel.
+ *
+ * `PENDING` is "received and acknowledged, not yet refetched": the delivery row
+ * *is* the queue, so a delivery that arrives while the drain is down is not
+ * lost. `DEAD` is one whose refetch failed its whole ladder — kept rather than
+ * deleted, because "the marketplace told us something and we never looked" is
+ * exactly the fact an operator needs to see.
+ */
+export const invChannelDeliveryStatusEnum = pgEnum("inv_channel_delivery_status", ["PENDING", "PROCESSED", "FAILED", "DEAD"]);
+export const invChannelSnapshotDiffStatusEnum = pgEnum("inv_channel_snapshot_diff_status", ["OPEN", "ACCEPTED", "DISMISSED"]);
+
+/**
+ * E6 — what an organisation has decided may happen when a channel disagrees
+ * with the ledger.
+ *
+ * `RECORD_DIFFERENCE` is the default and does exactly what it says. It is not a
+ * degraded mode: a marketplace's stock figure is that marketplace's opinion
+ * about our warehouse, and an opinion that could post a movement would make the
+ * ledger a mirror of whichever system last spoke.
+ *
+ * `ALLOW_ADJUSTMENT` does **not** mean the snapshot writes the ledger. It means
+ * a named operator is permitted to accept a recorded difference, which then
+ * posts one ordinary stock-engine command under their own idempotency key and
+ * warehouse scope — the same path a manual adjustment takes.
+ */
+export const invChannelSnapshotPolicyEnum = pgEnum("inv_channel_snapshot_policy", ["RECORD_DIFFERENCE", "ALLOW_ADJUSTMENT"]);
 export const invIdempotencyStatusEnum = pgEnum("inv_idempotency_status", ["IN_FLIGHT", "COMPLETED", "FAILED"]);
 export const invJobStatusEnum = pgEnum("inv_job_status", ["PENDING", "VALIDATING", "RUNNING", "COMPLETED", "FAILED"]);
 
@@ -526,7 +598,49 @@ export const invExpiryPolicyEnum = pgEnum("inv_expiry_policy", ["BLOCK", "WARN",
  * deliberately.
  */
 export const invNearExpiryPolicyEnum = pgEnum("inv_near_expiry_policy", ["ALLOW", "DEPRIORITIZE", "BLOCK"]);
+/**
+ * G5 — a landed-cost voucher has two states and no third.
+ *
+ * DRAFT is editable and has moved no money; APPLIED has revalued cost layers and
+ * posted a journal entry, and is terminal. There is deliberately no VOID: undoing
+ * an applied voucher means un-revaluing layers that a later issue may already
+ * have drawn from at the landed rate, and that reversal is a document of its own
+ * rather than a status flip.
+ */
+export const invLandedCostStatusEnum = pgEnum("inv_landed_cost_status", ["DRAFT", "APPLIED"]);
+/** How a charge is spread across the receipt's cost layers. */
+export const invLandedCostBasisEnum = pgEnum("inv_landed_cost_basis", ["VALUE", "QUANTITY"]);
+export const invLandedCostChargeTypeEnum = pgEnum("inv_landed_cost_charge_type", [
+  "FREIGHT",
+  "DUTY",
+  "INSURANCE",
+  "HANDLING",
+  "OTHER",
+]);
 export const invAiInsightStatusEnum = pgEnum("inv_ai_insight_status", ["NEW", "ACKNOWLEDGED", "DISMISSED"]);
+
+/**
+ * F6 — what a person says about an AI answer they were shown.
+ *
+ * Four verdicts rather than a thumb, because the four are acted on differently
+ * and collapsing them destroys the only signal worth having. `WRONG` is a claim
+ * about the arithmetic and points at the deterministic layer. `STALE` says the
+ * numbers were right when computed and are not any more, which is a caching and
+ * evidence-hash question, not a model question. `UNSAFE` is the one that must
+ * never be averaged into a satisfaction ratio: it means the answer proposed
+ * something an operator should not do, and one of those matters more than a
+ * hundred `USEFUL`s.
+ *
+ * A pg enum rather than free text so an unknown verdict cannot be stored at all
+ * — a text column with an application-side union drifts the first time a client
+ * sends something else.
+ */
+export const invAiFeedbackVerdictEnum = pgEnum("inv_ai_feedback_verdict", [
+  "USEFUL",
+  "WRONG",
+  "STALE",
+  "UNSAFE",
+]);
 
 export const partyTypeEnum = pgEnum("party_type", ["CUSTOMER", "VENDOR", "PARTNER", "BOTH"]);
 

@@ -93,6 +93,34 @@ const baseSchema = z
     COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_OUTLOOK: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_GMAIL: z.string().optional(),
+    /**
+     * E6 — which sales-channel adapter this deployment runs.
+     *
+     * Absent or `none` means no adapter is registered and nothing outbound
+     * happens: every channel resolves to the manual adapter and a refetch
+     * reports `NO_ADAPTER` without opening a socket. `fake` registers the
+     * deterministic development adapter, which contacts no marketplace.
+     *
+     * A real marketplace adapter does not belong here — third-party
+     * connectivity goes through Composio in the `integrations` module, and its
+     * credentials live on the connected account, never in this file or our
+     * database (root CLAUDE.md §5).
+     */
+    INV_CHANNEL_ADAPTER: z.preprocess(
+      emptyToUndefined,
+      z.enum(["none", "fake"]).optional(),
+    ),
+    /**
+     * E6 — the HMAC secret an inbound channel webhook is verified against.
+     *
+     * Deployment configuration rather than a tenant column, because a store's
+     * shared secret is a provider credential and §5 keeps those out of our
+     * database. Absent means the corresponding channel type refuses every
+     * delivery — an unconfigured secret is never "skip verification".
+     */
+    INV_CHANNEL_WEBHOOK_SECRET_SHOPIFY: z.preprocess(emptyToUndefined, z.string().optional()),
+    INV_CHANNEL_WEBHOOK_SECRET_WOOCOMMERCE: z.preprocess(emptyToUndefined, z.string().optional()),
+    INV_CHANNEL_WEBHOOK_SECRET_DEFAULT: z.preprocess(emptyToUndefined, z.string().optional()),
     EMAIL_FROM_NAME: z.preprocess(emptyToUndefined, z.string().trim().optional()),
     EMAIL_APP_URL: optionalUrl,
     NOREPLY_EMAIL: optionalEmail,

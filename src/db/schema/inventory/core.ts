@@ -1,6 +1,6 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, bigint, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum, invBarcodeTypeEnum, invTaxTreatmentEnum } from "../common/enums";
+import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum, invBarcodeTypeEnum, invTaxTreatmentEnum, invDrugScheduleEnum, invSaleModeEnum, invQtyInputModeEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 
 export const invUom = pgTable("inv_uom", {
@@ -92,6 +92,59 @@ export const invProducts = pgTable("inv_products", {
   hsnCode: text("hsn_code"),
   taxTreatment: invTaxTreatmentEnum("tax_treatment"),
   gstRate: decimal("gst_rate", { precision: 5, scale: 2 }),
+  /**
+   * E3 — the pharmacy inputs, behind the `pharmacy` pack.
+   *
+   * `mrpPaise` is the maximum retail price currently printed on this SKU's
+   * packs, in integer paise. Integer minor units and never a float: an MRP is a
+   * legal ceiling, a pack sold one paisa above it is an offence, and a value
+   * that arrives as 12550 and leaves as 125.49999999999999 is exactly the class
+   * of error that cannot be argued with afterwards.
+   *
+   * It is a **default, not a snapshot**. It moves whenever the manufacturer
+   * reprints, which is why it must never be what a dispense reads: the ceiling
+   * that binds a counter is the one printed on the pack in their hand, and that
+   * is a fact about the batch. The snapshots live on `inv_grn_lines.mrp_paise`
+   * (what the pack said on the day it was received) and `inv_lots.mrp_paise`
+   * (what every pack in that batch says, for as long as it is on the shelf) —
+   * both written once at receipt and never updated, so revising this column
+   * cannot retroactively change what unsold stock may be sold for.
+   *
+   * `mrpRequired` is the flag E3's receipt rule keys on: a SKU carrying it may
+   * not be received without a batch MRP, because once the carton is broken and
+   * the pack is on the shelf, the printed price is no longer recoverable from
+   * anywhere.
+   *
+   * `drugSchedule` is what the counter is allowed to do. `isHighAlert` and
+   * `lasaGroup` are the two safety flags: high-alert is a drug that causes
+   * disproportionate harm when given wrongly, and a LASA group names the set of
+   * products that look or sound like each other. A group rather than a boolean,
+   * because "this one is confusable" is useless at the shelf and "this one is
+   * confusable with those three, in those bins" is the whole warning.
+   */
+  mrpPaise: bigint("mrp_paise", { mode: "number" }),
+  mrpRequired: boolean("mrp_required").default(false).notNull(),
+  drugSchedule: invDrugScheduleEnum("drug_schedule"),
+  isHighAlert: boolean("is_high_alert").default(false).notNull(),
+  lasaGroup: text("lasa_group"),
+  /**
+   * E4 — the kirana inputs, behind the `kirana` pack.
+   *
+   * `saleMode` decides whether a sale may name a unit other than the one stock
+   * is held in: a LOOSE SKU is measured out of bulk and needs a conversion to do
+   * it, a PACKED one leaves in the unit it arrived in.
+   *
+   * `quantityInputMode` and `quantityPrecision` decide what an entered quantity
+   * may look like, and they are a pair — WHOLE means precision 0 and nothing
+   * else, and a measured mode means between one and four places, the ledger's
+   * own scale. The CHECK below holds the pair together, because either one alone
+   * is a setting that reads as configured while doing nothing: precision 3 on a
+   * WHOLE SKU accepts 1.005 tins, and SCALE at precision 0 rejects every reading
+   * a scale will ever send.
+   */
+  saleMode: invSaleModeEnum("sale_mode").default("PACKED").notNull(),
+  quantityInputMode: invQtyInputModeEnum("quantity_input_mode").default("WHOLE").notNull(),
+  quantityPrecision: integer("quantity_precision").default(0).notNull(),
   imageUrl: text("image_url"),
   customFields: jsonb("custom_fields").$type<Record<string, unknown>>(),
   createdBy: text("created_by").references(() => users.id).notNull(),
@@ -120,6 +173,22 @@ export const invProducts = pgTable("inv_products", {
   check(
     "chk_inv_products_tax_treatment_rate",
     sql`${table.taxTreatment} IS NULL OR ${table.taxTreatment} = 'TAXABLE' OR ${table.gstRate} IS NULL OR ${table.gstRate} = 0`,
+  ),
+  // E3. The confusable-set lookup: given this SKU's LASA group, which other SKUs
+  // share it. Partial, because outside a pharmacy nothing carries a group at all.
+  index("idx_inv_products_org_lasa_group").on(table.orgId, table.lasaGroup).where(sql`${table.lasaGroup} IS NOT NULL`),
+  // E3. The register scope query walks the catalogue by schedule. Partial for the
+  // same reason.
+  index("idx_inv_products_org_drug_schedule").on(table.orgId, table.drugSchedule).where(sql`${table.drugSchedule} IS NOT NULL`),
+  // E3. A negative ceiling is not a price. Zero is refused too: "free" and "we
+  // have not recorded one" are different, and NULL already says the second.
+  check("chk_inv_products_mrp_paise_positive", sql`${table.mrpPaise} IS NULL OR ${table.mrpPaise} > 0`),
+  // E4. The pair, held together. See the column comment: either half alone is a
+  // setting that reads as configured and does nothing.
+  check(
+    "chk_inv_products_qty_input_precision",
+    sql`(${table.quantityInputMode} = 'WHOLE' AND ${table.quantityPrecision} = 0)
+        OR (${table.quantityInputMode} <> 'WHOLE' AND ${table.quantityPrecision} BETWEEN 1 AND 4)`,
   ),
 ]);
 

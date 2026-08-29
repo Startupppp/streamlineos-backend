@@ -139,6 +139,12 @@ export interface InvSettingsRow {
   gstEwaybillEnabled: boolean;
   tallyExportEnabled: boolean;
   complianceAdapter: string;
+  /**
+   * E3. Whether this deployment produces the Schedule H1 register export. Its
+   * own switch, not something the `pharmacy` pack implies — see the column
+   * comment on `inv_settings.pharmacy_h1_register_enabled`.
+   */
+  pharmacyH1RegisterEnabled: boolean;
 }
 
 /** D2 — short-dated, not expired. See `invNearExpiryPolicyEnum`. */

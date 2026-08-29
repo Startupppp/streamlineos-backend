@@ -13,6 +13,7 @@ import { SoLifecycleService } from "src/modules/inventory/sales-orders/so-lifecy
 import { SoFulfillmentService } from "src/modules/inventory/sales-orders/so-fulfillment.service";
 import { PickWaveService } from "src/modules/inventory/picking/pick-wave.service";
 import { PickConfirmService } from "src/modules/inventory/picking/pick-confirm.service";
+import { CustomerReturnsService } from "src/modules/inventory/returns/customer-returns.service";
 import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
@@ -363,5 +364,52 @@ describe("[seeded-e2e] the golden path", () => {
     expect(await onHandAt(scene.storageId)).toBe(70);
     expect(await atp()).toBe(70);
     await expectReconciled("shipped");
+  });
+
+  it("takes 10 back, and they are promisable only once somebody has looked at them", async () => {
+    const ret = await asTenant(() =>
+      app.app.get(CustomerReturnsService).create(scene.orgId, scene.userId, {
+        soId,
+        lines: [
+          {
+            productVariantId: scene.variantId,
+            quantity: "10.0000",
+            reason: "Customer changed their mind",
+          },
+        ],
+      } as never),
+    );
+    const returnId = (ret as { id: number }).id;
+
+    const [line] = await asTenant(() =>
+      db().execute<{ id: number }>(sql`
+        SELECT id FROM inv_customer_return_lines
+        WHERE org_id = ${scene.orgId} AND return_id = ${returnId}`),
+    );
+
+    // A disposition asserted before anybody opened the box is a guess, so the
+    // line is created without one and nothing has moved yet.
+    expect(await atp()).toBe(70);
+
+    await asTenant(() =>
+      app.app.get(CustomerReturnsService).inspectLine(scene.orgId, scene.userId, returnId, {
+        lineId: line!.id,
+        disposition: "RESTOCK",
+      } as never),
+    );
+    await asTenant(() =>
+      app.app
+        .get(CustomerReturnsService)
+        .approve(scene.orgId, returnId, scene.userId, {} as never),
+    );
+    await asTenant(() =>
+      app.app
+        .get(CustomerReturnsService)
+        .post(scene.orgId, returnId, scene.userId, `gp-return-${scene.tag}`, {} as never),
+    );
+
+    // Inspected RESTOCK, so the 10 rejoin sellable stock and are promisable again.
+    expect(await atp()).toBe(80);
+    await expectReconciled("returned");
   });
 });

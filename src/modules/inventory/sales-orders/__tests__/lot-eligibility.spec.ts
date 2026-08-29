@@ -1,20 +1,28 @@
 import {
+  daysRemaining,
   isNearExpiry,
   nearExpiryHorizon,
   overridable,
+  overriddenRule,
   verdictFor,
   type EligibilityPolicy,
   type LotFacts,
 } from "../lot-eligibility";
 
 /**
- * D2 — the three questions, and the proof they stay apart.
+ * D2 — the four questions, and the proof they stay apart.
  *
  * INV-402 was one collapse of these (eligibility hidden inside the FEFO branch,
- * so every other strategy shipped expired stock). This adds a second axis, and
- * a second axis is a second chance to collapse them — so the tension is asserted
- * directly: FEFO wants the soonest-expiring lot first, near-expiry policy wants
- * it last, and both are satisfied because they answer different questions.
+ * so every other strategy shipped expired stock). Each new axis is a fresh
+ * chance to collapse them, so the tensions are asserted directly:
+ *
+ *   * FEFO wants the soonest-expiring lot first and near-expiry policy wants it
+ *     last — both satisfied, because one tiers and the other orders within a tier;
+ *   * the customer's shelf-life floor outranks `DEPRIORITIZE`, because "take it
+ *     last" is still taking it and a contract says "do not take it at all";
+ *   * the floor is not the near-expiry window under another name — a lot outside
+ *     the window can still break the floor, which is the case that proves the
+ *     second number earns its place.
  */
 
 const TODAY = "2026-08-29";
@@ -32,6 +40,7 @@ const BLOCK_EXPIRED: EligibilityPolicy = {
   expiryPolicy: "BLOCK",
   nearExpiryPolicy: "ALLOW",
   nearExpiryWindowDays: 30,
+  minShelfLifeDays: 0,
 };
 
 describe("D2 lot eligibility", () => {
@@ -139,6 +148,103 @@ describe("D2 lot eligibility", () => {
     it("reaches short-dated stock, whether it was blocked or merely deprioritized", () => {
       expect(overridable({ kind: "REFUSED", reason: "NEAR_EXPIRY" })).toBe(true);
       expect(overridable({ kind: "DEPRIORITIZED", reason: "NEAR_EXPIRY" })).toBe(true);
+    });
+
+    it("reaches a shelf-life refusal — a customer can agree to short stock on the day", () => {
+      expect(overridable({ kind: "REFUSED", reason: "SHELF_LIFE" })).toBe(true);
+    });
+
+    it("names the rule it would set aside, so the record can say which one", () => {
+      // The override record stores this verbatim. A single "overridden" flag
+      // cannot distinguish an organisation's own caution from a broken contract,
+      // and those are the two things a reviewer is trying to tell apart.
+      expect(overriddenRule({ kind: "REFUSED", reason: "SHELF_LIFE" })).toBe("SHELF_LIFE");
+      expect(overriddenRule({ kind: "REFUSED", reason: "NEAR_EXPIRY" })).toBe("NEAR_EXPIRY");
+      expect(overriddenRule({ kind: "DEPRIORITIZED", reason: "NEAR_EXPIRY" })).toBe("NEAR_EXPIRY");
+      expect(overriddenRule({ kind: "REFUSED", reason: "EXPIRED" })).toBeNull();
+      expect(overriddenRule({ kind: "ELIGIBLE" })).toBeNull();
+    });
+  });
+
+  describe("the customer's contracted minimum shelf life", () => {
+    /** 90 days out: comfortably outside a 30-day near-expiry window. */
+    const ninetyDays = lots([[1, { expiryDate: "2026-11-27" }]]);
+    const withFloor = (days: number): EligibilityPolicy => ({
+      ...BLOCK_EXPIRED,
+      minShelfLifeDays: days,
+    });
+
+    it("refuses a lot the near-expiry window has no opinion about", () => {
+      // The case the whole second number exists for. This lot is not
+      // short-dated by any org setting — and a customer contracted for 120 days.
+      expect(isNearExpiry({ expiryDate: "2026-11-27", status: "ACTIVE" }, 30, TODAY)).toBe(false);
+      expect(verdictFor(1, ninetyDays, withFloor(120), TODAY)).toEqual({
+        kind: "REFUSED",
+        reason: "SHELF_LIFE",
+      });
+    });
+
+    it("passes the same lot for a customer who contracted for less", () => {
+      // Same shelf, same day, same lot — a different answer per destination,
+      // which is the thing no ordering rule and no tenant-wide setting can do.
+      expect(verdictFor(1, ninetyDays, withFloor(60), TODAY)).toEqual({ kind: "ELIGIBLE" });
+    });
+
+    it("includes the floor day itself: exactly the agreed shelf life is enough", () => {
+      expect(verdictFor(1, ninetyDays, withFloor(90), TODAY)).toEqual({ kind: "ELIGIBLE" });
+      expect(verdictFor(1, ninetyDays, withFloor(91), TODAY)).toEqual({
+        kind: "REFUSED",
+        reason: "SHELF_LIFE",
+      });
+    });
+
+    it("means nothing at zero — no rule is no floor, not a floor of none", () => {
+      expect(verdictFor(1, ninetyDays, withFloor(0), TODAY)).toEqual({ kind: "ELIGIBLE" });
+    });
+
+    it("has no opinion on a lot with no expiry date", () => {
+      const undated = lots([[1, { expiryDate: null }]]);
+      expect(verdictFor(1, undated, withFloor(3650), TODAY)).toEqual({ kind: "ELIGIBLE" });
+    });
+
+    it("outranks DEPRIORITIZE: a contract is not a preference", () => {
+      // Under the org's own policy alone this lot would be allocatable-but-last.
+      // The floor removes it from the set instead, which is the distinction
+      // between an operational preference and a term of a supply agreement.
+      const shortAndBelowFloor = lots([[1, { expiryDate: "2026-09-10" }]]);
+      const policy: EligibilityPolicy = {
+        ...BLOCK_EXPIRED,
+        nearExpiryPolicy: "DEPRIORITIZE",
+        minShelfLifeDays: 60,
+      };
+      expect(verdictFor(1, shortAndBelowFloor, policy, TODAY)).toEqual({
+        kind: "REFUSED",
+        reason: "SHELF_LIFE",
+      });
+    });
+
+    it("does not turn an expired lot into an overridable one", () => {
+      // An expired lot fails every positive floor. If the floor reported
+      // SHELF_LIFE the override would reach it, and `expiryReservationPolicy`
+      // would become a suggestion by the back door. Reached only where the org
+      // allows expired stock at all.
+      const expired = lots([[1, { expiryDate: "2026-08-01" }]]);
+      const verdict = verdictFor(
+        1,
+        expired,
+        { ...BLOCK_EXPIRED, expiryPolicy: "ALLOW", minShelfLifeDays: 30 },
+        TODAY,
+      );
+      expect(verdict).toEqual({ kind: "REFUSED", reason: "EXPIRED" });
+      expect(overridable(verdict)).toBe(false);
+    });
+  });
+
+  describe("days remaining, as an override record snapshots it", () => {
+    it("counts whole days forward and backward from today", () => {
+      expect(daysRemaining("2026-09-28", TODAY)).toBe(30);
+      expect(daysRemaining(TODAY, TODAY)).toBe(0);
+      expect(daysRemaining("2026-08-01", TODAY)).toBe(-28);
     });
   });
 

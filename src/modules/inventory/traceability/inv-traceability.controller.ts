@@ -11,8 +11,13 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvTraceabilityService } from "./inv-traceability.service";
 import { TraceabilityChainService } from "./traceability-chain.service";
 import { LotGenealogyService } from "./lot-genealogy.service";
+import { AllocationOverrideReportService } from "./allocation-override-report.service";
 import { genealogyToCsv } from "./lib/genealogy-csv";
 import { genealogyQuerySchema, type GenealogyQueryInput } from "./dto/genealogy.schemas";
+import {
+  listAllocationOverridesSchema,
+  type ListAllocationOverridesInput,
+} from "./dto/allocation-overrides.schemas";
 import {
   listLotsSchema,
   listSerialsSchema,
@@ -34,6 +39,7 @@ export class InvTraceabilityController {
     private readonly traceability: InvTraceabilityService,
     private readonly chain: TraceabilityChainService,
     private readonly genealogy: LotGenealogyService,
+    private readonly allocationOverrides: AllocationOverrideReportService,
   ) {}
 
   @Get("lots")
@@ -119,6 +125,25 @@ export class InvTraceabilityController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.genealogy.getGraph(u.orgId, u.userId, query);
+  }
+
+  /**
+   * D2. Every allocation somebody took past the allocator's refusal — who, why,
+   * which rule, how short-dated the lot was, and which customer received it.
+   *
+   * Here rather than under `audit-events` because it is asked as a trace: the
+   * entry points are a lot number off a recall notice and a customer off a
+   * complaint, both of which are the anchors the rest of this controller takes.
+   * Gated on the audit key all the same — it is the trail, not stock data.
+   */
+  @Get("traceability/allocation-overrides")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:audit:read")
+  async listAllocationOverrides(
+    @Query(new ZodValidationPipe(listAllocationOverridesSchema)) query: ListAllocationOverridesInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.allocationOverrides.list(u.orgId, query);
   }
 
   @Get("traceability/genealogy/export")

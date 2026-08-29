@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, bigint, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { invPoStatusEnum, invGrnQualityEnum, invGrnDiscrepancyEnum, invGrnStatusEnum, invTaxTreatmentEnum, invGstModeEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
@@ -193,8 +193,36 @@ export const invGrnLines = pgTable("inv_grn_lines", {
   taxTreatment: invTaxTreatmentEnum("tax_treatment"),
   gstMode: invGstModeEnum("gst_mode"),
   taxRate: decimal("tax_rate", { precision: 5, scale: 2 }),
+  /**
+   * E3 — the two prices a pharmacy receipt has to capture, in integer paise.
+   *
+   * `mrpPaise` is what was printed on the cartons that arrived. Recorded here
+   * and not read back off the catalogue, for the same reason the tax columns
+   * above are snapshotted: the manufacturer reprints, and a receipt that says
+   * what the SKU says *today* cannot answer "what were we allowed to sell this
+   * batch for". The post transaction carries it onto `inv_lots.mrp_paise`,
+   * which is what a dispense reads.
+   *
+   * `purchaseRatePaise` is what this delivery actually cost per unit, which is
+   * routinely not what the purchase order said — trade schemes, revised rates
+   * and free goods all land at the door rather than at the order. `inv_po_lines`
+   * already carries the ordered rate; neither is derivable from the other, and
+   * the difference between them is the whole margin conversation.
+   *
+   * Both nullable: lines written before E3 and organisations not running the
+   * `pharmacy` pack have nothing to record, and null must keep meaning "not
+   * recorded" rather than "free".
+   */
+  mrpPaise: bigint("mrp_paise", { mode: "number" }),
+  purchaseRatePaise: bigint("purchase_rate_paise", { mode: "number" }),
 }, (table) => [
   unique("uniq_inv_grn_lines_org_id").on(table.orgId, table.id),
+  // E3. Zero is not a price; NULL is how "not recorded" is said.
+  check("chk_inv_grn_lines_mrp_paise_positive", sql`${table.mrpPaise} IS NULL OR ${table.mrpPaise} > 0`),
+  check(
+    "chk_inv_grn_lines_purchase_rate_paise_positive",
+    sql`${table.purchaseRatePaise} IS NULL OR ${table.purchaseRatePaise} > 0`,
+  ),
   foreignKey({
     columns: [table.orgId, table.grnId],
     foreignColumns: [invGrns.orgId, invGrns.id],

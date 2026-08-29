@@ -213,6 +213,17 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     description: "View inventory valuation and costing reports",
   },
   {
+    // Distinct from `purchase-orders:receive`, which every receiving clerk holds:
+    // applying a landed-cost voucher restates what inventory is worth and posts
+    // to the general ledger. Signing for a pallet and revaluing the balance sheet
+    // are different authorities.
+    name: "inventory:landed-cost:manage",
+    resource: "inventory:landed-cost",
+    action: "manage",
+    description:
+      "Raise landed-cost vouchers and apply freight, duty and handling into inventory cost layers",
+  },
+  {
     name: "inventory:settings:manage",
     resource: "inventory:settings",
     action: "manage",

@@ -11,7 +11,10 @@ import type { RateLimitService } from "../../../common/ratelimit/rate-limit.serv
 import type { ProjectsTicketsService } from "../../build/core/projects-tickets.service";
 import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { FeedbackAnalysis } from "../feedbucket-ai.schemas";
-import type { AiInvokeWithUsageResult } from "../../ai/core/gateway/ai-gateway.types";
+import type {
+  AiInvokeWithUsageResult,
+  AiInvokeWithUsageSuccess,
+} from "../../ai/core/gateway/ai-gateway.types";
 
 const ORG_A = "org_a";
 const ORG_B = "org_b";
@@ -83,10 +86,15 @@ const baseAnalysis: FeedbackAnalysis = {
   processedAt: new Date().toISOString(),
 };
 
-const baseGatewaySuccess: AiInvokeWithUsageResult<FeedbackAnalysis> = {
+// Typed as the success branch, not the union: the spread below only
+// type-checks when the compiler knows which branch it is spreading.
+const baseGatewaySuccess: AiInvokeWithUsageSuccess<FeedbackAnalysis> = {
   ok: true,
   data: baseAnalysis,
   aiUsage: { model: "gpt-4o", promptTokens: 50, completionTokens: 100, totalTokens: 150, credits: 1, costUsd: 0.002 },
+  // F6. The success branch now carries the gateway's correlation id, so a
+  // caller can record which invocation produced an answer.
+  correlationId: "corr-feedbucket-1",
 };
 
 function makeUser(orgId = ORG_A) {
@@ -180,7 +188,7 @@ describe("FeedbucketAiService", () => {
 
     it.each(cases)("maps type '%s' to suggestedTicketType '%s'", async (type, expected) => {
       const analysisWithType = { ...baseAnalysis, type: type as FeedbackAnalysis["type"] };
-      const gwResult: AiInvokeWithUsageResult<FeedbackAnalysis> = { ...baseGatewaySuccess, data: analysisWithType };
+      const gwResult: AiInvokeWithUsageSuccess<FeedbackAnalysis> = { ...baseGatewaySuccess, data: analysisWithType };
       const { service } = buildService({ gateway: makeGateway(gwResult) });
       const result = await service.analyze(makeUser(), SUB_ID);
       expect(result.suggestedTicketType).toBe(expected);

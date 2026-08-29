@@ -11,6 +11,8 @@ import { InvCountsModule } from "./counts/inv-counts.module";
 import { InvReturnsModule } from "./returns/inv-returns.module";
 import { InvTraceabilityModule } from "./traceability/inv-traceability.module";
 import { InvValuationModule } from "./valuation/inv-valuation.module";
+import { InvLandedCostModule } from "./landed-cost/inv-landed-cost.module";
+import { InvLabelsModule } from "./labels/inv-labels.module";
 import { InvReconciliationModule } from "./reconciliation/inv-reconciliation.module";
 import { InvReplenishmentModule } from "./replenishment/inv-replenishment.module";
 import { InvAiModule } from "./ai/inv-ai.module";
@@ -42,6 +44,8 @@ const INVENTORY_MODULES = [
   InvReturnsModule,
   InvTraceabilityModule,
   InvValuationModule,
+  InvLandedCostModule,
+  InvLabelsModule,
   InvReconciliationModule,
   InvReplenishmentModule,
   InvAiModule,

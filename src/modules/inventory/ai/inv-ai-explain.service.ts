@@ -1,156 +1,37 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
-import { createHash } from "node:crypto";
+import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { invAiInsights } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { AccessService } from "../../access/access.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import { AiConfirmationService } from "../../ai/confirmation/ai-confirmation.service";
-import { InvReplenishmentService } from "../replenishment/inv-replenishment.service";
 import {
   VendorScorecardService,
   type VendorScorecard,
 } from "../vendors/vendor-scorecard.service";
 import { InvAiService, type InventoryOpsBrief } from "./inv-ai.service";
 import {
-  INV_AI_ACTIONS,
   INV_AI_CONTRACT_VERSION,
   invAiNarrativeResponseSchema,
-  type InvAiFactor,
-  type InvAiNarrativeResponse,
-  type InvAiProvenance,
-  type InvEvidenceKind,
-  type InvEvidenceReference,
 } from "./dto/inv-ai-contract";
 import {
-  InvAiEvidenceError,
-  buildEvidenceAllowlist,
-  resolveInvAiActions,
-  type ResolvedInvAiAction,
-} from "./inv-ai-action-resolver";
-import { assertInvAiConfirmAuthority } from "./inv-ai-confirm-authority";
+  buildNarrationSystemPrompt,
+  buildSystemPrompt,
+  referencesFrom,
+  toNarration,
+  type InsightNarration,
+} from "./inv-ai-narration";
+
+/**
+ * F4. The narration helpers and the restraint rules moved to
+ * `inv-ai-narration.ts` when the reorder proposal became its own service
+ * (`proposals/inv-ai-proposal.service.ts`). Re-exported here because they are
+ * this service's response type and callers already import them from it.
+ */
+export type { ExplainFactor, InsightNarration } from "./inv-ai-narration";
 
 const FEATURE_KEY = "inv.insight-explain" as const;
-const REORDER_FEATURE_KEY = "inv.reorder-explain" as const;
 const DELAY_FEATURE_KEY = "inv.supplier-delay-briefing" as const;
 const OPS_BRIEF_FEATURE_KEY = "inv.ops-brief" as const;
-
-export type ExplainFactor = InvAiFactor;
-
-/**
- * INV-102. The response shape is the contract now: a status envelope, bounded
- * strict fields, and actions that arrive as an enum the server resolves rather
- * than as free model text. `suggestedActions: string[]` is gone -- a sentence
- * the model wrote is not an action, and rendering it as one made the model the
- * author of what an operator was invited to do next.
- */
-export interface InsightNarration {
-  status: InvAiNarrativeResponse["status"];
-  explanation: string;
-  factors: ExplainFactor[];
-  actions: ResolvedInvAiAction[];
-  evidenceSnapshot: Record<string, unknown>;
-  provenance: InvAiProvenance;
-}
-
-/**
- * A fingerprint of the numbers a proposal was reasoned about.
- *
- * A proposal is a promise about a moment. Between proposing "order 42" and
- * confirming it, a receipt can land, a transfer can arrive, or another operator
- * can raise the same PO -- and the confirmation would still post 42 against
- * evidence that no longer exists. Hashing the material figures at propose time
- * and re-checking them at confirm time makes that staleness visible instead of
- * silently actionable.
- *
- * Only the figures that would change the decision are hashed. Including
- * cosmetic fields would make every proposal look stale the moment a product was
- * renamed, and an alarm that cries wolf gets clicked through.
- */
-export function hashReorderEvidence(evidence: {
-  productVariantId: unknown;
-  currentOnHand: unknown;
-  suggestedOrderQty: unknown;
-  vendorId: unknown;
-}): string {
-  const material = [
-    evidence.productVariantId,
-    evidence.currentOnHand,
-    evidence.suggestedOrderQty,
-    evidence.vendorId,
-  ]
-    .map((value) => String(value ?? ""))
-    .join("|");
-  return createHash("sha256").update(material).digest("hex").slice(0, 32);
-}
-
-/** Maps whatever ids the deterministic layer actually read into references. */
-function referencesFrom(
-  entries: ReadonlyArray<[InvEvidenceKind, unknown]>,
-): InvEvidenceReference[] {
-  const refs: InvEvidenceReference[] = [];
-  for (const [kind, raw] of entries) {
-    const id = typeof raw === "string" ? Number(raw) : raw;
-    if (typeof id === "number" && Number.isInteger(id) && id > 0) {
-      refs.push({ kind, id });
-    }
-  }
-  return refs;
-}
-
-/**
- * One place where a validated model response becomes a narration. A citation
- * the server cannot vouch for fails the call rather than being dropped: the
- * sentence it supported would otherwise survive with its support removed.
- */
-function toNarration(
-  data: InvAiNarrativeResponse,
-  allowed: readonly InvEvidenceReference[],
-  evidenceSnapshot: Record<string, unknown>,
-  provenance: InvAiProvenance,
-): InsightNarration {
-  if (data.status === "insufficient_evidence") {
-    return {
-      status: data.status,
-      explanation: `Not enough evidence to explain this: ${data.missing.join("; ")}`,
-      factors: [],
-      actions: [],
-      evidenceSnapshot,
-      provenance,
-    };
-  }
-  if (data.status === "refused") {
-    return {
-      status: data.status,
-      explanation: data.reason,
-      factors: [],
-      actions: [],
-      evidenceSnapshot,
-      provenance,
-    };
-  }
-
-  try {
-    return {
-      status: data.status,
-      explanation: data.explanation,
-      factors: data.factors,
-      actions: resolveInvAiActions(
-        data.recommendations,
-        buildEvidenceAllowlist(allowed),
-      ),
-      evidenceSnapshot,
-      provenance,
-    };
-  } catch (error) {
-    if (error instanceof InvAiEvidenceError) {
-      throw new ServiceUnavailableException(error.message);
-    }
-    throw error;
-  }
-}
 
 interface DigestGroup {
   insightType: string;
@@ -165,12 +46,6 @@ export interface InventoryDigest {
   narration?: string;
 }
 
-export interface ReorderProposalResult {
-  evidence: Record<string, unknown>;
-  explanation: InsightNarration;
-  proposal: { proposalId: number; token: string; expiresAt: Date };
-}
-
 export interface SupplierDelayBriefingResult {
   vendors: Array<{
     vendorId: number;
@@ -181,40 +56,6 @@ export interface SupplierDelayBriefingResult {
   }>;
   narration: string;
   generatedAt: Date;
-}
-
-/**
- * The restraint rules, which every call gets. They are about arithmetic and
- * evidence, not about output shape, so a prose briefing needs them just as much
- * as a structured one does.
- */
-const RESTRAINT_RULES = [
-  "You are an inventory operations analyst. Your only job is to narrate and explain pre-computed evidence.",
-  "CRITICAL RULES you must never violate:",
-  "1. You MUST NOT compute, invent, or derive any numbers. Every quantity, value, date, and percentage is provided to you.",
-  "2. You MUST NOT contradict the evidence. Reference the exact figures given.",
-  "3. Your explanation narrates WHY these computed facts are operationally significant.",
-  "4. isFactual=true means the fact comes directly from the evidence data. isFactual=false means it is your operational suggestion.",
-  "5. Keep explanations concise (2-4 sentences).",
-];
-
-/**
- * Prose narration -- the digest and the supplier-delay briefing. These call
- * `invokeText` and are rendered as a paragraph, so telling them about a status
- * envelope and an action enum would describe a shape they cannot return.
- */
-function buildNarrationSystemPrompt(): string {
-  return RESTRAINT_RULES.join("\n");
-}
-
-/** Structured calls, held to the INV-102 contract. */
-function buildSystemPrompt(): string {
-  return [
-    ...RESTRAINT_RULES,
-    "6. Reply with status \"ok\" when the evidence supports an answer, \"insufficient_evidence\" (naming what is missing) when it does not, or \"refused\" when the request is not yours to answer. Do not answer anyway.",
-    `7. Every recommendation names one action from this exact list and nothing else: ${INV_AI_ACTIONS.join(", ")}. You do not describe an action, choose a route, or name a permission -- the server does that.`,
-    "8. Cite evidence as {kind, id} pairs drawn only from the evidence given to you. An id you were not given will be rejected and the whole answer discarded.",
-  ].join("\n");
 }
 
 function buildOpsBriefUserPrompt(brief: InventoryOpsBrief): string {
@@ -257,17 +98,6 @@ function buildDigestUserPrompt(groups: DigestGroup[]): string {
   ].join("\n");
 }
 
-function buildReorderUserPrompt(evidence: Record<string, unknown>): string {
-  return [
-    "Reorder proposal evidence (all numbers are pre-computed — do not modify or re-derive them):",
-    JSON.stringify(evidence, null, 2),
-    "",
-    "Explain why this reorder is operationally necessary based on the evidence above.",
-    "Extract factual quantities/dates/thresholds as factors (isFactual: true). Add procurement suggestions as factors (isFactual: false).",
-    "Return valid JSON: { explanation: string, factors: [{label, value, isFactual}], suggestedActions: string[] }",
-  ].join("\n");
-}
-
 function buildDelayBriefingUserPrompt(vendors: Array<{ vendorId: number; vendorName: string; insightCount: number; performance: VendorScorecard }>): string {
   return [
     "Supplier delay briefing — all performance figures are pre-computed (do not invent or modify any numbers):",
@@ -280,14 +110,17 @@ function buildDelayBriefingUserPrompt(vendors: Array<{ vendorId: number; vendorN
 
 @Injectable()
 export class InvAiExplainService {
+  /**
+   * F4. `AiConfirmationService`, `InvReplenishmentService` and `AccessService`
+   * left with the reorder proposal — it is `InvAiProposalService`'s now, and
+   * this service no longer proposes, confirms or asserts anything. What remains
+   * reads insights and narrates them.
+   */
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
-    private readonly confirmation: AiConfirmationService,
-    private readonly replenishment: InvReplenishmentService,
     private readonly scorecards: VendorScorecardService,
     private readonly insights: InvAiService,
-    private readonly access: AccessService,
   ) {}
 
   /**
@@ -485,199 +318,6 @@ export class InvAiExplainService {
     }
 
     return digest;
-  }
-
-  async getReorderProposal(
-    orgId: string,
-    userId: string,
-    variantId: number,
-    warehouseId?: number,
-  ): Promise<ReorderProposalResult> {
-    const suggestion = await this.replenishment.getSuggestionForVariant(orgId, variantId, warehouseId);
-
-    if (!suggestion) {
-      throw new NotFoundException("No reorder suggestion found for this variant — it may not be below the reorder threshold");
-    }
-
-    const evidence: Record<string, unknown> = {
-      productVariantId: suggestion.productVariantId,
-      variantSku: suggestion.variantSku,
-      variantName: suggestion.variantName,
-      productName: suggestion.productName,
-      currentOnHand: suggestion.currentOnHand,
-      forecastedQty: suggestion.forecasted,
-      suggestedOrderQty: suggestion.suggestedQty,
-      vendorId: suggestion.vendorId,
-      leadTimeDays: suggestion.leadTimeDays,
-      expectedDeliveryDate: suggestion.expectedDate,
-      reorderReason: suggestion.reason,
-      warehouseId: suggestion.warehouseId,
-      warehouseName: suggestion.warehouseName,
-    };
-
-    const result = await this.gateway.invokeStructured({
-      actor: { orgId, userId },
-      feature: REORDER_FEATURE_KEY,
-      tier: "fast",
-      maxTokens: 512,
-      charge: true,
-      redact: false,
-      schema: invAiNarrativeResponseSchema,
-      prompt: {
-        system: buildSystemPrompt(),
-        user: buildReorderUserPrompt(evidence),
-        promptKey: "inv.reorder-explain",
-        promptVersion: 1,
-      },
-    });
-
-    if (!result.ok) {
-      throw new ServiceUnavailableException(result.message);
-    }
-
-    const narration = toNarration(
-      result.data,
-      referencesFrom([
-        ["product_variant", suggestion.productVariantId],
-        ["vendor", suggestion.vendorId],
-        ["warehouse", suggestion.warehouseId],
-      ]),
-      evidence,
-      {
-        contractVersion: INV_AI_CONTRACT_VERSION,
-        promptKey: "inv.reorder-explain",
-        promptVersion: 1,
-        model: result.model,
-        correlationId: result.correlationId,
-      },
-    );
-
-    const proposal = await this.confirmation.propose({
-      orgId,
-      userId,
-      action: "inventory:create-draft-po",
-      // The quantity comes from the deterministic suggestion, never from the
-      // narration -- the model is a commentator on this payload, not a source
-      // for it.
-      payload: {
-        suggestion,
-        explanation: narration,
-        evidenceHash: hashReorderEvidence({
-          productVariantId: suggestion.productVariantId,
-          currentOnHand: suggestion.currentOnHand,
-          suggestedOrderQty: suggestion.suggestedQty,
-          vendorId: suggestion.vendorId,
-        }),
-      } as Record<string, unknown>,
-      // A3. `Date.now()` used to be part of this key, which made it unique per
-      // call and so defeated the only thing a key is for: `propose` replays a
-      // live PROPOSED row with a matching key, and no two calls ever matched.
-      // Every refresh of the screen minted another independently-confirmable
-      // proposal for the same shortfall, and confirming two of them raises two
-      // draft purchase orders. The identity of the proposal is the position it
-      // is about -- this variant, in this warehouse -- so that is the key.
-      idempotencyKey: `reorder:${orgId}:${variantId}:${suggestion.warehouseId ?? "any"}`,
-      ttlSeconds: 120,
-    });
-
-    return { evidence, explanation: narration, proposal };
-  }
-
-  /**
-   * F1. Confirming a proposal is where the AI surface stops being a reading
-   * surface, so it is where the procurement gate has to bite.
-   *
-   * The assertion runs twice, deliberately. Once **before** `confirm`, because
-   * `confirm` consumes the proposal — a denial after it would leave the caller
-   * with a spent token and nothing to show for it, and repeated denials would
-   * be a way to burn other people's proposals. And once **after**, against the
-   * action the stored row actually carries, because the first check can only
-   * assert the authority this *route* is about; a token minted for a transfer
-   * and replayed here must be measured against a transfer's authority, not a
-   * purchase order's.
-   */
-  async confirmReorderProposal(
-    user: CurrentUserContext,
-    proposalId: number,
-    token: string,
-  ) {
-    const { orgId, userId } = user;
-    const routeAction = "inventory:create-draft-po";
-
-    await assertInvAiConfirmAuthority(this.access, user, routeAction);
-
-    const confirmed = await this.confirmation.confirm({
-      token,
-      actor: { orgId, userId },
-    });
-
-    if (confirmed.action !== routeAction) {
-      // The token is valid and belongs to this caller, so this is not an
-      // existence question -- it is a caller asking this route to execute
-      // something it does not execute. Re-asserting rather than trusting the
-      // route's own action is what stops a cheaper proposal from being
-      // laundered through an expensive one.
-      await assertInvAiConfirmAuthority(this.access, user, confirmed.action);
-      throw new ForbiddenException(
-        "This proposal is not a draft purchase order",
-      );
-    }
-
-    const payload = confirmed.payload;
-    const suggestion = payload["suggestion"] as {
-      productVariantId: number;
-      suggestedQty: number;
-      currentOnHand: number;
-      vendorId: number | null;
-      warehouseId: number | null;
-    };
-
-    // The evidence is re-read, not trusted from the payload: if the position
-    // moved while the proposal sat waiting for a human, posting the original
-    // quantity would be acting on a world that no longer exists. The re-read
-    // only happens when there is a hash to compare it against, so a proposal
-    // that predates the hash costs no extra query.
-    const expectedHash = payload["evidenceHash"];
-    if (typeof expectedHash === "string") {
-      const current = await this.replenishment.getSuggestionForVariant(
-        orgId,
-        suggestion.productVariantId,
-        suggestion.warehouseId ?? undefined,
-      );
-      const actualHash = current
-        ? hashReorderEvidence({
-            productVariantId: current.productVariantId,
-            currentOnHand: current.currentOnHand,
-            suggestedOrderQty: current.suggestedQty,
-            vendorId: current.vendorId,
-          })
-        : null;
-      if (expectedHash !== actualHash) {
-        throw new ConflictException(
-          "The stock position changed after this proposal was made. Review the current figures and propose again.",
-        );
-      }
-    }
-
-    if (!suggestion.vendorId) {
-      throw new NotFoundException("No vendor associated with this reorder suggestion — assign a vendor to the reorder rule first");
-    }
-
-    const po = await this.replenishment.generatePo(orgId, userId, {
-      vendorId: suggestion.vendorId,
-      warehouseId: suggestion.warehouseId ?? undefined,
-      // C2. No quantity: `GeneratePoInput` no longer has a field for one. The
-      // proposal's own `suggestedQty` still guards *whether* to order — the
-      // evidence hash above refuses a stale one — but the number that reaches
-      // the line is re-derived by the server.
-      suggestions: [{ productVariantId: suggestion.productVariantId, unitCost: 0 }],
-      // Derived from the proposal, not minted per call: confirming the same
-      // AI proposal twice must raise one purchase order, and the proposal id is
-      // the only thing that is stable across those two attempts.
-    }, `ai-reorder-proposal:${confirmed.proposalId}`);
-
-    await this.confirmation.markExecuted(confirmed.proposalId, { poId: po.id }, orgId);
-    return po;
   }
 
   async getSupplierDelayBriefing(

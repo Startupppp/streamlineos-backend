@@ -112,7 +112,7 @@ export class AiGatewayService {
       costUsd,
     };
 
-    return { ok: true, data: result.data, aiUsage };
+    return { ok: true, data: result.data, aiUsage, correlationId };
   }
 
   async invokeText(opts: InvokeTextOpts): Promise<AiInvokeResult<string>> {

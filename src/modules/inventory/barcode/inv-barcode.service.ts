@@ -1,13 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
-import { Inject, Injectable } from "@nestjs/common";
+import QRCode from "qrcode";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { invProducts, invProductVariants, invLots, invSerialNumbers, invLocations, invStockLevels, invIdempotencyKeys } from "../../../db/schema";
+import { invProducts, invProductVariants, invLots, invSerialNumbers, invLocations, invStockLevels, invIdempotencyKeys, invUom, organizations } from "../../../db/schema";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { claimIdempotencyKey } from "../stock-engine/idempotency";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import type { BarcodeLookupResult, ScanResult } from "./dto/inv-barcode.schemas";
-import { parseGs1 } from "./gs1";
+import type { BarcodeLookupResult, LabelPayload, ScanResult } from "./dto/inv-barcode.schemas";
+import { formatGs1, parseGs1 } from "./gs1";
 
 @Injectable()
 export class InvBarcodeService {
@@ -258,6 +259,114 @@ export class InvBarcodeService {
 
       return { ...result, captured: true };
     });
+  }
+
+  /**
+   * G4 — everything a printed label needs, resolved from the goods rather than
+   * assembled by whoever is printing.
+   *
+   * The inverse of `lookup`, and it lives beside it deliberately: the one thing a
+   * label must guarantee is that scanning it comes back to the SKU it came off,
+   * and an encoder that lives away from the decoder is how a warehouse ends up
+   * with a shelf of labels its own scanners cannot read.
+   *
+   * `code` is therefore chosen for resolvability, not for prettiness. The
+   * variant's barcode where it has one, its SKU otherwise — `lookup` resolves
+   * both, and both are unique per organisation. The GS1 element string is offered
+   * alongside rather than instead: it carries the lot and expiry a batch label
+   * needs, `POST /inventory/barcode/scan` reads it, and it exists only where the
+   * variant carries a real GTIN.
+   *
+   * The QR encodes the richer of the two, so one scan resolves as much as the
+   * label knows. Rendering is the caller's business — this returns a payload, not
+   * a picture of one, because label stock, symbology and copy count are decisions
+   * made at the printer.
+   */
+  async buildLabel(
+    orgId: string,
+    productVariantId: number,
+    lotId?: number,
+  ): Promise<LabelPayload> {
+    const [variant] = await this.db
+      .select({
+        id: invProductVariants.id,
+        productId: invProductVariants.productId,
+        variantName: invProductVariants.name,
+        sku: invProductVariants.sku,
+        barcode: invProductVariants.barcode,
+        productName: invProducts.name,
+        productBarcode: invProducts.barcode,
+        uom: invUom.abbreviation,
+      })
+      .from(invProductVariants)
+      .innerJoin(invProducts, eq(invProducts.id, invProductVariants.productId))
+      .leftJoin(invUom, eq(invUom.id, invProducts.uomId))
+      .where(
+        and(
+          eq(invProductVariants.orgId, orgId),
+          eq(invProductVariants.id, productVariantId),
+          // An archived SKU must not print: a label is an instruction to put
+          // goods on a shelf under a code that no longer resolves.
+          isNull(invProductVariants.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!variant) throw new NotFoundException("Product variant not found");
+
+    const lot = lotId
+      ? ((await this.db.query.invLots.findFirst({
+          where: and(
+            eq(invLots.orgId, orgId),
+            eq(invLots.id, lotId),
+            // The pairing check: a lot belongs to exactly one variant, and a
+            // label showing this SKU over another batch's number is the single
+            // most expensive thing this endpoint could produce.
+            eq(invLots.productVariantId, productVariantId),
+          ),
+          columns: { id: true, lotNumber: true, expiryDate: true, manufactureDate: true },
+        })) ?? null)
+      : null;
+
+    if (lotId && !lot)
+      throw new NotFoundException("Lot not found for this product variant");
+
+    const [org] = await this.db
+      .select({ name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+
+    const gtin = variant.barcode ?? variant.productBarcode;
+    const code = variant.barcode ?? variant.sku;
+    const gs1 = formatGs1({
+      gtin,
+      lotNumber: lot?.lotNumber ?? null,
+      expiryDate: lot?.expiryDate ?? null,
+    });
+
+    return {
+      productVariantId: variant.id,
+      productId: variant.productId,
+      productName: variant.productName,
+      variantName: variant.variantName,
+      sku: variant.sku,
+      code,
+      codeSource: variant.barcode ? "barcode" : "sku",
+      uom: variant.uom ?? null,
+      lot: lot
+        ? {
+            lotId: lot.id,
+            lotNumber: lot.lotNumber,
+            expiryDate: lot.expiryDate ?? null,
+            manufactureDate: lot.manufactureDate ?? null,
+          }
+        : null,
+      gs1,
+      qrDataUri: await QRCode.toDataURL(gs1 ?? code, { margin: 1, width: 256 }),
+      printedAt: new Date().toISOString(),
+      organizationName: org?.name ?? "",
+    };
   }
 
   private async productStock(orgId: string, productId: number): Promise<string> {

@@ -1,6 +1,11 @@
 import { ForbiddenException } from "@nestjs/common";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { InvAiExplainService } from "../inv-ai-explain.service";
+import { InvAiProposalService } from "../proposals/inv-ai-proposal.service";
+import {
+  evidenceFromProposal,
+  hashProposalEvidence,
+} from "../proposals/inv-ai-proposal-evidence";
+import type { BatchableProposal } from "../../replenishment/forecast/po-batch.service";
 import {
   INV_AI_CONFIRMABLE_ACTIONS,
   assertInvAiConfirmAuthority,
@@ -14,6 +19,25 @@ const USER: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+};
+
+/** The persisted C2 proposal a confirm re-resolves. */
+const PROPOSAL: BatchableProposal = {
+  proposalId: 501,
+  productVariantId: 77,
+  variantSku: "SKU-077",
+  productName: "Widget",
+  warehouseId: 5,
+  warehouseName: "Main WH",
+  vendorId: 9,
+  vendorName: "Acme",
+  currency: "INR",
+  generatedAt: "2026-08-01T00:00:00.000Z",
+  reorderPoint: "120.0000",
+  suggestedQuantity: "36.0000",
+  unitCost: "12.5000",
+  duplicateOfPoNumber: null,
+  blockedReason: null,
 };
 
 /** An access service that answers only for the keys the caller actually holds. */
@@ -112,34 +136,37 @@ describe("F1 — the permission a confirmed AI proposal costs", () => {
  * The behaviour the contract names: "User with only `ai:propose` cannot create
  * a PO." Asserted against the service, not just the helper, because the helper
  * being right is worth nothing if the confirm path forgets to call it.
+ *
+ * F4 moved the confirm path to `InvAiProposalService`, and moved the mutation
+ * from `InvReplenishmentService.generatePo` to `PoBatchService.create`. The
+ * assertion is unchanged: a caller holding only `ai:propose` never reaches the
+ * service that raises the order, and never spends the proposal finding out.
  */
-describe("F1 — confirmReorderProposal with only inventory:ai:propose", () => {
-  function buildService(access: { holds: jest.Mock }, confirmation: object, replenishment: object) {
-    return new InvAiExplainService(
-      {} as never,
+describe("F1 — confirming with only inventory:ai:propose", () => {
+  function buildService(access: { holds: jest.Mock }, confirmation: object, batches: object) {
+    return new InvAiProposalService(
       {} as never,
       confirmation as never,
-      replenishment as never,
-      {} as never,
-      {} as never,
       access as never,
+      batches as never,
+      {} as never,
     );
   }
 
   it("refuses, and never reaches the purchase-order service", async () => {
-    const generatePo = jest.fn();
+    const create = jest.fn();
     const confirm = jest.fn();
     const service = buildService(
       accessHolding("inventory:ai:propose"),
       { confirm, markExecuted: jest.fn() },
-      { generatePo },
+      { create, proposalById: jest.fn() },
     );
 
     await expect(
-      service.confirmReorderProposal(USER, 1, "1.9999999999.abc"),
+      service.confirm(USER, { proposalId: 1, token: "1.9999999999.abc" }),
     ).rejects.toThrow(ForbiddenException);
 
-    expect(generatePo).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
     // The denial lands before the proposal is consumed. Confirming first and
     // refusing after would spend the token on a call that achieved nothing,
     // and would hand anyone holding `ai:propose` a way to burn other people's
@@ -148,30 +175,23 @@ describe("F1 — confirmReorderProposal with only inventory:ai:propose", () => {
   });
 
   it("admits a caller holding both keys and raises the draft PO", async () => {
-    const generatePo = jest.fn().mockResolvedValue({ id: "po-1" });
+    const evidence = evidenceFromProposal(PROPOSAL);
+    const create = jest.fn().mockResolvedValue({ poId: 1, poNumber: "PO-1" });
     const service = buildService(
       accessHolding("inventory:ai:propose", "inventory:purchase-orders:create"),
       {
         confirm: jest.fn().mockResolvedValue({
           proposalId: 1,
           action: "inventory:create-draft-po",
-          payload: {
-            suggestion: {
-              productVariantId: 77,
-              suggestedQty: 10,
-              currentOnHand: 2,
-              vendorId: 9,
-              warehouseId: 5,
-            },
-          },
+          payload: { evidence, evidenceHash: hashProposalEvidence(evidence) },
         }),
         markExecuted: jest.fn().mockResolvedValue(undefined),
       },
-      { generatePo },
+      { create, proposalById: jest.fn().mockResolvedValue(PROPOSAL) },
     );
 
-    await service.confirmReorderProposal(USER, 1, "1.9999999999.abc");
-    expect(generatePo).toHaveBeenCalledTimes(1);
+    await service.confirm(USER, { proposalId: 1, token: "1.9999999999.abc" });
+    expect(create).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a token whose stored action is not this route's", async () => {
@@ -179,23 +199,23 @@ describe("F1 — confirmReorderProposal with only inventory:ai:propose", () => {
     // holds both PO keys, so the route's own gate passes -- and the proposal is
     // still refused, because authority is measured against what the stored row
     // says it will do.
-    const generatePo = jest.fn();
+    const create = jest.fn();
     const service = buildService(
       accessHolding("inventory:ai:propose", "inventory:purchase-orders:create"),
       {
         confirm: jest.fn().mockResolvedValue({
           proposalId: 2,
           action: "inventory:create-transfer",
-          payload: { suggestion: { productVariantId: 1, suggestedQty: 1, vendorId: 1 } },
+          payload: { evidence: evidenceFromProposal(PROPOSAL), evidenceHash: "x" },
         }),
         markExecuted: jest.fn(),
       },
-      { generatePo },
+      { create, proposalById: jest.fn() },
     );
 
     await expect(
-      service.confirmReorderProposal(USER, 2, "2.9999999999.abc"),
+      service.confirm(USER, { proposalId: 2, token: "2.9999999999.abc" }),
     ).rejects.toThrow(ForbiddenException);
-    expect(generatePo).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
   });
 });

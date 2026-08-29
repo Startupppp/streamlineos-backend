@@ -2,6 +2,7 @@ import { Inject, Injectable, BadRequestException, Logger, NotFoundException } fr
 import { and, eq } from "drizzle-orm";
 import {
   invSalesOrders, invStockReservations, invPickLists, invPickListLines, invPackages, invPackageLines,
+  invShipmentLines, invSoLines, invProductVariants,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -13,8 +14,9 @@ import { InventorySettingsService } from "../stock-engine/inventory-settings.ser
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
 import { SoCoreService } from "./so-core.service";
+import { clientBehindSource, resolveShelfLifeFloor } from "../settings/min-shelf-life";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
-import { addDec, cmpDec } from "../stock-engine/decimal";
+import { addDec, cmpDec, mulDec } from "../stock-engine/decimal";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
 import { runIdempotent, revivedScalar } from "../stock-engine/idempotency";
 import { shelfLines } from "../shipments/packing-reconciliation";
@@ -24,6 +26,8 @@ import {
   postShipment,
   reviveShipResult,
 } from "./so-ship";
+import { IndiaComplianceService } from "../compliance/india-compliance.service";
+import type { InvSettingsRow } from "../stock-engine/stock-engine.types";
 
 /** The pick result as it comes back from the idempotency row's stored JSON. */
 function revivePickResult(stored: unknown): {
@@ -53,6 +57,7 @@ export class SoFulfillmentService {
     private readonly journalPosting: InventoryAccountingBridge,
     private readonly soCore: SoCoreService,
     private readonly projection: StockProjectionService,
+    private readonly compliance: IndiaComplianceService,
   ) {}
 
   async reserveSo(orgId: string, soId: number, userId: string, idempotencyKey: string, data: ReserveSoInput) {
@@ -66,6 +71,20 @@ export class SoFulfillmentService {
     }
 
     const settings = await this.settingsService.get(orgId);
+
+    // D2. The same two constraints `autoReserve` applies, resolved once for the
+    // order. Without them this path — the explicit "reserve stock" button on a
+    // confirmed order — allocated with no near-expiry tier and no customer
+    // shelf-life floor, so the button quietly took lots the automatic path had
+    // refused minutes earlier.
+    const clientId = await clientBehindSource(this.db, orgId, "inv_sales_order", String(soId));
+    const floor = await resolveShelfLifeFloor(this.db, orgId, clientId);
+    const constraints = {
+      nearExpiryPolicy: settings.nearExpiryPolicy,
+      nearExpiryWindowDays: settings.nearExpiryWindowDays,
+      minShelfLifeDays: floor.days,
+    };
+
     let allReserved = true;
 
     await this.db.transaction(async (tx) => {
@@ -106,6 +125,7 @@ export class SoFulfillmentService {
           const available = await this.soCore.findAvailableLotForLine(
             orgId, line.productVariantId, data.warehouseId ?? so.warehouseId ?? undefined,
             line.quantity, settings.reservationStrategy, settings.expiryReservationPolicy,
+            constraints,
           );
 
           if (!available) { allReserved = false; continue; }
@@ -468,9 +488,149 @@ export class SoFulfillmentService {
       });
     }
 
+    // E5 — the statutory documents this dispatch owes, if this organisation has
+    // asked for any.
+    //
+    // **After** the transaction, deliberately and for two reasons. The ship
+    // transaction's last write must stay the `outgoing_qty` recompute — a write
+    // slipped in after it silently corrupts the projection — and this does I/O
+    // to a provider, which must never happen while a pooled connection is held
+    // with a tenant GUC on it (§4).
+    await this.fileStatutoryDocuments(orgId, userId, soId, result, settings);
+
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
     await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
 
     return result;
+  }
+
+  /**
+   * E5 — the shipment seam: a dispatched shipment stores an IRN and emits the
+   * event, when the flags say so.
+   *
+   * ## Off means nothing happens
+   *
+   * The flags come from the settings row `shipSo` has already loaded, so an
+   * organisation with e-invoicing off pays for no extra query, constructs no
+   * payload and reaches no adapter. `IndiaComplianceService.register` refuses a
+   * second time on the same flags — this early return is not the boundary, it is
+   * what makes "flag off" cost nothing.
+   *
+   * ## The ledger is untouched either way
+   *
+   * Everything below runs after the ship transaction has committed and calls
+   * only `IndiaComplianceService`, which imports no stock engine. A shipment
+   * posted with the flags on and the same shipment posted with them off produce
+   * identical `inv_stock_transactions` rows; `__tests__/so-ship-compliance.spec.ts`
+   * asserts exactly that.
+   *
+   * ## What a replay does
+   *
+   * Nothing new. `register` hashes the document and returns the existing IRN for
+   * an unchanged one, so a retried ship — which replays through the idempotency
+   * claim and reaches here again — files once.
+   */
+  private async fileStatutoryDocuments(
+    orgId: string,
+    userId: string,
+    soId: number,
+    result: ShipSoResult,
+    settings: InvSettingsRow,
+  ): Promise<void> {
+    // The `gst` pack is a prerequisite: without it no line carries an HSN code,
+    // and a line with no HSN cannot be described to a tax authority at all.
+    if (!settings.packs.gst) return;
+    if (!settings.gstEinvoiceEnabled && !settings.gstEwaybillEnabled) return;
+    if (!result.shipmentId) return;
+
+    try {
+      const lines = await this.db
+        .select({
+          name: invProductVariants.name,
+          sku: invProductVariants.sku,
+          hsnCode: invSoLines.hsnCode,
+          quantity: invShipmentLines.quantity,
+          unitPrice: invSoLines.unitPrice,
+        })
+        .from(invShipmentLines)
+        .innerJoin(
+          invProductVariants,
+          and(
+            eq(invProductVariants.id, invShipmentLines.productVariantId),
+            eq(invProductVariants.orgId, invShipmentLines.orgId),
+          ),
+        )
+        .leftJoin(
+          invSoLines,
+          and(
+            eq(invSoLines.id, invShipmentLines.soLineId),
+            eq(invSoLines.orgId, invShipmentLines.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(invShipmentLines.orgId, orgId),
+            eq(invShipmentLines.shipmentId, result.shipmentId),
+          ),
+        );
+
+      if (lines.length === 0) return;
+
+      const complianceLines = lines.map((line) => ({
+        description: `${line.sku} ${line.name}`.trim(),
+        hsnCode: line.hsnCode,
+        // Decimal strings the whole way. A quantity or a taxable value that
+        // becomes a float on its way to a tax authority is a defect, not a
+        // rounding preference.
+        quantity: line.quantity,
+        taxableValue: mulDec(line.quantity, line.unitPrice ?? "0"),
+      }));
+
+      // Two documents, two calls, each gated on its own flag. An organisation
+      // that files e-invoices and hands e-way bills to its transporter is
+      // ordinary, and folding the two into one call would make that
+      // unrepresentable.
+      if (settings.gstEinvoiceEnabled) {
+        await this.fileOne(orgId, userId, soId, result, "EINVOICE", complianceLines);
+      }
+      if (settings.gstEwaybillEnabled) {
+        await this.fileOne(orgId, userId, soId, result, "EWAYBILL", complianceLines);
+      }
+    } catch (error: unknown) {
+      // Reported, never silent (§4). This cannot roll anything back — the goods
+      // have left and the ledger is right — but an operator has to be able to
+      // find out that a filing did not happen, and the compliance row itself
+      // records a FAILED attempt whenever the adapter answered at all.
+      this.logger.error(
+        `Statutory filing for shipment ${result.shipmentId} (SO ${soId}) failed: ` +
+          (error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+
+  private async fileOne(
+    orgId: string,
+    userId: string,
+    soId: number,
+    result: ShipSoResult,
+    kind: "EINVOICE" | "EWAYBILL",
+    lines: Array<{ description: string; hsnCode: string | null; quantity: string; taxableValue: string }>,
+  ): Promise<void> {
+    const filed = await this.compliance.register(orgId, userId, {
+      kind,
+      // The shipment, not the order: an e-way bill describes goods on a vehicle,
+      // and a partially shipped order raises one document per dispatch rather
+      // than one for the order.
+      sourceType: "inv_shipment",
+      sourceId: String(result.shipmentId),
+      documentNumber: result.shipmentNumber,
+      lines,
+    });
+
+    if (filed.status === "FAILED") {
+      this.logger.warn(
+        `${kind} for shipment ${result.shipmentId} (SO ${soId}) was refused: ${filed.code} ${filed.message}`,
+      );
+    }
   }
 }

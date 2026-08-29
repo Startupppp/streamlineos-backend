@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Post, Param, Body, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, Patch, Post, Put, Param, Body, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -8,18 +8,24 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { SettingsService } from "./settings.service";
+import { ShelfLifeRulesService } from "./shelf-life-rules.service";
 import {
   updateSettingsSchema,
   updateNumberSequenceSchema,
+  putShelfLifeRuleSchema,
   type UpdateSettingsInput,
   type UpdateNumberSequenceInput,
+  type PutShelfLifeRuleInput,
 } from "./dto/settings.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/settings")
 @UseGuards(JwtAuthGuard, ModuleGuard)
 export class SettingsController {
-  constructor(private readonly svc: SettingsService) {}
+  constructor(
+    private readonly svc: SettingsService,
+    private readonly shelfLife: ShelfLifeRulesService,
+  ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
@@ -73,6 +79,30 @@ export class SettingsController {
   @RequirePermission("inventory:settings:manage")
   getHealth(@CurrentUser() u: CurrentUserContext) {
     return this.svc.getHealth(u.orgId);
+  }
+
+  /**
+   * D2. The minimum-shelf-life contracts — the house floor and every customer
+   * that negotiated their own.
+   *
+   * Behind the administration key rather than a read key: a floor decides which
+   * lots an allocation may take, so it is policy, not a display preference.
+   */
+  @Get("shelf-life-rules")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:settings:manage")
+  listShelfLifeRules(@CurrentUser() u: CurrentUserContext) {
+    return this.shelfLife.list(u.orgId);
+  }
+
+  @Put("shelf-life-rules")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:settings:manage")
+  putShelfLifeRule(
+    @Body(new ZodValidationPipe(putShelfLifeRuleSchema)) body: PutShelfLifeRuleInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.shelfLife.put(u.orgId, u.userId, body);
   }
 
   @Post("maintenance/expire-reservations")

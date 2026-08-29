@@ -21,12 +21,44 @@ import { InventorySettingsService } from "../stock-engine/inventory-settings.ser
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import {
   assertMayOverrideAllocation,
+  daysRemaining,
   overridable,
+  overriddenRule,
   refusalMessage,
+  todayIso,
   verdictFor,
   type EligibilityPolicy,
   type LotFacts,
+  type OverriddenRule,
 } from "../sales-orders/lot-eligibility";
+import { clientBehindSource, resolveShelfLifeFloor } from "../settings/min-shelf-life";
+import { invAllocationOverrides } from "../../../db/schema";
+
+/**
+ * D2 — what an override record has to say, decided by asking what a reviewer
+ * needs six months later to answer "who shipped the short-dated stock, and why".
+ *
+ * Everything here is a snapshot rather than a join. The lot may have been
+ * consumed and purged, and the settings certainly may have been edited — a row
+ * that has to join `inv_settings` to explain itself explains itself differently
+ * every time somebody changes a setting, which is the opposite of a trail.
+ */
+interface OverrideFacts {
+  /** Which rule was set aside: the org's near-expiry block, or a customer floor. */
+  readonly rule: OverriddenRule;
+  readonly reason: string;
+  readonly lotId: number;
+  readonly lotNumber: string;
+  readonly lotExpiryDate: string;
+  readonly daysRemaining: number;
+  readonly nearExpiryPolicy: string;
+  readonly nearExpiryWindowDays: number;
+  readonly minShelfLifeDays: number;
+  /** Who receives it — null when the reservation names no customer document. */
+  readonly clientId: number | null;
+}
+
+type LotChoiceOutcome = { overridden: false } | { overridden: true; facts: OverrideFacts };
 
 @Injectable()
 export class InvStockReservationsService {
@@ -50,8 +82,9 @@ export class InvStockReservationsService {
    *     needed no override is refused rather than silently recorded, because a
    *     row saying "overridden" about an ordinary allocation is a false trail
    *     through the audit log;
-   *   * the lot is short-dated → needs `inventory:allocation:override` **and** a
-   *     reason, and the pair is audited;
+   *   * the lot is short-dated, or below the shelf life this customer contracted
+   *     for → needs `inventory:allocation:override` **and** a reason, and the
+   *     pair is recorded;
    *   * the lot is expired, recalled, blocked or consumed → refused outright.
    *     No permission reaches it: making those overridable would turn
    *     `expiryReservationPolicy: BLOCK` into a suggestion.
@@ -60,7 +93,7 @@ export class InvStockReservationsService {
     orgId: string,
     userId: string,
     input: CreateReservationInput,
-  ): Promise<{ overridden: boolean }> {
+  ): Promise<LotChoiceOutcome> {
     if (input.lotId === undefined) {
       if (input.overrideReason !== undefined) {
         throw new BadRequestException(
@@ -73,19 +106,27 @@ export class InvStockReservationsService {
     const settings = await this.settingsService.get(orgId);
     const lot = await this.db.query.invLots.findFirst({
       where: and(eq(invLots.orgId, orgId), eq(invLots.id, input.lotId)),
-      columns: { id: true, expiryDate: true, status: true },
+      columns: { id: true, lotNumber: true, expiryDate: true, status: true },
     });
     // A lot id from another tenant resolves to nothing here, and 404 is the
     // answer §4 requires — a 403 would confirm the row exists.
     if (!lot) throw new NotFoundException("Lot not found");
+
+    // D2. The same floor `autoReserve` applied, resolved through the same helper
+    // so a hand-raised reservation and an automatic one cannot hold two opinions
+    // about what this customer agreed to accept.
+    const clientId = await clientBehindSource(this.db, orgId, input.sourceType, input.sourceId);
+    const floor = await resolveShelfLifeFloor(this.db, orgId, clientId);
 
     const lotById: ReadonlyMap<number, LotFacts> = new Map([[lot.id, lot]]);
     const policy: EligibilityPolicy = {
       expiryPolicy: settings.expiryReservationPolicy,
       nearExpiryPolicy: settings.nearExpiryPolicy,
       nearExpiryWindowDays: settings.nearExpiryWindowDays,
+      minShelfLifeDays: floor.days,
     };
-    const verdict = verdictFor(lot.id, lotById, policy);
+    const today = todayIso();
+    const verdict = verdictFor(lot.id, lotById, policy, today);
 
     if (verdict.kind === "ELIGIBLE") {
       if (input.overrideReason !== undefined) {
@@ -105,7 +146,31 @@ export class InvStockReservationsService {
     }
 
     await assertMayOverrideAllocation(this.access, orgId, userId);
-    return { overridden: true };
+
+    // Both are guaranteed by the branches above — `overridable` is only ever
+    // true for a dated lot under one of the two judgement-call rules — but the
+    // types do not know that, and a cast here would be a cast in the one place
+    // the trail is written.
+    const rule = overriddenRule(verdict);
+    if (rule === null || lot.expiryDate === null) {
+      throw new BadRequestException(refusalMessage(verdict));
+    }
+
+    return {
+      overridden: true,
+      facts: {
+        rule,
+        reason: input.overrideReason,
+        lotId: lot.id,
+        lotNumber: lot.lotNumber,
+        lotExpiryDate: lot.expiryDate,
+        daysRemaining: daysRemaining(lot.expiryDate, today),
+        nearExpiryPolicy: settings.nearExpiryPolicy,
+        nearExpiryWindowDays: settings.nearExpiryWindowDays,
+        minShelfLifeDays: floor.days,
+        clientId,
+      },
+    };
   }
 
   async listReservations(orgId: string, userId: string, filters: ListReservationsInput) {
@@ -184,7 +249,7 @@ export class InvStockReservationsService {
     // D2. Before the claim, so a request that is going to be refused never
     // consumes its idempotency key — a caller fixing a missing reason and
     // retrying with the same key must not replay a stored refusal.
-    const { overridden } = await this.assertLotChoiceAllowed(orgId, userId, input);
+    const choice = await this.assertLotChoiceAllowed(orgId, userId, input);
 
     const reservationId = await this.db.transaction((tx) =>
       runIdempotent(
@@ -206,11 +271,40 @@ export class InvStockReservationsService {
             expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
           });
 
-          // D2. The override is audited inside the claim, beside the reservation
-          // it justifies. Outside it, a retry would write a second audit row for
-          // one decision and the trail would over-count deliberate overrides —
-          // which is the number a quality investigation is actually counting.
-          if (overridden) {
+          // D2. The override is recorded inside the claim, beside the
+          // reservation it justifies. Outside it, a retry would write a second
+          // row for one decision and the trail would over-count deliberate
+          // overrides — which is the number a quality investigation is actually
+          // counting.
+          //
+          // Two writes, on purpose. `inv_audit_events` is the immutable event
+          // log and its list endpoint deliberately does not project `after`
+          // (D7's redaction line), so the reason in it is written and
+          // unreadable. `inv_allocation_overrides` is the domain record: typed,
+          // indexed and answerable — who, why, which rule, how short-dated the
+          // lot actually was, what the policy said at the time, and which
+          // customer received it. Neither replaces the other.
+          if (choice.overridden) {
+            const { facts } = choice;
+            await tx.insert(invAllocationOverrides).values({
+              orgId,
+              actorUserId: userId,
+              reason: facts.reason,
+              verdict: facts.rule,
+              productVariantId: created.productVariantId,
+              lotId: facts.lotId,
+              lotNumber: facts.lotNumber,
+              lotExpiryDate: facts.lotExpiryDate,
+              daysRemaining: facts.daysRemaining,
+              nearExpiryPolicy: facts.nearExpiryPolicy,
+              nearExpiryWindowDays: facts.nearExpiryWindowDays,
+              minShelfLifeDays: facts.minShelfLifeDays,
+              sourceType: created.sourceType,
+              sourceId: created.sourceId,
+              clientId: facts.clientId,
+              reservationId: created.id,
+            });
+
             await this.audit.insert(tx, {
               orgId,
               actorUserId: userId,
@@ -218,11 +312,19 @@ export class InvStockReservationsService {
               resourceType: "inv_stock_reservation",
               resourceId: String(created.id),
               after: {
+                rule: facts.rule,
                 lotId: created.lotId,
+                lotNumber: facts.lotNumber,
+                lotExpiryDate: facts.lotExpiryDate,
+                daysRemaining: facts.daysRemaining,
                 productVariantId: created.productVariantId,
                 locationId: created.locationId,
                 reservedQty: created.reservedQty,
-                reason: input.overrideReason,
+                clientId: facts.clientId,
+                nearExpiryPolicy: facts.nearExpiryPolicy,
+                nearExpiryWindowDays: facts.nearExpiryWindowDays,
+                minShelfLifeDays: facts.minShelfLifeDays,
+                reason: facts.reason,
               },
             });
           }
