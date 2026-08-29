@@ -16,6 +16,7 @@ import { InvReplenishmentModule } from "./replenishment/inv-replenishment.module
 import { InvAiModule } from "./ai/inv-ai.module";
 import { InvQualityModule } from "./quality/inv-quality.module";
 import { InvNotificationsModule } from "./notifications/inv-notifications.module";
+import { InvComplianceModule } from "./compliance/inv-compliance.module";
 import { InvShipmentsModule } from "./shipments/inv-shipments.module";
 import { InvChannelsModule } from "./channels/inv-channels.module";
 import { InvImportExportModule } from "./import-export/inv-import-export.module";
@@ -45,6 +46,7 @@ const INVENTORY_MODULES = [
   InvAiModule,
   InvQualityModule,
   InvNotificationsModule,
+  InvComplianceModule,
   InvShipmentsModule,
   InvChannelsModule,
   InvImportExportModule,

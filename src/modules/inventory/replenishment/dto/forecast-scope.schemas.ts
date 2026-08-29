@@ -41,6 +41,24 @@ export const generateForecastSchema = z
   .strict();
 export type GenerateForecastBody = z.infer<typeof generateForecastSchema>;
 
+/**
+ * C2 — record a proposal for every SKU at this site that has recently sold.
+ *
+ * The sweep is capped rather than unbounded: each version costs a demand
+ * baseline, a backtest and a lead-time read, so this is a batch a buyer asks
+ * for, not a catalogue rebuild. `limit` defaults low and is hard-capped at 50 —
+ * a lower ceiling than the 100 that applies to reads (§3), because these are
+ * writes with real arithmetic behind each one.
+ */
+export const refreshForecastsSchema = z
+  .object({
+    warehouseId: z.number().int().positive().optional(),
+    historyWeeks: z.number().int().min(1).max(260).optional(),
+    limit: z.number().int().min(1).max(50).default(25),
+  })
+  .strict();
+export type RefreshForecastsBody = z.infer<typeof refreshForecastsSchema>;
+
 /** Paginated read over the stored history. Hard-capped at 100 like every list (§3). */
 export const forecastVersionsQuerySchema = z
   .object({

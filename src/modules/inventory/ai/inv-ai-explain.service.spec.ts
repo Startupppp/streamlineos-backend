@@ -625,7 +625,10 @@ describe("InvAiExplainService - confirmReorderProposal", () => {
     expect(body.warehouseId).toBe(5);
     expect(body.suggestions).toHaveLength(1);
     expect(body.suggestions[0].productVariantId).toBe(77);
-    expect(body.suggestions[0].suggestedQty).toBe(10);
+    // C2. The variant is named; the quantity is not. `GeneratePoInput` has no
+    // field for one any more, so confirming an AI proposal orders the server's
+    // own number rather than the one the model saw when it drafted the proposal.
+    expect(body.suggestions[0].suggestedQty).toBeUndefined();
   });
 
   it("should call AiConfirmationService.markExecuted with proposalId and poId after generating the PO", async () => {

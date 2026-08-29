@@ -51,14 +51,17 @@ export class InvPoBatchesController {
     @Body(new ZodValidationPipe(previewPoBatchSchema)) body: PreviewPoBatchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.batches.preview(u.orgId, u.userId, body.proposalIds);
+    return this.batches.preview(u.orgId, u.userId, body.proposalIds, body.overrides);
   }
 
   /**
    * Create the one draft order these proposals describe.
    *
    * A set spanning two suppliers is refused rather than split, and the quantity
-   * is the server's: the schema has no field for a client-sent one.
+   * is the server's: the schema has no field for a client-sent one. The one way
+   * a person changes it is `overrides`, which is a named act carrying a reason
+   * and is written to `inv_proposal_overrides` beside the order — never a
+   * quantity smuggled onto a line.
    */
   @Post()
   @UseGuards(PermissionGuard)

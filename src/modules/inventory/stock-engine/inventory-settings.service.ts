@@ -34,6 +34,10 @@ const toSettingsRow = (row: InvSettingsSelect | InvSettingsInsert): InvSettingsR
   gstMode: row.gstMode ?? "REGULAR",
   nearExpiryPolicy: row.nearExpiryPolicy ?? "DEPRIORITIZE",
   nearExpiryWindowDays: row.nearExpiryWindowDays ?? 30,
+  gstEinvoiceEnabled: row.gstEinvoiceEnabled ?? false,
+  gstEwaybillEnabled: row.gstEwaybillEnabled ?? false,
+  tallyExportEnabled: row.tallyExportEnabled ?? false,
+  complianceAdapter: row.complianceAdapter ?? "stub",
 });
 
 const buildDefaults = (orgId: string): InvSettingsInsert => ({
@@ -59,6 +63,10 @@ const buildDefaults = (orgId: string): InvSettingsInsert => ({
   gstMode: "REGULAR",
   nearExpiryPolicy: "DEPRIORITIZE",
   nearExpiryWindowDays: 30,
+  gstEinvoiceEnabled: false,
+  gstEwaybillEnabled: false,
+  tallyExportEnabled: false,
+  complianceAdapter: "stub",
 });
 
 @Injectable()

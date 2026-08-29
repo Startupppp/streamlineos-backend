@@ -13,6 +13,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { AccessService } from "../../access/access.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import type { ListRulesInput, CreateRuleInput, UpdateRuleInput, GeneratePoInput, ForecastingInput, SuggestionsQueryInput } from "./dto/replenishment.schemas";
 import { applyOrderPolicy } from "./forecast/order-policy";
@@ -20,6 +21,7 @@ import { runIdempotent } from "../stock-engine/idempotency";
 import { ReorderProposalService } from "./forecast/reorder-proposal.service";
 import { addDec, cmpDec, mulDec, subDec } from "../stock-engine/decimal";
 import { atLeastZero, fromExact, isPositiveExact, toExact } from "./forecast/exact";
+import { assertMayCreatePurchaseOrder } from "./forecast/purchase-order-authority";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -36,6 +38,7 @@ export class InvReplenishmentService {
     private readonly cache: CacheService,
     private readonly numSeq: NumberSequenceService,
     private readonly reorderProposals: ReorderProposalService,
+    private readonly access: AccessService,
   ) {}
 
   async listRules(orgId: string, filters: ListRulesInput) {
@@ -324,6 +327,12 @@ export class InvReplenishmentService {
    * that variant, put through the supplier's order policy. A body quantity is
    * ignored rather than rejected, because the caller is not doing anything
    * wrong by sending one — it is simply not the authority.
+   *
+   * C2 made "ignored" structural rather than remembered. `generatePoSchema`
+   * drops `suggestedQty` at the boundary, so `GeneratePoInput` has no such field
+   * and this method could not read one if a later edit tried to. A rule the code
+   * cannot express is a convention, and conventions are what the payload-driven
+   * quantity was.
    */
   /**
    * A3. Creating a draft purchase order took no key, so a double-clicked
@@ -332,6 +341,13 @@ export class InvReplenishmentService {
    * perfectly legitimate.
    */
   async generatePo(orgId: string, userId: string, body: GeneratePoInput, idempotencyKey: string) {
+    // C2. The decorator on the route says this too, but `PermissionGuard` is not
+    // global (backend §2) and lives on the controller: a new route added beside
+    // this one that forgets `@RequirePermission` would be authenticated,
+    // module-gated and able to raise purchase orders. The rule belongs where the
+    // order is created, which is the place a new caller cannot route around.
+    await assertMayCreatePurchaseOrder(this.access, orgId, userId);
+
     const recomputed = await Promise.all(
       body.suggestions.map(async (s) => {
         const suggestion = await this.getSuggestionForVariant(

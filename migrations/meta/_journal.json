@@ -2346,6 +2346,13 @@
       "when": 1788134409011,
       "tag": "0563_near_expiry_allocation_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 336,
+      "version": "7",
+      "when": 1788134409012,
+      "tag": "0564_india_compliance_adapters",
+      "breakpoints": true
     }
   ]
 }

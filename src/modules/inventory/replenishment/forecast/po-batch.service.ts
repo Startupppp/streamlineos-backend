@@ -1,8 +1,9 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { sql } from "drizzle-orm";
-import { invPoLines, invPurchaseOrders } from "../../../../db/schema";
+import { invPoLines, invProposalOverrides, invPurchaseOrders } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
+import { AccessService } from "../../../access/access.service";
 import { availableQtySumSql } from "../../stock-engine/available-sql";
 import { addDec } from "../../stock-engine/decimal";
 import { InventorySettingsService } from "../../stock-engine/inventory-settings.service";
@@ -15,9 +16,12 @@ import {
   blockedReason,
   orderQuantityFor,
   resolveProposalLines,
+  type ProposalOverride,
   type ProposalResolution,
+  type ResolvedBatchLine,
   type ResolvedProposalRow,
 } from "./po-batch-lines";
+import { assertMayCreatePurchaseOrder } from "./purchase-order-authority";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -88,6 +92,7 @@ export class PoBatchService {
     private readonly settings: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly access: AccessService,
   ) {}
 
   /** The persisted proposals a buyer could act on, newest version per site. */
@@ -146,9 +151,15 @@ export class PoBatchService {
     orgId: string,
     userId: string,
     proposalIds: readonly number[],
+    overrides: readonly ProposalOverride[] = [],
   ): Promise<PoBatchPreview> {
     const settings = await this.settings.get(orgId);
-    const resolution = await this.resolveForBatching(orgId, userId, proposalIds);
+    const resolution = await this.resolveForBatching(
+      orgId,
+      userId,
+      proposalIds,
+      overrides,
+    );
     return {
       batches: batchProposals(resolution.lines, {
         requireApproval: settings.requirePoApproval,
@@ -171,11 +182,27 @@ export class PoBatchService {
   async create(
     orgId: string,
     userId: string,
-    input: { proposalIds: readonly number[]; vendorId: number },
+    input: {
+      proposalIds: readonly number[];
+      vendorId: number;
+      overrides?: readonly ProposalOverride[];
+    },
     idempotencyKey: string,
   ): Promise<CreatedPoBatch> {
+    // Asserted here as well as on the route. `PermissionGuard` is not global
+    // (backend §2), so a controller added beside `InvPoBatchesController` that
+    // forgets `@RequirePermission` would be authenticated, module-gated and
+    // free to raise purchase orders; this is the check it cannot route around.
+    await assertMayCreatePurchaseOrder(this.access, orgId, userId);
+
+    const overrides = input.overrides ?? [];
     const settings = await this.settings.get(orgId);
-    const resolution = await this.resolveForBatching(orgId, userId, input.proposalIds);
+    const resolution = await this.resolveForBatching(
+      orgId,
+      userId,
+      input.proposalIds,
+      overrides,
+    );
 
     if (resolution.lines.length === 0) {
       throw new BadRequestException(
@@ -194,6 +221,8 @@ export class PoBatchService {
       throw new BadRequestException("This set of proposals produces no purchase order.");
     }
 
+    const overridden = resolution.lines.filter((line) => line.override !== null);
+
     const result = await this.db.transaction((tx) =>
       runIdempotent<StoredBatch>(
         tx,
@@ -203,8 +232,15 @@ export class PoBatchService {
           command: "inventory.replenishment.po-batch.create",
           vendorId: input.vendorId,
           proposalIds: [...input.proposalIds].sort((a, b) => a - b),
+          // The overrides are part of the request, so they are part of its
+          // identity. Left out, a retry that changed a quantity would replay the
+          // first order and report success for a number nobody ordered — and
+          // `runIdempotent` raises a parameter mismatch instead.
+          overrides: [...overrides]
+            .sort((a, b) => a.proposalId - b.proposalId)
+            .map((o) => [o.proposalId, o.quantity, o.reason]),
         },
-        () => this.insertDraftPo(tx, orgId, userId, batch),
+        () => this.insertDraftPo(tx, orgId, userId, batch, overridden),
         reviveBatch,
       ),
     );
@@ -230,6 +266,7 @@ export class PoBatchService {
     orgId: string,
     userId: string,
     batch: SupplierSiteBatch,
+    overridden: readonly ResolvedBatchLine[],
   ): Promise<StoredBatch> {
     const poNumber = await this.numSeq.next(orgId, "PO", tx);
     const subtotal = batch.lines.reduce(
@@ -270,6 +307,30 @@ export class PoBatchService {
       })),
     );
 
+    // C2. Written in the same transaction as the order it explains. A separate
+    // write could fail on its own and leave a purchase order carrying a human's
+    // number with nothing on record saying it was one — which is the state the
+    // whole unit exists to make impossible.
+    const overrideRows = overridden.flatMap((line) =>
+      line.override === null
+        ? []
+        : [
+            {
+              orgId,
+              forecastId: line.proposalId,
+              productVariantId: line.productVariantId,
+              warehouseId: line.warehouseId,
+              engineQty: line.engineOrdered,
+              requestedQty: line.override.requested,
+              orderedQty: line.ordered,
+              reason: line.override.reason,
+              poId: po.id,
+              createdBy: userId,
+            },
+          ],
+    );
+    if (overrideRows.length > 0) await tx.insert(invProposalOverrides).values(overrideRows);
+
     return { poId: po.id, poNumber: po.poNumber, created: true };
   }
 
@@ -278,8 +339,29 @@ export class PoBatchService {
     orgId: string,
     userId: string,
     proposalIds: readonly number[],
+    overrides: readonly ProposalOverride[],
   ): Promise<ProposalResolution> {
     const unique = [...new Set(proposalIds)];
+    // An override naming a proposal that is not in the batch would be accepted
+    // and silently do nothing, which is the shape of bug that makes a buyer
+    // believe they changed a quantity they did not. Refused instead.
+    const selected = new Set(unique);
+    const stray = overrides.find((o) => !selected.has(o.proposalId));
+    if (stray) {
+      throw new BadRequestException(
+        `An override was given for proposal ${stray.proposalId}, which is not in this batch.`,
+      );
+    }
+    const seen = new Set<number>();
+    for (const override of overrides) {
+      if (seen.has(override.proposalId)) {
+        throw new BadRequestException(
+          `Proposal ${override.proposalId} was overridden twice, and the two do not agree on a quantity.`,
+        );
+      }
+      seen.add(override.proposalId);
+    }
+
     const rows = await this.resolve(orgId, unique);
     if (rows.length !== unique.length) {
       // A missing id is a 404 rather than a 403 even when it belongs to another
@@ -288,7 +370,7 @@ export class PoBatchService {
     }
     for (const row of rows)
       await this.warehouseScope.assertWarehouseVisible(orgId, userId, row.warehouseId);
-    return resolveProposalLines(rows);
+    return resolveProposalLines(rows, overrides);
   }
 
   /**

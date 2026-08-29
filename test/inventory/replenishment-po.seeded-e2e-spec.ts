@@ -5,6 +5,7 @@ import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { StockEngineService } from "src/modules/inventory/stock-engine/stock-engine.service";
 import { InvReplenishmentService } from "src/modules/inventory/replenishment/inv-replenishment.service";
+import { generatePoSchema } from "src/modules/inventory/replenishment/dto/replenishment.schemas";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 
@@ -39,18 +40,27 @@ describe("[seeded-e2e] the server owns the purchase-order quantity", () => {
 
   const db = () => app.app.get<Db>(DRIZZLE);
 
+  /**
+   * The client's payload, through the endpoint's own schema.
+   *
+   * C2 made "the quantity is ignored" structural rather than remembered:
+   * `generatePoSchema` drops `suggestedQty`, so the service is handed a value
+   * that has no such field. Parsing here rather than hand-building the input is
+   * what makes this a test of the real boundary instead of a test of a
+   * convention the service could quietly stop honouring.
+   */
   const generate = (suggestedQty: number) =>
     asTenant(() =>
       app.app.get(InvReplenishmentService).generatePo(
         scene.orgId,
         scene.userId,
-        {
+        generatePoSchema.parse({
           vendorId: scene.vendorId,
           warehouseId: scene.warehouseId,
           suggestions: [
             { productVariantId: scene.variantId, suggestedQty, unitCost: 10 },
           ],
-        } as never,
+        }),
         `genpo-${randomUUID().slice(0, 8)}`,
       ),
     );

@@ -77,6 +77,24 @@ export const invSettings = pgTable("inv_settings", {
    * keeps the default and nothing reads it.
    */
   gstMode: invGstModeEnum("gst_mode").default("REGULAR").notNull(),
+  /**
+   * E5 — the statutory adapters, each off until asked for.
+   *
+   * Separate from `packGst`, deliberately. The pack decides whether HSN codes
+   * and tax treatment exist as *fields*; these decide whether this deployment
+   * talks to an authority. An organisation capturing HSN for its own records and
+   * filing through its accountant wants the first and not the second, and
+   * collapsing them would sign it up for outbound traffic it never asked for.
+   *
+   * `*_ADAPTER` names which implementation answers. `stub` is the only one that
+   * exists; anything else resolves to an adapter that refuses with
+   * NO_CREDENTIALS rather than silently falling back, because a silent fallback
+   * is how somebody comes to believe they are filing when they are rehearsing.
+   */
+  gstEinvoiceEnabled: boolean("gst_einvoice_enabled").default(false).notNull(),
+  gstEwaybillEnabled: boolean("gst_ewaybill_enabled").default(false).notNull(),
+  tallyExportEnabled: boolean("tally_export_enabled").default(false).notNull(),
+  complianceAdapter: text("compliance_adapter").default("stub").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -427,3 +445,49 @@ export const invAuditExportJobsRelations = relations(invAuditExportJobs, ({ one 
   organization: one(organizations, { fields: [invAuditExportJobs.orgId], references: [organizations.id] }),
   creator: one(users, { fields: [invAuditExportJobs.createdBy], references: [users.id] }),
 }));
+
+/**
+ * E5 — what an adapter said, kept.
+ *
+ * One row per attempt at one statutory document, and the row is the audit: a tax
+ * authority's acknowledgement is not something to reconstruct from a log line.
+ * `raw_response` is stored verbatim rather than parsed into columns, because the
+ * shape that matters in a dispute is the one the provider actually sent.
+ *
+ * `adapter_is_live` is on the row rather than derived from `adapter_code` at
+ * read time. A deployment that later configures a real GSP must not retroactively
+ * make its rehearsals look like filings, and a column written at the time is the
+ * only thing that survives that change.
+ *
+ * Uniqueness is on `(org_id, kind, source_type, source_id, payload_hash)`: the
+ * same document registered twice is one filing, and a document *edited* and
+ * re-registered is a different hash and therefore a different row — which is
+ * what stops an amended invoice silently inheriting the original's IRN.
+ */
+export const invComplianceDocuments = pgTable("inv_compliance_documents", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  kind: text("kind").notNull(),
+  sourceType: text("source_type").notNull(),
+  sourceId: text("source_id").notNull(),
+  documentNumber: text("document_number").notNull(),
+  payloadHash: text("payload_hash").notNull(),
+  adapterCode: text("adapter_code").notNull(),
+  adapterIsLive: boolean("adapter_is_live").default(false).notNull(),
+  status: text("status").notNull(),
+  externalId: text("external_id"),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  attempts: integer("attempts").default(0).notNull(),
+  rawResponse: jsonb("raw_response"),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  uniqueIndex("uniq_inv_compliance_doc").on(
+    table.orgId, table.kind, table.sourceType, table.sourceId, table.payloadHash,
+  ),
+  index("idx_inv_compliance_org_source").on(table.orgId, table.sourceType, table.sourceId),
+  index("idx_inv_compliance_org_status").on(table.orgId, table.status, table.createdAt),
+]);

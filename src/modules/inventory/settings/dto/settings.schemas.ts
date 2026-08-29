@@ -45,6 +45,15 @@ export const updateSettingsSchema = z.object({
    */
   nearExpiryPolicy: z.enum(["ALLOW", "DEPRIORITIZE", "BLOCK"]).optional(),
   nearExpiryWindowDays: z.number().int().min(0).max(365).optional(),
+  /**
+   * E5. Statutory adapters. Separate from `packGst`: the pack decides whether
+   * HSN fields exist, these decide whether this deployment talks to an authority.
+   * `stub` is the only implementation; any other name refuses with NO_CREDENTIALS.
+   */
+  gstEinvoiceEnabled: z.boolean().optional(),
+  gstEwaybillEnabled: z.boolean().optional(),
+  tallyExportEnabled: z.boolean().optional(),
+  complianceAdapter: z.string().min(1).max(50).optional(),
 }).strict();
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

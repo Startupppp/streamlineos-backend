@@ -4,7 +4,7 @@ import { invAiInsightStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { invProductVariants } from "./core";
 import { invWarehouses } from "./warehouses";
-import { invVendors } from "./purchase-orders";
+import { invPurchaseOrders, invVendors } from "./purchase-orders";
 
 export const invReorderRules = pgTable("inv_reorder_rules", {
   id: serial("id").primaryKey(),
@@ -152,6 +152,62 @@ export const invDemandForecasts = pgTable("inv_demand_forecasts", {
   index("idx_inv_demand_forecasts_org_variant")
     .on(table.orgId, table.productVariantId, table.warehouseId, table.generatedAt),
 ]);
+
+/**
+ * C2 — a person overruling the engine, on the record.
+ *
+ * The engine owns the quantity. That is the whole point of C2, and it is only
+ * true if the escape hatch is a *different act* rather than the same act with a
+ * different number in it. A buyer who knows something the ledger does not — a
+ * promotion next month, a supplier closing for a fortnight — must be able to
+ * order more than the arithmetic asks for. What must not happen is that number
+ * arriving as an ordinary quantity field and becoming indistinguishable from
+ * the engine's own answer the moment the purchase order is written.
+ *
+ * So an override is its own row: which stored proposal it overruled, what the
+ * engine would have ordered, what the person asked for, what was actually
+ * ordered after the supplier's minimum and pack size were applied to *their*
+ * number too, why, who, and which purchase order it became. Every one of those
+ * is unanswerable from `inv_po_lines`, which records only the number that won.
+ *
+ * The supplier's order policy is applied to an override as well, which is why
+ * `requested_qty` and `ordered_qty` are separate columns: a person asking for 30
+ * against a case of 12 buys 36, and the difference is the policy's doing rather
+ * than theirs.
+ *
+ * Append-only, like the forecasts it annotates — an override is a historical
+ * act, and editing one would rewrite the reason a purchase order exists.
+ */
+export const invProposalOverrides = pgTable("inv_proposal_overrides", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  /** The stored proposal (`inv_demand_forecasts` row) that was overruled. */
+  forecastId: integer("forecast_id").references(() => invDemandForecasts.id, { onDelete: "cascade" }).notNull(),
+  productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "cascade" }).notNull(),
+  /** NULL means the proposal covered the whole organisation. */
+  warehouseId: integer("warehouse_id").references(() => invWarehouses.id, { onDelete: "cascade" }),
+  /** What the server would have ordered on its own, after the order policy. */
+  engineQty: decimal("engine_qty", { precision: 18, scale: 4 }).notNull(),
+  /** What the person asked for, as they stated it. */
+  requestedQty: decimal("requested_qty", { precision: 18, scale: 4 }).notNull(),
+  /** What went on the line: the person's number, through the supplier's policy. */
+  orderedQty: decimal("ordered_qty", { precision: 18, scale: 4 }).notNull(),
+  reason: text("reason").notNull(),
+  poId: integer("po_id").references(() => invPurchaseOrders.id, { onDelete: "cascade" }).notNull(),
+  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("uniq_inv_proposal_overrides_org_id").on(table.orgId, table.id),
+  index("idx_inv_proposal_overrides_org_forecast").on(table.orgId, table.forecastId, table.createdAt),
+  index("idx_inv_proposal_overrides_org_po").on(table.orgId, table.poId),
+]);
+
+export const invProposalOverridesRelations = relations(invProposalOverrides, ({ one }) => ({
+  organization: one(organizations, { fields: [invProposalOverrides.orgId], references: [organizations.id] }),
+  forecast: one(invDemandForecasts, { fields: [invProposalOverrides.forecastId], references: [invDemandForecasts.id] }),
+  productVariant: one(invProductVariants, { fields: [invProposalOverrides.productVariantId], references: [invProductVariants.id] }),
+  warehouse: one(invWarehouses, { fields: [invProposalOverrides.warehouseId], references: [invWarehouses.id] }),
+}));
 
 export const invDemandForecastsRelations = relations(invDemandForecasts, ({ one }) => ({
   organization: one(organizations, { fields: [invDemandForecasts.orgId], references: [organizations.id] }),

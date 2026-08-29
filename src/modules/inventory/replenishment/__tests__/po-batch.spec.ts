@@ -83,6 +83,8 @@ describe("C6 grouping by supplier, site and currency", () => {
     productName: "Widget",
     requested: "10.0000",
     ordered: "10.0000",
+    engineOrdered: "10.0000",
+    override: null,
     unitCost: "5",
     lineValue: "50.0000",
     excess: "0.0000",

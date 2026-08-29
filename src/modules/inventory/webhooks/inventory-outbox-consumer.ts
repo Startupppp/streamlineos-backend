@@ -32,8 +32,6 @@ import type { WebhookEventType } from "./dto/webhooks.schemas";
  * `inventory-outbox-coverage.spec.ts` fails if an emitted type is missing here.
  */
 export const INVENTORY_WEBHOOK_ROUTES: Readonly<Record<string, WebhookEventType | null>> = {
-  // The engine's own movement event is the general "stock changed" signal, which
-  // is the name subscribers already hold.
   // G3's three notification triggers. Routed to null deliberately: each is a
   // real event with a real internal consumer (the notifier), and none has a
   // subscriber-facing name in `WEBHOOK_EVENTS`. Giving them one is a change to a
@@ -44,6 +42,15 @@ export const INVENTORY_WEBHOOK_ROUTES: Readonly<Record<string, WebhookEventType 
   "inventory.lot.expiring": null,
   "inventory.recall.opened": null,
   "inventory.adjustment.approval_requested": null,
+
+  // E5's statutory events. Routed to null for the same reason as G3's: each is a
+  // real event, and none has a subscriber-facing name in `WEBHOOK_EVENTS`.
+  // Giving a customer a webhook that fires when an IRN is issued is a contract
+  // decision, and one that must not be made while the only adapter is a stub —
+  // a subscriber cannot tell a rehearsal from a filing by the event alone.
+  "inventory.einvoice.registered": null,
+  "inventory.einvoice.cancelled": null,
+  "inventory.ewaybill.generated": null,
 
   // The engine's own movement event is the general "stock changed" signal, which
   // is the name subscribers already hold.

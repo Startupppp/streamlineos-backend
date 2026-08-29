@@ -134,6 +134,11 @@ export interface InvSettingsRow {
   /** D2. What the allocator does with short-dated stock, and where "short" starts. */
   nearExpiryPolicy: InvNearExpiryPolicy;
   nearExpiryWindowDays: number;
+  /** E5. Statutory adapters, each off until asked for. See `india-compliance-adapter.ts`. */
+  gstEinvoiceEnabled: boolean;
+  gstEwaybillEnabled: boolean;
+  tallyExportEnabled: boolean;
+  complianceAdapter: string;
 }
 
 /** D2 — short-dated, not expired. See `invNearExpiryPolicyEnum`. */

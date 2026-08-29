@@ -236,6 +236,85 @@ export class ForecastPersistenceService {
     return { version: existing, created: false };
   }
 
+  /**
+   * C2 — record a proposal for every SKU at this site that has recent demand.
+   *
+   * The per-variant `generate` above has existed since C1 and nothing called it
+   * from a screen, so `inv_demand_forecasts` stayed empty in every organisation
+   * that had not POSTed to the API by hand — and a replenishment page that
+   * reviews persisted proposals had nothing to review. That is not a missing
+   * endpoint, it is a missing *entry point*, and this is it.
+   *
+   * The candidate set is demand, not a min/max rule. A forecast is a statement
+   * about what has been selling; picking SKUs by whether somebody has configured
+   * a reorder rule would put the static policy back in charge of what the engine
+   * is even allowed to speak about, which is the arrangement C2 removes.
+   *
+   * Bounded on purpose. Each version costs a demand baseline, a backtest and a
+   * lead-time read, so this is a capped sweep a buyer triggers rather than an
+   * unbounded catalogue rebuild — and it is sequential, because running fifty
+   * backtests concurrently against Neon is how one screen refresh becomes an
+   * outage. A variant whose forecast fails is reported, not thrown: one
+   * unforecastable SKU must not deny the buyer the other forty-nine.
+   */
+  async refresh(
+    orgId: string,
+    userId: string,
+    options: { warehouseId: number | null; limit: number; historyWeeks?: number },
+  ): Promise<{
+    scanned: number;
+    recorded: number;
+    unchanged: number;
+    failed: Array<{ productVariantId: number; reason: string }>;
+  }> {
+    const { warehouseId, limit } = options;
+    const warehouseFilter =
+      warehouseId === null
+        ? sql`TRUE`
+        : sql`EXISTS (
+            SELECT 1 FROM inv_locations wh_loc
+            WHERE wh_loc.id = st.location_id
+              AND wh_loc.org_id = st.org_id
+              AND wh_loc.warehouse_id = ${warehouseId}
+          )`;
+
+    const rows = await this.db.execute<{ product_variant_id: number }>(sql`
+      SELECT st.product_variant_id
+      FROM inv_stock_transactions st
+      WHERE st.org_id = ${orgId}
+        AND st.transaction_type IN ('SALE', 'RESERVATION_CONSUME')
+        AND st.created_at >= now() - interval '1 year'
+        AND ${warehouseFilter}
+      GROUP BY st.product_variant_id
+      ORDER BY max(st.created_at) DESC
+      LIMIT ${limit}
+    `);
+
+    let recorded = 0;
+    let unchanged = 0;
+    const failed: Array<{ productVariantId: number; reason: string }> = [];
+
+    for (const row of rows) {
+      const productVariantId = Number(row.product_variant_id);
+      try {
+        const { created } = await this.generate(orgId, userId, {
+          productVariantId,
+          warehouseId,
+          historyWeeks: options.historyWeeks,
+        });
+        if (created) recorded += 1;
+        else unchanged += 1;
+      } catch (error: unknown) {
+        failed.push({
+          productVariantId,
+          reason: error instanceof Error ? error.message : "The forecast could not be recorded.",
+        });
+      }
+    }
+
+    return { scanned: rows.length, recorded, unchanged, failed };
+  }
+
   /** The most recent stored version for this variant and scope, or null. */
   async latest(
     orgId: string,

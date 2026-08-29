@@ -14,10 +14,12 @@ import {
   forecastScopeSchema,
   forecastVersionsQuerySchema,
   generateForecastSchema,
+  refreshForecastsSchema,
   type ForecastPolicyScopeInput,
   type ForecastScopeInput,
   type ForecastVersionsQuery,
   type GenerateForecastBody,
+  type RefreshForecastsBody,
 } from "./dto/forecast-scope.schemas";
 import { DemandBaselineService } from "./forecast/demand-baseline.service";
 import { SafetyStockPolicyService } from "./forecast/safety-stock-policy.service";
@@ -74,6 +76,31 @@ export class InvForecastingController {
       historyWeeks: body.historyWeeks,
       horizonWeeks: body.horizonWeeks,
       serviceLevel: body.serviceLevel,
+    });
+  }
+
+  /**
+   * C2. Record a proposal for every SKU at this site that has recently sold.
+   *
+   * `generate` above has existed since C1 and no screen called it, so the
+   * proposals table stayed empty and the replenishment page had nothing to
+   * review. This is the entry point that fills it. Like `generate` it is
+   * idempotent by fingerprint rather than by key — a second sweep over unchanged
+   * data lands on the rows the first one wrote and reports them as `unchanged`,
+   * so a double-clicked refresh is a no-op rather than a duplicate history.
+   */
+  @Post("versions/refresh")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:replenishment:manage")
+  async refreshVersions(
+    @Body(new ZodValidationPipe(refreshForecastsSchema)) body: RefreshForecastsBody,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const warehouseId = await this.demandBaseline.scopeFor(u.orgId, u.userId, body.warehouseId);
+    return this.forecastVersions.refresh(u.orgId, u.userId, {
+      warehouseId,
+      limit: body.limit,
+      historyWeeks: body.historyWeeks,
     });
   }
 

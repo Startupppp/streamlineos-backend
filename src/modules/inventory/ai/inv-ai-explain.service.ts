@@ -666,13 +666,11 @@ export class InvAiExplainService {
     const po = await this.replenishment.generatePo(orgId, userId, {
       vendorId: suggestion.vendorId,
       warehouseId: suggestion.warehouseId ?? undefined,
-      suggestions: [
-        {
-          productVariantId: suggestion.productVariantId,
-          suggestedQty: suggestion.suggestedQty,
-          unitCost: 0,
-        },
-      ],
+      // C2. No quantity: `GeneratePoInput` no longer has a field for one. The
+      // proposal's own `suggestedQty` still guards *whether* to order — the
+      // evidence hash above refuses a stale one — but the number that reaches
+      // the line is re-derived by the server.
+      suggestions: [{ productVariantId: suggestion.productVariantId, unitCost: 0 }],
       // Derived from the proposal, not minted per call: confirming the same
       // AI proposal twice must raise one purchase order, and the proposal id is
       // the only thing that is stable across those two attempts.

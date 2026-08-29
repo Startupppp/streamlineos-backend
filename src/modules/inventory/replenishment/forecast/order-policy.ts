@@ -89,11 +89,32 @@ export function applyOrderPolicy(
   };
 }
 
+/**
+ * C2 — a person's number, recorded as theirs.
+ *
+ * Present only on a line somebody overruled. `requested` is what they asked for,
+ * before the supplier's minimum and pack size were applied to it — the line's
+ * `ordered` is that number through the same policy the engine's goes through,
+ * because a vendor rejects an off-pack quantity no matter who chose it.
+ */
+export interface BatchLineOverride {
+  requested: string;
+  reason: string;
+}
+
 export interface BatchLine {
   productVariantId: number;
   productName: string;
   requested: string;
   ordered: string;
+  /**
+   * What the engine's own arithmetic would have ordered. Equal to `ordered` on
+   * every line nobody touched, and carried separately so a reader can always
+   * tell an engine number from a human one without re-deriving either.
+   */
+  engineOrdered: string;
+  /** Null when this line is the engine's own answer. */
+  override: BatchLineOverride | null;
   unitCost: string;
   lineValue: string;
   excess: string;
