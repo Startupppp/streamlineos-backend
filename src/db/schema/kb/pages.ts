@@ -13,7 +13,7 @@
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { projects } from "../build";
 import { kbSpaces } from "./spaces";
 import { kbArticles } from "../support/kb";
@@ -42,9 +42,12 @@ export const kbPages = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
     isLocked: boolean("is_locked").default(false).notNull(),
     createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdByMembershipId: integer("created_by_membership_id"),
     lastEditedById: text("last_edited_by_id").references(() => users.id, { onDelete: "set null" }),
+    lastEditedByMembershipId: integer("last_edited_by_membership_id"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     deletedById: text("deleted_by_id").references(() => users.id, { onDelete: "set null" }),
+    deletedByMembershipId: integer("deleted_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
     aclRevision: integer("acl_revision").notNull().default(1),
@@ -55,7 +58,9 @@ export const kbPages = pgTable(
     contentType: text("content_type").notNull().default("note").$type<"note" | "sop" | "policy" | "support_article" | "troubleshooting" | "decision_record" | "meeting_notes" | "runbook" | "project_brief" | "playbook">(),
     trustState: text("trust_state").notNull().default("unverified").$type<"unverified" | "verified" | "verification_expired">(),
     ownerUserId: text("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerMembershipId: integer("owner_membership_id"),
     verifiedById: text("verified_by_id").references(() => users.id, { onDelete: "set null" }),
+    verifiedByMembershipId: integer("verified_by_membership_id"),
     verifiedUntil: timestamp("verified_until", { withTimezone: true }),
     nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
     publicSlug: text("public_slug"),
@@ -84,6 +89,11 @@ export const kbPages = pgTable(
     foreignKey({ columns: [table.orgId, table.parentPageId], foreignColumns: [table.orgId, table.id], name: "fk_kb_pages_org_parent" }),
     foreignKey({ columns: [table.orgId, table.sourceArticleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_pages_org_source_article" }).onDelete("set null"),
     foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_kb_pages_org_project" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_created_membership" }),
+    foreignKey({ columns: [table.orgId, table.lastEditedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_edited_membership" }),
+    foreignKey({ columns: [table.orgId, table.deletedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_deleted_membership" }),
+    foreignKey({ columns: [table.orgId, table.ownerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_owner_membership" }),
+    foreignKey({ columns: [table.orgId, table.verifiedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_verified_membership" }),
   ],
 );
 

@@ -30,6 +30,7 @@ export const chatChannels = pgTable(
     createdBy: text("created_by")
       .references(() => users.id)
       .notNull(),
+    createdByMembershipId: integer("created_by_membership_id"),
     isArchived: boolean("is_archived").default(false).notNull(),
     entityType: text("entity_type"),
     entityId: text("entity_id"),
@@ -70,6 +71,7 @@ export const chatChannelMembers = pgTable(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    membershipId: integer("membership_id"),
     role: text("role").default("MEMBER").notNull(),
     lastReadAt: timestamp("last_read_at").defaultNow().notNull(),
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
@@ -106,6 +108,7 @@ export const chatMessages = pgTable(
     senderId: text("sender_id")
       .references(() => users.id)
       .notNull(),
+    senderMembershipId: integer("sender_membership_id"),
     content: text("content"),
     replyToId: bigint("reply_to_id", { mode: "number" }),
     isEdited: boolean("is_edited").default(false).notNull(),
@@ -217,6 +220,7 @@ export const chatPinnedMessages = pgTable(
     pinnedBy: text("pinned_by")
       .references(() => users.id)
       .notNull(),
+    pinnedByMembershipId: integer("pinned_by_membership_id"),
     pinnedAt: timestamp("pinned_at").defaultNow().notNull(),
   },
   (table) => [
@@ -239,6 +243,7 @@ export const chatSavedMessages = pgTable(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    membershipId: integer("membership_id"),
     messageId: bigint("message_id", { mode: "number" })
       .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
@@ -269,9 +274,11 @@ export const chatReplyReminders = pgTable(
     recipientUserId: text("recipient_user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    recipientMembershipId: integer("recipient_membership_id"),
     senderUserId: text("sender_user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    senderMembershipId: integer("sender_membership_id"),
     remindAt: timestamp("remind_at").notNull(),
     sentAt: timestamp("sent_at"),
     cancelledAt: timestamp("cancelled_at"),
@@ -403,6 +410,7 @@ export const chatHuddles = pgTable(
     startedBy: text("started_by")
       .references(() => users.id)
       .notNull(),
+    startedByMembershipId: integer("started_by_membership_id"),
     status: text("status").default("active").notNull(),
     calendarEventId: integer("calendar_event_id"),
     hasVideo: boolean("has_video").default(false).notNull(),
@@ -430,6 +438,7 @@ export const chatHuddleParticipants = pgTable(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    membershipId: integer("membership_id"),
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
     leftAt: timestamp("left_at"),
     isMuted: boolean("is_muted").default(false).notNull(),
@@ -464,6 +473,7 @@ export const chatChannelInviteLinks = pgTable(
     createdBy: text("created_by")
       .references(() => users.id)
       .notNull(),
+    createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     revokedAt: timestamp("revoked_at"),
   },
@@ -508,6 +518,7 @@ export const chatOrgSettings = pgTable(
       .default(50)
       .notNull(),
     updatedBy: text("updated_by").references(() => users.id),
+    updatedByMembershipId: integer("updated_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
