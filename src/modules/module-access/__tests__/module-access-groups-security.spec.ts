@@ -1,6 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
+import { ModuleAccessGroupCrudService } from "../module-access-group-crud.service";
+import { ModuleAccessGroupPolicyService } from "../module-access-group-policy.service";
 import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -157,6 +159,8 @@ async function buildSvc(opts: {
   const m = await Test.createTestingModule({
     providers: [
       ModuleAccessGroupsService,
+      ModuleAccessGroupCrudService,
+      ModuleAccessGroupPolicyService,
       { provide: DRIZZLE, useValue: mockDb },
       {
         provide: AccessService,
