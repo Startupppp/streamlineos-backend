@@ -205,6 +205,17 @@ Consequences for anyone picking this up:
 - A repo-wide suite-load failure usually means declared-vs-live column drift, or
   a module registered in `inventory.module.ts` before its file exists.
 
+**The drift was repaired mid-session, by hand.** Sixteen migrations were applied
+individually with `scripts/apply-migration-file.mjs` — 0526, 0534–0541, 0543,
+0544, 0545, 0550, 0553, 0561, 0562 — covering 32 missing columns across 8 tables
+and 8 absent tables. Declared-vs-live is now **zero across 86 inventory tables and
+1186 columns**, verified against the catalog on 2026-08-29.
+
+`drizzle.__drizzle_migrations` was rebuilt at least twice during the session and
+several hand-applied rows vanished with it. It is not evidence of anything. A
+migration whose columns are demonstrably live may have no row, and a row is no
+guarantee the columns exist.
+
 ---
 
 ## 7. Known failures that are not this programme's
@@ -279,15 +290,40 @@ talks to an authority.
 
 ## 9. Leftover risks
 
-1. **Seeded e2e coverage is thin against a real database** (§6). The unit and
-   guard specs are strong; the end-to-end proof is not, and that is an
-   environment problem rather than a code one.
-2. **In-process counters reset on deploy** (G6). They are rates over a window,
+Ordered by how often each actually bit during the work, not by severity in the
+abstract.
+
+1. **A unit can be committed, ticked, and called by nothing.** This happened
+   three times — E5's compliance service, G3's expiry sweep, E3's pharmacy
+   receipt rule — and every one was found by a person grepping for a caller
+   rather than by a gate. `inventory-reachability.spec.ts` catches the coarse
+   version; it judges at directory level, so a service unreachable *from the path
+   that claims it* still passes when anything in its own folder uses it. That is
+   exactly how E3 hid. **Grep for a caller outside the module before believing a
+   tick.**
+
+2. **Two sessions worked this branch concurrently.** Lanes were divided by
+   message, but any file touched by both deserves a second look:
+   `sidebar-nav-groups-inventory.ts`, `lot-eligibility.ts`, `inventory.module.ts`,
+   `migrations/meta/_journal.json`, and — because each had a seam wired by one
+   session into code the other owned — `inv-products.module.ts` and
+   `so-fulfillment.service.ts`.
+
+3. **The seeded suites share one Neon dev branch.** Coverage is not thin: a
+   little over 100 seeded e2e assertions currently run green against a real
+   database — golden-path 7 (the whole chain), picking-waves 32, pack-fields 19,
+   allocation-override 15, landed-cost 13, fefo-expiry 8, order-to-ship 6 —
+   across the engine, receiving, picking, shipping, returns, recalls, valuation
+   and both optional packs. The problem is contention, not coverage: they cannot
+   run concurrently without waiting on each other, and **a CI environment that
+   runs them in parallel will see timeouts rather than failures.** Run them
+   serially, or give each its own branch.
+
+4. **In-process counters reset on deploy** (G6). They are rates over a window,
    never totals. Anything needing durability is a database query by design.
-3. **The `IN_FLIGHT_ELSEWHERE` list** in the route-states test names routes whose
-   state gaps were real but owned by concurrent work. It is meant to reach zero;
-   check it is empty before calling the UX sweep complete.
-4. **Two sessions worked this branch concurrently.** Lanes were divided by
-   message, but any file touched by both deserves a second look — particularly
-   `sidebar-nav-groups-inventory.ts`, `lot-eligibility.ts`,
-   `inventory.module.ts` and `migrations/meta/_journal.json`.
+
+5. **The route-states `IN_FLIGHT_ELSEWHERE` list is empty today** — verified as
+   the literal `new Set<string>([])`, not merely inferred from a passing suite.
+   All eight routes parked during concurrent work were fixed. Keep checking it is
+   empty before calling the UX sweep complete; a non-empty list is real debt
+   wearing a reason.
