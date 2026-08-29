@@ -6,6 +6,8 @@ import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-trans
 import { PoService } from "src/modules/inventory/purchase-orders/po.service";
 import { GrnService } from "src/modules/inventory/purchase-orders/grn.service";
 import { InvStockService } from "src/modules/inventory/stock/inv-stock.service";
+import { PutawayTaskService } from "src/modules/inventory/putaway/putaway-task.service";
+import { PutawayCompleteService } from "src/modules/inventory/putaway/putaway-complete.service";
 import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
@@ -63,6 +65,7 @@ describe("[seeded-e2e] the golden path", () => {
   let app: SeededE2eApp;
   let scene: Scene;
   let teardown: () => Promise<void>;
+  let grnId: number;
 
   const asTenant = <T>(work: () => Promise<T>): Promise<T> =>
     runInNewTenantTransaction(app.app.get<Db>(DRIZZLE), scene.orgId, work);
@@ -197,7 +200,7 @@ describe("[seeded-e2e] the golden path", () => {
     // On order, and deliberately not promisable — they are not in the building.
     expect(await atp()).toBe(0);
 
-    await asTenant(() =>
+    const grn = await asTenant(() =>
       app.app.get(GrnService).receiveGoods(
         scene.orgId,
         poId,
@@ -213,8 +216,47 @@ describe("[seeded-e2e] the golden path", () => {
       ),
     );
 
+    grnId = (grn as { id: number }).id;
+
     expect(await onHandAt(scene.receivingId)).toBe(100);
     expect(await atp()).toBe(100);
     await expectReconciled("received");
+  });
+
+  it("puts the stock away into a pickable bin without changing what is promisable", async () => {
+    const task = await asTenant(() =>
+      app.app.get(PutawayTaskService).createFromReceipt(scene.orgId, scene.userId, {
+        grnId,
+      }),
+    );
+
+    const lines = await asTenant(() =>
+      db().execute<{ id: number }>(sql`
+        SELECT id FROM inv_putaway_task_lines
+        WHERE org_id = ${scene.orgId} AND task_id = ${task.taskId}
+        ORDER BY id`),
+    );
+    expect(lines).toHaveLength(1);
+
+    await asTenant(() =>
+      app.app.get(PutawayCompleteService).complete(
+        scene.orgId,
+        scene.userId,
+        task.taskId,
+        {
+          lines: [
+            { taskLineId: lines[0]!.id, quantity: "100.0000", toLocationId: scene.storageId },
+          ],
+        },
+        `gp-putaway-${scene.tag}`,
+      ),
+    );
+
+    // The stock walked from the dock to the aisle. Putaway relocates; it neither
+    // creates nor promises anything, so ATP is unmoved on purpose.
+    expect(await onHandAt(scene.receivingId)).toBe(0);
+    expect(await onHandAt(scene.storageId)).toBe(100);
+    expect(await atp()).toBe(100);
+    await expectReconciled("putaway");
   });
 });
