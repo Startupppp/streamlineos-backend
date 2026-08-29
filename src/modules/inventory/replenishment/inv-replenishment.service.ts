@@ -18,6 +18,8 @@ import type { ListRulesInput, CreateRuleInput, UpdateRuleInput, GeneratePoInput,
 import { applyOrderPolicy } from "./forecast/order-policy";
 import { runIdempotent } from "../stock-engine/idempotency";
 import { ReorderProposalService } from "./forecast/reorder-proposal.service";
+import { addDec, cmpDec, mulDec, subDec } from "../stock-engine/decimal";
+import { atLeastZero, fromExact, isPositiveExact, toExact } from "./forecast/exact";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -162,12 +164,17 @@ export class InvReplenishmentService {
             .groupBy(invStockLevels.productVariantId),
         ]);
 
-        const stockMap = new Map<string, { onHand: number; onOrder: number; outgoing: number }>();
+        // C1. Ledger quantities stay as the exact `numeric(18,4)` strings
+        // Postgres returned. `parseFloat` on these was the bug: the comparison
+        // two lines below decides whether an organisation buys stock, and a
+        // float comparison of a position against its minimum is wrong exactly
+        // when the position sits on it.
+        const stockMap = new Map<string, { onHand: string; onOrder: string; outgoing: string }>();
         for (const s of stockRows) {
           stockMap.set(String(s.variantId), {
-            onHand: parseFloat(s.onHand),
-            onOrder: parseFloat(s.onOrder),
-            outgoing: parseFloat(s.outgoing),
+            onHand: s.onHand,
+            onOrder: s.onOrder,
+            outgoing: s.outgoing,
           });
         }
 
@@ -175,16 +182,19 @@ export class InvReplenishmentService {
         const allSuggestions = rules
           .map((rule) => {
             const stock = stockMap.get(String(rule.productVariantId));
-            const onHand = stock?.onHand ?? 0;
-            const incoming = stock?.onOrder ?? 0;
-            const outgoing = stock?.outgoing ?? 0;
-            const forecasted = onHand + incoming - outgoing;
-            const minQty = parseFloat(rule.minQty);
-            if (forecasted >= minQty) return null;
+            const onHand = stock?.onHand ?? "0";
+            const incoming = stock?.onOrder ?? "0";
+            const outgoing = stock?.outgoing ?? "0";
+            const forecasted = subDec(addDec(onHand, incoming), outgoing);
+            const minQty = rule.minQty;
+            if (cmpDec(forecasted, minQty) >= 0) return null;
 
-            const maxQty = rule.maxQty ? parseFloat(rule.maxQty) : null;
-            const reorderQty = rule.reorderQty ? parseFloat(rule.reorderQty) : null;
-            const qty = maxQty != null ? Math.max(0, maxQty - forecasted) : (reorderQty ?? minQty - forecasted);
+            const maxQty = rule.maxQty ?? null;
+            const reorderQty = rule.reorderQty ?? null;
+            const qty =
+              maxQty !== null
+                ? atLeastZero(subDec(maxQty, forecasted))
+                : (reorderQty ?? subDec(minQty, forecasted));
             const vendorId = rule.vendorId ?? rule.productVariant.product.defaultVendorId ?? null;
 
             const expectedDate = new Date(today);
@@ -198,13 +208,17 @@ export class InvReplenishmentService {
               ruleId: rule.id,
               warehouseId: rule.warehouseId ?? null,
               warehouseName: rule.warehouse?.name ?? null,
-              currentOnHand: onHand,
-              forecasted: Math.round(forecasted * 10000) / 10000,
-              suggestedQty: Math.round(qty * 10000) / 10000,
+              // The arithmetic above is exact; these three fields cross to a
+              // JSON number once, at the wire, because the client sums them for
+              // display and has no decimal helper of its own yet. Nothing is
+              // decided on the float.
+              currentOnHand: fromExact(onHand),
+              forecasted: fromExact(forecasted),
+              suggestedQty: fromExact(qty),
               vendorId,
               leadTimeDays: rule.leadTimeDays ?? 7,
               expectedDate: expectedDate.toISOString().slice(0, 10),
-              reason: `Forecasted qty (${Math.round(forecasted * 100) / 100}) below min (${minQty})`,
+              reason: `Forecasted qty (${forecasted}) below min (${minQty})`,
             };
           })
           .filter((s): s is NonNullable<typeof s> => s !== null);
@@ -255,19 +269,22 @@ export class InvReplenishmentService {
     ]);
 
     const stockRow = stockRows[0];
-    const onHand = stockRow ? parseFloat(stockRow.onHand) : 0;
-    const incoming = stockRow ? parseFloat(stockRow.onOrder) : 0;
-    const outgoing = stockRow ? parseFloat(stockRow.outgoing) : 0;
+    const onHand = stockRow?.onHand ?? "0";
+    const incoming = stockRow?.onOrder ?? "0";
+    const outgoing = stockRow?.outgoing ?? "0";
     const today = new Date();
 
     for (const rule of rules) {
-      const forecasted = onHand + incoming - outgoing;
-      const minQty = parseFloat(rule.minQty);
-      if (forecasted >= minQty) continue;
+      const forecasted = subDec(addDec(onHand, incoming), outgoing);
+      const minQty = rule.minQty;
+      if (cmpDec(forecasted, minQty) >= 0) continue;
 
-      const maxQty = rule.maxQty ? parseFloat(rule.maxQty) : null;
-      const reorderQty = rule.reorderQty ? parseFloat(rule.reorderQty) : null;
-      const qty = maxQty != null ? Math.max(0, maxQty - forecasted) : (reorderQty ?? minQty - forecasted);
+      const maxQty = rule.maxQty ?? null;
+      const reorderQty = rule.reorderQty ?? null;
+      const qty =
+        maxQty !== null
+          ? atLeastZero(subDec(maxQty, forecasted))
+          : (reorderQty ?? subDec(minQty, forecasted));
       const vendorId = rule.vendorId ?? rule.productVariant.product.defaultVendorId ?? null;
       const expectedDate = new Date(today);
       expectedDate.setDate(expectedDate.getDate() + (rule.leadTimeDays ?? 7));
@@ -280,13 +297,15 @@ export class InvReplenishmentService {
         ruleId: rule.id,
         warehouseId: rule.warehouseId ?? null,
         warehouseName: rule.warehouse?.name ?? null,
-        currentOnHand: onHand,
-        forecasted: Math.round(forecasted * 10000) / 10000,
-        suggestedQty: Math.round(qty * 10000) / 10000,
+        currentOnHand: fromExact(onHand),
+        forecasted: fromExact(forecasted),
+        suggestedQty: fromExact(qty),
+        /** The exact figure, for callers that go on to order against it. */
+        suggestedQtyExact: qty,
         vendorId,
         leadTimeDays: rule.leadTimeDays ?? 7,
         expectedDate: expectedDate.toISOString().slice(0, 10),
-        reason: `Forecasted qty (${Math.round(forecasted * 100) / 100}) below min (${minQty})`,
+        reason: `Forecasted qty (${forecasted}) below min (${minQty})`,
       };
     }
 
@@ -351,11 +370,13 @@ export class InvReplenishmentService {
         // gappy demand, no demand, or too little history, where a forecast would
         // be a guess dressed as arithmetic.
         //
-        // The proposal service is org-and-variant scoped; it takes forecast
-        // options, not a warehouse. Said rather than passed-and-ignored: a
-        // per-warehouse forecast is a real gap, and a parameter that silently
-        // does nothing would hide it.
-        const proposal = await this.reorderProposals.propose(orgId, s.productVariantId);
+        // C1 closed the gap this comment used to record: the proposal service
+        // is warehouse-scoped now, so a purchase order raised for one site is
+        // sized against that site's demand, position and supplier lead time
+        // rather than against the organisation's average of every site.
+        const proposal = await this.reorderProposals.propose(orgId, s.productVariantId, {
+          warehouseId: body.warehouseId ?? null,
+        });
 
         // `hold` means two different things and collapsing them is a regression
         // that looks like the engine working. A **null** reorder point says the
@@ -365,37 +386,36 @@ export class InvReplenishmentService {
         // looked and the position is already covered; buying against that
         // because a rule says so is precisely what this unit removes.
         const engineModelled = proposal.reorderPoint !== null;
+        // Exact throughout: this is the quantity that becomes a line on a
+        // purchase order somebody signs.
         const engineQty = engineModelled
-          ? proposal.suggestedQuantity ?? 0
-          : suggestion?.suggestedQty ?? 0;
+          ? proposal.suggestedQuantity ?? "0"
+          : suggestion?.suggestedQtyExact ?? "0";
 
         const decidedBy = engineModelled ? "forecast" : "min/max policy override";
+        // `min_order_qty` and `order_multiple` are `numeric` columns; drizzle
+        // hands them back as exact strings and they stay that way.
         const rounded = applyOrderPolicy(engineQty, {
-          minOrderQty: policy?.minOrderQty === null || policy?.minOrderQty === undefined
-            ? null
-            : Number(policy.minOrderQty),
-          orderMultiple:
-            policy?.orderMultiple === null || policy?.orderMultiple === undefined
-              ? null
-              : Number(policy.orderMultiple),
+          minOrderQty: policy?.minOrderQty ?? null,
+          orderMultiple: policy?.orderMultiple ?? null,
         });
 
         return {
           productVariantId: s.productVariantId,
           suggestedQty: rounded.ordered,
-          unitCost: s.unitCost ?? 0,
+          unitCost: toExact(s.unitCost ?? 0),
           // Said out loud on the line, so a buyer reading the order can tell a
           // forecast from a static rule without re-deriving either.
           policyReasons: [
             ...rounded.reasons,
-            ...(engineQty > 0 ? [`Quantity decided by the ${decidedBy}.`] : []),
+            ...(isPositiveExact(engineQty) ? [`Quantity decided by the ${decidedBy}.`] : []),
             ...proposal.caveats,
           ],
         };
       }),
     );
 
-    const orderable = recomputed.filter((line) => line.suggestedQty > 0);
+    const orderable = recomputed.filter((line) => isPositiveExact(line.suggestedQty));
     if (orderable.length === 0) {
       throw new BadRequestException(
         "None of these variants still need ordering — the shortfall has already been met.",
@@ -421,17 +441,22 @@ export class InvReplenishmentService {
     body: GeneratePoInput,
     orderable: ReadonlyArray<{
       productVariantId: number;
-      suggestedQty: number;
-      unitCost: number;
+      /** Exact decimal string — this becomes `inv_po_lines.quantity`. */
+      suggestedQty: string;
+      /** Exact decimal string — this becomes `inv_po_lines.unit_cost`. */
+      unitCost: string;
       policyReasons: string[];
     }>,
   ) {
     const poNumber = await this.numSeq.next(orgId, "PO", tx);
     const today = new Date().toISOString().slice(0, 10);
 
+    // Money, and it is written to a column. A float subtotal over a dozen lines
+    // is off by a fraction of a paisa, which is exactly the sort of difference
+    // that makes a purchase order and its receipt fail to reconcile.
     const subtotal = orderable.reduce(
-      (sum, s) => sum + s.suggestedQty * s.unitCost,
-      0,
+      (sum, s) => addDec(sum, mulDec(s.suggestedQty, s.unitCost)),
+      "0",
     );
 
     const [po] = await tx
@@ -443,10 +468,10 @@ export class InvReplenishmentService {
         status: "DRAFT",
         orderDate: today,
         warehouseId: body.warehouseId,
-        subtotal: String(subtotal),
+        subtotal,
         taxAmount: "0",
         discount: "0",
-        total: String(subtotal),
+        total: subtotal,
         currency: "INR",
         createdBy: userId,
       })
@@ -457,11 +482,11 @@ export class InvReplenishmentService {
         orgId,
         poId: po.id,
         productVariantId: s.productVariantId,
-        quantity: String(s.suggestedQty),
+        quantity: s.suggestedQty,
         quantityReceived: "0",
-        unitCost: String(s.unitCost),
+        unitCost: s.unitCost,
         taxRate: "0",
-        amount: String(s.suggestedQty * s.unitCost),
+        amount: mulDec(s.suggestedQty, s.unitCost),
         lineOrder: i,
       })),
     );
@@ -521,7 +546,9 @@ export class InvReplenishmentService {
     const salesByVariant = new Map<number, number[]>();
     for (const s of salesRows) {
       const list = salesByVariant.get(s.variantId) ?? [];
-      list.push(parseFloat(s.weeklyQty));
+      // A weekly demand figure feeding an average: a statistic, so it crosses
+      // into a float here, once, by the named boundary.
+      list.push(fromExact(s.weeklyQty));
       salesByVariant.set(s.variantId, list);
     }
 
@@ -529,15 +556,22 @@ export class InvReplenishmentService {
       const weeklySales = salesByVariant.get(row.variantId) ?? [];
       const avgWeeklyDemand =
         weeklySales.length > 0 ? weeklySales.reduce((a, b) => a + b, 0) / weeklySales.length : 0;
-      const onHand = parseFloat(row.onHand);
-      const onOrder = parseFloat(row.onOrder);
-      const available = onHand + onOrder;
+      // Exact ledger quantities. `available` here is deliberately the *future*
+      // position — on hand plus on order — and not availability-to-promise;
+      // `availableQtySql` answers the other question.
+      const onHand = row.onHand;
+      const onOrder = row.onOrder;
+      const position = addDec(onHand, onOrder);
+      const positionValue = fromExact(position);
+      // Projections are estimates, not quantities anybody owns, so they stay in
+      // floating point and are labelled as projections.
       const projectedWeeks = [1, 2, 3, 4].map((w) => ({
         week: w,
         projectedDemand: Math.round(avgWeeklyDemand * w * 100) / 100,
-        projectedStock: Math.round(Math.max(0, available - avgWeeklyDemand * w) * 100) / 100,
+        projectedStock:
+          Math.round(Math.max(0, positionValue - avgWeeklyDemand * w) * 100) / 100,
       }));
-      const weeksOfStock = avgWeeklyDemand > 0 ? available / avgWeeklyDemand : null;
+      const weeksOfStock = avgWeeklyDemand > 0 ? positionValue / avgWeeklyDemand : null;
       const stockoutRisk = weeksOfStock != null ? (weeksOfStock < 2 ? "HIGH" : weeksOfStock < 4 ? "MEDIUM" : "LOW") : "NONE";
 
       return {
@@ -546,7 +580,7 @@ export class InvReplenishmentService {
         variantName: row.variantName,
         productName: row.productName,
         onHand,
-        onOrder: parseFloat(row.onOrder),
+        onOrder,
         avgWeeklyDemand: Math.round(avgWeeklyDemand * 100) / 100,
         weeksOfStock: weeksOfStock != null ? Math.round(weeksOfStock * 100) / 100 : null,
         stockoutRisk,

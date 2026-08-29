@@ -1,8 +1,9 @@
 import { pgTable, text, serial, timestamp, decimal, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   invVendorReturnReasonEnum, invCustomerReturnDispositionEnum,
   invPickListStatusEnum, invPickExceptionEnum, invCycleCountStatusEnum,
+  invPickExceptionStatusEnum, invPickExceptionResolutionEnum,
   invReturnStatusEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
@@ -210,6 +211,37 @@ export const invPickListLines = pgTable("inv_pick_list_lines", {
    */
   exceptionReason: invPickExceptionEnum("exception_reason"),
   exceptionNotes: text("exception_notes"),
+  /**
+   * B5. An exception with nobody's name on it is a note, not a task.
+   *
+   * The owner is the person who has to do something about it, and it defaults to
+   * whoever planned the walk rather than to the picker who found it: a picker at
+   * a shelf cannot decide whether an order ships short. Reassignable, because
+   * the planner is not always the person who ends up holding it.
+   */
+  exceptionOwnerId: text("exception_owner_id").references(() => users.id, { onDelete: "set null" }),
+  /**
+   * `OPEN` until somebody reviews it. Non-null exactly when `exception_reason`
+   * is, which is a CHECK rather than a convention — the two drifting apart is
+   * how a queue starts missing rows.
+   */
+  exceptionStatus: invPickExceptionStatusEnum("exception_status"),
+  /** Set exactly when the status is RESOLVED, enforced by a CHECK. */
+  exceptionResolution: invPickExceptionResolutionEnum("exception_resolution"),
+  exceptionResolutionNotes: text("exception_resolution_notes"),
+  exceptionReportedBy: text("exception_reported_by").references(() => users.id, { onDelete: "set null" }),
+  exceptionReportedAt: timestamp("exception_reported_at"),
+  exceptionResolvedBy: text("exception_resolved_by").references(() => users.id, { onDelete: "set null" }),
+  exceptionResolvedAt: timestamp("exception_resolved_at"),
+  /**
+   * B5. Where the goods actually were, on a `WRONG_LOCATION` report.
+   *
+   * Evidence rather than a correction: the line is retargeted to it so the
+   * picker can finish the walk, and the discrepancy survives on the row for a
+   * cycle count to chase. Without it "the wave sent me to the wrong bin" is a
+   * note in free text nobody can query.
+   */
+  exceptionLocationId: integer("exception_location_id").references(() => invLocations.id, { onDelete: "set null" }),
   /** What actually went in the tote, when the picker swapped one item for another. */
   substituteVariantId: integer("substitute_variant_id"),
   /**
@@ -233,6 +265,13 @@ export const invPickListLines = pgTable("inv_pick_list_lines", {
   }),
   index("idx_inv_pick_lines_pick").on(table.pickListId),
   index("idx_inv_pick_list_lines_variant").on(table.productVariantId),
+  // B5. The supervisor queue reads open exceptions across every wave, so the
+  // index is partial on the rows that are exceptions at all — the table is
+  // mostly lines that closed as asked, and a full index on `exception_status`
+  // would be almost entirely nulls.
+  index("idx_inv_pick_lines_exception_queue")
+    .on(table.orgId, table.exceptionStatus, table.id)
+    .where(sql`${table.exceptionReason} IS NOT NULL`),
 ]);
 
 export const invCycleCounts = pgTable("inv_cycle_counts", {

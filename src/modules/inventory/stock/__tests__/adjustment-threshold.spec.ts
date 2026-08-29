@@ -7,6 +7,11 @@ const mockWarehouseScope = {
   assertLocationsInScope: jest.fn(async () => undefined),
 };
 
+// D8. The write-off value is a cost field, so the service asks whether the
+// caller may see one before it answers. These cases are about routing, so the
+// answer is yes and the shape of the payload never changes under them.
+const mockCostVisibility = { canSeeCost: jest.fn(async () => true) };
+
 
 /**
  * A3. `createAdjustment` now claims its idempotency key on the transaction it
@@ -25,6 +30,9 @@ export function makeTx(findFirst: jest.Mock) {
   return {
     insert: jest.fn().mockReturnValue({ values }),
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }) }),
+    // D8. The posting reads its own cost back off the ledger rows the engine
+    // just wrote, so the transaction has to answer that too.
+    execute: jest.fn().mockResolvedValue([{ value: "42.0000" }]),
     query: { invStockAdjustments: { findFirst } },
   };
 }
@@ -41,30 +49,38 @@ function makeDb(adjRow?: Partial<{ id: number; status: string; referenceNumber: 
   // the mock has to answer it: it loads the named variants and refuses any whose
   // product has been deleted. Returning a live row keeps these cases about
   // threshold routing, which is what they are for.
-  const select = jest.fn().mockReturnValue({
-    from: jest.fn().mockReturnValue({
-      innerJoin: jest.fn().mockReturnValue({
-        // Ids match the line fixtures below: the gate reports any variant it
-        // did not find as missing, so a mock that answers with a different id
-        // fails the whole command rather than the case under test.
-        where: jest.fn().mockResolvedValue(
-          [1, 2].map((id) => ({
-            id,
-            productId: id,
-            sku: `SKU-${id}`,
-            costPrice: "1.0000",
-            sellingPrice: "2.0000",
-            variantActive: true,
-            productStatus: "ACTIVE",
-            productDeletedAt: null,
-          })),
-        ),
-      }),
-    }),
+  //
+  // D8 added two more reads on the same builder — the value threshold on
+  // `inv_settings`, and the scrap bin for a write-off reason — so the chain is
+  // generic rather than one fixed shape. Only the joined query (the variant
+  // gate) answers with rows; the others answer empty, which is what "this org
+  // has no value threshold and no scrap bin" looks like.
+  const variantRows = [1, 2].map((id) => ({
+    id,
+    productId: id,
+    sku: `SKU-${String(id)}`,
+    costPrice: "1.0000",
+    sellingPrice: "2.0000",
+    variantActive: true,
+    productStatus: "ACTIVE",
+    productDeletedAt: null,
+  }));
+  const select = jest.fn().mockImplementation(() => {
+    let joined = false;
+    const chain: Record<string, unknown> = {};
+    const step = jest.fn(() => chain);
+    chain.from = step;
+    chain.where = step;
+    chain.orderBy = step;
+    chain.limit = step;
+    chain.innerJoin = jest.fn(() => { joined = true; return chain; });
+    chain.then = (resolve: (rows: unknown[]) => unknown) => resolve(joined ? variantRows : []);
+    return chain;
   });
 
   return {
     insert, update, transaction, select,
+    execute: jest.fn().mockResolvedValue([]),
     query: {
       invStockAdjustments: { findFirst },
     },
@@ -112,6 +128,7 @@ function buildService(threshold: string | null, adjRowOverride?: Partial<{ id: n
     numSeq as never,
     settings as never,
     mockWarehouseScope as never,
+    mockCostVisibility as never,
   );
   return { svc, db, engine, settings };
 }
@@ -121,11 +138,19 @@ const baseLines = [
   { productVariantId: 2, locationId: 1, quantityChange: -5 },
 ];
 
+// D8. Mixed directions are legitimate on a correction and never on a write-off,
+// so the routing cases above carry a neutral reason and the write-off rule is
+// asserted on its own below.
+const writeOffLines = [
+  { productVariantId: 1, locationId: 1, quantityChange: -10 },
+  { productVariantId: 2, locationId: 1, quantityChange: -5 },
+];
+
 describe("InvStockAdjustmentsService — threshold routing", () => {
   describe("no threshold configured (null)", () => {
     it("auto-posts when threshold is null", async () => {
       const { svc, engine } = buildService(null);
-      await svc.createAdjustment("org1", "u1", { reason: "DAMAGE", lines: baseLines }, "idem-1");
+      await svc.createAdjustment("org1", "u1", { reason: "OTHER", lines: baseLines }, "idem-1");
       expect(engine.executeInTx).toHaveBeenCalledTimes(1);
     });
   });
@@ -149,13 +174,13 @@ describe("InvStockAdjustmentsService — threshold routing", () => {
   describe("above threshold → PENDING_APPROVAL", () => {
     it("does NOT call engine when totalAbsQty > threshold", async () => {
       const { svc, engine } = buildService("5");
-      await svc.createAdjustment("org1", "u1", { reason: "DAMAGE", lines: baseLines }, "idem-4");
+      await svc.createAdjustment("org1", "u1", { reason: "OTHER", lines: baseLines }, "idem-4");
       expect(engine.executeInTx).not.toHaveBeenCalled();
     });
 
     it("creates adjustment with PENDING_APPROVAL status when above threshold", async () => {
       const { svc, db } = buildService("5");
-      await svc.createAdjustment("org1", "u1", { reason: "DAMAGE", lines: baseLines }, "idem-5");
+      await svc.createAdjustment("org1", "u1", { reason: "OTHER", lines: baseLines }, "idem-5");
       const txFn = (db.transaction as jest.Mock).mock.calls[0][0] as (tx: unknown) => Promise<unknown>;
       const tx = makeTx(db.query.invStockAdjustments.findFirst);
       await txFn(tx);
@@ -185,8 +210,38 @@ describe("InvStockAdjustmentsService — threshold routing", () => {
         makeNumSeq() as never,
         makeSettings(null) as never,
         mockWarehouseScope as never,
-  );
+        mockCostVisibility as never,
+      );
       await expect(svc.getAdjustment("org1", 999)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe("D8 — a write-off may only remove stock", () => {
+    it("refuses a write-off reason on a line that adds stock", async () => {
+      const { svc, engine } = buildService(null);
+      await expect(
+        svc.createAdjustment("org1", "u1", { reason: "THEFT", lines: baseLines }, "idem-wo-1"),
+      ).rejects.toThrow(BadRequestException);
+      // Nothing reached the ledger: the refusal is before the transaction opens.
+      expect(engine.executeInTx).not.toHaveBeenCalled();
+    });
+
+    it("accepts a write-off whose every line removes stock", async () => {
+      const { svc, engine } = buildService(null);
+      await svc.createAdjustment("org1", "u1", { reason: "SCRAP", lines: writeOffLines }, "idem-wo-2");
+      expect(engine.executeInTx).toHaveBeenCalledTimes(1);
+    });
+
+    it("refuses a scrap location on a reason that is not a write-off", async () => {
+      const { svc } = buildService(null);
+      await expect(
+        svc.createAdjustment(
+          "org1",
+          "u1",
+          { reason: "RECOUNT", lines: baseLines, scrapLocationId: 7 },
+          "idem-wo-3",
+        ),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

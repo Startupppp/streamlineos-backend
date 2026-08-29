@@ -7,14 +7,12 @@ import { InvBarcodeService } from "../barcode/inv-barcode.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { runIdempotent } from "../stock-engine/idempotency";
 import { addDec, cmpDec } from "../stock-engine/decimal";
-import { loadOrderableVariants } from "../products/lib/orderable-variants";
-import type { ConfirmPickInput, ReportPickExceptionInput } from "./dto/picking.schemas";
+import type { ConfirmPickInput } from "./dto/picking.schemas";
 import {
   type PickGrain,
   type PickLineRow,
   loadPickLine,
   reviveConfirm,
-  reviveException,
 } from "./pick-line";
 import { PickCompletionService } from "./pick-completion.service";
 
@@ -48,9 +46,12 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
  * where the reservation is still holding them and writes zero, the consume then
  * empties `committed`, and availability jumps by the picked quantity. Stock in a
  * tote would be offered to the next customer. So `completion.syncGrains` is the
- * last call in both commands below, in the same transaction as everything it
- * reads, and the sequence lives in `PickCompletionService` rather than twice
- * here — two copies of it would be two chances to get the order wrong.
+ * last call in every command that touches a reservation, in the same transaction
+ * as everything it reads, and the sequence lives in `PickCompletionService`
+ * rather than in each caller — two copies of it would be two chances to get the
+ * order wrong. `PickExceptionReportService` is the other caller: B5 split
+ * reporting off this class, because recording what a picker did *not* find has
+ * to unwind a promise rather than hand it over, and that is a different job.
  *
  * **Why consuming is the right half of item 2's "engine movement (or
  * reservation consume into picked/outgoing)".**
@@ -159,6 +160,24 @@ export class PickConfirmService {
         serialId: scanned.serialId,
       });
     }
+    // B5. The bin the line *used* to stand on, when the picker took the goods
+    // from a different one. `EXPECTED_OUTGOING` is keyed on the pick line's own
+    // (location, lot, serial), so moving the line moves which row its picked
+    // quantity belongs to — and the row it left keeps whatever was computed
+    // there until something recomputes it, which nothing otherwise would.
+    if (
+      line.locationId !== null &&
+      (line.locationId !== pickedAt ||
+        line.lotId !== scanned.lotId ||
+        line.serialId !== scanned.serialId)
+    ) {
+      grains.push({
+        productVariantId: line.productVariantId,
+        locationId: line.locationId,
+        lotId: line.lotId,
+        serialId: line.serialId,
+      });
+    }
 
     // Step 1 of the hand-off. Before the recompute, always.
     const released = await this.completion.consumeCoveredReservations(
@@ -202,135 +221,6 @@ export class PickConfirmService {
     };
   }
 
-  /**
-   * INV-205 — record why a line could not close as asked.
-   *
-   * The distinction being preserved is between a line short because the shelf
-   * was empty and a line short because the picker moved on. The first is a stock
-   * problem and the second is a process problem; a warehouse that cannot tell
-   * them apart fixes neither, and the quantity alone cannot tell them apart.
-   *
-   * A substitution is held to the same catalogue rules as any other demand: the
-   * replacement must be a live, sellable variant of this organisation. Swapping
-   * in a discontinued SKU at the shelf would route around the gate the catalogue
-   * exists to enforce.
-   */
-  async reportException(
-    orgId: string,
-    userId: string,
-    pickListId: number,
-    input: ReportPickExceptionInput,
-    idempotencyKey: string,
-  ) {
-    // A3. A substitution records picked stock against a second variant, so a
-    // retry takes the swapped-in units out of availability twice.
-    return this.db.transaction((tx) =>
-      runIdempotent(
-        tx,
-        orgId,
-        idempotencyKey,
-        { command: "inventory.picking.exception", pickListId, input },
-        () => this.reportExceptionInTx(tx, orgId, userId, pickListId, input),
-        (stored) => reviveException(stored),
-      ),
-    );
-  }
-
-  private async reportExceptionInTx(
-    tx: Tx,
-    orgId: string,
-    userId: string,
-    pickListId: number,
-    input: ReportPickExceptionInput,
-  ) {
-    const line = await loadPickLine(tx, orgId, pickListId, input.pickLineId);
-    await this.completion.claimForConfirm(tx, orgId, userId, pickListId);
-
-    let substituteVariantId: number | null = null;
-    let substituteQuantity: string | null = null;
-    // Unchanged by a substitution. `quantityPicked` means how much of *this
-    // line's* variant was picked, and folding the substitute into it made
-    // packing believe units of the original were in the tote -- it builds its
-    // map keyed on productVariantId, so it would accept a package of the
-    // original and reject one holding what the picker actually took.
-    const quantityPicked = String(line.quantityPicked);
-
-    if (input.reason === "SUBSTITUTED") {
-      if (input.substituteVariantId === line.productVariantId) {
-        throw new BadRequestException(
-          "A substitution has to name a different product",
-        );
-      }
-      // Same gate as a sales order line: a discontinued or archived SKU cannot
-      // be introduced at the shelf either.
-      await loadOrderableVariants(this.db, orgId, [input.substituteVariantId]);
-      substituteVariantId = input.substituteVariantId;
-      substituteQuantity = input.quantityPicked;
-      // Still bounded by what the line asked for: substituting twelve against a
-      // line for five is a different mistake, not a licence.
-      const covered = addDec(quantityPicked, input.quantityPicked);
-      if (cmpDec(covered, String(line.quantityToPick)) > 0) {
-        throw new BadRequestException(
-          `Substituting ${input.quantityPicked} would exceed the ${line.quantityToPick} this line asks for`,
-        );
-      }
-    }
-
-    await tx
-      .update(invPickListLines)
-      .set({
-        exceptionReason: input.reason,
-        exceptionNotes: input.notes ?? null,
-        substituteVariantId,
-        substituteQuantity,
-        quantityPicked,
-      })
-      .where(
-        and(
-          eq(invPickListLines.orgId, orgId),
-          eq(invPickListLines.id, input.pickLineId),
-        ),
-      );
-
-    const grains: PickGrain[] = [];
-    // The substitute is physically in the tote, so it is picked stock and has to
-    // leave availability like any other pick. It is tracked on its own columns
-    // rather than folded into `quantityPicked`, so it needs its own grain —
-    // without it, swapping an item made those units sellable twice.
-    if (substituteVariantId !== null && line.locationId !== null) {
-      grains.push({
-        productVariantId: substituteVariantId,
-        locationId: line.locationId,
-        lotId: line.lotId,
-        serialId: line.serialId,
-      });
-    }
-
-    await this.completion.rollUpSoStatus(tx, orgId, line.soLineId);
-    const complete = await this.completion.finishWave(tx, orgId, userId, pickListId);
-    await this.completion.syncGrains(tx, orgId, grains);
-
-    await this.audit.insert(tx, {
-      orgId,
-      actorUserId: userId,
-      action: "inventory.pick.exception",
-      resourceType: "inv_pick_list_lines",
-      resourceId: String(input.pickLineId),
-      before: { exceptionReason: line.exceptionReason },
-      after: { exceptionReason: input.reason, substituteVariantId, substituteQuantity },
-      metadata: { pickListId, notes: input.notes ?? null, waveComplete: complete },
-    });
-
-    return {
-      pickLineId: input.pickLineId,
-      reason: input.reason,
-      substituteVariantId,
-      substituteQuantity,
-      quantityPicked,
-      waveComplete: complete,
-      reportedBy: userId,
-    };
-  }
 
   /**
    * B4, item 4 — the scan has to agree with the line on all three axes.

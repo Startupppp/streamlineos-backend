@@ -1,11 +1,13 @@
 import { Injectable } from "@nestjs/common";
-import { DemandBaselineService } from "./demand-baseline.service";
+import { DemandBaselineService, demandSeries, type DemandScope } from "./demand-baseline.service";
 import { classifyDemand, type DemandCategory } from "./demand-shape";
 import { LeadTimeService } from "./lead-time.service";
 import { describe as summarise, safetyStock, type SafetyStockResult } from "./safety-stock";
 
 export interface SafetyStockPolicyResult {
   productVariantId: number;
+  /** Null when the policy covers the whole organisation. */
+  warehouseId: number | null;
   serviceLevel: number;
   demandCategory: DemandCategory;
   demand: { mean: number; stdDev: number; periods: number };
@@ -13,6 +15,15 @@ export interface SafetyStockPolicyResult {
   /** Null when the model does not apply to this demand shape. */
   policy: SafetyStockResult | null;
   applicable: boolean;
+  /**
+   * Why the model was declined, when it was. Set exactly when `applicable` is
+   * false — the refusal is a value the caller can store, not a note it has to
+   * fish out of the end of `notes` and hope stays last.
+   */
+  refusalReason: string | null;
+  /** C1. Set when demand was measured over periods with nothing on the shelf. */
+  stockoutCensored: boolean;
+  censoredPeriods: number;
   notes: string[];
 }
 
@@ -24,6 +35,13 @@ export interface SafetyStockPolicyResult {
  * not remotely one. The arithmetic still produces a number, and the number
  * still looks like a service level, which is exactly why it has to be refused
  * rather than returned with a footnote.
+ *
+ * Note on number types (C1, and see `exact.ts`): everything on this path is
+ * statistical — a mean, a sample deviation, a z-score, √(L·σ_d² + d̄²·σ_L²) —
+ * and stays in floating point deliberately. The exact quantities are the demand
+ * history it reads, which arrives as decimal strings, and the safety stock and
+ * reorder point it produces, which become exact again the moment they are
+ * stored or compared against a stock position.
  */
 @Injectable()
 export class SafetyStockPolicyService {
@@ -40,27 +58,49 @@ export class SafetyStockPolicyService {
    *
    * C4 moved the derivation into `LeadTimeService`, which is where the same
    * observation is defined for the vendor scorecard. A second copy here drifted
-   * the moment one of them learned to ignore an abandoned receipt.
+   * the moment one of them learned to ignore an abandoned receipt. C1 passes a
+   * warehouse through to it for the same reason — still one definition, now with
+   * a filter on it.
    */
-  observedLeadTimeDays(orgId: string, productVariantId: number): Promise<number[]> {
-    return this.leadTimes.variantLeadTimeDays(orgId, productVariantId);
+  observedLeadTimeDays(
+    orgId: string,
+    productVariantId: number,
+    warehouseId: number | null = null,
+  ): Promise<number[]> {
+    return this.leadTimes.variantLeadTimeDays(orgId, productVariantId, warehouseId);
   }
 
   async policyFor(
     orgId: string,
     productVariantId: number,
-    options: { serviceLevel?: number; weeks?: number; fallbackLeadTimeDays?: number } = {},
+    options: {
+      serviceLevel?: number;
+      weeks?: number;
+      fallbackLeadTimeDays?: number;
+    } & DemandScope = {},
   ): Promise<SafetyStockPolicyResult> {
     const serviceLevel = options.serviceLevel ?? 0.95;
+    const warehouseId = options.warehouseId ?? null;
     const history = await this.baselines.history(orgId, productVariantId, {
       weeks: options.weeks ?? 52,
+      warehouseId,
     });
-    const series = history.map((p) => p.quantity);
+    const series = demandSeries(history);
     const classification = classifyDemand(series);
     const demand = summarise(series);
 
-    const leadTimeDays = await this.observedLeadTimeDays(orgId, productVariantId);
+    const leadTimeDays = await this.observedLeadTimeDays(orgId, productVariantId, warehouseId);
     const notes: string[] = [];
+
+    const censoredPeriods = history.filter((p) => p.stockoutCensored).length;
+    if (censoredPeriods > 0) {
+      // Stated before the model's own warnings, because it undercuts the input
+      // rather than the method: a buffer sized from censored demand is too small
+      // in exactly the periods it was meant to cover.
+      notes.push(
+        `${censoredPeriods} of ${history.length} periods closed with nothing on hand, so measured demand is a lower bound and this buffer is correspondingly optimistic.`,
+      );
+    }
 
     // Weekly periods throughout, because that is the grain the demand series
     // uses. Mixing daily lead times into weekly demand is a factor-of-seven
@@ -82,26 +122,28 @@ export class SafetyStockPolicyService {
     const applicable =
       classification.category === "smooth" || classification.category === "erratic";
 
+    const shared = {
+      productVariantId,
+      warehouseId,
+      serviceLevel,
+      demandCategory: classification.category,
+      demand: { ...demand, periods: series.length },
+      leadTime: {
+        periods: Number(leadTimePeriods.toFixed(4)),
+        stdDev: Number(leadTimeStdDev.toFixed(4)),
+        observations: leadTimeDays.length,
+      },
+      stockoutCensored: censoredPeriods > 0,
+      censoredPeriods,
+    };
+
     if (!applicable) {
-      notes.push(
+      const refusalReason =
         classification.category === "no_demand"
           ? "No demand recorded, so there is nothing to buffer against."
-          : `Demand is ${classification.category}. A normal-distribution safety stock does not describe it, and the number it produces would look like a service level without being one. ${classification.guidance}`,
-      );
-      return {
-        productVariantId,
-        serviceLevel,
-        demandCategory: classification.category,
-        demand: { ...demand, periods: series.length },
-        leadTime: {
-          periods: Number(leadTimePeriods.toFixed(4)),
-          stdDev: Number(leadTimeStdDev.toFixed(4)),
-          observations: leadTimeDays.length,
-        },
-        policy: null,
-        applicable: false,
-        notes,
-      };
+          : `Demand is ${classification.category}. A normal-distribution safety stock does not describe it, and the number it produces would look like a service level without being one. ${classification.guidance}`;
+      notes.push(refusalReason);
+      return { ...shared, policy: null, applicable: false, refusalReason, notes };
     }
 
     const policy = safetyStock({
@@ -113,17 +155,10 @@ export class SafetyStockPolicyService {
     });
 
     return {
-      productVariantId,
-      serviceLevel,
-      demandCategory: classification.category,
-      demand: { ...demand, periods: series.length },
-      leadTime: {
-        periods: Number(leadTimePeriods.toFixed(4)),
-        stdDev: Number(leadTimeStdDev.toFixed(4)),
-        observations: leadTimeDays.length,
-      },
+      ...shared,
       policy,
       applicable: true,
+      refusalReason: null,
       notes: [...notes, ...policy.warnings],
     };
   }

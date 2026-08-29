@@ -18,6 +18,7 @@ export type UpdateCarrierInput = z.infer<typeof updateCarrierSchema>;
 
 export const listPackagesQuerySchema = z.object({
   shipmentId: z.coerce.number().int().optional(),
+  soId: z.coerce.number().int().optional(),
   status: z.enum(["OPEN", "CLOSED", "SHIPPED"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),

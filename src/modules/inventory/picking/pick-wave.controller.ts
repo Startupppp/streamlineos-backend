@@ -19,17 +19,20 @@ import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.deco
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PickWaveService } from "./pick-wave.service";
 import { PickConfirmService } from "./pick-confirm.service";
+import { PickExceptionReportService } from "./pick-exception-report.service";
 import {
   confirmPickSchema,
   createWaveSchema,
   listWavesSchema,
   reassignWaveSchema,
-  reportPickExceptionSchema,
+  reportPlainPickExceptionSchema,
+  substitutePickLineSchema,
   type ConfirmPickInput,
   type CreateWaveInput,
   type ListWavesInput,
   type ReassignWaveInput,
-  type ReportPickExceptionInput,
+  type ReportPlainPickExceptionInput,
+  type SubstitutePickLineInput,
 } from "./dto/picking.schemas";
 
 @RequireModule("inventory")
@@ -39,6 +42,7 @@ export class PickWaveController {
   constructor(
     private readonly waves: PickWaveService,
     private readonly picks: PickConfirmService,
+    private readonly exceptions: PickExceptionReportService,
   ) {}
 
   @Post("waves")
@@ -123,9 +127,15 @@ export class PickWaveController {
   }
 
   /**
-   * INV-205. Records why a line could not close as asked, which is also what
+   * INV-205 / B5. Records why a line could not close as asked, which is also what
    * lets a short-picked wave finish -- a picker holding a tote the system will
    * not let them close is exactly the situation this resolves.
+   *
+   * `SUBSTITUTED` cannot come through here; it has its own route below.
+   * `PermissionGuard` reads exactly one `@RequirePermission` per handler, so a
+   * route covering every reason could only be gated at the weakest of them, and
+   * a picker allowed to say "the bin was empty" would thereby be allowed to
+   * change what the customer is owed.
    */
   @Post("waves/:pickListId/exception")
   @UseGuards(PermissionGuard)
@@ -133,9 +143,36 @@ export class PickWaveController {
   reportException(
     @IdempotencyKey() idempotencyKey: string,
     @Param("pickListId", ParseIntPipe) pickListId: number,
-    @Body(new ZodValidationPipe(reportPickExceptionSchema)) body: ReportPickExceptionInput,
+    @Body(new ZodValidationPipe(reportPlainPickExceptionSchema))
+    body: ReportPlainPickExceptionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.picks.reportException(u.orgId, u.userId, pickListId, body, idempotencyKey);
+    return this.exceptions.reportException(u.orgId, u.userId, pickListId, body, idempotencyKey);
+  }
+
+  /**
+   * B5, item 3. Swapping a different SKU in at the shelf.
+   *
+   * Its own route because it is its own authority: this rewrites the sales-order
+   * line's identity and moves the reservation onto the replacement, which is a
+   * change to what the customer receives rather than a report about what the
+   * shelf held.
+   */
+  @Post("waves/:pickListId/substitute")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:picking:substitute")
+  substitutePickLine(
+    @IdempotencyKey() idempotencyKey: string,
+    @Param("pickListId", ParseIntPipe) pickListId: number,
+    @Body(new ZodValidationPipe(substitutePickLineSchema)) body: SubstitutePickLineInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.exceptions.reportException(
+      u.orgId,
+      u.userId,
+      pickListId,
+      { ...body, reason: "SUBSTITUTED" },
+      idempotencyKey,
+    );
   }
 }

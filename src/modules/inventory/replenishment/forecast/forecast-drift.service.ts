@@ -1,13 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
-import { DemandBaselineService } from "./demand-baseline.service";
+import { DemandBaselineService, demandSeries, type DemandScope } from "./demand-baseline.service";
 import { BASELINES } from "./baselines";
 import { backtest } from "./backtest";
 import type { AccuracyMetrics } from "./accuracy";
 
 export interface DriftReport {
   productVariantId: number;
+  /** Null when the report covers the whole organisation. */
+  warehouseId: number | null;
   method: string | null;
   earlier: AccuracyMetrics | null;
   recent: AccuracyMetrics | null;
@@ -53,11 +55,17 @@ export class ForecastDriftService {
   async drift(
     orgId: string,
     productVariantId: number,
-    options: { weeks?: number } = {},
+    options: { weeks?: number } & DemandScope = {},
   ): Promise<DriftReport> {
     const weeks = options.weeks ?? 52;
-    const report = await this.baselines.baseline(orgId, productVariantId, { weeks });
-    const series = report.history.map((p) => p.quantity);
+    const warehouseId = options.warehouseId ?? null;
+    const report = await this.baselines.baseline(orgId, productVariantId, {
+      weeks,
+      warehouseId,
+    });
+    // C1. The estimators want floats; the ledger figures behind them are exact.
+    // `demandSeries` is the only crossing.
+    const series = demandSeries(report.history);
 
     const findings: string[] = [];
 
@@ -67,6 +75,7 @@ export class ForecastDriftService {
     ) {
       return {
         productVariantId,
+        warehouseId,
         method: report.champion?.method ?? null,
         earlier: null,
         recent: null,
@@ -82,6 +91,7 @@ export class ForecastDriftService {
     if (!report.champion) {
       return {
         productVariantId,
+        warehouseId,
         method: null,
         earlier: null,
         recent: null,
@@ -97,6 +107,7 @@ export class ForecastDriftService {
     if (!forecaster) {
       return {
         productVariantId,
+        warehouseId,
         method,
         earlier: null,
         recent: null,
@@ -119,6 +130,7 @@ export class ForecastDriftService {
     // not moved enough to call.
     const recentReport = await this.baselines.baseline(orgId, productVariantId, {
       weeks: Math.max(12, Math.floor(weeks / 2)),
+      warehouseId,
     });
     const championChanged =
       recentReport.champion !== null && recentReport.champion.method !== method;
@@ -172,6 +184,7 @@ export class ForecastDriftService {
 
     return {
       productVariantId,
+      warehouseId,
       method,
       earlier,
       recent,

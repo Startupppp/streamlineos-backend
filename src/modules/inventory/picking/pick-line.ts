@@ -1,8 +1,8 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { invPickListLines } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
-import { cmpDec } from "../stock-engine/decimal";
+import { PICK_LINE_CLOSED_SQL, type PickExceptionReason } from "./pick-exception-policy";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -23,7 +23,10 @@ export interface PickLineRow {
   serialId: number | null;
   quantityToPick: string;
   quantityPicked: string;
-  exceptionReason: string | null;
+  exceptionReason: PickExceptionReason | null;
+  exceptionStatus: "OPEN" | "RESOLVED" | null;
+  substituteVariantId: number | null;
+  substituteQuantity: string | null;
 }
 
 /** Loads one line of one wave, tenant- and wave-scoped. */
@@ -44,6 +47,9 @@ export async function loadPickLine(
       quantityToPick: invPickListLines.quantityToPick,
       quantityPicked: invPickListLines.quantityPicked,
       exceptionReason: invPickListLines.exceptionReason,
+      exceptionStatus: invPickListLines.exceptionStatus,
+      substituteVariantId: invPickListLines.substituteVariantId,
+      substituteQuantity: invPickListLines.substituteQuantity,
     })
     .from(invPickListLines)
     .where(
@@ -58,36 +64,36 @@ export async function loadPickLine(
 }
 
 /**
- * A wave is done when every line is *closed*, and a line closes either by being
- * picked in full or by an exception explaining the rest.
+ * A wave is done when every line is *closed*, and what closes a line is
+ * `PICK_LINE_CLOSED_SQL` — the one expression the wave board's progress column
+ * and the supervisor queue's blocking count also read.
  *
- * Without the second half a short pick leaves the wave open forever and the
- * picker is stuck holding a tote the system will not let them finish — which is
- * precisely the situation an exception exists to resolve.
+ * Without the exception half a short pick leaves the wave open forever and the
+ * picker is stuck holding a tote the system will not let them finish, which is
+ * precisely the situation an exception exists to resolve. B5 adds the other two
+ * halves: a `WRONG_LOCATION` report does not close anything, because the goods
+ * are somewhere and the walk is not over; and a damaged or substituted line
+ * closes only once a reviewer has signed it, which is what "unresolved can block
+ * wave complete where required" means in practice.
+ *
+ * One statement rather than a fetch-and-fold, so the quantity comparison stays
+ * in `numeric`.
  */
 export async function waveIsComplete(
   tx: Tx,
   orgId: string,
   pickListId: number,
 ): Promise<boolean> {
-  const lines = await tx
-    .select({
-      toPick: invPickListLines.quantityToPick,
-      picked: invPickListLines.quantityPicked,
-      exceptionReason: invPickListLines.exceptionReason,
-    })
-    .from(invPickListLines)
-    .where(
-      and(
-        eq(invPickListLines.orgId, orgId),
-        eq(invPickListLines.pickListId, pickListId),
-      ),
-    );
-  return lines.every(
-    (l) =>
-      l.exceptionReason !== null ||
-      cmpDec(String(l.picked), String(l.toPick)) >= 0,
-  );
+  const [row] = await tx.execute<{ complete: boolean }>(sql`
+    SELECT NOT EXISTS (
+      SELECT 1
+        FROM inv_pick_list_lines pll
+       WHERE pll.org_id = ${orgId}
+         AND pll.pick_list_id = ${pickListId}
+         AND NOT ${PICK_LINE_CLOSED_SQL}
+    ) AS complete
+  `);
+  return row?.complete === true;
 }
 
 /**
@@ -124,24 +130,53 @@ export function reviveConfirm(stored: unknown): {
   };
 }
 
-/** A replayed exception report, rebuilt from the stored JSON. */
-export function reviveException(stored: unknown): {
+/** What reporting an exception answers with, replay or not. */
+export interface PickExceptionResult {
   pickLineId: number;
   reason: string;
+  status: "OPEN" | "RESOLVED";
+  ownerUserId: string | null;
   substituteVariantId: number | null;
   substituteQuantity: string | null;
   quantityPicked: string;
   waveComplete: boolean;
   reportedBy: string;
-} {
+}
+
+/** A replayed exception report, rebuilt from the stored JSON. */
+export function reviveException(stored: unknown): PickExceptionResult {
   const row = asRecord(stored);
   return {
     pickLineId: Number(row.pickLineId ?? 0),
     reason: String(row.reason ?? ""),
+    status: row.status === "RESOLVED" ? "RESOLVED" : "OPEN",
+    ownerUserId: row.ownerUserId == null ? null : String(row.ownerUserId),
     substituteVariantId: row.substituteVariantId == null ? null : Number(row.substituteVariantId),
     substituteQuantity: row.substituteQuantity == null ? null : String(row.substituteQuantity),
     quantityPicked: String(row.quantityPicked ?? "0"),
     waveComplete: row.waveComplete === true,
     reportedBy: String(row.reportedBy ?? ""),
+  };
+}
+
+/** The wave header facts an exception needs: who planned it, and where it is. */
+export interface PickWaveContext {
+  createdBy: string;
+  warehouseId: number | null;
+}
+
+export async function loadWaveContext(
+  tx: Tx,
+  orgId: string,
+  pickListId: number,
+): Promise<PickWaveContext> {
+  const [row] = await tx.execute<{ created_by: string; warehouse_id: number | null }>(sql`
+    SELECT created_by, warehouse_id FROM inv_pick_lists
+     WHERE org_id = ${orgId} AND id = ${pickListId}
+  `);
+  if (!row) throw new NotFoundException("Pick list not found");
+  return {
+    createdBy: String(row.created_by),
+    warehouseId: row.warehouse_id === null ? null : Number(row.warehouse_id),
   };
 }

@@ -16,6 +16,12 @@ export const createInspectionSchema = z.object({
   notes: z.string().optional(),
   lines: z.array(z.object({
     productVariantId: z.number().int(),
+    /**
+     * Where the units stand. Optional because a manual inspection may be raised
+     * before anybody has looked; a line without one falls back to a lookup at
+     * disposition time, which cannot tell two bins of one SKU apart.
+     */
+    locationId: z.number().int().positive().optional(),
     lotId: z.number().int().optional(),
     serialId: z.number().int().optional(),
     quantity: z.string().regex(/^\d+(\.\d+)?$/),

@@ -83,8 +83,15 @@ export const openingStockSchema = z.object({
 }).strict();
 export type OpeningStockInput = z.infer<typeof openingStockSchema>;
 
+export const adjustmentReasons = [
+  "PURCHASE", "SALE", "RETURN", "DAMAGE", "EXPIRY", "THEFT", "RECOUNT", "OTHER", "SCRAP",
+] as const;
+
 export const listAdjustmentsSchema = z.object({
   status: z.enum(["DRAFT", "PENDING_APPROVAL", "APPROVED", "PENDING_POST", "POSTED", "CANCELLED"]).optional(),
+  reason: z.enum(adjustmentReasons).optional(),
+  /** D8. Every reason that condemns stock, in one filter — the write-off queue. */
+  writeOffsOnly: queryBoolean.optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 }).strict();
@@ -98,8 +105,14 @@ const adjustmentLineSchema = z.object({
 }).strict();
 
 export const createAdjustmentSchema = z.object({
-  reason: z.enum(["PURCHASE", "SALE", "RETURN", "DAMAGE", "EXPIRY", "THEFT", "RECOUNT", "OTHER"]),
+  reason: z.enum(adjustmentReasons),
   notes: z.string().max(1000).optional(),
+  /**
+   * D8. Where the condemned goods physically went, for a write-off reason only.
+   * Optional: the server resolves the warehouse's own scrap bin when the caller
+   * names none, and a warehouse that has no scrap bin still writes stock off.
+   */
+  scrapLocationId: z.number().int().positive().optional(),
   lines: z.array(adjustmentLineSchema).min(1),
 }).strict();
 export type CreateAdjustmentInput = z.infer<typeof createAdjustmentSchema>;

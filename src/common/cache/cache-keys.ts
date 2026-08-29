@@ -140,6 +140,7 @@ export const CACHE_KEYS = {
     `inv:quality:inspections:${orgId}`,
   invQualityHoldsNamespace: (orgId: string) => `inv:quality:holds:${orgId}`,
   invQualityRecallsNamespace: (orgId: string) => `inv:quality:recalls:${orgId}`,
+  invInspectionPlansNamespace: (orgId: string) => `inv:quality:plans:${orgId}`,
   invPackagesNamespace: (orgId: string) => `inv:packages:${orgId}`,
   invShipmentsNamespace: (orgId: string) => `inv:shipments:${orgId}`,
   invLoadsNamespace: (orgId: string) => `inv:loads:${orgId}`,

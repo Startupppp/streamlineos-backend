@@ -165,8 +165,10 @@ describe("[seeded-e2e] lead time and fill rate", () => {
     expect(fill.linesRequested).toBe(3);
     expect(fill.linesFilledInFull).toBe(1);
     expect(fill.lineFillRate).toBeCloseTo(0.3333, 3);
-    expect(fill.quantityRequested).toBe(30);
-    expect(fill.quantityFilled).toBe(14);
+    // C1. Exact quantities, as decimal strings: these are order lines, not
+    // statistics, and a float sum of `numeric(18,4)` is not the quantity.
+    expect(fill.quantityRequested).toBe("30.0000");
+    expect(fill.quantityFilled).toBe("14.0000");
     expect(fill.unitFillRate).toBeCloseTo(0.4667, 3);
   });
 

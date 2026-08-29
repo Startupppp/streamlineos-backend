@@ -11,6 +11,12 @@ export const updateSettingsSchema = z.object({
   overReceiptTolerancePct: z.string().optional(),
   requirePoApproval: z.boolean().optional(),
   adjustmentApprovalThreshold: z.string().nullable().optional(),
+  /**
+   * D8. Above this much inventory value an adjustment — a write-off above all —
+   * needs a second signature. Distinct from the quantity threshold beside it,
+   * which cannot tell forty screws from forty turbines.
+   */
+  adjustmentApprovalValueThreshold: z.string().nullable().optional(),
   autoReserveOnConfirm: z.boolean().optional(),
   allowPartialShipment: z.boolean().optional(),
   packageRequiredForShipping: z.boolean().optional(),

@@ -62,30 +62,127 @@ export const confirmPickSchema = z
 export type ConfirmPickInput = z.infer<typeof confirmPickSchema>;
 
 /**
- * INV-205. Why a line could not close as asked.
+ * INV-205 / B5. Why a line could not close as asked.
  *
- * A substitution has to name what went in the tote instead; the others do not,
- * because "the shelf was empty" has no second item to record. Enforced by the
- * schema rather than the service, so the impossible combination cannot be
- * constructed.
+ * Three shapes rather than one, because the reasons carry different evidence
+ * and the schema is where an impossible combination stops being constructible:
+ *
+ *   * the plain shortfalls carry only a note -- "the shelf was empty" has no
+ *     second item and no second place to record;
+ *   * `WRONG_LOCATION` carries where the goods actually were, which is the
+ *     whole content of the report and the thing that lets the line be
+ *     retargeted rather than written off;
+ *   * `SUBSTITUTED` carries what went in the tote instead, and reaches the API
+ *     through its own route because swapping a SKU rewrites what the customer
+ *     is owed and answers to its own permission.
  */
-export const reportPickExceptionSchema = z
-  .discriminatedUnion("reason", [
-    z
-      .object({
-        pickLineId: z.number().int().positive(),
-        reason: z.enum(["SHORT", "NOT_FOUND", "DAMAGED"]),
-        notes: z.string().max(500).optional(),
-      })
-      .strict(),
-    z
-      .object({
-        pickLineId: z.number().int().positive(),
-        reason: z.literal("SUBSTITUTED"),
-        substituteVariantId: z.number().int().positive(),
-        quantityPicked: positiveDecimalQuantity,
-        notes: z.string().max(500).optional(),
-      })
-      .strict(),
-  ]);
+const plainExceptionShape = {
+  pickLineId: z.number().int().positive(),
+  notes: z.string().max(500).optional(),
+};
+
+const shortfallException = z
+  .object({
+    ...plainExceptionShape,
+    reason: z.enum(["SHORT", "NOT_FOUND", "DAMAGED"]),
+  })
+  .strict();
+
+const wrongLocationException = z
+  .object({
+    ...plainExceptionShape,
+    reason: z.literal("WRONG_LOCATION"),
+    /**
+     * Where the picker actually found them. Optional: a picker who knows only
+     * that the bin was wrong still has something worth reporting, and demanding
+     * a location they cannot supply would push them onto `NOT_FOUND`, which
+     * means something else entirely.
+     */
+    foundLocationId: z.number().int().positive().optional(),
+  })
+  .strict();
+
+export const reportPickExceptionSchema = z.discriminatedUnion("reason", [
+  shortfallException,
+  wrongLocationException,
+  z
+    .object({
+      ...plainExceptionShape,
+      reason: z.literal("SUBSTITUTED"),
+      substituteVariantId: z.number().int().positive(),
+      quantityPicked: positiveDecimalQuantity,
+    })
+    .strict(),
+]);
 export type ReportPickExceptionInput = z.infer<typeof reportPickExceptionSchema>;
+
+/**
+ * B5. What the ordinary exception route accepts.
+ *
+ * `SUBSTITUTED` is absent deliberately. `PermissionGuard` reads exactly one
+ * `@RequirePermission` per handler, so a single endpoint covering every reason
+ * could only be gated at the weakest of them -- and a picker allowed to say
+ * "the shelf was empty" would thereby be allowed to change what the customer is
+ * owed. Splitting the route is how the two authorities stay apart.
+ */
+export const reportPlainPickExceptionSchema = z.discriminatedUnion("reason", [
+  shortfallException,
+  wrongLocationException,
+]);
+export type ReportPlainPickExceptionInput = z.infer<typeof reportPlainPickExceptionSchema>;
+
+/** B5. The substitution route's body -- the reason is the route, so it is implied. */
+export const substitutePickLineSchema = z
+  .object({
+    pickLineId: z.number().int().positive(),
+    substituteVariantId: z.number().int().positive(),
+    quantityPicked: positiveDecimalQuantity,
+    notes: z.string().max(500).optional(),
+  })
+  .strict();
+export type SubstitutePickLineInput = z.infer<typeof substitutePickLineSchema>;
+
+/**
+ * B5. The supervisor queue.
+ *
+ * `ownership` is a view rather than a user id, for the same reason `assignment`
+ * is on the wave queue: a query that could name the owner could read somebody
+ * else's queue, and "whose exceptions am I looking at" is answered from the
+ * token.
+ */
+export const listPickExceptionsSchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+    status: z.enum(["OPEN", "RESOLVED"]).optional(),
+    reason: z
+      .enum(["SHORT", "NOT_FOUND", "DAMAGED", "SUBSTITUTED", "WRONG_LOCATION"])
+      .optional(),
+    warehouseId: z.coerce.number().int().positive().optional(),
+    ownership: z.enum(["ANY", "MINE"]).default("ANY"),
+  })
+  .strict();
+export type ListPickExceptionsInput = z.infer<typeof listPickExceptionsSchema>;
+
+/**
+ * B5. What a reviewer decided.
+ *
+ * The note is required rather than optional: the value of a review is that
+ * somebody can later read why the order shipped the way it did, and a bare
+ * `ACCEPTED` with no words answers nothing.
+ */
+export const resolvePickExceptionSchema = z
+  .object({
+    resolution: z.enum(["ACCEPTED", "REJECTED"]),
+    notes: z.string().min(1).max(500),
+  })
+  .strict();
+export type ResolvePickExceptionInput = z.infer<typeof resolvePickExceptionSchema>;
+
+/** B5. Handing an exception to the person who will actually deal with it. */
+export const assignPickExceptionSchema = z
+  .object({
+    ownerUserId: z.string().min(1).max(255),
+  })
+  .strict();
+export type AssignPickExceptionInput = z.infer<typeof assignPickExceptionSchema>;

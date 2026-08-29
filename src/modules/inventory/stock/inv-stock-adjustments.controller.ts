@@ -53,7 +53,7 @@ export class InvStockAdjustmentsController {
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.adjustments.getAdjustment(u.orgId, adjustmentId);
+    return this.adjustments.getAdjustment(u.orgId, adjustmentId, u.userId);
   }
 
   @Post(":adjustmentId/approve")

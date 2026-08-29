@@ -1,4 +1,5 @@
-import { Controller, Get, Patch, Param, ParseIntPipe, Query, Body, UseGuards } from "@nestjs/common";
+import { Controller, Get, Patch, Param, ParseIntPipe, Query, Body, Res, UseGuards } from "@nestjs/common";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -9,6 +10,9 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvTraceabilityService } from "./inv-traceability.service";
 import { TraceabilityChainService } from "./traceability-chain.service";
+import { LotGenealogyService } from "./lot-genealogy.service";
+import { genealogyToCsv } from "./lib/genealogy-csv";
+import { genealogyQuerySchema, type GenealogyQueryInput } from "./dto/genealogy.schemas";
 import {
   listLotsSchema,
   listSerialsSchema,
@@ -29,6 +33,7 @@ export class InvTraceabilityController {
   constructor(
     private readonly traceability: InvTraceabilityService,
     private readonly chain: TraceabilityChainService,
+    private readonly genealogy: LotGenealogyService,
   ) {}
 
   @Get("lots")
@@ -100,5 +105,38 @@ export class InvTraceabilityController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.chain.getChain(u.orgId, query);
+  }
+
+  /**
+   * D1. The bounded genealogy graph around one lot or serial. Every answer
+   * carries the caps it was walked under and says whether they cut it short.
+   */
+  @Get("traceability/genealogy")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:read")
+  async getGenealogy(
+    @Query(new ZodValidationPipe(genealogyQuerySchema)) query: GenealogyQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.genealogy.getGraph(u.orgId, u.userId, query);
+  }
+
+  @Get("traceability/genealogy/export")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:export")
+  async exportGenealogy(
+    @Query(new ZodValidationPipe(genealogyQuerySchema)) query: GenealogyQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ) {
+    const graph = await this.genealogy.getGraph(u.orgId, u.userId, query);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="genealogy-${graph.anchor.kind}-${String(graph.anchor.id)}.csv"`,
+    );
+    res.setHeader("X-Genealogy-Complete", String(graph.truncation.complete));
+    res.setHeader("X-Genealogy-Truncation-Reasons", graph.truncation.reasons.join(","));
+    res.send(genealogyToCsv(graph));
   }
 }

@@ -3,7 +3,10 @@ import { sql } from "drizzle-orm";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
-import { DemandBaselineService } from "src/modules/inventory/replenishment/forecast/demand-baseline.service";
+import {
+  DemandBaselineService,
+  demandSeries,
+} from "src/modules/inventory/replenishment/forecast/demand-baseline.service";
 import { SafetyStockPolicyService } from "src/modules/inventory/replenishment/forecast/safety-stock-policy.service";
 import { ReorderProposalService } from "src/modules/inventory/replenishment/forecast/reorder-proposal.service";
 import { ReplenishmentSimulatorService } from "src/modules/inventory/replenishment/forecast/replenishment-simulator.service";
@@ -127,8 +130,11 @@ describe("[seeded-e2e] demand baselines", () => {
       svc().history(scene.orgId, scene.soldVariantId, { weeks: 16 }),
     );
     expect(history).toHaveLength(16);
-    expect(history.filter((p) => p.quantity === 0).length).toBeGreaterThan(5);
-    expect(history.some((p) => p.quantity === 7)).toBe(true);
+    // C1. Each period's quantity is the exact `numeric(18,4)` figure, not a
+    // float — `demandSeries` is the one crossing into the estimators.
+    const series = demandSeries(history);
+    expect(series.filter((q) => q === 0).length).toBeGreaterThan(5);
+    expect(history.some((p) => p.quantity === "7.0000")).toBe(true);
     // Strictly ascending periods: a forecaster that receives these backwards
     // produces a confident and entirely wrong answer.
     const periods = history.map((p) => p.period);
@@ -142,9 +148,9 @@ describe("[seeded-e2e] demand baselines", () => {
     const transferred = await asTenant(() =>
       svc().history(scene.orgId, scene.transferredVariantId, { weeks: 16 }),
     );
-    expect(sold.reduce((a, p) => a + p.quantity, 0)).toBe(31);
+    expect(demandSeries(sold).reduce((a, q) => a + q, 0)).toBe(31);
     // Five 50-unit transfers, and none of them are demand.
-    expect(transferred.reduce((a, p) => a + p.quantity, 0)).toBe(0);
+    expect(demandSeries(transferred).reduce((a, q) => a + q, 0)).toBe(0);
   });
 
   it("names a champion baseline once there is enough history", async () => {

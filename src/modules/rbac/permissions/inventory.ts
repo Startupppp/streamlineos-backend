@@ -144,6 +144,27 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     description: "Invoice sales orders",
   },
   {
+    /**
+     * B5. Swapping a SKU at the shelf rewrites what the customer is owed, so it
+     * is not the same authority as walking a wave. `inventory:sales-orders:ship`
+     * says "you may pick and dispatch what was ordered"; this says "you may
+     * change what was ordered", which is why it is a key of its own rather than
+     * one more thing every picker holds.
+     */
+    name: "inventory:picking:substitute",
+    resource: "inventory:picking",
+    action: "substitute",
+    description:
+      "Swap a different SKU in at the shelf, rewriting the sales-order line and its reservation",
+  },
+  {
+    /** B5. The supervisor half: owning, reassigning and resolving exceptions. */
+    name: "inventory:picking:review",
+    resource: "inventory:picking",
+    action: "review",
+    description: "Own and resolve pick exceptions raised by pickers",
+  },
+  {
     name: "inventory:reports:read",
     resource: "inventory:reports",
     action: "read",
@@ -244,6 +265,13 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     resource: "inventory:quality",
     action: "recall",
     description: "Manage product recalls",
+  },
+  {
+    name: "inventory:quality:plans:manage",
+    resource: "inventory:quality:plans",
+    action: "manage",
+    description:
+      "Author and version the inspection plans that decide which arrivals must be inspected before they become available",
   },
   {
     name: "inventory:packages:manage",

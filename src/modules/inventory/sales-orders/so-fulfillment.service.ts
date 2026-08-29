@@ -268,14 +268,13 @@ export class SoFulfillmentService {
 
   /**
    * A3. Packing took no key, and it creates documents rather than flipping a
-   * status: a retry produced a second package with a second package number and
-   * a second set of lines against the same picked stock.
-   */
-  /**
-   * A3. Packing took no key, and it creates documents rather than flipping a
    * status: a retry produced a second package, with a second package number and
    * a second set of lines, against the same picked stock. The package, its lines
    * and the order's status now move together or not at all.
+   *
+   * B6. Nothing here posts stock, and that is deliberate: the goods left the
+   * shelf when the picker took them and leave the building on the internal ship
+   * command. A movement raised at the bench would subtract the same units twice.
    */
   async packSo(
     orgId: string,
@@ -284,14 +283,6 @@ export class SoFulfillmentService {
     data: PackSoInput,
     idempotencyKey: string,
   ) {
-    const so = await this.db.query.invSalesOrders.findFirst({
-      where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
-    });
-    if (!so) throw new NotFoundException("Sales order not found");
-    if (so.status !== "PICKED") {
-      throw new BadRequestException("Sales order must be PICKED before packing");
-    }
-
     const settings = await this.settingsService.get(orgId);
 
     const packageId = await this.db.transaction((tx) =>
@@ -301,19 +292,71 @@ export class SoFulfillmentService {
         idempotencyKey,
         { command: "inventory.sales-orders.pack", soId, data },
         async () => {
+          // B6. Read and checked *inside* the claim, which is the only place the
+          // guard can be both correct and replay-safe. Outside it, a client
+          // retrying after a network timeout on a pack that had already
+          // committed was refused with "must be PICKED" — the status its own
+          // first run had just moved to PACKED — so the key protected nothing on
+          // the one path idempotency exists for. Inside, the replay branch
+          // returns the stored package before the guard is reached, and a first
+          // run that fails the guard rolls the claim back with it.
+          const so = await tx.query.invSalesOrders.findFirst({
+            where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
+            columns: { id: true, status: true },
+          });
+          if (!so) throw new NotFoundException("Sales order not found");
+          if (so.status !== "PICKED") {
+            throw new BadRequestException("Sales order must be PICKED before packing");
+          }
+
           let created: number | null = null;
 
           if (settings.packageRequiredForShipping) {
             const packageNumber = await this.numSeq.next(orgId, "PACKAGE", tx);
 
-            const pickLists = await tx.query.invPickLists.findMany({
-              where: and(eq(invPickLists.orgId, orgId), eq(invPickLists.soId!, soId)),
-              with: { lines: true },
-            });
+            /**
+             * B6. Found through the *lines*, not through `inv_pick_lists.so_id`.
+             *
+             * A wave's header carries a null `so_id` — that is what
+             * distinguishes it from a single-order pick — so this lookup
+             * returned nothing for a wave-picked order and packing raised an
+             * **empty** package: a document asserting that a carton holding
+             * three units holds none, closed, and shipped on. B4 found and fixed
+             * the identical defect in `shipSo`; this is the same join.
+             *
+             * Every line still reaches this the same way for a single-order
+             * pick, which sets both `so_id` and `so_line_id`; cancelled pick
+             * lists are excluded, as they are everywhere else this quantity is
+             * read.
+             */
+            const pickedLines = await tx.execute<{
+              product_variant_id: number;
+              lot_id: number | null;
+              serial_id: number | null;
+              quantity_picked: string;
+            }>(sql`
+              SELECT pll.product_variant_id,
+                     pll.lot_id,
+                     pll.serial_id,
+                     pll.quantity_picked
+                FROM inv_pick_list_lines pll
+                JOIN inv_pick_lists pl
+                  ON pl.org_id = pll.org_id AND pl.id = pll.pick_list_id
+                JOIN inv_so_lines sol
+                  ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
+               WHERE pll.org_id = ${orgId}
+                 AND sol.so_id = ${soId}
+                 AND pl.status <> 'CANCELLED'
+               ORDER BY pll.id
+            `);
 
             const [pkg] = await tx.insert(invPackages).values({
               orgId,
               packageNumber,
+              // B6. The carton knows which order it holds, so the bench can
+              // reconcile a scan and the packing queue can be read off the
+              // cartons rather than off the order's status.
+              soId,
               weight: data.weight?.toFixed(4),
               dimensionsL: data.dimensionsL?.toFixed(2),
               dimensionsW: data.dimensionsW?.toFixed(2),
@@ -324,16 +367,18 @@ export class SoFulfillmentService {
 
             created = pkg!.id;
 
-            const packageLinesValues = pickLists.flatMap((pl) =>
-              pl.lines.map((line) => ({
+            const packageLinesValues = pickedLines
+              // A line closed by an exception can hold zero, and a carton line
+              // for nothing is a manifest entry nobody can act on.
+              .filter((line) => Number(line.quantity_picked) !== 0)
+              .map((line) => ({
                 orgId,
                 packageId: pkg!.id,
-                productVariantId: line.productVariantId,
-                lotId: line.lotId,
-                serialId: line.serialId,
-                quantity: line.quantityPicked,
-              }))
-            );
+                productVariantId: Number(line.product_variant_id),
+                lotId: line.lot_id === null ? null : Number(line.lot_id),
+                serialId: line.serial_id === null ? null : Number(line.serial_id),
+                quantity: String(line.quantity_picked),
+              }));
 
             if (packageLinesValues.length > 0) {
               await tx.insert(invPackageLines).values(packageLinesValues);

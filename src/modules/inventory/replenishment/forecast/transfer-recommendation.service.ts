@@ -4,14 +4,24 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
 import { availableQtySumSql } from "../../stock-engine/available-sql";
+import { fromExact } from "./exact";
 
 export interface WarehousePosition {
   warehouseId: number;
   warehouseName: string;
-  onHand: number;
-  committed: number;
-  available: number;
-  /** Weekly demand measured at this warehouse. */
+  /**
+   * C1. Ledger quantities, exact. These are `numeric(18,4)` figures read
+   * straight from `inv_stock_levels` and shown to a planner, so they are decimal
+   * strings — see `exact.ts` for where the line between these and the estimates
+   * below is drawn.
+   */
+  onHand: string;
+  committed: string;
+  available: string;
+  /**
+   * Weekly demand measured at this warehouse. An estimate — a rate over a window
+   * — and therefore a float, deliberately, like everything derived from it.
+   */
   weeklyDemand: number;
   /** Weeks of cover the available stock represents. Null when nothing sells here. */
   weeksOfCover: number | null;
@@ -130,19 +140,20 @@ export class TransferRecommendationService {
     `);
 
     const positions: WarehousePosition[] = rows.map((row) => {
-      const onHand = Number(row.on_hand);
-      const committed = Number(row.committed);
       // A1. One formula. A two-term copy here treated blocked, quality-held
       // and picked-not-shipped stock as transferable, so the plan would move
       // goods that were already spoken for.
-      const available = Number(row.available);
-      const weeklyDemand = Number(row.demand) / weeks;
+      //
+      // C1. The three ledger figures stay exact; cover and demand are rates over
+      // a window and cross into floats here, once, by the named boundary.
+      const available = fromExact(row.available);
+      const weeklyDemand = fromExact(row.demand) / weeks;
       return {
         warehouseId: row.warehouse_id,
         warehouseName: row.warehouse_name,
-        onHand,
-        committed,
-        available,
+        onHand: row.on_hand,
+        committed: row.committed,
+        available: row.available,
         weeklyDemand: Number(weeklyDemand.toFixed(4)),
         // Infinite cover is not a number, and reporting it as one makes every
         // idle site look like the best donor in the network.
@@ -168,8 +179,8 @@ export class TransferRecommendationService {
     // demand has all of its stock spare.
     const spareOf = (p: WarehousePosition) =>
       p.weeklyDemand === 0
-        ? p.available
-        : p.available -
+        ? fromExact(p.available)
+        : fromExact(p.available) -
           p.weeklyDemand * TransferRecommendationService.DONOR_FLOOR_WEEKS;
 
     const donors = positions
@@ -187,7 +198,7 @@ export class TransferRecommendationService {
       let stillNeeded =
         recipient.weeklyDemand *
           TransferRecommendationService.RECIPIENT_TARGET_WEEKS -
-        recipient.available;
+        fromExact(recipient.available);
 
       for (const donor of donors) {
         if (stillNeeded < TransferRecommendationService.MIN_TRANSFER_UNITS) break;
@@ -200,8 +211,13 @@ export class TransferRecommendationService {
         donor.spare -= quantity;
         stillNeeded -= quantity;
 
-        const donorAfter = donor.position.available - quantity;
-        const recipientAfter = recipient.available + quantity;
+        // Both sides of the trade, in the same float space as the cover figures
+        // they are compared against. The transfer itself is a whole number of
+        // units (`Math.floor` above); a recommendation is advice about a rate,
+        // and dressing it in four exact decimal places would claim a precision
+        // the demand estimate behind it does not have.
+        const donorAfter = fromExact(donor.position.available) - quantity;
+        const recipientAfter = fromExact(recipient.available) + quantity;
 
         recommendations.push({
           fromWarehouseId: donor.position.warehouseId,

@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
-import { DemandBaselineService } from "./demand-baseline.service";
+import { DemandBaselineService, type DemandScope } from "./demand-baseline.service";
 import { SafetyStockPolicyService } from "./safety-stock-policy.service";
 import { safetyStock } from "./safety-stock";
 
@@ -29,6 +29,8 @@ export interface SimulationOutcome {
 
 export interface SimulationResult {
   productVariantId: number;
+  /** Null when the simulation covers the whole organisation. */
+  warehouseId: number | null;
   applicable: boolean;
   /** Why not, when the model does not describe this demand. */
   reason?: string;
@@ -70,8 +72,9 @@ export class ReplenishmentSimulatorService {
     orgId: string,
     productVariantId: number,
     scenarios: Array<SimulationScenario & { label: string }>,
-    options: { weeks?: number; serviceLevel?: number } = {},
+    options: { weeks?: number; serviceLevel?: number } & DemandScope = {},
   ): Promise<SimulationResult> {
+    const warehouseId = options.warehouseId ?? null;
     if (scenarios.length === 0) {
       throw new BadRequestException("At least one scenario is required");
     }
@@ -85,11 +88,13 @@ export class ReplenishmentSimulatorService {
     const policy = await this.policies.policyFor(orgId, productVariantId, {
       serviceLevel: baseServiceLevel,
       weeks: options.weeks,
+      warehouseId,
     });
 
     if (!policy.applicable || policy.policy === null) {
       return {
         productVariantId,
+        warehouseId,
         applicable: false,
         reason:
           policy.notes[0] ??
@@ -155,6 +160,7 @@ export class ReplenishmentSimulatorService {
 
     return {
       productVariantId,
+      warehouseId,
       applicable: true,
       baseline,
       scenarios: outcomes,

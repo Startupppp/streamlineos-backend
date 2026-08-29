@@ -133,7 +133,15 @@ export const accountTypeEnum = pgEnum("account_type", ["ASSET", "LIABILITY", "EQ
 export const journalEntryStatusEnum = pgEnum("journal_entry_status", ["DRAFT", "PENDING_APPROVAL", "POSTED", "VOID"]);
 
 export const invProductStatusEnum = pgEnum("inv_product_status", ["ACTIVE", "INACTIVE", "DISCONTINUED"]);
-export const invAdjReasonEnum = pgEnum("inv_adj_reason", ["PURCHASE", "SALE", "RETURN", "DAMAGE", "EXPIRY", "THEFT", "RECOUNT", "OTHER"]);
+/**
+ * D8. `SCRAP` names the condemning of goods that are on the shelf, which the
+ * other seven reasons could only approximate: DAMAGE says why they are worthless
+ * and RECOUNT says the count was wrong, but neither says the units were
+ * destroyed. The ledger has had `SCRAP` as a transaction type since the first
+ * migration and `inv_reason_category` has had it as a category; only the
+ * document's own reason was missing it.
+ */
+export const invAdjReasonEnum = pgEnum("inv_adj_reason", ["PURCHASE", "SALE", "RETURN", "DAMAGE", "EXPIRY", "THEFT", "RECOUNT", "OTHER", "SCRAP"]);
 /**
  * Which quantity a movement moved.
  *
@@ -399,12 +407,39 @@ export const invVendorReturnReasonEnum = pgEnum("inv_vendor_return_reason", ["DA
  * `blocked_qty`.
  */
 export const invCustomerReturnDispositionEnum = pgEnum("inv_customer_return_disposition", ["RESTOCK", "QUARANTINE", "SCRAP", "RETURN_TO_VENDOR"]);
-/** INV-205. Why a pick line did not close the way it was asked to. */
+/**
+ * INV-205. Why a pick line did not close the way it was asked to.
+ *
+ * B5 adds `WRONG_LOCATION`, and it is the one member that does not close the
+ * line. The other four say the units are not coming: the shelf was short, the
+ * bin was empty, the goods were broken, or something else went in the tote.
+ * `WRONG_LOCATION` says the goods exist and the wave sent the picker to the
+ * wrong place — the work is still outstanding, so the line is retargeted and
+ * stays open rather than being written off.
+ */
 export const invPickExceptionEnum = pgEnum("inv_pick_exception", [
   "SHORT",
   "NOT_FOUND",
   "DAMAGED",
   "SUBSTITUTED",
+  "WRONG_LOCATION",
+]);
+/**
+ * B5. Where an exception is in its own life, separately from the line's.
+ *
+ * An exception nobody has looked at and one a supervisor has signed off are
+ * different facts, and the enum on its own could not tell them apart — so a
+ * substitution the picker invented at the shelf read exactly like one the
+ * warehouse had agreed to.
+ */
+export const invPickExceptionStatusEnum = pgEnum("inv_pick_exception_status", [
+  "OPEN",
+  "RESOLVED",
+]);
+/** B5. What the reviewer decided. Set only when the exception is RESOLVED. */
+export const invPickExceptionResolutionEnum = pgEnum("inv_pick_exception_resolution", [
+  "ACCEPTED",
+  "REJECTED",
 ]);
 
 export const invPickListStatusEnum = pgEnum("inv_pick_list_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]);
@@ -423,6 +458,22 @@ export const invCycleCountStatusEnum = pgEnum("inv_cycle_count_status", ["PLANNE
 export const invQualityInspectionStatusEnum = pgEnum("inv_quality_inspection_status", ["PENDING", "IN_PROGRESS", "PASSED", "FAILED", "DISPOSITION_REQUIRED", "COMPLETED", "CANCELLED"]);
 export const invQualityHoldStatusEnum = pgEnum("inv_quality_hold_status", ["ACTIVE", "RELEASED"]);
 export const invQualityDispositionEnum = pgEnum("inv_quality_disposition", ["RELEASE_TO_AVAILABLE", "QUARANTINE", "RETURN_TO_VENDOR", "SCRAP"]);
+/**
+ * D3. How much of an arriving quantity an inspector has to physically check.
+ *
+ * It is the *sample*, never the hold: the whole delivered quantity is
+ * quarantined pending the verdict whatever the sample size says, because a
+ * sample that fails condemns the batch it was drawn from and not just the units
+ * that were opened.
+ */
+export const invInspectionSamplingMethodEnum = pgEnum("inv_inspection_sampling_method", ["ALL", "PERCENTAGE", "FIXED_QUANTITY"]);
+/**
+ * A plan version is immutable once it leaves DRAFT — an inspection records the
+ * version that governed it, so editing that version rewrites the rule a
+ * completed result was judged against. Changing a rule publishes a new version
+ * and supersedes the old one.
+ */
+export const invInspectionPlanVersionStatusEnum = pgEnum("inv_inspection_plan_version_status", ["DRAFT", "ACTIVE", "SUPERSEDED"]);
 export const invRecallStatusEnum = pgEnum("inv_recall_status", ["OPEN", "IN_PROGRESS", "CLOSED"]);
 export const invShipmentStatusEnum = pgEnum("inv_shipment_status", ["DRAFT", "PACKED", "LABEL_CREATED", "SHIPPED", "DELIVERED", "CANCELLED"]);
 export const invPackageStatusEnum = pgEnum("inv_package_status", ["OPEN", "CLOSED", "SHIPPED"]);

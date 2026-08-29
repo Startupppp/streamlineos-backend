@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, date, jsonb, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { invLotStatusEnum, invSerialStatusEnum } from "../common/enums";
 import { organizations } from "../common/auth";
 import { invProductVariants } from "./core";
@@ -46,6 +46,10 @@ export const invSerialNumbers = pgTable("inv_serial_numbers", {
   index("idx_inv_serials_variant").on(table.productVariantId),
   index("idx_inv_serials_status").on(table.orgId, table.status),
   index("idx_inv_serials_location").on(table.currentLocationId),
+  // D1. `lot_id` is the one real parent/child FK in this schema and had no
+  // index, so walking from a lot to the units it contains scanned every serial
+  // in the tenant. Added in 0542.
+  index("idx_inv_serials_org_lot").on(table.orgId, table.lotId).where(sql`${table.lotId} IS NOT NULL`),
   index("idx_inv_serials_serial_number_trgm").using("gin", table.serialNumber.op("gin_trgm_ops")),
 ]);
 

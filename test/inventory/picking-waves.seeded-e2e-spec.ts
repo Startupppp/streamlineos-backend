@@ -8,9 +8,11 @@ import { SoCoreService } from "src/modules/inventory/sales-orders/so-core.servic
 import { SoLifecycleService } from "src/modules/inventory/sales-orders/so-lifecycle.service";
 import { SoFulfillmentService } from "src/modules/inventory/sales-orders/so-fulfillment.service";
 import { StockEngineService } from "src/modules/inventory/stock-engine/stock-engine.service";
+import { InventorySettingsService } from "src/modules/inventory/stock-engine/inventory-settings.service";
 import { INVENTORY_COMMAND_EVENTS } from "src/modules/inventory/stock-engine/command-events";
 import { PickWaveService } from "src/modules/inventory/picking/pick-wave.service";
 import { PickConfirmService } from "src/modules/inventory/picking/pick-confirm.service";
+import { PickExceptionReportService } from "src/modules/inventory/picking/pick-exception-report.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { outboxEventsFor } from "test/helpers/outbox-events";
 import { seedOrg } from "test/helpers/seed-builder";
@@ -85,6 +87,10 @@ describe("[seeded-e2e] picking waves", () => {
 
   const waves = () => app.app.get(PickWaveService);
   const picks = () => app.app.get(PickConfirmService);
+  // B5 split reporting an exception off the confirm path: one records what a
+  // picker found, the other what they did not, and only the second unwinds a
+  // reservation or rewrites a sales-order line.
+  const exceptions = () => app.app.get(PickExceptionReportService);
 
   beforeAll(async () => {
     app = await createSeededE2eApp();
@@ -153,6 +159,18 @@ describe("[seeded-e2e] picking waves", () => {
           {
             transactionType: "PURCHASE",
             productVariantId: scene.variantId,
+            locationId: scene.locationId,
+            quantityDelta: "500.0000",
+            unitCost: "1.0000",
+          },
+          // B5. The substitute needs stock of its own now. A substitution
+          // rewrites the sales-order line onto the replacement and re-promises
+          // the order against it, so it is refused outright when the replacement
+          // is a SKU the organisation does not actually have — which is the
+          // point: an order cannot be re-promised against nothing.
+          {
+            transactionType: "PURCHASE",
+            productVariantId: scene.substituteVariantId,
             locationId: scene.locationId,
             quantityDelta: "500.0000",
             unitCost: "1.0000",
@@ -465,7 +483,7 @@ describe("[seeded-e2e] picking waves", () => {
       expect(open.status).toBe("IN_PROGRESS");
 
       const result = await asTenant(() =>
-        picks().reportException(scene.orgId, scene.userId, pickListId, {
+        exceptions().reportException(scene.orgId, scene.userId, pickListId, {
           pickLineId: lineId,
           reason: "SHORT",
           notes: "Only two on the shelf",
@@ -479,7 +497,7 @@ describe("[seeded-e2e] picking waves", () => {
       // picker moved on carry the same quantity and different meanings.
       const { pickListId, lineId } = await oneLineWave();
       await asTenant(() =>
-        picks().reportException(scene.orgId, scene.userId, pickListId, {
+        exceptions().reportException(scene.orgId, scene.userId, pickListId, {
           pickLineId: lineId,
           reason: "NOT_FOUND",
           notes: "Bin empty",
@@ -502,7 +520,7 @@ describe("[seeded-e2e] picking waves", () => {
     it("records what actually went in the tote on a substitution", async () => {
       const { pickListId, lineId } = await oneLineWave();
       const result = await asTenant(() =>
-        picks().reportException(scene.orgId, scene.userId, pickListId, {
+        exceptions().reportException(scene.orgId, scene.userId, pickListId, {
           pickLineId: lineId,
           reason: "SUBSTITUTED",
           substituteVariantId: scene.substituteVariantId,
@@ -521,7 +539,7 @@ describe("[seeded-e2e] picking waves", () => {
       // what the picker actually took.
       const { pickListId, lineId } = await oneLineWave();
       await asTenant(() =>
-        picks().reportException(scene.orgId, scene.userId, pickListId, {
+        exceptions().reportException(scene.orgId, scene.userId, pickListId, {
           pickLineId: lineId,
           reason: "SUBSTITUTED",
           substituteVariantId: scene.substituteVariantId,
@@ -549,7 +567,7 @@ describe("[seeded-e2e] picking waves", () => {
       const { pickListId, lineId } = await oneLineWave();
       await expect(
         asTenant(() =>
-          picks().reportException(scene.orgId, scene.userId, pickListId, {
+          exceptions().reportException(scene.orgId, scene.userId, pickListId, {
             pickLineId: lineId,
             reason: "SUBSTITUTED",
             substituteVariantId: scene.substituteVariantId,
@@ -565,7 +583,7 @@ describe("[seeded-e2e] picking waves", () => {
       const { pickListId, lineId } = await oneLineWave();
       await expect(
         asTenant(() =>
-          picks().reportException(scene.orgId, scene.userId, pickListId, {
+          exceptions().reportException(scene.orgId, scene.userId, pickListId, {
             pickLineId: lineId,
             reason: "SUBSTITUTED",
             substituteVariantId: scene.retiredVariantId,
@@ -579,7 +597,7 @@ describe("[seeded-e2e] picking waves", () => {
       const { pickListId, lineId } = await oneLineWave();
       await expect(
         asTenant(() =>
-          picks().reportException(scene.orgId, scene.userId, pickListId, {
+          exceptions().reportException(scene.orgId, scene.userId, pickListId, {
             pickLineId: lineId,
             reason: "SUBSTITUTED",
             substituteVariantId: scene.variantId,
@@ -907,6 +925,173 @@ describe("[seeded-e2e] picking waves", () => {
       expect(afterShip.outgoing).toBe(0);
       expect(afterShip.available).toBe(beforeShip.available);
       expect(await soStatus(iso.soId)).toBe("SHIPPED");
+    });
+
+    /**
+     * B6 — the pack side of the same defect.
+     *
+     * `packSo` looked its pick lists up by `inv_pick_lists.so_id`, which is null
+     * for a wave, so a wave-picked order packed an **empty** package: a closed
+     * document asserting that a carton holding three units holds none, with the
+     * order flipped to PACKED and nothing to say otherwise. Silent, because the
+     * status moved and a package existed — only its manifest was blank.
+     *
+     * Nested so the setting is on for this case alone: `packSo` raises a package
+     * only when the org requires one for shipping, and turning that on for the
+     * whole file would make every earlier ship-from-PICKED case refuse.
+     */
+    describe("packing a wave-picked order", () => {
+      const settings = () => app.app.get(InventorySettingsService);
+
+      beforeAll(async () => {
+        await asTenant(() =>
+          settings().update(scene.orgId, { packageRequiredForShipping: true }, scene.userId),
+        );
+      });
+
+      afterAll(async () => {
+        await asTenant(() =>
+          settings().update(scene.orgId, { packageRequiredForShipping: false }, scene.userId),
+        ).catch(() => undefined);
+      });
+
+      const packageContents = async (packageId: number) => {
+        const rows = await asTenant(() =>
+          app.app.get<Db>(DRIZZLE).execute<{
+            product_variant_id: number;
+            quantity: string;
+          }>(sql`
+            SELECT product_variant_id, quantity
+              FROM inv_package_lines
+             WHERE org_id = ${scene.orgId} AND package_id = ${packageId}
+             ORDER BY id`),
+        );
+        return rows.map((r) => ({
+          variantId: Number(r.product_variant_id),
+          quantity: String(r.quantity),
+        }));
+      };
+
+      it("packs the units the wave actually picked, not an empty carton", async () => {
+        const iso = await isolatedOrder(3);
+        await asTenant(() =>
+          picks().confirmPick(scene.orgId, scene.userId, iso.pickListId, {
+            pickLineId: iso.line.id,
+            quantityPicked: "3.0000",
+          }, `wave-pack-pick-${iso.pickListId}`),
+        );
+        expect(await soStatus(iso.soId)).toBe("PICKED");
+
+        const result = await asTenant(() =>
+          app.app.get(SoFulfillmentService).packSo(
+            scene.orgId,
+            iso.soId,
+            scene.userId,
+            { weight: 2 },
+            `wave-pack-${iso.soId}`,
+          ),
+        );
+
+        expect(result.packageId).toBeDefined();
+        expect(await packageContents(result.packageId!)).toEqual([
+          { variantId: iso.variantId, quantity: "3.0000" },
+        ]);
+        expect(await soStatus(iso.soId)).toBe("PACKED");
+      });
+
+      it("attributes the carton to the order it is packing", async () => {
+        // Without the link the package is reconcilable against nothing: the
+        // shipment that used to carry the attribution does not exist yet.
+        const iso = await isolatedOrder(2);
+        await asTenant(() =>
+          picks().confirmPick(scene.orgId, scene.userId, iso.pickListId, {
+            pickLineId: iso.line.id,
+            quantityPicked: "2.0000",
+          }, `wave-pack-link-pick-${iso.pickListId}`),
+        );
+
+        const result = await asTenant(() =>
+          app.app.get(SoFulfillmentService).packSo(
+            scene.orgId,
+            iso.soId,
+            scene.userId,
+            {},
+            `wave-pack-link-${iso.soId}`,
+          ),
+        );
+
+        const [row] = await asTenant(() =>
+          app.app.get<Db>(DRIZZLE).execute<{ so_id: number | null; status: string }>(sql`
+            SELECT so_id, status::text AS status FROM inv_packages
+             WHERE org_id = ${scene.orgId} AND id = ${result.packageId!}`),
+        );
+        expect(Number(row!.so_id)).toBe(iso.soId);
+        expect(row!.status).toBe("CLOSED");
+      });
+
+      it("packs no stock movement", async () => {
+        // B7's rule, from the other side: stock posts on the internal ship
+        // command and nowhere else. A movement raised at the bench would
+        // subtract units the picker already took off the shelf.
+        const iso = await isolatedOrder(4);
+        await asTenant(() =>
+          picks().confirmPick(scene.orgId, scene.userId, iso.pickListId, {
+            pickLineId: iso.line.id,
+            quantityPicked: "4.0000",
+          }, `wave-pack-nostock-pick-${iso.pickListId}`),
+        );
+
+        const before = await bucketsAt(iso.locationId, iso.variantId);
+        await asTenant(() =>
+          app.app.get(SoFulfillmentService).packSo(
+            scene.orgId,
+            iso.soId,
+            scene.userId,
+            {},
+            `wave-pack-nostock-${iso.soId}`,
+          ),
+        );
+
+        expect(await bucketsAt(iso.locationId, iso.variantId)).toEqual(before);
+      });
+
+      it("replays the same key rather than raising a second carton", async () => {
+        // The retry a client actually makes: the first call committed and the
+        // response never arrived. The status guard used to sit outside the
+        // claim, so this came back "must be PICKED" — refused on the status its
+        // own first run had set — and the key protected nothing on the one path
+        // it exists for.
+        const iso = await isolatedOrder(2);
+        await asTenant(() =>
+          picks().confirmPick(scene.orgId, scene.userId, iso.pickListId, {
+            pickLineId: iso.line.id,
+            quantityPicked: "2.0000",
+          }, `wave-pack-replay-pick-${iso.pickListId}`),
+        );
+
+        const key = `wave-pack-replay-${iso.soId}`;
+        const call = () =>
+          asTenant(() =>
+            app.app.get(SoFulfillmentService).packSo(
+              scene.orgId,
+              iso.soId,
+              scene.userId,
+              {},
+              key,
+            ),
+          );
+
+        const first = await call();
+        const second = await call();
+        expect(second.packageId).toBe(first.packageId);
+
+        const [count] = await asTenant(() =>
+          app.app.get<Db>(DRIZZLE).execute<{ n: number }>(sql`
+            SELECT COUNT(*)::int AS n FROM inv_packages
+             WHERE org_id = ${scene.orgId} AND so_id = ${iso.soId}`),
+        );
+        expect(Number(count!.n)).toBe(1);
+      });
     });
   });
 

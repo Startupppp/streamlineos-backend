@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { describe as summarise } from "./safety-stock";
+import { fromExact } from "./exact";
 
 export interface LeadTimeEstimate {
   vendorId: number;
@@ -25,8 +26,13 @@ export interface FillRateEstimate {
   productVariantId: number;
   linesRequested: number;
   linesFilledInFull: number;
-  quantityRequested: number;
-  quantityFilled: number;
+  /**
+   * C1. Exact `numeric(18,4)` quantities, as decimal strings — these are order
+   * quantities summed from `inv_so_lines`, not statistics. The two rates below
+   * are ratios and stay floats; see `exact.ts`.
+   */
+  quantityRequested: string;
+  quantityFilled: string;
   /** Share of lines met in full, 0-1. */
   lineFillRate: number;
   /** Share of units met, 0-1. */
@@ -173,8 +179,30 @@ export class LeadTimeService {
    * it. Safety stock needs the spread of lead times for one SKU across every
    * supplier that ships it, which is a different sample from any one vendor's.
    * It is the same definition of an observation, which is why it lives here.
+   *
+   * C1 added an optional warehouse. It is a filter on this one definition, not
+   * a second derivation: a supplier who is four days from the northern depot and
+   * eleven from the southern one has two lead times, and averaging them produces
+   * a number that is wrong at both sites. The receipt's own location decides
+   * which warehouse an observation belongs to; a receipt that names no location
+   * cannot be attributed and is excluded from a warehouse-scoped sample rather
+   * than being quietly counted at every site.
    */
-  async variantLeadTimeDays(orgId: string, productVariantId: number): Promise<number[]> {
+  async variantLeadTimeDays(
+    orgId: string,
+    productVariantId: number,
+    warehouseId: number | null = null,
+  ): Promise<number[]> {
+    const warehouseFilter =
+      warehouseId === null
+        ? sql`TRUE`
+        : sql`EXISTS (
+            SELECT 1 FROM inv_locations lt_loc
+            WHERE lt_loc.id = g.location_id
+              AND lt_loc.org_id = g.org_id
+              AND lt_loc.warehouse_id = ${warehouseId}
+          )`;
+
     const rows = await this.db.execute<{ days: string }>(sql`
       SELECT EXTRACT(EPOCH FROM (g.received_date::timestamp - po.order_date::timestamp)) / 86400
              AS days
@@ -186,6 +214,7 @@ export class LeadTimeService {
         AND pol.product_variant_id = ${productVariantId}
         AND g.status <> 'CANCELLED'
         AND g.received_date >= po.order_date
+        AND ${warehouseFilter}
       ORDER BY g.received_date DESC
       LIMIT 50
     `);
@@ -237,8 +266,8 @@ export class LeadTimeService {
 
     const linesRequested = row?.lines_requested ?? 0;
     const linesFilled = row?.lines_filled ?? 0;
-    const qtyRequested = Number(row?.qty_requested ?? 0);
-    const qtyFilled = Number(row?.qty_filled ?? 0);
+    const qtyRequested = row?.qty_requested ?? "0";
+    const qtyFilled = row?.qty_filled ?? "0";
 
     const ratio = (numerator: number, denominator: number) =>
       denominator === 0 ? 0 : Number((numerator / denominator).toFixed(4));
@@ -250,7 +279,7 @@ export class LeadTimeService {
       quantityRequested: qtyRequested,
       quantityFilled: qtyFilled,
       lineFillRate: ratio(linesFilled, linesRequested),
-      unitFillRate: ratio(qtyFilled, qtyRequested),
+      unitFillRate: ratio(fromExact(qtyFilled), fromExact(qtyRequested)),
       // A rate over three orders is a fact about three orders.
       note:
         linesRequested === 0

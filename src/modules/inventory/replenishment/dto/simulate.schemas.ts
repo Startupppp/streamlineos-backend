@@ -4,6 +4,10 @@ import { z } from "zod";
 export const simulateSchema = z
   .object({
     serviceLevel: z.number().gt(0).lt(1).optional(),
+    /** C1. Which warehouse to simulate. Omitted means the whole organisation. */
+    warehouseId: z.number().int().positive().optional(),
+    /** Weeks of demand history the measured baseline is fitted over. */
+    weeks: z.number().int().min(1).max(260).optional(),
     scenarios: z
       .array(
         z

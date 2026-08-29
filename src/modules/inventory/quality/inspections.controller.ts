@@ -15,6 +15,8 @@ import {
   failInspectionSchema,
   disposeInspectionSchema,
 } from "./dto/quality.schemas";
+import { correctInspectionSchema } from "./dto/inspection-plans.schemas";
+import type { CorrectInspectionInput } from "./dto/inspection-plans.schemas";
 import type {
   ListInspectionsQueryInput,
   CreateInspectionInput,
@@ -100,13 +102,33 @@ export class InspectionsController {
   ) {return this.svc.dispose(u.orgId, u.userId, id, body, idempotencyKey);
   }
 
+  /**
+   * Cancelling gives back whatever the inspection was holding, so it moves
+   * stock and takes a key like every other command that does.
+   */
   @Post(":inspectionId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
   cancel(
     @Param("inspectionId", ParseIntPipe) id: number,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.cancel(u.orgId, u.userId, id);
+    return this.svc.cancel(u.orgId, u.userId, id, idempotencyKey);
+  }
+
+  /**
+   * A completed result is evidence and is never edited; correcting one raises a
+   * fresh inspection that names what it supersedes.
+   */
+  @Post(":inspectionId/correct")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:quality:inspect")
+  correct(
+    @Param("inspectionId", ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(correctInspectionSchema)) body: CorrectInspectionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.correct(u.orgId, u.userId, id, body);
   }
 }

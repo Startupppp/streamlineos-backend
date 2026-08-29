@@ -2248,6 +2248,41 @@
       "when": 1788134406000,
       "tag": "0540_package_sales_order_link",
       "breakpoints": true
+    },
+    {
+      "idx": 322,
+      "version": "7",
+      "when": 1788134407000,
+      "tag": "0542_genealogy_traversal_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 323,
+      "version": "7",
+      "when": 1788134408000,
+      "tag": "0541_demand_forecast_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 324,
+      "version": "7",
+      "when": 1788134408001,
+      "tag": "0545_stock_write_off",
+      "breakpoints": true
+    },
+    {
+      "idx": 325,
+      "version": "7",
+      "when": 1788134408002,
+      "tag": "0544_inspection_plans",
+      "breakpoints": true
+    },
+    {
+      "idx": 326,
+      "version": "7",
+      "when": 1788134409002,
+      "tag": "0543_pick_exception_ownership",
+      "breakpoints": true
     }
   ]
 }

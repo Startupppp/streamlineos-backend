@@ -7,9 +7,10 @@ import { GrnPostingService } from "./grn-post.service";
 import { GrnReadService } from "./grn-read.service";
 import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
 import { AccountingModule } from "../../accounting/core/accounting.module";
+import { InvQualityModule } from "../quality/inv-quality.module";
 
 @Module({
-  imports: [InvStockEngineModule, AccountingModule],
+  imports: [InvQualityModule, InvStockEngineModule, AccountingModule],
   controllers: [InvPurchaseOrdersController, GrnController],
   providers: [PoService, GrnService, GrnPostingService, GrnReadService],
   exports: [PoService, GrnService, GrnPostingService, GrnReadService],

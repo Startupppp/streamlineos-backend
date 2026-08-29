@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, date, decimal, integer, jsonb, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
-import { relations, sql } from "drizzle-orm";
+import { desc, relations, sql } from "drizzle-orm";
 import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum, invAdjustmentStatusEnum, invQuantityBucketEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { invProductVariants, invUom } from "./core";
@@ -69,6 +69,19 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   index("idx_inv_txn_org_created").on(table.orgId, table.createdAt),
   index("idx_inv_txn_org_variant_type_created").on(table.orgId, table.productVariantId, table.transactionType, table.createdAt),
   index("idx_inv_txn_org_posting_date").on(table.orgId, table.postingDate),
+  // D1. The genealogy walk's three access paths. Before 0542 nothing indexed
+  // `lot_id` or `serial_id` at all, so every lot-anchored ledger read scanned
+  // the organisation's whole ledger; and `idx_inv_txn_reference` does not lead
+  // with `org_id`, which under RLS rules out an index-only scan entirely (§7).
+  index("idx_inv_txn_org_lot_reference")
+    .on(table.orgId, table.lotId, table.referenceType, table.referenceId)
+    .where(sql`${table.lotId} IS NOT NULL`),
+  index("idx_inv_txn_org_serial_reference")
+    .on(table.orgId, table.serialId, table.referenceType, table.referenceId)
+    .where(sql`${table.serialId} IS NOT NULL`),
+  index("idx_inv_txn_org_reference_item")
+    .on(table.orgId, table.referenceType, table.referenceId, table.lotId, table.serialId)
+    .where(sql`${table.referenceType} IS NOT NULL AND (${table.lotId} IS NOT NULL OR ${table.serialId} IS NOT NULL)`),
   unique("uniq_inv_stock_transactions_org_id").on(table.orgId, table.id),
   foreignKey({
     columns: [table.orgId, table.correctionOfTransactionId],
@@ -92,6 +105,21 @@ export const invStockAdjustments = pgTable("inv_stock_adjustments", {
   reason: invAdjReasonEnum("reason").notNull(),
   notes: text("notes"),
   status: invAdjustmentStatusEnum("status").default("POSTED").notNull(),
+  /**
+   * D8. Where the condemned goods physically went. It carries no quantity: a
+   * write-off that moved the units into a scrap bin would leave them on hand at
+   * that bin, still counted and still valued, which is the one thing a write-off
+   * exists to stop. The ledger movement is a SCRAP issue out of the line's own
+   * location; this records the disposal route so the paper trail can be walked
+   * back to a bin rather than stopping at "it left".
+   */
+  scrapLocationId: integer("scrap_location_id"),
+  /**
+   * D8. What the write-off actually cost, from the cost layers the issue
+   * consumed — never an estimate from the variant's list cost. Null until the
+   * document posts, because until then no layer has been drawn.
+   */
+  writtenOffValue: decimal("written_off_value", { precision: 18, scale: 4 }),
   approvedBy: text("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   postedBy: text("posted_by").references(() => users.id),
@@ -103,6 +131,12 @@ export const invStockAdjustments = pgTable("inv_stock_adjustments", {
   index("idx_inv_adj_org_ref").on(table.orgId, table.referenceNumber),
   unique("uniq_inv_stock_adjustments_org_id").on(table.orgId, table.id),
   index("idx_inv_adj_org").on(table.orgId),
+  index("idx_inv_adj_org_reason").on(table.orgId, table.reason, desc(table.createdAt)),
+  foreignKey({
+    columns: [table.orgId, table.scrapLocationId],
+    foreignColumns: [invLocations.orgId, invLocations.id],
+    name: "fk_inv_stock_adjustments_scrap_location_id_org",
+  }).onDelete("set null"),
 ]);
 
 export const invStockAdjustmentLines = pgTable("inv_stock_adjustment_lines", {
@@ -207,6 +241,7 @@ export const invStockAdjustmentsRelations = relations(invStockAdjustments, ({ on
   creator: one(users, { fields: [invStockAdjustments.createdBy], references: [users.id] }),
   approver: one(users, { fields: [invStockAdjustments.approvedBy], references: [users.id], relationName: "adjApprover" }),
   poster: one(users, { fields: [invStockAdjustments.postedBy], references: [users.id], relationName: "adjPoster" }),
+  scrapLocation: one(invLocations, { fields: [invStockAdjustments.scrapLocationId], references: [invLocations.id], relationName: "adjScrapLocation" }),
   lines: many(invStockAdjustmentLines),
 }));
 

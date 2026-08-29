@@ -11,7 +11,6 @@ import {
   invPoLines,
   invGrns,
   invGrnLines,
-  invQualityInspections,
   invStockTransactions,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -22,7 +21,6 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
-import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
 import { addDec, cmpDec, divDec, mulDec, subDec, isPositive } from "../stock-engine/decimal";
@@ -36,6 +34,7 @@ import {
   resolveSerialIds,
 } from "./lib/receipt-lots-serials";
 import type { ReverseGrnInput } from "./dto/inv-purchase-orders.schemas";
+import { ReceiptInspectionService } from "../quality/receipt-inspection.service";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -75,7 +74,7 @@ export class GrnPostingService {
     private readonly projection: StockProjectionService,
     private readonly settingsService: InventorySettingsService,
     private readonly audit: InventoryAuditService,
-    private readonly numSeq: NumberSequenceService,
+    private readonly receiptInspection: ReceiptInspectionService,
     private readonly warehouseScope: WarehouseScopeService,
     private readonly journalPosting: InventoryAccountingBridge,
   ) {}
@@ -384,17 +383,20 @@ export class GrnPostingService {
 
     await postReceiptJournal(this.journalPosting, orgId, userId, grn, po, grn.lines);
 
-    if (settings.inspectionOnReceipt) {
-      const inspNumber = await this.numSeq.next(orgId, "INSPECTION", tx);
-      await tx.insert(invQualityInspections).values({
-        orgId,
-        inspectionNumber: inspNumber,
-        sourceType: "inv_grn",
-        sourceId: String(grn.id),
-        status: "PENDING",
-        createdBy: userId,
-      });
-    }
+    // D3. Quality owns whether a receipt needs inspecting and what that does to
+    // the stock. This module used to insert into a Quality table directly — a
+    // §1 boundary violation — and the row it wrote was inert: a PENDING
+    // inspection that held nothing, so received goods were sellable before
+    // anybody had looked at them.
+    //
+    // The setting is not consulted here any more either. A plan covering the SKU
+    // triggers an inspection on its own, and `inspectionOnReceipt` is the
+    // fallback for orgs with no plans; both live behind this call.
+    await this.receiptInspection.raiseForReceiptInTx(tx, orgId, userId, {
+      grnId: grn.id,
+      grnNumber: grn.grnNumber,
+      idempotencyKey,
+    });
 
     return grn.id;
   }
@@ -432,6 +434,18 @@ export class GrnPostingService {
 
     if (txns.length === 0)
       throw new BadRequestException("No stock transactions found for this GRN");
+
+    // D3. An open inspection is holding these goods in QUALITY_HOLD, which is a
+    // subset of `on_hand` at the grain. Reversing the receipt drives `on_hand`
+    // below the standing hold and the engine refuses with a bare
+    // HOLD_EXCEEDS_ON_HAND — correct, but it tells the operator nothing about
+    // what to do. Say it here, where the reason is known.
+    const holding = await this.receiptInspection.openInspectionFor(orgId, grnId);
+    if (holding !== null) {
+      throw new BadRequestException(
+        `Inspection ${holding} is holding this receipt's goods. Complete or cancel it before reversing the receipt.`,
+      );
+    }
 
     await this.db.transaction(async (tx) => {
       for (const txn of txns) {

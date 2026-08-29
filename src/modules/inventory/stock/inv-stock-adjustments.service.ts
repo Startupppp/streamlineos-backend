@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import {
@@ -14,12 +14,34 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import { CostVisibilityService } from "../stock-engine/cost-visibility";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { ListAdjustmentsInput, CreateAdjustmentInput } from "./dto/inv-stock.schemas";
 import { loadCorrectableVariants } from "../products/lib/orderable-variants";
+import {
+  WRITE_OFF_REASONS,
+  adjustmentMovementType,
+  assertWriteOffRemovesStock,
+  isWriteOffReason,
+  withoutWriteOffValue,
+} from "./lib/write-off";
+import {
+  needsApproval as adjustmentNeedsApproval,
+  resolveScrapLocation,
+} from "./lib/adjustment-approval";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/** The document as the posting path needs it. */
+interface PostableAdjustment {
+  id: number;
+  referenceNumber: string;
+  reason: string;
+  notes: string | null;
+  scrapLocationId: number | null;
+  lines: Array<{ productVariantId: number; locationId: number; quantityChange: string }>;
+}
 
 @Injectable()
 export class InvStockAdjustmentsService {
@@ -30,15 +52,20 @@ export class InvStockAdjustmentsService {
     private readonly numSeq: NumberSequenceService,
     private readonly settings: InventorySettingsService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly costVisibility: CostVisibilityService,
   ) {}
 
   async listAdjustments(orgId: string, filters: ListAdjustmentsInput, scope: DataScope = "all", userId?: string) {
     if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
 
-    const { status, page, limit } = filters;
+    const { status, reason, writeOffsOnly, page, limit } = filters;
     const offset = (page - 1) * limit;
     const conditions = [eq(invStockAdjustments.orgId, orgId)];
     if (status) conditions.push(eq(invStockAdjustments.status, status));
+    if (reason) conditions.push(eq(invStockAdjustments.reason, reason));
+    // D8. The write-off queue is one predicate over the reason, not a second
+    // table to keep in step with this one.
+    if (writeOffsOnly) conditions.push(inArray(invStockAdjustments.reason, [...WRITE_OFF_REASONS]));
     if (scope !== "all" && userId) {
       conditions.push(applyScope(scope, orgId, userId, { ownerColumn: invStockAdjustments.createdBy }));
     }
@@ -72,16 +99,23 @@ export class InvStockAdjustmentsService {
       this.db.select({ count: sql<number>`count(*)::int` }).from(invStockAdjustments).where(where),
     ]);
 
-    return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
+    const showCost = userId !== undefined && (await this.costVisibility.canSeeCost(orgId, userId));
+    return {
+      items: showCost ? items : items.map(withoutWriteOffValue),
+      total: countResult[0]?.count ?? 0,
+      page,
+      totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
+    };
   }
 
-  async getAdjustment(orgId: string, adjustmentId: number) {
+  async getAdjustment(orgId: string, adjustmentId: number, userId?: string) {
     const adj = await this.db.query.invStockAdjustments.findFirst({
       where: and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adjustmentId)),
       with: {
         creator: { columns: { id: true, name: true } },
         approver: { columns: { id: true, name: true } },
         poster: { columns: { id: true, name: true } },
+        scrapLocation: { columns: { id: true, name: true, code: true } },
         lines: {
           with: {
             productVariant: { with: { product: { columns: { id: true, name: true, sku: true } } } },
@@ -91,7 +125,8 @@ export class InvStockAdjustmentsService {
       },
     });
     if (!adj) throw new NotFoundException("Adjustment not found");
-    return adj;
+    const showCost = userId !== undefined && (await this.costVisibility.canSeeCost(orgId, userId));
+    return showCost ? adj : withoutWriteOffValue(adj);
   }
 
   /**
@@ -112,12 +147,28 @@ export class InvStockAdjustmentsService {
     // A4. The correction gate, not the demand gate: writing off or recounting a
     // discontinued SKU is exactly what an operator does with retired stock, so
     // only a product deleted from the catalogue is refused here.
-    await loadCorrectableVariants(this.db, orgId, data.lines.map((l) => l.productVariantId));
+    const variants = await loadCorrectableVariants(this.db, orgId, data.lines.map((l) => l.productVariantId));
 
-    const cfg = await this.settings.get(orgId);
-    const totalAbsQty = data.lines.reduce((sum, l) => sum + Math.abs(l.quantityChange), 0);
-    const threshold = cfg.adjustmentApprovalThreshold !== null ? parseFloat(cfg.adjustmentApprovalThreshold) : null;
-    const needsApproval = threshold !== null && totalAbsQty > threshold;
+    // D8. A write-off is an adjustment with a condemning reason, so the two
+    // rules that only make sense for one are asserted for one.
+    const writeOff = isWriteOffReason(data.reason);
+    if (writeOff) assertWriteOffRemovesStock(data.reason, data.lines);
+    else if (data.scrapLocationId !== undefined) {
+      throw new BadRequestException(
+        `A scrap location only applies to a write-off (${WRITE_OFF_REASONS.join(", ")}), not to a ${data.reason} adjustment`,
+      );
+    }
+    const scrapLocationId = writeOff
+      ? await resolveScrapLocation(this.db, orgId, data.lines, data.scrapLocationId)
+      : null;
+
+    const needsApproval = await adjustmentNeedsApproval(
+      this.db,
+      orgId,
+      await this.settings.get(orgId),
+      data.lines,
+      variants,
+    );
 
     const adjustmentId = await this.db.transaction(async (tx) =>
       runIdempotent(
@@ -132,6 +183,7 @@ export class InvStockAdjustmentsService {
             referenceNumber: refNum,
             reason: data.reason,
             notes: data.notes,
+            scrapLocationId,
             status: needsApproval ? "PENDING_APPROVAL" : "PENDING_POST",
             createdBy: userId,
           }).returning({ id: invStockAdjustments.id, refNum: invStockAdjustments.referenceNumber });
@@ -174,11 +226,7 @@ export class InvStockAdjustmentsService {
 
     if (!needsApproval) await this.engine.invalidateCaches(orgId);
 
-    const result = await this.db.query.invStockAdjustments.findFirst({
-      where: and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adjustmentId)),
-      with: { lines: true, creator: { columns: { id: true, name: true } } },
-    });
-    return result;
+    return this.getAdjustment(orgId, adjustmentId, userId);
   }
 
   /**
@@ -233,7 +281,7 @@ export class InvStockAdjustmentsService {
       ),
     );
 
-    return this.getAdjustment(orgId, adjustmentId);
+    return this.getAdjustment(orgId, adjustmentId, userId);
   }
 
   async postAdjustment(orgId: string, userId: string, adjustmentId: number, idempotencyKey: string) {
@@ -242,12 +290,16 @@ export class InvStockAdjustmentsService {
       with: { lines: true },
     });
     if (!adj) throw new NotFoundException("Adjustment not found");
+    // D8. "Unapproved cannot post" is this line, and PENDING_APPROVAL is the
+    // status `createAdjustment` gives a document over either threshold — so a
+    // write-off that needs a second signature has no route to the ledger until
+    // `approveAdjustment` has been through maker-checker.
     if (adj.status !== "APPROVED" && adj.status !== "PENDING_POST") {
       throw new BadRequestException("Adjustment must be APPROVED or PENDING_POST to post");
     }
 
     await this.applyAdjustmentLines(orgId, userId, adj, idempotencyKey);
-    return this.getAdjustment(orgId, adjustmentId);
+    return this.getAdjustment(orgId, adjustmentId, userId);
   }
 
   async cancelAdjustment(orgId: string, adjustmentId: number) {
@@ -273,7 +325,7 @@ export class InvStockAdjustmentsService {
   private async applyAdjustmentLines(
     orgId: string,
     userId: string,
-    adj: { id: number; referenceNumber: string; reason: string; notes: string | null; lines: Array<{ productVariantId: number; locationId: number; quantityChange: string }> },
+    adj: PostableAdjustment,
     idempotencyKey: string,
   ) {
     await this.db.transaction((tx: Tx) =>
@@ -296,24 +348,28 @@ export class InvStockAdjustmentsService {
     tx: Tx,
     orgId: string,
     userId: string,
-    adj: { id: number; referenceNumber: string; reason: string; notes: string | null; lines: Array<{ productVariantId: number; locationId: number; quantityChange: string }> },
+    adj: PostableAdjustment,
     idempotencyKey: string,
   ) {
-    await this.engine.executeInTx(tx, orgId, userId, {
+    const result = await this.engine.executeInTx(tx, orgId, userId, {
       idempotencyKey,
       sourceType: "inv_adjustment",
       sourceId: adj.id.toString(),
       reason: adj.reason,
       movements: adj.lines.map((line) => ({
-        transactionType: parseFloat(line.quantityChange) > 0 ? "ADJUSTMENT_IN" as const : "ADJUSTMENT_OUT" as const,
+        // `parseFloat` on an 18,4 numeric is banned here for the reason it is
+        // banned everywhere: 0.0001 of drift decides the sign of a movement.
+        transactionType: adjustmentMovementType(adj.reason, line.quantityChange),
         productVariantId: line.productVariantId,
         locationId: line.locationId,
         quantityDelta: line.quantityChange,
       })),
     });
 
+    const writtenOffValue = await this.issuedValueOf(tx, orgId, result.transactionIds);
+
     await tx.update(invStockAdjustments)
-      .set({ status: "POSTED", postedBy: userId, postedAt: new Date() })
+      .set({ status: "POSTED", postedBy: userId, postedAt: new Date(), writtenOffValue })
       .where(and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adj.id)));
 
     await OutboxWriter.emit(tx, {
@@ -327,10 +383,40 @@ export class InvStockAdjustmentsService {
         adjustmentId: adj.id,
         referenceNumber: adj.referenceNumber,
         reason: adj.reason,
+        writeOff: isWriteOffReason(adj.reason),
+        scrapLocationId: adj.scrapLocationId,
+        writtenOffValue,
         lineCount: adj.lines.length,
         actorUserId: userId,
       },
       occurredAt: new Date(),
     });
+  }
+
+  /**
+   * D8 — what the document actually cost, read back off the ledger it just
+   * wrote.
+   *
+   * `total_cost` on an issue row is whatever `planIssue` found the cost layers
+   * to be carrying, and every draw it made is recorded in
+   * `inv_valuation_consumptions`, so this figure is reproducible from the rows
+   * rather than being a second opinion about them. Estimating it instead —
+   * quantity times the variant's cost price — would have been wrong by the
+   * whole spread between the layers under FIFO, and wrong by every price change
+   * since the last receipt under weighted average.
+   *
+   * Negative movements only: on a mixed adjustment the value written off is
+   * what left, not what left netted against what arrived.
+   */
+  private async issuedValueOf(tx: Tx, orgId: string, transactionIds: readonly number[]): Promise<string | null> {
+    if (transactionIds.length === 0) return null;
+    const [row] = await tx.execute<{ value: string }>(sql`
+      SELECT COALESCE(SUM(total_cost), 0)::text AS value
+      FROM inv_stock_transactions
+      WHERE org_id = ${orgId}
+        AND quantity_change < 0
+        AND id IN (${sql.join(transactionIds.map((id) => sql`${id}`), sql`, `)})
+    `);
+    return row?.value ?? null;
   }
 }

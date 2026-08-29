@@ -1,6 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import type { ListWavesInput } from "./dto/picking.schemas";
+import { PICK_LINE_CLOSED_SQL } from "./pick-exception-policy";
 
 /** A wave header as the workbench lists it. */
 export interface WaveSummary {
@@ -16,6 +17,8 @@ export interface WaveSummary {
   orderCount: number;
   lineCount: number;
   linesClosed: number;
+  /** B5. How many of this wave's lines are waiting on a reviewer. */
+  openExceptions: number;
 }
 
 interface WaveQueueRow extends Record<string, unknown> {
@@ -31,6 +34,7 @@ interface WaveQueueRow extends Record<string, unknown> {
   order_count: number;
   line_count: number;
   lines_closed: number;
+  open_exceptions: number;
 }
 
 /**
@@ -98,7 +102,8 @@ export async function queryWaveQueue(
              pl.created_at,
              COALESCE(agg.order_count, 0)::int AS order_count,
              COALESCE(agg.line_count, 0)::int AS line_count,
-             COALESCE(agg.lines_closed, 0)::int AS lines_closed
+             COALESCE(agg.lines_closed, 0)::int AS lines_closed,
+             COALESCE(agg.open_exceptions, 0)::int AS open_exceptions
         FROM inv_pick_lists pl
         LEFT JOIN inv_warehouses w
           ON w.org_id = pl.org_id AND w.id = pl.warehouse_id
@@ -109,10 +114,18 @@ export async function queryWaveQueue(
         LEFT JOIN LATERAL (
           SELECT COUNT(DISTINCT sol.so_id) AS order_count,
                  COUNT(*) AS line_count,
+                 -- B5. The shared closed rule, not a second copy of it. This
+                 -- read "exception_reason IS NOT NULL OR picked >= to_pick",
+                 -- which now disagrees with the wave in two ways: a
+                 -- WRONG_LOCATION line is still outstanding, and a damaged or
+                 -- substituted one is not closed until a reviewer says so. The
+                 -- board would have shown 4/4 beside a wave that refused to
+                 -- complete.
+                 COUNT(*) FILTER (WHERE ${PICK_LINE_CLOSED_SQL}) AS lines_closed,
                  COUNT(*) FILTER (
                    WHERE pll.exception_reason IS NOT NULL
-                      OR pll.quantity_picked::numeric >= pll.quantity_to_pick::numeric
-                 ) AS lines_closed
+                     AND pll.exception_status = 'OPEN'
+                 ) AS open_exceptions
             FROM inv_pick_list_lines pll
             LEFT JOIN inv_so_lines sol
               ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
@@ -143,6 +156,7 @@ export async function queryWaveQueue(
       orderCount: Number(row.order_count),
       lineCount: Number(row.line_count),
       linesClosed: Number(row.lines_closed),
+      openExceptions: Number(row.open_exceptions),
     })),
     total,
     page: filters.page,
