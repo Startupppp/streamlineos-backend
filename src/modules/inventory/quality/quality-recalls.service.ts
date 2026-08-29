@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
@@ -18,6 +19,7 @@ import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { ListRecallsQueryInput, CreateRecallInput, UpdateRecallInput } from "./dto/quality.schemas";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { isPositive } from "../stock-engine/decimal";
 import { runIdempotent } from "../stock-engine/idempotency";
 import { RecallSimulationService, type RecallImpact } from "./recall-simulation.service";
@@ -279,6 +281,31 @@ export class RecallsService {
           evidenceVersion: impact?.evidenceVersion ?? null,
         },
       });
+
+      // G3. An audit row is a private record of who did what; nothing subscribes
+      // to a table. A recall is the one inventory event a warehouse most needs
+      // pushed at it — the lots are already RECALLED and the allocator is already
+      // refusing them, so this is what explains why. Inside the transaction, so
+      // it commits with the recall or not at all, and through the outbox, so the
+      // recall still commits when the notifier is down.
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "inv_recall_event",
+        aggregateId: String(recall.id),
+        aggregateVersion: 1,
+        eventType: "inventory.recall.opened",
+        payload: {
+          recallId: recall.id,
+          referenceNumber: recallNumber,
+          title: input.title,
+          lotCount: lines.length,
+          quarantinedGrains: quarantine.length,
+          openedByUserId: userId,
+        },
+        occurredAt: new Date(),
+      });
+
       return { recall: { id: recall.id, recallNumber }, quarantine };
         },
         (stored) => reviveRecall(stored),

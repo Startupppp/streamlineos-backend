@@ -208,6 +208,28 @@ export class InvStockAdjustmentsService {
             if (stored) {
               await this.applyAdjustmentLinesInTx(tx, orgId, userId, stored, `${idempotencyKey}:post`);
             }
+          } else {
+            // G3. An adjustment that stops at PENDING_APPROVAL is waiting on a
+            // person, and until now nothing told that person. Emitted inside the
+            // same transaction that created it, so the adjustment and the signal
+            // commit together — and so the adjustment still commits when nothing
+            // is listening, because the outbox row simply waits for the relay.
+            await OutboxWriter.emit(tx, {
+              eventId: randomUUID(),
+              organizationId: orgId,
+              aggregateType: "inv_stock_adjustment",
+              aggregateId: String(adj.id),
+              aggregateVersion: 1,
+              eventType: "inventory.adjustment.approval_requested",
+              payload: {
+                adjustmentId: adj.id,
+                referenceNumber: adj.refNum,
+                reason: data.reason,
+                lineCount: data.lines.length,
+                requestedByUserId: userId,
+              },
+              occurredAt: new Date(),
+            });
           }
 
           return adj.id;

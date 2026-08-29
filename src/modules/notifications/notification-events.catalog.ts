@@ -498,6 +498,32 @@ const INVENTORY = [
     defaultType: "WARNING",
     defaultChannels: IA_EMAIL,
   }),
+  /**
+   * G3. A lot that has entered a near-expiry window and still holds stock.
+   *
+   * In-app only, and not urgent: a lot ninety days out is a planning signal, and
+   * emailing about it is how a category gets muted before the thirty-day one
+   * arrives. The narrowing windows do the escalating, not the channel.
+   */
+  e("inventory.lot.expiring", "inventory", "INVENTORY", "Lot nearing expiry", {
+    defaultType: "WARNING",
+    defaultChannels: IA,
+  }),
+  /**
+   * G3. A recall has been opened, and stock has stopped moving.
+   *
+   * The one inventory event that is urgent by its nature: the goods are already
+   * quarantined and the lots already refused by the allocator, so this is the
+   * message that tells a warehouse why. Email as well as in-app for the same
+   * reason `inventory.webhook.failing` carries it — the audience is not reliably
+   * looking at the product when it happens.
+   */
+  e("inventory.recall.opened", "inventory", "INVENTORY", "Recall opened", {
+    defaultPriority: "HIGH",
+    defaultType: "WARNING",
+    defaultChannels: IA_EMAIL,
+    allowedChannels: ALLOWED_URGENT,
+  }),
 ];
 
 const SURVEYS = [
