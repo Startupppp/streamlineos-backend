@@ -26,7 +26,11 @@ ON CONFLICT ("name") DO NOTHING;
 -- record type is the same class of act as managing its custom fields, so it
 -- lands with whoever already holds that.
 INSERT INTO "role_permission_grants" ("org_id", "role_id", "permission_key", "scope")
-SELECT DISTINCT g."org_id", g."role_id", 'settings:record-layouts:manage', 'all'
+-- `'all'` is cast explicitly: `scope` is the `data_scope` enum, and an untyped
+-- literal in an INSERT ... SELECT is text, which Postgres will not coerce. This
+-- backfill failed for that reason, so the grant it exists to make has never been
+-- made -- ticket 20's permission reached nobody.
+SELECT DISTINCT g."org_id", g."role_id", 'settings:record-layouts:manage', 'all'::"data_scope"
 FROM "role_permission_grants" g
 WHERE g."permission_key" = 'settings:custom-fields:manage'
 ON CONFLICT DO NOTHING;

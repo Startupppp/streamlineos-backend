@@ -45,6 +45,38 @@ DROP TABLE IF EXISTS "support_custom_fields";
 --> statement-breakpoint
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Step 2b: the fourth duplicate, which this migration originally missed
+-- ─────────────────────────────────────────────────────────────────────────────
+-- The baseline (0000) already ships a `custom_field_definitions` — the CRM one,
+-- keyed on (org_id, entity_type, name) with `sort_order` and no `project_id`.
+-- It is a fourth implementation of the same idea and belongs in the list above,
+-- but it shares its name with the table this migration creates, so the CREATE
+-- below failed with "already exists" on any database built from the migration
+-- chain. That is why an empty-database run has not reached the end of the
+-- journal.
+--
+-- Dropped on its shape rather than unconditionally: a database that already
+-- carries the consolidated table must not lose it. `key` exists only on the new
+-- shape and `name` only on the old, so the test names exactly one of them.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'custom_field_definitions'
+      AND column_name = 'name'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'custom_field_definitions'
+      AND column_name = 'key'
+  ) THEN
+    DROP TABLE "custom_field_definitions" CASCADE;
+  END IF;
+END $$;
+--> statement-breakpoint
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Step 3: unified definitions table
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE TABLE "custom_field_definitions" (
