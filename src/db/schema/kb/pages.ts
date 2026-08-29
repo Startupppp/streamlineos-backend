@@ -104,14 +104,18 @@ export const kbPageFavorites = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     pageId: integer("page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    membershipId: integer("membership_id"),
     sortOrder: integer("sort_order").default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex("uniq_kb_page_favorites_page_user").on(table.pageId, table.userId),
+    uniqueIndex("uniq_kb_page_favorites_page_membership").on(table.orgId, table.pageId, table.membershipId),
     index("idx_kb_page_favorites_org_user").on(table.orgId, table.userId),
+    index("idx_kb_page_favorites_org_membership_sort").on(table.orgId, table.membershipId, table.sortOrder, table.createdAt),
     unique("uniq_kb_page_favorites_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_favorites_org_page" }),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_favorites_org_membership" }),
   ],
 );
 
@@ -122,13 +126,17 @@ export const kbPageVisits = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     pageId: integer("page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    membershipId: integer("membership_id"),
     visitedAt: timestamp("visited_at").defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex("uniq_kb_page_visits_page_user").on(table.pageId, table.userId),
+    uniqueIndex("uniq_kb_page_visits_page_membership").on(table.orgId, table.pageId, table.membershipId),
     index("idx_kb_page_visits_org_user_visited").on(table.orgId, table.userId, table.visitedAt),
+    index("idx_kb_page_visits_org_membership_visited").on(table.orgId, table.membershipId, table.visitedAt),
     unique("uniq_kb_page_visits_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_visits_org_page" }),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_visits_org_membership" }),
   ],
 );
 
@@ -167,11 +175,13 @@ export const kbPagesRelations = relations(kbPages, ({ one, many }) => ({
 export const kbPageFavoritesRelations = relations(kbPageFavorites, ({ one }) => ({
   page: one(kbPages, { fields: [kbPageFavorites.pageId], references: [kbPages.id] }),
   user: one(users, { fields: [kbPageFavorites.userId], references: [users.id] }),
+  membership: one(organizationMembers, { fields: [kbPageFavorites.membershipId], references: [organizationMembers.id] }),
 }));
 
 export const kbPageVisitsRelations = relations(kbPageVisits, ({ one }) => ({
   page: one(kbPages, { fields: [kbPageVisits.pageId], references: [kbPages.id] }),
   user: one(users, { fields: [kbPageVisits.userId], references: [users.id] }),
+  membership: one(organizationMembers, { fields: [kbPageVisits.membershipId], references: [organizationMembers.id] }),
 }));
 
 export const kbPageLinksRelations = relations(kbPageLinks, ({ one }) => ({

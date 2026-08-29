@@ -1,6 +1,6 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
-import { kbPages, kbPageFavorites, kbPageLinks, kbPageVisits } from "../../../db/schema";
+import { kbPages, kbPageFavorites, kbPageLinks, kbPageVisits, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -18,17 +18,31 @@ type KbPageListItem = Omit<PageRow, "content" | "contentText" | "fts">;
 export class KbPageVisitsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  private async activeMembershipId(user: CurrentUserContext): Promise<number> {
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, user.orgId),
+        eq(organizationMembers.userId, user.userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    if (!membership) throw new ForbiddenException("Active organization membership is required");
+    return membership.id;
+  }
+
   private getAccessibleProjectIds(user: CurrentUserContext): Promise<number[]> {
     return getAccessibleProjectIds(this.db, user);
   }
 
   async getRecent(user: CurrentUserContext): Promise<KbPageListItem[]> {
     const orgId = user.orgId;
+    const membershipId = await this.activeMembershipId(user);
     const [visits, projectIds] = await Promise.all([
       this.db
         .select({ pageId: kbPageVisits.pageId })
         .from(kbPageVisits)
-        .where(and(eq(kbPageVisits.orgId, orgId), eq(kbPageVisits.userId, user.userId)))
+        .where(and(eq(kbPageVisits.orgId, orgId), eq(kbPageVisits.membershipId, membershipId)))
         .orderBy(desc(kbPageVisits.visitedAt))
         .limit(20),
       this.getAccessibleProjectIds(user),
@@ -53,11 +67,12 @@ export class KbPageVisitsService {
 
   async getFavorites(user: CurrentUserContext): Promise<KbPageListItem[]> {
     const orgId = user.orgId;
+    const membershipId = await this.activeMembershipId(user);
     const [favs, projectIds] = await Promise.all([
       this.db
         .select({ pageId: kbPageFavorites.pageId })
         .from(kbPageFavorites)
-        .where(and(eq(kbPageFavorites.orgId, orgId), eq(kbPageFavorites.userId, user.userId)))
+        .where(and(eq(kbPageFavorites.orgId, orgId), eq(kbPageFavorites.membershipId, membershipId)))
         .orderBy(asc(kbPageFavorites.sortOrder), asc(kbPageFavorites.createdAt))
         .limit(50),
       this.getAccessibleProjectIds(user),
@@ -82,16 +97,18 @@ export class KbPageVisitsService {
 
   async addFavorite(user: CurrentUserContext, pageId: number): Promise<{ success: boolean }> {
     const orgId = user.orgId;
+    const membershipId = await this.activeMembershipId(user);
     await assertPageAccessible(this.db, user, pageId);
     await this.db
       .insert(kbPageFavorites)
-      .values({ orgId, pageId, userId: user.userId })
+      .values({ orgId, pageId, userId: user.userId, membershipId })
       .onConflictDoNothing();
     return { success: true };
   }
 
   async removeFavorite(user: CurrentUserContext, pageId: number): Promise<{ success: boolean }> {
     const orgId = user.orgId;
+    const membershipId = await this.activeMembershipId(user);
     await this.db
       .delete(kbPageFavorites)
       .where(
@@ -99,6 +116,7 @@ export class KbPageVisitsService {
           eq(kbPageFavorites.pageId, pageId),
           eq(kbPageFavorites.userId, user.userId),
           eq(kbPageFavorites.orgId, orgId),
+          eq(kbPageFavorites.membershipId, membershipId),
         ),
       );
     return { success: true };
@@ -106,12 +124,13 @@ export class KbPageVisitsService {
 
   async recordVisit(user: CurrentUserContext, pageId: number): Promise<{ success: boolean }> {
     const orgId = user.orgId;
+    const membershipId = await this.activeMembershipId(user);
     await assertPageAccessible(this.db, user, pageId);
     await this.db
       .insert(kbPageVisits)
-      .values({ orgId, pageId, userId: user.userId, visitedAt: new Date() })
+      .values({ orgId, pageId, userId: user.userId, membershipId, visitedAt: new Date() })
       .onConflictDoUpdate({
-        target: [kbPageVisits.pageId, kbPageVisits.userId],
+        target: [kbPageVisits.orgId, kbPageVisits.pageId, kbPageVisits.membershipId],
         set: { visitedAt: new Date() },
       });
     return { success: true };

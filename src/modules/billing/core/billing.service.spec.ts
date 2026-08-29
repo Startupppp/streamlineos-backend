@@ -15,6 +15,7 @@ import { ExternalEffectLedger } from "../../../common/outbox/external-effect-led
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import { PaymentWebhookHealthService } from "../payments/payment-webhook-health.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
+import { BillingProfileService } from "./billing-profile.service";
 import { PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
 import { COUPON_EXHAUSTED, COUPON_EXPIRED, COUPON_WRONG_PLAN } from "./coupon-pricing";
 import {
@@ -192,6 +193,7 @@ async function buildService(
       },
       { provide: PaymentWebhookHealthService, useValue: { recordSignatureFailure: jest.fn() } },
       { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
+      { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
     ],
   }).compile();
   return module.get(BillingService);
@@ -245,6 +247,24 @@ describe("BillingService.verifyAndActivate — goes through the registry", () =>
     const message = (error as { message?: string }).message ?? "";
     expect(message).not.toContain("fake-private");
     expect(message).not.toContain("fake-public");
+  });
+});
+
+describe("BillingService cross-tenant isolation", () => {
+  it("does not return another organization's subscription", async () => {
+    const db = makeDb({ subscription: null });
+    const findSubscription = db.query.subscriptions.findFirst as jest.Mock;
+    findSubscription.mockImplementation(async (query: { where?: unknown }) => {
+      if (query.where === undefined)
+        return { id: 1, orgId: "org_a", plan: "STARTER", status: "ACTIVE" };
+      return null;
+    });
+    const svc = await buildService(db, makeResolver());
+
+    const result = await svc.getSubscription("org_b");
+
+    expect(result.subscription).toBeNull();
+    expect(findSubscription).toHaveBeenCalledTimes(1);
   });
 });
 
