@@ -2199,6 +2199,13 @@
       "when": 1788048000000,
       "tag": "0533_ledger_correction_objects_relocked",
       "breakpoints": true
+    },
+    {
+      "idx": 315,
+      "version": "7",
+      "when": 1788134400000,
+      "tag": "0534_grn_receiving_lifecycle",
+      "breakpoints": true
     }
   ]
 }

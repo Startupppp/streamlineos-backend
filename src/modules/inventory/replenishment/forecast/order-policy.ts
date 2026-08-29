@@ -31,6 +31,14 @@ export function applyOrderPolicy(
   const reasons: string[] = [];
   let ordered = requested;
 
+  // A shortfall of zero is not a small shortfall; it is no shortfall. The
+  // supplier's minimum applies to an order somebody has decided to place, not
+  // to the decision of whether to place one — without this, every variant whose
+  // position is already healthy was raised to the minimum and bought.
+  if (requested <= 0) {
+    return { requested: 0, ordered: 0, excess: 0, reasons: [] };
+  }
+
   if (policy.minOrderQty !== null && ordered < policy.minOrderQty) {
     reasons.push(
       `Raised to the supplier's minimum order quantity of ${policy.minOrderQty}.`,

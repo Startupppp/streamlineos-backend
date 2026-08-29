@@ -149,6 +149,24 @@ export const invSoStatusEnum = pgEnum("inv_so_status", ["DRAFT", "CONFIRMED", "P
 export const invTransferStatusEnum = pgEnum("inv_transfer_status", ["PENDING", "RESERVED", "IN_TRANSIT", "COMPLETED", "CANCELLED"]);
 export const invLocationTypeEnum = pgEnum("inv_location_type", ["ZONE", "AISLE", "RACK", "BIN", "RECEIVING", "SHIPPING", "QUARANTINE", "SCRAP", "TRANSIT", "RETURNS"]);
 export const invGrnQualityEnum = pgEnum("inv_grn_quality", ["ACCEPTED", "REJECTED"]);
+/**
+ * B1. A delivery has a life before it becomes stock.
+ *
+ * `inv_grns` had no status at all, so recording a receipt and posting it were
+ * the same act and there was nowhere to put a delivery that had arrived but not
+ * yet been counted. DRAFT and COUNTING write no stock; QUALITY_REVIEW is the
+ * step where an inspector looks at what the counter found; POSTED is the only
+ * state in which `inv_stock_transactions` has rows for this document. CANCELLED
+ * is how an unposted receipt is abandoned — the row stays, because a delivery
+ * somebody walked away from is a fact worth keeping.
+ */
+export const invGrnStatusEnum = pgEnum("inv_grn_status", [
+  "DRAFT",
+  "COUNTING",
+  "QUALITY_REVIEW",
+  "POSTED",
+  "CANCELLED",
+]);
 /** INV-201. Why a received line did not match what the purchase order owed. */
 export const invGrnDiscrepancyEnum = pgEnum("inv_grn_discrepancy", [
   "SHORT",

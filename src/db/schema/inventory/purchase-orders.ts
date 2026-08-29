@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { invPoStatusEnum, invGrnQualityEnum, invGrnDiscrepancyEnum } from "../common/enums";
+import { invPoStatusEnum, invGrnQualityEnum, invGrnDiscrepancyEnum, invGrnStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { clients } from "../crm/contacts";
 import { businessParties } from "../party/business-parties";
@@ -105,12 +105,21 @@ export const invGrns = pgTable("inv_grns", {
   receivedDate: date("received_date").notNull(),
   locationId: integer("location_id").references(() => invLocations.id, { onDelete: "set null" }),
   notes: text("notes"),
+  /**
+   * B1. Where this delivery is in its life. Nothing but POSTED has stock
+   * behind it, so the status is the answer to "has this moved anything".
+   */
+  status: invGrnStatusEnum("status").default("DRAFT").notNull(),
+  postedBy: text("posted_by").references(() => users.id),
+  postedAt: timestamp("posted_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_grn_org_number").on(table.orgId, table.grnNumber),
   unique("uniq_inv_grns_org_id").on(table.orgId, table.id),
   index("idx_inv_grn_po").on(table.poId),
+  index("idx_inv_grn_org_status").on(table.orgId, table.status, table.receivedDate),
 ]);
 
 export const invGrnLines = pgTable("inv_grn_lines", {
@@ -134,6 +143,19 @@ export const invGrnLines = pgTable("inv_grn_lines", {
   quantityExpected: decimal("quantity_expected", { precision: 18, scale: 4 }),
   /** NULL means the line matched, which is the common case. */
   discrepancyReason: invGrnDiscrepancyEnum("discrepancy_reason"),
+  /**
+   * B1. What the counter wrote down about the lot, held here until the receipt
+   * posts.
+   *
+   * These used to go straight into `inv_lots` at receipt time, which is fine
+   * when receiving and posting are the same act and wrong the moment they are
+   * not: a draft that created lot rows would have put traceable batches into
+   * the catalogue for goods nobody had accepted yet. The lot is resolved — found
+   * or created — in the post transaction, from these three columns.
+   */
+  lotNumber: text("lot_number"),
+  expiryDate: date("expiry_date"),
+  manufactureDate: date("manufacture_date"),
 }, (table) => [
   unique("uniq_inv_grn_lines_org_id").on(table.orgId, table.id),
   foreignKey({
@@ -147,6 +169,37 @@ export const invGrnLines = pgTable("inv_grn_lines", {
     name: "fk_inv_grn_lines_po_line_id_org",
   }),
   index("idx_inv_grn_lines_grn").on(table.grnId),
+]);
+
+/**
+ * B1. The serials a counter scanned into a receipt line that has not posted.
+ *
+ * A row per serial rather than an array on the line, for the reason §3 gives:
+ * an array cannot be indexed, cannot be appended to atomically by an operator
+ * scanning one unit at a time, and cannot carry the uniqueness that matters
+ * here — `uniq_inv_grn_line_serials_line_number` is what stops the same unit
+ * being scanned twice into the same line, which no application check can
+ * guarantee under two concurrent scanners.
+ *
+ * These are draft data, not stock: `inv_serial_numbers` rows are created in the
+ * post transaction. A serial recorded here is a claim about what is on the
+ * pallet; a serial there is a unit the business owns.
+ */
+export const invGrnLineSerials = pgTable("inv_grn_line_serials", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  grnLineId: integer("grn_line_id").references(() => invGrnLines.id, { onDelete: "cascade" }).notNull(),
+  serialNumber: text("serial_number").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("uniq_inv_grn_line_serials_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.grnLineId],
+    foreignColumns: [invGrnLines.orgId, invGrnLines.id],
+    name: "fk_inv_grn_line_serials_grn_line_id_org",
+  }).onDelete("cascade"),
+  uniqueIndex("uniq_inv_grn_line_serials_line_number").on(table.orgId, table.grnLineId, table.serialNumber),
+  index("idx_inv_grn_line_serials_line").on(table.grnLineId),
 ]);
 
 export const invVendorsRelations = relations(invVendors, ({ one, many }) => ({
@@ -175,10 +228,16 @@ export const invGrnsRelations = relations(invGrns, ({ one, many }) => ({
   purchaseOrder: one(invPurchaseOrders, { fields: [invGrns.poId], references: [invPurchaseOrders.id] }),
   location: one(invLocations, { fields: [invGrns.locationId], references: [invLocations.id] }),
   creator: one(users, { fields: [invGrns.createdBy], references: [users.id] }),
+  poster: one(users, { fields: [invGrns.postedBy], references: [users.id] }),
   lines: many(invGrnLines),
 }));
 
-export const invGrnLinesRelations = relations(invGrnLines, ({ one }) => ({
+export const invGrnLinesRelations = relations(invGrnLines, ({ one, many }) => ({
   grn: one(invGrns, { fields: [invGrnLines.grnId], references: [invGrns.id] }),
   poLine: one(invPoLines, { fields: [invGrnLines.poLineId], references: [invPoLines.id] }),
+  serials: many(invGrnLineSerials),
+}));
+
+export const invGrnLineSerialsRelations = relations(invGrnLineSerials, ({ one }) => ({
+  grnLine: one(invGrnLines, { fields: [invGrnLineSerials.grnLineId], references: [invGrnLines.id] }),
 }));
