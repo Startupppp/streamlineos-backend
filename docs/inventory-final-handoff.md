@@ -400,23 +400,85 @@ abstract.
    session into code the other owned — `inv-products.module.ts` and
    `so-fulfillment.service.ts`.
 
-3. **A hand-rolled copy of the ATP formula diverges at the edge, not in the
-   middle.** `availableQtySql` gates sellability with a correlated
+3. **A copy of the ATP formula is correct only because of a constraint two
+   tables away — and that constraint is not in the schema file.**
+   `availableQtySql` gates sellability with a correlated
    `CASE WHEN EXISTS (… is_sellable IS FALSE) THEN 0 ELSE …`. The obvious
    hand-written equivalent — join `inv_locations`, filter `is_sellable IS NOT
-   FALSE` — agrees at every grain the suite exercises and disagrees on one row:
-   a stock level whose location cannot be read (RLS, or a location that has
-   gone). The join **drops** it; the canonical form **keeps** it, matching the
-   column's `true` default rather than silently zeroing a warehouse.
+   FALSE` — differs on exactly one row: a stock level whose location cannot be
+   read. The join **drops** it; the canonical form **keeps** it, matching
+   `is_sellable`'s `true` default rather than silently zeroing a warehouse.
 
-   Found when a second session replaced its own copy in the golden path with the
-   canonical call. Nothing regressed and the canonical behaviour is the correct
-   one — but the direction was safe by luck of which copy had been written, not
-   by design, and no test in the suite distinguishes the two. This is the
-   concrete cost A1 was collapsing eight copies to avoid: **call
-   `availableQtySql`, never restate it.**
+   **That row cannot currently exist**, so the two forms are equivalent in
+   practice and this is not a live defect. Verified rather than assumed:
 
-4. **The seeded suites share one Neon dev branch.** Coverage is not thin: a
+   - `inv_stock_levels.location_id` is `NOT NULL`;
+   - `fk_inv_stock_levels_location_id_org` is
+     `FOREIGN KEY (org_id, location_id) REFERENCES inv_locations(org_id, id)`,
+     so the location is same-tenant by construction;
+   - `inv_locations_location_id_fk` cascades on delete, so it exists;
+   - `inv_locations` has RLS enabled with `USING (org_id = current_org_id())`,
+     which is the predicate those FKs already satisfy.
+
+   So a caller who can read the stock level can read its location, and with no
+   GUC `current_org_id()` fails closed with `42501` — the query errors rather
+   than quietly dropping rows.
+
+   **The catch is where that guarantee lives, and it is worse than "not in the
+   schema file".** `fk_inv_stock_levels_location_id_org` is not in
+   `src/db/schema/inventory/stock.ts` (which declares only the single-column
+   reference) **and is not created by any migration** — see risk 4. It exists on
+   the Neon branch and nowhere else. So the argument above is sound *for this
+   database* and false for a database rebuilt from `migrations/`: there the
+   composite FK is absent, nothing stops a stock level referencing a location in
+   another organisation, and the two forms diverge silently. No test can catch
+   it, because the case cannot be constructed on the database the tests run
+   against.
+
+   That is the sharper argument for A1's single-formula rule than "a copy might
+   already be wrong": **a copy's correctness depends on a schema constraint two
+   tables away that nobody re-checks when they change it, and here that
+   constraint is invisible in the file you would read to check.** Call
+   `availableQtySql`; never restate it.
+
+   Deliberately untested: the only way to construct the case is to break the FK
+   or forge an RLS state the application cannot produce, and a test asserting
+   behaviour in an impossible state would pass forever and tell nobody anything.
+
+4. **76 of inventory's 126 composite tenant foreign keys exist only on the Neon
+   branch — no migration creates them.** Found while checking risk 3, by
+   listing `fk_%_org` constraints on `inv\_%` tables from `pg_constraint` and
+   grepping `migrations/*.sql` for each name. Both of `inv_stock_levels`'
+   composite FKs are in the missing set, as are those on `inv_stock_transactions`,
+   `inv_stock_reservations`, `inv_lots`, `inv_serial_numbers`, `inv_locations`,
+   `inv_po_lines`, `inv_so_lines`, `inv_pick_list_lines` and most line tables.
+
+   These are the constraints §3 of `backend/CLAUDE.md` requires so a child row
+   cannot reference a parent in another organisation. Application predicates and
+   RLS do not replace them — the rule says so explicitly. On a fresh database
+   built from `migrations/`, inventory has 60% fewer of them than the database
+   this branch was developed and tested against.
+
+   This is the handoff's own §3 rule biting: *"applied to the Neon branch" ≠
+   migrated — it counts only when it is in the Drizzle journal AND `db:migrate`
+   reproduces it on an EMPTY DB.* Every one of these was applied by hand.
+
+   Reproduce the list with:
+
+   ```sql
+   SELECT conrelid::regclass::text AS tbl, conname, pg_get_constraintdef(oid)
+   FROM pg_constraint
+   WHERE contype = 'f' AND conname LIKE 'fk\_%\_org'
+     AND conrelid::regclass::text LIKE 'inv\_%'
+   ORDER BY 1;
+   ```
+
+   then grep `migrations/` for each `conname`. Authoring the missing ones is a
+   migration-writing job, not an investigation — the definitions are already in
+   `pg_get_constraintdef`. Add them `NOT VALID` then `VALIDATE`, per §3's
+   lock rules.
+
+5. **The seeded suites share one Neon dev branch.** Coverage is not thin: a
    little over 100 seeded e2e assertions currently run green against a real
    database — golden-path 7 (the whole chain), picking-waves 32, pack-fields 19,
    allocation-override 15, landed-cost 13, fefo-expiry 8, order-to-ship 6 —
@@ -426,10 +488,10 @@ abstract.
    runs them in parallel will see timeouts rather than failures.** Run them
    serially, or give each its own branch.
 
-5. **In-process counters reset on deploy** (G6). They are rates over a window,
+6. **In-process counters reset on deploy** (G6). They are rates over a window,
    never totals. Anything needing durability is a database query by design.
 
-6. **The route-states `IN_FLIGHT_ELSEWHERE` list is empty today** — verified as
+7. **The route-states `IN_FLIGHT_ELSEWHERE` list is empty today** — verified as
    the literal `new Set<string>([])`, not merely inferred from a passing suite.
    All eight routes parked during concurrent work were fixed. Keep checking it is
    empty before calling the UX sweep complete; a non-empty list is real debt
