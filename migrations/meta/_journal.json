@@ -2255,6 +2255,202 @@
       "when": 1787830381442,
       "tag": "0557_relationship_states_deal_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 322,
+      "version": "7",
+      "when": 1787830382442,
+      "tag": "0265_party_association_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 323,
+      "version": "7",
+      "when": 1787830383442,
+      "tag": "0266_party_association_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 324,
+      "version": "7",
+      "when": 1787830384442,
+      "tag": "0269_mailbox_push_secret",
+      "breakpoints": true
+    },
+    {
+      "idx": 325,
+      "version": "7",
+      "when": 1787830385442,
+      "tag": "0271_crm_suppression_hashes_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 326,
+      "version": "7",
+      "when": 1787830386442,
+      "tag": "0272_quote_document_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 327,
+      "version": "7",
+      "when": 1787830387442,
+      "tag": "0472_outbox_inbox_aggregate_fence",
+      "breakpoints": true
+    },
+    {
+      "idx": 328,
+      "version": "7",
+      "when": 1787830388442,
+      "tag": "0478_invoice_line_items_column_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 329,
+      "version": "7",
+      "when": 1787830389442,
+      "tag": "0482_candidate_resume_column_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 330,
+      "version": "7",
+      "when": 1787830391442,
+      "tag": "0533_autonomy_repairs",
+      "breakpoints": true
+    },
+    {
+      "idx": 331,
+      "version": "7",
+      "when": 1787830392442,
+      "tag": "0534_compliance_subject_request_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 332,
+      "version": "7",
+      "when": 1787830393442,
+      "tag": "0535_crm_outbound",
+      "breakpoints": true
+    },
+    {
+      "idx": 333,
+      "version": "7",
+      "when": 1787830394442,
+      "tag": "0536_subscriptions_agreed_price",
+      "breakpoints": true
+    },
+    {
+      "idx": 334,
+      "version": "7",
+      "when": 1787830395442,
+      "tag": "0540_crm_call_analyses",
+      "breakpoints": true
+    },
+    {
+      "idx": 335,
+      "version": "7",
+      "when": 1787830396442,
+      "tag": "0541_crm_call_analysis_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 336,
+      "version": "7",
+      "when": 1787830397442,
+      "tag": "0542_crm_call_analysis_releases",
+      "breakpoints": true
+    },
+    {
+      "idx": 337,
+      "version": "7",
+      "when": 1787830398442,
+      "tag": "0543_crm_call_analysis_team_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 338,
+      "version": "7",
+      "when": 1787830399442,
+      "tag": "0544_crm_call_recording_consent",
+      "breakpoints": true
+    },
+    {
+      "idx": 339,
+      "version": "7",
+      "when": 1787830400442,
+      "tag": "0545_crm_commission_plans",
+      "breakpoints": true
+    },
+    {
+      "idx": 340,
+      "version": "7",
+      "when": 1787830401442,
+      "tag": "0546_crm_commission_accrual",
+      "breakpoints": true
+    },
+    {
+      "idx": 341,
+      "version": "7",
+      "when": 1787830402442,
+      "tag": "0550_customer_lifecycle_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 342,
+      "version": "7",
+      "when": 1787830403442,
+      "tag": "0551_customer_lifecycle_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 343,
+      "version": "7",
+      "when": 1787830404442,
+      "tag": "0552_customer_health_assessments",
+      "breakpoints": true
+    },
+    {
+      "idx": 344,
+      "version": "7",
+      "when": 1787830405442,
+      "tag": "0553_customer_health_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 345,
+      "version": "7",
+      "when": 1787830406442,
+      "tag": "0554_lifecycle_renewal_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 346,
+      "version": "7",
+      "when": 1787830407442,
+      "tag": "0555_crm_reporting",
+      "breakpoints": true
+    },
+    {
+      "idx": 347,
+      "version": "7",
+      "when": 1787830408442,
+      "tag": "0556_backfill_crm_reporting_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 348,
+      "version": "7",
+      "when": 1787830409442,
+      "tag": "0558_crm_nurture_sequences",
+      "breakpoints": true
+    },
+    {
+      "idx": 349,
+      "version": "7",
+      "when": 1787830410442,
+      "tag": "0559_data_quality_autonomous_decision",
+      "breakpoints": true
     }
   ]
 }

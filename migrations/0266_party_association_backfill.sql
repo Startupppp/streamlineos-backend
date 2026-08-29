@@ -36,12 +36,33 @@
 --
 -- Authored via `generate --custom`; see 0205 for why db:generate cannot run here.
 
+--
+-- WHY EVERY STATEMENT BELOW IS GUARDED
+--
+-- This file was written before ticket 08 dropped `leads`, `clients`, `contacts`
+-- and `crm_organizations`, and it was never added to `_journal.json` -- so it
+-- did not run while those tables still existed, and it is ordered after 0278
+-- now that it has been. Read literally it would fail on `relation "clients" does
+-- not exist`, which is what it did the moment it was journalled.
+--
+-- Each UPDATE is wrapped in a `to_regclass` check on the legacy table it reads.
+-- On a database that has already dropped them there is nothing to copy and the
+-- statement is skipped; on one that somehow still has them the backfill runs
+-- exactly as written. A backfill whose source is gone is a no-op, not an error.
+--
+-- The four statements remain idempotent either way: every one is guarded by
+-- `IS DISTINCT FROM` and re-running the file changes nothing.
+
 SET lock_timeout = '5s';
 
 --> statement-breakpoint
 /*
  * `clients.lead_id`: the lead a client was converted out of, as the lead's party.
  */
+DO $guard$
+BEGIN
+  IF to_regclass('public.clients') IS NOT NULL THEN
+    EXECUTE $stmt$
 UPDATE "business_parties" p
 SET "converted_from_party_id" = lm."party_id"
 FROM "client_party_map" cm
@@ -54,6 +75,9 @@ WHERE cm."organization_id" = p."organization_id"
   AND c."lead_id" IS NOT NULL
   AND lm."party_id" <> p."party_id"
   AND p."converted_from_party_id" IS DISTINCT FROM lm."party_id";
+$stmt$;
+  END IF;
+END $guard$;
 
 --> statement-breakpoint
 /*
@@ -63,6 +87,10 @@ WHERE cm."organization_id" = p."organization_id"
  * decision 0265 records: one link, not two named after whichever table happened
  * to spell it first.
  */
+DO $guard$
+BEGIN
+  IF to_regclass('public.contacts') IS NOT NULL THEN
+    EXECUTE $stmt$
 UPDATE "business_parties" p
 SET "converted_from_party_id" = lm."party_id"
 FROM "contact_party_map" cm
@@ -75,6 +103,9 @@ WHERE cm."organization_id" = p."organization_id"
   AND ct."lead_id" IS NOT NULL
   AND lm."party_id" <> p."party_id"
   AND p."converted_from_party_id" IS DISTINCT FROM lm."party_id";
+$stmt$;
+  END IF;
+END $guard$;
 
 --> statement-breakpoint
 /*
@@ -85,6 +116,10 @@ WHERE cm."organization_id" = p."organization_id"
  * column still names it, and dropping the link here would be this backfill
  * deciding something the association never said.
  */
+DO $guard$
+BEGIN
+  IF to_regclass('public.contacts') IS NOT NULL THEN
+    EXECUTE $stmt$
 UPDATE "business_parties" p
 SET "primary_deal_id" = ct."deal_id"
 FROM "contact_party_map" cm
@@ -98,6 +133,9 @@ WHERE cm."organization_id" = p."organization_id"
     WHERE d."org_id" = ct."org_id" AND d."id" = ct."deal_id"
   )
   AND p."primary_deal_id" IS DISTINCT FROM ct."deal_id";
+$stmt$;
+  END IF;
+END $guard$;
 
 --> statement-breakpoint
 /*
@@ -110,6 +148,10 @@ WHERE cm."organization_id" = p."organization_id"
  * `parent_id` pointing at a row that no longer exists, and that is a dangling
  * pointer rather than a hierarchy.
  */
+DO $guard$
+BEGIN
+  IF to_regclass('public.crm_organizations') IS NOT NULL THEN
+    EXECUTE $stmt$
 UPDATE "business_parties" p
 SET "parent_party_id" = pm."party_id"
 FROM "crm_org_party_map" cm
@@ -122,6 +164,9 @@ WHERE cm."organization_id" = p."organization_id"
   AND o."parent_id" IS NOT NULL
   AND pm."party_id" <> p."party_id"
   AND p."parent_party_id" IS DISTINCT FROM pm."party_id";
+$stmt$;
+  END IF;
+END $guard$;
 
 --> statement-breakpoint
 ANALYZE "business_parties";
