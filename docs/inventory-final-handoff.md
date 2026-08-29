@@ -121,7 +121,23 @@ found on this branch were that shape.
 
 ## 3. Migrations
 
-Numbers 0548–0574 belong to this programme.
+Numbers 0548–0575 belong to this programme.
+
+**A cold build now does real work at `0575`, and that is a new failure
+surface.** Until it, a fresh database simply never had inventory's composite
+tenant foreign keys (risk 4). `0575` creates all 79 and validates them against
+whatever rows the earlier migrations produced — so if any seed or backfill in
+`migrations/` writes a cross-tenant reference that the live database never
+contained, the cold build fails there. That is the correct place to fail: the
+constraint is right and the data is wrong. But it is a failure that could not
+happen before, and it will present as "0575 broke the build" rather than as
+"migration N wrote a bad row".
+
+**The FKs land after every table exists, so a cold build has a window without
+them.** `0575` runs last by necessity — a constraint cannot precede its tables —
+which means every earlier migration in a fresh build runs with no composite
+tenant FK enforcing anything. Anything in that window relying on one for
+integrity gets it only at the end, in bulk, at `VALIDATE` time.
 
 **`drizzle.__drizzle_migrations` is not evidence on this branch.** It was
 rewritten mid-session (509 rows down to 380) and several hand-applied rows went
@@ -203,7 +219,7 @@ confirms. Result:
 
 | | count |
 |---|---|
-| recorded (was already, or verified applied then recorded) | 210 |
+| recorded (was already, or verified applied then recorded) | 211 |
 | genuinely not applied — all payroll/CRM/build, **zero inventory** | 36 |
 | claim no checkable object (backfill/grant only) — left alone | 95 |
 
@@ -445,38 +461,52 @@ abstract.
    or forge an RLS state the application cannot produce, and a test asserting
    behaviour in an impossible state would pass forever and tell nobody anything.
 
-4. **76 of inventory's 126 composite tenant foreign keys exist only on the Neon
-   branch — no migration creates them.** Found while checking risk 3, by
-   listing `fk_%_org` constraints on `inv\_%` tables from `pg_constraint` and
-   grepping `migrations/*.sql` for each name. Both of `inv_stock_levels`'
-   composite FKs are in the missing set, as are those on `inv_stock_transactions`,
-   `inv_stock_reservations`, `inv_lots`, `inv_serial_numbers`, `inv_locations`,
-   `inv_po_lines`, `inv_so_lines`, `inv_pick_list_lines` and most line tables.
+4. **Inventory's composite tenant foreign keys are authored now. 635 of the
+   platform's are not.** 79 of inventory's 119 composite same-tenant FKs existed
+   only on the Neon branch, created by no migration. Migration `0575` authors
+   all 79 — added `NOT VALID` and validated separately per §3's lock rules, both
+   halves guarded on `pg_constraint` so the file is a no-op here and the
+   creating statement on a fresh database. Verified idempotent by applying it
+   twice: 119 before, 119 after, 0 unvalidated.
 
-   These are the constraints §3 of `backend/CLAUDE.md` requires so a child row
-   cannot reference a parent in another organisation. Application predicates and
-   RLS do not replace them — the rule says so explicitly. On a fresh database
-   built from `migrations/`, inventory has 60% fewer of them than the database
-   this branch was developed and tested against.
+   **Inventory is complete: 0 of 119 remain unauthored.** The estate is not.
+   Across the whole database there are **799** composite tenant FKs and **635
+   are still created by no migration** — inventory was about a ninth of the
+   problem. By owning module:
+
+   | | missing | | missing |
+   |---|---|---|---|
+   | kb | 64 | project | 27 |
+   | hr | 45 | crm | 25 |
+   | survey | 40 | support | 17 |
+   | fin | 29 | sign | 17 |
+   | payroll | 28 | ticket | 14 |
+   | chat | 28 | candidate / acc / workflow | 13 / 13 / 12 |
+
+   These are the constraints `backend/CLAUDE.md` §3 requires so a child row
+   cannot reference a parent in another organisation, and it says explicitly
+   that application predicates and RLS do not replace them. On a database built
+   from `migrations/`, every module above is missing most of them.
 
    This is the handoff's own §3 rule biting: *"applied to the Neon branch" ≠
    migrated — it counts only when it is in the Drizzle journal AND `db:migrate`
-   reproduces it on an EMPTY DB.* Every one of these was applied by hand.
+   reproduces it on an EMPTY DB.* Every one was applied by hand.
 
-   Reproduce the list with:
+   Reproduce with — note the filter is on the **definition**, not the name:
 
    ```sql
    SELECT conrelid::regclass::text AS tbl, conname, pg_get_constraintdef(oid)
    FROM pg_constraint
-   WHERE contype = 'f' AND conname LIKE 'fk\_%\_org'
-     AND conrelid::regclass::text LIKE 'inv\_%'
+   WHERE contype = 'f'
+     AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (org_id,%'
    ORDER BY 1;
    ```
 
-   then grep `migrations/` for each `conname`. Authoring the missing ones is a
-   migration-writing job, not an investigation — the definitions are already in
-   `pg_get_constraintdef`. Add them `NOT VALID` then `VALIDATE`, per §3's
-   lock rules.
+   then grep `migrations/` for each `conname`. A name filter
+   (`conname LIKE 'fk\_%\_org'`) over-counts: it caught 7 constraints on
+   `inv_*` that are not `(org_id, …)` composites, which is where this entry's
+   earlier figure of 126 came from. `0575` is the worked example for authoring
+   the rest.
 
 5. **The seeded suites share one Neon dev branch.** Coverage is not thin: a
    little over 100 seeded e2e assertions currently run green against a real
