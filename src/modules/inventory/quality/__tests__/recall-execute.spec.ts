@@ -206,7 +206,7 @@ const SELECTION_REQUEST = {
   title: "Contaminated batch",
   selection: { lotIds: [1] },
   evidenceVersion: "abc123",
-} as const;
+};
 
 describe("R4/D4 — executing a recall", () => {
   it("raises one document, flips the lots, and holds only stock that exists", async () => {

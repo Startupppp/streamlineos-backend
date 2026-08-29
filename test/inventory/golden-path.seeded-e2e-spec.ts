@@ -11,6 +11,8 @@ import { PutawayCompleteService } from "src/modules/inventory/putaway/putaway-co
 import { SoCoreService } from "src/modules/inventory/sales-orders/so-core.service";
 import { SoLifecycleService } from "src/modules/inventory/sales-orders/so-lifecycle.service";
 import { SoFulfillmentService } from "src/modules/inventory/sales-orders/so-fulfillment.service";
+import { PickWaveService } from "src/modules/inventory/picking/pick-wave.service";
+import { PickConfirmService } from "src/modules/inventory/picking/pick-confirm.service";
 import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
@@ -307,5 +309,59 @@ describe("[seeded-e2e] the golden path", () => {
     expect(await onHandAt(scene.storageId)).toBe(100);
     expect(await atp()).toBe(70);
     await expectReconciled("reserved");
+  });
+
+  it("picks the order on a wave and ships it out of the building", async () => {
+    const wave = await asTenant(() =>
+      app.app.get(PickWaveService).createWave(scene.orgId, scene.userId, {
+        warehouseId: scene.warehouseId,
+        soIds: [soId],
+      }),
+    );
+
+    // A wave's pick lists hang off the wave, not off an order — `so_id` is null
+    // for a wave, and both packSo and shipSo once looked them up by it and found
+    // nothing while every unit suite stayed green. Walking the whole path is the
+    // only thing that catches that, so the wave form is used deliberately here.
+    const pickLines = await asTenant(() =>
+      db().execute<{ id: number }>(sql`
+        SELECT id FROM inv_pick_list_lines
+        WHERE org_id = ${scene.orgId} AND pick_list_id = ${wave.pickListId}
+        ORDER BY id`),
+    );
+    expect(pickLines).toHaveLength(1);
+
+    await asTenant(() =>
+      app.app.get(PickConfirmService).confirmPick(
+        scene.orgId,
+        scene.userId,
+        wave.pickListId,
+        { pickLineId: pickLines[0]!.id, quantityPicked: "30.0000" },
+        `gp-pick-${scene.tag}`,
+      ),
+    );
+    await expectReconciled("picked");
+
+    await asTenant(() =>
+      app.app
+        .get(SoFulfillmentService)
+        .packSo(scene.orgId, soId, scene.userId, {} as never, `gp-pack-${scene.tag}`),
+    );
+
+    await asTenant(() =>
+      app.app
+        .get(SoFulfillmentService)
+        .shipSo(scene.orgId, soId, scene.userId, `gp-ship-${scene.tag}`, {
+          shipDate: "2026-08-04",
+        } as never),
+    );
+
+    // Shipping turns a promise into a departure. The 30 leave the shelf and the
+    // reservation that held them is consumed, so on_hand falls by 30 while what
+    // is promisable does not move at all -- if ATP moved here, the ship path
+    // either double-counted the reservation or failed to release it.
+    expect(await onHandAt(scene.storageId)).toBe(70);
+    expect(await atp()).toBe(70);
+    await expectReconciled("shipped");
   });
 });

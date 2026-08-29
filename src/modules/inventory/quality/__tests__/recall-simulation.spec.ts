@@ -164,7 +164,7 @@ function build(rows: Record<string, Row[]>, scope: number[] | null = null) {
   };
 }
 
-const SELECTION = { lotIds: [1, 2] } as const;
+const SELECTION = { lotIds: [1, 2] };
 
 describe("D4 — the recall simulator", () => {
   it("returns the full impact without writing anything", async () => {
