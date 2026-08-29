@@ -23,11 +23,21 @@ export interface PickListModel {
   readonly stampDataUri: string;
 }
 
+/**
+ * LOT / SERIAL is sized for a full GS1 identifier, because on a serialised pick
+ * that column is the whole instruction — which physical unit to take off the
+ * shelf. GS1 application identifier 21 (SERIAL) and 10 (BATCH/LOT) are each up
+ * to twenty alphanumeric characters and this module parses GS1 on the scan
+ * path, so at weight 15 a scanned serial printed as "SN9876543210..." — a sheet
+ * that points at a set of units instead of one, and gives the picker no sign it
+ * has done so. The width came from DESCRIPTION, which can truncate without cost
+ * because the SKU beside it is the identifier.
+ */
 const COLUMNS: readonly DocumentColumn[] = [
   { header: "LOCATION", weight: 13 },
   { header: "SKU", weight: 15 },
-  { header: "DESCRIPTION", weight: 25 },
-  { header: "LOT / SERIAL", weight: 15 },
+  { header: "DESCRIPTION", weight: 16 },
+  { header: "LOT / SERIAL", weight: 24 },
   { header: "ORDER", weight: 12 },
   { header: "TO PICK", weight: 10, align: "right" },
   { header: "PICKED", weight: 10, align: "right" },

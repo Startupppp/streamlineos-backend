@@ -35,16 +35,25 @@ export interface GrnNoteModel {
  * a date, and a lot number that loses its tail matches the wrong batch. A long
  * product name truncates instead, which costs nothing — the SKU beside it is the
  * identifier.
+ *
+ * LOT / BATCH is sized for the longest lot the system can actually hold, not
+ * the longest anyone has typed so far. GS1 application identifier 10 is up to
+ * twenty alphanumeric characters, `barcode/gs1.ts` parses AI 10 straight into
+ * `lotNumber`, and `inv_lots.lot_number` is `text` with no limit — so a scan
+ * puts twenty characters on a receipt. At weight 14 that rendered
+ * "ABCD1234EF...", which is the failure this comment already described, printed
+ * on the document the warehouse signs. The width came from DESCRIPTION for the
+ * reason given above.
  */
 const COLUMNS: readonly DocumentColumn[] = [
   { header: "SKU", weight: 16 },
-  { header: "DESCRIPTION", weight: 19 },
-  { header: "LOT / BATCH", weight: 14 },
+  { header: "DESCRIPTION", weight: 11 },
+  { header: "LOT / BATCH", weight: 24 },
   { header: "EXPIRY", weight: 12 },
   { header: "EXPECTED", weight: 10, align: "right" },
   { header: "RECEIVED", weight: 10, align: "right" },
   { header: "UOM", weight: 6 },
-  { header: "QUALITY", weight: 13 },
+  { header: "QUALITY", weight: 11 },
 ];
 
 /**

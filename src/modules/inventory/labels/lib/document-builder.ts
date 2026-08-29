@@ -63,24 +63,33 @@ export class DocumentBuilder {
     return new DocumentBuilder(doc, regular, bold, footerLabel);
   }
 
-  /** The masthead: who this document belongs to, and what it is. */
+  /**
+   * The masthead: who this document belongs to, and what it is.
+   *
+   * Every string here goes through `fit` for the same reason the table cells do.
+   * An organisation name is tenant free text, and pdf-lib's standard fonts throw
+   * on anything outside WinAnsi — so a Hindi trading name did not render a
+   * degraded masthead, it failed the whole document, for every goods-receipt
+   * note and pick list that tenant ever asked for.
+   */
   header(organizationName: string, title: string, reference: string): this {
-    this.page.drawText(organizationName || "Organisation", {
+    const safeReference = this.fit(reference, this.bold, 12, CONTENT_WIDTH);
+    this.page.drawText(this.fit(organizationName || "Organisation", this.bold, 10, CONTENT_WIDTH), {
       x: MARGIN,
       y: this.y - 12,
       size: 10,
       font: this.bold,
       color: MUTED,
     });
-    this.page.drawText(title, {
+    this.page.drawText(this.fit(title, this.bold, 18, CONTENT_WIDTH), {
       x: MARGIN,
       y: this.y - 34,
       size: 18,
       font: this.bold,
       color: INK,
     });
-    const width = this.bold.widthOfTextAtSize(reference, 12);
-    this.page.drawText(reference, {
+    const width = this.bold.widthOfTextAtSize(safeReference, 12);
+    this.page.drawText(safeReference, {
       x: PAGE_WIDTH - MARGIN - width,
       y: this.y - 32,
       size: 12,
@@ -118,7 +127,7 @@ export class DocumentBuilder {
 
   sectionTitle(text: string): this {
     this.ensure(24);
-    this.page.drawText(text, {
+    this.page.drawText(this.fit(text, this.bold, 10, CONTENT_WIDTH), {
       x: MARGIN,
       y: this.y - 12,
       size: 10,
