@@ -136,16 +136,32 @@ describe("[seeded-e2e] inspection plans hold a receipt out of ATP until it is di
     const grnId = (draft as { id: number }).id;
     const grnNumber = (draft as { grnNumber: string }).grnNumber;
 
+    // `postInTx` raises the inspection itself now — the receipt path calls
+    // `raiseForReceiptInTx` as its last step. This spec used to call it here as
+    // well, standing in for wiring that did not exist yet; once the wiring
+    // landed that became a *second* hold over the same quantity, and since a
+    // hold is a subset of on-hand, 200 held against 100 received trips
+    // HOLD_EXCEEDS_ON_HAND and rolls the whole receipt back.
     const key = `post-${randomUUID()}`;
-    const raised = await asTenant(async (tx) => {
+    await asTenant(async (tx) => {
       await app.app.get(GrnPostingService).postInTx(tx, scene.orgId, grnId, scene.userId, key);
-      return app.app
-        .get(ReceiptInspectionService)
-        .raiseForReceiptInTx(tx, scene.orgId, scene.userId, { grnId, grnNumber, idempotencyKey: key });
     });
+    const raised = await openInspectionFor(grnId);
     await app.app.get(GrnPostingService).invalidateAfterPost(scene.orgId, po.id);
     await app.app.get(ReceiptInspectionService).invalidateAfterRaise(scene.orgId);
     return { grnId, raised };
+  }
+
+  /** What the receipt path raised, read back rather than returned by the call. */
+  async function openInspectionFor(grnId: number) {
+    const [row] = await asTenant((tx) =>
+      tx.execute<{ id: number; inspection_number: string }>(sql`
+        SELECT id, inspection_number FROM inv_quality_inspections
+         WHERE org_id = ${scene.orgId} AND source_type = 'inv_grn'
+           AND source_id = ${String(grnId)}
+         ORDER BY id DESC LIMIT 1`),
+    );
+    return row ? { inspectionId: Number(row.id), inspectionNumber: String(row.inspection_number) } : null;
   }
 
   const inspections = () => app.app.get(InspectionsService);
