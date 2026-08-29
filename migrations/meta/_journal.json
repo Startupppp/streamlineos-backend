@@ -2388,6 +2388,13 @@
       "when": 1788134409017,
       "tag": "0574_inventory_pharmacy_kirana_packs",
       "breakpoints": true
+    },
+    {
+      "idx": 342,
+      "version": "7",
+      "when": 1788134409018,
+      "tag": "0575_inventory_composite_tenant_fks",
+      "breakpoints": true
     }
   ]
 }
