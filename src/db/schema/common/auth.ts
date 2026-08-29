@@ -100,6 +100,7 @@ export const organizationMembers = pgTable("organization_members", {
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_org_members_user_org").on(table.userId, table.orgId),
+  unique("uniq_org_members_org_user").on(table.orgId, table.userId),
   unique("uniq_org_members_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_org_members_single_owner").on(table.orgId).where(sql`is_owner = true`),
   index("idx_org_members_org_role").on(table.orgId, table.role),

@@ -18,6 +18,7 @@ export const calendarEvents = pgTable("calendar_events", {
   entityType: text("entity_type"),
   entityId: text("entity_id"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   agenda: text("agenda"),
   postMeetingNotes: text("post_meeting_notes"),
   linkedDealId: integer("linked_deal_id"),
@@ -33,6 +34,7 @@ export const calendarEvents = pgTable("calendar_events", {
   index("idx_calendar_events_org_date").on(table.orgId, table.startDate),
   index("idx_calendar_events_category").on(table.category),
   index("idx_calendar_events_created_by").on(table.createdBy),
+  index("idx_calendar_events_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
   index("idx_calendar_events_external").on(table.integrationConnectionId, table.externalEventId),
   unique("uniq_calendar_events_org_id").on(table.orgId, table.id),
 ]);
@@ -52,11 +54,13 @@ export const eventAttendees = pgTable("event_attendees", {
   index("idx_event_attendees_membership_id").on(table.orgId, table.membershipId),
   foreignKey({ columns: [table.orgId, table.eventId], foreignColumns: [calendarEvents.orgId, calendarEvents.id], name: "fk_event_attendees_org_event" }),
   foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_event_attendees_org_membership" }),
+  foreignKey({ columns: [table.orgId, table.userId], foreignColumns: [organizationMembers.orgId, organizationMembers.userId], name: "fk_event_attendees_org_user" }),
 ]);
 
 export const calendarEventsRelations = relations(calendarEvents, ({ one, many }) => ({
   organization: one(organizations, { fields: [calendarEvents.orgId], references: [organizations.id] }),
   creator: one(users, { fields: [calendarEvents.createdBy], references: [users.id] }),
+  creatorMembership: one(organizationMembers, { fields: [calendarEvents.orgId, calendarEvents.createdByMembershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
   attendees: many(eventAttendees),
 }));
 

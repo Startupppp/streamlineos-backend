@@ -231,6 +231,7 @@ export class NotificationTimeSweepsService {
         title: `Starting soon: ${event.title}`,
         message: "This event starts within the next 30 minutes.",
         link: `/calendar?event=${event.id}`,
+        dedupeKey: `calendar-starting-soon:${event.id}:${event.startDate.toISOString()}`,
       });
       result.eventsStartingSoon += 1;
     }

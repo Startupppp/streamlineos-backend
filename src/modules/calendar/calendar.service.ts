@@ -78,6 +78,15 @@ export class CalendarService {
 
     const [{ event, eventConflicts, attendeeMemberships }, oooConflicts] = await Promise.all([
       this.db.transaction(async (tx) => {
+        const creatorMembership = await tx.query.organizationMembers.findFirst({
+          columns: { id: true },
+          where: and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, userId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        });
+        if (!creatorMembership) throw new Error("Active organization membership required");
         const conflicts = await this.conflict.checkConflictsInTx(
           tx,
           orgId,
@@ -90,6 +99,7 @@ export class CalendarService {
           .values({
             orgId,
             createdBy: userId,
+            createdByMembershipId: creatorMembership.id,
             title: input.title,
             description: input.description ?? null,
             location: input.location ?? null,
