@@ -161,4 +161,50 @@ describe("E5 India compliance boundary", () => {
       }
     });
   });
+
+  describe("the ladder is reachable", () => {
+    /**
+     * Strip comments before reading code as code.
+     *
+     * The service's own comment explains why it must not call
+     * `adapter.register` directly — so a scan that does not strip comments
+     * finds that sentence and reports the defect it is quoting. This module has
+     * been bitten by exactly that shape before, which is why the stripper is
+     * asserted below rather than assumed.
+     */
+    function codeOf(file: string): string {
+      return readFileSync(join(__dirname, "..", file), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .split("\n")
+        .map((line) => line.replace(/\/\/.*$/, ""))
+        .join("\n");
+    }
+
+    it("strips comments, so it cannot read its own explanation as code", () => {
+      const code = codeOf("india-compliance.service.ts");
+      expect(code).not.toContain("Calling `adapter.register` directly");
+      expect(code).toContain("executeComplianceCall");
+    });
+
+    /**
+     * `planComplianceAttempt`, `COMPLIANCE_RETRY_SCHEDULE_MS` and
+     * `COMPLIANCE_CALL_TIMEOUT_MS` were exported, unit-tested and called by
+     * nothing: the service awaited the adapter once, so one refusal was final
+     * and a portal that never answered held the request open. A green ladder
+     * test proved the ladder was correct, not that anything walked it.
+     */
+    it("routes every adapter call through the executor, never straight at the adapter", () => {
+      const code = codeOf("india-compliance.service.ts");
+
+      expect(code).not.toMatch(/await\s+adapter\.(register|cancel)\s*\(/);
+      expect(code).toMatch(/executeComplianceCall\(\s*\(\)\s*=>\s*adapter\.register/);
+      expect(code).toMatch(/executeComplianceCall\(\s*\(\)\s*=>\s*adapter\.cancel/);
+    });
+
+    it("keeps the executor itself walking the declared schedule", () => {
+      const code = codeOf("india-compliance-adapter.ts");
+      expect(code).toMatch(/executeComplianceCall[\s\S]*planComplianceAttempt/);
+      expect(code).toMatch(/executeComplianceCall[\s\S]*COMPLIANCE_CALL_TIMEOUT_MS/);
+    });
+  });
 });

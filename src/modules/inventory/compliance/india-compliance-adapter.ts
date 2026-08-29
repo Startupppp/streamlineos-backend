@@ -176,6 +176,98 @@ export function planComplianceAttempt(input: {
 }
 
 /**
+ * Walks the ladder `planComplianceAttempt` describes, and bounds each call.
+ *
+ * The planner decides what should happen next; this is the thing that does it.
+ * Without it the schedule, `COMPLIANCE_MAX_ATTEMPTS` and
+ * `COMPLIANCE_CALL_TIMEOUT_MS` were exported, unit-tested and called by
+ * nothing — a portal that refused once was recorded as failed with no second
+ * attempt, and one that never answered left the caller's promise unsettled,
+ * because `await adapter.register(...)` has no deadline of its own.
+ *
+ * A timeout is a transient failure, so it takes the ladder like any other: a
+ * portal that is slow now may answer in nine hundred milliseconds, and the
+ * whole ladder is sized to fit inside a request budget.
+ *
+ * `sleep` is a parameter so a test can walk the ladder without waiting for it.
+ */
+export async function executeComplianceCall(
+  call: () => Promise<ComplianceResult>,
+  options: {
+    readonly timeoutMs?: number;
+    readonly sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<ComplianceResult> {
+  const timeoutMs = options.timeoutMs ?? COMPLIANCE_CALL_TIMEOUT_MS;
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+
+  let attempts = 0;
+  let last: ComplianceResult = {
+    status: "FAILED",
+    code: "NOT_ATTEMPTED",
+    message: "no attempt was made",
+    terminal: false,
+  };
+
+  for (;;) {
+    last = await withComplianceTimeout(call, timeoutMs);
+    const plan = planComplianceAttempt({
+      attempts,
+      ok: last.status !== "FAILED",
+      terminal: last.status === "FAILED" ? last.terminal : false,
+    });
+    attempts = plan.attempts;
+
+    if (plan.retryInMs === null) return last;
+    await sleep(plan.retryInMs);
+  }
+}
+
+/**
+ * The deadline itself.
+ *
+ * The losing promise is left to settle on its own — there is no cancellation to
+ * hand a provider SDK — so this bounds how long the caller waits, not how long
+ * the portal takes.
+ */
+async function withComplianceTimeout(
+  call: () => Promise<ComplianceResult>,
+  timeoutMs: number,
+): Promise<ComplianceResult> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<ComplianceResult>((resolve) => {
+    timer = setTimeout(
+      () =>
+        resolve({
+          status: "FAILED",
+          code: "TIMEOUT",
+          message: `no answer within ${timeoutMs}ms`,
+          terminal: false,
+        }),
+      timeoutMs,
+    );
+  });
+
+  try {
+    return await Promise.race([call(), deadline]);
+  } catch (err) {
+    // A provider SDK rejects on a socket error the same way it would return a
+    // 503. Letting it escape would propagate out of `register` instead of
+    // recording a failure, so the outage would reach the caller as a stack
+    // trace and leave no document row behind explaining it.
+    return {
+      status: "FAILED",
+      code: "ADAPTER_THREW",
+      message: err instanceof Error ? err.message : String(err),
+      terminal: false,
+    };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * A deterministic, obviously-fake identifier.
  *
  * The `STUB-` prefix is load-bearing. A real IRN is 64 hex characters, and a

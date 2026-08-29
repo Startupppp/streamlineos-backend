@@ -10,6 +10,7 @@ import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { randomUUID } from "node:crypto";
 import {
   COMPLIANCE_EVENTS,
+  executeComplianceCall,
   STUB_COMPLIANCE_ADAPTER,
   unconfiguredLiveAdapter,
   type ComplianceAdapter,
@@ -130,19 +131,12 @@ export class IndiaComplianceService {
     }
 
     const request: ComplianceRequest = { ...input, payloadHash };
-    let result: ComplianceResult;
-    try {
-      result = await adapter.register(request);
-    } catch (err) {
-      // An adapter that throws is an outage, not a rejection. Recorded as a
-      // failure so the operator sees it, and never as a registration.
-      result = {
-        status: "FAILED",
-        code: "ADAPTER_THREW",
-        message: err instanceof Error ? err.message : String(err),
-        terminal: false,
-      };
-    }
+    // Through the executor, so the retry ladder and the ten-second deadline
+    // actually run. Calling `adapter.register` directly is what left both
+    // exported, unit-tested and reachable from nothing: one refusal was
+    // recorded as final, and a portal that never answered held this request
+    // open with no deadline of its own. A throw comes back as a FAILED result.
+    const result: ComplianceResult = await executeComplianceCall(() => adapter.register(request));
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -256,12 +250,18 @@ export class IndiaComplianceService {
       throw new BadRequestException("There is no registered document to cancel.");
     }
 
+    // Captured before the closure: the guard above narrows `doc.externalId` to
+    // a string, but that narrowing does not survive into a callback, because
+    // the compiler cannot know `doc` is unchanged by the time it runs.
+    const externalId = doc.externalId;
     const adapter = this.adapterFor(doc.adapterCode);
-    const result = await adapter.cancel({
-      kind: input.kind,
-      externalId: doc.externalId,
-      reason: input.reason,
-    });
+    const result = await executeComplianceCall(() =>
+      adapter.cancel({
+        kind: input.kind,
+        externalId,
+        reason: input.reason,
+      }),
+    );
 
     if (result.status === "FAILED") return { status: "FAILED", message: result.message };
 
