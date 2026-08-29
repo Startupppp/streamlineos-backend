@@ -162,7 +162,26 @@ export class WorkflowOutboxRelayService {
       highest = Math.max(highest, event.outboxEventId);
     }
 
-    if (highest > 0)
+    /**
+     * The cursor only moves on a pass that saw everything.
+     *
+     * `outbox_event_id` is one sequence across every tenant, but discovery is now
+     * per organisation and shares a single budget — so a pass that fills the
+     * budget has read the first tenants and not the later ones. Advancing on that
+     * pass would move a *global* cursor past ids belonging to organisations this
+     * pass never queried, and any of theirs more than `CURSOR_LAG` below the
+     * highest seen would never be read again. Not delayed: never, for the life of
+     * the process. That is the precise failure `CURSOR_LAG` exists to prevent,
+     * reintroduced from the other direction by the per-org loop.
+     *
+     * A full budget therefore leaves the cursor where it is and the next tick
+     * re-reads from the same place, which drains the backlog rather than skipping
+     * it — safe for the same reason the lag is: `startRun` keys on
+     * `causationEventId` and returns the existing run instead of starting a
+     * second.
+     */
+    const sawEverything = events.length < limit;
+    if (highest > 0 && sawEverything)
       this.cursor = Math.max(this.cursor, highest - WorkflowOutboxRelayService.CURSOR_LAG);
 
     if (started > 0) this.logger.log(`Relay started ${String(started)} workflow run(s)`);

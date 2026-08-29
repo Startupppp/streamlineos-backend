@@ -973,7 +973,20 @@ export class CrmImportService {
      * as the column that says what the row did.
      */
     const [row] = await tx
-      .select()
+      // Named rather than `select()`: the eight below are what `commitRow` and
+      // `fileUncertainty` between them read. `values` and `custom_fields` are
+      // jsonb and can be the width of a spreadsheet row, so the columns this
+      // does not name are not free.
+      .select({
+        crmImportRowId: crmImportRows.crmImportRowId,
+        rowNumber: crmImportRows.rowNumber,
+        action: crmImportRows.action,
+        reason: crmImportRows.reason,
+        values: crmImportRows.values,
+        customFields: crmImportRows.customFields,
+        matchedRecordId: crmImportRows.matchedRecordId,
+        match: crmImportRows.match,
+      })
       .from(crmImportRows)
       .where(
         and(
@@ -1082,7 +1095,17 @@ export class CrmImportService {
     tx: TenantTx,
     organizationId: string,
     crmImportId: string,
-    row: typeof crmImportRows.$inferSelect,
+    /**
+     * The six columns this reads, not the whole row.
+     *
+     * Named so the claim in `commitRow` can select what it needs rather than
+     * `select *` — and so adding a column to `crm_import_rows` does not silently
+     * widen what this is handed.
+     */
+    row: Pick<
+      typeof crmImportRows.$inferSelect,
+      "crmImportRowId" | "rowNumber" | "reason" | "values" | "matchedRecordId" | "match"
+    >,
     filename: string | null,
   ): Promise<void> {
     if (!row.matchedRecordId || !row.match)

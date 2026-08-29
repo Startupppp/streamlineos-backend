@@ -142,13 +142,6 @@ export interface DecisionRow {
 }
 
 /**
- * Builds the row, deriving reversibility rather than accepting it.
- *
- * A caller that could pass its own would eventually pass `instant` for something
- * that is not, and the review feed would tell a manager they can undo something
- * they cannot.
- */
-/**
  * A deal id as the decision ledger stores one.
  *
  * `activities.deal_id` is an integer with a foreign key to `deals`;
@@ -165,6 +158,13 @@ export function decisionDealId(dealId: number | null): string | null {
   return dealId === null ? null : String(dealId);
 }
 
+/**
+ * Builds the row, deriving reversibility rather than accepting it.
+ *
+ * A caller that could pass its own would eventually pass `instant` for something
+ * that is not, and the review feed would tell a manager they can undo something
+ * they cannot.
+ */
 export function buildDecision(input: DecisionInput): DecisionRow {
   return {
     organizationId: input.organizationId,

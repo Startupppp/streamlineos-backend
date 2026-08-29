@@ -86,6 +86,45 @@ describe("WorkflowOutboxRelayService", () => {
    * it looks like there is every durable workflow in the product quietly
    * stopping.
    */
+  /**
+   * The starvation the per-org loop reintroduced, and the reason the cursor is
+   * conditional.
+   *
+   * `limit` is one budget shared across every organisation, so a pass that fills
+   * it has read the first tenants and not the later ones. A cursor advanced on
+   * that pass moves past ids belonging to organisations the pass never queried —
+   * and any of theirs more than `CURSOR_LAG` below the highest seen would never
+   * be read again. Not delayed: never, which is precisely what `CURSOR_LAG`
+   * exists to prevent.
+   */
+  it("does not advance the cursor on a pass that filled its budget", async () => {
+    const registry = new WorkflowRegistry();
+    registry.register({ name: "onboard", triggers: ["party.created"], handler: async () => null });
+
+    const full = [
+      event({ outboxEventId: 9_000, eventId: "evt-a" }),
+      event({ outboxEventId: 9_001, eventId: "evt-b" }),
+    ];
+    const relay = new WorkflowOutboxRelayService(dbReturning([full]), registry, runnerSpy().service);
+
+    await relay.relay(2); // exactly the budget: there may be more behind it
+    expect(relay.position).toBe(0);
+  });
+
+  it("advances once a pass comes back short, which means it saw everything", async () => {
+    const registry = new WorkflowRegistry();
+    registry.register({ name: "onboard", triggers: ["party.created"], handler: async () => null });
+
+    const relay = new WorkflowOutboxRelayService(
+      dbReturning([[event({ outboxEventId: 9_000 })]]),
+      registry,
+      runnerSpy().service,
+    );
+
+    await relay.relay(50);
+    expect(relay.position).toBe(8_000); // 9_000 - CURSOR_LAG
+  });
+
   it("discovers per organisation rather than across tenants", async () => {
     const registry = new WorkflowRegistry();
     const relay = new WorkflowOutboxRelayService(dbReturning([[event()]]), registry, runnerSpy().service);

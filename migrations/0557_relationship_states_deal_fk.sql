@@ -51,3 +51,10 @@ END $$;
 
 --> statement-breakpoint
 ALTER TABLE "relationship_states" VALIDATE CONSTRAINT "fk_relationship_states_deal";
+
+--> statement-breakpoint
+-- The `ALTER COLUMN ... TYPE` above rewrites the table, which leaves the planner
+-- with stale statistics and an empty visibility map. Skipping this is how a plan
+-- that should read 53 blocks reads 201,875 -- and the whole point of the key is
+-- to make the deal index usable, which the planner has to be told about.
+ANALYZE "relationship_states";

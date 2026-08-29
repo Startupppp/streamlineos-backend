@@ -1,4 +1,4 @@
-import { createActivitySchema, timelineQuerySchema } from "./activity.schemas";
+import { MAX_SERIAL, createActivitySchema, timelineQuerySchema } from "./activity.schemas";
 
 /**
  * The deal anchor's boundary, which moved here from `numericDealIds`.
@@ -41,8 +41,8 @@ describe("activity anchor: dealId", () => {
 
   /** Above the `serial` ceiling is not a deal id, whatever it parses to. */
   it("refuses a number too large to be a serial", () => {
-    expect(createActivitySchema.safeParse({ ...base, dealId: 2_147_483_647 }).success).toBe(true);
-    expect(createActivitySchema.safeParse({ ...base, dealId: 2_147_483_648 }).success).toBe(false);
+    expect(createActivitySchema.safeParse({ ...base, dealId: MAX_SERIAL }).success).toBe(true);
+    expect(createActivitySchema.safeParse({ ...base, dealId: MAX_SERIAL + 1 }).success).toBe(false);
   });
 
   /** The same field on the read side, which is where a URL reaches it. */

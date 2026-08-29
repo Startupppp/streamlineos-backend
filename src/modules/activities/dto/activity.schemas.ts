@@ -2,6 +2,15 @@ import { z } from "zod";
 import { ACTIVITY_KINDS } from "../../../db/schema/crm/activities";
 import { queryBoolean } from "../../../common/validation/query-boolean";
 
+/**
+ * Postgres `serial`. A value above it is not a deal id, whatever it parses to.
+ *
+ * Named because it is a fact about the column type rather than a chosen bound,
+ * and because `task-list.ts` used to hold the same number for the same reason —
+ * one place for it now that the guard lives at the boundary.
+ */
+export const MAX_SERIAL = 2_147_483_647;
+
 const anchorFields = {
   partyId: z.string().trim().min(1).optional(),
   /**
@@ -12,7 +21,7 @@ const anchorFields = {
    * ceiling -- a value above it is not a deal id whatever it parses to, and the
    * check belongs here now that the column itself is typed.
    */
-  dealId: z.coerce.number().int().positive().max(2_147_483_647).optional(),
+  dealId: z.coerce.number().int().positive().max(MAX_SERIAL).optional(),
   subjectId: z.string().trim().min(1).optional(),
 };
 

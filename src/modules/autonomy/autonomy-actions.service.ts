@@ -375,10 +375,6 @@ export class AutonomyActionsService {
   }
 
   async loadDeal(organizationId: string, dealId: number) {
-    // The parse that stood here belonged to a text column. `deal_id` is an
-    // integer with a foreign key now, so a value that reaches this method is
-    // already a deal id -- there is nothing left to reject.
-    const numeric = dealId;
 
     const [row] = await this.db
       .select({
@@ -391,7 +387,7 @@ export class AutonomyActionsService {
       })
       .from(deals)
       .where(
-        and(eq(deals.orgId, organizationId), eq(deals.id, numeric), isNull(deals.deletedAt)),
+        and(eq(deals.orgId, organizationId), eq(deals.id, dealId), isNull(deals.deletedAt)),
       )
       .limit(1);
 

@@ -142,8 +142,17 @@ export const crmNurtureEnrollments = pgTable(
      * against them without a mapping that does not totally exist.
      */
     partyId: text("party_id").notNull(),
-    /** The deal it is about, carried through to `composeAndHold` unchanged. */
-    dealId: text("deal_id"),
+    /**
+     * The deal it is about, carried through to `composeAndHold`.
+     *
+     * Integer with a foreign key, like `activities.deal_id` and
+     * `relationship_states.deal_id` after 0472 and 0557 — `deals.id` is a
+     * `serial`, and a text column against it can carry no key and forces an
+     * implicit cast on every join. `ON DELETE SET NULL` rather than cascade: an
+     * enrolment is a conversation with a person and outlives the deal it was
+     * about.
+     */
+    dealId: integer("deal_id"),
 
     status: text("status").$type<NurtureEnrollmentStatus>().default("active").notNull(),
     /** How many steps have been attempted. 0 means none yet; step 1 is next. */

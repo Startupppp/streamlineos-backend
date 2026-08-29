@@ -15,6 +15,9 @@
 -- beside it: a finding outlives the decision that closed it, and the ledger is
 -- an audit record rather than a parent.
 
+-- Fail fast rather than queue behind whatever holds the table.
+SET lock_timeout = '5s';
+--> statement-breakpoint
 ALTER TABLE "data_quality_findings"
   ADD COLUMN IF NOT EXISTS "autonomous_decision_id" TEXT;
 --> statement-breakpoint

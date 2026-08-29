@@ -25,6 +25,9 @@
 -- reached it through their parent. They carry it because RLS is per table: a
 -- policy on the parent protects nothing about a query that starts at the child.
 
+-- Fail fast rather than queue behind whatever holds the table.
+SET lock_timeout = '5s';
+--> statement-breakpoint
 -- ── The cadence ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS "crm_nurture_sequences" (
   "nurture_sequence_id" TEXT PRIMARY KEY,
@@ -43,8 +46,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_crm_nurture_sequences_name"
   ON "crm_nurture_sequences" ("organization_id", lower("name"))
   WHERE "deleted_at" IS NULL;
 --> statement-breakpoint
+-- Partial, because the table soft-deletes: every read that uses this index
+-- excludes deleted rows, so carrying them in it is dead weight the planner has
+-- to filter back out.
 CREATE INDEX IF NOT EXISTS "idx_crm_nurture_sequences_org"
-  ON "crm_nurture_sequences" ("organization_id", "status", "created_at");
+  ON "crm_nurture_sequences" ("organization_id", "status", "created_at")
+  WHERE "deleted_at" IS NULL;
 --> statement-breakpoint
 
 -- ── A step: a wait, and nothing else ────────────────────────────────────────
@@ -73,7 +80,7 @@ CREATE TABLE IF NOT EXISTS "crm_nurture_enrollments" (
   "organization_id"       TEXT NOT NULL REFERENCES "organizations"("id") ON DELETE CASCADE,
   "nurture_sequence_id"   TEXT NOT NULL,
   "party_id"              TEXT NOT NULL,
-  "deal_id"               TEXT,
+  "deal_id"               INTEGER,
   "status"                TEXT NOT NULL DEFAULT 'active',
   "current_step"          INTEGER NOT NULL DEFAULT 0,
   "exit_reason"           TEXT,
@@ -119,6 +126,66 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_crm_nurture_step_attempts_step"
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_crm_nurture_step_attempts_org"
   ON "crm_nurture_step_attempts" ("organization_id", "created_at");
+--> statement-breakpoint
+
+-- ── Relational integrity ────────────────────────────────────────────────────
+--
+-- Composite on the tenant as well as the key, which is the shape the rest of
+-- this schema uses: a child that referenced only its parent's id could name a
+-- parent in another organisation and the foreign key would be satisfied. RLS
+-- does not close that — a policy filters what a query returns, it does not
+-- constrain what a write may point at.
+--
+-- Each one needs a unique on the parent's (organisation, id) pair to point at.
+ALTER TABLE "crm_nurture_sequences"
+  ADD CONSTRAINT "uniq_crm_nurture_sequences_org_id"
+  UNIQUE ("organization_id", "nurture_sequence_id");
+--> statement-breakpoint
+ALTER TABLE "crm_nurture_enrollments"
+  ADD CONSTRAINT "uniq_crm_nurture_enrollments_org_id"
+  UNIQUE ("organization_id", "nurture_enrollment_id");
+--> statement-breakpoint
+
+ALTER TABLE "crm_nurture_sequence_steps"
+  ADD CONSTRAINT "fk_crm_nurture_sequence_steps_sequence"
+  FOREIGN KEY ("organization_id", "nurture_sequence_id")
+  REFERENCES "crm_nurture_sequences" ("organization_id", "nurture_sequence_id")
+  ON DELETE CASCADE;
+--> statement-breakpoint
+ALTER TABLE "crm_nurture_enrollments"
+  ADD CONSTRAINT "fk_crm_nurture_enrollments_sequence"
+  FOREIGN KEY ("organization_id", "nurture_sequence_id")
+  REFERENCES "crm_nurture_sequences" ("organization_id", "nurture_sequence_id")
+  ON DELETE CASCADE;
+--> statement-breakpoint
+-- The enrolment is about the party, so it goes when the party does.
+ALTER TABLE "crm_nurture_enrollments"
+  ADD CONSTRAINT "fk_crm_nurture_enrollments_party"
+  FOREIGN KEY ("organization_id", "party_id")
+  REFERENCES "business_parties" ("organization_id", "party_id")
+  ON DELETE CASCADE;
+--> statement-breakpoint
+-- `SET NULL`, not cascade: an enrolment outlives the deal it was about. The
+-- sequence is a conversation with a person, and losing the deal should not lose
+-- the record that we were talking to them.
+ALTER TABLE "crm_nurture_enrollments"
+  ADD CONSTRAINT "fk_crm_nurture_enrollments_deal"
+  FOREIGN KEY ("organization_id", "deal_id")
+  REFERENCES "deals" ("org_id", "id")
+  ON DELETE SET NULL;
+--> statement-breakpoint
+ALTER TABLE "crm_nurture_step_attempts"
+  ADD CONSTRAINT "fk_crm_nurture_step_attempts_enrollment"
+  FOREIGN KEY ("organization_id", "nurture_enrollment_id")
+  REFERENCES "crm_nurture_enrollments" ("organization_id", "nurture_enrollment_id")
+  ON DELETE CASCADE;
+--> statement-breakpoint
+
+-- Every foreign key gets an index on the referencing side: without one, deleting
+-- a parent sequential-scans each child to find what to cascade.
+CREATE INDEX IF NOT EXISTS "idx_crm_nurture_enrollments_deal"
+  ON "crm_nurture_enrollments" ("organization_id", "deal_id")
+  WHERE "deal_id" IS NOT NULL;
 --> statement-breakpoint
 
 -- ── Tenant isolation ────────────────────────────────────────────────────────
