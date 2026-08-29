@@ -19,7 +19,42 @@
 -- exist, that is data the timeline is already lying about, and it should stop
 -- the migration loudly rather than install a constraint that permits it.
 
+-- WHY THIS MIGRATION NEVER APPLIED
+--
+-- `activities.deal_id` was declared `text` while `deals.id` is a `serial`. A
+-- foreign key cannot span that, so the statement below failed with "foreign key
+-- constraint cannot be implemented" on every database built from this journal —
+-- which is why an empty-database run stopped here, and why the integrity hole
+-- described above is still open everywhere.
+--
+-- The type is the bug, not just an obstacle to the constraint. `party_id` and
+-- `subject_id` are genuinely text, and `deal_id` was made to match them for
+-- symmetry with a key that is an integer. Every join between the two therefore
+-- carried an implicit cast, which is also why `idx_activities_deal_timeline` was
+-- not being used for them.
+--
+-- Converted before the constraint is added. `USING` is explicit rather than
+-- relying on an assignment cast, and a non-numeric value stops the migration —
+-- if one exists it is a deal id the timeline was already lying about, and
+-- silently dropping it would hide the very thing this migration is for.
+
 SET lock_timeout = '5s';
+
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'activities'
+      AND column_name = 'deal_id'
+      AND data_type = 'text'
+  ) THEN
+    ALTER TABLE "activities"
+      ALTER COLUMN "deal_id" TYPE INTEGER
+      USING NULLIF(BTRIM("deal_id"), '')::INTEGER;
+  END IF;
+END $$;
 
 --> statement-breakpoint
 DO $$

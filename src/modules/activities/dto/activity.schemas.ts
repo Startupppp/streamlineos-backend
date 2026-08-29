@@ -4,7 +4,15 @@ import { queryBoolean } from "../../../common/validation/query-boolean";
 
 const anchorFields = {
   partyId: z.string().trim().min(1).optional(),
-  dealId: z.string().trim().min(1).optional(),
+  /**
+   * A deal id, which is a `serial` and so an integer.
+   *
+   * Coerced rather than required as a number: this used to be a free string and
+   * a client sending `"42"` must keep working. The upper bound is the `serial`
+   * ceiling -- a value above it is not a deal id whatever it parses to, and the
+   * check belongs here now that the column itself is typed.
+   */
+  dealId: z.coerce.number().int().positive().max(2_147_483_647).optional(),
   subjectId: z.string().trim().min(1).optional(),
 };
 

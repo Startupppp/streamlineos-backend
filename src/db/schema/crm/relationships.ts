@@ -64,7 +64,8 @@ export const relationshipStates = pgTable(
      * rather than crashing. A column that had to be coercible here would make
      * this table refuse rows the timeline already holds.
      */
-    dealId: text("deal_id"),
+    /** Integer: a foreign key to `deals.id`, which is a `serial`. See 0557. */
+    dealId: integer("deal_id"),
 
     /**
      * The oldest activity the window kept.

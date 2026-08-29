@@ -7,7 +7,7 @@ import { keysetAtOrBefore } from "../../common/pagination/keyset";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { AutonomyActionsService } from "./autonomy-actions.service";
 import { classifyDelivery } from "./deterministic";
-import {
+import { decisionDealId,
   buildDecision,
   capText,
   RECORDED_CONVERSATION_CHARS,
@@ -98,7 +98,7 @@ export class AutonomyService {
           triggerType: "activity",
           triggerId: activityId,
           partyId: activity.partyId,
-          dealId: activity.dealId,
+          dealId: decisionDealId(activity.dealId),
           activityId,
           summary: `Not a reply — classified as ${delivery}. Nothing extracted.`,
         }),
@@ -140,7 +140,7 @@ export class AutonomyService {
           triggerType: "activity",
           triggerId: activityId,
           partyId: activity.partyId,
-          dealId: activity.dealId,
+          dealId: decisionDealId(activity.dealId),
           activityId,
           summary: refusalSummary(eligibility.reason),
         }),
@@ -201,7 +201,7 @@ export class AutonomyService {
           triggerType: "activity",
           triggerId: activityId,
           partyId: activity.partyId,
-          dealId: activity.dealId,
+          dealId: decisionDealId(activity.dealId),
           activityId,
           promptVersion: String(EXTRACTION_PROMPT_VERSION),
           summary: `Extraction did not complete: ${result.kind}.`,

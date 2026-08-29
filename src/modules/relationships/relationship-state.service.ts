@@ -25,7 +25,24 @@ import {
  */
 export type RelationshipAnchor =
   | { readonly kind: "party"; readonly partyId: string }
-  | { readonly kind: "deal"; readonly dealId: string };
+  | { readonly kind: "deal"; readonly dealId: number };
+
+/**
+ * The deal a stored row is anchored to, insisted upon.
+ *
+ * A row reaches here having already failed the `party_id` test, so it is
+ * deal-anchored by elimination — and a deal-anchored row with no `deal_id` is a
+ * contradiction the CHECK constraint exists to prevent. This used to read
+ * `row.dealId ?? ""`, which turned that contradiction into an anchor pointing at
+ * nothing and carried it into a caller's query. There is no empty integer to
+ * fall back to, and inventing one would only move the problem, so it throws
+ * where the state is actually wrong.
+ */
+function dealAnchorId(dealId: number | null): number {
+  if (dealId === null)
+    throw new Error("relationship_states row has neither a party nor a deal anchor");
+  return dealId;
+}
 
 export interface StoredRelationship {
   readonly relationshipStateId: string;
@@ -324,7 +341,7 @@ export class RelationshipStateService {
       relationshipStateId: row.relationshipStateId,
       anchor: row.partyId
         ? { kind: "party", partyId: row.partyId }
-        : { kind: "deal", dealId: row.dealId ?? "" },
+        : { kind: "deal", dealId: dealAnchorId(row.dealId) },
       state: {
         observedFrom: row.observedFrom,
         lastContactAt: row.lastContactAt,
@@ -385,7 +402,7 @@ export class RelationshipStateService {
     for (const row of rows) {
       const anchor: RelationshipAnchor = row.partyId
         ? { kind: "party", partyId: row.partyId }
-        : { kind: "deal", dealId: row.dealId ?? "" };
+        : { kind: "deal", dealId: dealAnchorId(row.dealId) };
       const stored = await this.read(organizationId, anchor);
       if (stored) found.push(stored);
     }

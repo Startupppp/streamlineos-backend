@@ -140,7 +140,7 @@ export async function seedDemoDataset(
         subject: activity.subject,
         body: activity.body,
         partyId: anchor.partyId,
-        dealId: anchor.dealId === null || anchor.dealId === undefined ? null : String(anchor.dealId),
+        dealId: anchor.dealId ?? null,
         actorKind: "human" as const,
         actorUserId: ownerUserId,
         source: DEMO_SOURCE,

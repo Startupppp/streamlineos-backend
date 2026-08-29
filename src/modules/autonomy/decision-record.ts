@@ -148,6 +148,23 @@ export interface DecisionRow {
  * that is not, and the review feed would tell a manager they can undo something
  * they cannot.
  */
+/**
+ * A deal id as the decision ledger stores one.
+ *
+ * `activities.deal_id` is an integer with a foreign key to `deals`;
+ * `autonomous_decisions.deal_id` is text and deliberately stays that way. The
+ * ledger is an audit record of what the system decided, kept whether or not the
+ * thing it decided about still exists, and it sits beside `trigger_id`, which is
+ * polymorphic by design. A foreign key there would delete the evidence along
+ * with the deal.
+ *
+ * So the conversion is explicit and lives in one place, rather than a `String()`
+ * at each of the call sites where the two columns meet.
+ */
+export function decisionDealId(dealId: number | null): string | null {
+  return dealId === null ? null : String(dealId);
+}
+
 export function buildDecision(input: DecisionInput): DecisionRow {
   return {
     organizationId: input.organizationId,

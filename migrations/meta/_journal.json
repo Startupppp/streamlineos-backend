@@ -2248,6 +2248,13 @@
       "when": 1787830380442,
       "tag": "0276_derive_party_from_legacy",
       "breakpoints": true
+    },
+    {
+      "idx": 321,
+      "version": "7",
+      "when": 1787830381442,
+      "tag": "0557_relationship_states_deal_fk",
+      "breakpoints": true
     }
   ]
 }

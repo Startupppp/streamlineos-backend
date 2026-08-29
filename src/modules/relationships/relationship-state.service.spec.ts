@@ -213,7 +213,7 @@ describe("bringing one relationship up to date", () => {
     const reads = new Map<unknown, Row[]>([[activities, []]]);
     const service = new RelationshipStateService(makeDb(rec, reads, { relationshipStateId: "rel-1" }));
 
-    await service.rebuild(ORG, { kind: "deal", dealId: "77" });
+    await service.rebuild(ORG, { kind: "deal", dealId: 77 });
 
     // The state row is still written — a relationship with no history is a fact
     // about it, and the row is what a silence sweep skips over.
