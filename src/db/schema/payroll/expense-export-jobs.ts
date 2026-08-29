@@ -3,7 +3,21 @@ import { bigint, check, index, integer, jsonb, pgTable, text, timestamp, uniqueI
 import { organizations, users } from "../common/auth";
 
 export type ExpenseExportJobStatus = "pending" | "running" | "completed" | "failed" | "expired";
-export interface ExpenseExportFilters { status?: string; startDate?: string; endDate?: string; userId?: string }
+export type ExpenseExportStatusFilter =
+  | "DRAFT"
+  | "SUBMITTED"
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "REIMBURSEMENT_PENDING"
+  | "REIMBURSED"
+  | "PAID";
+export interface ExpenseExportFilters {
+  status?: ExpenseExportStatusFilter;
+  startDate?: string;
+  endDate?: string;
+  userId?: string;
+}
 
 export const expenseExportJobs = pgTable("expense_export_jobs", {
   id: uuid("id").defaultRandom().primaryKey(),

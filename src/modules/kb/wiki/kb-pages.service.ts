@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { kbPages, kbPageFavorites, kbPageTemplates, kbSpaces } from "../../../db/schema";
+import { kbPages, kbPageFavorites, kbPageTemplates, kbSpaces, organizationMembers } from "../../../db/schema";
 import type { KbPageContent } from "../../../db/schema/kb/pages";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -25,6 +25,7 @@ import { computeVerificationInterval, shouldResetTrust } from "./kb-page-governa
 import { KbPageReviewsService } from "./kb-page-reviews.service";
 import { resyncPageLinks, snapshotIfNeeded } from "./kb-page-edit.util";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 type PageRow = typeof kbPages.$inferSelect;
 
@@ -38,6 +39,10 @@ export class KbPagesService {
     private readonly reviews: KbPageReviewsService,
     private readonly planLimits: PlanLimitsService,
   ) {}
+
+  private membershipId(user: CurrentUserContext): number | null {
+    return user.principal === undefined ? null : actingMembershipId(user.principal);
+  }
 
   async create(user: CurrentUserContext, input: CreatePageInput): Promise<PageRow> {
     const orgId = user.orgId;
@@ -100,7 +105,9 @@ export class KbPagesService {
         content: templateContent ?? null,
         sortOrder: maxSort + 100,
         createdById: user.userId,
+        createdByMembershipId: this.membershipId(user),
         lastEditedById: user.userId,
+        lastEditedByMembershipId: this.membershipId(user),
         projectId: input.projectId ?? null,
       })
       .returning();
@@ -131,7 +138,9 @@ export class KbPagesService {
       columns: { id: true },
     });
 
-    const canShare = user.isOrgOwner || canManage || page.createdById === user.userId;
+    const canShare = user.isOrgOwner || canManage || (
+      this.membershipId(user) !== null && page.createdByMembershipId === this.membershipId(user)
+    ) || (page.createdByMembershipId === null && page.createdById === user.userId);
 
     return {
       ...page,
@@ -153,7 +162,10 @@ export class KbPagesService {
       throw new HttpException({ message: "Page is locked", code: "PAGE_LOCKED" }, HttpStatus.CONFLICT);
     }
 
-    const values: Partial<typeof kbPages.$inferInsert> = { lastEditedById: user.userId };
+    const values: Partial<typeof kbPages.$inferInsert> = {
+      lastEditedById: user.userId,
+      lastEditedByMembershipId: this.membershipId(user),
+    };
     if (input.spaceId !== undefined) {
       if (input.spaceId != null) {
         const space = await this.db.query.kbSpaces.findFirst({
@@ -175,7 +187,19 @@ export class KbPagesService {
     if (input.contentText !== undefined) values.contentText = input.contentText;
     if (input.status !== undefined) values.status = input.status;
     if (input.contentType !== undefined) values.contentType = input.contentType;
-    if (input.ownerUserId !== undefined) values.ownerUserId = input.ownerUserId;
+    if (input.ownerUserId !== undefined) {
+      values.ownerUserId = input.ownerUserId;
+      values.ownerMembershipId = input.ownerUserId === null
+        ? null
+        : (await this.db.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, input.ownerUserId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+          columns: { id: true },
+        }))?.id ?? null;
+    }
 
     const contentChanged = input.content !== undefined;
     const aclChanged = input.spaceId !== undefined;
@@ -239,7 +263,7 @@ export class KbPagesService {
     const orgId = user.orgId;
     const [updated] = await this.db
       .update(kbPages)
-      .set({ isLocked, lastEditedById: user.userId })
+      .set({ isLocked, lastEditedById: user.userId, lastEditedByMembershipId: this.membershipId(user) })
       .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)))
       .returning();
     if (!updated) throw new NotFoundException("Page not found");
@@ -257,7 +281,7 @@ export class KbPagesService {
     return this.db.transaction(async (tx) => {
       const [updated] = await tx
         .update(kbPages)
-        .set({ status: "published", lastEditedById: user.userId })
+        .set({ status: "published", lastEditedById: user.userId, lastEditedByMembershipId: this.membershipId(user) })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning();
       if (!updated) throw new NotFoundException("Page not found");
@@ -286,7 +310,7 @@ export class KbPagesService {
     return this.db.transaction(async (tx) => {
       const [updated] = await tx
         .update(kbPages)
-        .set({ status: "archived", lastEditedById: user.userId })
+        .set({ status: "archived", lastEditedById: user.userId, lastEditedByMembershipId: this.membershipId(user) })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning();
       if (!updated) throw new NotFoundException("Page not found");
@@ -315,7 +339,7 @@ export class KbPagesService {
     return this.db.transaction(async (tx) => {
       const [updated] = await tx
         .update(kbPages)
-        .set({ status: "draft", lastEditedById: user.userId })
+        .set({ status: "draft", lastEditedById: user.userId, lastEditedByMembershipId: this.membershipId(user) })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning();
       if (!updated) throw new NotFoundException("Page not found");
@@ -347,7 +371,7 @@ export class KbPagesService {
     if (!current) throw new NotFoundException("Page not found");
     const [updated] = await this.db
       .update(kbPages)
-      .set({ status, lastEditedById: user.userId })
+      .set({ status, lastEditedById: user.userId, lastEditedByMembershipId: this.membershipId(user) })
       .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Page not found");
@@ -373,9 +397,11 @@ export class KbPagesService {
       .set({
         trustState: "verified",
         verifiedById: user.userId,
+        verifiedByMembershipId: this.membershipId(user),
         verifiedUntil,
         nextReviewAt,
         lastEditedById: user.userId,
+        lastEditedByMembershipId: this.membershipId(user),
       })
       .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
       .returning();
@@ -394,7 +420,7 @@ export class KbPagesService {
 
     const [updated] = await this.db
       .update(kbPages)
-      .set({ trustState: "verification_expired", lastEditedById: user.userId })
+      .set({ trustState: "verification_expired", lastEditedById: user.userId, lastEditedByMembershipId: this.membershipId(user) })
       .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Page not found");
@@ -455,11 +481,12 @@ export class KbPagesService {
     const orgId = user.orgId;
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
-      columns: { id: true, createdById: true, visibility: true, publicToken: true },
+      columns: { id: true, createdById: true, createdByMembershipId: true, visibility: true, publicToken: true },
     });
     if (!page) throw new NotFoundException("Page not found");
 
-    const isCreator = page.createdById === user.userId;
+    const isCreator = this.membershipId(user) !== null && page.createdByMembershipId === this.membershipId(user)
+      || (page.createdByMembershipId === null && page.createdById === user.userId);
     if (!isCreator && !canManage) {
       throw new NotFoundException("Page not found");
     }

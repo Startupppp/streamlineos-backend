@@ -14,6 +14,7 @@ import {
   chatMessages,
   chatMessageReactions,
   users,
+  organizationMembers,
 } from "../../db/schema";
 import type { ChatAttachmentPayload, PersistedMessage } from "./chat-message.types";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -69,12 +70,20 @@ export class ChatMessagesService {
     @Inject(MESSAGE_FANOUT_PROVIDER) private readonly fanout: MessageFanoutProvider,
   ) {}
 
-  private async isMember(channelId: number, userId: string, orgId: string): Promise<boolean> {
+  private async resolveMembershipId(orgId: string, userId: string): Promise<number | null> {
+    const row = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")),
+      columns: { id: true },
+    });
+    return row?.id ?? null;
+  }
+
+  private async isMember(channelId: number, userId: string, orgId: string, membershipId?: number): Promise<boolean> {
     const member = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, userId),
+        membershipId === undefined ? eq(chatChannelMembers.userId, userId) : eq(chatChannelMembers.membershipId, membershipId),
       ),
     });
     return Boolean(member);
@@ -87,7 +96,7 @@ export class ChatMessagesService {
     limit: number,
   ) {
     const userId = actor.userId;
-    if (!(await this.isMember(channelId, userId, actor.orgId))) {
+    if (!(await this.isMember(channelId, userId, actor.orgId, actor.membershipId))) {
       throw new ForbiddenException("You are not a member of this channel");
     }
 
@@ -128,7 +137,7 @@ export class ChatMessagesService {
 
   async poll(channelId: number, actor: EntityActor, since: Date) {
     const userId = actor.userId;
-    if (!(await this.isMember(channelId, userId, actor.orgId))) {
+    if (!(await this.isMember(channelId, userId, actor.orgId, actor.membershipId))) {
       throw new ForbiddenException("You are not a member of this channel");
     }
 
@@ -150,7 +159,8 @@ export class ChatMessagesService {
   }
 
   async send(channelId: number, userId: string, orgId: string, body: SendMessageInput) {
-    if (!(await this.isMember(channelId, userId, orgId))) {
+    const senderMembershipId = await this.resolveMembershipId(orgId, userId);
+    if (senderMembershipId === null || !(await this.isMember(channelId, userId, orgId, senderMembershipId))) {
       throw new ForbiddenException("You are not a member of this channel");
     }
 
@@ -201,6 +211,7 @@ export class ChatMessagesService {
           orgId,
           channelId,
           senderId: userId,
+          senderMembershipId,
           content: sanitizedContent?.trim() || null,
           replyToId: body.replyToId,
           metadata: body.metadata ?? null,
@@ -311,10 +322,13 @@ export class ChatMessagesService {
       where: and(eq(chatMessages.id, messageId), eq(chatMessages.isDeleted, false)),
     });
     if (!message) throw new NotFoundException("Message not found");
-    if (!(await this.isMember(message.channelId, userId, orgId))) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
+    if (membershipId === null || !(await this.isMember(message.channelId, userId, orgId, membershipId))) {
       throw new ForbiddenException("You are not a member of this channel");
     }
-    if (message.senderId !== userId) {
+    if (message.senderMembershipId !== null && message.senderMembershipId !== undefined
+      ? message.senderMembershipId !== membershipId
+      : message.senderId !== userId) {
       throw new ForbiddenException("You can only edit your own messages");
     }
 
@@ -322,7 +336,12 @@ export class ChatMessagesService {
     await this.db
       .update(chatMessages)
       .set({ content: content.trim(), isEdited: true, updatedAt })
-      .where(and(eq(chatMessages.id, messageId), eq(chatMessages.senderId, userId)));
+        .where(and(
+          eq(chatMessages.id, messageId),
+          membershipId !== null && membershipId !== undefined
+            ? eq(chatMessages.senderMembershipId, membershipId)
+            : eq(chatMessages.senderId, userId),
+        ));
 
     void this.ably.publishChatEvent(orgId, message.channelId, "message:updated", {
       id: messageId,
@@ -340,11 +359,14 @@ export class ChatMessagesService {
       where: and(eq(chatMessages.id, messageId), eq(chatMessages.isDeleted, false)),
     });
     if (!message) throw new NotFoundException("Message not found");
-    if (!(await this.isMember(message.channelId, userId, orgId))) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
+    if (membershipId === null || !(await this.isMember(message.channelId, userId, orgId, membershipId))) {
       throw new ForbiddenException("You are not a member of this channel");
     }
 
-    if (!isOrgAdmin && message.senderId !== userId) {
+    if (!isOrgAdmin && (message.senderMembershipId !== null && message.senderMembershipId !== undefined
+      ? message.senderMembershipId !== membershipId
+      : message.senderId !== userId)) {
       throw new ForbiddenException("You can only delete your own messages");
     }
 
@@ -379,7 +401,7 @@ export class ChatMessagesService {
 
     if (!parentMessage) throw new NotFoundException("Message not found");
 
-    if (!(await this.isMember(parentMessage.channelId, userId, actor.orgId))) {
+    if (!(await this.isMember(parentMessage.channelId, userId, actor.orgId, actor.membershipId))) {
       throw new ForbiddenException("You are not a member of this channel");
     }
 
@@ -481,6 +503,7 @@ export class ChatMessagesService {
           orgId,
           channelId,
           senderId,
+          senderMembershipId: await this.resolveMembershipId(orgId, senderId),
           content,
           messageType: "system",
           metadata,
@@ -521,10 +544,13 @@ export class ChatMessagesService {
   }
 
   async react(channelId: number, messageId: number, userId: string, orgId: string, emoji: string) {
+    const actingMembershipId = await this.resolveMembershipId(orgId, userId);
+    if (actingMembershipId === null) throw new ForbiddenException("You are not a member of this organization");
     const membership = await this.db.query.chatChannelMembers.findFirst({
       where: and(
+        eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, userId),
+        eq(chatChannelMembers.membershipId, actingMembershipId),
       ),
     });
     if (!membership) throw new ForbiddenException("You are not a member of this channel");
