@@ -53,12 +53,12 @@ Run against local PostgreSQL 18, on a database created empty and built only by
 
 | Gate | Result |
 |---|---|
-| `db:bootstrap` from `CREATE DATABASE` | **350/350, REACHED_HEAD** |
+| `db:bootstrap` from `CREATE DATABASE` | **348/348, REACHED_HEAD** |
 | `check-schema-drift` (declared vs built) | **0 tables, 0 columns** the database cannot satisfy |
 | Legacy CRM identity tables present afterwards | **none** — G3 observed rather than inferred |
 | Backend `tsc --noEmit` | clean |
-| Backend unit suite | **8,380 passing**; 23 failing, all pre-existing and non-CRM (kb, hr, build, storage, automation, cache, notifications), verified identical at `51bf2046` in a baseline worktree |
-| Seeded e2e (`jest-e2e-seeded`) | **126/126, 6/6 suites** — harness, tenant isolation, inbound ingress, import round trip, golden path, kb |
+| Backend unit suite | **8,382 passing**; 23 failing, all pre-existing and non-CRM (kb, hr, build, storage, automation, cache, notifications), verified identical at `51bf2046` in a baseline worktree |
+| Seeded e2e (`jest-e2e-seeded`) | **129/129, 6/6 suites** — harness, tenant isolation, inbound ingress, import round trip, golden path, kb |
 | Frontend `tsc --noEmit` | clean |
 | Frontend `eslint` | **0 errors** (242 warnings) |
 | Frontend suite | **1,254/1,254, 144/144 suites** |
@@ -75,7 +75,7 @@ It is how the missing 27 were found and how they stay found.
 
 ## G1 — the golden path
 
-`test/crm/crm-golden-path.seeded-e2e-spec.ts`, 3/3. Nothing is substituted: a
+`test/crm/crm-golden-path.seeded-e2e-spec.ts`, 6/6. Nothing is substituted: a
 signed WhatsApp Cloud API webhook through the real reader and adapter, in over
 HTTP through the real guards, the durable runtime advanced by
 `POST /cron/workflow-tick` rather than by calling a handler, every assertion read
@@ -86,7 +86,15 @@ next step. The rep does that step, opens a deal, and the follow-up loop drafts a
 message into a hold — which a human stops inside the window, and nothing leaves.
 A second message is left to run its window out.
 
-The last test asserts **both** arms, and that is what makes it deterministic.
+Three further tests cover the extras G1 names after the main path. A legacy
+contact id still resolves to its party with `contacts` long dropped — which is
+also P2-08b's Done-when, and was unasserted. A duplicate merge reverses, and the
+loser resolves through the merge walk while it is merged. And a member holding
+nothing gets 403 from a CRM list while the rep gets 200: G2 at the seam the
+frontend cannot fake, because `NoPermissionState` is only honest if the server
+actually refuses.
+
+The window test asserts **both** arms, and that is what makes it deterministic.
 `OUTBOUND_WORKING_HOURS` is a constant and explicitly "not a setting", so a
 window elapsing outside 09:00–17:00 local is deferred to the next opening. Out of
 hours the test asserts the hold is still held, nothing is sent, and the run sleeps
@@ -133,6 +141,17 @@ It drops eleven `hr_people` columns that the HR schema still declares, so applyi
 it breaks that module — the migration and its schema never landed together. That
 is HR's inconsistency to resolve, and journalling it from a CRM branch would be
 exactly the "do not disturb other modules" line. HR is left as it was.
+
+### The non-seeded e2e suite
+
+`jest-e2e.json` also runs now — it could not before, because `AppModule` did not
+boot. 2,563 pass and 336 fail across 35 suites, none of them CRM. The failures
+cluster in payroll, accounting, support, ownership and HR onboarding, and the
+dominant signatures are 402 MODULE_NOT_ENABLED and 500s from absent fixtures: a
+bare local database with no storage backend and no per-module seed data. Sampled
+one — `accounting/attachments` fails only "hands the same bytes back on download",
+13 of its 14 passing. These are newly *observable*, not newly broken, and each
+module's own fixtures are what they need.
 
 ### Pre-existing failures not touched
 
