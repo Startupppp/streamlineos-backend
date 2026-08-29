@@ -66,10 +66,22 @@ cold more than once (see §6).
 
 ## 3. Migrations
 
-Numbers 0548–0574 belong to this programme. Applied state was checked against
-`information_schema` and `pg_tables`, **not** against
-`drizzle.__drizzle_migrations`, which is unreliable on this branch — it reports
-239 of 337 journal entries as pending, a squashed-baseline artefact.
+Numbers 0548–0574 belong to this programme.
+
+**`drizzle.__drizzle_migrations` is not evidence on this branch.** It was
+rewritten mid-session (509 rows down to 380) and several hand-applied rows went
+with it, so a migration whose columns are demonstrably live may have no row. Read
+the catalog instead.
+
+**The two catalogs agree, so either is safe.** One agent reported that
+`information_schema.columns` under-reports on this database. That is **not
+reproducible**: checked 2026-08-29, `inv_settings` returns 32 columns from
+`information_schema.columns` and 32 from `pg_attribute`/`pg_class`. Recorded
+because the failure direction would have been safe either way — under-reporting
+produces false MISSING, never false OK — but the claim itself does not hold.
+
+Applied state below was checked against `pg_class` / `pg_attribute` /
+`information_schema`, never against the bookkeeping table.
 
 | Migration | What it adds | Applied |
 |---|---|---|
@@ -87,6 +99,28 @@ Numbers 0548–0574 belong to this programme. Applied state was checked against
 | `0572_inventory_landed_cost` | landed-cost vouchers and allocation (G5) | ✅ |
 | `0573_shelf_life_allocation_overrides` | per-customer shelf-life floor (D2 extension) | — |
 | `0574_inventory_pharmacy_kirana_packs` | pharmacy + kirana pack fields (E3/E4) | not yet |
+
+### The typecheck gate
+
+**One command checks everything, and it was not the one anybody was running:**
+
+```
+nice -n 15 node --max-old-space-size=8192 ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
+```
+
+Three independent gates were each blind to test code, in different ways:
+
+- `tsconfig.build.json` carries `"exclude": ["node_modules", "test", "dist", "evals", "**/*spec.ts"]`. Every typecheck run against it skipped every spec.
+- `tsconfig.json`'s `include` was `["src/**/*", "evals/**/*"]` and never mentioned `test/`, so the seeded e2e suite — the highest-value tests in the repo — was typechecked by nothing at all.
+- ts-jest runs with `isolatedModules`, which compiles without checking.
+
+So a spec could rot against a signature that moved underneath it and all three
+stayed green. `test/**/*` is now in the include, and turning it on cost **zero**
+errors in `src` — it has been free the entire time. It immediately surfaced six
+real errors in `test/inventory` that nothing could previously see.
+
+**Assert the exit code, never grep for "error".** A tsc that dies on heap
+exhaustion prints nothing and greps as zero errors. It needs 8GB.
 
 ### Two traps this branch taught
 
@@ -183,6 +217,36 @@ Reported rather than hidden, so nobody spends an afternoon on them:
 - `src/common/cache/cache.service.spec.ts` — pre-existing, untouched by this work.
 - ~38 further backend suites outside `inventory/` and `ai/` (access, billing, HR,
   KB, CRM, organization). All pre-existing on this branch.
+- **15 typecheck errors outside inventory, newly visible** now that `test/**/*` is
+  included: 13 in `test/crm`, 1 in `test/kb`, 1 in `test/helpers`. The worst is
+  `test/crm/crm-import-roundtrip.seeded-e2e-spec.ts`, which imports `toCsv` —
+  a symbol `crm-export.service` does not export — and calls `.commit()` and
+  `.rowsFor()`, neither of which exists. That spec has been referencing a service
+  shape that is not there, and no gate was looking. Out of this programme's scope,
+  named here so nobody trips over it believing it is new.
+
+### Running the seeded e2e suite
+
+`jest-e2e-seeded.json` sets `testTimeout` to 120000, and that is unreliable for a
+multi-step suite when more than one seeded run shares the Neon branch — a slice
+that takes 8.7s on a quiet database timed out at 120s while three suites ran at
+once, having used 1.5s of CPU in seven minutes of wall clock. It was waiting on
+the database, not computing.
+
+**Either run them serially, or give a multi-step suite its own timeout.** The
+golden path now sets 300s per slice. A timeout that depends on what else is
+running is a flaky test, not a slow one.
+
+### Two product rules worth knowing before writing a fixture
+
+- **A goods receipt refuses the same PO line twice** — "PO line N appears twice on
+  this receipt". Two batches against one order line means two deliveries, which is
+  also how they arrive.
+- **`quality-recalls.service.ts` exports `RecallsService`, not
+  `QualityRecallsService`.** Importing the latter resolves to `undefined` and
+  reaches `app.get(undefined)`, failing four minutes into a booted app with "Nest
+  could not find given element" — precisely the error a typecheck reports in two
+  seconds, and precisely what no gate was looking at.
 
 ---
 
