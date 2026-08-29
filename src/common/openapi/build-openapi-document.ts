@@ -1,5 +1,9 @@
 import type { INestApplication } from "@nestjs/common";
-import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from "@nestjs/swagger";
+import {
+  DocumentBuilder,
+  SwaggerModule,
+  type OpenAPIObject,
+} from "@nestjs/swagger";
 import { recordRouteClassification } from "../auth/record-route-classification";
 import {
   CONTRACT_PARAMETERS,
@@ -68,27 +72,50 @@ function propertiesOf(schema: JsonSchema): Record<string, JsonSchema> {
 function requiredOf(schema: JsonSchema): Set<string> {
   const required = schema.required;
   if (!Array.isArray(required)) return new Set();
-  return new Set(required.filter((name): name is string => typeof name === "string"));
+  return new Set(
+    required.filter((name): name is string => typeof name === "string"),
+  );
 }
 
 function applyQuery(operation: MutableOperation, query: JsonSchema): void {
-  const existing = new Set<string>();
-  const parameters = Array.isArray(operation.parameters) ? operation.parameters : [];
+  const parameters = Array.isArray(operation.parameters)
+    ? operation.parameters
+    : [];
+  const properties = propertiesOf(query);
+  const required = requiredOf(query);
+
   for (const parameter of parameters) {
-    if (isParameter(parameter) && typeof parameter.name === "string")
+    if (!isParameter(parameter)) continue;
+    if (parameter.in !== "query" || typeof parameter.name !== "string")
+      continue;
+    const schema = properties[parameter.name];
+    if (!schema) continue;
+    parameter.schema = schema;
+    parameter.required = required.has(parameter.name);
+  }
+
+  const existing = new Set<string>();
+  for (const parameter of parameters) {
+    if (
+      isParameter(parameter) &&
+      parameter.in === "query" &&
+      typeof parameter.name === "string"
+    )
       existing.add(parameter.name);
   }
 
-  const required = requiredOf(query);
   const added: unknown[] = [];
-  for (const [name, schema] of Object.entries(propertiesOf(query))) {
+  for (const [name, schema] of Object.entries(properties)) {
     if (existing.has(name)) continue;
     added.push({ name, in: "query", required: required.has(name), schema });
   }
   if (added.length > 0) operation.parameters = [...parameters, ...added];
 }
 
-function applyPathParams(operation: MutableOperation, params: JsonSchema): void {
+function applyPathParams(
+  operation: MutableOperation,
+  params: JsonSchema,
+): void {
   if (!Array.isArray(operation.parameters)) return;
   const properties = propertiesOf(params);
   for (const parameter of operation.parameters) {
@@ -100,7 +127,9 @@ function applyPathParams(operation: MutableOperation, params: JsonSchema): void 
 }
 
 function applyIdempotency(operation: MutableOperation, command: string): void {
-  const parameters = Array.isArray(operation.parameters) ? operation.parameters : [];
+  const parameters = Array.isArray(operation.parameters)
+    ? operation.parameters
+    : [];
   const alreadyReferenced = parameters.some(
     (parameter) =>
       isParameter(parameter) &&
@@ -115,7 +144,7 @@ function applyIdempotency(operation: MutableOperation, command: string): void {
   operation["x-idempotent"] = true;
 }
 
-function applyContract(
+export function applyOperationContract(
   method: string,
   operation: MutableOperation,
   contract: OperationContract,
@@ -151,7 +180,10 @@ export function buildOpenApiDocument(app: INestApplication): BuiltDocument {
   const { contracts, unconvertible } = scanOperationContracts(app);
 
   const components = document.components ?? {};
-  components.schemas = sortRecord({ ...CONTRACT_SCHEMAS, ...(components.schemas ?? {}) });
+  components.schemas = sortRecord({
+    ...CONTRACT_SCHEMAS,
+    ...(components.schemas ?? {}),
+  });
   components.parameters = sortRecord({
     ...CONTRACT_PARAMETERS,
     ...(components.parameters ?? {}),
@@ -169,7 +201,7 @@ export function buildOpenApiDocument(app: INestApplication): BuiltDocument {
       if (!isOperation(operation)) continue;
       const contract = contracts.get(String(operation.operationId));
       if (!contract) continue;
-      applyContract(method.toLowerCase(), operation, contract);
+      applyOperationContract(method.toLowerCase(), operation, contract);
       contractsApplied += 1;
     }
   }
