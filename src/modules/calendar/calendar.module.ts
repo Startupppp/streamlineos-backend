@@ -10,6 +10,7 @@ import { IntegrationsModule } from "../integrations/core/integrations.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { CalendarNativeEventSource } from "./calendar-native-event-source";
 import { CalendarConflictService } from "./calendar-conflict.service";
+import { CalendarReminderSweepService } from "./calendar-reminder-sweep.service";
 
 @Module({
   imports: [IntegrationsModule, NotificationsModule],
@@ -18,12 +19,13 @@ import { CalendarConflictService } from "./calendar-conflict.service";
     CalendarEventsAggregateService,
     CalendarService,
     CalendarConflictService,
+    CalendarReminderSweepService,
     ExternalCalendarEventsService,
     ExternalCalendarSyncService,
     CalendarSourceRegistry,
     CalendarSourcePreferencesService,
     CalendarNativeEventSource,
   ],
-  exports: [CalendarService, CalendarConflictService, CalendarSourceRegistry],
+  exports: [CalendarService, CalendarConflictService, CalendarReminderSweepService, CalendarSourceRegistry],
 })
 export class CalendarModule {}

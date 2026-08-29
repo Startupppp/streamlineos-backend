@@ -27,6 +27,7 @@ import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
 import { CrmFollowupSweepService } from "../crm/core/crm-followup-sweep.service";
 import { NotificationTimeSweepsService } from "../notifications/time-sweeps/notification-time-sweeps.service";
 import { CronLeaseService } from "./cron-lease.service";
+import { CalendarReminderSweepService } from "../calendar/calendar-reminder-sweep.service";
 
 @Public()
 @Controller("cron")
@@ -49,6 +50,7 @@ export class CronPlatformController {
     private readonly crmFollowupSweep: CrmFollowupSweepService,
     private readonly timeSweeps: NotificationTimeSweepsService,
     private readonly accountOrgIndex: AccountOrganizationIndexService,
+    private readonly calendarReminderSweep: CalendarReminderSweepService,
     private readonly cronLease: CronLeaseService,
   ) {}
 
@@ -105,6 +107,17 @@ export class CronPlatformController {
   @HttpCode(200)
   postNotificationOutboxFlush(@Headers("authorization") authorization?: string) {
     return this.runNotificationOutboxFlush(authorization);
+  }
+
+  @Get("calendar-reminder-sweep")
+  getCalendarReminderSweep(@Headers("authorization") authorization?: string) {
+    return this.runCalendarReminderSweep(authorization);
+  }
+
+  @Post("calendar-reminder-sweep")
+  @HttpCode(200)
+  postCalendarReminderSweep(@Headers("authorization") authorization?: string) {
+    return this.runCalendarReminderSweep(authorization);
   }
 
   @Get("notifications-retention-sweep")
@@ -334,6 +347,20 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Notification outbox flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runCalendarReminderSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("calendar-reminder-sweep", 120, () =>
+        this.calendarReminderSweep.run(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "calendar-reminder-sweep already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("Calendar reminder sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

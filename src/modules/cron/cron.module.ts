@@ -64,10 +64,12 @@ import { CrmModule } from "../crm/core/crm.module";
 import { OutboxModule } from "../../common/outbox/outbox.module";
 import { SessionsModule } from "../sessions/sessions.module";
 import { EmploymentFactsModule } from "../directory/employment-facts.module";
+import { CalendarModule } from "../calendar/calendar.module";
 
 @Module({
   imports: [
     EmploymentFactsModule,
+    CalendarModule,
     AutomationModule,
     AiModule,
     AiJobsModule,
