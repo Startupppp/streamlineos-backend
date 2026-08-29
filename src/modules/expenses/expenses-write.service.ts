@@ -46,6 +46,8 @@ const ALL_EXPENSE_STATUS_SET = new Set<string>([
   "DRAFT", "SUBMITTED", "PENDING", "APPROVED", "REJECTED", "REIMBURSEMENT_PENDING", "REIMBURSED", "PAID",
 ]);
 
+const MAX_EMAIL_REPORT_ROWS = 10_000;
+
 function isExpenseStatus(value: string): value is AllExpenseStatus {
   return ALL_EXPENSE_STATUS_SET.has(value);
 }
@@ -378,7 +380,8 @@ export class ExpensesWriteService {
       this.db.query.expenses.findMany({
         where: and(...conditions),
         with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } } },
-        orderBy: [desc(expenses.expenseDate)],
+        orderBy: [desc(expenses.expenseDate), desc(expenses.id)],
+        limit: MAX_EMAIL_REPORT_ROWS + 1,
       }),
       this.db
         .select({
@@ -391,6 +394,13 @@ export class ExpensesWriteService {
 
     if (expenseList.length === 0) {
       throw new BadRequestException("No expenses found for the selected filters");
+    }
+
+    const totalCount = Number(statsRow[0]?.totalCount ?? 0);
+    if (totalCount > MAX_EMAIL_REPORT_ROWS) {
+      throw new BadRequestException(
+        `The selected report contains ${totalCount} expenses. Narrow the filters to ${MAX_EMAIL_REPORT_ROWS} or fewer rows.`,
+      );
     }
 
     const [adminEmails, hrEmails] = await Promise.all([

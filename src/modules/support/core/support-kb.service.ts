@@ -432,7 +432,7 @@ export class SupportKbService {
   }
 
   private async syncArticleTags(tx: Tx, orgId: string, articleId: number, tagNames: string[]): Promise<string[]> {
-    await tx.delete(kbArticleTags).where(eq(kbArticleTags.articleId, articleId));
+    await tx.delete(kbArticleTags).where(and(eq(kbArticleTags.orgId, orgId), eq(kbArticleTags.articleId, articleId)));
 
     if (tagNames.length === 0) return [];
 
@@ -456,7 +456,7 @@ export class SupportKbService {
     if (tagRows.length > 0) {
       await tx
         .insert(kbArticleTags)
-        .values(tagRows.map((t) => ({ articleId, tagId: t.id })))
+        .values(tagRows.map((t) => ({ orgId, articleId, tagId: t.id })))
         .onConflictDoNothing();
     }
 

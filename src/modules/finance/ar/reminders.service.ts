@@ -9,6 +9,7 @@ import { buildListResponse, paginateOffset } from "../../../common/pagination/pa
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type { CreateReminderPolicyInput, UpdateReminderPolicyInput, ListReminderPoliciesQuery, ListReminderLogQuery } from "./dto/finance-ar.schemas";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
+import { boundedMap } from "../../../common/async/bounded-map";
 
 @Injectable()
 export class RemindersService {
@@ -128,38 +129,41 @@ export class RemindersService {
     const policies = await this.db.select({ id: finReminderPolicies.id, orgId: finReminderPolicies.orgId, offsets: finReminderPolicies.offsets, channel: finReminderPolicies.channel }).from(finReminderPolicies).where(and(policyWhere, isNull(finReminderPolicies.archivedAt))).limit(1000).orderBy(asc(finReminderPolicies.id));
     if (policies.length === 0) return { sent: 0 };
 
-    const invWhere = and(
-      inArray(invoices.status, ["ISSUED", "PARTIALLY_PAID", "OVERDUE"]),
-      isNotNull(invoices.dueDate),
-      ...(orgId ? [eq(invoices.orgId, orgId)] : []),
-    );
     const memberRows = await this.db
       .select({ orgId: organizationMembers.orgId, userId: organizationMembers.userId })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.status, "ACTIVE"), orgId ? eq(organizationMembers.orgId, orgId) : sql`true`));
+      .where(and(
+        eq(organizationMembers.status, "ACTIVE"),
+        inArray(organizationMembers.orgId, [...new Set(policies.map((policy) => policy.orgId))]),
+      ))
+      .orderBy(asc(organizationMembers.orgId), asc(organizationMembers.userId));
     const membersByOrg = new Map<string, string[]>();
     for (const member of memberRows) {
       const members = membersByOrg.get(member.orgId) ?? [];
       if (members.length < 5) members.push(member.userId);
       membersByOrg.set(member.orgId, members);
     }
-    let invoiceCursor = 0;
-    const batchSize = 500;
-    let sent = 0;
-    for (;;) {
-      const batch = await this.db
+
+    const sent = await boundedMap(policies, 4, async (policy) => {
+      const dueDates = policy.offsets.map((offsetDays) => {
+        const target = new Date(todayMs - offsetDays * 86400000);
+        return target.toISOString().slice(0, 10);
+      });
+      const uniqueDueDates = [...new Set(dueDates)];
+      const rows = await this.db
         .select({ id: invoices.id, orgId: invoices.orgId, invoiceNumber: invoices.invoiceNumber, dueDate: invoices.dueDate, collectionOwnerId: invoices.collectionOwnerId })
         .from(invoices)
-        .where(and(invWhere, gt(invoices.id, invoiceCursor)))
-        .limit(batchSize)
-        .orderBy(asc(invoices.id));
-      sent += await this.processInvoiceBatch(batch, policies, membersByOrg, todayMs);
-      const last = batch[batch.length - 1];
-      if (!last || batch.length < batchSize) break;
-      invoiceCursor = last.id;
-    }
-
-    return { sent };
+        .where(and(
+          eq(invoices.orgId, policy.orgId),
+          inArray(invoices.status, ["ISSUED", "PARTIALLY_PAID", "OVERDUE"]),
+          isNotNull(invoices.dueDate),
+          inArray(invoices.dueDate, uniqueDueDates),
+        ))
+        .orderBy(asc(invoices.id))
+        .limit(5000);
+      return this.processInvoiceBatch(rows, [policy], membersByOrg, todayMs);
+    });
+    return { sent: sent.reduce((total, result) => total + (result.status === "fulfilled" ? result.value : 0), 0) };
   }
 
   private async processInvoiceBatch(
@@ -168,7 +172,7 @@ export class RemindersService {
     membersByOrg: Map<string, string[]>,
     todayMs: number,
   ): Promise<number> {
-    let sent = 0;
+    const work: Array<{ policy: (typeof policies)[number]; inv: (typeof invoicesBatch)[number]; offsetDays: number }> = [];
     for (const policy of policies) {
       for (const inv of invoicesBatch) {
         if (policy.orgId !== inv.orgId) continue;
@@ -178,6 +182,11 @@ export class RemindersService {
           const targetMs = dueMs + offsetDays * 86400000;
           if (Math.abs(targetMs - todayMs) >= 43200000) continue;
 
+          work.push({ policy, inv, offsetDays });
+        }
+      }
+    }
+    const results = await boundedMap(work, 8, async ({ policy, inv, offsetDays }) => {
           const insertResult = await this.db
             .insert(finReminderLog)
             .values({
@@ -193,13 +202,15 @@ export class RemindersService {
               where: inArray(finReminderLog.status, ["FAILED", "PENDING"]),
             })
             .returning({ id: finReminderLog.id });
-          if (insertResult.length === 0) continue;
+          if (insertResult.length === 0) return 0;
 
-          const targetUserIds = inv.collectionOwnerId ? [inv.collectionOwnerId] : (membersByOrg.get(inv.orgId) ?? []);
+          const targetUserIds = inv.collectionOwnerId
+            ? [inv.collectionOwnerId]
+            : (membersByOrg.get(inv.orgId) ?? []);
 
           if (targetUserIds.length === 0) {
             await this.db.update(finReminderLog).set({ status: "FAILED" }).where(eq(finReminderLog.id, insertResult[0]!.id));
-            continue;
+            return 0;
           }
 
           let delivered = false;
@@ -219,10 +230,8 @@ export class RemindersService {
             await this.db.update(finReminderLog).set({ status: "FAILED" }).where(eq(finReminderLog.id, insertResult[0]!.id));
             logSideEffectFailure("invoice reminder notification dispatch", { orgId: inv.orgId, invoiceId: inv.id })(error);
           });
-          if (delivered) sent++;
-        }
-      }
-    }
-    return sent;
+          return delivered ? 1 : 0;
+    });
+    return results.reduce((total, result) => total + (result.status === "fulfilled" ? result.value : 0), 0);
   }
 }

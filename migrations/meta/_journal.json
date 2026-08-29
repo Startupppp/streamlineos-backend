@@ -2612,6 +2612,13 @@
       "when": 1787941028254,
       "tag": "0656_communication_tenant_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 374,
+      "version": "7",
+      "when": 1787941088254,
+      "tag": "0657_kb_article_tags_tenant_integrity",
+      "breakpoints": true
     }
   ]
 }

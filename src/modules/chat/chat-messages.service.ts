@@ -72,9 +72,9 @@ export class ChatMessagesService {
   private async isMember(channelId: number, userId: string, orgId: string): Promise<boolean> {
     const member = await this.db.query.chatChannelMembers.findFirst({
       where: and(
+        eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, channelId),
         eq(chatChannelMembers.userId, userId),
-        eq(chatChannelMembers.orgId, orgId),
       ),
     });
     return Boolean(member);
@@ -442,6 +442,7 @@ export class ChatMessagesService {
       .where(
         and(
           eq(chatMessages.id, messageId),
+          eq(chatMessages.orgId, orgId),
           eq(chatMessages.channelId, channelId),
           eq(chatChannels.orgId, orgId),
           eq(chatMessages.isDeleted, false),
@@ -551,7 +552,9 @@ export class ChatMessagesService {
       ),
     });
     if (current) {
-      await this.db.delete(chatMessageReactions).where(eq(chatMessageReactions.id, current.id));
+      await this.db.delete(chatMessageReactions).where(
+        and(eq(chatMessageReactions.orgId, orgId), eq(chatMessageReactions.id, current.id)),
+      );
     } else {
       await this.db.insert(chatMessageReactions).values({
         orgId,

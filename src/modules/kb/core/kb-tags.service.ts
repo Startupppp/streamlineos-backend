@@ -62,12 +62,12 @@ export class KbTagsService {
 
   async setArticleTags(orgId: string, articleId: number, input: SetArticleTagsInput): Promise<ArticleTagRow[]> {
     return this.db.transaction(async (tx) => {
-      await tx.delete(kbArticleTags).where(eq(kbArticleTags.articleId, articleId));
+      await tx.delete(kbArticleTags).where(and(eq(kbArticleTags.orgId, orgId), eq(kbArticleTags.articleId, articleId)));
 
       if (input.tagIds.length > 0) {
         await tx
           .insert(kbArticleTags)
-          .values(input.tagIds.map((tagId) => ({ articleId, tagId })));
+          .values(input.tagIds.map((tagId) => ({ orgId, articleId, tagId })));
       }
 
       const resolvedTags: ArticleTagRow[] =
