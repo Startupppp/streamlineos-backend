@@ -17,6 +17,8 @@ import { ExpenseLifecycleService } from "./expense-lifecycle.service";
 import { TravelController } from "./travel.controller";
 import { TravelService } from "./travel.service";
 import { EmployeeExpensesController } from "./employee-expenses.controller";
+import { ExpenseExportService } from "./expense-export.service";
+import { ExpenseExportWorkerService } from "./expense-export-worker.service";
 
 @Module({
   imports: [AutomationModule, AccountingModule, NotificationsModule, OutboxModule],
@@ -29,6 +31,8 @@ import { EmployeeExpensesController } from "./employee-expenses.controller";
     TravelService,
     ExpenseSubmittedConsumer,
     ExpenseDecidedConsumer,
+    ExpenseExportService,
+    ExpenseExportWorkerService,
   ],
   exports: [ExpensesService, ExpenseLifecycleService],
 })

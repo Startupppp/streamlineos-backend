@@ -5,6 +5,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  Headers,
   HttpCode,
   NotFoundException,
   Param,
@@ -46,6 +47,9 @@ import {
 } from "./dto/expense.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { ExpenseExportService } from "./expense-export.service";
+import { ExpenseExportWorkerService } from "./expense-export-worker.service";
+import { pipeline } from "node:stream/promises";
 
 const EXPORT_HEADERS = [
   "Date",
@@ -67,6 +71,8 @@ export class ExpensesController {
     private readonly expensesWrite: ExpensesWriteService,
     private readonly lifecycle: ExpenseLifecycleService,
     private readonly access: AccessService,
+    private readonly exportJobs: ExpenseExportService,
+    private readonly exportWorker: ExpenseExportWorkerService,
   ) {}
 
   private async canApprove(u: CurrentUserContext): Promise<boolean> {
@@ -179,6 +185,37 @@ export class ExpensesController {
       `attachment; filename="expenses-${new Date().toISOString().split("T")[0]}.csv"`,
     );
     res.send(csv);
+  }
+
+  @Post("export/jobs")
+  @HttpCode(202)
+  @Idempotent("expenses.export.create")
+  @RequirePermission("hr:expenses:read")
+  async createExportJob(
+    @Body(new ZodValidationPipe(exportSchema)) filters: ExportInput,
+    @Headers("idempotency-key") idempotencyKey: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const job = await this.exportJobs.create(u, filters, idempotencyKey, await this.canApprove(u));
+    this.exportWorker.wake();
+    return job;
+  }
+
+  @Get("export/jobs/:jobId")
+  @RequirePermission("hr:expenses:read")
+  getExportJob(@Param("jobId") jobId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.exportJobs.get(u.orgId, u.userId, jobId);
+  }
+
+  @Get("export/jobs/:jobId/download")
+  @RequirePermission("hr:expenses:read")
+  async downloadExportJob(@Param("jobId") jobId: string, @CurrentUser() u: CurrentUserContext, @Res() res: Response) {
+    const { job, file } = await this.exportJobs.download(u.orgId, u.userId, jobId);
+    res.setHeader("Content-Type", file.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${(job.fileName ?? "expenses.csv").replace(/[^a-zA-Z0-9_.-]/g, "-")}"`);
+    res.setHeader("Cache-Control", "private, no-store");
+    if (file.contentLength !== undefined) res.setHeader("Content-Length", String(file.contentLength));
+    await pipeline(file.body, res);
   }
 
   @Post(":expenseId/submit")
