@@ -512,6 +512,23 @@ describe("UsageMeteringService — readMeterUsage", () => {
   });
 });
 
+describe("UsageMeteringService — tenant isolation", () => {
+  it("never combines a different org's same-meter usage or reservation with the caller's quota", async () => {
+    const { tx, predicates, selectResults } = makeTx();
+    queueAcquire(selectResults, { settled: 20, reserved: 5 });
+    ambientTx = tx;
+    const service = await buildService();
+
+    await service.acquireReservation(reservationInput({ orgId: "org-a", meterKey: "api.calls" }));
+
+    const usagePredicates = predicates.filter((predicate) =>
+      predicate.includes("billing_usage_"),
+    );
+    expect(usagePredicates).toHaveLength(3);
+    for (const predicate of usagePredicates) expect(predicate).toContain('"org_id" =');
+  });
+});
+
 describe("UsageMeteringService — no JS Date reaches a raw SQL template", () => {
   it("executes no raw statement but the advisory lock, so no period bound is interpolated", async () => {
     const { tx, executedSql, selectResults } = makeTx();
