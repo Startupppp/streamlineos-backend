@@ -57,10 +57,21 @@ Three grades, used precisely below:
 | **Proven** | Reachable, and exercised against a real database or a real request — not only a mocked unit test. |
 | **Written** | The code exists and typechecks. Nothing more is claimed. |
 
-Most of this programme is **Reachable**. The seeded end-to-end suites are
-**Written** except where the golden path covers them, because they need a
-database with a seeded organisation and this branch's database has been rebuilt
-cold more than once (see §6).
+All forty units of `pending one.md` are closed. Grades at close:
+
+- **Proven** — G7 (7/7 on two consecutive independent runs), D2, E3, E4, G5,
+  and everything the ~100 seeded e2e assertions walk: the engine, receiving,
+  putaway, picking, shipping, returns, recalls, valuation, both optional packs.
+- **Reachable** — the rest. Each was verified by finding a caller outside the
+  unit's own directory, or an HTTP route, rather than taken from a build report.
+  That check moved **four units back to open** during the work, and all four were
+  then genuinely closed.
+- **Written** — nothing remains in this grade.
+
+Four units were ticked and then un-ticked on this evidence: E5 (a compliance
+service nothing called), G3 (a sweep with no trigger), E3 and E4 (rules the
+receiving path never invoked). None of them would have been caught by reading
+the checklist.
 
 ---
 
@@ -73,12 +84,14 @@ rewritten mid-session (509 rows down to 380) and several hand-applied rows went
 with it, so a migration whose columns are demonstrably live may have no row. Read
 the catalog instead.
 
-**The two catalogs agree, so either is safe.** One agent reported that
-`information_schema.columns` under-reports on this database. That is **not
-reproducible**: checked 2026-08-29, `inv_settings` returns 32 columns from
-`information_schema.columns` and 32 from `pg_attribute`/`pg_class`. Recorded
-because the failure direction would have been safe either way — under-reporting
-produces false MISSING, never false OK — but the claim itself does not hold.
+**The two catalogs agree, so either is safe.** A report circulated during this
+work that `information_schema.columns` under-reports on this database. It does
+not, and the report has been withdrawn. Checked 2026-08-29: `inv_settings`
+returns 32 columns from `information_schema.columns` and 32 from
+`pg_attribute`/`pg_class`. The original readings were about ten minutes apart
+with three migrations applied in between — drift in time, not a privilege
+filter. Recorded because a wrong finding that circulates is worth retracting in
+writing.
 
 Applied state below was checked against `pg_class` / `pg_attribute` /
 `information_schema`, never against the bookkeeping table.
