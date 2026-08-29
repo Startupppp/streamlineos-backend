@@ -58,8 +58,30 @@ describe("inventory GL posting rules", () => {
     expect(unaccounted).toEqual([]);
   });
 
+  /**
+   * A call site may name its codes through constants, and that is better code
+   * than a literal — `accountCode: INVENTORY_ACCOUNT` says what the number is
+   * for. So the mirror resolves `const NAME = "1300";` in the same file before
+   * comparing, rather than demanding a literal and quietly punishing the clearer
+   * version. (`landed-cost-apply.service.ts` is the one that does this.)
+   */
+  function withResolvedCodes(source: string): string {
+    let resolved = source;
+    for (const decl of source.matchAll(/const (\w+) = "(\d{3,4})";/g)) {
+      const [, name, code] = decl;
+      if (!name || !code) continue;
+      resolved = resolved.replace(
+        new RegExp(`accountCode: ${name}\\b`, "g"),
+        `accountCode: "${code}"`,
+      );
+    }
+    return resolved;
+  }
+
   it("names the same account codes its call site does", () => {
-    const sources = inventorySources().map((path) => readFileSync(path, "utf8"));
+    const sources = inventorySources().map((path) =>
+      withResolvedCodes(readFileSync(path, "utf8")),
+    );
 
     for (const rule of GL_POSTING_RULES) {
       // Every file that posts this event, not the first one found: a second call

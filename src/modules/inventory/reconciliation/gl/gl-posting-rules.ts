@@ -48,6 +48,20 @@ export const GL_POSTING_RULES: readonly GlPostingRule[] = [
     label: "Cost of goods sold",
     accountCodes: ["5000", "1300"],
   },
+  {
+    // G5. Applying a landed-cost voucher restates what inventory is worth, so it
+    // posts like a receipt does — and the recon report must expect it, or a
+    // freight allocation of any size vanishes from the comparison and the report
+    // says everything reconciles. This mirror test is what caught its absence.
+    //
+    // Three codes rather than two: the voucher credits the payable, debits
+    // inventory for stock still on hand, and debits COGS for whatever has
+    // already shipped, because value cannot be added to units that have left.
+    sourceType: "inv_landed_cost",
+    sourceEvent: "apply",
+    label: "Landed cost applied",
+    accountCodes: ["1300", "5000", "2000"],
+  },
 ];
 
 export const GL_RECON_STATUSES = [
