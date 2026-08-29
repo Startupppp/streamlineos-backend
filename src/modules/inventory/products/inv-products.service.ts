@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { DataScope } from "../../access/access.types";
+import type { ResolveLineTaxQuery } from "./dto/inv-products.schemas";
 import type {
   CreateProductInput,
   UpdateProductInput,
@@ -14,13 +15,23 @@ import type {
 } from "./dto/inv-products.schemas";
 import { InvProductCrudService } from "./inv-product-crud.service";
 import { InvProductCatalogService } from "./inv-product-catalog.service";
+import { InvTaxTreatmentService, type LineTaxSnapshot } from "./inv-tax-treatment.service";
 
 @Injectable()
 export class InvProductsService {
   constructor(
     private readonly crud: InvProductCrudService,
     private readonly catalog: InvProductCatalogService,
+    private readonly tax: InvTaxTreatmentService,
   ) {}
+
+  resolveLineTax(
+    orgId: string,
+    productVariantId: number,
+    query: ResolveLineTaxQuery,
+  ): Promise<LineTaxSnapshot> {
+    return this.tax.resolveLineTax(orgId, { productVariantId, ...query });
+  }
 
   listProducts(
     orgId: string,

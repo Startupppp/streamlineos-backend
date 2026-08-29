@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, check, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, check, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   invQualityInspectionStatusEnum, invQualityHoldStatusEnum,
@@ -215,6 +215,17 @@ export const invRecallEvents = pgTable("inv_recall_events", {
   title: text("title").notNull(),
   description: text("description"),
   status: invRecallStatusEnum("status").default("OPEN").notNull(),
+  /**
+   * D4. The content hash of the impact picture this recall was executed
+   * against, and that picture itself.
+   *
+   * A recall is a regulated act whose defensibility rests on what was known at
+   * the time — "we recalled 14 lots" is not evidence, "these lots, this stock,
+   * these 31 customers, hashed" is. Null for a recall raised from an explicit
+   * line list, which asserts nothing about a wider picture.
+   */
+  evidenceVersion: text("evidence_version"),
+  evidenceSnapshot: jsonb("evidence_snapshot").$type<Record<string, unknown>>(),
   createdBy: text("created_by").references(() => users.id).notNull(),
   closedAt: timestamp("closed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

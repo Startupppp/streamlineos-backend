@@ -1,9 +1,11 @@
-import { ConflictException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { invAiInsights } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { AiConfirmationService } from "../../ai/confirmation/ai-confirmation.service";
 import { InvReplenishmentService } from "../replenishment/inv-replenishment.service";
@@ -28,6 +30,7 @@ import {
   resolveInvAiActions,
   type ResolvedInvAiAction,
 } from "./inv-ai-action-resolver";
+import { assertInvAiConfirmAuthority } from "./inv-ai-confirm-authority";
 
 const FEATURE_KEY = "inv.insight-explain" as const;
 const REORDER_FEATURE_KEY = "inv.reorder-explain" as const;
@@ -284,6 +287,7 @@ export class InvAiExplainService {
     private readonly replenishment: InvReplenishmentService,
     private readonly scorecards: VendorScorecardService,
     private readonly insights: InvAiService,
+    private readonly access: AccessService,
   ) {}
 
   /**
@@ -579,16 +583,45 @@ export class InvAiExplainService {
     return { evidence, explanation: narration, proposal };
   }
 
+  /**
+   * F1. Confirming a proposal is where the AI surface stops being a reading
+   * surface, so it is where the procurement gate has to bite.
+   *
+   * The assertion runs twice, deliberately. Once **before** `confirm`, because
+   * `confirm` consumes the proposal — a denial after it would leave the caller
+   * with a spent token and nothing to show for it, and repeated denials would
+   * be a way to burn other people's proposals. And once **after**, against the
+   * action the stored row actually carries, because the first check can only
+   * assert the authority this *route* is about; a token minted for a transfer
+   * and replayed here must be measured against a transfer's authority, not a
+   * purchase order's.
+   */
   async confirmReorderProposal(
-    orgId: string,
-    userId: string,
+    user: CurrentUserContext,
     proposalId: number,
     token: string,
   ) {
+    const { orgId, userId } = user;
+    const routeAction = "inventory:create-draft-po";
+
+    await assertInvAiConfirmAuthority(this.access, user, routeAction);
+
     const confirmed = await this.confirmation.confirm({
       token,
       actor: { orgId, userId },
     });
+
+    if (confirmed.action !== routeAction) {
+      // The token is valid and belongs to this caller, so this is not an
+      // existence question -- it is a caller asking this route to execute
+      // something it does not execute. Re-asserting rather than trusting the
+      // route's own action is what stops a cheaper proposal from being
+      // laundered through an expensive one.
+      await assertInvAiConfirmAuthority(this.access, user, confirmed.action);
+      throw new ForbiddenException(
+        "This proposal is not a draft purchase order",
+      );
+    }
 
     const payload = confirmed.payload;
     const suggestion = payload["suggestion"] as {

@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   invRecallEvents,
@@ -20,26 +20,46 @@ import type { ListRecallsQueryInput, CreateRecallInput, UpdateRecallInput } from
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { isPositive } from "../stock-engine/decimal";
 import { runIdempotent } from "../stock-engine/idempotency";
+import { RecallSimulationService, type RecallImpact } from "./recall-simulation.service";
+
+/** What the idempotent unit of `create` produces, and replays. */
+interface ExecutedRecall {
+  recall: { id: number; recallNumber: string };
+  /** The (lot, location) grains the engine must quarantine, at their on-hand. */
+  quarantine: Array<{
+    productVariantId: number;
+    locationId: number;
+    lotId: number;
+    onHand: string;
+  }>;
+}
 
 /**
- * A replayed recall, rebuilt from the stored JSON. Only the identity is revived:
- * a replay says "this recall already exists", and the caller re-reads it if it
- * needs the rest.
+ * A replayed recall, rebuilt from the stored JSON.
+ *
+ * The stored response is JSON that has been through the database, so every
+ * number arrived as whatever `jsonb` gave back and a blind cast would be a lie
+ * the type system cannot catch — hence a revive rather than an assertion.
+ * Quantities stay strings: they are 18,4 numerics, and `Number()` on one is the
+ * float arithmetic the ledger rules forbid.
  */
-function reviveRecall(stored: unknown): {
-  recall: { id: number; recallNumber: string };
-  lines: Array<{ lotId: number | null }>;
-} {
+function reviveRecall(stored: unknown): ExecutedRecall {
   const row = typeof stored === "object" && stored !== null ? (stored as Record<string, unknown>) : {};
   const recall = typeof row.recall === "object" && row.recall !== null
     ? (row.recall as Record<string, unknown>)
     : {};
-  const lines = Array.isArray(row.lines) ? row.lines : [];
+  const quarantine = Array.isArray(row.quarantine) ? row.quarantine : [];
   return {
     recall: { id: Number(recall.id ?? 0), recallNumber: String(recall.recallNumber ?? "") },
-    lines: lines.map((l) => {
-      const line = typeof l === "object" && l !== null ? (l as Record<string, unknown>) : {};
-      return { lotId: line.lotId == null ? null : Number(line.lotId) };
+    quarantine: quarantine.flatMap((q) => {
+      const g = typeof q === "object" && q !== null ? (q as Record<string, unknown>) : {};
+      if (g.lotId == null || g.locationId == null) return [];
+      return [{
+        productVariantId: Number(g.productVariantId),
+        locationId: Number(g.locationId),
+        lotId: Number(g.lotId),
+        onHand: String(g.onHand ?? "0"),
+      }];
     }),
   };
 }
@@ -53,6 +73,7 @@ export class RecallsService {
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
     private readonly audit: InventoryAuditService,
+    private readonly simulation: RecallSimulationService,
   ) {}
 
   async list(orgId: string, userId: string, query: ListRecallsQueryInput) {
@@ -145,29 +166,49 @@ export class RecallsService {
     return { ...recall, affectedShipments };
   }
 
+  /**
+   * D4 — execute a recall.
+   *
+   * Two shapes of request reach here. An explicit `lines` list is the caller
+   * naming lots and serials outright. A `selection` is the caller naming the
+   * *question* — "everything this vendor sent us in March" — and presenting
+   * the `evidenceVersion` a simulate returned for it; the simulation is re-run
+   * here and a moved picture is a 409, never a silent execution against
+   * numbers an operator read ten minutes ago.
+   */
   async create(orgId: string, userId: string, input: CreateRecallInput, idempotencyKey: string) {
-    // A3/A5. The engine claims a derived key per lot, so the quarantine
-    // movements were already replay-safe — but the recall *document* was not,
-    // so a retried request raised a second recall with a second number against
-    // the same lots.
-    const { recall, lines } = await this.db.transaction(async (tx) =>
+    const { lines: resolvedLines, impact } = await this.resolveLines(orgId, userId, input);
+
+    // A3/A5/D4. Everything that writes a document — the recall, its lines, the
+    // lot flip and the hold records — sits inside one idempotent unit, so a
+    // retried request replays all of it or none of it. It used to cover only
+    // the recall row: a retry replayed the document and then inserted a second
+    // full set of quality holds against the same stock, which is a recall that
+    // looks idempotent from the outside and is not.
+    //
+    // The engine movements stay outside because `executeMany` opens its own
+    // transaction; they carry a derived key per (recall, lot, location) and are
+    // replay-safe on their own terms.
+    const executed = await this.db.transaction(async (tx) =>
       runIdempotent(
         tx,
         orgId,
         idempotencyKey,
         { command: "inventory.quality.recall.create", input },
-        async () => {
+        async (): Promise<ExecutedRecall> => {
       const recallNumber = await this.numSeq.next(orgId, "RECALL", tx);
       const [recall] = await tx.insert(invRecallEvents).values({
         orgId,
         recallNumber,
         title: input.title,
         description: input.description ?? null,
+        evidenceVersion: impact?.evidenceVersion ?? null,
+        evidenceSnapshot: impact === null ? null : { ...impact },
         createdBy: userId,
       }).returning();
       if (!recall) throw new Error("Insert recall failed");
       const lines = await tx.insert(invRecallLines).values(
-        input.lines.map(l => ({
+        resolvedLines.map(l => ({
           orgId,
           recallId: recall.id,
           productVariantId: l.productVariantId ?? null,
@@ -178,85 +219,138 @@ export class RecallsService {
       const recalledLotIds = lines
         .map(l => l.lotId)
         .filter((id): id is number => id !== null && id !== undefined);
+
+      const quarantine: ExecutedRecall["quarantine"] = [];
       if (recalledLotIds.length > 0) {
+        // The allocator refuses any lot whose status is not ACTIVE, under every
+        // strategy, so this flip is what actually stops the goods moving —
+        // the holds below are the document trail, not the enforcement.
         await tx.update(invLots)
           .set({ status: "RECALLED" })
           .where(and(inArray(invLots.id, recalledLotIds), eq(invLots.orgId, orgId)));
+
+        // Projected, not `select()`: an unprojected read here returned every
+        // column of every matching stock row, and `parseFloat` on an 18,4
+        // numeric is the float arithmetic the ledger rules forbid — a lot
+        // holding 0.0001 units is on the shelf and must be recalled with the
+        // rest.
+        const levels = await tx
+          .select({
+            productVariantId: invStockLevels.productVariantId,
+            locationId: invStockLevels.locationId,
+            lotId: invStockLevels.lotId,
+            onHand: invStockLevels.onHand,
+          })
+          .from(invStockLevels)
+          .where(and(eq(invStockLevels.orgId, orgId), inArray(invStockLevels.lotId, recalledLotIds)));
+
+        for (const level of levels) {
+          if (level.lotId === null || level.lotId === undefined) continue;
+          if (!isPositive(level.onHand)) continue;
+          quarantine.push({
+            productVariantId: level.productVariantId,
+            locationId: level.locationId,
+            lotId: level.lotId,
+            onHand: level.onHand,
+          });
+        }
+
+        if (quarantine.length > 0) {
+          await tx.insert(invQualityHolds).values(
+            quarantine.map(grain => ({
+              orgId,
+              productVariantId: grain.productVariantId,
+              locationId: grain.locationId,
+              lotId: grain.lotId,
+              quantity: grain.onHand,
+              reason: `Recall ${recallNumber}`,
+              createdBy: userId,
+            })),
+          );
+        }
       }
+
       await this.audit.insert(tx, {
         orgId, actorUserId: userId, action: "recall.created",
         resourceType: "recall", resourceId: String(recall.id),
-        after: { recallNumber, linesCount: lines.length },
+        after: {
+          recallNumber,
+          linesCount: lines.length,
+          evidenceVersion: impact?.evidenceVersion ?? null,
+        },
       });
-      return { recall, lines };
+      return { recall: { id: recall.id, recallNumber }, quarantine };
         },
         (stored) => reviveRecall(stored),
       ),
     );
 
-    const lotIds = lines
-      .map(l => l.lotId)
-      .filter((lotId): lotId is number => lotId !== null && lotId !== undefined);
+    const recallCommands = executed.quarantine.map(grain => ({
+      idempotencyKey: `recall:${executed.recall.id}:lot:${grain.lotId}:loc:${grain.locationId}`,
+      sourceType: "RECALL",
+      sourceId: String(executed.recall.id),
+      // A recall quarantines the goods; it does not make them disappear.
+      // Zeroing ON_HAND as well drove available negative and destroyed the
+      // count of what is physically on the shelf — which is exactly the
+      // number a recall needs to report.
+      movements: [
+        { transactionType: "QUARANTINE_IN", productVariantId: grain.productVariantId, locationId: grain.locationId, lotId: grain.lotId, quantityDelta: grain.onHand, qualityBucket: "QUALITY_HOLD" as const },
+      ],
+    }));
 
-    if (lotIds.length > 0) {
-      // Projected, not `select()`: an unprojected read here returned every
-      // column of every matching stock row, and `parseFloat` on an 18,4 numeric
-      // is the float arithmetic the ledger rules forbid — a lot holding
-      // 0.0001 units is on the shelf and must be recalled with the rest.
-      const allStockLevels = await this.db
-        .select({
-          productVariantId: invStockLevels.productVariantId,
-          locationId: invStockLevels.locationId,
-          lotId: invStockLevels.lotId,
-          onHand: invStockLevels.onHand,
-        })
-        .from(invStockLevels)
-        .where(and(eq(invStockLevels.orgId, orgId), inArray(invStockLevels.lotId, lotIds)));
-
-      const eligibleLevels = allStockLevels.filter((level) => isPositive(level.onHand));
-
-      const recallCommands = eligibleLevels.flatMap(level => {
-        const lotId = level.lotId;
-        if (lotId === null || lotId === undefined) return [];
-        const iKey = `recall:${recall.id}:lot:${lotId}:loc:${level.locationId}`;
-        return [{
-          idempotencyKey: iKey,
-          sourceType: "RECALL",
-          sourceId: String(recall.id),
-          // A recall quarantines the goods; it does not make them disappear.
-          // Zeroing ON_HAND as well drove available negative and destroyed the
-          // count of what is physically on the shelf — which is exactly the
-          // number a recall needs to report.
-          movements: [
-            { transactionType: "QUARANTINE_IN", productVariantId: level.productVariantId, locationId: level.locationId, lotId, quantityDelta: level.onHand, qualityBucket: "QUALITY_HOLD" as const },
-          ],
-        }];
-      });
-
-      if (recallCommands.length > 0) {
-        await this.engine.executeMany(orgId, userId, recallCommands);
-      }
-
-      // Inside the same transaction as the quarantine movements: the hold
-      // document and the stock it describes have to commit together, or a
-      // rolled-back recall leaves holds against stock nothing quarantined.
-      if (eligibleLevels.length > 0) {
-        await this.db.insert(invQualityHolds).values(
-          eligibleLevels.map(level => ({
-            orgId,
-            productVariantId: level.productVariantId,
-            locationId: level.locationId,
-            lotId: level.lotId,
-            quantity: level.onHand,
-            reason: `Recall ${recall.recallNumber}`,
-            createdBy: userId,
-          })),
-        );
-      }
+    if (recallCommands.length > 0) {
+      await this.engine.executeMany(orgId, userId, recallCommands);
     }
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invQualityRecallsNamespace(orgId));
-    return recall;
+    return this.findOne(orgId, executed.recall.id);
+  }
+
+  /**
+   * The lines a create request means, and the evidence it was justified by.
+   *
+   * An explicit `lines` list is taken at face value and carries no evidence. A
+   * `selection` is re-simulated here — not trusted from the client — and the
+   * hash compared: a selection that has since gained or lost a lot, moved
+   * stock, or shipped another carton produces a different version, and the
+   * execute is refused rather than acting on the operator's stale reading.
+   */
+  private async resolveLines(
+    orgId: string,
+    userId: string,
+    input: CreateRecallInput,
+  ): Promise<{
+    lines: Array<{ productVariantId?: number; lotId?: number; serialId?: number }>;
+    impact: RecallImpact | null;
+  }> {
+    if (input.selection === undefined) {
+      // The schema's refinement guarantees one of the two is present.
+      return { lines: input.lines ?? [], impact: null };
+    }
+
+    const impact = await this.simulation.simulate(orgId, userId, input.selection);
+
+    if (impact.evidenceVersion !== input.evidenceVersion) {
+      throw new ConflictException({
+        code: "RECALL_EVIDENCE_STALE",
+        message:
+          "The stock picture changed since this recall was simulated. Re-run the simulation and review the impact before executing.",
+        expectedEvidenceVersion: impact.evidenceVersion,
+        submittedEvidenceVersion: input.evidenceVersion,
+      });
+    }
+
+    if (impact.lots.length === 0) {
+      throw new BadRequestException("This selection matches no lots, so there is nothing to recall");
+    }
+
+    return {
+      lines: impact.lots.map((lot) => ({
+        productVariantId: lot.productVariantId,
+        lotId: lot.lotId,
+      })),
+      impact,
+    };
   }
 
   async update(orgId: string, userId: string, id: number, input: UpdateRecallInput) {
@@ -269,6 +363,10 @@ export class RecallsService {
       patch.status = input.status;
       if (input.status === "CLOSED") patch.closedAt = new Date();
     }
+    // `notes` is the client's name for the recall's narrative, and the column
+    // holding it is `description`. The field was accepted and then dropped on
+    // the floor: the UI's notes editor reported success and stored nothing.
+    if (input.notes !== undefined) patch.description = input.notes;
     await this.db.update(invRecallEvents).set(patch)
       .where(and(eq(invRecallEvents.id, id), eq(invRecallEvents.orgId, orgId)));
     await this.audit.insert(this.db, {

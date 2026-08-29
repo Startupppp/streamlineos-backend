@@ -1,17 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, lte, sql, type SQL } from "drizzle-orm";
 import {
   invStockLevels,
   invProducts,
   invProductVariants,
   invShipments,
   invLots,
-  invReorderRules,
   invAiInsights,
   invChannelStockPublications,
   invQualityInspections,
   invStockReservations,
-  invLocations,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -20,6 +18,49 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import type { ValuationReportInput, SlowMovingQueryInput, ExpiryReportInput, ReorderQueryInput } from "./dto/inv-reports.schemas";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { availableQtySql } from "../stock-engine/available-sql";
+import { InvValuationService } from "../valuation/inv-valuation.service";
+
+interface SlowMovingRow extends Record<string, unknown> {
+  productVariantId: number;
+  variantSku: string;
+  variantName: string | null;
+  productName: string;
+  onHand: number;
+  onHandDec: string;
+  averageCost: number;
+  averageCostDec: string;
+  value: number;
+  valueDec: string;
+  lastMovement: string | null;
+  daysSinceLastMovement: number | null;
+  totalRows: number;
+}
+
+interface ReorderRow extends Record<string, unknown> {
+  productVariantId: number;
+  variantSku: string;
+  variantName: string | null;
+  productId: number;
+  productName: string;
+  productSku: string;
+  onHand: number;
+  onHandDec: string;
+  onOrder: number;
+  committed: number;
+  availableQty: number;
+  availableQtyDec: string;
+  reorderPoint: number;
+  minStockLevel: number;
+  reorderRuleId: number | null;
+  minQty: number | null;
+  maxQty: number | null;
+  reorderQty: number | null;
+  suggestedQty: number;
+  suggestedQtyDec: string;
+  vendorId: number | null;
+  leadTimeDays: number | null;
+  totalRows: number;
+}
 
 @Injectable()
 export class InvReportsExtendedService {
@@ -27,13 +68,14 @@ export class InvReportsExtendedService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly valuation: InvValuationService,
   ) {}
 
   private async stockScope(orgId: string, userId: string) {
     const scope = await this.warehouseScope.resolve(orgId, userId);
     return {
       sql: this.warehouseScope.locationPredicate(scope, sql`${invStockLevels.locationId}`),
-      key: scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none"),
+      key: this.warehouseScope.scopeKey(scope),
     };
   }
 
@@ -44,11 +86,17 @@ export class InvReportsExtendedService {
     const thirtyDaysCutoff = thirtyDaysOut.toISOString().slice(0, 10);
 
     const results = await Promise.allSettled([
+      // D5. Summed in `numeric` and projected twice: `exact` is the figure, and
+      // the float is the legacy shape the dashboard tile reads. Neither is
+      // `parseFloat`-ed — the multiplication happens once, in Postgres, where a
+      // decimal is a decimal.
       this.db
-        .select({ total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}::numeric * NULLIF(${invStockLevels.averageCost}::numeric, 0)), 0)::text` })
+        .select({
+          exact: sql<string>`COALESCE(SUM(${invStockLevels.onHand}::numeric * COALESCE(${invStockLevels.averageCost}, 0)::numeric), 0)::text`,
+          approx: sql<number>`COALESCE(SUM(${invStockLevels.onHand}::numeric * COALESCE(${invStockLevels.averageCost}, 0)::numeric), 0)::float8`,
+        })
         .from(invStockLevels)
-        .where(and(eq(invStockLevels.orgId, orgId), scope.sql))
-        .then((r) => parseFloat(r[0]?.total ?? "0")),
+        .where(and(eq(invStockLevels.orgId, orgId), scope.sql)),
 
       this.db
         .select({ count: sql<number>`count(distinct ${invLots.id})::int` })
@@ -63,10 +111,12 @@ export class InvReportsExtendedService {
         .then((r) => r[0]?.count ?? 0),
 
       this.db
-        .select({ total: sql<string>`COALESCE(SUM(${invStockLevels.qualityHoldQty}::numeric), 0)::text` })
+        .select({
+          exact: sql<string>`COALESCE(SUM(${invStockLevels.qualityHoldQty}::numeric), 0)::text`,
+          approx: sql<number>`COALESCE(SUM(${invStockLevels.qualityHoldQty}::numeric), 0)::float8`,
+        })
         .from(invStockLevels)
-        .where(and(eq(invStockLevels.orgId, orgId), scope.sql))
-        .then((r) => parseFloat(r[0]?.total ?? "0")),
+        .where(and(eq(invStockLevels.orgId, orgId), scope.sql)),
 
       this.db
         .select({ count: sql<number>`count(*)::int` })
@@ -112,10 +162,15 @@ export class InvReportsExtendedService {
     const get = <T>(result: PromiseSettledResult<T>, fallback: T): T =>
       result.status === "fulfilled" ? result.value : fallback;
 
+    const stock = get(results[0], [])[0];
+    const hold = get(results[2], [])[0];
+
     return {
-      stockValue: get(results[0], 0),
+      stockValue: stock?.approx ?? 0,
+      stockValueDec: stock?.exact ?? "0",
       expiringLotsCount: get(results[1], 0),
-      qualityHoldQty: get(results[2], 0),
+      qualityHoldQty: hold?.approx ?? 0,
+      qualityHoldQtyDec: hold?.exact ?? "0",
       activeReservationsCount: get(results[3], 0),
       openShipmentsCount: get(results[4], 0),
       failedChannelSyncsCount: get(results[5], 0),
@@ -124,93 +179,49 @@ export class InvReportsExtendedService {
     };
   }
 
-  async getValuationReport(orgId: string, userId: string, filters: ValuationReportInput) {
-    const { warehouseId, categoryId, page, limit } = filters;
-    const offset = (page - 1) * limit;
-    const scope = await this.stockScope(orgId, userId);
-    const cacheKey = CACHE_KEYS.invValuationReport(orgId, `${scope.key}-${warehouseId ?? "all"}-${categoryId ?? "all"}-${page}-${limit}`);
-
+  /**
+   * D5. One valuation implementation, not two.
+   *
+   * `/inventory/reports/valuation` and `/inventory/valuation` were separate
+   * copies of the same FIFO/standard/average dispatch, each with its own
+   * `parseFloat` arithmetic and its own idea of a page total. This route now
+   * reads the canonical service, so the date grain, the layer evidence and the
+   * exact totals arrive here for free and cannot drift out again.
+   */
+  getValuationReport(orgId: string, userId: string, filters: ValuationReportInput) {
     return this.cache.cached(
-      cacheKey,
-      async () => {
-        const conditions = [eq(invStockLevels.orgId, orgId), scope.sql];
-        if (warehouseId != null) {
-          conditions.push(
-            inArray(
-              invStockLevels.locationId,
-              this.db.select({ id: invLocations.id }).from(invLocations).where(eq(invLocations.warehouseId, warehouseId)),
-            ),
-          );
-        }
-        if (categoryId != null) {
-          conditions.push(
-            inArray(
-              invStockLevels.productVariantId,
-              this.db
-                .select({ id: invProductVariants.id })
-                .from(invProductVariants)
-                .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-                .where(eq(invProducts.categoryId, categoryId)),
-            ),
-          );
-        }
-
-        const [rows, [countRow]] = await Promise.all([
-          this.db
-            .select({
-              productVariantId: invStockLevels.productVariantId,
-              variantSku: invProductVariants.sku,
-              variantName: invProductVariants.name,
-              productName: invProducts.name,
-              costingMethod: invProducts.costingMethod,
-              standardCost: invProducts.standardCost,
-              onHand: sql<string>`COALESCE(SUM(${invStockLevels.onHand}::numeric), 0)::text`,
-              avgCost: sql<string>`COALESCE(AVG(NULLIF(${invStockLevels.averageCost}::numeric, 0)), 0)::text`,
-              fifoValue: sql<string>`COALESCE((
-                SELECT SUM(vl.remaining_value::numeric)
-                FROM inv_valuation_layers vl
-                WHERE vl.org_id = ${orgId} AND vl.product_variant_id = ${invStockLevels.productVariantId}
-                  AND vl.remaining_quantity::numeric > 0
-              ), 0)::text`,
-            })
-            .from(invStockLevels)
-            .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
-            .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-            .where(and(...conditions))
-            .groupBy(invStockLevels.productVariantId, invProductVariants.id, invProducts.id)
-            .orderBy(invProductVariants.sku)
-            .limit(limit)
-            .offset(offset),
-          this.db
-            .select({ total: sql<number>`count(distinct ${invStockLevels.productVariantId})::int` })
-            .from(invStockLevels)
-            .where(and(...conditions)),
-        ]);
-
-        const items = rows.map((r) => {
-          const onHand = parseFloat(r.onHand);
-          let value: number;
-          if (r.costingMethod === "FIFO") {
-            value = parseFloat(r.fifoValue);
-          } else if (r.costingMethod === "STANDARD") {
-            value = onHand * parseFloat(r.standardCost ?? "0");
-          } else {
-            value = onHand * parseFloat(r.avgCost);
-          }
-          return { ...r, onHand, value: Math.round(value * 100) / 100 };
-        });
-
-        const total = countRow?.total ?? 0;
-        return { items, total, page, totalPages: Math.ceil(total / limit) };
-      },
+      CACHE_KEYS.invValuationReport(
+        orgId,
+        [
+          filters.warehouseId ?? "all",
+          filters.categoryId ?? "all",
+          filters.asOfDate ?? "live",
+          filters.periodId ?? "no-period",
+          filters.page,
+          filters.limit,
+          userId,
+        ].join("-"),
+      ),
+      () => this.valuation.getValuationSummary(orgId, userId, filters),
       CACHE_TTL.MEDIUM,
     );
   }
 
+  /**
+   * D5. Value is `Σ(on_hand × average_cost)` per stock row, in `numeric`, not
+   * total-on-hand times the unweighted mean of each row's average — which is
+   * what `AVG(NULLIF(average_cost, 0))` produced and which is wrong whenever the
+   * same variant sits at two locations at two costs. `averageCost` is then the
+   * implied unit cost of that value, so the three figures always agree.
+   */
   async getSlowMovingReport(orgId: string, userId: string, filters: SlowMovingQueryInput) {
     const { days, page, limit } = filters;
     const offset = (page - 1) * limit;
     const scope = await this.stockScope(orgId, userId);
+    const scopeSql = this.warehouseScope.locationPredicate(
+      await this.warehouseScope.resolve(orgId, userId),
+      "sl.location_id",
+    );
     const cacheKey = CACHE_KEYS.invSlowMovingReport(orgId, `${scope.key}-${days}-${page}-${limit}`);
 
     return this.cache.cached(
@@ -219,69 +230,63 @@ export class InvReportsExtendedService {
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - days);
 
-        const slowMovingWhere = and(
-          eq(invStockLevels.orgId, orgId),
-      scope.sql,
-          scope.sql,
-          sql`${invStockLevels.onHand}::numeric > 0`,
-          sql`NOT EXISTS (
-            SELECT 1 FROM inv_stock_transactions t
-            WHERE t.org_id = ${orgId}
-              AND t.product_variant_id = ${invStockLevels.productVariantId}
-              AND t.transaction_type IN ('SALE', 'TRANSFER_OUT')
-              AND t.created_at >= ${cutoff.toISOString()}
-          )`,
-        );
-
-        const [rows, countRows] = await Promise.all([
-          this.db
-            .select({
-              productVariantId: invStockLevels.productVariantId,
-              variantSku: invProductVariants.sku,
-              variantName: invProductVariants.name,
-              productName: invProducts.name,
-              onHand: sql<string>`COALESCE(SUM(${invStockLevels.onHand}::numeric), 0)::text`,
-              averageCost: sql<string>`COALESCE(AVG(NULLIF(${invStockLevels.averageCost}::numeric, 0)), 0)::text`,
-              lastMovement: sql<string | null>`(
-                SELECT MAX(t.created_at)::text
+        const rows = await this.db.execute<SlowMovingRow>(sql`
+          WITH r AS (
+            SELECT
+              sl.product_variant_id,
+              v.sku   AS variant_sku,
+              v.name  AS variant_name,
+              p.name  AS product_name,
+              SUM(sl.on_hand::numeric) AS on_hand,
+              SUM(sl.on_hand::numeric * COALESCE(sl.average_cost, 0)::numeric) AS value,
+              (
+                SELECT MAX(t.created_at)
                 FROM inv_stock_transactions t
                 WHERE t.org_id = ${orgId}
-                  AND t.product_variant_id = ${invStockLevels.productVariantId}
+                  AND t.product_variant_id = sl.product_variant_id
                   AND t.transaction_type IN ('SALE', 'TRANSFER_OUT')
-              )`,
-              daysSinceLastMovement: sql<number | null>`
-                EXTRACT(DAY FROM (NOW() - (
-                  SELECT MAX(t.created_at)
-                  FROM inv_stock_transactions t
-                  WHERE t.org_id = ${orgId}
-                    AND t.product_variant_id = ${invStockLevels.productVariantId}
-                    AND t.transaction_type IN ('SALE', 'TRANSFER_OUT')
-                )))::int
-              `,
-            })
-            .from(invStockLevels)
-            .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
-            .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-            .where(slowMovingWhere)
-            .groupBy(invStockLevels.productVariantId, invProductVariants.id, invProducts.id)
-            .orderBy(sql`days_since_last_movement DESC NULLS FIRST`)
-            .limit(limit)
-            .offset(offset),
-          this.db
-            .select({ total: sql<number>`count(distinct ${invStockLevels.productVariantId})::int` })
-            .from(invStockLevels)
-            .where(slowMovingWhere),
-        ]);
+              ) AS last_movement_at
+            FROM inv_stock_levels sl
+            JOIN inv_product_variants v ON v.id = sl.product_variant_id
+            JOIN inv_products p         ON p.id = v.product_id
+            WHERE sl.org_id = ${orgId}
+              AND ${scopeSql}
+              AND sl.on_hand::numeric > 0
+              AND NOT EXISTS (
+                SELECT 1 FROM inv_stock_transactions t
+                WHERE t.org_id = ${orgId}
+                  AND t.product_variant_id = sl.product_variant_id
+                  AND t.transaction_type IN ('SALE', 'TRANSFER_OUT')
+                  AND t.created_at >= ${cutoff.toISOString()}::timestamp
+              )
+            GROUP BY sl.product_variant_id, v.sku, v.name, p.name
+          )
+          SELECT
+            r.product_variant_id                        AS "productVariantId",
+            r.variant_sku                               AS "variantSku",
+            r.variant_name                              AS "variantName",
+            r.product_name                              AS "productName",
+            r.on_hand::float8                           AS "onHand",
+            r.on_hand::text                             AS "onHandDec",
+            (CASE WHEN r.on_hand <> 0 THEN r.value / r.on_hand ELSE 0 END)::float8 AS "averageCost",
+            (CASE WHEN r.on_hand <> 0 THEN r.value / r.on_hand ELSE 0 END)::text   AS "averageCostDec",
+            r.value::float8                             AS "value",
+            r.value::text                               AS "valueDec",
+            r.last_movement_at::text                    AS "lastMovement",
+            EXTRACT(DAY FROM (NOW() - r.last_movement_at))::int AS "daysSinceLastMovement",
+            count(*) OVER ()::int                       AS "totalRows"
+          FROM r
+          ORDER BY "daysSinceLastMovement" DESC NULLS FIRST, r.variant_sku
+          LIMIT ${limit} OFFSET ${offset}
+        `);
 
-        const items = rows.map((r) => ({
-          ...r,
-          onHand: parseFloat(r.onHand),
-          value: Math.round(parseFloat(r.onHand) * parseFloat(r.averageCost) * 100) / 100,
-          averageCost: parseFloat(r.averageCost),
-        }));
-
-        const total = countRows[0]?.total ?? 0;
-        return { items, total, page, totalPages: Math.ceil(total / limit) };
+        const total = rows[0]?.totalRows ?? 0;
+        return {
+          items: rows.map(({ totalRows: _t, ...row }) => row),
+          total,
+          page,
+          totalPages: Math.ceil(total / limit),
+        };
       },
       CACHE_TTL.MEDIUM,
     );
@@ -300,10 +305,36 @@ export class InvReportsExtendedService {
         cutoff.setDate(cutoff.getDate() + withinDays);
         const cutoffStr = cutoff.toISOString().slice(0, 10);
 
+        // Both the warehouse scope and the caller's own warehouse filter used to
+        // appear *only in the cache key*. So a warehouse-restricted operator was
+        // shown every site's expiring lots — a §4 scope leak through a report —
+        // and `?warehouseId=` silently returned every warehouse while being
+        // cached under a key that said it had been filtered.
+        //
+        // The lot itself carries no location; its stock does. Both predicates
+        // therefore constrain the same existence check that already proves the
+        // lot has stock, so a lot is listed only where the caller can see the
+        // stock that makes it worth listing.
+        const visibleStock = (extra: SQL | null) => sql`(
+          SELECT COALESCE(SUM(sl.on_hand::numeric), 0)
+            FROM inv_stock_levels sl
+           WHERE sl.lot_id = ${invLots.id}
+             AND sl.org_id = ${orgId}
+             AND ${scope.sql}
+             ${extra ?? sql``}
+        ) > 0`;
+
         const conditions = [
           eq(invLots.orgId, orgId),
           lte(invLots.expiryDate, cutoffStr),
-          sql`(SELECT COALESCE(SUM(sl.on_hand::numeric), 0) FROM inv_stock_levels sl WHERE sl.lot_id = ${invLots.id} AND sl.org_id = ${orgId}) > 0`,
+          visibleStock(
+            warehouseId
+              ? sql`AND sl.location_id IN (
+                    SELECT id FROM inv_locations
+                     WHERE org_id = ${orgId} AND warehouse_id = ${warehouseId}
+                  )`
+              : null,
+          ),
         ];
         if (status) conditions.push(eq(invLots.status, status));
 
@@ -337,92 +368,105 @@ export class InvReportsExtendedService {
     );
   }
 
+  /**
+   * D5. The shortfall is decided in Postgres, in `numeric`.
+   *
+   * It used to be `Math.max(0, parseFloat(rule.maxQty) - parseFloat(row.onHand))`
+   * — a purchasing quantity chosen from two floats. Two other defects went with
+   * it: the rule lookup keyed a warehouse map by `location_id`, so a
+   * warehouse-scoped rule never matched and every such variant silently fell back
+   * to the product-level reorder point; and `availableQty` was selected but
+   * dropped before the response, so the screen's availability column read
+   * `undefined`. Both are fixed here rather than mirrored.
+   */
   async getReorderReportUpgraded(orgId: string, filters: ReorderQueryInput) {
     const { page, limit } = filters;
     const offset = (page - 1) * limit;
 
-    const reorderWhere = and(
-      eq(invStockLevels.orgId, orgId),
-      sql`${invStockLevels.onHand}::numeric <= ${invProducts.reorderPoint}::numeric`,
-    );
+    const rows = await this.db.execute<ReorderRow>(sql`
+      WITH r AS (
+        SELECT
+          sl.product_variant_id,
+          v.sku  AS variant_sku,
+          v.name AS variant_name,
+          p.id   AS product_id,
+          p.name AS product_name,
+          p.sku  AS product_sku,
+          sl.on_hand::numeric    AS on_hand,
+          sl.on_order::numeric   AS on_order,
+          sl.committed::numeric  AS committed,
+          ${availableQtySql("sl")} AS available_qty,
+          p.reorder_point::numeric   AS reorder_point,
+          p.min_stock_level::numeric AS min_stock_level,
+          p.default_vendor_id,
+          rule.id            AS rule_id,
+          rule.min_qty       AS rule_min_qty,
+          rule.max_qty       AS rule_max_qty,
+          rule.reorder_qty   AS rule_reorder_qty,
+          rule.vendor_id     AS rule_vendor_id,
+          rule.lead_time_days AS rule_lead_time_days,
+          CASE
+            WHEN rule.id IS NOT NULL AND rule.max_qty IS NOT NULL
+              THEN GREATEST(rule.max_qty - sl.on_hand::numeric, 0)
+            WHEN rule.id IS NOT NULL
+              THEN COALESCE(rule.reorder_qty, 0)
+            ELSE GREATEST(p.reorder_point::numeric - sl.on_hand::numeric, 0)
+          END AS suggested_qty
+        FROM inv_stock_levels sl
+        JOIN inv_product_variants v ON v.id = sl.product_variant_id
+        JOIN inv_products p         ON p.id = v.product_id
+        LEFT JOIN LATERAL (
+          SELECT rr.id, rr.min_qty::numeric AS min_qty, rr.max_qty::numeric AS max_qty,
+                 rr.reorder_qty::numeric AS reorder_qty, rr.vendor_id, rr.lead_time_days
+          FROM inv_reorder_rules rr
+          WHERE rr.org_id = ${orgId}
+            AND rr.is_active
+            AND rr.product_variant_id = sl.product_variant_id
+            AND (
+              rr.warehouse_id IS NULL
+              OR rr.warehouse_id = (SELECT loc.warehouse_id FROM inv_locations loc WHERE loc.id = sl.location_id)
+            )
+          ORDER BY (rr.warehouse_id IS NULL) ASC, rr.id ASC
+          LIMIT 1
+        ) rule ON TRUE
+        WHERE sl.org_id = ${orgId}
+          AND sl.on_hand::numeric <= p.reorder_point::numeric
+      )
+      SELECT
+        r.product_variant_id      AS "productVariantId",
+        r.variant_sku             AS "variantSku",
+        r.variant_name            AS "variantName",
+        r.product_id              AS "productId",
+        r.product_name            AS "productName",
+        r.product_sku             AS "productSku",
+        r.on_hand::float8         AS "onHand",
+        r.on_hand::text           AS "onHandDec",
+        r.on_order::float8        AS "onOrder",
+        r.committed::float8       AS "committed",
+        r.available_qty::float8   AS "availableQty",
+        r.available_qty::text     AS "availableQtyDec",
+        r.reorder_point::float8   AS "reorderPoint",
+        r.min_stock_level::float8 AS "minStockLevel",
+        r.rule_id                 AS "reorderRuleId",
+        r.rule_min_qty::float8    AS "minQty",
+        r.rule_max_qty::float8    AS "maxQty",
+        r.rule_reorder_qty::float8 AS "reorderQty",
+        r.suggested_qty::float8   AS "suggestedQty",
+        r.suggested_qty::text     AS "suggestedQtyDec",
+        COALESCE(r.rule_vendor_id, r.default_vendor_id) AS "vendorId",
+        r.rule_lead_time_days     AS "leadTimeDays",
+        count(*) OVER ()::int     AS "totalRows"
+      FROM r
+      ORDER BY r.variant_sku, r.product_variant_id
+      LIMIT ${limit} OFFSET ${offset}
+    `);
 
-    const [stockRows, rules, [countRow]] = await Promise.all([
-      this.db
-        .select({
-          productVariantId: invStockLevels.productVariantId,
-          locationId: invStockLevels.locationId,
-          onHand: invStockLevels.onHand,
-          onOrder: invStockLevels.onOrder,
-          committed: invStockLevels.committed,
-          // A1. The frontend was computing `onHand - committed` and calling it
-          // availability — an eighth copy of the formula, two terms short. The
-          // server owns this number.
-          availableQty: availableQtySql("inv_stock_levels"),
-          averageCost: invStockLevels.averageCost,
-          variantSku: invProductVariants.sku,
-          variantName: invProductVariants.name,
-          productId: invProducts.id,
-          productName: invProducts.name,
-          productSku: invProducts.sku,
-          reorderPoint: invProducts.reorderPoint,
-          minStockLevel: invProducts.minStockLevel,
-          defaultVendorId: invProducts.defaultVendorId,
-        })
-        .from(invStockLevels)
-        .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
-        .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-        .where(reorderWhere)
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select()
-        .from(invReorderRules)
-        .where(and(eq(invReorderRules.orgId, orgId), eq(invReorderRules.isActive, true))),
-      this.db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(invStockLevels)
-        .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
-        .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-        .where(reorderWhere),
-    ]);
-
-    const ruleMap = new Map<string, typeof rules[number]>();
-    for (const r of rules) {
-      ruleMap.set(`${r.productVariantId}:${r.warehouseId ?? "null"}`, r);
-    }
-
-    const items = stockRows.map((row) => {
-      const rule = ruleMap.get(`${row.productVariantId}:null`) ?? ruleMap.get(`${row.productVariantId}:${row.locationId}`);
-      const onHand = parseFloat(row.onHand);
-      const suggestedQty = rule
-        ? rule.maxQty
-          ? Math.max(0, parseFloat(rule.maxQty) - onHand)
-          : parseFloat(rule.reorderQty ?? "0")
-        : Math.max(0, parseFloat(row.reorderPoint) - onHand);
-
-      return {
-        productVariantId: row.productVariantId,
-        variantSku: row.variantSku,
-        variantName: row.variantName,
-        productId: row.productId,
-        productName: row.productName,
-        productSku: row.productSku,
-        onHand,
-        onOrder: parseFloat(row.onOrder),
-        committed: parseFloat(row.committed),
-        reorderPoint: parseFloat(row.reorderPoint),
-        minStockLevel: parseFloat(row.minStockLevel),
-        reorderRuleId: rule?.id ?? null,
-        minQty: rule ? parseFloat(rule.minQty) : null,
-        maxQty: rule?.maxQty ? parseFloat(rule.maxQty) : null,
-        reorderQty: rule?.reorderQty ? parseFloat(rule.reorderQty) : null,
-        suggestedQty: Math.round(suggestedQty * 10000) / 10000,
-        vendorId: rule?.vendorId ?? row.defaultVendorId ?? null,
-        leadTimeDays: rule?.leadTimeDays ?? null,
-      };
-    });
-
-    const total = countRow?.total ?? 0;
-    return { items, total, page, totalPages: Math.ceil(total / limit) };
+    const total = rows[0]?.totalRows ?? 0;
+    return {
+      items: rows.map(({ totalRows: _t, ...row }) => row),
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 }

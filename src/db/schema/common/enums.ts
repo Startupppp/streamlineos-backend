@@ -388,6 +388,31 @@ export const paymentManualMethodStatusEnum = pgEnum("payment_manual_method_statu
   "enabled", "missing_instructions", "disabled",
 ]);
 
+/**
+ * E2 — how a supply is treated for GST, which is not the same question as what
+ * rate it carries.
+ *
+ * `TAXABLE` at 0% and `NIL_RATED` look identical on an invoice line and are
+ * different rows in a GSTR-1 summary; `EXEMPT` and `NON_GST` differ again in
+ * whether input credit has to be reversed. Collapsing them into "rate = 0"
+ * loses the distinction the return actually asks for, so the treatment is
+ * stored beside the rate rather than derived from it.
+ */
+export const invTaxTreatmentEnum = pgEnum("inv_tax_treatment", [
+  "TAXABLE", "EXEMPT", "NIL_RATED", "ZERO_RATED", "NON_GST",
+]);
+
+/**
+ * E2 — the organisation's GST registration mode.
+ *
+ * A composition dealer pays tax out of turnover and may not collect it from a
+ * customer, so an outward document that shows a tax split is not merely
+ * cosmetic — it is an invoice the dealer is not allowed to raise. The mode is
+ * snapshotted onto every document line so a later switch cannot rewrite what an
+ * already-posted document claimed.
+ */
+export const invGstModeEnum = pgEnum("inv_gst_mode", ["REGULAR", "COMPOSITION"]);
+
 export const invProductTypeEnum = pgEnum("inv_product_type", ["STOCKABLE", "CONSUMABLE", "SERVICE"]);
 export const invTrackingMethodEnum = pgEnum("inv_tracking_method", ["NONE", "LOT", "SERIAL"]);
 export const invCostingMethodEnum = pgEnum("inv_costing_method", ["STANDARD", "WEIGHTED_AVERAGE", "FIFO"]);

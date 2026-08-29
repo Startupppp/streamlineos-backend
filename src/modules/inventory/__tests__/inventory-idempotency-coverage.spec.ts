@@ -152,6 +152,23 @@ describe("A3 — idempotency coverage across inventory commands", () => {
     expect(missing).toEqual([]);
   });
 
+  it("does not make a read-only POST ask for a key it has no use for", () => {
+    // D4. `recalls/simulate` is a POST purely because a recall selection does
+    // not fit in a query string; it writes nothing, so there is no effect to
+    // replay and nothing a key would protect. Demanding one anyway is the
+    // mirror image of the defect above — a key the client is made to mint and
+    // the server cannot use — and it would quietly turn every re-simulate into
+    // a 409 while the first lease was live.
+    const source = readFileSync(
+      join(INVENTORY_ROOT, "quality", "recalls.controller.ts"),
+      "utf8",
+    );
+    const simulate = source.slice(source.indexOf('@Post("simulate")'), source.indexOf("@Post()"));
+
+    expect(simulate).toContain("simulate(");
+    expect(simulate).not.toContain("@IdempotencyKey()");
+  });
+
   it("has one way to read the header, so the check cannot drift", () => {
     // Twenty handlers carried a hand-copied `if (!key) throw`, in three
     // different wordings, and the copies were what made the check separable

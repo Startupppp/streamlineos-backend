@@ -33,6 +33,9 @@ export type MovementsQueryInput = z.infer<typeof movementsQuerySchema>;
 export const valuationReportSchema = z.object({
   warehouseId: z.coerce.number().int().positive().optional(),
   categoryId: z.coerce.number().int().positive().optional(),
+  /** D5. The date the figure is quoted at, directly or via an accounting period. */
+  asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  periodId: z.coerce.number().int().positive().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 }).strict();

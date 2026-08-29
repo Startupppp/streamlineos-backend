@@ -606,11 +606,13 @@ export class InvStockTransfersService {
     if (!transfer) throw new NotFoundException("Transfer not found");
     // A2. Deliberately unchanged. Cancelling stops at RESERVED, so no cancel can
     // strand goods at a transit location -- there is nothing there to strand
-    // until a dispatch has happened. The gap that does exist is the other way
-    // round: an IN_TRANSIT transfer has no terminal state but COMPLETED, so a
-    // journey that is abandoned, or completed short, leaves its stock standing
-    // in transit with no route out of it. Closing that needs a state machine
-    // decision (an abandon/return-to-source transition), not a wider cancel.
+    // until a dispatch has happened. The gap that did exist was the other way
+    // round: an IN_TRANSIT transfer had no terminal state but COMPLETED, so a
+    // journey that was abandoned, or completed short, left its stock standing in
+    // transit with no route out. R3 closes that with `TransitExitService`, which
+    // is the state-machine decision it needed -- goods return to the source bin
+    // or are written off, both as posted movements -- rather than a wider cancel
+    // that would have had to move stock it never named.
     if (transfer.status !== "PENDING" && transfer.status !== "RESERVED") {
       throw new BadRequestException("Only PENDING or RESERVED transfers can be cancelled");
     }

@@ -5,13 +5,18 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { InvBarcodeService } from "../barcode/inv-barcode.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
+import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
+import { SoCoreService } from "../sales-orders/so-core.service";
 import { runIdempotent } from "../stock-engine/idempotency";
 import { addDec, cmpDec } from "../stock-engine/decimal";
+import { INV_ERRORS } from "../stock-engine/stock-engine.types";
+import { allocateFromAvailableStock } from "./pick-allocation";
 import type { ConfirmPickInput } from "./dto/picking.schemas";
 import {
   type PickGrain,
   type PickLineRow,
   loadPickLine,
+  loadWaveContext,
   reviveConfirm,
 } from "./pick-line";
 import { PickCompletionService } from "./pick-completion.service";
@@ -79,6 +84,8 @@ export class PickConfirmService {
     private readonly barcode: InvBarcodeService,
     private readonly completion: PickCompletionService,
     private readonly audit: InventoryAuditService,
+    private readonly settings: InventorySettingsService,
+    private readonly soCore: SoCoreService,
   ) {}
 
   /**
@@ -88,6 +95,10 @@ export class PickConfirmService {
    * A picker holding the wrong box scans it, the screen says the right SKU
    * because the screen is showing the *task*, and the wrong goods ship. Only the
    * server knows both what was asked for and what was actually read.
+   *
+   * R3, item 1. A confirm now always ends up at a real bin, or it is refused:
+   * see `resolvePickTarget`. The null case used to be silent, and silence was
+   * the whole defect — the quantity landed and the projection did not.
    */
   async confirmPick(
     orgId: string,
@@ -134,14 +145,16 @@ export class PickConfirmService {
       );
     }
 
-    const pickedAt = input.locationId ?? line.locationId;
+    const target = await this.resolvePickTarget(tx, orgId, pickListId, line, input);
+    const pickedAt = target.locationId;
+    const pickedLot = scanned.lotId ?? target.lotId;
 
     await tx
       .update(invPickListLines)
       .set({
         quantityPicked: nextPicked,
         locationId: pickedAt,
-        lotId: scanned.lotId,
+        lotId: pickedLot,
         serialId: scanned.serialId,
       })
       .where(
@@ -151,15 +164,17 @@ export class PickConfirmService {
         ),
       );
 
-    const grains: PickGrain[] = [];
-    if (pickedAt !== null) {
-      grains.push({
+    // R3. Unconditional now: `resolvePickTarget` either produced a bin or threw,
+    // so there is no longer a branch in which a confirm writes a quantity and
+    // silently skips the projection that makes it stop being sellable.
+    const grains: PickGrain[] = [
+      {
         productVariantId: line.productVariantId,
         locationId: pickedAt,
-        lotId: scanned.lotId,
+        lotId: pickedLot,
         serialId: scanned.serialId,
-      });
-    }
+      },
+    ];
     // B5. The bin the line *used* to stand on, when the picker took the goods
     // from a different one. `EXPECTED_OUTGOING` is keyed on the pick line's own
     // (location, lot, serial), so moving the line moves which row its picked
@@ -168,7 +183,7 @@ export class PickConfirmService {
     if (
       line.locationId !== null &&
       (line.locationId !== pickedAt ||
-        line.lotId !== scanned.lotId ||
+        line.lotId !== pickedLot ||
         line.serialId !== scanned.serialId)
     ) {
       grains.push({
@@ -210,15 +225,81 @@ export class PickConfirmService {
         scanned: input.scannedPayload !== undefined,
         reservationsConsumed: released.length,
         waveComplete: complete,
+        // R3. Whether the server had to find the bin. A wave that keeps needing
+        // this is a wave whose lines were never allocated, and that is a
+        // planning fact worth being able to count.
+        locationResolvedAtConfirm:
+          line.locationId === null && input.locationId === undefined,
       },
     });
 
     return {
       pickLineId: input.pickLineId,
       quantityPicked: nextPicked,
+      pickedAtLocationId: pickedAt,
       waveComplete: complete,
       pickedBy: userId,
     };
+  }
+
+  /**
+   * R3, item 1 — where these units are actually coming from, settled here or not at all.
+   *
+   * Three answers, in order:
+   *
+   *   1. the bin the picker names, which is authoritative — they are standing at
+   *      it, and `WRONG_LOCATION` exists for the case where the wave was wrong;
+   *   2. the bin the wave allocated, which is the ordinary case;
+   *   3. **a fresh allocation through the same shared helper `createWave` uses.**
+   *      A line the allocator could not resolve at plan time is often resolvable
+   *      by the time somebody picks it — a receipt landed, a hold was released —
+   *      and asking again costs one query. It goes through
+   *      `findAvailableLotForLine` rather than a local "where is this SKU"
+   *      query, so the eligibility, FEFO and expiry terms are the ones a reserve
+   *      would have applied.
+   *
+   * If all three come back empty the confirm is **refused**. It used to succeed:
+   * `pickedAt` was null, the row was updated, and the projection grain was
+   * skipped, so `quantity_picked` said the goods were in a tote while
+   * availability still offered them to the next customer. A 400 naming
+   * `LOCATION_NOT_FOUND` is the honest answer — there is nowhere for these units
+   * to have come from, and the line needs a decision rather than a confirm.
+   */
+  private async resolvePickTarget(
+    tx: Tx,
+    orgId: string,
+    pickListId: number,
+    line: PickLineRow,
+    input: ConfirmPickInput,
+  ): Promise<{ locationId: number; lotId: number | null }> {
+    const stated = input.locationId ?? line.locationId;
+    if (stated !== null) return { locationId: stated, lotId: line.lotId };
+
+    const wave = await loadWaveContext(tx, orgId, pickListId);
+    const settings = await this.settings.get(orgId);
+    const allocation = await allocateFromAvailableStock(
+      (productVariantId, quantity) =>
+        this.soCore.findAvailableLotForLine(
+          orgId,
+          productVariantId,
+          wave.warehouseId,
+          quantity,
+          settings.reservationStrategy,
+          settings.expiryReservationPolicy,
+        ),
+      line.productVariantId,
+      input.quantityPicked,
+    );
+
+    if (allocation.status !== "ALLOCATED") {
+      throw new BadRequestException({
+        code: INV_ERRORS.LOCATION_NOT_FOUND,
+        message:
+          "This task has no location and no eligible stock could be found for it. Report an exception or allocate a bin before confirming.",
+      });
+    }
+
+    return { locationId: allocation.locationId, lotId: line.lotId ?? allocation.lotId };
   }
 
 

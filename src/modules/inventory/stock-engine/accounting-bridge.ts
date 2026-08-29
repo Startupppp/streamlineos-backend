@@ -58,13 +58,34 @@ export class InventoryAccountingBridge {
     return probe;
   }
 
-  /** Refuses a movement into a closed or locked period, where periods exist. */
-  async assertOpen(orgId: string, postingDate: string): Promise<void> {
-    const has = await this.installed(
+  /**
+   * D6 — the same two questions this class already answers for itself, asked by
+   * the reconciliation report.
+   *
+   * The report has to say *why* a movement produced no journal, and "accounting
+   * is not installed in this database" is a different answer from "this tenant
+   * never mapped account 1300". Re-probing with a second `to_regclass` would
+   * give a second, independently-drifting opinion of the same fact, so the
+   * memoised probe is exposed instead of copied. Read-only: neither accessor
+   * posts anything.
+   */
+  hasJournals(): Promise<boolean> {
+    return this.installed(
+      "journal_entries",
+      "inventory movements will not produce accounting entries until the accounting module is migrated",
+    );
+  }
+
+  hasPeriods(): Promise<boolean> {
+    return this.installed(
       "accounting_periods",
       "stock posting-date control is inactive until the accounting module is migrated",
     );
-    if (!has) return;
+  }
+
+  /** Refuses a movement into a closed or locked period, where periods exist. */
+  async assertOpen(orgId: string, postingDate: string): Promise<void> {
+    if (!(await this.hasPeriods())) return;
     await this.periods.assertPeriodOpen(orgId, new Date(postingDate));
   }
 
@@ -90,11 +111,7 @@ export class InventoryAccountingBridge {
   async postJournalEntry(
     draft: Parameters<JournalPostingService["persistJournalEntry"]>[0],
   ): Promise<void> {
-    const has = await this.installed(
-      "journal_entries",
-      "inventory movements will not produce accounting entries until the accounting module is migrated",
-    );
-    if (!has) return;
+    if (!(await this.hasJournals())) return;
 
     const codes = [...new Set(draft.lines.map((line) => line.accountCode))];
     const found = await this.db

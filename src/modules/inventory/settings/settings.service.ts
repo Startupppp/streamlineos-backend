@@ -69,6 +69,16 @@ export class SettingsService {
         "At least one inventory pack must stay enabled — warehouse, kirana, pharmacy or gst",
       );
     }
+    // E2. `COMPOSITION` decides whether an outward document may show a tax split
+    // at all, and nothing asks that question while the pack is off. Accepting it
+    // anyway would leave a registration mode stored, invisible on every screen,
+    // and live the moment somebody turns the pack on months later.
+    const nextGstMode = input.gstMode ?? current.gstMode;
+    if (nextGstMode === "COMPOSITION" && !nextPacks.gst) {
+      throw new BadRequestException(
+        "The GST composition scheme needs the gst pack enabled — enable it in the same change or leave the mode as REGULAR",
+      );
+    }
     const updated = await this.invSettings.update(orgId, input, userId);
     await this.cache.invalidate(CACHE_KEYS.invSettings(orgId));
     return updated;

@@ -93,6 +93,15 @@ export class InvAiExplainController {
     return this.explainService.getReorderProposal(u.orgId, u.userId, parsed.data.variantId, parsed.data.warehouseId);
   }
 
+  /**
+   * F1. This raises a draft purchase order, so it costs
+   * `inventory:purchase-orders:create` **as well as** `inventory:ai:propose`.
+   *
+   * `@RequirePermission` takes one key, so the decorator can only state the
+   * first half; the conjunction is asserted inside the service against the
+   * stored proposal's own action (`inv-ai-confirm-authority.ts`). The decorator
+   * is the cheap early denial, not the boundary.
+   */
   @Post("reorder-proposal/confirm")
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
@@ -103,7 +112,7 @@ export class InvAiExplainController {
   ) {
     const parsed = confirmProposalBodySchema.safeParse(rawBody);
     if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.explainService.confirmReorderProposal(u.orgId, u.userId, parsed.data.proposalId, parsed.data.token);
+    return this.explainService.confirmReorderProposal(u, parsed.data.proposalId, parsed.data.token);
   }
 
   @Get("supplier-delay")

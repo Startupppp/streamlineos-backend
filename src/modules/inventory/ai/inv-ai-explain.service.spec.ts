@@ -4,6 +4,7 @@ import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service"
 import type { AiConfirmationService } from "../../ai/confirmation/ai-confirmation.service";
 import type { InvReplenishmentService } from "../replenishment/inv-replenishment.service";
 import type { VendorScorecardService } from "../vendors/vendor-scorecard.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 const MOCK_INSIGHT = {
   id: 1,
@@ -57,6 +58,25 @@ const MOCK_GATEWAY_META = {
   usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
 };
 
+/**
+ * F1. The confirm path now asks `AccessService` whether the caller holds both
+ * keys, so every construction needs one. The default answers yes to everything
+ * — these tests are about the reorder mechanics, and the conjunction has its
+ * own suite in `__tests__/inv-ai-confirm-authority.spec.ts` where a partial
+ * holder is the subject rather than the scenery.
+ */
+const ALLOW_ALL_ACCESS = { holds: () => Promise.resolve(true) };
+
+/** The shape `@CurrentUser()` hands the service. */
+const TEST_USER: CurrentUserContext = {
+  userId: "user-1",
+  orgId: "org-1",
+  role: "MEMBER",
+  isOrgOwner: false,
+  sessionId: "session-1",
+  tokenScopes: null,
+};
+
 function buildService(
   db: object,
   gateway: Partial<AiGatewayService>,
@@ -64,6 +84,7 @@ function buildService(
   replenishment?: Partial<InvReplenishmentService>,
   scorecards?: Partial<VendorScorecardService>,
   insights?: { getOpsBrief?: unknown },
+  access?: { holds?: (user: CurrentUserContext, key: string) => Promise<boolean> },
 ) {
   return new InvAiExplainService(
     db as never,
@@ -72,6 +93,7 @@ function buildService(
     (replenishment ?? {}) as InvReplenishmentService,
     (scorecards ?? {}) as VendorScorecardService,
     (insights ?? {}) as never,
+    (access ?? ALLOW_ALL_ACCESS) as never,
   );
 }
 
@@ -589,8 +611,7 @@ describe("InvAiExplainService - confirmReorderProposal", () => {
       replenishment,
     );
     await service.confirmReorderProposal(
-      "org-1",
-      "user-1",
+      TEST_USER,
       101,
       "101.9999999999.abc123",
     );
@@ -637,8 +658,7 @@ describe("InvAiExplainService - confirmReorderProposal", () => {
       replenishment,
     );
     await service.confirmReorderProposal(
-      "org-1",
-      "user-1",
+      TEST_USER,
       101,
       "101.9999999999.abc123",
     );
@@ -678,7 +698,7 @@ describe("InvAiExplainService - confirmReorderProposal", () => {
       replenishment,
     );
     await expect(
-      service.confirmReorderProposal("org-1", "user-1", 102, "102.xxx.yyy"),
+      service.confirmReorderProposal(TEST_USER, 102, "102.xxx.yyy"),
     ).rejects.toThrow(NotFoundException);
     expect(generatePo).not.toHaveBeenCalled();
   });
@@ -798,6 +818,10 @@ describe("InvAiExplainService - stale evidence on confirm", () => {
     const confirmation = {
       confirm: jest.fn().mockResolvedValue({
         proposalId: 1,
+        // F1. `AiConfirmationService.confirm` always returns the stored row's
+        // action, and the confirm path now measures authority against it, so a
+        // fixture that omits it is no longer a faithful stand-in.
+        action: "inventory:create-draft-po",
         payload: {
           suggestion: asSuggestion(3),
           evidenceHash: hashReorderEvidence(material),
@@ -820,7 +844,7 @@ describe("InvAiExplainService - stale evidence on confirm", () => {
     const { confirmation, replenishment } = build(3);
     const service = buildService({}, {}, confirmation, replenishment);
     await expect(
-      service.confirmReorderProposal("org-1", "user-1", 1, "tok"),
+      service.confirmReorderProposal(TEST_USER, 1, "tok"),
     ).resolves.toEqual({ id: 900 });
     expect(replenishment.generatePo).toHaveBeenCalled();
   });
@@ -831,7 +855,7 @@ describe("InvAiExplainService - stale evidence on confirm", () => {
     const { confirmation, replenishment } = build(503);
     const service = buildService({}, {}, confirmation, replenishment);
     await expect(
-      service.confirmReorderProposal("org-1", "user-1", 1, "tok"),
+      service.confirmReorderProposal(TEST_USER, 1, "tok"),
     ).rejects.toThrow(ConflictException);
     expect(replenishment.generatePo).not.toHaveBeenCalled();
   });
@@ -842,7 +866,7 @@ describe("InvAiExplainService - stale evidence on confirm", () => {
     const { confirmation, replenishment } = build(null);
     const service = buildService({}, {}, confirmation, replenishment);
     await expect(
-      service.confirmReorderProposal("org-1", "user-1", 1, "tok"),
+      service.confirmReorderProposal(TEST_USER, 1, "tok"),
     ).rejects.toThrow(ConflictException);
     expect(replenishment.generatePo).not.toHaveBeenCalled();
   });

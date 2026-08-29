@@ -53,6 +53,13 @@ export class PickWaveService {
    * picker sees it, through `allocateWaveLines`. A line with no location is a
    * task with no instruction, and it also has no projection grain to write to,
    * so a confirm against one silently left the picked units sellable.
+   *
+   * R3, item 1. What is left over is now said out loud. A line the allocator
+   * cannot resolve is still created — the demand is real and deleting it would
+   * lose it — but it comes back in `linesNeedingDecision`, and `confirmPick`
+   * refuses to close it against a null location rather than skipping its
+   * projection grain. So "no bin" is a state somebody is handed, not a null that
+   * travels quietly into the ledger.
    */
   async createWave(orgId: string, userId: string, input: CreateWaveInput) {
     await this.warehouseScope.assertWarehouseVisible(orgId, userId, input.warehouseId);
@@ -142,26 +149,38 @@ export class PickWaveService {
         })
         .returning();
 
-      await tx.insert(invPickListLines).values(
-        lines.map((line) => {
-          const at = allocations.get(line.soLineId);
-          return {
-            orgId,
-            pickListId: wave!.id,
-            soLineId: line.soLineId,
-            productVariantId: line.productVariantId,
-            locationId: at?.locationId ?? null,
-            lotId: at?.lotId ?? null,
-            serialId: at?.serialId ?? null,
-            quantityToPick: String(line.quantity),
-            quantityPicked: "0",
-          };
-        }),
-      );
+      const inserted = await tx
+        .insert(invPickListLines)
+        .values(
+          lines.map((line) => {
+            const at = allocations.get(line.soLineId);
+            const allocated = at?.status === "ALLOCATED" ? at : null;
+            return {
+              orgId,
+              pickListId: wave!.id,
+              soLineId: line.soLineId,
+              productVariantId: line.productVariantId,
+              locationId: allocated?.locationId ?? null,
+              lotId: allocated?.lotId ?? null,
+              serialId: allocated?.serialId ?? null,
+              quantityToPick: String(line.quantity),
+              quantityPicked: "0",
+            };
+          }),
+        )
+        .returning({ id: invPickListLines.id, soLineId: invPickListLines.soLineId });
 
-      const unallocated = lines.filter(
-        (line) => (allocations.get(line.soLineId)?.locationId ?? null) === null,
-      ).length;
+      // R3, item 1. Named rather than counted. A wave that comes back "3 lines
+      // could not be allocated" leaves the planner to find which three by
+      // reading the whole wave; the ids are what a client needs to put those
+      // lines in front of somebody, and the count is derived from them.
+      const needsDecision = inserted
+        .filter(
+          (row) =>
+            row.soLineId !== null &&
+            allocations.get(row.soLineId)?.status !== "ALLOCATED",
+        )
+        .map((row) => row.id);
 
       await this.audit.insert(tx, {
         orgId,
@@ -170,7 +189,11 @@ export class PickWaveService {
         resourceType: "inv_pick_lists",
         resourceId: String(wave!.id),
         after: { pickNumber, warehouseId: input.warehouseId, soIds: input.soIds },
-        metadata: { lineCount: lines.length, unallocatedLines: unallocated },
+        metadata: {
+          lineCount: lines.length,
+          unallocatedLines: needsDecision.length,
+          linesNeedingDecision: needsDecision,
+        },
       });
 
       return {
@@ -180,7 +203,8 @@ export class PickWaveService {
         lineCount: lines.length,
         // Surfaced rather than swallowed: a wave whose lines have nowhere to be
         // picked from is a stock problem the picker cannot solve at the shelf.
-        unallocatedLines: unallocated,
+        unallocatedLines: needsDecision.length,
+        linesNeedingDecision: needsDecision,
       };
     });
   }
@@ -211,6 +235,11 @@ export class PickWaveService {
    * reviewer's signature where one is required -- and a client copy of it would
    * be a fourth place for it to drift, showing a picker a finished row the server
    * still considers outstanding.
+   *
+   * R3. `needs_decision` is the other half of that: outstanding work with nowhere
+   * to walk to. Derived here for the same reason `line_closed` is -- a client
+   * inferring it from a null `location_id` would call a line that has already
+   * been short-closed a decision somebody still owes.
    */
   async getWave(orgId: string, userId: string, pickListId: number) {
     const wave = await this.db.query.invPickLists.findFirst({
@@ -247,6 +276,7 @@ export class PickWaveService {
       substitute_sku: string | null;
       substitute_quantity: string | null;
       line_closed: boolean;
+      needs_decision: boolean;
     }>(sql`
       SELECT pll.id,
              pll.so_line_id,
@@ -272,7 +302,8 @@ export class PickWaveService {
              pll.substitute_variant_id,
              sub.sku AS substitute_sku,
              pll.substitute_quantity,
-             ${PICK_LINE_CLOSED_SQL} AS line_closed
+             ${PICK_LINE_CLOSED_SQL} AS line_closed,
+             (pll.location_id IS NULL AND NOT ${PICK_LINE_CLOSED_SQL}) AS needs_decision
       FROM inv_pick_list_lines pll
       JOIN inv_product_variants v
         ON v.org_id = pll.org_id AND v.id = pll.product_variant_id

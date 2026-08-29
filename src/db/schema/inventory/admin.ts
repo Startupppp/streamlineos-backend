@@ -3,7 +3,7 @@ import { desc, relations, sql } from "drizzle-orm";
 import {
   invReservationStrategyEnum, invCostingMethodEnum, invExpiryPolicyEnum,
   invIdempotencyStatusEnum, invJobStatusEnum, invWebhookEventStatusEnum,
-  invReasonCategoryEnum, invImportRowStatusEnum,
+  invReasonCategoryEnum, invImportRowStatusEnum, invGstModeEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
 
@@ -50,6 +50,20 @@ export const invSettings = pgTable("inv_settings", {
   packKirana: boolean("pack_kirana").default(false).notNull(),
   packPharmacy: boolean("pack_pharmacy").default(false).notNull(),
   packGst: boolean("pack_gst").default(false).notNull(),
+  /**
+   * E2 — how this organisation is registered, and therefore whether it may
+   * collect tax from a customer at all.
+   *
+   * Lives beside the packs rather than on a document, because it is a property
+   * of the registration and changes at most once or twice in a business's life.
+   * Every outward line snapshots it anyway: a dealer that leaves the composition
+   * scheme must not have last quarter's documents silently start claiming a tax
+   * split they never showed.
+   *
+   * Only meaningful while `packGst` is on; an organisation not running the pack
+   * keeps the default and nothing reads it.
+   */
+  gstMode: invGstModeEnum("gst_mode").default("REGULAR").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

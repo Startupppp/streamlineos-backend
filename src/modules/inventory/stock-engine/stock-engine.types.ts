@@ -125,6 +125,12 @@ export interface InvSettingsRow {
    * rule that must not fire when its pack is off cannot forget to look.
    */
   packs: InvPackFlags;
+  /**
+   * E2. How the organisation is registered. Only meaningful while the `gst` pack
+   * is on; carried on the same row so the composition rule never needs a second
+   * query at the moment a document line is priced.
+   */
+  gstMode: InvGstMode;
 }
 
 /** E1 — the four packs. Warehouse is the core product; the rest are opt-in. */
@@ -134,3 +140,13 @@ export interface InvPackFlags {
   pharmacy: boolean;
   gst: boolean;
 }
+
+/** E2 — GST registration mode. A composition dealer may not collect outward tax. */
+export type InvGstMode = "REGULAR" | "COMPOSITION";
+
+/**
+ * E2 — how a supply is treated for GST, which is a different question from what
+ * rate it carries: `TAXABLE` at 0% and `NIL_RATED` are separate lines in a
+ * return.
+ */
+export type InvTaxTreatment = "TAXABLE" | "EXEMPT" | "NIL_RATED" | "ZERO_RATED" | "NON_GST";

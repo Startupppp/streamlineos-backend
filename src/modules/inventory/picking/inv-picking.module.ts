@@ -14,7 +14,10 @@ import { InvSalesOrdersModule } from "../sales-orders/inv-sales-orders.module";
   // PickWaveService injects WarehouseScopeService, NumberSequenceService,
   // InventorySettingsService and InventoryAuditService from the stock engine, and
   // SoCoreService from sales orders for the shared FEFO/FIFO allocator;
-  // PickConfirmService adds InvBarcodeService; PickExceptionReportService adds
+  // PickConfirmService adds InvBarcodeService, and -- R3 -- InventorySettingsService
+  // plus SoCoreService, so a confirm with no location can re-run the same shared
+  // allocator rather than writing a quantity to nowhere;
+  // PickExceptionReportService adds
   // ReservationService, InventorySettingsService and SoCoreService -- B5 needs
   // those three to release a short pick's reservation and to re-promise a
   // substituted line through the shared allocator; PickCompletionService adds

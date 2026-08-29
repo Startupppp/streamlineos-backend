@@ -32,6 +32,12 @@ export const updateSettingsSchema = z.object({
   packKirana: z.boolean().optional(),
   packPharmacy: z.boolean().optional(),
   packGst: z.boolean().optional(),
+  /**
+   * E2. The organisation's GST registration. Only meaningful while the `gst`
+   * pack is on, and the service refuses `COMPOSITION` without it — a composition
+   * rule that silently does nothing is worse than one that will not save.
+   */
+  gstMode: z.enum(["REGULAR", "COMPOSITION"]).optional(),
 }).strict();
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

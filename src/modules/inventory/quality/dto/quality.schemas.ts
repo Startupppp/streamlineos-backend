@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { recallSelectionSchema } from "./recall-simulation.schemas";
 
 export const listInspectionsQuerySchema = z.object({
   status: z.enum(["PENDING", "IN_PROGRESS", "PASSED", "FAILED", "DISPOSITION_REQUIRED", "COMPLETED", "CANCELLED"]).optional(),
@@ -79,6 +80,21 @@ export const listRecallsQuerySchema = z.object({
 }).strict();
 export type ListRecallsQueryInput = z.infer<typeof listRecallsQuerySchema>;
 
+/**
+ * D4. Executing a recall.
+ *
+ * Two ways in, and they are not equivalent. `lines` is the explicit form — the
+ * caller already knows exactly which lots and serials, and takes
+ * responsibility for that list. `selection` is the simulated form: the caller
+ * states the *question* ("this vendor's March deliveries"), and must present
+ * the `evidenceVersion` a simulate returned for that same question. The server
+ * re-runs the simulation and refuses if the picture has moved, so a recall is
+ * never executed against numbers an operator read ten minutes ago.
+ *
+ * `evidenceVersion` is required with `selection` rather than optional: a
+ * selection-shaped recall that skips the simulate is exactly the unexamined
+ * blast radius this unit exists to prevent.
+ */
 export const createRecallSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
@@ -86,8 +102,22 @@ export const createRecallSchema = z.object({
     productVariantId: z.number().int().optional(),
     lotId: z.number().int().optional(),
     serialId: z.number().int().optional(),
-  }).strict()).min(1),
-}).strict();
+  }).strict()).min(1).optional(),
+  selection: recallSelectionSchema.optional(),
+  evidenceVersion: z.string().min(1).max(128).optional(),
+}).strict()
+  .refine((b) => (b.lines === undefined) !== (b.selection === undefined), {
+    message: "Provide exactly one of lines or selection",
+    path: ["selection"],
+  })
+  .refine((b) => b.selection === undefined || b.evidenceVersion !== undefined, {
+    message: "evidenceVersion is required when a recall is raised from a selection — simulate first",
+    path: ["evidenceVersion"],
+  })
+  .refine((b) => b.selection !== undefined || b.evidenceVersion === undefined, {
+    message: "evidenceVersion only applies to a selection-based recall",
+    path: ["evidenceVersion"],
+  });
 export type CreateRecallInput = z.infer<typeof createRecallSchema>;
 
 export const updateRecallSchema = z.object({

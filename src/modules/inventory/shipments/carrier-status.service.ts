@@ -141,13 +141,14 @@ export class CarrierStatusService {
 
     // No tracking number is not an error either. A shipment handed to a driver
     // before the courier has issued one is an ordinary morning in a warehouse.
-    if (!adapter.canPoll || !shipment.trackingNumber) {
+    const tracking = shipment.trackingNumber;
+    if (!adapter.canPoll || !tracking) {
       return { ...base, polled: false, recorded: 0 };
     }
 
     const call = await runCarrierCall(() =>
       adapter.fetchTracking({
-        trackingNumber: shipment.trackingNumber!,
+        trackingNumber: tracking,
         carrierCode: shipment.carrierCode ?? adapter.code,
       }),
     );
@@ -178,8 +179,19 @@ export class CarrierStatusService {
       // The carrier's own account of which parcel this is, checked against ours
       // rather than trusted: an adapter that returns an event for a tracking
       // number we did not ask about is naming somebody else's shipment.
-      if (event.trackingNumber !== shipment.trackingNumber) continue;
-      const applied = await this.applyEvent(orgId, userId, shipment, event);
+      if (event.trackingNumber !== tracking) continue;
+      // Carried forward rather than read once. A poll returns a *batch*, and
+      // carriers batch them in whatever order their queue drained — so applying
+      // each against the status the shipment had before the batch started would
+      // let a DELIVERED followed by an OUT-OF-ORDER earlier scan walk the
+      // shipment backwards, which is the one thing the monotonic rule exists to
+      // stop.
+      const applied = await this.applyEvent(
+        orgId,
+        userId,
+        { id: shipment.id, status, carrierId: shipment.carrierId },
+        event,
+      );
       if (applied.recorded) recorded += 1;
       status = applied.status;
     }

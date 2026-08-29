@@ -1,4 +1,4 @@
-import { applyOrderPolicy, batchByVendor } from "../order-policy";
+import { applyOrderPolicy, batchProposals } from "../order-policy";
 
 /**
  * C1 turned every figure in this file into an exact `numeric(18,4)` decimal
@@ -77,9 +77,17 @@ describe("INV-309 order policy rounding", () => {
 });
 
 describe("INV-309 batching and approval", () => {
-  const line = (vendorId: number, value: string, excess = "0") => ({
+  const line = (
+    vendorId: number,
+    value: string,
+    excess = "0",
+    site: { warehouseId?: number | null; currency?: string } = {},
+  ) => ({
     vendorId,
     vendorName: `Vendor ${vendorId}`,
+    warehouseId: site.warehouseId ?? 1,
+    warehouseName: `Site ${site.warehouseId ?? 1}`,
+    currency: site.currency ?? "INR",
     productVariantId: vendorId * 100,
     productName: "Thing",
     requested: "10",
@@ -93,7 +101,7 @@ describe("INV-309 batching and approval", () => {
   it("puts one order per vendor, not one per SKU", () => {
     // Eleven separate orders to one supplier on one day is eleven delivery
     // fees and eleven receipts to book.
-    const batches = batchByVendor(
+    const batches = batchProposals(
       [line(1, "100"), line(1, "50"), line(2, "30")],
       { requireApproval: false, approvalThreshold: null },
     );
@@ -106,7 +114,7 @@ describe("INV-309 batching and approval", () => {
     // 0.1 + 0.2 is the whole argument for this file being in decimals: in
     // floats the total is 0.30000000000000004, and it is compared against an
     // approval threshold.
-    const batches = batchByVendor(
+    const batches = batchProposals(
       [line(1, "0.1"), line(1, "0.2")],
       { requireApproval: false, approvalThreshold: "0.3" },
     );
@@ -117,7 +125,7 @@ describe("INV-309 batching and approval", () => {
   it("checks the threshold against the batched total, not the line", () => {
     // A policy evaluated per line is avoided by splitting the order, which is
     // precisely what batching just stopped happening by accident.
-    const batches = batchByVendor(
+    const batches = batchProposals(
       [line(1, "60"), line(1, "60")],
       { requireApproval: false, approvalThreshold: "100" },
     );
@@ -126,7 +134,7 @@ describe("INV-309 batching and approval", () => {
   });
 
   it("leaves a batch under the threshold alone", () => {
-    const batches = batchByVendor(
+    const batches = batchProposals(
       [line(1, "40")],
       { requireApproval: false, approvalThreshold: "100" },
     );
@@ -135,7 +143,7 @@ describe("INV-309 batching and approval", () => {
   });
 
   it("honours a blanket approval requirement regardless of value", () => {
-    const batches = batchByVendor(
+    const batches = batchProposals(
       [line(1, "1")],
       { requireApproval: true, approvalThreshold: "1000000" },
     );
@@ -144,7 +152,7 @@ describe("INV-309 batching and approval", () => {
   });
 
   it("totals what the order policy cost across the batch", () => {
-    const batches = batchByVendor(
+    const batches = batchProposals(
       [line(1, "100", "17"), line(1, "50", "3")],
       { requireApproval: false, approvalThreshold: null },
     );

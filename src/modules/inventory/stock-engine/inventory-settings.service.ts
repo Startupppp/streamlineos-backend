@@ -31,6 +31,7 @@ const toSettingsRow = (row: InvSettingsSelect | InvSettingsInsert): InvSettingsR
     pharmacy: row.packPharmacy ?? false,
     gst: row.packGst ?? false,
   },
+  gstMode: row.gstMode ?? "REGULAR",
 });
 
 const buildDefaults = (orgId: string): InvSettingsInsert => ({
@@ -53,6 +54,7 @@ const buildDefaults = (orgId: string): InvSettingsInsert => ({
   packKirana: false,
   packPharmacy: false,
   packGst: false,
+  gstMode: "REGULAR",
 });
 
 @Injectable()

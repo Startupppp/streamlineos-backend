@@ -9,14 +9,20 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RecallsService } from "./quality-recalls.service";
+import { RecallSimulationService } from "./recall-simulation.service";
 import { listRecallsQuerySchema, createRecallSchema, updateRecallSchema } from "./dto/quality.schemas";
 import type { ListRecallsQueryInput, CreateRecallInput, UpdateRecallInput } from "./dto/quality.schemas";
+import { simulateRecallSchema } from "./dto/recall-simulation.schemas";
+import type { SimulateRecallInput } from "./dto/recall-simulation.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/quality/recalls")
 @UseGuards(JwtAuthGuard, ModuleGuard)
 export class RecallsController {
-  constructor(private readonly svc: RecallsService) {}
+  constructor(
+    private readonly svc: RecallsService,
+    private readonly simulation: RecallSimulationService,
+  ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
@@ -36,6 +42,29 @@ export class RecallsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.findOne(u.orgId, id);
+  }
+
+  /**
+   * D4 — what a recall would do, before anybody does it.
+   *
+   * A POST that writes nothing: no holds, no lot status changes, no ledger
+   * rows, no idempotency key, because there is no effect to replay. It is a
+   * POST rather than a GET only because a selection — lot ids, variants, a
+   * date range, a vendor — does not fit in a query string.
+   *
+   * Gated on `inventory:quality:read`, not `:recall`: reading the blast radius
+   * is how somebody decides whether to ask for a recall, and requiring the
+   * power to execute one in order to look at it is the reason operators guess
+   * instead.
+   */
+  @Post("simulate")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:quality:read")
+  simulate(
+    @Body(new ZodValidationPipe(simulateRecallSchema)) body: SimulateRecallInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.simulation.simulate(u.orgId, u.userId, body.selection);
   }
 
   @Post()

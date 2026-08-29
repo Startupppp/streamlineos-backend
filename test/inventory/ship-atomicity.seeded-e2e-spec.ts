@@ -11,6 +11,10 @@ import { PickWaveService } from "src/modules/inventory/picking/pick-wave.service
 import { PickConfirmService } from "src/modules/inventory/picking/pick-confirm.service";
 import { PickExceptionReportService } from "src/modules/inventory/picking/pick-exception-report.service";
 import { CarrierStatusService } from "src/modules/inventory/shipments/carrier-status.service";
+import {
+  CarrierAdapterRegistry,
+  type CarrierTrackingEvent,
+} from "src/modules/inventory/shipments/carrier-adapter";
 import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
 import { INVENTORY_COMMAND_EVENTS } from "src/modules/inventory/stock-engine/command-events";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
@@ -572,6 +576,152 @@ describe("[seeded-e2e] shipment posting is atomic", () => {
         status: "DELIVERED",
         deadLettered: false,
       });
+    }, 120_000);
+  });
+
+  /**
+   * B7, item 2 — the adapter boundary against a fake, said plainly.
+   *
+   * No carrier account exists and nothing here speaks to a courier. The fake is
+   * not standing in for an integration we could have used; it is standing in for
+   * the *failure modes* a carrier has, which are the things a real integration
+   * makes impossible to reproduce on demand — a batch that arrives out of order,
+   * a replayed scan, an endpoint that is simply down.
+   *
+   * What it proves that a unit test cannot: those batches go through the same
+   * ingest as the in-app POST, so the dedupe and monotonic rules hold for an
+   * adapter without anybody having to remember to reapply them; and a courier
+   * being unreachable changes nothing about the shipment. That last one is B7's
+   * item 3 — external failure does not corrupt internal state — measured rather
+   * than asserted in prose.
+   */
+  describe("a carrier adapter, exercised against a fake", () => {
+    let shipmentId: number;
+    let tracking: string;
+    let answer: () => Promise<CarrierTrackingEvent[]>;
+
+    beforeAll(async () => {
+      const soId = await createOrder([{ productVariantId: scene.variantId, quantity: 1 }]);
+      const [line] = await soLines(soId);
+      await asTenant(() =>
+        ship().pickSo(
+          scene.orgId,
+          soId,
+          scene.userId,
+          { lines: [{ soLineId: line!.id, locationId: scene.locationId, quantityPicked: "1.0000" }] },
+          `b7-pick-fake-${soId}`,
+        ),
+      );
+      tracking = `B7-FAKE-${randomUUID().slice(0, 8)}`;
+      const result = await asTenant(() =>
+        ship().shipSo(scene.orgId, soId, scene.userId, `b7-ship-fake-${soId}`, {
+          shipDate: "2026-08-29",
+          trackingNumber: tracking,
+        }),
+      );
+      shipmentId = result.shipmentId;
+
+      const code = `PARCELCO${randomUUID().slice(0, 4).toUpperCase()}`;
+      await asTenant(async () => {
+        const db = app.app.get<Db>(DRIZZLE);
+        const [carrier] = await db.execute<{ id: number }>(sql`
+          INSERT INTO inv_carriers (org_id, name, code)
+          VALUES (${scene.orgId}, 'ParcelCo', ${code}) RETURNING id`);
+        await db.execute(sql`
+          UPDATE inv_shipments SET carrier_id = ${carrier!.id}
+           WHERE org_id = ${scene.orgId} AND id = ${shipmentId}`);
+      });
+
+      answer = () => Promise.resolve([]);
+      app.app.get(CarrierAdapterRegistry).register({
+        code,
+        canPoll: true,
+        fetchTracking: () => answer(),
+      });
+    }, 300_000);
+
+    const refresh = () =>
+      asTenant(() =>
+        app.app.get(CarrierStatusService).refreshTracking(scene.orgId, scene.userId, shipmentId),
+      );
+
+    const event = (
+      status: "SHIPPED" | "DELIVERED",
+      occurredAt: string,
+      id: string,
+    ): CarrierTrackingEvent => ({
+      trackingNumber: tracking,
+      status,
+      occurredAt,
+      carrierEventId: id,
+    });
+
+    it("records an out-of-order batch without walking the shipment backwards", async () => {
+      // The order a courier's queue actually drains in. Taking the last message
+      // as truth here is how a customer is told their delivered parcel is back
+      // on a van.
+      answer = () =>
+        Promise.resolve([
+          event("DELIVERED", "2026-08-31T12:00:00.000Z", `fake-d-${shipmentId}`),
+          event("SHIPPED", "2026-08-30T08:00:00.000Z", `fake-s-${shipmentId}`),
+        ]);
+
+      const result = await refresh();
+      expect(result.polled).toBe(true);
+      expect(result.deadLettered).toBe(false);
+      // Both are kept — declining to act on an event is not a reason to lose it.
+      expect(result.recorded).toBe(2);
+      expect(result.status).toBe("DELIVERED");
+
+      const timeline = await asTenant(() =>
+        app.app.get(CarrierStatusService).timeline(scene.orgId, shipmentId),
+      );
+      expect(timeline.shipment.status).toBe("DELIVERED");
+      expect(timeline.events).toHaveLength(2);
+    }, 120_000);
+
+    it("treats the same batch arriving again as a no-op", async () => {
+      const result = await refresh();
+      expect(result.recorded).toBe(0);
+      expect(result.status).toBe("DELIVERED");
+
+      const timeline = await asTenant(() =>
+        app.app.get(CarrierStatusService).timeline(scene.orgId, shipmentId),
+      );
+      expect(timeline.events).toHaveLength(2);
+    }, 120_000);
+
+    it("dead-letters an unreachable carrier and leaves stock and shipment alone", async () => {
+      const stockBefore = await buckets(scene.variantId);
+      answer = () => Promise.reject(new Error("courier gateway 503"));
+
+      const result = await refresh();
+
+      // A value, not a throw. The goods are on a van; a courier's API being down
+      // is not a reason to unwind anything.
+      expect(result.deadLettered).toBe(true);
+      expect(result.polled).toBe(true);
+      expect(result.recorded).toBe(0);
+      expect(result.error).toContain("courier gateway 503");
+
+      expect(await buckets(scene.variantId)).toEqual(stockBefore);
+      const timeline = await asTenant(() =>
+        app.app.get(CarrierStatusService).timeline(scene.orgId, shipmentId),
+      );
+      expect(timeline.shipment.status).toBe("DELIVERED");
+      expect(timeline.events).toHaveLength(2);
+
+      // And the dead letter is on the record, because nothing else would say a
+      // courier was ever unreachable.
+      const audited = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ action: string }>(sql`
+          SELECT action FROM inv_audit_events
+           WHERE org_id = ${scene.orgId}
+             AND resource_type = 'shipment'
+             AND resource_id = ${String(shipmentId)}
+             AND action = 'shipment.carrier-poll-dead-lettered'`),
+      );
+      expect(audited).toHaveLength(1);
     }, 120_000);
   });
 });

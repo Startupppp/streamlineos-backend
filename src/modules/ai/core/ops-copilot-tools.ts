@@ -1,11 +1,10 @@
 import { Injectable, Inject } from "@nestjs/common";
 import { tool } from "ai";
 import { z } from "zod";
-import { and, eq, ilike, sql } from "drizzle-orm";
+import { and, eq, ilike, isNull, sql } from "drizzle-orm";
 import {
   invProducts,
   invProductVariants,
-  invStockLevels,
   leaveBalances,
   leaveTypes,
   payrollRuns,
@@ -14,6 +13,10 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { availableQtySumSql } from "../../inventory/stock-engine/available-sql";
+import {
+  WarehouseScopeService,
+  type ResolvedWarehouseScope,
+} from "../../inventory/stock-engine/warehouse-scope.service";
 import { ToolAccessService } from "./tool-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { DataScope } from "../../access/access.types";
@@ -26,11 +29,81 @@ export interface OpsCopilotContext {
   actor: CurrentUserContext;
 }
 
+/** Caps on what one lookup may pull into a context window. */
+const STOCK_LOOKUP_CAPS = { products: 5, variants: 10 } as const;
+
+export interface CopilotStockRow {
+  variantId: number;
+  onHand: number;
+  committed: number;
+  available: number;
+}
+
+/**
+ * F2 — stock quantities for a set of variants, scoped to the asker's warehouses.
+ *
+ * Two rules from backend/CLAUDE.md §4 meet in this one query, and both used to
+ * be missing here.
+ *
+ * The first is that a chunk is disclosed the moment it enters the context
+ * window, so the copilot must bind **the same object-level visibility the direct
+ * read endpoint enforces**, in the SQL predicate. `inv-stock.service`,
+ * `inv-stock-reservations.service` and the inventory reports all resolve
+ * `WarehouseScopeService` and put it in their `WHERE`; this tool did not, so an
+ * operator assigned to one warehouse could read every site's stock by asking the
+ * assistant instead of opening the screen it is a second door onto. The scope is
+ * now the same service's predicate, not a paraphrase of it.
+ *
+ * The second is that `available` has exactly one definition. A1 collapsed eight
+ * hand-written copies of the subtraction, one of them here, where it read
+ * `onHand - committed` — two terms of five, quietly offering blocked stock,
+ * quality-held stock, picked-and-waiting stock, and goods standing in a van at a
+ * transit location. A copilot states its number to a human as fact, so it uses
+ * `availableQtySumSql` and nothing else.
+ */
+export async function readCopilotVariantStock(
+  db: Db,
+  orgId: string,
+  scope: ResolvedWarehouseScope,
+  variantIds: readonly number[],
+): Promise<CopilotStockRow[]> {
+  if (variantIds.length === 0 || scope.isEmpty) return [];
+
+  const rows = await db.execute<{
+    variant_id: number;
+    on_hand: string;
+    committed: string;
+    available: string;
+  }>(sql`
+    SELECT
+      product_variant_id AS variant_id,
+      COALESCE(SUM(on_hand::numeric), 0)::text AS on_hand,
+      COALESCE(SUM(committed::numeric), 0)::text AS committed,
+      ${availableQtySumSql("inv_stock_levels")}::text AS available
+    FROM inv_stock_levels
+    WHERE org_id = ${orgId}
+      AND product_variant_id = ANY(${sql`ARRAY[${sql.join(
+        variantIds.map((id) => sql`${id}`),
+        sql`, `,
+      )}]::int[]`})
+      AND ${scope.location("inv_stock_levels.location_id")}
+    GROUP BY product_variant_id
+  `);
+
+  return rows.map((row) => ({
+    variantId: Number(row.variant_id),
+    onHand: Number(row.on_hand),
+    committed: Number(row.committed),
+    available: Number(row.available),
+  }));
+}
+
 @Injectable()
 export class OpsCopilotTools {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly toolAccess: ToolAccessService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
   private async selfPayrollRows(orgId: string, userId: string, month?: string, year?: string) {
@@ -62,7 +135,7 @@ export class OpsCopilotTools {
         description:
           "Search for inventory products by name and show their current stock availability. Returns up to 5 matching products with on-hand, committed, and available quantities.",
         inputSchema: z.object({
-          productQuery: z.string().min(1).describe("Partial product name to search for"),
+          productQuery: z.string().min(1).max(120).describe("Partial product name to search for"),
         }),
         execute: async ({ productQuery }) => {
           const deny = await this.toolAccess.denyReason(orgId, userId, "inventory:products:read");
@@ -71,12 +144,23 @@ export class OpsCopilotTools {
           const stockDeny = await this.toolAccess.denyReason(orgId, userId, "inventory:stock:read");
           if (stockDeny) return { denied: true, reason: stockDeny };
 
+          const scope = await this.warehouseScope.forUser(orgId, userId);
+
           const q = `%${productQuery.trim()}%`;
+          // Soft-deleted products are withdrawn from the catalogue, and §3's rule
+          // is that every read filters them: without this the assistant happily
+          // quotes stock for a SKU the product screens no longer show.
           const matched = await this.db
             .select({ id: invProducts.id, name: invProducts.name, sku: invProducts.sku, status: invProducts.status })
             .from(invProducts)
-            .where(and(eq(invProducts.orgId, orgId), ilike(invProducts.name, q)))
-            .limit(5);
+            .where(
+              and(
+                eq(invProducts.orgId, orgId),
+                isNull(invProducts.deletedAt),
+                ilike(invProducts.name, q),
+              ),
+            )
+            .limit(STOCK_LOOKUP_CAPS.products);
 
           if (matched.length === 0) {
             return { results: [], message: `No products found matching "${productQuery}".` };
@@ -87,46 +171,22 @@ export class OpsCopilotTools {
               const variants = await this.db
                 .select({ id: invProductVariants.id, name: invProductVariants.name })
                 .from(invProductVariants)
-                .where(eq(invProductVariants.productId, product.id))
-                .limit(10);
+                .where(
+                  and(
+                    eq(invProductVariants.orgId, orgId),
+                    eq(invProductVariants.productId, product.id),
+                    isNull(invProductVariants.deletedAt),
+                  ),
+                )
+                .limit(STOCK_LOOKUP_CAPS.variants);
 
               const variantIds = variants.map((v) => v.id);
               if (variantIds.length === 0) {
                 return { ...product, stock: [] };
               }
 
-              // A1. `available` was `onHand - committed` here: two terms of
-              // five, ignoring blocked, quality-held and picked-but-unshipped
-              // stock, and offering goods sitting in a transit location. The
-              // copilot quotes this number back to a human, so it is computed
-              // by the one definition of availability, in the same aggregate.
-              const stockRows = await this.db.execute<{
-                variant_id: number;
-                on_hand: string;
-                committed: string;
-                available: string;
-              }>(sql`
-                SELECT
-                  product_variant_id AS variant_id,
-                  COALESCE(SUM(on_hand::numeric), 0)::text AS on_hand,
-                  COALESCE(SUM(committed::numeric), 0)::text AS committed,
-                  ${availableQtySumSql("inv_stock_levels")}::text AS available
-                FROM ${invStockLevels}
-                WHERE org_id = ${orgId}
-                  AND product_variant_id = ANY(ARRAY[${sql.join(variantIds.map((id) => sql`${id}`), sql`, `)}]::int[])
-                GROUP BY product_variant_id
-              `);
-
-              const stockByVariant = new Map(
-                stockRows.map((r) => [
-                  Number(r.variant_id),
-                  {
-                    onHand: Number(r.on_hand),
-                    committed: Number(r.committed),
-                    available: Number(r.available),
-                  },
-                ]),
-              );
+              const stockRows = await readCopilotVariantStock(this.db, orgId, scope, variantIds);
+              const stockByVariant = new Map(stockRows.map((r) => [r.variantId, r]));
 
               return {
                 ...product,

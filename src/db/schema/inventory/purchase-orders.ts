@@ -1,6 +1,6 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
-import { invPoStatusEnum, invGrnQualityEnum, invGrnDiscrepancyEnum, invGrnStatusEnum } from "../common/enums";
+import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
+import { invPoStatusEnum, invGrnQualityEnum, invGrnDiscrepancyEnum, invGrnStatusEnum, invTaxTreatmentEnum, invGstModeEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { clients } from "../crm/contacts";
 import { businessParties } from "../party/business-parties";
@@ -78,8 +78,29 @@ export const invPoLines = pgTable("inv_po_lines", {
   uomId: integer("uom_id").references(() => invUom.id, { onDelete: "set null" }),
   quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
   uomFactor: decimal("uom_factor", { precision: 18, scale: 6 }),
+  /**
+   * The rate in percent, scale 2 — 18.00, not 0.18. `amount` beside it is the
+   * taxable value (entered quantity × unit cost) and is tax-exclusive; that was
+   * already true before E2 and is stated here because the pair is now read by
+   * something other than the header rollup.
+   */
   taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("0").notNull(),
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
+  /**
+   * E2 — the tax inputs as they stood when this line was written.
+   *
+   * A snapshot, not a join: reclassifying a SKU next quarter must not silently
+   * restate what a purchase order already said, and the HSN code on a filed
+   * return has to keep matching the document it came from. Nullable because
+   * lines written before E2, and lines in organisations not running the `gst`
+   * pack, have nothing to snapshot — and "we did not record this" must stay
+   * distinguishable from "we recorded that it was nil".
+   */
+  hsnCode: text("hsn_code"),
+  taxTreatment: invTaxTreatmentEnum("tax_treatment"),
+  gstMode: invGstModeEnum("gst_mode"),
+  /** The exact tax on this line: `amount × taxRate / 100`, half-up at 4dp. */
+  taxAmount: decimal("tax_amount", { precision: 18, scale: 4 }),
   lineOrder: integer("line_order").default(0).notNull(),
 }, (table) => [
   unique("uniq_inv_po_lines_org_id").on(table.orgId, table.id),
@@ -156,6 +177,22 @@ export const invGrnLines = pgTable("inv_grn_lines", {
   lotNumber: text("lot_number"),
   expiryDate: date("expiry_date"),
   manufactureDate: date("manufacture_date"),
+  /**
+   * E2 — the tax inputs as they stood when the goods were received.
+   *
+   * Taken again at receipt rather than read off the purchase order: months can
+   * pass between ordering and receiving, and a reclassification in between
+   * belongs to the receipt, which is the document the input credit is claimed
+   * against. Once the GRN is POSTED these never change, whatever the catalogue
+   * does afterwards.
+   *
+   * No `amount` here, because a GRN line prices nothing — it records a quantity
+   * against a purchase-order line that already carries the price.
+   */
+  hsnCode: text("hsn_code"),
+  taxTreatment: invTaxTreatmentEnum("tax_treatment"),
+  gstMode: invGstModeEnum("gst_mode"),
+  taxRate: decimal("tax_rate", { precision: 5, scale: 2 }),
 }, (table) => [
   unique("uniq_inv_grn_lines_org_id").on(table.orgId, table.id),
   foreignKey({

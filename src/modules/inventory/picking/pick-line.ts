@@ -118,6 +118,13 @@ function asRecord(stored: unknown): Record<string, unknown> {
 export function reviveConfirm(stored: unknown): {
   pickLineId: number;
   quantityPicked: string;
+  /**
+   * R3. Where the units were taken from. Non-null on every fresh confirm, since
+   * one that could not resolve a bin is now refused; nullable only here, because
+   * a response stored before this change carries no such field and inventing a
+   * location for it would be worse than admitting the row predates the rule.
+   */
+  pickedAtLocationId: number | null;
   waveComplete: boolean;
   pickedBy: string;
 } {
@@ -125,6 +132,7 @@ export function reviveConfirm(stored: unknown): {
   return {
     pickLineId: Number(row.pickLineId ?? 0),
     quantityPicked: String(row.quantityPicked ?? "0"),
+    pickedAtLocationId: row.pickedAtLocationId == null ? null : Number(row.pickedAtLocationId),
     waveComplete: row.waveComplete === true,
     pickedBy: String(row.pickedBy ?? ""),
   };

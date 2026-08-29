@@ -2,6 +2,43 @@ import { z } from "zod";
 
 const SKU_PATTERN = /^[A-Z0-9][A-Z0-9_-]*$/;
 const DECIMAL_PATTERN = /^\d+(\.\d{1,4})?$/;
+/**
+ * E2. HSN is 4, 6 or 8 digits for goods; SAC is 6 for services. Which length an
+ * organisation uses is a returns-filing choice driven by turnover, so all three
+ * are accepted and none is padded — a 4-digit code stored as 8 zero-padded
+ * digits is a different code.
+ */
+const HSN_PATTERN = /^(\d{4}|\d{6}|\d{8})$/;
+/** Percent, scale 2 — "18.00", not "0.18". */
+const GST_RATE_PATTERN = /^\d{1,3}(\.\d{1,2})?$/;
+
+export const TAX_TREATMENTS = ["TAXABLE", "EXEMPT", "NIL_RATED", "ZERO_RATED", "NON_GST"] as const;
+
+const hsnCodeSchema = z
+  .string()
+  .trim()
+  .regex(HSN_PATTERN, "HSN/SAC code must be 4, 6 or 8 digits");
+
+const gstRateSchema = z
+  .string()
+  .trim()
+  .regex(GST_RATE_PATTERN, "GST rate must be a percentage with up to 2 decimal places")
+  .refine((v) => Number(v) <= 100, "GST rate cannot exceed 100");
+
+/**
+ * E2. The tax inputs, accepted only while the `gst` pack is on — the service
+ * refuses them otherwise rather than writing a column the organisation cannot
+ * see. Nullable so a classification can be taken back off a SKU; `undefined`
+ * leaves it alone, `null` clears it.
+ */
+export const productTaxFields = {
+  hsnCode: hsnCodeSchema.nullable().optional(),
+  taxTreatment: z.enum(TAX_TREATMENTS).nullable().optional(),
+  gstRate: gstRateSchema.nullable().optional(),
+};
+
+/** The keys the `gst` pack owns, named once so the gate and the stripper agree. */
+export const PRODUCT_TAX_FIELD_KEYS = ["hsnCode", "taxTreatment", "gstRate"] as const;
 
 export const listProductsSchema = z.object({
   status: z.enum(["ACTIVE", "INACTIVE", "DISCONTINUED"]).optional(),
@@ -57,6 +94,7 @@ export const createProductSchema = z.object({
   hasVariants: z.boolean().default(false),
   imageUrl: z.string().url().optional(),
   customFields: z.record(z.string(), z.unknown()).optional(),
+  ...productTaxFields,
 }).strict();
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
@@ -167,3 +205,16 @@ export const updateUomSchema = z.object({
   isActive: z.boolean().optional(),
 }).strict();
 export type UpdateUomInput = z.infer<typeof updateUomSchema>;
+
+/**
+ * E2 — what a document line needs to know before it can be written.
+ *
+ * A GET with the taxable value in the query: this reads a classification and
+ * computes one figure from it, and writes nothing.
+ */
+export const resolveLineTaxSchema = z.object({
+  taxableAmount: z.string().trim().regex(DECIMAL_PATTERN, "taxableAmount must be a decimal with up to 4 places"),
+  documentKind: z.enum(["PURCHASE", "SALE"]),
+  taxRate: gstRateSchema.optional(),
+}).strict();
+export type ResolveLineTaxQuery = z.infer<typeof resolveLineTaxSchema>;

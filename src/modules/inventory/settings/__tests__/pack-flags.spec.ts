@@ -1,6 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 import { SettingsService } from "../settings.service";
-import type { InvSettingsRow } from "../../stock-engine/stock-engine.types";
+import type { InvGstMode, InvSettingsRow } from "../../stock-engine/stock-engine.types";
 
 /**
  * E1 — the packs, and the one rule that has to hold about them.
@@ -12,7 +12,7 @@ import type { InvSettingsRow } from "../../stock-engine/stock-engine.types";
  * indistinguishable from a broken deployment from the operator's side.
  */
 
-function settingsRow(packs: InvSettingsRow["packs"]): InvSettingsRow {
+function settingsRow(packs: InvSettingsRow["packs"], gstMode: InvGstMode = "REGULAR"): InvSettingsRow {
   return {
     allowNegativeStock: false,
     allowBackorders: false,
@@ -29,13 +29,14 @@ function settingsRow(packs: InvSettingsRow["packs"]): InvSettingsRow {
     packageRequiredForShipping: false,
     channelPublishPolicy: null,
     packs,
+    gstMode,
   };
 }
 
-function buildService(current: InvSettingsRow["packs"]) {
-  const update = jest.fn(async () => settingsRow(current));
+function buildService(current: InvSettingsRow["packs"], gstMode: InvGstMode = "REGULAR") {
+  const update = jest.fn(async () => settingsRow(current, gstMode));
   const invSettings = {
-    get: jest.fn(async () => settingsRow(current)),
+    get: jest.fn(async () => settingsRow(current, gstMode)),
     update,
   };
   const cache = { invalidate: jest.fn(async () => undefined) };
@@ -95,5 +96,37 @@ describe("E1 pack flags", () => {
     });
     await service.updateSettings("org1", "u1", { packWarehouse: false });
     expect(update).toHaveBeenCalled();
+  });
+
+  /**
+   * E2 — the registration mode is only answerable while the pack that asks the
+   * question is on.
+   */
+  it("refuses the composition scheme while the gst pack is off", async () => {
+    const { service, update } = buildService(warehouseOnly);
+    await expect(
+      service.updateSettings("org1", "u1", { gstMode: "COMPOSITION" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("accepts the composition scheme when the gst pack is turned on in the same change", async () => {
+    const { service, update } = buildService(warehouseOnly);
+    await service.updateSettings("org1", "u1", { packGst: true, gstMode: "COMPOSITION" });
+    expect(update).toHaveBeenCalledWith("org1", { packGst: true, gstMode: "COMPOSITION" }, "u1");
+  });
+
+  it("refuses to turn the gst pack off underneath a composition registration", async () => {
+    // The inverse of the rule above, and the one that would otherwise be missed:
+    // the mode is already COMPOSITION and the patch only touches the pack, so
+    // nothing in the request mentions GST mode at all.
+    const { service, update } = buildService(
+      { warehouse: true, kirana: false, pharmacy: false, gst: true },
+      "COMPOSITION",
+    );
+    await expect(
+      service.updateSettings("org1", "u1", { packGst: false }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(update).not.toHaveBeenCalled();
   });
 });

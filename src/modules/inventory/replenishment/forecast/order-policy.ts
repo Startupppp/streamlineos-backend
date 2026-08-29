@@ -100,9 +100,17 @@ export interface BatchLine {
   reasons: string[];
 }
 
-export interface VendorBatch {
+/** What decides which purchase order a line belongs on. */
+export interface BatchKeyFields {
   vendorId: number;
   vendorName: string;
+  /** Null means the proposal was made for the organisation rather than a site. */
+  warehouseId: number | null;
+  warehouseName: string | null;
+  currency: string;
+}
+
+export interface SupplierSiteBatch extends BatchKeyFields {
   lines: BatchLine[];
   totalValue: string;
   /** Units bought beyond need across the batch, so the cost of the policy is visible. */
@@ -111,31 +119,52 @@ export interface VendorBatch {
   approvalReason?: string;
 }
 
+/** The grouping key, exposed so a caller can talk about a batch it has not built yet. */
+export function batchKey(fields: {
+  vendorId: number;
+  warehouseId: number | null;
+  currency: string;
+}): string {
+  return `${fields.vendorId}|${fields.warehouseId ?? "org"}|${fields.currency}`;
+}
+
 /**
- * Group lines into one order per vendor, and decide whether a human signs it.
+ * C6 — group lines into one order per supplier, site and currency.
  *
- * One order per vendor rather than one per SKU is the entire point: a supplier
- * receiving eleven separate orders for eleven items on the same day will charge
- * eleven delivery fees, and the warehouse will book eleven receipts.
+ * One order per vendor rather than one per SKU is the point a buyer feels: a
+ * supplier receiving eleven separate orders for eleven items on the same day
+ * charges eleven delivery fees and the warehouse books eleven receipts.
+ *
+ * Vendor alone is not the key, though, and the two extra terms are not
+ * decoration. **Warehouse** is on the purchase order header and decides where
+ * the goods are received, so merging two sites onto one order sends every unit
+ * to whichever site happened to sort first. **Currency** is also on the header
+ * and there is exactly one of it: putting a USD line and an INR line on one
+ * order produces a total in no currency at all, which then flows into the
+ * receipt, the valuation and the supplier's invoice reconciliation.
  */
-export function batchByVendor(
-  lines: Array<BatchLine & { vendorId: number; vendorName: string }>,
+export function batchProposals(
+  lines: Array<BatchLine & BatchKeyFields>,
   policy: { requireApproval: boolean; approvalThreshold: string | null },
-): VendorBatch[] {
-  const byVendor = new Map<number, VendorBatch>();
+): SupplierSiteBatch[] {
+  const batches = new Map<string, SupplierSiteBatch>();
 
   for (const line of lines) {
-    let batch = byVendor.get(line.vendorId);
+    const key = batchKey(line);
+    let batch = batches.get(key);
     if (!batch) {
       batch = {
         vendorId: line.vendorId,
         vendorName: line.vendorName,
+        warehouseId: line.warehouseId,
+        warehouseName: line.warehouseName,
+        currency: line.currency,
         lines: [],
         totalValue: "0.0000",
         totalExcessUnits: "0.0000",
         requiresApproval: false,
       };
-      byVendor.set(line.vendorId, batch);
+      batches.set(key, batch);
     }
     batch.lines.push(line);
     // Money, summed exactly. A batch total is what the approval threshold is
@@ -144,7 +173,7 @@ export function batchByVendor(
     batch.totalExcessUnits = addDec(batch.totalExcessUnits, line.excess);
   }
 
-  return [...byVendor.values()].map((batch) => {
+  return [...batches.values()].map((batch) => {
     const totalValue = batch.totalValue;
     // The threshold is checked against the batched total, not the line. An
     // approval policy evaluated per line is trivially avoided by splitting the

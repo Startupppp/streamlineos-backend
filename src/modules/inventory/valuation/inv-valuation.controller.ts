@@ -11,8 +11,10 @@ import { InvValuationService } from "./inv-valuation.service";
 import {
   valuationSummarySchema,
   valuationLayersSchema,
+  valuationConsumptionsSchema,
   type ValuationSummaryInput,
   type ValuationLayersInput,
+  type ValuationConsumptionsInput,
 } from "./dto/valuation.schemas";
 
 @RequireModule("inventory")
@@ -31,6 +33,14 @@ export class InvValuationController {
     return this.valuation.getValuationSummary(u.orgId, u.userId, filters);
   }
 
+  /** The accounting periods a valuation may be quoted at, where any exist. */
+  @Get("periods")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:valuation:read")
+  listPeriods(@CurrentUser() u: CurrentUserContext) {
+    return this.valuation.listPeriods(u.orgId);
+  }
+
   @Get("layers")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:valuation:read")
@@ -39,5 +49,16 @@ export class InvValuationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.valuation.getValuationLayers(u.orgId, u.userId, filters);
+  }
+
+  /** Which layers each issue drew from, and what the draw cost. */
+  @Get("consumptions")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:valuation:read")
+  getValuationConsumptions(
+    @Query(new ZodValidationPipe(valuationConsumptionsSchema)) filters: ValuationConsumptionsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.valuation.getValuationConsumptions(u.orgId, u.userId, filters);
   }
 }

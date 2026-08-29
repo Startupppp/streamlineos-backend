@@ -9,6 +9,7 @@ import { InspectionPlansService } from "./inspection-plans.service";
 import { ReceiptInspectionService } from "./receipt-inspection.service";
 import { HoldsService } from "./quality-holds.service";
 import { RecallsService } from "./quality-recalls.service";
+import { RecallSimulationService } from "./recall-simulation.service";
 
 /**
  * D3. `ReceiptInspectionService` is exported because the receipt path calls it:
@@ -32,6 +33,7 @@ import { RecallsService } from "./quality-recalls.service";
     ReceiptInspectionService,
     HoldsService,
     RecallsService,
+    RecallSimulationService,
   ],
   exports: [ReceiptInspectionService],
 })

@@ -13,8 +13,8 @@ import { resolveInvProductsScope } from "../stock-engine/inventory-scope";
 import {
   listProductsSchema, createProductSchema, updateProductSchema,
   createVariantSchema, updateVariantSchema, createCategorySchema, createUomSchema, listVariantsSchema,
-  updateCategorySchema, updateUomSchema,
-  type ListProductsInput, type CreateProductInput, type UpdateProductInput,
+  updateCategorySchema, updateUomSchema, resolveLineTaxSchema,
+  type ListProductsInput, type CreateProductInput, type UpdateProductInput, type ResolveLineTaxQuery,
   type CreateVariantInput, type UpdateVariantInput, type CreateCategoryInput, type CreateUomInput, type ListVariantsInput,
   type UpdateCategoryInput, type UpdateUomInput,
 } from "./dto/inv-products.schemas";
@@ -103,6 +103,29 @@ export class InvProductsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.products.listVariants(u.orgId, filters);
+  }
+
+  /**
+   * E2 — the tax inputs for one document line, before the line is written.
+   *
+   * Sits here rather than on each document module because there is one answer:
+   * the SKU's classification, the organisation's registration mode, and the
+   * exact tax that follows. A purchase-order screen and a sales-order screen
+   * asking the same question must not be able to get different answers, and the
+   * composition rule in particular has to be enforced somewhere a form cannot
+   * route around.
+   *
+   * A read — it computes and returns, and writes nothing.
+   */
+  @Get("variants/:variantId/tax-treatment")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:read")
+  resolveLineTax(
+    @Param("variantId", ParseIntPipe) variantId: number,
+    @Query(new ZodValidationPipe(resolveLineTaxSchema)) query: ResolveLineTaxQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.products.resolveLineTax(u.orgId, variantId, query);
   }
 
   @Post(":productId/archive")

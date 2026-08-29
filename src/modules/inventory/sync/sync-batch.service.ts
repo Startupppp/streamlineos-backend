@@ -1,11 +1,15 @@
-import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { ConflictException, HttpException, Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { invIdempotencyKeys } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { INV_ERRORS } from "../stock-engine/stock-engine.types";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { PickConfirmService } from "../picking/pick-confirm.service";
+import { GrnService } from "../purchase-orders/grn.service";
+import { InvBarcodeService } from "../barcode/inv-barcode.service";
 import { runIdempotent } from "../stock-engine/idempotency";
+import { adjustmentMovementType } from "../stock/lib/write-off";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../../common/logger/logger.service";
@@ -16,12 +20,51 @@ import type {
   SyncOperationResult,
 } from "./dto/sync.schemas";
 
+/**
+ * B8 — the structured code a Nest exception was thrown with, if it carries one.
+ *
+ * The inventory services throw `new BadRequestException({ code, message })`, so
+ * the name of the failure is already on the wire — it is just buried in the
+ * response body rather than on `Error.message`. Reading it here is what lets
+ * the device answer "the stock is not there" differently from "the document
+ * moved on" without matching prose, which is a classification that drifts the
+ * first time somebody rewords a message.
+ */
+function structuredCodeOf(error: unknown): string | null {
+  if (!(error instanceof HttpException)) return null;
+  const body: unknown = error.getResponse();
+  if (typeof body !== "object" || body === null) return null;
+  const code = (body as { code?: unknown }).code;
+  return typeof code === "string" && code.length > 0 ? code : null;
+}
+
+/**
+ * The three answers a device can usefully give a human, and no more.
+ *
+ * A conflict the operator cannot act on is noise, so this collapses everything
+ * to one of: the stock is not there (show them what is), the document moved on
+ * (show them what changed), or the same operation is already in flight (wait,
+ * do not ask anybody anything). Anything else keeps its own name rather than
+ * being flattened into a category that would make the UI lie about it.
+ */
+export function conflictCodeOf(error: unknown, message: string): string {
+  const structured = structuredCodeOf(error);
+  if (structured) return structured;
+  if (/insufficient|not enough|exceeds? (?:the )?available/i.test(message))
+    return INV_ERRORS.INSUFFICIENT_STOCK;
+  if (/closed|cancelled|no longer|already|not found|state/i.test(message))
+    return INV_ERRORS.INVALID_DOCUMENT_STATE;
+  return "UNCLASSIFIED";
+}
+
 @Injectable()
 export class SyncBatchService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly engine: StockEngineService,
     private readonly picking: PickConfirmService,
+    private readonly receiving: GrnService,
+    private readonly barcode: InvBarcodeService,
   ) {}
 
   /**
@@ -104,61 +147,9 @@ export class SyncBatchService {
     }
 
     try {
-      if (operation.type === "stock.adjust") {
-        await this.engine.execute(orgId, userId, {
-          idempotencyKey: key,
-          sourceType: "offline-sync",
-          sourceId: operation.clientOperationId,
-          postingDate: operation.occurredAt.slice(0, 10),
-          movements: [
-            {
-              transactionType: "ADJUSTMENT_IN",
-              productVariantId: operation.productVariantId,
-              locationId: operation.locationId,
-              quantityDelta: operation.quantityDelta,
-            },
-          ],
-        });
-      } else {
-        // A3. This branch used to run the pick and *then* insert a COMPLETED
-        // row for the key, which is a receipt rather than a claim. The two
-        // operation types were not equally protected: `stock.adjust` claims
-        // inside the engine, before its movement; the pick claimed after its
-        // own. `confirmPick` adds to `quantity_picked` relatively and
-        // decrements the outgoing bucket, so two copies of one operation
-        // arriving together — exactly what a device on a failing network
-        // sends — both got past the COMPLETED read above, both picked, and the
-        // trailing `onConflictDoNothing` recorded that silently. The claim now
-        // comes first and shares the pick's transaction, so the second copy
-        // waits on the key and replays instead of picking again.
-        const replayed = await this.db.transaction((tx) =>
-          runIdempotent(
-            tx,
-            orgId,
-            key,
-            operation,
-            async () => {
-              // Derived, not the same key: `confirmPick` claims one of its own
-              // now, and claiming a key twice in one transaction is a duplicate
-              // rather than a nesting — it would 409 every first attempt.
-              await this.picking.confirmPick(
-                orgId,
-                userId,
-                operation.pickListId,
-                {
-                  pickLineId: operation.pickLineId,
-                  quantityPicked: operation.quantityPicked,
-                },
-                `${key}:confirm`,
-              );
-              return false;
-            },
-            () => true,
-          ),
-        );
-        if (replayed) {
-          return { clientOperationId: operation.clientOperationId, outcome: "duplicate" };
-        }
+      const replayed = await this.runOperation(orgId, userId, operation, key);
+      if (replayed) {
+        return { clientOperationId: operation.clientOperationId, outcome: "duplicate" };
       }
 
       // Emitted after the operation has committed, and its failure must not be
@@ -180,8 +171,153 @@ export class SyncBatchService {
         clientOperationId: operation.clientOperationId,
         outcome: isConflict ? "conflict" : "failed",
         reason: message,
+        // B8. A machine-readable name for the conflict, because the device has
+        // to answer three of them differently: the stock is not there, the
+        // document moved on, or something else entirely. Matching the prose in
+        // the UI would put this classification in two places and let the
+        // operator's options drift from the reason they were shown.
+        code: conflictCodeOf(error, message),
       };
     }
+  }
+
+  /**
+   * B8 — run one queued operation through the service that owns it online.
+   *
+   * Returns whether the operation had already been applied. Nothing here writes
+   * stock, receives a delivery or closes a pick line itself: an offline path
+   * with its own copy of any of those would be a second, weaker set of rules
+   * for exactly the operations that got the least supervision.
+   *
+   * Every branch but `stock.adjust` shares one shape — claim the device's key
+   * first, in its own transaction, then do the work under a *derived* key. The
+   * claim has to come first, not after: `confirmPick` and `receiveGoods` both
+   * accumulate relatively, so two copies of one operation arriving together
+   * would both get past the COMPLETED read in `applyOne` and both apply.
+   * (`stock.adjust` needs no wrapper because the engine claims this exact key
+   * inside its own transaction, before its movement.) The inner key is derived
+   * rather than the same string because claiming one key twice would read as a
+   * duplicate rather than a nesting, and 409 every first attempt.
+   */
+  private async runOperation(
+    orgId: string,
+    userId: string,
+    operation: SyncOperation,
+    key: string,
+  ): Promise<boolean> {
+    switch (operation.type) {
+      case "stock.adjust":
+        await this.engine.execute(orgId, userId, {
+          idempotencyKey: key,
+          sourceType: "offline-sync",
+          sourceId: operation.clientOperationId,
+          postingDate: operation.occurredAt.slice(0, 10),
+          movements: [
+            {
+              /**
+               * B8. The ledger type follows the sign of the delta.
+               *
+               * Every offline adjustment was posted `ADJUSTMENT_IN` whatever
+               * its sign, so a queued correction of −5 landed as an *inbound*
+               * movement of −5: the arithmetic was right, and the ledger said
+               * stock had arrived. Nothing that reads `transaction_type` —
+               * shrinkage reporting, the AI adjustment summary, an auditor
+               * separating a recount from a write-off — could tell an offline
+               * removal from an offline receipt. `adjustmentMovementType` is
+               * the same function the online adjustment path uses, so the two
+               * cannot drift, and it also gives a condemned line `SCRAP`
+               * rather than `ADJUSTMENT_OUT`.
+               *
+               * The quantity itself is passed through untouched. The sign is
+               * the instruction; a direction flag beside an absolute value
+               * would be a second place for it to be stated and a first place
+               * for it to disagree.
+               */
+              transactionType: adjustmentMovementType(
+                operation.reasonCode ?? "",
+                operation.quantityDelta,
+              ),
+              productVariantId: operation.productVariantId,
+              locationId: operation.locationId,
+              quantityDelta: operation.quantityDelta,
+            },
+          ],
+        });
+        return false;
+
+      case "pick.confirm":
+        return this.claimThen(orgId, key, operation, async () => {
+          await this.picking.confirmPick(
+            orgId,
+            userId,
+            operation.pickListId,
+            {
+              pickLineId: operation.pickLineId,
+              quantityPicked: operation.quantityPicked,
+            },
+            `${key}:confirm`,
+          );
+        });
+
+      case "receive.count":
+        return this.claimThen(orgId, key, operation, async () => {
+          // The whole delivery — document, PO arithmetic, movements, events,
+          // journal — through the one command the dock uses online. A queued
+          // count is a delivery that was counted with no signal, not a
+          // different kind of document.
+          await this.receiving.receiveGoods(
+            orgId,
+            operation.poId,
+            userId,
+            `${key}:receive`,
+            {
+              receivedDate: operation.receivedDate,
+              locationId: operation.locationId,
+              notes: operation.notes,
+              lines: operation.lines,
+            },
+          );
+        });
+
+      case "scan.capture":
+        return this.claimThen(orgId, key, operation, async () => {
+          // Resolved against the catalogue as it stands now, not as the device
+          // last saw it. The raw payload is the fact; what it means is an
+          // interpretation, and the device's copy of the catalogue is the
+          // stalest one in the system.
+          await this.barcode.captureScan(
+            orgId,
+            userId,
+            `${key}:scan`,
+            operation.payload,
+          );
+        });
+    }
+  }
+
+  /**
+   * Claim the device's key, then do the work under it. `true` means a prior
+   * attempt already did it.
+   */
+  private claimThen(
+    orgId: string,
+    key: string,
+    request: unknown,
+    work: () => Promise<void>,
+  ): Promise<boolean> {
+    return this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        key,
+        request,
+        async () => {
+          await work();
+          return false;
+        },
+        () => true,
+      ),
+    );
   }
 
   private async emitApplied(

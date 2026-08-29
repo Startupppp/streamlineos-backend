@@ -159,16 +159,16 @@ describe("runCarrierCall", () => {
     // The losing half of the race still settles. Left unattended it would
     // surface minutes later and take the process down with it, long after the
     // request it belonged to was answered.
-    let reject: ((error: Error) => void) | null = null;
+    const control: { reject: ((error: Error) => void) | null } = { reject: null };
     const result = await runCarrierCall(
       () =>
         new Promise<CarrierTrackingEvent[]>((_resolve, rej) => {
-          reject = rej;
+          control.reject = rej;
         }),
       { sleep: instant, timer: instant },
     );
     expect(result.ok).toBe(false);
-    reject?.(new Error("arrived after the deadline"));
+    control.reject?.(new Error("arrived after the deadline"));
     await new Promise((resolve) => setImmediate(resolve));
   });
 });

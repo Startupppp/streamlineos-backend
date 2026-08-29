@@ -25,9 +25,9 @@ function accumulate(
  * grain it stands on.
  *
  * This is the single answer to "what came off the shelf for this order", and
- * packing, shipping and the reconciliation above all read it. Three commands
- * carried three hand-copied versions of the same join, which is how the
- * substitution below stayed invisible in two of them.
+ * packing, shipping and `pickedQuantities` all read it. Three commands carried
+ * three hand-copied versions of the same join, which is how the substitution
+ * described below stayed invisible in two of them.
  *
  * **A pick line can yield two rows, and that is the point.** A picker who swaps
  * one SKU for another records the swap on `substitute_variant_id` /

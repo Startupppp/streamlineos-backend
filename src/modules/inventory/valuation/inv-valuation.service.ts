@@ -1,132 +1,230 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
-import {
-  invValuationLayers,
-  invStockLevels,
-  invProductVariants,
-  invProducts,
-  invLocations,
-} from "../../../db/schema";
+import { sql, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
-import type { ValuationSummaryInput, ValuationLayersInput } from "./dto/valuation.schemas";
+import type {
+  ValuationSummaryInput,
+  ValuationLayersInput,
+  ValuationConsumptionsInput,
+} from "./dto/valuation.schemas";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import { InventoryPeriodService, todayIso, type InventoryPeriod } from "./inventory-period.service";
+import {
+  asAtValuationSql,
+  consumptionEvidenceSql,
+  layerEvidenceSql,
+  liveValuationSql,
+} from "./lib/valuation-sql";
+
+/**
+ * Every quantity and every money figure below leaves Postgres as `text` and is
+ * never parsed. `parseFloat` on a `numeric(18,4)` is lossy in both directions —
+ * it loses precision on the way in and invents digits on the way out — and this
+ * service is where an organisation's stock value is quoted from.
+ */
+export interface ValuationSummaryRow {
+  productVariantId: number;
+  variantSku: string;
+  variantName: string | null;
+  productId: number;
+  productName: string;
+  costingMethod: string;
+  onHand: string;
+  value: string;
+  fifoValue: string;
+  standardCost: string;
+  unitCostBasis: string;
+  layerCount: number;
+}
+
+export interface ValuationGrain {
+  asOfDate: string;
+  /** True when the figure is today's projection rather than a ledger replay. */
+  live: boolean;
+  period: InventoryPeriod | null;
+}
+
+interface SummaryRow extends ValuationSummaryRow, Record<string, unknown> {
+  totalRows: number;
+  totalValue: string;
+  totalOnHand: string;
+}
+
+interface LayerRow extends Record<string, unknown> {
+  layerId: number;
+  createdAt: Date;
+  stockTransactionId: number | null;
+  costingMethod: string;
+  sourceType: string | null;
+  sourceId: string | null;
+  locationId: number | null;
+  locationName: string | null;
+  warehouseName: string | null;
+  lotId: number | null;
+  lotNumber: string | null;
+  quantity: string;
+  unitCost: string;
+  totalValue: string;
+  remainingQuantity: string;
+  remainingValue: string;
+  consumedQuantity: string;
+  consumptionCount: number;
+  remainingQuantityAsAt: string;
+  remainingValueAsAt: string;
+  totalRows: number;
+}
+
+interface ConsumptionRow extends Record<string, unknown> {
+  consumptionId: number;
+  createdAt: Date;
+  stockTransactionId: number;
+  valuationLayerId: number;
+  quantity: string;
+  unitCost: string;
+  totalCost: string;
+  layerUnitCost: string;
+  layerCreatedAt: Date;
+  layerSourceType: string | null;
+  layerSourceId: string | null;
+  costingMethod: string;
+  productVariantId: number;
+  transactionType: string;
+  referenceType: string | null;
+  referenceId: string | null;
+  postingDate: string;
+  variantSku: string;
+  productName: string;
+  locationName: string | null;
+  totalRows: number;
+}
 
 @Injectable()
 export class InvValuationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly periods: InventoryPeriodService,
   ) {}
 
-  async getValuationSummary(orgId: string, userId: string, filters: ValuationSummaryInput) {
-    const { warehouseId, page, limit } = filters;
-    const offset = (page - 1) * limit;
-
+  private async locationScope(orgId: string, userId: string): Promise<(column: string) => SQL> {
     const scope = await this.warehouseScope.resolve(orgId, userId);
-    const stockConditions = [eq(invStockLevels.orgId, orgId)];
-    stockConditions.push(this.warehouseScope.warehousePredicate(scope, sql`${invLocations.warehouseId}`));
-    // The FIFO subquery sums layers for the variant, and layers are keyed per
-    // location since 0400 — so it needs the same scope or the value would
-    // include warehouses the caller cannot see.
-    const layerScope = this.warehouseScope.locationPredicate(scope, sql.raw("vl.location_id"));
-    const locCondition = warehouseId != null ? eq(invLocations.warehouseId, warehouseId) : undefined;
+    return (column: string) => this.warehouseScope.locationPredicate(scope, column);
+  }
 
-    const baseQuery = this.db
-      .select({
-        productVariantId: invStockLevels.productVariantId,
-        variantSku: invProductVariants.sku,
-        variantName: invProductVariants.name,
-        productId: invProducts.id,
-        productName: invProducts.name,
-        costingMethod: invProducts.costingMethod,
-        standardCost: invProducts.standardCost,
-        onHand: sql<string>`COALESCE(SUM(${invStockLevels.onHand}::numeric), 0)::text`,
-        avgCost: sql<string>`COALESCE(AVG(NULLIF(${invStockLevels.averageCost}::numeric, 0)), 0)::text`,
-        fifoValue: sql<string>`COALESCE((
-          SELECT SUM(vl.remaining_value::numeric)
-          FROM inv_valuation_layers vl
-          WHERE vl.org_id = ${orgId}
-            AND vl.product_variant_id = ${invStockLevels.productVariantId}
-            AND vl.remaining_quantity::numeric > 0
-            AND ${layerScope}
-        ), 0)::text`,
-      })
-      .from(invStockLevels)
-      .innerJoin(invLocations, eq(invStockLevels.locationId, invLocations.id))
-      .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
-      .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-      .where(locCondition != null ? and(...stockConditions, locCondition) : and(...stockConditions))
-      .groupBy(invStockLevels.productVariantId, invProductVariants.id, invProducts.id)
-      .orderBy(invProductVariants.sku)
-      .limit(limit)
-      .offset(offset);
+  async getValuationSummary(orgId: string, userId: string, filters: ValuationSummaryInput) {
+    const { warehouseId, categoryId, page, limit } = filters;
+    const grain = await this.periods.resolveAsAt(orgId, filters);
+    const live = grain.asOfDate >= todayIso();
+    const locationScope = await this.locationScope(orgId, userId);
 
-    const countQuery = this.db
-      .select({ total: sql<number>`count(distinct ${invStockLevels.productVariantId})::int` })
-      .from(invStockLevels)
-      .innerJoin(invLocations, eq(invStockLevels.locationId, invLocations.id))
-      .where(locCondition != null ? and(...stockConditions, locCondition) : and(...stockConditions));
+    const params = {
+      orgId,
+      locationScope,
+      warehouseId,
+      categoryId,
+      asOfDate: grain.asOfDate,
+      limit,
+      offset: (page - 1) * limit,
+    };
+    const rows = await this.db.execute<SummaryRow>(
+      live ? liveValuationSql(params) : asAtValuationSql(params),
+    );
 
-    const [rows, [countRow]] = await Promise.all([baseQuery, countQuery]);
-
-    const items = rows.map((r) => {
-      const onHand = parseFloat(r.onHand);
-      let value: number;
-      if (r.costingMethod === "FIFO") {
-        value = parseFloat(r.fifoValue);
-      } else if (r.costingMethod === "STANDARD") {
-        value = onHand * parseFloat(r.standardCost ?? "0");
-      } else {
-        value = onHand * parseFloat(r.avgCost);
-      }
-      return {
-        productVariantId: r.productVariantId,
-        variantSku: r.variantSku,
-        variantName: r.variantName,
-        productId: r.productId,
-        productName: r.productName,
-        costingMethod: r.costingMethod,
-        onHand,
-        value: Math.round(value * 10000) / 10000,
-        averageCost: parseFloat(r.avgCost),
-      };
-    });
-
-    const totalValue = items.reduce((sum, i) => sum + i.value, 0);
-    const total = countRow?.total ?? 0;
-
+    const first = rows[0];
+    const total = first?.totalRows ?? 0;
     return {
-      items,
+      grain: { asOfDate: grain.asOfDate, live, period: grain.period },
+      items: rows.map(({ totalRows: _t, totalValue: _v, totalOnHand: _o, ...row }) => row),
+      totalValue: first?.totalValue ?? "0",
+      totalOnHand: first?.totalOnHand ?? "0",
       total,
       page,
       totalPages: Math.ceil(total / limit),
-      totalValue: Math.round(totalValue * 10000) / 10000,
     };
   }
 
+  /**
+   * The layers standing behind one variant's value, each with the quantity and
+   * value it still held on the quoted date and how much had been drawn out of it
+   * by then. A valuation figure that cannot be opened is an assertion; this is
+   * what makes it a derivation.
+   */
   async getValuationLayers(orgId: string, userId: string, filters: ValuationLayersInput) {
-    const { variantId, page, limit } = filters;
-    const offset = (page - 1) * limit;
-    const scope = await this.warehouseScope.resolve(orgId, userId);
-    const where = and(
-      eq(invValuationLayers.orgId, orgId),
-      eq(invValuationLayers.productVariantId, variantId),
-      this.warehouseScope.locationPredicate(scope, sql`${invValuationLayers.locationId}`),
+    const { variantId, warehouseId, page, limit } = filters;
+    const grain = await this.periods.resolveAsAt(orgId, filters);
+    const locationScope = await this.locationScope(orgId, userId);
+
+    const rows = await this.db.execute<LayerRow>(
+      layerEvidenceSql(
+        orgId,
+        variantId,
+        locationScope,
+        grain.asOfDate,
+        warehouseId,
+        limit,
+        (page - 1) * limit,
+      ),
     );
 
-    const [items, [countRow]] = await Promise.all([
-      this.db.query.invValuationLayers.findMany({
-        where,
-        orderBy: [desc(invValuationLayers.createdAt)],
-        limit,
-        offset,
-      }),
-      this.db.select({ total: sql<number>`count(*)::int` }).from(invValuationLayers).where(where),
-    ]);
+    const total = rows[0]?.totalRows ?? 0;
+    return {
+      grain: { asOfDate: grain.asOfDate, live: grain.asOfDate >= todayIso(), period: grain.period },
+      items: rows.map(({ totalRows: _t, ...row }) => row),
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
 
-    return { items, total: countRow?.total ?? 0, page, totalPages: Math.ceil((countRow?.total ?? 0) / limit) };
+  /**
+   * Consumption lines. `commitIssue` writes one per layer an issue draws from,
+   * carrying the quantity taken and the unit cost it was taken at, so cost of
+   * goods sold is reproducible from rows rather than recomputed from a
+   * `remaining_quantity` that has since moved on.
+   */
+  async getValuationConsumptions(
+    orgId: string,
+    userId: string,
+    filters: ValuationConsumptionsInput,
+  ) {
+    const { variantId, layerId, stockTransactionId, page, limit } = filters;
+    const window = await this.periods.resolveWindow(orgId, {
+      periodId: filters.periodId,
+      fromDate: filters.fromDate,
+      toDate: filters.toDate,
+    });
+    const locationScope = await this.locationScope(orgId, userId);
+
+    const conditions: SQL[] = [
+      sql`vc.created_at::date >= ${window.fromDate}::date`,
+      sql`vc.created_at::date <= ${window.toDate}::date`,
+    ];
+    if (variantId != null) conditions.push(sql`t.product_variant_id = ${variantId}`);
+    if (layerId != null) conditions.push(sql`vc.valuation_layer_id = ${layerId}`);
+    if (stockTransactionId != null)
+      conditions.push(sql`vc.stock_transaction_id = ${stockTransactionId}`);
+
+    const rows = await this.db.execute<ConsumptionRow>(
+      consumptionEvidenceSql(
+        orgId,
+        sql.join(conditions, sql` AND `),
+        locationScope,
+        limit,
+        (page - 1) * limit,
+      ),
+    );
+
+    const total = rows[0]?.totalRows ?? 0;
+    return {
+      window: { fromDate: window.fromDate, toDate: window.toDate, period: window.period },
+      items: rows.map(({ totalRows: _t, ...row }) => row),
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  listPeriods(orgId: string) {
+    return this.periods.listPeriods(orgId);
   }
 }

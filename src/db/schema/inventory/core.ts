@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum, invBarcodeTypeEnum } from "../common/enums";
+import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum, invBarcodeTypeEnum, invTaxTreatmentEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 
 export const invUom = pgTable("inv_uom", {
@@ -70,6 +70,28 @@ export const invProducts = pgTable("inv_products", {
   minStockLevel: decimal("min_stock_level", { precision: 18, scale: 4 }).default("0").notNull(),
   maxStockLevel: decimal("max_stock_level", { precision: 18, scale: 4 }).default("0").notNull(),
   hasVariants: boolean("has_variants").default(false).notNull(),
+  /**
+   * E2 — the tax inputs, behind the `gst` pack.
+   *
+   * Inventory holds them and does not compute a return from them: what a supply
+   * is classified as, and what rate that classification carries, is decided in
+   * the catalogue by the person who knows the goods, and is consumed by
+   * accounting. Nullable throughout, because an organisation that does not run
+   * the pack never sees these fields and must not be forced to invent values for
+   * them — and because "not classified yet" is a real state that a default of
+   * `0%` would silently launder into "nil rated".
+   *
+   * `hsnCode` is 4, 6 or 8 digits for goods and 6 for services (SAC); the length
+   * is a returns-filing choice, not a data-quality one, so all three are stored
+   * as given rather than padded.
+   *
+   * `gstRate` is the SKU's default rate in percent, scale 2 — 18.00, not 0.18.
+   * It is a *default* for a document line, never the line's authority: the line
+   * snapshots what it was told at the moment it was written.
+   */
+  hsnCode: text("hsn_code"),
+  taxTreatment: invTaxTreatmentEnum("tax_treatment"),
+  gstRate: decimal("gst_rate", { precision: 5, scale: 2 }),
   imageUrl: text("image_url"),
   customFields: jsonb("custom_fields").$type<Record<string, unknown>>(),
   createdBy: text("created_by").references(() => users.id).notNull(),
@@ -87,6 +109,18 @@ export const invProducts = pgTable("inv_products", {
   index("idx_inv_products_barcode").on(table.barcode),
   index("idx_inv_products_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
   index("idx_inv_products_sku_trgm").using("gin", table.sku.op("gin_trgm_ops")),
+  // E2. The HSN summary of a return groups the catalogue by code, so the code
+  // leads after the tenant. Partial, because most rows have no code until the
+  // organisation runs the gst pack.
+  index("idx_inv_products_org_hsn").on(table.orgId, table.hsnCode).where(sql`${table.hsnCode} IS NOT NULL`),
+  // E2. A treatment that is not TAXABLE cannot carry a rate. Written as a
+  // constraint rather than a service check because the pair is only ever
+  // meaningful together, and a row that says "exempt at 18%" is not a validation
+  // failure somebody can explain — it is two answers to one question.
+  check(
+    "chk_inv_products_tax_treatment_rate",
+    sql`${table.taxTreatment} IS NULL OR ${table.taxTreatment} = 'TAXABLE' OR ${table.gstRate} IS NULL OR ${table.gstRate} = 0`,
+  ),
 ]);
 
 export const invProductVariants = pgTable("inv_product_variants", {

@@ -25,7 +25,9 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
+import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { CostVisibilityService, stripCostFields } from "../stock-engine/cost-visibility";
+import { PRODUCT_TAX_FIELD_KEYS } from "./dto/inv-products.schemas";
 import type {
   CreateProductInput,
   UpdateProductInput,
@@ -53,6 +55,32 @@ function isUniqueViolation(err: unknown): boolean {
   return false;
 }
 
+const TAX_FIELD_SET: ReadonlySet<string> = new Set(PRODUCT_TAX_FIELD_KEYS);
+
+/**
+ * E1/E2. Removes the `gst` pack's fields from a payload, at any nesting depth.
+ *
+ * Stripped from the response rather than hidden in the UI, for the same reason
+ * cost fields are: a distributor that does not run the pack must not receive an
+ * `hsnCode: null` it then has to explain, and a client that never sees the field
+ * cannot start depending on it. Same shape as `stripCostFields` deliberately —
+ * one idea, two gates.
+ */
+function stripTaxValue(value: unknown, depth: number): unknown {
+  if (depth > 6 || value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((v) => stripTaxValue(v, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+    if (TAX_FIELD_SET.has(key)) continue;
+    out[key] = stripTaxValue(inner, depth + 1);
+  }
+  return out;
+}
+
+export function stripProductTaxFields<T>(payload: T): T {
+  return stripTaxValue(payload, 0) as T;
+}
+
 @Injectable()
 export class InvProductCrudService {
   constructor(
@@ -60,7 +88,36 @@ export class InvProductCrudService {
     private readonly cache: CacheService,
     private readonly audit: InventoryAuditService,
     private readonly costVisibility: CostVisibilityService,
+    private readonly settings: InventorySettingsService,
   ) {}
+
+  /**
+   * E1 — the pack flag, doing something.
+   *
+   * With the `gst` pack off there is no HSN field on the form, no HSN column in
+   * the response, and no way to write one through the API either. A gate that
+   * only hides the field leaves the column writable by anyone who has read the
+   * network tab, and then the organisation has classification data it cannot see
+   * or correct.
+   */
+  private async assertGstPackForTaxFields(
+    orgId: string,
+    data: CreateProductInput | UpdateProductInput,
+  ): Promise<void> {
+    const supplied = PRODUCT_TAX_FIELD_KEYS.filter((key) => key in data);
+    if (supplied.length === 0) return;
+    const settings = await this.settings.get(orgId);
+    if (settings.packs.gst) return;
+    throw new BadRequestException({
+      code: "GST_PACK_DISABLED",
+      message: `The GST pack is not enabled for this organisation, so ${supplied.join(", ")} cannot be set. Enable it in inventory settings first.`,
+    });
+  }
+
+  private async gstPackEnabled(orgId: string): Promise<boolean> {
+    const settings = await this.settings.get(orgId);
+    return settings.packs.gst;
+  }
 
   private async assertNoStockForVariants(
     orgId: string,
@@ -131,8 +188,13 @@ export class InvProductCrudService {
     // Cost visibility is part of the key: this list is cached per org, so a
     // masked payload must not be served to a cost-permitted caller or vice versa.
     const showCost = userId ? await this.costVisibility.canSeeCost(orgId, userId) : false;
+    // E1. The pack is part of the key, not a post-filter on a shared entry: this
+    // list is cached per org, so one payload cannot be both the version that
+    // carries HSN and the version that does not. Keying it also means turning the
+    // pack on needs no cross-module cache invalidation from settings.
+    const showTax = await this.gstPackEnabled(orgId);
     const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
-    const hash = `${showCost ? "cost" : "nocost"}:${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${includeDeleted ? "withdeleted" : "live"}:${limit}:${offset}${scopeSuffix}`;
+    const hash = `${showCost ? "cost" : "nocost"}:${showTax ? "gst" : "nogst"}:${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${includeDeleted ? "withdeleted" : "live"}:${limit}:${offset}${scopeSuffix}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.invProductsNamespace(orgId),
       hash,
@@ -181,8 +243,9 @@ export class InvProductCrudService {
             .where(where),
         ]);
 
+        const visible = showCost ? items : stripCostFields(items);
         return {
-          items: showCost ? items : stripCostFields(items),
+          items: showTax ? visible : stripProductTaxFields(visible),
           total: countResult[0]?.count ?? 0,
           page,
           totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
@@ -199,6 +262,7 @@ export class InvProductCrudService {
    */
   async getProduct(orgId: string, productId: number, userId?: string, includeDeleted = false) {
     const showCost = userId ? await this.costVisibility.canSeeCost(orgId, userId) : false;
+    const showTax = await this.gstPackEnabled(orgId);
     const product = await this.db.query.invProducts.findFirst({
       where: and(
         eq(invProducts.id, productId),
@@ -213,7 +277,8 @@ export class InvProductCrudService {
       },
     });
     if (!product) throw new NotFoundException("Product not found");
-    return showCost ? product : stripCostFields(product);
+    const visible = showCost ? product : stripCostFields(product);
+    return showTax ? visible : stripProductTaxFields(visible);
   }
 
   private async generateNextSku(orgId: string): Promise<string> {
@@ -234,6 +299,7 @@ export class InvProductCrudService {
   }
 
   async createProduct(orgId: string, userId: string, data: CreateProductInput) {
+    await this.assertGstPackForTaxFields(orgId, data);
     if (data.barcode) await assertNoBarcodeConflict(this.db, orgId, data.barcode);
     if (data.purchaseUomId)
       await this.assertUomBelongsToOrg(
@@ -312,6 +378,7 @@ export class InvProductCrudService {
     productId: number,
     data: UpdateProductInput,
   ) {
+    await this.assertGstPackForTaxFields(orgId, data);
     const existing = await this.db.query.invProducts.findFirst({
       where: and(
         eq(invProducts.id, productId),

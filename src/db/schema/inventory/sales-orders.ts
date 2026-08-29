@@ -1,6 +1,6 @@
-import { pgTable, text, serial, timestamp, decimal, date, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
-import { invSoStatusEnum } from "../common/enums";
+import { pgTable, text, serial, timestamp, decimal, date, integer, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
+import { invSoStatusEnum, invTaxTreatmentEnum, invGstModeEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { clients } from "../crm/contacts";
 import { businessParties } from "../party/business-parties";
@@ -55,9 +55,23 @@ export const invSoLines = pgTable("inv_so_lines", {
   uomId: integer("uom_id").references(() => invUom.id, { onDelete: "set null" }),
   quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
   uomFactor: decimal("uom_factor", { precision: 18, scale: 6 }),
+  /**
+   * The rate in percent, scale 2 — 18.00, not 0.18. `amount` beside it is the
+   * taxable value (entered quantity × unit price) and is tax-exclusive.
+   */
   taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("0").notNull(),
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   costAtTime: decimal("cost_at_time", { precision: 18, scale: 4 }).default("0").notNull(),
+  /**
+   * E2 — the tax inputs as they stood when this line was written. Same contract
+   * as the purchase side: a snapshot rather than a join, nullable so that
+   * "not recorded" stays distinguishable from "recorded as nil".
+   */
+  hsnCode: text("hsn_code"),
+  taxTreatment: invTaxTreatmentEnum("tax_treatment"),
+  gstMode: invGstModeEnum("gst_mode"),
+  /** The exact tax on this line: `amount × taxRate / 100`, half-up at 4dp. */
+  taxAmount: decimal("tax_amount", { precision: 18, scale: 4 }),
   lineOrder: integer("line_order").default(0).notNull(),
 }, (table) => [
   unique("uniq_inv_so_lines_org_id").on(table.orgId, table.id),
@@ -73,6 +87,15 @@ export const invSoLines = pgTable("inv_so_lines", {
   }),
   index("idx_inv_so_lines_so").on(table.soId),
   index("idx_inv_so_lines_variant").on(table.productVariantId),
+  // E2. A composition dealer may not collect tax from a customer, so an outward
+  // line that snapshots COMPOSITION and still shows a rate is an invoice that
+  // could not lawfully have been raised. The service refuses it with a legible
+  // message; this is what makes it true against a direct write, and it is on the
+  // sales table only — a composition dealer still *pays* tax on purchases.
+  check(
+    "chk_inv_so_lines_composition_no_outward_tax",
+    sql`${table.gstMode} IS DISTINCT FROM 'COMPOSITION' OR (${table.taxRate} = 0 AND COALESCE(${table.taxAmount}, 0) = 0)`,
+  ),
 ]);
 
 export const invSalesOrdersRelations = relations(invSalesOrders, ({ one, many }) => ({
