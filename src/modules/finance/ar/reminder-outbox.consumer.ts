@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
-import { finReminderLog } from "../../../db/schema";
+import { and, eq, inArray } from "drizzle-orm";
+import { finReminderLog, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InboxConsumer } from "../../../common/outbox/inbox-consumer";
@@ -48,11 +48,30 @@ export class ReminderOutboxConsumer implements OutboxEventConsumer, OnModuleInit
     }
 
     const payload = parsed.data;
+    const activeRecipients = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.orgId, event.organizationId),
+          eq(organizationMembers.status, "ACTIVE"),
+          inArray(organizationMembers.userId, payload.targetUserIds),
+        ),
+      );
+    const targetUserIds = activeRecipients.map((recipient) => recipient.userId);
+    if (targetUserIds.length === 0) {
+      await this.db
+        .update(finReminderLog)
+        .set({ status: "SKIPPED" })
+        .where(and(eq(finReminderLog.orgId, event.organizationId), eq(finReminderLog.id, payload.reminderLogId)));
+      await inbox.markProcessed(CONSUMER_NAME, event.eventId, "SKIPPED", "no active recipients");
+      return;
+    }
     try {
       await this.dispatch.emit({
         eventKey: "accounting.invoice.overdue",
         orgId: event.organizationId,
-        targetUserIds: payload.targetUserIds,
+        targetUserIds,
         dedupeKey: outboxEffectIdempotencyKey(event, CONSUMER_NAME),
         entityType: "invoice",
         entityId: String(payload.invoiceId),
