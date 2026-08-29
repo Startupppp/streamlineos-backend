@@ -204,13 +204,13 @@ export class ExpensesController {
   @Get("export/jobs/:jobId")
   @RequirePermission("hr:expenses:read")
   getExportJob(@Param("jobId") jobId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.exportJobs.get(u.orgId, u.userId, jobId);
+    return this.exportJobs.get(u, jobId);
   }
 
   @Get("export/jobs/:jobId/download")
   @RequirePermission("hr:expenses:read")
   async downloadExportJob(@Param("jobId") jobId: string, @CurrentUser() u: CurrentUserContext, @Res() res: Response) {
-    const { job, file } = await this.exportJobs.download(u.orgId, u.userId, jobId);
+    const { job, file } = await this.exportJobs.download(u, jobId);
     res.setHeader("Content-Type", file.contentType);
     res.setHeader("Content-Disposition", `attachment; filename="${(job.fileName ?? "expenses.csv").replace(/[^a-zA-Z0-9_.-]/g, "-")}"`);
     res.setHeader("Cache-Control", "private, no-store");

@@ -1,10 +1,11 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, gt, gte, lte } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { expenseExportJobs, expenses, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { accountableMembershipId } from "../../common/auth/principal";
 import { StorageService, type FileStreamResult } from "../storage/storage.service";
 import type { ExportInput } from "./dto/expense.schemas";
 
@@ -17,26 +18,28 @@ export class ExpenseExportService {
   constructor(@Inject(DRIZZLE) private readonly db: Db, private readonly storage: StorageService) {}
 
   async create(user: CurrentUserContext, filters: ExportInput, idempotencyKey: string, orgWide: boolean) {
+    const requesterMembershipId = accountableMembershipId(user.principal);
+    if (requesterMembershipId === null) throw new ForbiddenException("A member identity is required to export expenses");
     const requestHash = createHash("sha256").update(JSON.stringify(filters)).digest("hex");
     const inserted = await this.db.insert(expenseExportJobs).values({
-      orgId: user.orgId, requestedBy: user.userId, filters: { ...filters, ...(orgWide ? {} : { userId: user.userId }) }, idempotencyKey, requestHash,
+      orgId: user.orgId, requestedByMembershipId: requesterMembershipId, filters: { ...filters, ...(orgWide ? {} : { userId: user.userId }) }, idempotencyKey, requestHash,
     }).onConflictDoNothing({ target: [expenseExportJobs.orgId, expenseExportJobs.idempotencyKey] }).returning();
     const job = inserted[0] ?? (await this.db.select().from(expenseExportJobs).where(and(eq(expenseExportJobs.orgId, user.orgId), eq(expenseExportJobs.idempotencyKey, idempotencyKey))).limit(1))[0];
     if (!job) throw new BadRequestException("Failed to create expense export job");
-    if (job.requestedBy !== user.userId || job.requestHash !== requestHash) throw new BadRequestException("Idempotency-Key was used for a different export");
+    if (job.requestedByMembershipId !== requesterMembershipId || job.requestHash !== requestHash) throw new BadRequestException("Idempotency-Key was used for a different export");
     return this.view(job);
   }
 
-  async get(orgId: string, userId: string, id: string) {
-    const job = await this.find(orgId, userId, id);
+  async get(user: CurrentUserContext, id: string) {
+    const job = await this.find(user, id);
     return this.view(job);
   }
 
-  async download(orgId: string, userId: string, id: string): Promise<{ job: ReturnType<ExpenseExportService["view"]>; file: FileStreamResult }> {
-    const job = await this.find(orgId, userId, id);
+  async download(user: CurrentUserContext, id: string): Promise<{ job: ReturnType<ExpenseExportService["view"]>; file: FileStreamResult }> {
+    const job = await this.find(user, id);
     if (job.status === "expired" || (job.expiresAt && job.expiresAt <= new Date())) throw new BadRequestException("Export has expired");
     if (job.status !== "completed" || !job.fileKey) throw new BadRequestException("Export is not ready for download");
-    return { job: this.view(job), file: await this.storage.getFileStream(orgId, job.fileKey) };
+    return { job: this.view(job), file: await this.storage.getFileStream(user.orgId, job.fileKey) };
   }
 
   async claim(orgId: string): Promise<ExpenseExportJobRow | null> {
@@ -63,6 +66,12 @@ export class ExpenseExportService {
   async fail(job: ExpenseExportJobRow, error: unknown) { const retry = job.attempt < job.maxAttempts; await this.db.update(expenseExportJobs).set({ status: retry ? "pending" : "failed", errorCode: "EXPORT_GENERATION_FAILED", errorMessage: error instanceof Error ? error.message.slice(0, 500) : "Export generation failed", lockedAt: null, updatedAt: new Date() }).where(and(eq(expenseExportJobs.id, job.id), eq(expenseExportJobs.status, "running"))); }
   async reclaim(orgId: string, staleBefore: Date) { await this.db.update(expenseExportJobs).set({ status: "pending", lockedAt: null, updatedAt: new Date() }).where(and(eq(expenseExportJobs.orgId, orgId), eq(expenseExportJobs.status, "running"), lte(expenseExportJobs.lockedAt, staleBefore))); }
 
-  private async find(orgId: string, userId: string, id: string) { const job = (await this.db.select().from(expenseExportJobs).where(and(eq(expenseExportJobs.orgId, orgId), eq(expenseExportJobs.requestedBy, userId), eq(expenseExportJobs.id, id))).limit(1))[0]; if (!job) throw new NotFoundException("Expense export job not found"); return job; }
+  private async find(user: CurrentUserContext, id: string) {
+    const requesterMembershipId = accountableMembershipId(user.principal);
+    if (requesterMembershipId === null) throw new NotFoundException("Expense export job not found");
+    const job = (await this.db.select().from(expenseExportJobs).where(and(eq(expenseExportJobs.orgId, user.orgId), eq(expenseExportJobs.requestedByMembershipId, requesterMembershipId), eq(expenseExportJobs.id, id))).limit(1))[0];
+    if (!job) throw new NotFoundException("Expense export job not found");
+    return job;
+  }
   private view(job: ExpenseExportJobRow) { return { id: job.id, status: job.status, processedRows: job.processedRows, rowCount: job.rowCount, fileName: job.fileName, errorCode: job.errorCode, errorMessage: job.errorMessage, createdAt: job.createdAt, completedAt: job.completedAt, expiresAt: job.expiresAt }; }
 }
