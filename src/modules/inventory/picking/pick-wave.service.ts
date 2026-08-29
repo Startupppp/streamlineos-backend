@@ -19,6 +19,7 @@ import { InventorySettingsService } from "../stock-engine/inventory-settings.ser
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { SoCoreService } from "../sales-orders/so-core.service";
 import { allocateWaveLines } from "./pick-allocation";
+import { pickConstraintsResolver } from "./pick-allocation-constraints";
 import { assertClaimHeldBy } from "./pick-line";
 import { PICK_LINE_CLOSED_SQL } from "./pick-exception-policy";
 import { queryWaveQueue } from "./pick-wave-queue";
@@ -99,6 +100,7 @@ export class PickWaveService {
     const lines = await this.db
       .select({
         soLineId: invSoLines.id,
+        soId: invSoLines.soId,
         productVariantId: invSoLines.productVariantId,
         quantity: invSoLines.quantity,
       })
@@ -113,15 +115,22 @@ export class PickWaveService {
     }
 
     const settings = await this.settingsService.get(orgId);
+    const constraintsFor = pickConstraintsResolver(this.db, this.settingsService, orgId);
     const allocations = await allocateWaveLines(
       this.db,
       orgId,
       lines.map((l) => ({
         soLineId: l.soLineId,
+        soId: l.soId,
         productVariantId: l.productVariantId,
         quantity: String(l.quantity),
       })),
-      (productVariantId, quantity) =>
+      // D2. Constraints per order, cached per order. A wave spans several
+      // customers, and the shelf-life floor is a term of one agreement — see
+      // `pick-allocation-constraints.ts`. Without this the whole picking module
+      // allocated with no near-expiry tier and no floor, so a wave could promise
+      // a lot auto-reserve had refused for the same customer minutes earlier.
+      async (productVariantId, quantity, soId) =>
         this.soCore.findAvailableLotForLine(
           orgId,
           productVariantId,
@@ -129,6 +138,7 @@ export class PickWaveService {
           quantity,
           settings.reservationStrategy,
           settings.expiryReservationPolicy,
+          await constraintsFor(soId),
         ),
     );
 

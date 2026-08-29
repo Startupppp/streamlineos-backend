@@ -29,12 +29,20 @@ export interface AllocatableLine {
   soLineId: number;
   productVariantId: number;
   quantity: string;
+  /**
+   * D2. The order this line serves, so the allocator can honour that customer's
+   * contracted shelf-life floor. A wave spans several orders and therefore
+   * several agreements — resolving one floor for the whole wave would apply the
+   * strictest customer's term to everybody else's stock, and relax theirs to it.
+   */
+  soId: number | null;
 }
 
 /** Resolves a line to a stock row, in the order of what is already promised. */
 export type LotFinder = (
   productVariantId: number,
   quantity: string,
+  soId: number | null,
 ) => Promise<{ locationId: number; lotId?: number } | null>;
 
 /**
@@ -51,8 +59,9 @@ export async function allocateFromAvailableStock(
   findLot: LotFinder,
   productVariantId: number,
   quantity: string,
+  soId: number | null = null,
 ): Promise<PickAllocation> {
-  const found = await findLot(productVariantId, quantity);
+  const found = await findLot(productVariantId, quantity, soId);
   if (!found) return { status: "NEEDS_DECISION" };
   return {
     status: "ALLOCATED",
@@ -142,7 +151,7 @@ export async function allocateWaveLines(
     if (allocations.has(line.soLineId)) continue;
     allocations.set(
       line.soLineId,
-      await allocateFromAvailableStock(findLot, line.productVariantId, line.quantity),
+      await allocateFromAvailableStock(findLot, line.productVariantId, line.quantity, line.soId),
     );
   }
 

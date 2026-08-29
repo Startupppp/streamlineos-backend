@@ -77,6 +77,12 @@ export async function queryWaveQueue(
       : filters.assignment === "UNCLAIMED"
         ? sql`AND pl.assigned_to IS NULL`
         : sql``;
+  // Half-open at the top so the whole of `to` is included, which is the same
+  // convention the throughput report measures its window by. A board and the
+  // report it was reached from disagreeing about what "to the 8th" covers is
+  // exactly the drill-through this filter exists to make possible.
+  const fromPredicate = filters.from ? sql`AND pl.created_at >= ${filters.from}::date` : sql``;
+  const toPredicate = filters.to ? sql`AND pl.created_at < (${filters.to}::date + 1)` : sql``;
 
   const where = sql`
     pl.org_id = ${orgId}
@@ -85,6 +91,8 @@ export async function queryWaveQueue(
       ${statusPredicate}
       ${warehouseFilter}
       ${assignmentPredicate}
+      ${fromPredicate}
+      ${toPredicate}
   `;
 
   const offset = (filters.page - 1) * filters.limit;

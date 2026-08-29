@@ -19,6 +19,8 @@ import {
   loadWaveContext,
   reviveConfirm,
 } from "./pick-line";
+import { resolvePickConstraints } from "./pick-allocation-constraints";
+import { soIdForLine } from "./pick-so-lookup";
 import { PickCompletionService } from "./pick-completion.service";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -277,6 +279,16 @@ export class PickConfirmService {
 
     const wave = await loadWaveContext(tx, orgId, pickListId);
     const settings = await this.settings.get(orgId);
+    // D2. The same constraints auto-reserve honours. Without them a confirm that
+    // resolves its own bin could take a lot the reserve path had refused for this
+    // customer minutes earlier — the picker would be handed it by the system that
+    // had just declined to promise it.
+    const constraints = await resolvePickConstraints(
+      this.db,
+      this.settings,
+      orgId,
+      line.soLineId === null ? null : await soIdForLine(tx, orgId, line.soLineId),
+    );
     const allocation = await allocateFromAvailableStock(
       (productVariantId, quantity) =>
         this.soCore.findAvailableLotForLine(
@@ -286,6 +298,7 @@ export class PickConfirmService {
           quantity,
           settings.reservationStrategy,
           settings.expiryReservationPolicy,
+          constraints,
         ),
       line.productVariantId,
       input.quantityPicked,

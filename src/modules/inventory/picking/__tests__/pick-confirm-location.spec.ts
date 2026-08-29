@@ -43,6 +43,11 @@ function makeTx(line: typeof PICK_LINE) {
     const step = jest.fn(() => chain);
     chain.from = step;
     chain.where = step;
+    // D2. `soIdForLine` ends its chain with `.limit(1)` — the line carries
+    // `soLineId` and the customer's shelf-life floor hangs off the order, so the
+    // confirm path looks the order up. Without this the chain is merely
+    // chainable and not awaitable at that step.
+    chain.limit = step;
     chain.then = (resolve: (rows: unknown[]) => unknown) => resolve([line]);
     return chain;
   });
@@ -77,6 +82,20 @@ function buildService(options: {
   const tx = makeTx(line);
   const db = {
     transaction: jest.fn().mockImplementation((fn: (t: unknown) => unknown) => fn(tx)),
+    // D2. `resolvePickConstraints` reads the customer's shelf-life rules off the
+    // bare handle, not the transaction — it is policy, not part of the write. No
+    // rules configured is the default case and resolves to a floor of zero days,
+    // which is the behaviour every organisation has until it writes one.
+    select: jest.fn().mockImplementation(() => {
+      const chain: Record<string, unknown> = {};
+      const step = jest.fn(() => chain);
+      chain.from = step;
+      chain.where = step;
+      chain.orderBy = step;
+      chain.limit = step;
+      chain.then = (resolve: (rows: unknown[]) => unknown) => resolve([]);
+      return chain;
+    }),
   };
   const barcode = { scan: jest.fn() };
   const completion = {
@@ -91,6 +110,8 @@ function buildService(options: {
     get: jest.fn().mockResolvedValue({
       reservationStrategy: "FIFO",
       expiryReservationPolicy: "BLOCK",
+      nearExpiryPolicy: "DEPRIORITIZE",
+      nearExpiryWindowDays: 30,
     }),
   };
   const soCore = {
@@ -165,6 +186,12 @@ describe("PickConfirmService — where the units came from", () => {
       "2.0000",
       "FIFO",
       "BLOCK",
+      // D2. The seventh argument is the point: a confirm that resolves its own
+      // bin now allocates under the same near-expiry tier and customer
+      // shelf-life floor auto-reserve honours. Every picking call site used to
+      // stop at "BLOCK", so a substitution could hand a customer a lot the
+      // reserve path had refused minutes earlier.
+      { nearExpiryPolicy: "DEPRIORITIZE", nearExpiryWindowDays: 30, minShelfLifeDays: 0 },
     );
     expect(completion.syncGrains).toHaveBeenCalledWith(
       expect.anything(),

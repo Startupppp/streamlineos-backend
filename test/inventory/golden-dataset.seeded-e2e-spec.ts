@@ -192,7 +192,13 @@ describe("[seeded-e2e] the golden inventory dataset", () => {
      * Calling each once is what proves both.
      */
     it("every newly scoped list executes and stays inside the tenant", async () => {
-      const lists = [
+      // Every one of these returns a differently-shaped page, and the loop below
+
+      // asserts only that each has an `items` array — so the array's type is that
+
+      // shared contract rather than a union TypeScript cannot reconcile.
+
+      const lists: Array<() => Promise<{ items: unknown[] }>> = [
         () => seededApp.app.get(InvTraceabilityService).listSerials(fixture.orgId, fixture.userId, { page: 1, limit: 50 }),
         () => seededApp.app.get(PackagesService).list(fixture.orgId, fixture.userId, { page: 1, limit: 50 }),
         () => seededApp.app.get(CustomerReturnsService).list(fixture.orgId, fixture.userId, { page: 1, limit: 50 }),

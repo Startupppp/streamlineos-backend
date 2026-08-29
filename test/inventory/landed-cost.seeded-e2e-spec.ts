@@ -231,6 +231,7 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
     grnId: number,
     amountCents: number,
     basis: "VALUE" | "QUANTITY" = "VALUE",
+    key = `lc-create-${randomUUID()}`,
   ) =>
     asTenant(() =>
       app.app.get(LandedCostService).createVoucher(
@@ -244,7 +245,7 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
             { chargeType: "FREIGHT", description: "Inbound haulage", amountCents },
           ],
         } as never,
-        `lc-create-${randomUUID()}`,
+        key,
       ),
     );
 
@@ -577,6 +578,41 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
       expect((await voucherRow(voucherId)).status).toBe("DRAFT");
       const layers = await layersFor(grn.id);
       expect(layers[0]).toMatchObject({ unit_cost: "9.0000", total_value: "180.0000" });
+    }, 120_000);
+
+    it("raises one voucher when the create is retried under the same key", async () => {
+      // The retry path is not decoration on a financial document: two vouchers
+      // for one carrier invoice put the freight through twice the moment
+      // somebody applies both, and there is no movement to reverse it with.
+      const order = await sentOrder([
+        { variantId: scene.dearId, quantity: 2, unitCost: "12.0000" },
+      ]);
+      const grn = (await receive(order.poId, [
+        { poLineId: order.poLineIds[0], quantityReceived: "2" },
+      ])) as { id: number };
+
+      const key = `lc-create-retry-${randomUUID()}`;
+      const first = await createVoucher(grn.id, 1_234, "VALUE", key);
+      const again = await createVoucher(grn.id, 1_234, "VALUE", key);
+
+      expect(again).toEqual(first);
+      const [{ n }] = await asTenant(() =>
+        db().execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM inv_landed_cost_vouchers
+          WHERE org_id = ${scene.orgId} AND grn_id = ${grn.id}`),
+      );
+      expect(n).toBe(1);
+
+      // And a second charge moves the header total in the same breath, so the
+      // voucher can never disagree with the invoices hanging off it.
+      const updated = await asTenant(() =>
+        app.app.get(LandedCostService).addCharge(scene.orgId, scene.userId, first.id, {
+          chargeType: "DUTY",
+          description: "Customs assessment",
+          amountCents: 766,
+        } as never),
+      );
+      expect(updated.chargeTotalCents).toBe("2000");
     }, 120_000);
 
     it("gates raising and applying on a key a receiving clerk does not hold", () => {

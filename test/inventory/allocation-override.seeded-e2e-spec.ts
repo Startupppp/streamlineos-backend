@@ -77,7 +77,7 @@ interface Scene {
   recalled: Lot;
 }
 
-interface OverrideRow {
+interface OverrideRow extends Record<string, unknown> {
   actor_user_id: string;
   reason: string;
   verdict: string;

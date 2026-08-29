@@ -14,9 +14,13 @@ import {
  * with it the two ways a line comes to have no bin.
  */
 
+// D2. `soId` is on the line because the allocator needs to know which customer
+// it is allocating to — the contracted shelf-life floor is a term of one supply
+// agreement, and a wave spans several. Null here: these fixtures test the
+// reservation-versus-fallback choice, not the floor.
 const LINES = [
-  { soLineId: 10, productVariantId: 100, quantity: "5.0000" },
-  { soLineId: 11, productVariantId: 101, quantity: "3.0000" },
+  { soLineId: 10, soId: null, productVariantId: 100, quantity: "5.0000" },
+  { soLineId: 11, soId: null, productVariantId: 101, quantity: "3.0000" },
 ];
 
 function makeDb(reserved: ReadonlyArray<Record<string, unknown>>) {
@@ -93,7 +97,9 @@ describe("allocateWaveLines", () => {
       lotId: 3,
       serialId: null,
     });
-    expect(findLot).toHaveBeenCalledWith(100, "5.0000");
+    // D2. The finder is handed the order the line serves, so it can resolve that
+    // customer's contracted shelf-life floor rather than allocating without one.
+    expect(findLot).toHaveBeenCalledWith(100, "5.0000", null);
   });
 
   it("still creates the line when nothing resolves, flagged as needing a decision", async () => {

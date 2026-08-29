@@ -54,7 +54,7 @@ interface Scene {
   otherLocationId: number;
 }
 
-interface LevelRow {
+interface LevelRow extends Record<string, unknown> {
   on_hand: string;
   committed: string;
   blocked_qty: string | null;

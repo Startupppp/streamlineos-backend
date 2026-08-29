@@ -14,6 +14,8 @@ import { SoFulfillmentService } from "src/modules/inventory/sales-orders/so-fulf
 import { PickWaveService } from "src/modules/inventory/picking/pick-wave.service";
 import { PickConfirmService } from "src/modules/inventory/picking/pick-confirm.service";
 import { CustomerReturnsService } from "src/modules/inventory/returns/customer-returns.service";
+import { RecallSimulationService } from "src/modules/inventory/quality/recall-simulation.service";
+import { RecallsService } from "src/modules/inventory/quality/quality-recalls.service";
 import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
@@ -55,6 +57,16 @@ const PERMISSIONS = [
   "inventory:quality:recall",
 ] as const;
 
+/**
+ * Each slice drives a whole business step through real services against a real
+ * database, and this suite shares that database with every other seeded run on
+ * the machine. The 120s default is a coin toss under that load -- it failed the
+ * reservation slice at 120019ms while the same slice passed in 8s on a quiet
+ * database. A timeout that depends on what else is running is a flaky test, not
+ * a slow one.
+ */
+const SLICE_TIMEOUT_MS = 300_000;
+
 interface Scene {
   orgId: string;
   userId: string;
@@ -73,6 +85,8 @@ describe("[seeded-e2e] the golden path", () => {
   let teardown: () => Promise<void>;
   let grnId: number;
   let soId: number;
+  /** A second, lot-tracked SKU, so the recall has two lots to tell apart. */
+  let lotVariantId: number;
 
   const asTenant = <T>(work: () => Promise<T>): Promise<T> =>
     runInNewTenantTransaction(app.app.get<Db>(DRIZZLE), scene.orgId, work);
@@ -80,7 +94,7 @@ describe("[seeded-e2e] the golden path", () => {
   const db = () => app.app.get<Db>(DRIZZLE);
 
   /** What the business can promise, through the one availability formula. */
-  const atp = async (): Promise<number> => {
+  const atp = async (variantId?: number): Promise<number> => {
     const [row] = await asTenant(() =>
       db().execute<{ available: string }>(sql`
         SELECT COALESCE(SUM(
@@ -92,7 +106,7 @@ describe("[seeded-e2e] the golden path", () => {
         FROM inv_stock_levels sl
         JOIN inv_locations loc ON loc.org_id = sl.org_id AND loc.id = sl.location_id
         WHERE sl.org_id = ${scene.orgId}
-          AND sl.product_variant_id = ${scene.variantId}
+          AND sl.product_variant_id = ${variantId ?? scene.variantId}
           AND loc.is_sellable IS NOT FALSE`),
     );
     return Number(row!.available);
@@ -176,7 +190,7 @@ describe("[seeded-e2e] the golden path", () => {
   it("starts with nothing on the shelf and nothing promisable", async () => {
     expect(await atp()).toBe(0);
     await expectReconciled("empty");
-  });
+  }, SLICE_TIMEOUT_MS);
 
   it("buys 100 and receives them onto the dock", async () => {
     const po = await asTenant(() =>
@@ -228,7 +242,7 @@ describe("[seeded-e2e] the golden path", () => {
     expect(await onHandAt(scene.receivingId)).toBe(100);
     expect(await atp()).toBe(100);
     await expectReconciled("received");
-  });
+  }, SLICE_TIMEOUT_MS);
 
   it("puts the stock away into a pickable bin without changing what is promisable", async () => {
     const task = await asTenant(() =>
@@ -265,7 +279,7 @@ describe("[seeded-e2e] the golden path", () => {
     expect(await onHandAt(scene.storageId)).toBe(100);
     expect(await atp()).toBe(100);
     await expectReconciled("putaway");
-  });
+  }, SLICE_TIMEOUT_MS);
 
   it("promises 30 to a customer and holds them against the shelf", async () => {
     const so = await asTenant(() =>
@@ -310,7 +324,7 @@ describe("[seeded-e2e] the golden path", () => {
     expect(await onHandAt(scene.storageId)).toBe(100);
     expect(await atp()).toBe(70);
     await expectReconciled("reserved");
-  });
+  }, SLICE_TIMEOUT_MS);
 
   it("picks the order on a wave and ships it out of the building", async () => {
     const wave = await asTenant(() =>
@@ -364,7 +378,7 @@ describe("[seeded-e2e] the golden path", () => {
     expect(await onHandAt(scene.storageId)).toBe(70);
     expect(await atp()).toBe(70);
     await expectReconciled("shipped");
-  });
+  }, SLICE_TIMEOUT_MS);
 
   it("takes 10 back, and they are promisable only once somebody has looked at them", async () => {
     const ret = await asTenant(() =>
@@ -411,5 +425,110 @@ describe("[seeded-e2e] the golden path", () => {
     // Inspected RESTOCK, so the 10 rejoin sellable stock and are promisable again.
     expect(await atp()).toBe(80);
     await expectReconciled("returned");
-  });
+  }, SLICE_TIMEOUT_MS);
+
+  it("recalls one lot of two and leaves the other sellable", async () => {
+    // A lot-tracked SKU of its own: the recall has to distinguish two lots, and
+    // the first SKU tracks nothing.
+    lotVariantId = await asTenant(async () => {
+      const one = async <T extends Record<string, unknown>>(q: ReturnType<typeof sql>) =>
+        (await db().execute<T>(q))[0]!;
+      const uom = await one<{ id: number }>(sql`
+        INSERT INTO inv_uom (org_id, name, abbreviation, is_base)
+        VALUES (${scene.orgId}, ${`Vial ${scene.tag}`}, ${`V${scene.tag}`}, true) RETURNING id`);
+      const product = await one<{ id: number }>(sql`
+        INSERT INTO inv_products (org_id, uom_id, name, sku, tracking_method, created_by)
+        VALUES (${scene.orgId}, ${uom.id}, 'Batched syrup', ${`GPL-${scene.tag}`}, 'LOT', ${scene.userId})
+        RETURNING id`);
+      const variant = await one<{ id: number }>(sql`
+        INSERT INTO inv_product_variants (org_id, product_id, name, sku)
+        VALUES (${scene.orgId}, ${product.id}, 'Default', ${`GPL-${scene.tag}-V`}) RETURNING id`);
+      return variant.id;
+    });
+
+    const po = await asTenant(() =>
+      app.app.get(PoService).createPo(scene.orgId, scene.userId, {
+        vendorId: scene.vendorId,
+        orderDate: "2026-08-05",
+        warehouseId: scene.warehouseId,
+        currency: "INR",
+        lines: [
+          {
+            productVariantId: lotVariantId,
+            quantity: 40,
+            unitCost: "2.0000",
+            taxRate: "0",
+            lineOrder: 0,
+          },
+        ],
+      } as never),
+    );
+    const poId = (po as { id: number }).id;
+    await asTenant(() => app.app.get(PoService).sendPo(scene.orgId, poId, scene.userId));
+    const [poLine] = await asTenant(() =>
+      db().execute<{ id: number }>(sql`
+        SELECT id FROM inv_po_lines WHERE org_id = ${scene.orgId} AND po_id = ${poId}`),
+    );
+
+    // Two deliveries against the one order line, each its own batch. A receipt
+    // refuses to carry the same PO line twice -- one delivery is one count of
+    // one line -- so two batches means two receipts, which is also how they
+    // actually arrive. This is the reason a recall is a lot-level question
+    // rather than a SKU-level one.
+    const receiveBatch = (n: string, qty: string, lot: string, expiry: string) =>
+      asTenant(() =>
+        app.app.get(GrnService).receiveGoods(scene.orgId, poId, scene.userId, `gp-lots-${n}-${scene.tag}`, {
+          receivedDate: "2026-08-06",
+          locationId: scene.storageId,
+          lines: [
+            {
+              poLineId: poLine!.id,
+              quantityReceived: qty,
+              qualityStatus: "ACCEPTED",
+              lotNumber: lot,
+              expiryDate: expiry,
+            },
+          ],
+        } as never),
+      );
+    await receiveBatch("a", "25.0000", `L-A-${scene.tag}`, "2027-01-31");
+    await receiveBatch("b", "15.0000", `L-B-${scene.tag}`, "2027-06-30");
+    expect(await atp(lotVariantId)).toBe(40);
+
+    const [badLot] = await asTenant(() =>
+      db().execute<{ id: number }>(sql`
+        SELECT id FROM inv_lots
+        WHERE org_id = ${scene.orgId} AND lot_number = ${`L-A-${scene.tag}`}`),
+    );
+
+    // Simulating is a read. If it moved anything, the operator could not use it
+    // to decide whether to act -- which is the whole point of a simulation.
+    const impact = await asTenant(() =>
+      app.app
+        .get(RecallSimulationService)
+        .simulate(scene.orgId, scene.userId, { lotIds: [badLot!.id] }),
+    );
+    expect(impact.lots.map((l) => l.lotNumber)).toEqual([`L-A-${scene.tag}`]);
+    expect(await atp(lotVariantId)).toBe(40);
+    await expectReconciled("recall simulated");
+
+    await asTenant(() =>
+      app.app.get(RecallsService).create(
+        scene.orgId,
+        scene.userId,
+        {
+          title: `Golden recall ${scene.tag}`,
+          selection: { lotIds: [badLot!.id] },
+          evidenceVersion: impact.evidenceVersion,
+        } as never,
+        `gp-recall-${scene.tag}`,
+      ),
+    );
+
+    // Executing holds the recalled lot and nothing else: 25 come off the market,
+    // the 15 in the untouched lot stay sellable, and the first SKU is unaffected.
+    expect(await atp(lotVariantId)).toBe(15);
+    expect(await atp()).toBe(80);
+    await expectReconciled("recall executed");
+  }, SLICE_TIMEOUT_MS);
 });

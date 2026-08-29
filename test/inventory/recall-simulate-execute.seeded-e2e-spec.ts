@@ -55,7 +55,7 @@ interface Scene {
 const STOCKED_A = "100.0000";
 const STOCKED_B = "40.0000";
 
-interface Position {
+interface Position extends Record<string, unknown> {
   recalls: number;
   recallLines: number;
   holds: number;

@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
+import { resolvePickConstraints } from "./pick-allocation-constraints";
 import { invPickListLines } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -388,6 +389,17 @@ export class PickExceptionReportService {
     // and a second allocator in this module is how picking once came to promise
     // expired lots.
     const settings = await this.settings.get(orgId);
+    // D2. A substitution is still an allocation to this customer, so it takes the
+    // same constraints their order took. Without them a picker's substitute could
+    // be a lot auto-reserve had refused for breaching that customer's supply
+    // agreement — the one path where a rule being skipped is least visible,
+    // because the substitution already reads as an exception.
+    const constraints = await resolvePickConstraints(
+      this.db,
+      this.settings,
+      orgId,
+      demand.soId,
+    );
     const found = await this.soCore.findAvailableLotForLine(
       orgId,
       input.substituteVariantId,
@@ -395,6 +407,7 @@ export class PickExceptionReportService {
       input.quantityPicked,
       settings.reservationStrategy,
       settings.expiryReservationPolicy,
+      constraints,
     );
     if (!found) {
       throw new BadRequestException(

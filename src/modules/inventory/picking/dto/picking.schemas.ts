@@ -27,6 +27,17 @@ export const listWavesSchema = z
     status: z.enum(["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]).optional(),
     warehouseId: z.coerce.number().int().positive().optional(),
     assignment: z.enum(["ANY", "MINE", "UNCLAIMED"]).default("ANY"),
+    /**
+     * The window the wave was raised in, filtering `created_at`. Optional and
+     * independent, so either edge alone is a valid open-ended window.
+     *
+     * Days rather than instants, and inclusive of `to`: this exists so a
+     * dashboard drilling through from a report can carry the date window the
+     * reader is looking at, and a window that silently dropped the last day
+     * would disagree with the report it came from.
+     */
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   })
   .strict();
 export type ListWavesInput = z.infer<typeof listWavesSchema>;

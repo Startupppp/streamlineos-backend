@@ -41,7 +41,7 @@ const PERMISSIONS = [
   "inventory:quality:release",
 ] as const;
 
-interface Level {
+interface Level extends Record<string, unknown> {
   onHand: string;
   committed: string;
   blocked: string;
