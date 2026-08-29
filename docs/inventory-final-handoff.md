@@ -73,6 +73,50 @@ service nothing called), G3 (a sweep with no trigger), E3 and E4 (rules the
 receiving path never invoked). None of them would have been caught by reading
 the checklist.
 
+### The reachability check has a sharp edge — read this before using it
+
+"A caller outside the unit's own directory" is the right question for a
+*service*. Applied to a **pure planner** — `planCarrierAttempt`,
+`planWebhookAttempt`, `planComplianceAttempt`, any `next*DelayMs` — it produces
+false positives, because the executor that consumes a planner is normally
+co-located with it. Grepping for callers of `planCarrierAttempt` outside
+`carrier-adapter.ts` returns nothing, and that code is entirely correct:
+`runCarrierCall` sits in the same file, uses the planner and
+`CARRIER_CALL_TIMEOUT_MS`, and is called from `carrier-status.service.ts:149`.
+
+**For a planner, both halves must hold:**
+
+1. an executor exists that consumes the plan — walks the schedule, applies the
+   timeout — and
+2. that executor is invoked from a service on a production path.
+
+E5 failed the first half: `planComplianceAttempt`,
+`COMPLIANCE_RETRY_SCHEDULE_MS` and `COMPLIANCE_CALL_TIMEOUT_MS` were exported
+and unit-tested, no executor existed, and `register` did
+`await adapter.register(request)` once. A portal that refused once was recorded
+as final, and `COMPLIANCE_CALL_TIMEOUT_MS` had zero usages anywhere in the
+repository, so a provider that never answered left the caller's promise
+unsettled — `await` has no deadline of its own. Fixed in `a0fabb43`.
+
+The second half is the more likely future shape: an executor that exists, is
+tested, and is called by nobody. A caller-grep on the planner passes it.
+
+Checked on this basis, all four retry families are wired — carrier
+(`runCarrierCall` → `carrier-status.service.ts:149`), webhook
+(`planWebhookAttempt` → `webhook-delivery.worker.ts:303`, `webhooks.service.ts`),
+channel (`withChannelTimeout` + `CHANNEL_CALL_TIMEOUT_MS` →
+`channel-snapshot.service.ts:518/525`) and compliance. The seven non-retry
+planners each have exactly one production call site: `planRevaluation` →
+landed-cost-apply, `planFromQuestion` → inv-copilot, `planReportFromQuestion` →
+inv-report-builder, `resolveSampleQuantity` → receipt-inspection,
+`resolveTaxSnapshot` → inv-tax-treatment, `resolveDispensingSafety` →
+inv-pharmacy, `resolveProposalLines` → po-batch.
+
+**Why the shape is dangerous at all:** extracting a planner is what makes its
+behaviour checkable, and it is also what lets the executor never get written.
+The green planner spec then reads as proof the behaviour exists. Both failures
+found on this branch were that shape.
+
 ---
 
 ## 3. Migrations
@@ -344,7 +388,10 @@ abstract.
    version; it judges at directory level, so a service unreachable *from the path
    that claims it* still passes when anything in its own folder uses it. That is
    exactly how E3 hid. **Grep for a caller outside the module before believing a
-   tick.**
+   tick** — but read *The reachability check has a sharp edge* in §2 first: that
+   grep is wrong for a pure planner, whose executor is normally co-located, and
+   applying it there flags correct code. A second session ran the sweep on that
+   advice and nearly "fixed" a working carrier path.
 
 2. **Two sessions worked this branch concurrently.** Lanes were divided by
    message, but any file touched by both deserves a second look:
@@ -353,7 +400,23 @@ abstract.
    session into code the other owned — `inv-products.module.ts` and
    `so-fulfillment.service.ts`.
 
-3. **The seeded suites share one Neon dev branch.** Coverage is not thin: a
+3. **A hand-rolled copy of the ATP formula diverges at the edge, not in the
+   middle.** `availableQtySql` gates sellability with a correlated
+   `CASE WHEN EXISTS (… is_sellable IS FALSE) THEN 0 ELSE …`. The obvious
+   hand-written equivalent — join `inv_locations`, filter `is_sellable IS NOT
+   FALSE` — agrees at every grain the suite exercises and disagrees on one row:
+   a stock level whose location cannot be read (RLS, or a location that has
+   gone). The join **drops** it; the canonical form **keeps** it, matching the
+   column's `true` default rather than silently zeroing a warehouse.
+
+   Found when a second session replaced its own copy in the golden path with the
+   canonical call. Nothing regressed and the canonical behaviour is the correct
+   one — but the direction was safe by luck of which copy had been written, not
+   by design, and no test in the suite distinguishes the two. This is the
+   concrete cost A1 was collapsing eight copies to avoid: **call
+   `availableQtySql`, never restate it.**
+
+4. **The seeded suites share one Neon dev branch.** Coverage is not thin: a
    little over 100 seeded e2e assertions currently run green against a real
    database — golden-path 7 (the whole chain), picking-waves 32, pack-fields 19,
    allocation-override 15, landed-cost 13, fefo-expiry 8, order-to-ship 6 —
@@ -363,10 +426,10 @@ abstract.
    runs them in parallel will see timeouts rather than failures.** Run them
    serially, or give each its own branch.
 
-4. **In-process counters reset on deploy** (G6). They are rates over a window,
+5. **In-process counters reset on deploy** (G6). They are rates over a window,
    never totals. Anything needing durability is a database query by design.
 
-5. **The route-states `IN_FLIGHT_ELSEWHERE` list is empty today** — verified as
+6. **The route-states `IN_FLIGHT_ELSEWHERE` list is empty today** — verified as
    the literal `new Set<string>([])`, not merely inferred from a passing suite.
    All eight routes parked during concurrent work were fixed. Keep checking it is
    empty before calling the UX sweep complete; a non-empty list is real debt
