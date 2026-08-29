@@ -34,6 +34,19 @@ import type { WebhookEventType } from "./dto/webhooks.schemas";
 export const INVENTORY_WEBHOOK_ROUTES: Readonly<Record<string, WebhookEventType | null>> = {
   // The engine's own movement event is the general "stock changed" signal, which
   // is the name subscribers already hold.
+  // G3's three notification triggers. Routed to null deliberately: each is a
+  // real event with a real internal consumer (the notifier), and none has a
+  // subscriber-facing name in `WEBHOOK_EVENTS`. Giving them one is a change to a
+  // customer-facing contract, not a routing decision, so it is left to whoever
+  // owns that contract — but they must appear here, because the publisher treats
+  // an unregistered type as an error and retries it to DEAD rather than ignoring
+  // it. That is what this table is for.
+  "inventory.lot.expiring": null,
+  "inventory.recall.opened": null,
+  "inventory.adjustment.approval_requested": null,
+
+  // The engine's own movement event is the general "stock changed" signal, which
+  // is the name subscribers already hold.
   "inventory.stock.movement.posted": "inventory.stock.changed",
   "inventory.stock.adjusted": "inventory.adjustment.posted",
   "inventory.stock.low": "inventory.stock.low",
