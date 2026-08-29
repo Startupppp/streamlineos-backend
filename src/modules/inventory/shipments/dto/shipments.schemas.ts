@@ -94,6 +94,17 @@ export const listShipmentsQuerySchema = z.object({
   carrierId: z.coerce.number().int().optional(),
   warehouseId: z.coerce.number().int().optional(),
   soId: z.coerce.number().int().optional(),
+  /**
+   * The window the shipment left in, filtering `shipped_at`. Optional and
+   * independent, so either edge alone is a valid open-ended window.
+   *
+   * `shipped_at` and not `created_at`: this is the date a report counts a
+   * shipment against, so a dashboard drilling through from one keeps the window
+   * the reader is looking at. It follows that either edge excludes shipments
+   * that have not left — which is what a dispatch window means.
+   */
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 }).strict();

@@ -15,6 +15,7 @@ import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { UomConversionService } from "../stock-engine/uom-conversion.service";
+import { InvQuantityCaptureService } from "../products/inv-quantity-capture.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
 import type {
   CancelGrnInput,
@@ -38,7 +39,7 @@ type GrnDraftLine = CreateGrnDraftInput["lines"][number];
 interface ReceivablePo {
   id: number;
   warehouseId: number | null;
-  lines: ReadonlyArray<{ id: number; productVariant: { productId: number } }>;
+  lines: ReadonlyArray<{ id: number; productVariant: { id: number; productId: number } }>;
 }
 
 /**
@@ -75,6 +76,7 @@ export class GrnService {
     private readonly cache: CacheService,
     private readonly numSeq: NumberSequenceService,
     private readonly uom: UomConversionService,
+    private readonly quantityCapture: InvQuantityCaptureService,
     private readonly audit: InventoryAuditService,
     private readonly poService: PoService,
     private readonly warehouseScope: WarehouseScopeService,
@@ -383,6 +385,23 @@ export class GrnService {
       if (line.qualityStatus === "REJECTED" && !line.rejectionReason)
         throw new BadRequestException(`Line ${line.poLineId}: a rejected line needs a reason`);
 
+      // E4. Checked before the conversion, deliberately: converting first turns
+      // a rejected 2.9955 kg into an accepted 2995.5 g and hides the refusal
+      // behind a unit change. The conversion below is unchanged — it is what
+      // already stops a delivery counted in cases reaching the ledger as that
+      // many singles — and this only decides whether the figure was one this
+      // SKU may be counted in at all.
+      //
+      // Called unconditionally. The service reads the kirana pack itself and
+      // returns before it loads the product when it is off, so a flag check here
+      // would only be a second copy of the same condition — and the copy is what
+      // drifts. With the pack off this is a cached settings read and a return.
+      await this.quantityCapture.assertEnteredQuantity(
+        orgId,
+        poLine.productVariant.id,
+        line.quantityReceived,
+      );
+
       const converted = await this.uom.convert(
         orgId,
         poLine.productVariant.productId,
@@ -406,6 +425,11 @@ export class GrnService {
           lotNumber: line.lotNumber,
           expiryDate: line.expiryDate,
           manufactureDate: line.manufactureDate,
+          // E3. Snapshotted on the line as given. Whether they were *required*
+          // is the pharmacy pack's question and is asked at post, where the
+          // whole receipt is refused as one rather than line by line.
+          mrpPaise: line.mrpPaise ?? null,
+          purchaseRatePaise: line.purchaseRatePaise ?? null,
         })
         .returning({ id: invGrnLines.id });
       if (!inserted) throw new ConflictException("Could not write the receipt line");

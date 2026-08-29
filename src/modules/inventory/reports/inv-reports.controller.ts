@@ -24,7 +24,13 @@ import {
 } from "./dto/inv-reports.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { OperationsMetricsService } from "./operations-metrics.service";
-import { throughputQuerySchema, type ThroughputQueryInput } from "./dto/operations-metrics.schemas";
+import { WorkAgingService } from "./work-aging.service";
+import {
+  throughputQuerySchema,
+  workAgingQuerySchema,
+  type ThroughputQueryInput,
+  type WorkAgingQueryInput,
+} from "./dto/operations-metrics.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/reports")
@@ -34,6 +40,7 @@ export class InvReportsController {
     private readonly reports: InvReportsService,
     private readonly extended: InvReportsExtendedService,
     private readonly operationsMetrics: OperationsMetricsService,
+    private readonly workAging: WorkAgingService,
   ) {}
 
   /**
@@ -48,6 +55,23 @@ export class InvReportsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.operationsMetrics.throughput(u.orgId, u.userId, query);
+  }
+
+  /**
+   * How long the open work in each stage has been standing there.
+   *
+   * The same permission as throughput: both are the same floor-supervisor view
+   * over the same rows, and a second key nobody has been granted would put the
+   * dashboard behind a permission that exists only in this file.
+   */
+  @Get("work-aging")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:reports:read")
+  getWorkAging(
+    @Query(new ZodValidationPipe(workAgingQuerySchema)) query: WorkAgingQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.workAging.workAging(u.orgId, u.userId, query);
   }
 
   @Get("dashboard")

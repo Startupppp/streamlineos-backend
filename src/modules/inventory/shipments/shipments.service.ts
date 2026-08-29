@@ -36,10 +36,12 @@ export class ShipmentsService {
   ) {}
 
   async list(orgId: string, userId: string, query: ListShipmentsQueryInput) {
-    const { status, carrierId, warehouseId, soId, page, limit } = query;
+    const { status, carrierId, warehouseId, soId, from, to, page, limit } = query;
     const offset = (page - 1) * limit;
     const scope = await this.warehouseScope.forUser(orgId, userId);
-    const hash = `${scope.key}:${status ?? ""}:${carrierId ?? ""}:${warehouseId ?? ""}:${soId ?? ""}:${limit}:${offset}`;
+    // Every filter that changes the result changes the key. A window omitted
+    // here would serve one date range's page under another's.
+    const hash = `${scope.key}:${status ?? ""}:${carrierId ?? ""}:${warehouseId ?? ""}:${soId ?? ""}:${from ?? ""}:${to ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(CACHE_KEYS.invShipmentsNamespace(orgId), `list:${hash}`, async () => {
       const conditions = [eq(invShipments.orgId, orgId), scope.warehouse(sql`${invShipments.warehouseId}`)];
@@ -47,6 +49,11 @@ export class ShipmentsService {
       if (carrierId) conditions.push(eq(invShipments.carrierId, carrierId));
       if (warehouseId) conditions.push(eq(invShipments.warehouseId, warehouseId));
       if (soId) conditions.push(eq(invShipments.soId, soId));
+      // Half-open at the top so the whole of `to` is included — the same
+      // convention the throughput report measures its window by, so a
+      // drill-through lands on the rows the report counted.
+      if (from) conditions.push(sql`${invShipments.shippedAt} >= ${from}::date`);
+      if (to) conditions.push(sql`${invShipments.shippedAt} < (${to}::date + 1)`);
       const where = and(...conditions);
 
       const [items, [countRow]] = await Promise.all([

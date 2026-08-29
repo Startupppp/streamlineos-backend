@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import type { ThroughputQueryInput } from "./dto/operations-metrics.schemas";
+import { locationsInWarehouse } from "./warehouse-filter";
 
 export interface ThroughputMetrics {
   window: { from: string; to: string };
@@ -56,6 +57,14 @@ export class OperationsMetricsService {
     query: ThroughputQueryInput,
   ): Promise<ThroughputMetrics> {
     const scope = await this.warehouseScope.forUser(orgId, userId);
+
+    // One site out of the caller's, when they ask for one. 404 rather than 403
+    // on a warehouse they may not see, and on one that is not this tenant's:
+    // a 403 on an id the caller cannot read confirms that the id exists.
+    if (query.warehouseId !== undefined) {
+      await this.warehouseScope.assertWarehouseVisible(orgId, userId, query.warehouseId);
+    }
+
     // An operator assigned no warehouse sees no throughput, rather than the
     // whole building's.
     if (scope.isEmpty) {
@@ -64,6 +73,18 @@ export class OperationsMetricsService {
 
     const from = query.from;
     const to = query.to;
+
+    // Beside the scope predicate on every half, never instead of it: this
+    // narrows what the caller may already see and is not itself an access
+    // control. Receiving resolves through inv_locations because inv_grns names
+    // a location and has no warehouse column.
+    const site = query.warehouseId;
+    const onlyReceiptSite =
+      site === undefined
+        ? sql`TRUE`
+        : sql`g.location_id IN ${locationsInWarehouse(orgId, site)}`;
+    const onlyPickSite = site === undefined ? sql`TRUE` : sql`p.warehouse_id = ${site}`;
+    const onlyShipSite = site === undefined ? sql`TRUE` : sql`s.warehouse_id = ${site}`;
 
     const [receiving] = await this.db.execute<{
       receipts: number;
@@ -83,6 +104,7 @@ export class OperationsMetricsService {
         -- warehouse-scoped reader saw the whole organisation's receipts, which
         -- is the same leak INV-109 closed on listGrns.
         AND ${scope.location(sql`g.location_id`)}
+        AND ${onlyReceiptSite}
     `);
 
     const [picking] = await this.db.execute<{
@@ -103,6 +125,7 @@ export class OperationsMetricsService {
         AND p.created_at >= ${from}::date
         AND p.created_at < (${to}::date + 1)
         AND ${scope.warehouse(sql`p.warehouse_id`)}
+        AND ${onlyPickSite}
     `);
 
     const [shipping] = await this.db.execute<{
@@ -130,6 +153,7 @@ export class OperationsMetricsService {
         AND s.shipped_at >= ${from}::date
         AND s.shipped_at < (${to}::date + 1)
         AND ${scope.warehouse(sql`s.warehouse_id`)}
+        AND ${onlyShipSite}
     `);
 
     const rate = (numerator: number, denominator: number) =>

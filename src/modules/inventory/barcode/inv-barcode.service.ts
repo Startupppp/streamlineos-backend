@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { InvPharmacyService } from "../products/inv-pharmacy.service";
 import QRCode from "qrcode";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -12,7 +13,10 @@ import { formatGs1, parseGs1 } from "./gs1";
 
 @Injectable()
 export class InvBarcodeService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly pharmacy: InvPharmacyService,
+  ) {}
 
   async lookup(orgId: string, code: string): Promise<BarcodeLookupResult> {
     const [
@@ -147,6 +151,32 @@ export class InvBarcodeService {
         `Lot ${lot.lotNumber} belongs to a different variant than GTIN ${parsed.gtin}`,
       );
     }
+    /**
+     * E3 — the LASA and high-alert warnings, on the surface a person actually
+     * touches.
+     *
+     * `GET /inventory/products/variants/:variantId/pharmacy` returned these and
+     * nothing called it. A picker does not open a product page mid-walk; they
+     * scan. So a look-alike/sound-alike warning existed, was tested, and reached
+     * nobody — which for this particular class of warning is the difference
+     * between the pack being real and being paperwork.
+     *
+     * Merged into `warnings` rather than added as a second field, because the
+     * scan surface already has one channel for "read this before you act" and a
+     * second one is a channel somebody renders in only half the places.
+     *
+     * `blocksDispense` is deliberately not consulted here: it is `false` by
+     * construction, and a scan is not a dispense. This shows; it never refuses.
+     */
+    if (variant) {
+      const profile = await this.pharmacy.dispensingProfile(orgId, variant.id);
+      for (const alert of profile.safety.alerts) {
+        warnings.push(
+          alert.disposition === "ACKNOWLEDGE" ? `Confirm before use: ${alert.message}` : alert.message,
+        );
+      }
+    }
+
     if (lot && lot.status !== "ACTIVE") {
       warnings.push(`Lot ${lot.lotNumber} is ${lot.status}`);
     }

@@ -73,6 +73,21 @@ const grnLotLineSchema = z.object({
   lotNumber: z.string().max(100).optional(),
   expiryDate: isoDate.optional(),
   manufactureDate: isoDate.optional(),
+  /**
+   * E3 — the two prices a pharmacy receipt captures, in integer paise.
+   *
+   * `mrpPaise` is what was printed on the cartons that arrived; the post
+   * transaction carries it onto `inv_lots.mrp_paise`, which is what a dispense
+   * reads. `purchaseRatePaise` is what this delivery actually cost per unit,
+   * which is routinely not what the order said.
+   *
+   * Optional here and required by the pharmacy pack, not by the schema: a
+   * distributor's receipt form has neither field, and a validation rule nobody
+   * asked for reads as a bug. `InvPharmacyService.assertReceiptLine` is what
+   * refuses a flagged SKU without an MRP, and only while the pack is on.
+   */
+  mrpPaise: z.number().int().positive().max(1_000_000_000, "MRP is in paise, not rupees").optional(),
+  purchaseRatePaise: z.number().int().positive().max(1_000_000_000, "the purchase rate is in paise, not rupees").optional(),
   serialNumbers: z.array(z.string().max(100)).optional(),
 }).strict();
 
@@ -122,6 +137,16 @@ export const listGrnSchema = z.object({
   poId: z.coerce.number().int().positive().optional(),
   vendorId: z.coerce.number().int().positive().optional(),
   status: z.enum(["DRAFT", "COUNTING", "QUALITY_REVIEW", "POSTED", "CANCELLED"]).optional(),
+  /**
+   * One site's receipts.
+   *
+   * `inv_grns` carries a `location_id` and no warehouse column, so this is
+   * resolved through `inv_locations` — the same resolution the warehouse scope
+   * already performs on this table, rather than a second answer to "which
+   * warehouse is this receipt in". A receipt posted to no location belongs to no
+   * warehouse and so matches no filter.
+   */
+  warehouseId: z.coerce.number().int().positive().optional(),
   dateFrom: isoDate.optional(),
   dateTo: isoDate.optional(),
   page: z.coerce.number().int().min(1).default(1),

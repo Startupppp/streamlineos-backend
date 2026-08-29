@@ -35,6 +35,7 @@ import {
 } from "./lib/receipt-lots-serials";
 import type { ReverseGrnInput } from "./dto/inv-purchase-orders.schemas";
 import { ReceiptInspectionService } from "../quality/receipt-inspection.service";
+import { InvPharmacyService } from "../products/inv-pharmacy.service";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -77,6 +78,7 @@ export class GrnPostingService {
     private readonly receiptInspection: ReceiptInspectionService,
     private readonly warehouseScope: WarehouseScopeService,
     private readonly journalPosting: InventoryAccountingBridge,
+    private readonly pharmacy: InvPharmacyService,
   ) {}
 
   /**
@@ -229,6 +231,31 @@ export class GrnPostingService {
       await assertLotAcceptable(
         tx, orgId, line, poLine.productVariantId, grn.receivedDate, settings.expiryReservationPolicy,
       );
+
+      /**
+       * E3. The pharmacy receipt gate, in the validation pass — before the
+       * quantity-received writes, before the engine call, before the projection
+       * recompute. A refusal here leaves the receipt exactly as it was; the same
+       * refusal after any of those would either roll back work already done or,
+       * worse, be reached after the ledger had moved.
+       *
+       * Called unconditionally, with no flag check here. The service reads the
+       * pack itself and returns before it touches the SKU when it is off, so a
+       * second check at the call site buys nothing and costs the one thing that
+       * matters: two places that have to agree on what "the pharmacy pack" means.
+       * The one that drifts is always the copy.
+       *
+       * The rule itself is not restated here either. It lives in the catalogue
+       * module because it is a property of the SKU, and the receiving screen asks
+       * the same service through `receipt-requirements` so the operator is told
+       * at the door rather than discovering it at post.
+       */
+      await this.pharmacy.assertReceiptLine(orgId, poLine.productVariantId, {
+        mrpPaise: line.mrpPaise,
+        purchaseRatePaise: line.purchaseRatePaise,
+        lotNumber: line.lotNumber,
+        expiryDate: line.expiryDate,
+      });
 
       if (poLine.productVariant.product.trackingMethod === "SERIAL")
         await assertSerialsAcceptable(tx, orgId, line, poLine.productVariantId);

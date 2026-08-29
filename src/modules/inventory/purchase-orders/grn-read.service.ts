@@ -25,10 +25,17 @@ export class GrnReadService {
   ) {}
 
   async listGrns(orgId: string, userId: string, filters: ListGrnInput) {
-    const { poId, vendorId, status, dateFrom, dateTo, page, limit } = filters;
+    const { poId, vendorId, status, warehouseId, dateFrom, dateTo, page, limit } = filters;
     const offset = (page - 1) * limit;
     const scope = await this.warehouseScope.forUser(orgId, userId);
-    const hash = `${scope.key}:${poId ?? ""}:${vendorId ?? ""}:${status ?? ""}:${dateFrom ?? ""}:${dateTo ?? ""}:${limit}:${offset}`;
+
+    // 404 rather than 403 on a warehouse this caller may not see. Asked before
+    // the cache, because a gate behind a cache is a gate that runs once.
+    if (warehouseId !== undefined) {
+      await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
+    }
+
+    const hash = `${scope.key}:${poId ?? ""}:${vendorId ?? ""}:${status ?? ""}:${warehouseId ?? ""}:${dateFrom ?? ""}:${dateTo ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(
       CACHE_KEYS.invGrnNamespace(orgId),
@@ -37,6 +44,18 @@ export class GrnReadService {
         const conditions = [eq(invGrns.orgId, orgId), scope.location(sql`${invGrns.locationId}`)];
         if (poId) conditions.push(eq(invGrns.poId, poId));
         if (status) conditions.push(eq(invGrns.status, status));
+        // Resolved through inv_locations exactly as `locationPredicate` above
+        // resolves the scope, and applied beside it rather than instead of it:
+        // this narrows what the caller may already see and is not an access
+        // control of its own.
+        if (warehouseId !== undefined) {
+          conditions.push(
+            sql`${invGrns.locationId} IN (
+              SELECT id FROM inv_locations
+              WHERE org_id = ${orgId} AND warehouse_id = ${warehouseId}
+            )`,
+          );
+        }
         if (dateFrom) conditions.push(gte(invGrns.receivedDate, dateFrom));
         if (dateTo) conditions.push(lte(invGrns.receivedDate, dateTo));
 

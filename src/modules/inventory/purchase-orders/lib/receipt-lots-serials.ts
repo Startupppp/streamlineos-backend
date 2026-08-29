@@ -12,6 +12,11 @@ export interface ReceiptLotDraft {
   lotNumber: string | null;
   expiryDate: string | null;
   manufactureDate: string | null;
+  /**
+   * E3. The MRP printed on the cartons, in integer paise, as recorded on the
+   * receipt line. Optional because only the `pharmacy` pack captures it.
+   */
+  mrpPaise?: number | null;
 }
 
 /** The serial fields, likewise. */
@@ -122,6 +127,15 @@ export async function resolveLotId(
       lotNumber: line.lotNumber,
       expiryDate: line.expiryDate,
       manufactureDate: line.manufactureDate,
+      /**
+       * E3. The snapshot, taken here and never updated. The ceiling that binds a
+       * sale is the one printed on the pack in the customer's hand, so it is a
+       * fact about this batch — two batches of one medicine on one shelf
+       * routinely carry different MRPs, and the older may not be sold at the
+       * newer's price. An existing lot keeps the MRP it was received with; a
+       * re-print arrives as a new batch number.
+       */
+      mrpPaise: line.mrpPaise ?? null,
       productVariantId,
     })
     .returning({ id: invLots.id });

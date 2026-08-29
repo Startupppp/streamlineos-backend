@@ -5,6 +5,7 @@ import { InvReportsExtendedService } from "./inv-reports-extended.service";
 import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
 import { InvValuationModule } from "../valuation/inv-valuation.module";
 import { OperationsMetricsService } from "./operations-metrics.service";
+import { WorkAgingService } from "./work-aging.service";
 
 @Module({
   // InvReportsService and InvReportsExtendedService inject WarehouseScopeService, which
@@ -14,7 +15,12 @@ import { OperationsMetricsService } from "./operations-metrics.service";
   // copy of the same costing dispatch, so that module is imported for its provider.
   imports: [InvStockEngineModule, InvValuationModule],
   controllers: [InvReportsController],
-  providers: [InvReportsService, InvReportsExtendedService, OperationsMetricsService],
+  providers: [
+    InvReportsService,
+    InvReportsExtendedService,
+    OperationsMetricsService,
+    WorkAgingService,
+  ],
   exports: [InvReportsService, InvReportsExtendedService],
 })
 export class InvReportsModule {}

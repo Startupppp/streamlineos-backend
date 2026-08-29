@@ -17,7 +17,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
-import { runIdempotent, revivedId } from "../stock-engine/idempotency";
+import { runIdempotent } from "../stock-engine/idempotency";
 import { centsToDecimal } from "./lib/apportion";
 import type {
   AddLandedCostChargeInput,
@@ -73,11 +73,17 @@ export class LandedCostService {
         idempotencyKey,
         { command: "inventory.landed-cost.create", grnId: input.grnId },
         () => this.insertVoucher(tx, orgId, userId, input, grn.grnNumber),
+        // Read field by field rather than through `revivedId`, which unwraps a
+        // scalar result and would see this object as NaN — so a retried create
+        // would answer 409 "unreadable" instead of replaying the voucher it
+        // already raised. The stored response has been through JSONB, so nothing
+        // here assumes a type it has not checked.
         (stored) => {
-          const id = revivedId(stored);
+          const revived = stored as { id?: unknown; voucherNumber?: unknown };
+          const id = Number(revived.id);
           if (!Number.isInteger(id))
             throw new ConflictException("The stored result for this key is unreadable");
-          return { id, voucherNumber: String((stored as { voucherNumber?: unknown }).voucherNumber ?? "") };
+          return { id, voucherNumber: String(revived.voucherNumber ?? "") };
         },
       ),
     );
