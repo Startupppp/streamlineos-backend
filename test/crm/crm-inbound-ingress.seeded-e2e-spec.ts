@@ -402,6 +402,12 @@ describe(`${SEEDED_HARNESS} inbound ingress — fixture to rows, no provider SDK
           "extract-and-act",
           "log-activity",
           "mark-processed",
+          // P4-in. The relationship materialiser was added to the workflow and
+          // this list was not updated with it, so the assertion has been failing
+          // since — which nobody saw, because the suite it lives in could not be
+          // run. An exact set rather than a subset is the point: a step that
+          // stops running is as much a defect as one that appears unannounced.
+          "materialise-relationship",
           "record-participants",
           "resolve-party",
           "resolve-region",

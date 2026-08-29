@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { outboxEvents } from "../../db/schema";
 import { reportError } from "../observability";
+import { forEachOrg } from "../tenant/for-each-org";
 import { WorkflowRegistry } from "./workflow-registry";
 import { WorkflowRunnerService } from "./workflow-runner.service";
 
@@ -67,25 +68,66 @@ export class WorkflowOutboxRelayService {
     private readonly runner: WorkflowRunnerService,
   ) {}
 
+  /**
+   * Discovery is per organisation, and has to be.
+   *
+   * `outbox_events` carries `tenant_isolation`, so the cross-tenant read this
+   * method used to open with — every ACTIVE event above the cursor, all tenants
+   * at once — is denied under RLS with 42501 "no tenant context". Not degraded:
+   * the whole cron tick 500s, no run is ever started, and every durable workflow
+   * in the product silently stops. It only worked at all because the databases
+   * it was exercised against connected as an owner, which bypasses RLS; the
+   * moment `APP_DATABASE_URL` points at the non-owner role it is supposed to,
+   * the autonomous half of the CRM does nothing.
+   *
+   * `forEachOrg` is the pattern the platform already settled on for exactly this
+   * — `organizations` carries no tenant column and therefore no policy, so it
+   * can be enumerated without a bypass role, and each organisation's discovery
+   * then runs inside its own tenant transaction.
+   *
+   * `limit` stays a whole-tick budget rather than becoming per organisation. A
+   * relay that read fifty events per tenant would scale its own batch size with
+   * the customer list, which is the opposite of what a batch size is for.
+   */
   async relay(limit: number = RELAY_BATCH_SIZE): Promise<RelayResult> {
-    const events = await this.db
-      .select({
-        outboxEventId: outboxEvents.outboxEventId,
-        eventId: outboxEvents.eventId,
-        organizationId: outboxEvents.organizationId,
-        eventType: outboxEvents.eventType,
-        payload: outboxEvents.payload,
-        correlationId: outboxEvents.correlationId,
-      })
-      .from(outboxEvents)
-      .where(
-        and(
-          gt(outboxEvents.outboxEventId, this.cursor),
-          eq(outboxEvents.lifecycleState, "ACTIVE"),
-        ),
-      )
-      .orderBy(asc(outboxEvents.outboxEventId))
-      .limit(limit);
+    const events: {
+      outboxEventId: number;
+      eventId: string;
+      organizationId: string;
+      eventType: string;
+      payload: unknown;
+      correlationId: string | null;
+    }[] = [];
+
+    await forEachOrg(this.db, "workflow-outbox-relay", async (tx) => {
+      const remaining = limit - events.length;
+      if (remaining <= 0) return;
+
+      const rows = await tx
+        .select({
+          outboxEventId: outboxEvents.outboxEventId,
+          eventId: outboxEvents.eventId,
+          organizationId: outboxEvents.organizationId,
+          eventType: outboxEvents.eventType,
+          payload: outboxEvents.payload,
+          correlationId: outboxEvents.correlationId,
+        })
+        .from(outboxEvents)
+        .where(
+          and(
+            gt(outboxEvents.outboxEventId, this.cursor),
+            eq(outboxEvents.lifecycleState, "ACTIVE"),
+          ),
+        )
+        .orderBy(asc(outboxEvents.outboxEventId))
+        .limit(remaining);
+
+      events.push(...rows);
+    });
+
+    // Globally ordered again: `outbox_event_id` is one identity sequence across
+    // every tenant, and `CURSOR_LAG` below reasons about that single stream.
+    events.sort((a, b) => a.outboxEventId - b.outboxEventId);
 
     let started = 0;
     let highest = 0;

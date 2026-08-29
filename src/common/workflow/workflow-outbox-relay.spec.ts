@@ -1,7 +1,30 @@
 import type { Db } from "../../db/drizzle.types";
+import { forEachOrg } from "../tenant/for-each-org";
 import { WorkflowRegistry } from "./workflow-registry";
 import { WorkflowOutboxRelayService } from "./workflow-outbox-relay.service";
 import type { WorkflowRunnerService } from "./workflow-runner.service";
+
+/**
+ * `forEachOrg` is the seam, not an implementation detail to see through.
+ *
+ * The relay cannot read `outbox_events` across tenants — the table carries
+ * `tenant_isolation`, and a query with no tenant context is refused with 42501,
+ * which took the whole cron tick down with it. Discovery therefore runs inside
+ * one tenant transaction per organisation.
+ *
+ * Mocked here because what these cases are about is the relay's own reasoning —
+ * the cursor, the global ordering, the deduplication — and standing up
+ * `withTenant` and a real `organizations` table to reach it would test Postgres.
+ * That discovery genuinely goes through this seam is asserted directly below,
+ * and proved end to end by `crm-inbound-ingress.seeded-e2e-spec.ts`, which runs
+ * the real tick against a database whose role cannot bypass RLS.
+ */
+jest.mock("../tenant/for-each-org", () => ({
+  forEachOrg: jest.fn(async (db: unknown, _sweep: string, fn: (tx: unknown, orgId: string) => Promise<void>) => {
+    await fn(db, "org-1");
+    return { organizations: 1, succeeded: 1, failed: 0 };
+  }),
+}));
 
 interface EventRow {
   outboxEventId: number;
@@ -50,6 +73,29 @@ function event(overrides: Partial<EventRow> = {}): EventRow {
 }
 
 describe("WorkflowOutboxRelayService", () => {
+  beforeEach(() => {
+    (forEachOrg as jest.Mock).mockClear();
+  });
+
+  /**
+   * The regression this file exists to prevent a second time.
+   *
+   * A relay that reads the outbox directly works against an owner connection and
+   * fails against the non-owner role the application is supposed to use — so the
+   * failure appears only in an environment nobody runs unit tests in, and what
+   * it looks like there is every durable workflow in the product quietly
+   * stopping.
+   */
+  it("discovers per organisation rather than across tenants", async () => {
+    const registry = new WorkflowRegistry();
+    const relay = new WorkflowOutboxRelayService(dbReturning([[event()]]), registry, runnerSpy().service);
+
+    await relay.relay();
+
+    expect(forEachOrg).toHaveBeenCalledTimes(1);
+    expect((forEachOrg as jest.Mock).mock.calls[0]?.[1]).toBe("workflow-outbox-relay");
+  });
+
   it("starts a run for an event a workflow listens to", async () => {
     const registry = new WorkflowRegistry();
     registry.register({ name: "onboard", triggers: ["party.created"], handler: async () => null });

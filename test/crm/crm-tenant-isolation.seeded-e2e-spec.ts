@@ -92,7 +92,9 @@ const TENANT_TABLES = [
   "crm_monthly_metrics",
   "crm_options",
   "crm_org_party_map",
-  "crm_organizations",
+  // `crm_organizations` stood here. 0278 dropped it with the other three legacy
+  // identity tables; `crm_org_party_map` above is what a bookmarked id of one
+  // now resolves through.
   "crm_people",
   "crm_pipeline_stages",
   "crm_pipelines",
@@ -141,6 +143,37 @@ const TENANT_TABLES = [
   "subject_party_links",
   "subject_types",
   "subjects",
+
+  /**
+   * Wave 4 and Wave 5, which reached a database for the first time when their
+   * twenty-seven migrations were finally journalled. Their RLS was written all
+   * along; until the tables existed, this file could not prove any of it, and
+   * an absent case reads exactly like a passing one.
+   */
+  "autonomy_repair_policies",
+  "autonomy_repairs",
+  "crm_call_analyses",
+  "crm_call_analysis_refusals",
+  "crm_call_analysis_releases",
+  "crm_call_recording_consent",
+  "crm_cold_outbound_settings",
+  "crm_commission_accrual_parts",
+  "crm_commission_accrual_snapshots",
+  "crm_commission_assignments",
+  "crm_commission_earnings",
+  "crm_commission_plan_versions",
+  "crm_commission_plans",
+  "crm_deal_forecast_models",
+  "crm_deal_forecast_scores",
+  "crm_nurture_enrollments",
+  "crm_nurture_sequence_steps",
+  "crm_nurture_sequences",
+  "crm_nurture_step_attempts",
+  "crm_outbound_class_stops",
+  "crm_outbound_messages",
+  "crm_report_definitions",
+  "crm_report_runs",
+  "crm_sending_domains",
 ] as const;
 
 /**
