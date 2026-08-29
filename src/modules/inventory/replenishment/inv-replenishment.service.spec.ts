@@ -32,8 +32,20 @@ const mockCache = {
 
 const mockNumSeq = { next: jest.fn() };
 
+// These two arrived when the replenishment screen was wired to the forecast
+// engine. Nothing in this file's suggestion-math tests reaches them, so they
+// exist to satisfy the constructor rather than to be asserted on.
+const mockReorderProposals = { latestFor: jest.fn(), generate: jest.fn() };
+const mockAccess = { assertPermission: jest.fn(), can: jest.fn() };
+
 function buildService() {
-  return new InvReplenishmentService(mockDb as never, mockCache as never, mockNumSeq as never);
+  return new InvReplenishmentService(
+    mockDb as never,
+    mockCache as never,
+    mockNumSeq as never,
+    mockReorderProposals as never,
+    mockAccess as never,
+  );
 }
 
 const DEFAULT_FILTERS = { page: 1, limit: 50 };

@@ -92,6 +92,10 @@ describe("INV-309 batching and approval", () => {
     productName: "Thing",
     requested: "10",
     ordered: "10",
+    // A fixture line is the engine's own answer: nobody has overridden it, so
+    // engineOrdered equals ordered and there is no override to carry.
+    engineOrdered: "10",
+    override: null,
     unitCost: value,
     lineValue: value,
     excess,

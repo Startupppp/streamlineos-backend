@@ -192,7 +192,7 @@ describe("InvStockAdjustmentsService — threshold routing", () => {
   describe("approve + post flow", () => {
     it("throws when trying to approve a POSTED adjustment", async () => {
       const { svc } = buildService("5", { id: 1, status: "POSTED" });
-      await expect(svc.approveAdjustment("org1", "u1", 1)).rejects.toThrow(BadRequestException);
+      await expect(svc.approveAdjustment("org1", "u1", 1, "approve-posted-key")).rejects.toThrow(BadRequestException);
     });
 
     it("throws when trying to post an adjustment that is PENDING_APPROVAL (not yet approved)", async () => {
