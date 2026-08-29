@@ -316,6 +316,31 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     description: "Manage reorder rules and replenishment",
   },
   {
+    name: "inventory:replenishment:read",
+    resource: "inventory:replenishment",
+    action: "read",
+    description: "View replenishment proposals, transfer recommendations and forecast drift",
+    scopable: true,
+  },
+  {
+    name: "inventory:allocation:override",
+    resource: "inventory:allocation",
+    action: "override",
+    description: "Override FEFO or a near-expiry block when allocating a lot, with a recorded reason",
+  },
+  {
+    name: "inventory:transit:abandon",
+    resource: "inventory:transit",
+    action: "abandon",
+    description: "Abandon or return-to-source stock stranded in transit by a short receipt",
+  },
+  {
+    name: "inventory:labels:print",
+    resource: "inventory:labels",
+    action: "print",
+    description: "Print barcode labels, goods-receipt notes and pick lists",
+  },
+  {
     name: "inventory:ai:read",
     resource: "inventory:ai",
     action: "read",

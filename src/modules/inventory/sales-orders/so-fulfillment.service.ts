@@ -25,7 +25,7 @@ import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dt
 import { addDec, cmpDec, mulDec } from "../stock-engine/decimal";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
 import { runIdempotent, revivedScalar } from "../stock-engine/idempotency";
-import { type ShelfLine, shelfLines } from "../shipments/packing-reconciliation";
+import { shelfLines } from "../shipments/packing-reconciliation";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type InventorySettings = Awaited<ReturnType<InventorySettingsService["get"]>>;

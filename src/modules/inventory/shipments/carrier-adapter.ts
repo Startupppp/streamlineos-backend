@@ -220,31 +220,28 @@ export async function runCarrierCall<T>(
 
   let attempts = 0;
   for (;;) {
-    let failure: unknown = null;
     try {
       const value = await withTimeout(work, timeoutMs, timer);
       return { ok: true, value, attempts: attempts + 1 };
-    } catch (error) {
-      failure = error;
-    }
-
-    const plan = planCarrierAttempt({
-      attempts,
-      ok: false,
-      terminal: failure instanceof TerminalCarrierError,
-    });
-    attempts = plan.attempts;
-
-    if (plan.deadLettered) {
-      return {
-        ok: false,
+    } catch (failure) {
+      const plan = planCarrierAttempt({
         attempts,
-        reason: failure instanceof CarrierTimeoutError ? "timeout" : "error",
-        error: describe(failure),
-        deadLettered: true,
-      };
+        ok: false,
+        terminal: failure instanceof TerminalCarrierError,
+      });
+      attempts = plan.attempts;
+
+      if (plan.deadLettered) {
+        return {
+          ok: false,
+          attempts,
+          reason: failure instanceof CarrierTimeoutError ? "timeout" : "error",
+          error: describe(failure),
+          deadLettered: true,
+        };
+      }
+      await sleep(plan.retryInMs ?? 0);
     }
-    await sleep(plan.retryInMs ?? 0);
   }
 }
 

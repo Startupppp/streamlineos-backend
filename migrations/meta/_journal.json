@@ -2290,6 +2290,13 @@
       "when": 1788134409003,
       "tag": "0547_ledger_keyset_pagination",
       "breakpoints": true
+    },
+    {
+      "idx": 328,
+      "version": "7",
+      "when": 1788134409004,
+      "tag": "0548_inventory_pending_one_permissions",
+      "breakpoints": true
     }
   ]
 }

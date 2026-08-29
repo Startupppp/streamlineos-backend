@@ -616,6 +616,9 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "inventory:picking:review",
       "inventory:packages:manage",
       "inventory:shipments:manage",
+      "inventory:transit:abandon",
+      "inventory:allocation:override",
+      "inventory:labels:print",
     ],
   },
   {
@@ -633,6 +636,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "inventory:sales-orders:read",
       "inventory:sales-orders:ship",
       "inventory:packages:manage",
+      "inventory:labels:print",
     ],
   },
   {
@@ -650,6 +654,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "inventory:purchase-orders:create",
       "inventory:purchase-orders:update",
       "inventory:replenishment:manage",
+      "inventory:replenishment:read",
       "inventory:reports:read",
       "inventory:ai:read",
       "inventory:ai:propose",
@@ -704,6 +709,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "inventory:quality:read",
       "inventory:valuation:read",
       "inventory:reports:read",
+      "inventory:replenishment:read",
       "inventory:ai:read",
     ],
   },

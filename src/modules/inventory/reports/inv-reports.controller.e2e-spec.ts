@@ -52,6 +52,39 @@ describe("/inventory/reports (e2e)", () => {
     expect(res.status).toBe(200);
   });
 
+  /**
+   * G1. Page one still answers with a count for the callers that only know
+   * `page`; a cursor page deliberately does not, because `count(*)` over a
+   * tenant's ledger is the cost the cursor exists to avoid.
+   */
+  it("movements pages by cursor, and stops counting once it does", async () => {
+    const first = await request(app.getHttpServer())
+      .get("/inventory/reports/movements?limit=2")
+      .set("Authorization", `Bearer ${token}`);
+    expect(first.status).toBe(200);
+    const firstBody = first.body.data ?? first.body;
+    expect(typeof firstBody.hasMore).toBe("boolean");
+    if (!firstBody.hasMore) return;
+
+    const second = await request(app.getHttpServer())
+      .get(`/inventory/reports/movements?limit=2&cursor=${encodeURIComponent(String(firstBody.nextCursor))}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(second.status).toBe(200);
+    const secondBody = second.body.data ?? second.body;
+    expect(secondBody.total).toBeNull();
+
+    const firstIds = firstBody.items.map((row: { id: number }) => row.id);
+    const secondIds = secondBody.items.map((row: { id: number }) => row.id);
+    expect(firstIds.filter((id: number) => secondIds.includes(id))).toEqual([]);
+  });
+
+  it("400 above the 100-per-page cap on movements", async () => {
+    const res = await request(app.getHttpServer())
+      .get("/inventory/reports/movements?limit=101")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(400);
+  });
+
   it("dashboard response contains expected shape", async () => {
     const res = await request(app.getHttpServer())
       .get("/inventory/reports/dashboard")
