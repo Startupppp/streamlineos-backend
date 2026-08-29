@@ -25,6 +25,25 @@ import { join } from "node:path";
  *
  * **What it deliberately does not do.** It does not check that a route is
  * *permitted*, or that a service does anything useful. Reachability is a floor.
+ *
+ * **And what it cannot do at all.** It judges at directory level, so a service
+ * that is unreachable *from the path that claims it* passes as long as anything
+ * in its own folder uses it. E3 hid there: `InvPharmacyService.assertReceiptLine`
+ * refuses a flagged SKU with no MRP, is unit-tested, and is consumed inside
+ * `products/` — while the GRN post path never calls it, so "a receipt without an
+ * MRP fails" was true in a test and false in the product.
+ *
+ * A stricter rule was tried — every service in a module's `exports:` array needs
+ * an importer outside its directory — and produced fourteen findings of which
+ * roughly one was real, because a service consumed by its own controller is
+ * perfectly reachable. It was removed rather than shipped with exemptions: a
+ * check people learn to silence has stopped checking, which is the thing this
+ * file exists to prevent.
+ *
+ * The gap it leaves is not a tooling gap. Whether a *rule* is enforced on the
+ * *path that claims it* is a semantic question about behaviour, and the
+ * instrument for it is the golden path in `test/inventory/golden-path.seeded-e2e-spec.ts`
+ * — which is why that spec matters more than any static check here.
  */
 
 const INVENTORY_DIR = join(__dirname, "..");
