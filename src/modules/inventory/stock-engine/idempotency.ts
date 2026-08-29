@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, UnprocessableEntityException } from "@nestjs/common";
+import { inventoryCounters } from "../observability/inventory-counters";
 import { createHash } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { invIdempotencyKeys } from "../../../db/schema";
@@ -77,6 +78,11 @@ export async function claimIdempotencyKey(
 
   if (claimed.length > 0) return { kind: "proceed" };
 
+  // G6. Everything below this line is a retry of a key that already exists, and
+  // the three ways it can end — replay, in-flight conflict, expired-lease
+  // takeover — are the rates an operator needs. None of them leaves a row of its
+  // own, so counting here is the only place they are visible at all.
+
   const existing = await tx.query.invIdempotencyKeys.findFirst({
     where: and(
       eq(invIdempotencyKeys.orgId, orgId),
@@ -92,16 +98,20 @@ export async function claimIdempotencyKey(
     );
   }
 
-  if (existing.status === "COMPLETED")
+  if (existing.status === "COMPLETED") {
+    inventoryCounters.increment(orgId, "stock.command.replayed");
     return { kind: "replay", stored: existing.response };
+  }
 
   if (
     existing.status === "IN_FLIGHT" &&
     existing.leaseExpiresAt !== null &&
     existing.leaseExpiresAt > new Date()
   ) {
+    inventoryCounters.increment(orgId, "stock.command.conflict");
     throw new ConflictException({ code: INV_ERRORS.DUPLICATE_IDEMPOTENCY_KEY });
   }
+  inventoryCounters.increment(orgId, "stock.command.retry");
 
   const leaseLock =
     existing.leaseExpiresAt !== null

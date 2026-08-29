@@ -7,6 +7,7 @@ import { MovementCostingService } from "./movement-costing.service";
 import { addDec, mulDec, cmpDec, isPositive, isNegative } from "./decimal";
 import { levelKey, type LockedLevel } from "./stock-level-locks";
 import { emitStockMovementPosted } from "./stock-events";
+import { inventoryCounters } from "../observability/inventory-counters";
 import type { CostingLookup } from "./costing-context";
 import {
   INV_ERRORS,
@@ -361,6 +362,11 @@ export class MovementApplyService {
       cmd.sourceType,
       cmd.sourceId,
     );
+
+    // G6. Counted here rather than at the controller: this is the point past
+    // which the movement is written and the command has succeeded. A counter at
+    // the edge would also count commands the engine went on to refuse.
+    inventoryCounters.increment(orgId, "stock.command.success");
 
     const engineResult: StockEngineResult = { transactionIds: txnIds, levels: cmdLevels };
 

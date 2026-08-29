@@ -35,8 +35,14 @@ ALTER TABLE "inv_settings"
 --> statement-breakpoint
 -- A window wider than the shelf life it describes silently blocks the whole
 -- catalogue, which reads as "allocation is broken" rather than as a setting.
-ALTER TABLE "inv_settings"
-  ADD CONSTRAINT "chk_inv_settings_near_expiry_window"
-  CHECK ("near_expiry_window_days" >= 0 AND "near_expiry_window_days" <= 365) NOT VALID;
+--
+-- Guarded, because this environment re-applies migration files: the column adds
+-- above are already IF NOT EXISTS, and a bare ADD CONSTRAINT beside them fails
+-- the whole file on the second run for a constraint that is already correct.
+DO $$ BEGIN
+  ALTER TABLE "inv_settings"
+    ADD CONSTRAINT "chk_inv_settings_near_expiry_window"
+    CHECK ("near_expiry_window_days" >= 0 AND "near_expiry_window_days" <= 365) NOT VALID;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "inv_settings" VALIDATE CONSTRAINT "chk_inv_settings_near_expiry_window";
