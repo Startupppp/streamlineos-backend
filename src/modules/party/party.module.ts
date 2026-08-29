@@ -12,6 +12,15 @@ import { SubjectService } from "./subject.service";
   imports: [BillingModule],
   controllers: [PartyController, PartyMergeController, SubjectController],
   providers: [PartyService, PartyMergeService, PartyRolesService, SubjectService],
-  exports: [PartyMergeService, PartyRolesService, SubjectService],
+  /**
+   * `PartyService` is exported because `CrmMcpModule` injects it.
+   *
+   * It was the one service here that stayed internal, which was true right up
+   * until the MCP server was written against it. Without the export `AppModule`
+   * does not instantiate at all — not the MCP route, the whole application — and
+   * no unit test can see that, because every one of them builds its own module
+   * with its own providers. Only booting the real graph catches it.
+   */
+  exports: [PartyService, PartyMergeService, PartyRolesService, SubjectService],
 })
 export class PartyModule {}
