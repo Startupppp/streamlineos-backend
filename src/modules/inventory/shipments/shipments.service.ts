@@ -16,6 +16,7 @@ import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { runIdempotent } from "../stock-engine/idempotency";
 import type {
   ListShipmentsQueryInput,
   CreateShipmentInput,
@@ -156,38 +157,64 @@ export class ShipmentsService {
     }
 
     const safeInput = input ?? {};
-    const [updated] = await this.db.transaction(async (tx) => {
-      const rows = await tx.update(invShipments).set({
-        status: "SHIPPED",
-        shippedAt: new Date(),
-        trackingNumber: safeInput.trackingNumber ?? shipment.trackingNumber,
-        carrierId: safeInput.carrierId ?? shipment.carrierId,
-        updatedAt: new Date(),
-      }).where(and(eq(invShipments.id, shipmentId), eq(invShipments.orgId, orgId))).returning();
-      await this.audit.insert(tx, {
+    // A3. The key used to reach this method and stop here, recorded as audit
+    // metadata and never claimed. The status read above is not a substitute: it
+    // happens outside the write, so two copies of the same request in flight
+    // together both see PACKED, both flip the row and both emit
+    // `inventory.shipment.dispatched` -- two dispatches to the carrier for one
+    // shipment. The claim and the dispatch share this transaction, so the event
+    // is emitted exactly as often as the key is claimed.
+    const updated = await this.db.transaction(async (tx) => {
+      await runIdempotent(
+        tx,
         orgId,
-        actorUserId: userId,
-        action: "shipment.shipped",
-        resourceType: "shipment",
-        resourceId: String(shipmentId),
-        metadata: { idempotencyKey },
-      });
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "inv_shipment",
-        aggregateId: String(shipmentId),
-        aggregateVersion: Date.now(),
-        eventType: "inventory.shipment.dispatched",
-        payload: {
+        idempotencyKey,
+        {
           shipmentId,
-          shipmentNumber: rows[0]?.shipmentNumber ?? shipment.shipmentNumber,
-          soId: shipment.soId,
-          actorUserId: userId,
+          trackingNumber: safeInput.trackingNumber ?? null,
+          carrierId: safeInput.carrierId ?? null,
         },
-        occurredAt: new Date(),
-      });
-      return rows;
+        async () => {
+          const rows = await tx.update(invShipments).set({
+            status: "SHIPPED",
+            shippedAt: new Date(),
+            trackingNumber: safeInput.trackingNumber ?? shipment.trackingNumber,
+            carrierId: safeInput.carrierId ?? shipment.carrierId,
+            updatedAt: new Date(),
+          }).where(and(eq(invShipments.id, shipmentId), eq(invShipments.orgId, orgId))).returning();
+          await this.audit.insert(tx, {
+            orgId,
+            actorUserId: userId,
+            action: "shipment.shipped",
+            resourceType: "shipment",
+            resourceId: String(shipmentId),
+            metadata: { idempotencyKey },
+          });
+          await OutboxWriter.emit(tx, {
+            eventId: randomUUID(),
+            organizationId: orgId,
+            aggregateType: "inv_shipment",
+            aggregateId: String(shipmentId),
+            aggregateVersion: Date.now(),
+            eventType: "inventory.shipment.dispatched",
+            payload: {
+              shipmentId,
+              shipmentNumber: rows[0]?.shipmentNumber ?? shipment.shipmentNumber,
+              soId: shipment.soId,
+              actorUserId: userId,
+            },
+            occurredAt: new Date(),
+          });
+          return { shipmentId };
+        },
+        // The row is re-read below on both paths rather than revived from the
+        // stored JSON, so a replay answers with the shipment as it now stands
+        // and no `Date` has to survive a round trip through jsonb.
+        () => ({ shipmentId }),
+      );
+      const [row] = await tx.select().from(invShipments)
+        .where(and(eq(invShipments.id, shipmentId), eq(invShipments.orgId, orgId))).limit(1);
+      return row;
     });
     await this.cache.invalidateNamespace(CACHE_KEYS.invShipmentsNamespace(orgId));
     return updated;

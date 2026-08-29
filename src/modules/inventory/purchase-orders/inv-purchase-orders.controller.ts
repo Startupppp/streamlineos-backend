@@ -1,8 +1,6 @@
-import {
-  BadRequestException, Controller, Get, Post, Patch, Body, Param,
-  ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus, Headers,
-} from "@nestjs/common";
+import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
@@ -19,11 +17,6 @@ import {
   listPoSchema, createPoSchema, updatePoSchema, createGrnSchema,
   type ListPoInput, type CreatePoInput, type UpdatePoInput, type CreateGrnInput,
 } from "./dto/inv-purchase-orders.schemas";
-
-function requireIdempotencyKey(key: string | undefined): string {
-  if (!key) throw new BadRequestException("Idempotency-Key header is required");
-  return key;
-}
 
 @RequireModule("inventory")
 @Controller("inventory/purchase-orders")
@@ -130,10 +123,10 @@ export class InvPurchaseOrdersController {
   receiveGoods(
     @Param("poId", ParseIntPipe) poId: number,
     @Body(new ZodValidationPipe(createGrnSchema)) body: CreateGrnInput,
-    @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
+    @IdempotencyKey() idempotencyKeyHeader: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const idempotencyKey = requireIdempotencyKey(idempotencyKeyHeader);
+    const idempotencyKey = idempotencyKeyHeader;
     return this.grns.receiveGoods(u.orgId, poId, u.userId, idempotencyKey, body);
   }
 }

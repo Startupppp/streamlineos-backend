@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -41,12 +42,10 @@ export class HoldsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
   create(
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @Body(new ZodValidationPipe(createHoldSchema)) body: CreateHoldInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.svc.create(u.orgId, u.userId, idempotencyKey, body);
+  ) {return this.svc.create(u.orgId, u.userId, idempotencyKey, body);
   }
 
   @Post(":holdId/release")
@@ -54,10 +53,8 @@ export class HoldsController {
   @RequirePermission("inventory:quality:release")
   release(
     @Param("holdId", ParseIntPipe) holdId: number,
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.svc.release(u.orgId, u.userId, holdId, idempotencyKey);
+  ) {return this.svc.release(u.orgId, u.userId, holdId, idempotencyKey);
   }
 }

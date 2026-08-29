@@ -16,6 +16,15 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import type { ListRulesInput, CreateRuleInput, UpdateRuleInput, GeneratePoInput, ForecastingInput, SuggestionsQueryInput } from "./dto/replenishment.schemas";
 import { applyOrderPolicy } from "./forecast/order-policy";
+import { runIdempotent } from "../stock-engine/idempotency";
+
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/** A replayed draft PO, rebuilt from the stored JSON. */
+function revivePo(stored: unknown): { id: number; poNumber: string } {
+  const row = typeof stored === "object" && stored !== null ? (stored as Record<string, unknown>) : {};
+  return { id: Number(row.id ?? 0), poNumber: String(row.poNumber ?? "") };
+}
 
 @Injectable()
 export class InvReplenishmentService {
@@ -295,7 +304,13 @@ export class InvReplenishmentService {
    * ignored rather than rejected, because the caller is not doing anything
    * wrong by sending one — it is simply not the authority.
    */
-  async generatePo(orgId: string, userId: string, body: GeneratePoInput) {
+  /**
+   * A3. Creating a draft purchase order took no key, so a double-clicked
+   * "Create Draft PO" raised two orders for the same shortfall — and because
+   * the quantity is re-derived from the live suggestion, the second one looked
+   * perfectly legitimate.
+   */
+  async generatePo(orgId: string, userId: string, body: GeneratePoInput, idempotencyKey: string) {
     const recomputed = await Promise.all(
       body.suggestions.map(async (s) => {
         const suggestion = await this.getSuggestionForVariant(
@@ -353,49 +368,71 @@ export class InvReplenishmentService {
       );
     }
 
-    return this.db.transaction(async (tx) => {
-      const poNumber = await this.numSeq.next(orgId, "PO", tx);
-      const today = new Date().toISOString().slice(0, 10);
+    return this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        idempotencyKey,
+        { command: "inventory.replenishment.generate-po", orderable },
+        () => this.createDraftPoInTx(tx, orgId, userId, body, orderable),
+        (stored) => revivePo(stored),
+      ),
+    );
+  }
 
-      const subtotal = orderable.reduce(
-        (sum, s) => sum + s.suggestedQty * s.unitCost,
-        0,
-      );
+  private async createDraftPoInTx(
+    tx: Tx,
+    orgId: string,
+    userId: string,
+    body: GeneratePoInput,
+    orderable: ReadonlyArray<{
+      productVariantId: number;
+      suggestedQty: number;
+      unitCost: number;
+      policyReasons: string[];
+    }>,
+  ) {
+    const poNumber = await this.numSeq.next(orgId, "PO", tx);
+    const today = new Date().toISOString().slice(0, 10);
 
-      const [po] = await tx
-        .insert(invPurchaseOrders)
-        .values({
-          orgId,
-          vendorId: body.vendorId,
-          poNumber,
-          status: "DRAFT",
-          orderDate: today,
-          warehouseId: body.warehouseId,
-          subtotal: String(subtotal),
-          taxAmount: "0",
-          discount: "0",
-          total: String(subtotal),
-          currency: "INR",
-          createdBy: userId,
-        })
-        .returning();
+    const subtotal = orderable.reduce(
+      (sum, s) => sum + s.suggestedQty * s.unitCost,
+      0,
+    );
 
-      await tx.insert(invPoLines).values(
-        orderable.map((s, i) => ({
-          orgId,
-          poId: po.id,
-          productVariantId: s.productVariantId,
-          quantity: String(s.suggestedQty),
-          quantityReceived: "0",
-          unitCost: String(s.unitCost),
-          taxRate: "0",
-          amount: String(s.suggestedQty * s.unitCost),
-          lineOrder: i,
-        })),
-      );
+    const [po] = await tx
+      .insert(invPurchaseOrders)
+      .values({
+        orgId,
+        vendorId: body.vendorId,
+        poNumber,
+        status: "DRAFT",
+        orderDate: today,
+        warehouseId: body.warehouseId,
+        subtotal: String(subtotal),
+        taxAmount: "0",
+        discount: "0",
+        total: String(subtotal),
+        currency: "INR",
+        createdBy: userId,
+      })
+      .returning();
 
-      return po;
-    });
+    await tx.insert(invPoLines).values(
+      orderable.map((s, i) => ({
+        orgId,
+        poId: po.id,
+        productVariantId: s.productVariantId,
+        quantity: String(s.suggestedQty),
+        quantityReceived: "0",
+        unitCost: String(s.unitCost),
+        taxRate: "0",
+        amount: String(s.suggestedQty * s.unitCost),
+        lineOrder: i,
+      })),
+    );
+
+    return po;
   }
 
   async getForecasting(orgId: string, filters: ForecastingInput) {

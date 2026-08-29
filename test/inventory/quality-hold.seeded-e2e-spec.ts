@@ -266,6 +266,46 @@ describe("[seeded-e2e] quality holds and the availability formula", () => {
     });
   });
 
+  describe("the same hold request, sent twice", () => {
+    it("records one hold document and quarantines the quantity once", async () => {
+      // A3. The engine claimed the key, so the movement replayed correctly and
+      // quality_hold_qty was right — which is exactly why this went unnoticed.
+      // The `inv_quality_holds` insert sat outside that claim and ran again, so
+      // one quarantined quantity grew a hold document per attempt. Releasing
+      // one of them leaves its twin ACTIVE against stock that is no longer
+      // held: a hold on nothing that nobody can clear.
+      const lot = await stockedLot("retry", "50.0000");
+      const key = `hold-retry-${randomUUID().slice(0, 8)}`;
+      const request = {
+        productVariantId: scene.variantId,
+        locationId: lot.locationId,
+        lotId: lot.lotId,
+        quantity: "10.0000",
+        reason: "Sent twice",
+      };
+
+      const first = await asTenant(() =>
+        app.app.get(HoldsService).create(scene.orgId, scene.userId, key, request as never),
+      );
+      const second = await asTenant(() =>
+        app.app.get(HoldsService).create(scene.orgId, scene.userId, key, request as never),
+      );
+
+      expect((second as { id: number }).id).toBe((first as { id: number }).id);
+
+      const [holds] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM inv_quality_holds
+          WHERE org_id = ${scene.orgId} AND lot_id = ${lot.lotId}`),
+      );
+      expect(holds!.n).toBe(1);
+
+      const after = await levelFor(lot.lotId);
+      expect(after.onHand).toBe("50.0000");
+      expect(after.qualityHold).toBe("10.0000");
+    });
+  });
+
   describe("a recall", () => {
     it("quarantines the lot without erasing what is on the shelf", async () => {
       // A recall used to post `-on_hand` to ON_HAND as well as `+on_hand` to

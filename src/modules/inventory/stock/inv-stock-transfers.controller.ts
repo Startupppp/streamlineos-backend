@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Headers, Param, ParseIntPipe, Post, Body, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, ParseIntPipe, Post, Body, Query, UseGuards } from "@nestjs/common";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
@@ -7,6 +7,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { resolveInvStockScope } from "../stock-engine/inventory-scope";
@@ -61,23 +62,21 @@ export class InvStockTransfersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   reserveTransfer(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.transfers.reserveTransfer(u.orgId, u.userId, transferId);
+    return this.transfers.reserveTransfer(u.orgId, u.userId, transferId, idempotencyKey);
   }
 
   @Post(":transferId/dispatch")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   dispatchTransfer(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
     return this.transfers.dispatchTransfer(u.orgId, u.userId, transferId, idempotencyKey);
   }
 
@@ -85,12 +84,11 @@ export class InvStockTransfersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   completeTransfer(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @Body(new ZodValidationPipe(completeTransferSchema)) body: CompleteTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
     return this.transfers.completeTransfer(u.orgId, u.userId, transferId, body, idempotencyKey);
   }
 
@@ -98,9 +96,10 @@ export class InvStockTransfersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   cancelTransfer(
+    @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.transfers.cancelTransfer(u.orgId, u.userId, transferId);
+    return this.transfers.cancelTransfer(u.orgId, u.userId, transferId, idempotencyKey);
   }
 }

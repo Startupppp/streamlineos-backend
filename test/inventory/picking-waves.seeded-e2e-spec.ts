@@ -71,7 +71,7 @@ describe("[seeded-e2e] picking waves", () => {
     );
     const id = (so as { id: number }).id;
     await asTenant(() =>
-      app.app.get(SoLifecycleService).confirmSo(scene.orgId, id, scene.userId),
+      app.app.get(SoLifecycleService).confirmSo(scene.orgId, id, scene.userId, `confirm-${id}`),
     );
     return id;
   }
@@ -230,7 +230,7 @@ describe("[seeded-e2e] picking waves", () => {
         quantityPicked: "2.0000",
         locationId: scene.locationId,
         scannedPayload: scene.variantSku,
-      }),
+      }, `wave-confirmPick-1`),
     );
 
     expect(result.quantityPicked).toBe("2.0000");
@@ -309,7 +309,7 @@ describe("[seeded-e2e] picking waves", () => {
         pickLineId: detail.lines[0]!.id,
         quantityPicked: "3.0000",
         locationId: spareId,
-      }),
+      }, `wave-confirmPick-2`),
     );
 
     const after = await bucketsAt(spareId);
@@ -360,7 +360,7 @@ describe("[seeded-e2e] picking waves", () => {
           pickLineId: detail.lines[0]!.id,
           quantityPicked: "1.0000",
           scannedPayload: "SOME-OTHER-SKU-THAT-IS-NOT-THIS",
-        }),
+        }, `wave-confirmPick-3`),
       ),
     ).rejects.toThrow(BadRequestException);
   });
@@ -382,7 +382,7 @@ describe("[seeded-e2e] picking waves", () => {
         waves().confirmPick(scene.orgId, scene.userId, wave.pickListId, {
           pickLineId: detail.lines[0]!.id,
           quantityPicked: "2.0000",
-        }),
+        }, `wave-confirmPick-4`),
       ),
     ).rejects.toThrow(BadRequestException);
   });
@@ -401,12 +401,17 @@ describe("[seeded-e2e] picking waves", () => {
     );
     const lineId = detail.lines[0]!.id;
 
-    for (const part of ["0.3333", "0.3333", "0.3334"]) {
+    // A key per attempt, as a real client sends. Reusing one across the three
+    // partial picks would be correct behaviour producing a wrong test: the
+    // second call carries an identical body and would legitimately *replay*
+    // rather than pick, and the third would be refused as the same key with a
+    // different request.
+    for (const [index, part] of ["0.3333", "0.3333", "0.3334"].entries()) {
       await asTenant(() =>
         waves().confirmPick(scene.orgId, scene.userId, wave.pickListId, {
           pickLineId: lineId,
           quantityPicked: part,
-        }),
+        }, `wave-partial-${wave.pickListId}-${index}`),
       );
     }
 
@@ -440,7 +445,7 @@ describe("[seeded-e2e] picking waves", () => {
         waves().confirmPick(scene.orgId, scene.userId, pickListId, {
           pickLineId: lineId,
           quantityPicked: "2.0000",
-        }),
+        }, `wave-confirmPick-6`),
       );
 
       const open = await asTenant(() =>
@@ -453,7 +458,7 @@ describe("[seeded-e2e] picking waves", () => {
           pickLineId: lineId,
           reason: "SHORT",
           notes: "Only two on the shelf",
-        }),
+        }, `wave-reportException-7`),
       );
       expect(result.waveComplete).toBe(true);
     });
@@ -467,7 +472,7 @@ describe("[seeded-e2e] picking waves", () => {
           pickLineId: lineId,
           reason: "NOT_FOUND",
           notes: "Bin empty",
-        }),
+        }, `wave-reportException-8`),
       );
 
       const detail = await asTenant(() =>
@@ -491,7 +496,7 @@ describe("[seeded-e2e] picking waves", () => {
           reason: "SUBSTITUTED",
           substituteVariantId: scene.substituteVariantId,
           quantityPicked: "5.0000",
-        }),
+        }, `wave-reportException-9`),
       );
       expect(result.substituteVariantId).toBe(scene.substituteVariantId);
       expect(result.substituteQuantity).toBe("5.0000");
@@ -510,7 +515,7 @@ describe("[seeded-e2e] picking waves", () => {
           reason: "SUBSTITUTED",
           substituteVariantId: scene.substituteVariantId,
           quantityPicked: "5.0000",
-        }),
+        }, `wave-reportException-10`),
       );
 
       const [row] = await asTenant(() =>
@@ -538,7 +543,7 @@ describe("[seeded-e2e] picking waves", () => {
             reason: "SUBSTITUTED",
             substituteVariantId: scene.substituteVariantId,
             quantityPicked: "99.0000",
-          }),
+          }, `wave-reportException-11`),
         ),
       ).rejects.toThrow(BadRequestException);
     });
@@ -554,7 +559,7 @@ describe("[seeded-e2e] picking waves", () => {
             reason: "SUBSTITUTED",
             substituteVariantId: scene.retiredVariantId,
             quantityPicked: "1.0000",
-          }),
+          }, `wave-reportException-12`),
         ),
       ).rejects.toThrow();
     });
@@ -568,7 +573,7 @@ describe("[seeded-e2e] picking waves", () => {
             reason: "SUBSTITUTED",
             substituteVariantId: scene.variantId,
             quantityPicked: "1.0000",
-          }),
+          }, `wave-reportException-13`),
         ),
       ).rejects.toThrow(BadRequestException);
     });

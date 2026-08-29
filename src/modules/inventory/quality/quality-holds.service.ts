@@ -7,6 +7,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
+import { runIdempotent, revivedId } from "../stock-engine/idempotency";
 import type { ListHoldsQueryInput, CreateHoldInput } from "./dto/quality.schemas";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 
@@ -79,44 +80,85 @@ export class HoldsService {
     );
   }
 
+  /**
+   * A3. The engine claimed the key; the hold record did not.
+   *
+   * `engine.execute` replays a repeated key correctly — the quarantine movement
+   * happens once — but the `inv_quality_holds` insert below sat outside that
+   * claim and ran again on every retry. One quarantined quantity therefore grew
+   * one hold document per attempt, and releasing one of them left its twin
+   * ACTIVE against stock that is no longer held: an unreleasable hold on
+   * nothing. The claim now spans the movement and the document together.
+   *
+   * The engine gets a derived key rather than this one. Claiming the same key
+   * twice in one transaction is a duplicate, not a nesting, so passing it
+   * straight through would 409 every first attempt.
+   */
   async create(orgId: string, userId: string, idempotencyKey: string, input: CreateHoldInput) {
-    await this.engine.execute(orgId, userId, {
-      idempotencyKey,
-      sourceType: "QUALITY_HOLD",
-      sourceId: String(orgId),
-      // One movement, not a transfer. `quality_hold_qty` is subtracted from
-      // `on_hand` by the availability formula, so it is a subset of on_hand
-      // and not a pool beside it — also decrementing ON_HAND would deduct the
-      // same units twice and under-report goods still sitting on the shelf.
-      movements: [
-        {
-          transactionType: "QUARANTINE_IN",
-          productVariantId: input.productVariantId,
-          locationId: input.locationId,
-          lotId: input.lotId,
-          serialId: input.serialId,
-          quantityDelta: input.quantity,
-          qualityBucket: "QUALITY_HOLD",
+    const holdId = await this.db.transaction(async (tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        idempotencyKey,
+        input,
+        async () => {
+          await this.engine.executeInTx(tx, orgId, userId, {
+            idempotencyKey: `${idempotencyKey}:stock`,
+            sourceType: "QUALITY_HOLD",
+            sourceId: String(orgId),
+            // One movement, not a transfer. `quality_hold_qty` is subtracted from
+            // `on_hand` by the availability formula, so it is a subset of on_hand
+            // and not a pool beside it — also decrementing ON_HAND would deduct the
+            // same units twice and under-report goods still sitting on the shelf.
+            movements: [
+              {
+                transactionType: "QUARANTINE_IN",
+                productVariantId: input.productVariantId,
+                locationId: input.locationId,
+                lotId: input.lotId,
+                serialId: input.serialId,
+                quantityDelta: input.quantity,
+                qualityBucket: "QUALITY_HOLD",
+              },
+            ],
+          });
+          const [hold] = await tx.insert(invQualityHolds).values({
+            orgId,
+            productVariantId: input.productVariantId,
+            locationId: input.locationId,
+            lotId: input.lotId ?? null,
+            serialId: input.serialId ?? null,
+            quantity: input.quantity,
+            reason: input.reason,
+            createdBy: userId,
+          }).returning({ id: invQualityHolds.id });
+          if (!hold) throw new ConflictException("Could not record the hold");
+          await this.audit.insert(tx, {
+            orgId, actorUserId: userId, action: "quality_hold.created",
+            resourceType: "quality_hold", resourceId: String(hold.id),
+            after: { productVariantId: input.productVariantId, quantity: input.quantity },
+          });
+          return hold.id;
         },
-      ],
+        // The stored id has been through jsonb and may come back as a string,
+        // so it is parsed rather than cast; a garbled row fails loudly here
+        // instead of becoming a NaN lookup that finds nothing.
+        (stored) => {
+          const id = revivedId(stored);
+          if (!Number.isInteger(id))
+            throw new ConflictException("The stored result for this key is unreadable");
+          return id;
+        },
+      ),
+    );
+    // `executeInTx` does not invalidate on its own the way `execute` did.
+    await Promise.all([
+      this.engine.invalidateCaches(orgId),
+      this.cache.invalidateNamespace(CACHE_KEYS.invQualityHoldsNamespace(orgId)),
+    ]);
+    return this.db.query.invQualityHolds.findFirst({
+      where: and(eq(invQualityHolds.id, holdId), eq(invQualityHolds.orgId, orgId)),
     });
-    const [hold] = await this.db.insert(invQualityHolds).values({
-      orgId,
-      productVariantId: input.productVariantId,
-      locationId: input.locationId,
-      lotId: input.lotId ?? null,
-      serialId: input.serialId ?? null,
-      quantity: input.quantity,
-      reason: input.reason,
-      createdBy: userId,
-    }).returning();
-    await this.audit.insert(this.db, {
-      orgId, actorUserId: userId, action: "quality_hold.created",
-      resourceType: "quality_hold", resourceId: String(hold?.id ?? 0),
-      after: { productVariantId: input.productVariantId, quantity: input.quantity },
-    });
-    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityHoldsNamespace(orgId));
-    return hold;
   }
 
   async release(orgId: string, userId: string, holdId: number, idempotencyKey: string) {

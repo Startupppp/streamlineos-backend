@@ -1,4 +1,5 @@
-import { ConflictException, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, ConflictException, UnprocessableEntityException } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { invIdempotencyKeys } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
@@ -122,4 +123,81 @@ export async function claimIdempotencyKey(
     throw new ConflictException({ code: INV_ERRORS.DUPLICATE_IDEMPOTENCY_KEY });
 
   return { kind: "proceed" };
+}
+
+/**
+ * A3. Run a command once per idempotency key, and replay its result thereafter.
+ *
+ * `claimIdempotencyKey` gives the claim; every caller that used it then repeated
+ * the same three steps — claim, run, mark COMPLETED with a response — and the
+ * commands that skipped the last step replayed nothing, so a retry either
+ * 409'd until the lease expired or, where no claim was taken at all, simply ran
+ * a second time. A reserve run twice is two ACTIVE reservations against the same
+ * stock.
+ *
+ * `revive` rather than a cast: the stored response is JSON that has been through
+ * the database, so `Date`s are strings and a blind cast to `T` is a lie the type
+ * system cannot catch. The engine's `extractEngineResult` is the same idea.
+ */
+export async function runIdempotent<T>(
+  tx: Tx,
+  orgId: string,
+  key: string,
+  request: unknown,
+  work: () => Promise<T>,
+  revive: (stored: unknown) => T | Promise<T>,
+): Promise<T> {
+  // An absent key used to reach the INSERT as a column default and fail on the
+  // NOT NULL, naming `inv_idempotency_keys` rather than the caller that forgot
+  // to pass one. A command guarded by a key that is not there is not guarded.
+  if (typeof key !== "string" || key.trim().length === 0) {
+    throw new BadRequestException(
+      "An Idempotency-Key is required for this operation",
+    );
+  }
+
+  const requestHash = createHash("sha256")
+    .update(JSON.stringify(request))
+    .digest("hex");
+
+  const claim = await claimIdempotencyKey(tx, orgId, key, requestHash);
+  if (claim.kind === "replay") return await revive(claim.stored);
+
+  const result = await work();
+
+  await tx
+    .update(invIdempotencyKeys)
+    .set({ status: "COMPLETED", response: toStoredResponse(result) })
+    .where(
+      and(
+        eq(invIdempotencyKeys.orgId, orgId),
+        eq(invIdempotencyKeys.idempotencyKey, key),
+      ),
+    );
+
+  return result;
+}
+
+/**
+ * The column is `jsonb`, which cannot hold a bare scalar under this schema's
+ * typing, so a non-object result is wrapped. `revive` unwraps it.
+ */
+function toStoredResponse(result: unknown): Record<string, unknown> {
+  if (isPlainObject(result)) return result;
+  return { value: result ?? null };
+}
+
+/** The counterpart to `toStoredResponse` for a scalar-valued command. */
+export function revivedScalar(stored: unknown): unknown {
+  return isPlainObject(stored) && "value" in stored ? stored.value : stored;
+}
+
+/**
+ * The common case: a command whose result is the id of the row it created.
+ *
+ * Three services had grown their own copy of this, which is how a formula
+ * starts drifting.
+ */
+export function revivedId(stored: unknown): number {
+  return Number(revivedScalar(stored));
 }

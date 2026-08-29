@@ -1,4 +1,5 @@
-import { BadRequestException, Controller, Get, Headers, Param, ParseIntPipe, Post, Body, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, ParseIntPipe, Post, Body, Query, UseGuards } from "@nestjs/common";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -39,12 +40,10 @@ export class InvStockAdjustmentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
   createAdjustment(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Body(new ZodValidationPipe(createAdjustmentSchema)) body: CreateAdjustmentInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.adjustments.createAdjustment(u.orgId, u.userId, body, idempotencyKey);
+  ) {return this.adjustments.createAdjustment(u.orgId, u.userId, body, idempotencyKey);
   }
 
   @Get(":adjustmentId")
@@ -61,22 +60,21 @@ export class InvStockAdjustmentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:adjustments:approve")
   approveAdjustment(
+    @IdempotencyKey() idempotencyKey: string,
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.adjustments.approveAdjustment(u.orgId, u.userId, adjustmentId);
+    return this.adjustments.approveAdjustment(u.orgId, u.userId, adjustmentId, idempotencyKey);
   }
 
   @Post(":adjustmentId/post")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:adjustments:post")
   postAdjustment(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.adjustments.postAdjustment(u.orgId, u.userId, adjustmentId, idempotencyKey);
+  ) {return this.adjustments.postAdjustment(u.orgId, u.userId, adjustmentId, idempotencyKey);
   }
 
   @Post(":adjustmentId/cancel")

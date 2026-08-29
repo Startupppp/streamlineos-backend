@@ -211,4 +211,60 @@ describe("[seeded-e2e] offline sync batch", () => {
     expect(result.applied).toBe(2);
     expect(result.results.map((r) => r.clientOperationId)).toEqual([first, second]);
   });
+  describe("a queued pick, sent twice at once", () => {
+    /** A pick list with one line asking for `qty`, ready to be confirmed. */
+    async function pickTask(qty: string): Promise<{ pickListId: number; pickLineId: number }> {
+      const db = app.app.get<Db>(DRIZZLE);
+      return runInNewTenantTransaction(db, scene.orgId, async () => {
+        const tag = randomUUID().slice(0, 8);
+        const one = async <T extends Record<string, unknown>>(q: ReturnType<typeof sql>) =>
+          (await db.execute<T>(q))[0]!;
+        const list = await one<{ id: number }>(sql`
+          INSERT INTO inv_pick_lists (org_id, pick_number, status, created_by)
+          VALUES (${scene.orgId}, ${`PK-${tag}`}, 'PENDING', ${scene.userId}) RETURNING id`);
+        const line = await one<{ id: number }>(sql`
+          INSERT INTO inv_pick_list_lines
+            (org_id, pick_list_id, product_variant_id, location_id, quantity_to_pick)
+          VALUES (${scene.orgId}, ${list.id}, ${scene.variantId}, ${scene.locationId}, ${qty})
+          RETURNING id`);
+        return { pickListId: list.id, pickLineId: line.id };
+      });
+    }
+
+    const pickedOn = async (pickLineId: number) => {
+      const [row] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ quantity_picked: string }>(sql`
+          SELECT quantity_picked FROM inv_pick_list_lines
+          WHERE org_id = ${scene.orgId} AND id = ${pickLineId}`),
+      );
+      return row!.quantity_picked;
+    };
+
+    it("picks the units once when the same operation arrives twice at once", async () => {
+      // A3. The two operation types were not equally protected. `stock.adjust`
+      // claims inside the engine, before its movement; the pick ran first and
+      // wrote a COMPLETED row afterwards, which is a receipt, not a claim.
+      // `confirmPick` adds to `quantity_picked` relatively, so two copies of
+      // one operation in flight together both got past the COMPLETED read and
+      // both picked — ten units out of a tote that holds five.
+      const { pickListId, pickLineId } = await pickTask("10.0000");
+      const operation = {
+        type: "pick.confirm" as const,
+        clientOperationId: `pick-${randomUUID()}`,
+        occurredAt: "2026-08-28T14:00:00.000Z",
+        pickListId,
+        pickLineId,
+        quantityPicked: "5.0000",
+      };
+
+      const [a, b] = await Promise.all([
+        asTenant(() => sync().apply(scene.orgId, scene.userId, { operations: [operation] })),
+        asTenant(() => sync().apply(scene.orgId, scene.userId, { operations: [operation] })),
+      ]);
+
+      expect(a.applied + b.applied).toBe(1);
+      expect(a.duplicates + b.duplicates).toBe(1);
+      expect(await pickedOn(pickLineId)).toBe("5.0000");
+    });
+  });
 });

@@ -14,6 +14,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PickWaveService } from "./pick-wave.service";
 import {
@@ -55,11 +56,12 @@ export class PickWaveController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   confirmPick(
+    @IdempotencyKey() idempotencyKey: string,
     @Param("pickListId", ParseIntPipe) pickListId: number,
     @Body(new ZodValidationPipe(confirmPickSchema)) body: ConfirmPickInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.waves.confirmPick(u.orgId, u.userId, pickListId, body);
+    return this.waves.confirmPick(u.orgId, u.userId, pickListId, body, idempotencyKey);
   }
 
   /**
@@ -71,10 +73,11 @@ export class PickWaveController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   reportException(
+    @IdempotencyKey() idempotencyKey: string,
     @Param("pickListId", ParseIntPipe) pickListId: number,
     @Body(new ZodValidationPipe(reportPickExceptionSchema)) body: ReportPickExceptionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.waves.reportException(u.orgId, u.userId, pickListId, body);
+    return this.waves.reportException(u.orgId, u.userId, pickListId, body, idempotencyKey);
   }
 }

@@ -1,10 +1,11 @@
-import { BadRequestException, Controller, Get, Headers, Post, Body, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Body, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvStockService } from "./inv-stock.service";
@@ -70,33 +71,32 @@ export class InvStockController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reserve")
   createReservation(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Body(new ZodValidationPipe(createReservationSchema)) body: CreateReservationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.reservations.createReservation(u.orgId, u.userId, body);
+    return this.reservations.createReservation(u.orgId, u.userId, body, idempotencyKey);
   }
 
   @Post("release-reservation")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reserve")
   releaseReservation(
+    @IdempotencyKey() idempotencyKey: string,
     @Body(new ZodValidationPipe(releaseReservationSchema)) body: ReleaseReservationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reservations.releaseReservation(u.orgId, u.userId, body);
+    return this.reservations.releaseReservation(u.orgId, u.userId, body, idempotencyKey);
   }
 
   @Post("opening")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
   createOpeningBalance(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Body(new ZodValidationPipe(openingStockSchema)) body: OpeningStockInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
     return this.reservations.createOpeningBalance(u.orgId, u.userId, body, idempotencyKey);
   }
 }

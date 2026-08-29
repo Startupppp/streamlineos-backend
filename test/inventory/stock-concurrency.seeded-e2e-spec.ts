@@ -6,6 +6,8 @@ import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-trans
 import { StockEngineService } from "src/modules/inventory/stock-engine/stock-engine.service";
 import { ReservationService } from "src/modules/inventory/stock-engine/reservation.service";
 import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
+import { InvStockAdjustmentsService } from "src/modules/inventory/stock/inv-stock-adjustments.service";
+import { InventorySettingsService } from "src/modules/inventory/stock-engine/inventory-settings.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 
@@ -356,4 +358,87 @@ describe("[seeded-e2e] concurrent stock commands", () => {
     },
     300_000,
   );
+  describe("the same create-adjustment request, sent twice", () => {
+    const adjustments = () => app.app.get(InvStockAdjustmentsService);
+
+    const setThreshold = (value: string | null) =>
+      asTenant(() =>
+        app.app
+          .get(InventorySettingsService)
+          .update(scene.orgId, { adjustmentApprovalThreshold: value }, scene.userId),
+      );
+
+    const documentsNoted = async (note: string) => {
+      const [row] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM inv_stock_adjustments
+          WHERE org_id = ${scene.orgId} AND notes = ${note}`),
+      );
+      return row!.n;
+    };
+
+    it("raises one adjustment on the branch that waits for approval", async () => {
+      // A3, and the branch that had no protection at all. Below the approval
+      // threshold the key went to the engine and the *movement* was safe. Above
+      // it the command stops at PENDING_APPROVAL, posts nothing, and so claimed
+      // nothing — a retry raised a second write-off document with its own
+      // reference number, and both were then approvable and postable.
+      await setThreshold("5.0000");
+      const key = `adj-approval-${randomUUID()}`;
+      const data = {
+        reason: "DAMAGE",
+        notes: key,
+        lines: [{ productVariantId: scene.variantId, locationId: scene.locationA, quantityChange: -50 }],
+      };
+
+      const first = await asTenant(() =>
+        adjustments().createAdjustment(scene.orgId, scene.userId, data as never, key),
+      );
+      const second = await asTenant(() =>
+        adjustments().createAdjustment(scene.orgId, scene.userId, data as never, key),
+      );
+
+      expect(second!.id).toBe(first!.id);
+      expect(first!.status).toBe("PENDING_APPROVAL");
+      expect(await documentsNoted(key)).toBe(1);
+    });
+
+    it("posts one adjustment on the branch that posts immediately", async () => {
+      // The other branch. It was correct only by accident: the engine hashes
+      // its command, the command names the new adjustment's id, so an identical
+      // retry looked like a different request and got 422. The stock was safe
+      // and the caller was told something untrue.
+      await setThreshold(null);
+      await command(`adj-seed-${randomUUID()}`, [
+        {
+          transactionType: "PURCHASE",
+          productVariantId: scene.variantId,
+          locationId: scene.locationA,
+          quantityDelta: "40.0000",
+          unitCost: "1.0000",
+        },
+      ]);
+      const before = await onHandAt(scene.locationA);
+
+      const key = `adj-post-${randomUUID()}`;
+      const data = {
+        reason: "RECOUNT",
+        notes: key,
+        lines: [{ productVariantId: scene.variantId, locationId: scene.locationA, quantityChange: -10 }],
+      };
+
+      const first = await asTenant(() =>
+        adjustments().createAdjustment(scene.orgId, scene.userId, data as never, key),
+      );
+      const second = await asTenant(() =>
+        adjustments().createAdjustment(scene.orgId, scene.userId, data as never, key),
+      );
+
+      expect(second!.id).toBe(first!.id);
+      expect(first!.status).toBe("POSTED");
+      expect(await documentsNoted(key)).toBe(1);
+      expect(await onHandAt(scene.locationA)).toBe(before - 10);
+      await expectReconciled();
+    });
+  });
 });

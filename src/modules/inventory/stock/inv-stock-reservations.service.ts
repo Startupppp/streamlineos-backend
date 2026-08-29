@@ -1,6 +1,7 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { invStockReservations } from "../../../db/schema";
+import { runIdempotent, revivedId } from "../stock-engine/idempotency";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -62,25 +63,98 @@ export class InvStockReservationsService {
     }, CACHE_TTL.SHORT);
   }
 
-  async createReservation(orgId: string, userId: string, input: CreateReservationInput) {
-    const reservation = await this.reservationService.createReservation(orgId, userId, {
-      sourceType: input.sourceType,
-      sourceId: input.sourceId,
-      sourceLineId: input.sourceLineId,
-      productVariantId: input.productVariantId,
-      warehouseId: input.warehouseId,
-      locationId: input.locationId,
-      lotId: input.lotId,
-      serialId: input.serialId,
-      qty: input.qty,
-      expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
-    });
+  /**
+   * A3. Reserving is the command that most needed a key and had none.
+   *
+   * The route demanded an `Idempotency-Key` header, threw without it, and then
+   * called this method without it — so the client was made to supply a key that
+   * changed nothing. A retried reserve inserted a *second* ACTIVE reservation
+   * and incremented `committed` again, holding the same stock twice against one
+   * order, which availability then subtracted twice.
+   *
+   * The claim is taken in the same transaction as the insert. A claim committed
+   * separately from the work it guards protects nothing: the claim can survive
+   * while the work rolls back, and the retry replays a reservation that does not
+   * exist.
+   *
+   * The reservation is read back by id rather than revived from the stored JSON.
+   * A stored response has been through the database, so its timestamps come back
+   * as strings; re-reading returns a real row on the replay path and the first
+   * one, and it is the same row either way.
+   */
+  async createReservation(
+    orgId: string,
+    userId: string,
+    input: CreateReservationInput,
+    idempotencyKey: string,
+  ) {
+    const reservationId = await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        idempotencyKey,
+        { command: "inventory.stock.reserve", input },
+        async () => {
+          const created = await this.reservationService.createReservationInTx(tx, orgId, userId, {
+            sourceType: input.sourceType,
+            sourceId: input.sourceId,
+            sourceLineId: input.sourceLineId,
+            productVariantId: input.productVariantId,
+            warehouseId: input.warehouseId,
+            locationId: input.locationId,
+            lotId: input.lotId,
+            serialId: input.serialId,
+            qty: input.qty,
+            expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
+          });
+          return created.id;
+        },
+        revivedId,
+      ),
+    );
+
     await this.cache.invalidateNamespace(`inv:reservations:list:${orgId}`);
+    const reservation = await this.db.query.invStockReservations.findFirst({
+      where: and(
+        eq(invStockReservations.orgId, orgId),
+        eq(invStockReservations.id, reservationId),
+      ),
+    });
+    if (!reservation) throw new NotFoundException("Reservation not found");
     return reservation;
   }
 
-  async releaseReservation(orgId: string, userId: string, input: ReleaseReservationInput) {
-    await this.reservationService.releaseReservation(orgId, userId, input.reservationId);
+  /**
+   * Releasing is already idempotent underneath — `releaseReservationInTx` takes
+   * the row `FOR UPDATE` and returns without doing anything when it is not
+   * ACTIVE, so a double release cannot decrement `committed` twice.
+   *
+   * It still claims a key, because the contract a client sees should not depend
+   * on which stock commands happen to be safe to repeat: every stock-affecting
+   * POST takes a key and means the same thing by it. Here the claim is belt and
+   * braces rather than the mechanism.
+   */
+  async releaseReservation(
+    orgId: string,
+    userId: string,
+    input: ReleaseReservationInput,
+    idempotencyKey: string,
+  ) {
+    await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        idempotencyKey,
+        { command: "inventory.stock.release-reservation", input },
+        async () => {
+          await this.reservationService.releaseReservationInTx(
+            tx, orgId, userId, input.reservationId,
+          );
+          return { released: input.reservationId };
+        },
+        () => ({ released: input.reservationId }),
+      ),
+    );
     await this.cache.invalidateNamespace(`inv:reservations:list:${orgId}`);
   }
 

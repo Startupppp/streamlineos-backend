@@ -207,7 +207,7 @@ describe("[seeded-e2e] purchase order to shipment", () => {
       // order has already left CONFIRMED — the reservation is part of confirming,
       // not a step after it.
       await asTenant(() =>
-        app.app.get(SoLifecycleService).confirmSo(scene.orgId, so.id, scene.userId),
+        app.app.get(SoLifecycleService).confirmSo(scene.orgId, so.id, scene.userId, `confirm-${so.id}`),
       );
 
       const reserved = await stock();
@@ -223,13 +223,13 @@ describe("[seeded-e2e] purchase order to shipment", () => {
           lines: [
             { soLineId: soLines[0]!.id, locationId: scene.locationId, quantityPicked: "40.0000" },
           ],
-        }),
+        }, `pick-${so.id}`),
       );
       await expectReconciled();
 
       // ── pack ───────────────────────────────────────────────────────────────
       await asTenant(() =>
-        app.app.get(SoFulfillmentService).packSo(scene.orgId, so.id, scene.userId, { weight: 12 }),
+        app.app.get(SoFulfillmentService).packSo(scene.orgId, so.id, scene.userId, { weight: 12 }, `pack-${so.id}`),
       );
       await expectReconciled();
 
@@ -267,7 +267,7 @@ describe("[seeded-e2e] purchase order to shipment", () => {
     );
 
     await asTenant(() =>
-      app.app.get(SoLifecycleService).confirmSo(scene.orgId, so.id, scene.userId),
+      app.app.get(SoLifecycleService).confirmSo(scene.orgId, so.id, scene.userId, `confirm-${so.id}`),
     );
 
     const confirmed = await asTenant(() => app.app.get(SoCoreService).getSo(scene.orgId, so.id));

@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { PickWaveService } from "../picking/pick-wave.service";
+import { runIdempotent } from "../stock-engine/idempotency";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../../common/logger/logger.service";
@@ -119,24 +120,45 @@ export class SyncBatchService {
           ],
         });
       } else {
-        await this.picking.confirmPick(orgId, userId, operation.pickListId, {
-          pickLineId: operation.pickLineId,
-          quantityPicked: operation.quantityPicked,
-        });
-        // The picking path has its own idempotency story, so the claim is
-        // recorded here to keep the device's view of "already sent" uniform
-        // across operation types.
-        await this.db
-          .insert(invIdempotencyKeys)
-          .values({
+        // A3. This branch used to run the pick and *then* insert a COMPLETED
+        // row for the key, which is a receipt rather than a claim. The two
+        // operation types were not equally protected: `stock.adjust` claims
+        // inside the engine, before its movement; the pick claimed after its
+        // own. `confirmPick` adds to `quantity_picked` relatively and
+        // decrements the outgoing bucket, so two copies of one operation
+        // arriving together — exactly what a device on a failing network
+        // sends — both got past the COMPLETED read above, both picked, and the
+        // trailing `onConflictDoNothing` recorded that silently. The claim now
+        // comes first and shares the pick's transaction, so the second copy
+        // waits on the key and replays instead of picking again.
+        const replayed = await this.db.transaction((tx) =>
+          runIdempotent(
+            tx,
             orgId,
-            idempotencyKey: key,
-            requestHash: operation.clientOperationId,
-            status: "COMPLETED",
-            expiresAt: new Date(Date.now() + 86_400_000),
-            leaseExpiresAt: new Date(Date.now() + 900_000),
-          })
-          .onConflictDoNothing();
+            key,
+            operation,
+            async () => {
+              // Derived, not the same key: `confirmPick` claims one of its own
+              // now, and claiming a key twice in one transaction is a duplicate
+              // rather than a nesting — it would 409 every first attempt.
+              await this.picking.confirmPick(
+                orgId,
+                userId,
+                operation.pickListId,
+                {
+                  pickLineId: operation.pickLineId,
+                  quantityPicked: operation.quantityPicked,
+                },
+                `${key}:confirm`,
+              );
+              return false;
+            },
+            () => true,
+          ),
+        );
+        if (replayed) {
+          return { clientOperationId: operation.clientOperationId, outcome: "duplicate" };
+        }
       }
 
       // Emitted after the operation has committed, and its failure must not be

@@ -1,7 +1,4 @@
-import {
-  Controller, Get, Post, Patch, Body, Param, ParseIntPipe,
-  Query, UseGuards, HttpCode, HttpStatus, Headers, BadRequestException,
-} from "@nestjs/common";
+import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -9,6 +6,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { resolveInvSoScope } from "../stock-engine/inventory-scope";
@@ -79,10 +77,11 @@ export class InvSalesOrdersController {
   @RequirePermission("inventory:sales-orders:confirm")
   @HttpCode(HttpStatus.OK)
   confirm(
+    @IdempotencyKey() idempotencyKey: string,
     @Param("soId", ParseIntPipe) soId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.soCore.confirmSo(u.orgId, soId, u.userId);
+    return this.soCore.confirmSo(u.orgId, soId, u.userId, idempotencyKey);
   }
 
   @Post(":soId/reserve")
@@ -92,11 +91,10 @@ export class InvSalesOrdersController {
   reserve(
     @Param("soId", ParseIntPipe) soId: number,
     @Body(new ZodValidationPipe(reserveSoSchema)) body: ReserveSoInput,
-    @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKeyHeader) throw new BadRequestException("Idempotency-Key header is required");
-    return this.soFulfillment.reserveSo(u.orgId, soId, u.userId, idempotencyKeyHeader, body);
+    return this.soFulfillment.reserveSo(u.orgId, soId, u.userId, idempotencyKey, body);
   }
 
   @Post(":soId/pick")
@@ -104,11 +102,12 @@ export class InvSalesOrdersController {
   @RequirePermission("inventory:sales-orders:ship")
   @HttpCode(HttpStatus.OK)
   pick(
+    @IdempotencyKey() idempotencyKey: string,
     @Param("soId", ParseIntPipe) soId: number,
     @Body(new ZodValidationPipe(pickSoSchema)) body: PickSoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.soFulfillment.pickSo(u.orgId, soId, u.userId, body);
+    return this.soFulfillment.pickSo(u.orgId, soId, u.userId, body, idempotencyKey);
   }
 
   @Post(":soId/pack")
@@ -116,11 +115,12 @@ export class InvSalesOrdersController {
   @RequirePermission("inventory:sales-orders:ship")
   @HttpCode(HttpStatus.OK)
   pack(
+    @IdempotencyKey() idempotencyKey: string,
     @Param("soId", ParseIntPipe) soId: number,
     @Body(new ZodValidationPipe(packSoSchema)) body: PackSoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.soFulfillment.packSo(u.orgId, soId, u.userId, body);
+    return this.soFulfillment.packSo(u.orgId, soId, u.userId, body, idempotencyKey);
   }
 
   @Post(":soId/ship")
@@ -130,11 +130,10 @@ export class InvSalesOrdersController {
   ship(
     @Param("soId", ParseIntPipe) soId: number,
     @Body(new ZodValidationPipe(shipSoSchema)) body: ShipSoInput,
-    @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKeyHeader) throw new BadRequestException("Idempotency-Key header is required");
-    return this.soFulfillment.shipSo(u.orgId, soId, u.userId, idempotencyKeyHeader, body);
+    return this.soFulfillment.shipSo(u.orgId, soId, u.userId, idempotencyKey, body);
   }
 
   @Post(":soId/invoice")

@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Param, Body, Query, Headers, ParseIntPipe, UseGuards, HttpCode, HttpStatus, BadRequestException } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Param, Body, Query, ParseIntPipe, UseGuards, HttpCode, HttpStatus } from "@nestjs/common";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -73,11 +74,9 @@ export class ShipmentsController {
   ship(
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
     @Body(new ZodValidationPipe(shipActionSchema)) body: ShipActionInput,
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header is required");
-    return this.svc.ship(u.orgId, u.userId, shipmentId, body, idempotencyKey);
+  ) {return this.svc.ship(u.orgId, u.userId, shipmentId, body, idempotencyKey);
   }
 
   @Post(":shipmentId/cancel")

@@ -14,6 +14,7 @@ import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { ListLoadsQueryInput, CreateLoadInput, DispatchLoadInput, CloseLoadInput } from "./dto/shipments.schemas";
+import { runIdempotent, revivedId } from "../stock-engine/idempotency";
 
 @Injectable()
 export class LoadsService {
@@ -92,7 +93,12 @@ export class LoadsService {
     return load;
   }
 
-  async dispatch(orgId: string, userId: string, loadId: number, input: DispatchLoadInput) {
+  /**
+   * A3. Dispatching a load took no key. The DRAFT guard makes a repeat safe, but
+   * a client retrying a timed-out dispatch was told the load was not DRAFT — the
+   * dispatch had in fact happened, and the driver had left.
+   */
+  async dispatch(orgId: string, userId: string, loadId: number, input: DispatchLoadInput, idempotencyKey: string) {
     const [load] = await this.db.select().from(invLoads).where(and(eq(invLoads.id, loadId), eq(invLoads.orgId, orgId))).limit(1);
     if (!load) throw new NotFoundException("Load not found");
     if (load.status !== "DRAFT") throw new ConflictException("Load must be DRAFT to dispatch");
@@ -134,22 +140,34 @@ export class LoadsService {
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const [updated] = await this.db.transaction(async (tx) => {
-      const rows = await tx.update(invLoads).set({
-        status: "DISPATCHED",
-        dispatchDate: input.dispatchDate ?? today,
-        updatedAt: new Date(),
-      }).where(and(eq(invLoads.id, loadId), eq(invLoads.orgId, orgId))).returning();
-      await this.audit.insert(tx, {
+    const dispatchedId = await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
         orgId,
-        actorUserId: userId,
-        action: "load.dispatched",
-        resourceType: "load",
-        resourceId: String(loadId),
-      });
-      return rows;
-    });
+        idempotencyKey,
+        { command: "inventory.loads.dispatch", loadId, input },
+        async () => {
+          await tx.update(invLoads).set({
+            status: "DISPATCHED",
+            dispatchDate: input.dispatchDate ?? today,
+            updatedAt: new Date(),
+          }).where(and(eq(invLoads.id, loadId), eq(invLoads.orgId, orgId)));
+          await this.audit.insert(tx, {
+            orgId,
+            actorUserId: userId,
+            action: "load.dispatched",
+            resourceType: "load",
+            resourceId: String(loadId),
+          });
+          return loadId;
+        },
+        revivedId,
+      ),
+    );
+
     await this.cache.invalidateNamespace(CACHE_KEYS.invLoadsNamespace(orgId));
+    const [updated] = await this.db.select().from(invLoads)
+      .where(and(eq(invLoads.id, dispatchedId), eq(invLoads.orgId, orgId))).limit(1);
     return updated;
   }
 

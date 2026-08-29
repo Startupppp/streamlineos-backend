@@ -5,6 +5,7 @@ import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { CarrierStatusService } from "src/modules/inventory/shipments/carrier-status.service";
+import { ShipmentsService } from "src/modules/inventory/shipments/shipments.service";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 
@@ -191,5 +192,79 @@ describe("[seeded-e2e] carrier status events", () => {
     await expect(
       post("DELIVERED", "2026-08-28T11:00:00.000Z", "evt-x", scene.otherOrgTracking),
     ).rejects.toThrow(NotFoundException);
+  });
+  describe("dispatching the same shipment twice", () => {
+    /** A shipment standing packed on the bench, waiting to be handed over. */
+    async function packedShipment(): Promise<number> {
+      const db = app.app.get<Db>(DRIZZLE);
+      return runInNewTenantTransaction(db, scene.orgId, async () => {
+        const tag = randomUUID().slice(0, 8);
+        const rows = await db.execute<{ id: number }>(sql`
+          INSERT INTO inv_shipments
+            (org_id, shipment_number, tracking_number, status, created_by)
+          VALUES (${scene.orgId}, ${`SHP-${tag}`}, ${`TRKP-${tag}`}, 'PACKED', ${scene.userId})
+          RETURNING id`);
+        return rows[0]!.id;
+      });
+    }
+
+    const dispatchEvents = async (shipmentId: number) => {
+      const [row] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM outbox_events
+          WHERE organization_id = ${scene.orgId}
+            AND aggregate_type = 'inv_shipment'
+            AND aggregate_id = ${String(shipmentId)}
+            AND event_type = 'inventory.shipment.dispatched'`),
+      );
+      return row!.n;
+    };
+
+    const ship = (shipmentId: number, key: string) =>
+      asTenant(() =>
+        app.app
+          .get(ShipmentsService)
+          .ship(scene.orgId, scene.userId, shipmentId, {} as never, key),
+      );
+
+    it("hands the parcel to the carrier once when the request is repeated", async () => {
+      // A3. The key reached `ship` and was written into the audit trail and
+      // nowhere else. The status read that stood in for it happens outside the
+      // write, so two copies of one request in flight together both saw PACKED,
+      // both flipped the row and both emitted `inventory.shipment.dispatched` —
+      // two dispatches to the carrier for one parcel. Sent concurrently here
+      // because that is the only shape in which the old code was wrong.
+      const shipmentId = await packedShipment();
+      const key = `ship-${randomUUID()}`;
+
+      const outcomes = await Promise.allSettled([ship(shipmentId, key), ship(shipmentId, key)]);
+      expect(outcomes.some((o) => o.status === "fulfilled")).toBe(true);
+
+      expect(await dispatchEvents(shipmentId)).toBe(1);
+
+      const [row] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ status: string }>(sql`
+          SELECT status FROM inv_shipments
+          WHERE org_id = ${scene.orgId} AND id = ${shipmentId}`),
+      );
+      expect(row!.status).toBe("SHIPPED");
+    });
+
+    it("claims the key, so a later retry has something to replay", async () => {
+      // The claim itself, not its effect: an unclaimed key leaves no row, and
+      // that is what "the signature looks correct" looked like from the
+      // outside.
+      const shipmentId = await packedShipment();
+      const key = `ship-claim-${randomUUID()}`;
+      await ship(shipmentId, key);
+
+      const [row] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ status: string }>(sql`
+          SELECT status FROM inv_idempotency_keys
+          WHERE org_id = ${scene.orgId} AND idempotency_key = ${key}`),
+      );
+      expect(row?.status).toBe("COMPLETED");
+      expect(await dispatchEvents(shipmentId)).toBe(1);
+    });
   });
 });

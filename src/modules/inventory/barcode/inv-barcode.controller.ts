@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Headers, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -60,10 +61,8 @@ export class InvBarcodeController {
   @RequirePermission("inventory:stock:read")
   captureScan(
     @Body(new ZodValidationPipe(barcodeScanSchema)) body: BarcodeScanInput,
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.barcodeService.captureScan(u.orgId, u.userId, idempotencyKey, body.payload);
+  ) {return this.barcodeService.captureScan(u.orgId, u.userId, idempotencyKey, body.payload);
   }
 }

@@ -572,7 +572,14 @@ export class InvAiExplainService {
           vendorId: suggestion.vendorId,
         }),
       } as Record<string, unknown>,
-      idempotencyKey: `reorder-${orgId}-${variantId}-${Date.now()}`,
+      // A3. `Date.now()` used to be part of this key, which made it unique per
+      // call and so defeated the only thing a key is for: `propose` replays a
+      // live PROPOSED row with a matching key, and no two calls ever matched.
+      // Every refresh of the screen minted another independently-confirmable
+      // proposal for the same shortfall, and confirming two of them raises two
+      // draft purchase orders. The identity of the proposal is the position it
+      // is about -- this variant, in this warehouse -- so that is the key.
+      idempotencyKey: `reorder:${orgId}:${variantId}:${suggestion.warehouseId ?? "any"}`,
       ttlSeconds: 120,
     });
 
@@ -640,7 +647,10 @@ export class InvAiExplainService {
           unitCost: 0,
         },
       ],
-    });
+      // Derived from the proposal, not minted per call: confirming the same
+      // AI proposal twice must raise one purchase order, and the proposal id is
+      // the only thing that is stable across those two attempts.
+    }, `ai-reorder-proposal:${confirmed.proposalId}`);
 
     await this.confirmation.markExecuted(confirmed.proposalId, { poId: po.id }, orgId);
     return po;

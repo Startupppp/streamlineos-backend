@@ -8,20 +8,35 @@ const mockWarehouseScope = {
 };
 
 
+/**
+ * A3. `createAdjustment` now claims its idempotency key on the transaction it
+ * is given, so the transaction handed to the callback has to answer the claim
+ * as well as the insert: `values().onConflictDoNothing().returning()` for the
+ * key row, and `query.invStockAdjustments.findFirst` for the re-read the
+ * immediate-post branch does inside the claim.
+ */
+export function makeTx(findFirst: jest.Mock) {
+  const values = jest.fn().mockReturnValue({
+    returning: jest.fn().mockResolvedValue([{ id: 1, refNum: "ADJ-00001" }]),
+    onConflictDoNothing: jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: 1 }]),
+    }),
+  });
+  return {
+    insert: jest.fn().mockReturnValue({ values }),
+    update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }) }),
+    query: { invStockAdjustments: { findFirst } },
+  };
+}
+
 function makeDb(adjRow?: Partial<{ id: number; status: string; referenceNumber: string; reason: string; notes: string | null; lines: unknown[] }>) {
   const returning = jest.fn().mockResolvedValue([{ id: 1, referenceNumber: "ADJ-00001" }]);
   const insert = jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning }) });
   const updateChain = { set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }) };
   const update = jest.fn().mockReturnValue(updateChain);
-  const transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => unknown) => {
-    const tx = {
-      insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1 }]) }) }),
-      update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }) }),
-    };
-    return fn(tx);
-  });
   const defaultAdj = { id: 1, status: "PENDING_APPROVAL", referenceNumber: "ADJ-00001", reason: "DAMAGE", notes: null, lines: [] };
   const findFirst = jest.fn().mockResolvedValue(adjRow ? { ...defaultAdj, ...adjRow } : defaultAdj);
+  const transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => unknown) => fn(makeTx(findFirst)));
   return {
     insert, update, transaction,
     query: {
@@ -115,8 +130,8 @@ describe("InvStockAdjustmentsService — threshold routing", () => {
     it("creates adjustment with PENDING_APPROVAL status when above threshold", async () => {
       const { svc, db } = buildService("5");
       await svc.createAdjustment("org1", "u1", { reason: "DAMAGE", lines: baseLines }, "idem-5");
-      const txFn = (db.transaction as jest.Mock).mock.calls[0][0] as (tx: { insert: jest.Mock }) => Promise<unknown>;
-      const tx = { insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1 }]) }) }) };
+      const txFn = (db.transaction as jest.Mock).mock.calls[0][0] as (tx: unknown) => Promise<unknown>;
+      const tx = makeTx(db.query.invStockAdjustments.findFirst);
       await txFn(tx);
       const insertCall = tx.insert.mock.calls[0];
       expect(insertCall).toBeDefined();

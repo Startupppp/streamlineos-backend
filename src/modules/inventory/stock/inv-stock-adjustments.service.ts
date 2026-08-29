@@ -14,6 +14,7 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import { runIdempotent, revivedId } from "../stock-engine/idempotency";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { ListAdjustmentsInput, CreateAdjustmentInput } from "./dto/inv-stock.schemas";
 
@@ -92,55 +93,102 @@ export class InvStockAdjustmentsService {
     return adj;
   }
 
+  /**
+   * A3. The key reached this method and only one of its two branches used it.
+   *
+   * Below the approval threshold the adjustment posts immediately and the key
+   * went to the engine, so the *movement* was protected. Above it the command
+   * stopped at PENDING_APPROVAL and claimed nothing at all — a retried create
+   * raised a second adjustment document with its own reference number and its
+   * own lines, and both of them were then approvable and postable. That is the
+   * write-off path, where a duplicate is not a cosmetic problem.
+   *
+   * The claim therefore wraps the whole command rather than the posting half of
+   * it, and the engine is given a derived key: the same key claimed twice in
+   * one transaction is a duplicate, not a nesting.
+   */
   async createAdjustment(orgId: string, userId: string, data: CreateAdjustmentInput, idempotencyKey: string) {
     const cfg = await this.settings.get(orgId);
     const totalAbsQty = data.lines.reduce((sum, l) => sum + Math.abs(l.quantityChange), 0);
     const threshold = cfg.adjustmentApprovalThreshold !== null ? parseFloat(cfg.adjustmentApprovalThreshold) : null;
     const needsApproval = threshold !== null && totalAbsQty > threshold;
 
-    const referenceNumber = await this.db.transaction(async (tx) => {
-      const refNum = await this.numSeq.next(orgId, "ADJUSTMENT", tx);
-      const [adj] = await tx.insert(invStockAdjustments).values({
+    const adjustmentId = await this.db.transaction(async (tx) =>
+      runIdempotent(
+        tx,
         orgId,
-        referenceNumber: refNum,
-        reason: data.reason,
-        notes: data.notes,
-        status: needsApproval ? "PENDING_APPROVAL" : "PENDING_POST",
-        createdBy: userId,
-      }).returning({ id: invStockAdjustments.id, refNum: invStockAdjustments.referenceNumber });
+        idempotencyKey,
+        data,
+        async () => {
+          const refNum = await this.numSeq.next(orgId, "ADJUSTMENT", tx);
+          const [adj] = await tx.insert(invStockAdjustments).values({
+            orgId,
+            referenceNumber: refNum,
+            reason: data.reason,
+            notes: data.notes,
+            status: needsApproval ? "PENDING_APPROVAL" : "PENDING_POST",
+            createdBy: userId,
+          }).returning({ id: invStockAdjustments.id, refNum: invStockAdjustments.referenceNumber });
+          if (!adj) throw new ConflictException("Could not open the adjustment");
 
-      await tx.insert(invStockAdjustmentLines).values(
-        data.lines.map((line) => ({
-          orgId,
-          adjustmentId: adj!.id,
-          productVariantId: line.productVariantId,
-          locationId: line.locationId,
-          quantityChange: line.quantityChange.toString(),
-          notes: line.notes,
-        }))
-      );
+          await tx.insert(invStockAdjustmentLines).values(
+            data.lines.map((line) => ({
+              orgId,
+              adjustmentId: adj.id,
+              productVariantId: line.productVariantId,
+              locationId: line.locationId,
+              quantityChange: line.quantityChange.toString(),
+              notes: line.notes,
+            }))
+          );
 
-      return refNum;
-    });
+          if (!needsApproval) {
+            const stored = await tx.query.invStockAdjustments.findFirst({
+              where: and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adj.id)),
+              with: { lines: true },
+            });
+            if (stored) {
+              await this.applyAdjustmentLinesInTx(tx, orgId, userId, stored, `${idempotencyKey}:post`);
+            }
+          }
 
-    if (!needsApproval) {
-      const adj = await this.db.query.invStockAdjustments.findFirst({
-        where: and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.referenceNumber, referenceNumber)),
-        with: { lines: true },
-      });
-      if (adj) {
-        await this.applyAdjustmentLines(orgId, userId, adj, idempotencyKey);
-      }
-    }
+          return adj.id;
+        },
+        // The stored id has been through jsonb and may come back as a string,
+        // so it is parsed rather than cast; a garbled row fails loudly here
+        // instead of becoming a NaN lookup that finds nothing.
+        (stored) => {
+          const id = revivedId(stored);
+          if (!Number.isInteger(id))
+            throw new ConflictException("The stored result for this key is unreadable");
+          return id;
+        },
+      ),
+    );
+
+    if (!needsApproval) await this.engine.invalidateCaches(orgId);
 
     const result = await this.db.query.invStockAdjustments.findFirst({
-      where: and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.referenceNumber, referenceNumber)),
+      where: and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adjustmentId)),
       with: { lines: true, creator: { columns: { id: true, name: true } } },
     });
     return result;
   }
 
-  async approveAdjustment(orgId: string, userId: string, adjustmentId: number) {
+  /**
+   * A3. Approving is safe to repeat — the UPDATE is conditional on
+   * PENDING_APPROVAL and the affected-row count is checked — but a retry after a
+   * timeout got a 409 saying the adjustment was no longer pending, when the
+   * caller's own earlier request is what approved it. That is the same shape as
+   * a repeated confirm or dispatch, and the key exists to replay the answer
+   * rather than to make the write safe.
+   */
+  async approveAdjustment(
+    orgId: string,
+    userId: string,
+    adjustmentId: number,
+    idempotencyKey: string,
+  ) {
     const adj = await this.db.query.invStockAdjustments.findFirst({
       where: and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adjustmentId)),
     });
@@ -156,15 +204,28 @@ export class InvStockAdjustmentsService {
       );
     }
 
-    const updated = await this.db.update(invStockAdjustments)
-      .set({ status: "APPROVED", approvedBy: userId, approvedAt: new Date() })
-      .where(and(
-        eq(invStockAdjustments.orgId, orgId),
-        eq(invStockAdjustments.id, adjustmentId),
-        eq(invStockAdjustments.status, "PENDING_APPROVAL"),
-      ))
-      .returning({ id: invStockAdjustments.id });
-    if (updated.length === 0) throw new ConflictException("Adjustment is no longer pending approval");
+    await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        idempotencyKey,
+        { command: "inventory.adjustments.approve", adjustmentId },
+        async () => {
+          const updated = await tx.update(invStockAdjustments)
+            .set({ status: "APPROVED", approvedBy: userId, approvedAt: new Date() })
+            .where(and(
+              eq(invStockAdjustments.orgId, orgId),
+              eq(invStockAdjustments.id, adjustmentId),
+              eq(invStockAdjustments.status, "PENDING_APPROVAL"),
+            ))
+            .returning({ id: invStockAdjustments.id });
+          if (updated.length === 0)
+            throw new ConflictException("Adjustment is no longer pending approval");
+          return adjustmentId;
+        },
+        revivedId,
+      ),
+    );
 
     return this.getAdjustment(orgId, adjustmentId);
   }
@@ -209,44 +270,61 @@ export class InvStockAdjustmentsService {
     adj: { id: number; referenceNumber: string; reason: string; notes: string | null; lines: Array<{ productVariantId: number; locationId: number; quantityChange: string }> },
     idempotencyKey: string,
   ) {
-    await this.db.transaction(async (tx: Tx) => {
-      await this.engine.executeInTx(tx, orgId, userId, {
-        idempotencyKey,
-        sourceType: "inv_adjustment",
-        sourceId: adj.id.toString(),
-        reason: adj.reason,
-        movements: adj.lines.map((line) => ({
-          transactionType: parseFloat(line.quantityChange) > 0 ? "ADJUSTMENT_IN" as const : "ADJUSTMENT_OUT" as const,
-          productVariantId: line.productVariantId,
-          locationId: line.locationId,
-          quantityDelta: line.quantityChange,
-        })),
-      });
-
-      await tx.update(invStockAdjustments)
-        .set({ status: "POSTED", postedBy: userId, postedAt: new Date() })
-        .where(and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adj.id)));
-
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "inv_stock_adjustment",
-        aggregateId: String(adj.id),
-        aggregateVersion: Date.now(),
-        eventType: "inventory.stock.adjusted",
-        payload: {
-          adjustmentId: adj.id,
-          referenceNumber: adj.referenceNumber,
-          reason: adj.reason,
-          lineCount: adj.lines.length,
-          actorUserId: userId,
-        },
-        occurredAt: new Date(),
-      });
-    });
+    await this.db.transaction((tx: Tx) =>
+      this.applyAdjustmentLinesInTx(tx, orgId, userId, adj, idempotencyKey),
+    );
 
     await Promise.all([
       this.engine.invalidateCaches(orgId),
     ]);
+  }
+
+  /**
+   * The posting itself, on a transaction the caller owns.
+   *
+   * `createAdjustment` needs the posting to share the transaction that claimed
+   * its idempotency key, so that a claim can never commit over work that did
+   * not. Opening a second transaction here would have separated the two.
+   */
+  private async applyAdjustmentLinesInTx(
+    tx: Tx,
+    orgId: string,
+    userId: string,
+    adj: { id: number; referenceNumber: string; reason: string; notes: string | null; lines: Array<{ productVariantId: number; locationId: number; quantityChange: string }> },
+    idempotencyKey: string,
+  ) {
+    await this.engine.executeInTx(tx, orgId, userId, {
+      idempotencyKey,
+      sourceType: "inv_adjustment",
+      sourceId: adj.id.toString(),
+      reason: adj.reason,
+      movements: adj.lines.map((line) => ({
+        transactionType: parseFloat(line.quantityChange) > 0 ? "ADJUSTMENT_IN" as const : "ADJUSTMENT_OUT" as const,
+        productVariantId: line.productVariantId,
+        locationId: line.locationId,
+        quantityDelta: line.quantityChange,
+      })),
+    });
+
+    await tx.update(invStockAdjustments)
+      .set({ status: "POSTED", postedBy: userId, postedAt: new Date() })
+      .where(and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adj.id)));
+
+    await OutboxWriter.emit(tx, {
+      eventId: randomUUID(),
+      organizationId: orgId,
+      aggregateType: "inv_stock_adjustment",
+      aggregateId: String(adj.id),
+      aggregateVersion: Date.now(),
+      eventType: "inventory.stock.adjusted",
+      payload: {
+        adjustmentId: adj.id,
+        referenceNumber: adj.referenceNumber,
+        reason: adj.reason,
+        lineCount: adj.lines.length,
+        actorUserId: userId,
+      },
+      occurredAt: new Date(),
+    });
   }
 }

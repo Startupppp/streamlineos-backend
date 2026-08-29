@@ -4,6 +4,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
@@ -60,11 +61,12 @@ export class LoadsController {
   @RequirePermission("inventory:loads:manage")
   @HttpCode(HttpStatus.OK)
   dispatch(
+    @IdempotencyKey() idempotencyKey: string,
     @Param("loadId", ParseIntPipe) loadId: number,
     @Body(new ZodValidationPipe(dispatchLoadSchema)) body: DispatchLoadInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.dispatch(u.orgId, u.userId, loadId, body);
+    return this.svc.dispatch(u.orgId, u.userId, loadId, body, idempotencyKey);
   }
 
   @Post(":loadId/close")

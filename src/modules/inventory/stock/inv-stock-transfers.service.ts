@@ -8,6 +8,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { runIdempotent, revivedId } from "../stock-engine/idempotency";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
@@ -161,45 +162,65 @@ export class InvStockTransfersService {
   }
 
   // B1-03: All line reservations created atomically in one transaction.
-  async reserveTransfer(orgId: string, userId: string, transferId: number) {
-    const transfer = await this.db.transaction(async (tx) => {
-      const [locked] = await tx.execute<{
-        id: number; status: string; from_location_id: number; org_id: string;
-      }>(sql`
-        SELECT id, status, from_location_id, org_id
-        FROM inv_stock_transfers
-        WHERE id = ${transferId} AND org_id = ${orgId}
-        FOR UPDATE
-      `);
-
-      if (!locked) throw new NotFoundException("Transfer not found");
-      if (locked.status !== "PENDING") throw new BadRequestException("Only PENDING transfers can be reserved");
-
-      const lines = await tx.query.invStockTransferLines.findMany({
-        where: eq(invStockTransferLines.transferId, transferId),
-      });
-
-      for (const line of lines) {
-        await this.reservationService.createReservationInTx(tx, orgId, userId, {
-          sourceType: "inv_transfer",
-          sourceId: transferId.toString(),
-          sourceLineId: line.id.toString(),
-          productVariantId: line.productVariantId,
-          locationId: locked.from_location_id,
-          lotId: line.lotId ?? undefined,
-          serialId: line.serialId ?? undefined,
-          qty: line.quantity,
-        });
-      }
-
-      await tx.update(invStockTransfers)
-        .set({ status: "RESERVED", reservedAt: new Date() })
-        .where(and(eq(invStockTransfers.orgId, orgId), eq(invStockTransfers.id, transferId)));
-
-      return transferId;
-    });
+  /**
+   * A3. The route demanded an `Idempotency-Key` and then called this without it.
+   *
+   * The status guard made a retry safe but not *correct*: the second call found
+   * the transfer already RESERVED and threw 400, so a client retrying a request
+   * that had actually succeeded — the usual reason to retry — was told its
+   * transfer could not be reserved. Replaying the original answer is the point
+   * of the key.
+   */
+  async reserveTransfer(orgId: string, userId: string, transferId: number, idempotencyKey: string) {
+    const transfer = await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        idempotencyKey,
+        { command: "inventory.transfers.reserve", transferId },
+        () => this.reserveTransferInTx(tx, orgId, userId, transferId),
+        revivedId,
+      ),
+    );
 
     return this.getTransfer(orgId, transfer);
+  }
+
+  private async reserveTransferInTx(tx: Tx, orgId: string, userId: string, transferId: number) {
+    const [locked] = await tx.execute<{
+      id: number; status: string; from_location_id: number; org_id: string;
+    }>(sql`
+      SELECT id, status, from_location_id, org_id
+      FROM inv_stock_transfers
+      WHERE id = ${transferId} AND org_id = ${orgId}
+      FOR UPDATE
+    `);
+
+    if (!locked) throw new NotFoundException("Transfer not found");
+    if (locked.status !== "PENDING") throw new BadRequestException("Only PENDING transfers can be reserved");
+
+    const lines = await tx.query.invStockTransferLines.findMany({
+      where: eq(invStockTransferLines.transferId, transferId),
+    });
+
+    for (const line of lines) {
+      await this.reservationService.createReservationInTx(tx, orgId, userId, {
+        sourceType: "inv_transfer",
+        sourceId: transferId.toString(),
+        sourceLineId: line.id.toString(),
+        productVariantId: line.productVariantId,
+        locationId: locked.from_location_id,
+        lotId: line.lotId ?? undefined,
+        serialId: line.serialId ?? undefined,
+        qty: line.quantity,
+      });
+    }
+
+    await tx.update(invStockTransfers)
+      .set({ status: "RESERVED", reservedAt: new Date() })
+      .where(and(eq(invStockTransfers.orgId, orgId), eq(invStockTransfers.id, transferId)));
+
+    return transferId;
   }
 
   // B1-06: engine.executeInTx + reservation consumption + status update in one transaction.
@@ -458,7 +479,12 @@ export class InvStockTransfersService {
 
   // B1-20/21: Cancel releases reservations (via releaseReservationInTx in one tx) and
   // invalidates stock summary + stock level caches.
-  async cancelTransfer(orgId: string, userId: string, transferId: number) {
+  /**
+   * A3. Cancelling took no key at all. The status guard makes a repeat safe, but
+   * a client retrying a timed-out cancel was told the transfer could not be
+   * cancelled — the request had in fact succeeded.
+   */
+  async cancelTransfer(orgId: string, userId: string, transferId: number, idempotencyKey: string) {
     const transfer = await this.db.query.invStockTransfers.findFirst({
       where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
       columns: { id: true, status: true },
@@ -475,32 +501,51 @@ export class InvStockTransfersService {
       throw new BadRequestException("Only PENDING or RESERVED transfers can be cancelled");
     }
 
-    await this.db.transaction(async (tx) => {
-      if (transfer.status === "RESERVED") {
-        const activeReservations = await tx
-          .select({ id: invStockReservations.id })
-          .from(invStockReservations)
-          .where(and(
-            eq(invStockReservations.orgId, orgId),
-            eq(invStockReservations.sourceType, "inv_transfer"),
-            eq(invStockReservations.sourceId, transferId.toString()),
-            eq(invStockReservations.status, "ACTIVE"),
-          ));
-
-        for (const res of activeReservations) {
-          await this.reservationService.releaseReservationInTx(tx, orgId, userId, res.id);
-        }
-      }
-
-      await tx.update(invStockTransfers)
-        .set({ status: "CANCELLED" })
-        .where(and(eq(invStockTransfers.orgId, orgId), eq(invStockTransfers.id, transferId)));
-    });
+    await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        idempotencyKey,
+        { command: "inventory.transfers.cancel", transferId },
+        () => this.cancelTransferInTx(tx, orgId, userId, transferId, transfer.status),
+        () => ({ cancelled: transferId }),
+      ),
+    );
 
     await Promise.all([
       this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId)),
       this.cache.invalidateNamespace(`inv:stock:levels:${orgId}`),
       this.cache.invalidateNamespace(`inv:reservations:list:${orgId}`),
     ]);
+  }
+
+  private async cancelTransferInTx(
+    tx: Tx,
+    orgId: string,
+    userId: string,
+    transferId: number,
+    status: string,
+  ): Promise<{ cancelled: number }> {
+    if (status === "RESERVED") {
+      const activeReservations = await tx
+        .select({ id: invStockReservations.id })
+        .from(invStockReservations)
+        .where(and(
+          eq(invStockReservations.orgId, orgId),
+          eq(invStockReservations.sourceType, "inv_transfer"),
+          eq(invStockReservations.sourceId, transferId.toString()),
+          eq(invStockReservations.status, "ACTIVE"),
+        ));
+
+      for (const res of activeReservations) {
+        await this.reservationService.releaseReservationInTx(tx, orgId, userId, res.id);
+      }
+    }
+
+    await tx.update(invStockTransfers)
+      .set({ status: "CANCELLED" })
+      .where(and(eq(invStockTransfers.orgId, orgId), eq(invStockTransfers.id, transferId)));
+
+    return { cancelled: transferId };
   }
 }

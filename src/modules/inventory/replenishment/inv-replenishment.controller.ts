@@ -4,6 +4,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -83,9 +84,10 @@ export class InvReplenishmentController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:create")
   generatePo(
+    @IdempotencyKey() idempotencyKey: string,
     @Body(new ZodValidationPipe(generatePoSchema)) body: GeneratePoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.replenishment.generatePo(u.orgId, u.userId, body);
+    return this.replenishment.generatePo(u.orgId, u.userId, body, idempotencyKey);
   }
 }

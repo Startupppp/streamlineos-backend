@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -72,11 +73,9 @@ export class InspectionsController {
   @RequirePermission("inventory:quality:release")
   pass(
     @Param("inspectionId", ParseIntPipe) id: number,
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.svc.pass(u.orgId, u.userId, id, idempotencyKey);
+  ) {return this.svc.pass(u.orgId, u.userId, id, idempotencyKey);
   }
 
   @Post(":inspectionId/fail")
@@ -95,12 +94,10 @@ export class InspectionsController {
   @RequirePermission("inventory:quality:inspect")
   dispose(
     @Param("inspectionId", ParseIntPipe) id: number,
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @Body(new ZodValidationPipe(disposeInspectionSchema)) body: DisposeInspectionInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.svc.dispose(u.orgId, u.userId, id, body, idempotencyKey);
+  ) {return this.svc.dispose(u.orgId, u.userId, id, body, idempotencyKey);
   }
 
   @Post(":inspectionId/cancel")

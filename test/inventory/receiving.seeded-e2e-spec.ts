@@ -239,6 +239,76 @@ describe("[seeded-e2e] goods receipt discrepancies and exact quantities", () => 
     expect(grnLine!.discrepancy_reason).toBeNull();
   });
 
+  describe("a receipt sent twice under one key", () => {
+    const receiveWithKey = (poId: number, key: string, line: Record<string, unknown>) =>
+      asTenant(() =>
+        app.app.get(GrnService).receiveGoods(scene.orgId, poId, scene.userId, key, {
+          receivedDate: "2026-08-02",
+          locationId: scene.locationId,
+          lines: [line],
+        } as never),
+      );
+
+    const receivedOnLine = async (poLineId: number) => {
+      const [row] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ quantity_received: string }>(sql`
+          SELECT quantity_received FROM inv_po_lines
+          WHERE org_id = ${scene.orgId} AND id = ${poLineId}`),
+      );
+      return row!.quantity_received;
+    };
+
+    it("posts one receipt when nothing on the delivery was accepted", async () => {
+      // A3, and the branch that had no protection at all. With every line
+      // REJECTED there are no movements, so the engine — which is where the key
+      // was claimed — is never called. The retry therefore ran the whole
+      // receipt again: a second GRN document, and the same twelve units counted
+      // against the order twice, which is how a purchase order closes as
+      // RECEIVED against goods nobody accepted.
+      const { poId, poLineId } = await sentOrder(20);
+      const key = `grn-rejected-${randomUUID()}`;
+      const line = {
+        poLineId,
+        quantityReceived: "12.0000",
+        qualityStatus: "REJECTED",
+        rejectionReason: "Crushed in transit",
+      };
+
+      await receiveWithKey(poId, key, line);
+      await receiveWithKey(poId, key, line);
+
+      expect(await grnLinesFor(poLineId)).toHaveLength(1);
+      expect(await receivedOnLine(poLineId)).toBe("12.0000");
+    });
+
+    it("replays an accepted receipt rather than refusing it", async () => {
+      // The other half. Where movements did exist the retry was refused, and
+      // only by accident: the engine hashes the command, the command carries
+      // the new GRN's id, so an identical retry looked like a different request
+      // and got 422. Right answer, wrong reason, wrong error — and it stopped
+      // being right the moment a command stopped naming a fresh row.
+      const { poId, poLineId } = await sentOrder(20);
+      const key = `grn-accepted-${randomUUID()}`;
+      const line = { poLineId, quantityReceived: "8.0000", qualityStatus: "ACCEPTED" };
+
+      const first = await receiveWithKey(poId, key, line);
+      const second = await receiveWithKey(poId, key, line);
+
+      expect((second as { id: number }).id).toBe((first as { id: number }).id);
+      expect(await grnLinesFor(poLineId)).toHaveLength(1);
+      expect(await receivedOnLine(poLineId)).toBe("8.0000");
+
+      // One movement, because the engine's own claim held; one document,
+      // because the command's claim now holds too.
+      const [ledger] = await asTenant(() =>
+        app.app.get<Db>(DRIZZLE).execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM inv_stock_transactions
+          WHERE org_id = ${scene.orgId} AND idempotency_key = ${`${key}:stock`}`),
+      );
+      expect(ledger!.n).toBe(1);
+    });
+  });
+
   describe("a terminal purchase order stops being expected", () => {
     const onOrder = async () => {
       const [row] = await asTenant(() =>

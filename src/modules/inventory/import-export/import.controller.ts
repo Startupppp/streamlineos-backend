@@ -1,8 +1,6 @@
-import {
-  Controller, Get, Post, Param, Body, Query, ParseIntPipe, UseGuards, Headers,
-  BadRequestException, UseInterceptors, UploadedFile,
-} from "@nestjs/common";
+import { Controller, Get, Post, Param, Body, Query, ParseIntPipe, UseGuards, BadRequestException, UseInterceptors, UploadedFile } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -50,7 +48,7 @@ export class ImportController {
   openStaged(
     @Body(new ZodValidationPipe(openImportJobSchema)) body: OpenImportJobInput,
     @CurrentUser() u: CurrentUserContext,
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
   ) {
     return this.staged.createJob(u.orgId, u.userId, { ...body, idempotencyKey });
   }

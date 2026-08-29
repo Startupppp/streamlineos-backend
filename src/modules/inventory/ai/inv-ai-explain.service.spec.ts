@@ -414,6 +414,35 @@ describe("InvAiExplainService - getReorderProposal", () => {
     expect(generatePo).not.toHaveBeenCalled();
   });
 
+  it("keys the proposal on the position, so two calls do not raise two proposals", async () => {
+    // A3. The key carried `Date.now()`, which made it unique per call and so
+    // defeated the only thing a key does: `propose` replays a live PROPOSED row
+    // with a matching key, and no two calls ever matched. Every refresh of the
+    // screen minted another independently-confirmable proposal for the same
+    // shortfall, and confirming two of them raises two draft purchase orders.
+    const gateway = {
+      invokeStructured: jest
+        .fn()
+        .mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE, ...MOCK_GATEWAY_META }),
+    };
+    const confirmation = { propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL) };
+    const replenishment = {
+      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
+    };
+
+    const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
+    await service.getReorderProposal("org-1", "user-1", 77);
+    await service.getReorderProposal("org-1", "user-1", 77);
+
+    const keys = (confirmation.propose as jest.Mock).mock.calls.map(
+      (call: [{ idempotencyKey: string }]) => call[0].idempotencyKey,
+    );
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBe(keys[1]);
+    // Named after the position it is about, not the moment it was asked for.
+    expect(keys[0]).toBe("reorder:org-1:77:5");
+  });
+
   it("should return proposal from AiConfirmationService.propose in the result", async () => {
     const gateway = {
       invokeStructured: jest

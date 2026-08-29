@@ -1,8 +1,6 @@
-import {
-  Controller, Get, Post, Body, Param,
-  ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus, Headers, BadRequestException,
-} from "@nestjs/common";
+import { Controller, Get, Post, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -76,11 +74,9 @@ export class CustomerReturnsController {
   post(
     @Param("returnId", ParseIntPipe) returnId: number,
     @Body(new ZodValidationPipe(postCustomerReturnSchema)) body: PostCustomerReturnInput,
-    @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
+    @IdempotencyKey() idempotencyKeyHeader: string,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!idempotencyKeyHeader) throw new BadRequestException("Idempotency-Key header is required");
-    return this.service.post(u.orgId, returnId, u.userId, idempotencyKeyHeader, body);
+  ) {return this.service.post(u.orgId, returnId, u.userId, idempotencyKeyHeader, body);
   }
 
   @Post(":returnId/cancel")

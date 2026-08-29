@@ -400,8 +400,8 @@ export class SoCoreService {
     });
   }
 
-  confirmSo(orgId: string, soId: number, userId: string) {
-    return this.lifecycle.confirmSo(orgId, soId, userId);
+  confirmSo(orgId: string, soId: number, userId: string, idempotencyKey: string) {
+    return this.lifecycle.confirmSo(orgId, soId, userId, idempotencyKey);
   }
 
   cancelSo(orgId: string, soId: number, userId: string) {

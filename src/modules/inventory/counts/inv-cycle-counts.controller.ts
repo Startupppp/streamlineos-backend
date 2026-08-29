@@ -1,4 +1,5 @@
-import { BadRequestException, Controller, Get, Headers, Param, ParseIntPipe, Patch, Post, Body, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, ParseIntPipe, Patch, Post, Body, Query, UseGuards } from "@nestjs/common";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -84,12 +85,10 @@ export class InvCycleCountsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   post(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.counts.postCycleCount(u.orgId, u.userId, countId, idempotencyKey);
+  ) {return this.counts.postCycleCount(u.orgId, u.userId, countId, idempotencyKey);
   }
 
   @Post(":countId/cancel")

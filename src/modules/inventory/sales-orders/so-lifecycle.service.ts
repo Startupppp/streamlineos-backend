@@ -24,6 +24,7 @@ import { subDec, cmpDec } from "../stock-engine/decimal";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
+import { runIdempotent } from "../stock-engine/idempotency";
 import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 
@@ -42,7 +43,13 @@ export class SoLifecycleService {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
-  async confirmSo(orgId: string, soId: number, userId: string) {
+  /**
+   * A3. Confirming took no key. The DRAFT guard makes a repeat safe, but a
+   * client retrying a timed-out confirm was told the order could not be
+   * confirmed — when it already had been, and had auto-reserved stock on the
+   * way. Replaying the original answer is what the key is for.
+   */
+  async confirmSo(orgId: string, soId: number, userId: string, idempotencyKey: string) {
     const so = await this.db.query.invSalesOrders.findFirst({
       where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
       with: { lines: true },
@@ -53,10 +60,22 @@ export class SoLifecycleService {
 
     const settings = await this.settingsService.get(orgId);
 
-    await this.db
-      .update(invSalesOrders)
-      .set({ status: "CONFIRMED", confirmedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
+    await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        idempotencyKey,
+        { command: "inventory.sales-orders.confirm", soId },
+        async () => {
+          await tx
+            .update(invSalesOrders)
+            .set({ status: "CONFIRMED", confirmedAt: new Date(), updatedAt: new Date() })
+            .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
+          return { confirmed: soId };
+        },
+        () => ({ confirmed: soId }),
+      ),
+    );
 
     if (settings.autoReserveOnConfirm) {
       try {

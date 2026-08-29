@@ -20,6 +20,21 @@ import { SoCoreService } from "./so-core.service";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
 import { addDec, cmpDec } from "../stock-engine/decimal";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
+import { runIdempotent, revivedScalar } from "../stock-engine/idempotency";
+
+/** The pick result as it comes back from the idempotency row's stored JSON. */
+function revivePickResult(stored: unknown): {
+  pickListId: number;
+  pickNumber: string;
+  allPicked: boolean;
+} {
+  const row = typeof stored === "object" && stored !== null ? (stored as Record<string, unknown>) : {};
+  return {
+    pickListId: Number(row.pickListId ?? 0),
+    pickNumber: String(row.pickNumber ?? ""),
+    allPicked: row.allPicked === true,
+  };
+}
 
 @Injectable()
 export class SoFulfillmentService {
@@ -126,7 +141,24 @@ export class SoFulfillmentService {
     return { soId, status: newStatus, allReserved };
   }
 
-  async pickSo(orgId: string, soId: number, userId: string, data: PickSoInput) {
+  /**
+   * A3. Picking took no idempotency key and ran across three separate
+   * transactions — a pick-list insert, then a transaction for the projection,
+   * then a line insert, then a status update.
+   *
+   * So a retry produced a *second* pick list, recorded the same pick again and
+   * subtracted the same units from availability twice; and a failure between any
+   * two of those steps left the order in a state no single step describes —
+   * `outgoing_qty` moved with no lines to explain it, or lines with the bucket
+   * untouched. One transaction, claimed once.
+   */
+  async pickSo(
+    orgId: string,
+    soId: number,
+    userId: string,
+    data: PickSoInput,
+    idempotencyKey: string,
+  ) {
     const so = await this.db.query.invSalesOrders.findFirst({
       where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
       with: { lines: { with: { productVariant: { with: { product: { columns: { id: true, trackingMethod: true } } } } } } },
@@ -148,53 +180,6 @@ export class SoFulfillmentService {
       }
     }
 
-    const pickNumber = await this.numSeq.next(orgId, "PICK_LIST");
-
-    const [pickList] = await this.db.insert(invPickLists).values({
-      orgId,
-      pickNumber,
-      soId,
-      warehouseId: so.warehouseId,
-      status: "COMPLETED",
-      createdBy: userId,
-    }).returning();
-
-    // A1. `outgoing_qty` had no writer at all, so availability ignored one of
-    // its five terms. Only the portion no reservation covers is recorded here:
-    // a reserved pick is already out of availability via `committed`, and
-    // counting it twice would be a worse error than counting it never.
-    await this.db.transaction(async (tx) => {
-      for (const line of data.lines) {
-        const soLine = so.lines.find((l) => l.id === line.soLineId);
-        if (!soLine) continue;
-        await this.projection.recordPicked(
-          tx,
-          orgId,
-          soLine.productVariantId,
-          line.locationId,
-          line.quantityPicked,
-        );
-      }
-    });
-
-    await this.db.insert(invPickListLines).values(
-      data.lines.map((line) => {
-        const soLine = so.lines.find((l) => l.id === line.soLineId);
-        if (!soLine) throw new BadRequestException(`SO line ${line.soLineId} not found`);
-        return {
-          orgId,
-          pickListId: pickList.id,
-          soLineId: line.soLineId,
-          productVariantId: soLine.productVariantId,
-          locationId: line.locationId,
-          lotId: line.lotId,
-          serialId: line.serialId,
-          quantityToPick: line.quantityPicked,
-          quantityPicked: line.quantityPicked,
-        };
-      })
-    );
-
     // Exact. Deciding a whole order is picked on the strength of float
     // comparisons is how an order ships one unit short and nothing notices.
     const orderedQtyMap = new Map(so.lines.map((l) => [l.id, String(l.quantity)]));
@@ -209,17 +194,92 @@ export class SoFulfillmentService {
       (l) => cmpDec(pickedMap.get(l.id) ?? "0", orderedQtyMap.get(l.id) ?? "0") >= 0,
     );
 
-    await this.db.update(invSalesOrders)
-      .set({ status: allPicked ? "PICKED" : so.status, updatedAt: new Date() })
-      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
+    const result = await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        idempotencyKey,
+        { command: "inventory.sales-orders.pick", soId, lines: data.lines },
+        async () => {
+          const pickNumber = await this.numSeq.next(orgId, "PICK_LIST", tx);
+
+          const [pickList] = await tx.insert(invPickLists).values({
+            orgId,
+            pickNumber,
+            soId,
+            warehouseId: so.warehouseId,
+            status: "COMPLETED",
+            createdBy: userId,
+          }).returning();
+
+          await tx.insert(invPickListLines).values(
+            data.lines.map((line) => {
+              const soLine = so.lines.find((l) => l.id === line.soLineId);
+              if (!soLine) throw new BadRequestException(`SO line ${line.soLineId} not found`);
+              return {
+                orgId,
+                pickListId: pickList!.id,
+                soLineId: line.soLineId,
+                productVariantId: soLine.productVariantId,
+                locationId: line.locationId,
+                lotId: line.lotId,
+                serialId: line.serialId,
+                quantityToPick: line.quantityPicked,
+                quantityPicked: line.quantityPicked,
+              };
+            })
+          );
+
+          // A1. `outgoing_qty` had no writer at all, so availability ignored one
+          // of its five terms. Only the portion no reservation covers is
+          // recorded: a reserved pick is already out of availability via
+          // `committed`, and counting it twice is a worse error than never.
+          for (const line of data.lines) {
+            const soLine = so.lines.find((l) => l.id === line.soLineId);
+            if (!soLine) continue;
+            await this.projection.recordPicked(
+              tx,
+              orgId,
+              soLine.productVariantId,
+              line.locationId,
+              line.quantityPicked,
+            );
+          }
+
+          await tx.update(invSalesOrders)
+            .set({ status: allPicked ? "PICKED" : so.status, updatedAt: new Date() })
+            .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
+
+          return { pickListId: pickList!.id, pickNumber, allPicked };
+        },
+        (stored) => revivePickResult(stored),
+      ),
+    );
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
     await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
 
-    return { pickListId: pickList.id, pickNumber, allPicked };
+    return result;
   }
 
-  async packSo(orgId: string, soId: number, userId: string, data: PackSoInput) {
+  /**
+   * A3. Packing took no key, and it creates documents rather than flipping a
+   * status: a retry produced a second package with a second package number and
+   * a second set of lines against the same picked stock.
+   */
+  /**
+   * A3. Packing took no key, and it creates documents rather than flipping a
+   * status: a retry produced a second package, with a second package number and
+   * a second set of lines, against the same picked stock. The package, its lines
+   * and the order's status now move together or not at all.
+   */
+  async packSo(
+    orgId: string,
+    soId: number,
+    userId: string,
+    data: PackSoInput,
+    idempotencyKey: string,
+  ) {
     const so = await this.db.query.invSalesOrders.findFirst({
       where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
     });
@@ -229,53 +289,70 @@ export class SoFulfillmentService {
     }
 
     const settings = await this.settingsService.get(orgId);
-    let packageId: number | undefined;
 
-    if (settings.packageRequiredForShipping) {
-      const packageNumber = await this.numSeq.next(orgId, "PACKAGE");
-
-      const pickLists = await this.db.query.invPickLists.findMany({
-        where: and(eq(invPickLists.orgId, orgId), eq(invPickLists.soId!, soId)),
-        with: { lines: true },
-      });
-
-      const [pkg] = await this.db.insert(invPackages).values({
+    const packageId = await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
         orgId,
-        packageNumber,
-        weight: data.weight?.toFixed(4),
-        dimensionsL: data.dimensionsL?.toFixed(2),
-        dimensionsW: data.dimensionsW?.toFixed(2),
-        dimensionsH: data.dimensionsH?.toFixed(2),
-        status: "CLOSED",
-        createdBy: userId,
-      }).returning();
+        idempotencyKey,
+        { command: "inventory.sales-orders.pack", soId, data },
+        async () => {
+          let created: number | null = null;
 
-      packageId = pkg.id;
+          if (settings.packageRequiredForShipping) {
+            const packageNumber = await this.numSeq.next(orgId, "PACKAGE", tx);
 
-      const packageLinesValues = pickLists.flatMap((pl) =>
-        pl.lines.map((line) => ({
-          orgId,
-          packageId: pkg.id,
-          productVariantId: line.productVariantId,
-          lotId: line.lotId,
-          serialId: line.serialId,
-          quantity: line.quantityPicked,
-        }))
-      );
+            const pickLists = await tx.query.invPickLists.findMany({
+              where: and(eq(invPickLists.orgId, orgId), eq(invPickLists.soId!, soId)),
+              with: { lines: true },
+            });
 
-      if (packageLinesValues.length > 0) {
-        await this.db.insert(invPackageLines).values(packageLinesValues);
-      }
-    }
+            const [pkg] = await tx.insert(invPackages).values({
+              orgId,
+              packageNumber,
+              weight: data.weight?.toFixed(4),
+              dimensionsL: data.dimensionsL?.toFixed(2),
+              dimensionsW: data.dimensionsW?.toFixed(2),
+              dimensionsH: data.dimensionsH?.toFixed(2),
+              status: "CLOSED",
+              createdBy: userId,
+            }).returning();
 
-    await this.db.update(invSalesOrders)
-      .set({ status: "PACKED", updatedAt: new Date() })
-      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
+            created = pkg!.id;
+
+            const packageLinesValues = pickLists.flatMap((pl) =>
+              pl.lines.map((line) => ({
+                orgId,
+                packageId: pkg!.id,
+                productVariantId: line.productVariantId,
+                lotId: line.lotId,
+                serialId: line.serialId,
+                quantity: line.quantityPicked,
+              }))
+            );
+
+            if (packageLinesValues.length > 0) {
+              await tx.insert(invPackageLines).values(packageLinesValues);
+            }
+          }
+
+          await tx.update(invSalesOrders)
+            .set({ status: "PACKED", updatedAt: new Date() })
+            .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
+
+          return created;
+        },
+        (stored) => {
+          const value = revivedScalar(stored);
+          return value === null || value === undefined ? null : Number(value);
+        },
+      ),
+    );
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
     await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
 
-    return { soId, status: "PACKED", packageId };
+    return { soId, status: "PACKED", packageId: packageId ?? undefined };
   }
 
   async shipSo(orgId: string, soId: number, userId: string, idempotencyKey: string, data: ShipSoInput) {
