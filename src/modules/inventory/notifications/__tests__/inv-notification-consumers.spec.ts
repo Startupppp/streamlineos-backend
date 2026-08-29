@@ -3,6 +3,8 @@ import {
   InvLotExpiringConsumerService,
   InvRecallOpenedConsumerService,
 } from "../inv-notification-consumers.service";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { NOTIFICATION_EVENT_MAP } from "../../../notifications/notification-events.catalog";
 
 /**
@@ -255,5 +257,43 @@ describe("G3 inventory notification consumers", () => {
       // gets, and being told your own recall is live is not noise.
       expect(h.dispatched[0]!.targetUserIds).toEqual(["ops", "qa"]);
     });
+  });
+});
+
+describe("G3 expiry sweep — the window SQL", () => {
+  /**
+   * The bug this pins was silent and total: `VALUES (90, 60, 30)` is one row of
+   * three columns, so `t(w)` names only the first and `MIN(w)` was always 90.
+   * Every lot inside the widest window reported at 90 and never escalated to 60
+   * or 30 — the escalation the whole three-window design rests on simply never
+   * happened, and nothing failed. Only running the SQL shows it.
+   */
+  it("builds one row per window, not one row of three columns", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "inv-expiry-sweep.service.ts"),
+      "utf8",
+    );
+    // Each window wrapped in its own parens before the join.
+    expect(source).toContain("sql`(${d})`");
+    expect(source).toContain("FROM (VALUES ${windows}) AS t(w)");
+    // The broken form, which reads almost identically.
+    expect(source).not.toContain("(VALUES (${windows}))");
+  });
+
+  it("narrows as the date approaches, so a lot re-notifies at each crossing", () => {
+    // The behaviour the SQL has to produce, stated independently of it:
+    // days_left 61 is inside 90 only; 31 is inside 90 and 60, and the narrowest
+    // is what the operator needs to hear.
+    const windows = [90, 60, 30];
+    const narrowest = (daysLeft: number) =>
+      windows.filter((w) => daysLeft <= w).sort((a, b) => a - b)[0] ?? null;
+
+    expect(narrowest(95)).toBeNull();
+    expect(narrowest(90)).toBe(90);
+    expect(narrowest(61)).toBe(90);
+    expect(narrowest(60)).toBe(60);
+    expect(narrowest(31)).toBe(60);
+    expect(narrowest(30)).toBe(30);
+    expect(narrowest(5)).toBe(30);
   });
 });

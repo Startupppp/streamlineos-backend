@@ -60,8 +60,13 @@ export class InvExpirySweepService {
       // all three at once is three notifications for one fact. `LEAST` picks the
       // most urgent, and the consumer's key carries it so the lot notifies again
       // only when it crosses into the next one.
+      // One row per window, not one row of three columns. `VALUES (90, 60, 30)`
+      // is a single row whose only named column is `w = 90`, so `MIN(w)` was
+      // always 90 — every lot inside the widest window reported at 90 and never
+      // escalated to 60 or 30, silently defeating the whole point of having
+      // three of them. `VALUES (90),(60),(30)` is three rows.
       const windows = sql.join(
-        NEAR_EXPIRY_WINDOWS_DAYS.map((d) => sql`${d}`),
+        NEAR_EXPIRY_WINDOWS_DAYS.map((d) => sql`(${d})`),
         sql`, `,
       );
 
@@ -87,7 +92,7 @@ export class InvExpirySweepService {
                lot_number,
                product_variant_id,
                expiry_date::text            AS expiry_date,
-               (SELECT MIN(w) FROM (VALUES (${windows})) AS t(w) WHERE days_left <= w)::int AS window_days,
+               (SELECT MIN(w) FROM (VALUES ${windows}) AS t(w) WHERE days_left <= w)::int AS window_days,
                on_hand::text                AS on_hand
         FROM stocked
         WHERE days_left <= ${Math.max(...NEAR_EXPIRY_WINDOWS_DAYS)}

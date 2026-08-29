@@ -366,6 +366,13 @@ export class MovementApplyService {
     // G6. Counted here rather than at the controller: this is the point past
     // which the movement is written and the command has succeeded. A counter at
     // the edge would also count commands the engine went on to refuse.
+    //
+    // It counts an *applied* command, not a committed one. An in-memory counter
+    // cannot roll back, so a command that applies here and then fails on the
+    // event write or the idempotency completion is still counted a success. The
+    // window is two statements wide and the ratio it feeds — conflicts over
+    // attempts — is not distorted by it, but an operator reading these numbers
+    // should know they are attempts that got this far rather than commits.
     inventoryCounters.increment(orgId, "stock.command.success");
 
     const engineResult: StockEngineResult = { transactionIds: txnIds, levels: cmdLevels };
