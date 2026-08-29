@@ -22,6 +22,7 @@ import { CommandCenterController } from "./command-center.controller";
 import { CommandCenterService } from "./command-center.service";
 import { PayrollCommandReceiptsService } from "../command-receipts.service";
 import { PayrollRunLockService } from "../run-lock.service";
+import { PayrollRunCalculationGuardsService } from "./payroll-run-calculation-guards.service";
 
 @Module({
   imports: [AccessModule, PayrollInsightsModule, PayrollEntitiesModule, DirectoryModule],
@@ -47,6 +48,7 @@ import { PayrollRunLockService } from "../run-lock.service";
     CommandCenterService,
     PayrollCommandReceiptsService,
     PayrollRunLockService,
+    PayrollRunCalculationGuardsService,
   ],
   exports: [GenerateService, PayrollCommandReceiptsService, PayrollRunLockService],
 })

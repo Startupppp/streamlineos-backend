@@ -3,6 +3,16 @@ import type {
   NotificationEventDefinition,
 } from "./notification-event-definition.types";
 import type { NotificationCategoryValue } from "./notifications.types";
+import {
+  BUILD_TICKET_RESOURCE,
+  DEFAULT_ALLOWED_CHANNELS,
+  IN_APP,
+  IN_APP_EMAIL,
+  IN_APP_PUSH,
+  IN_APP_PUSH_EMAIL,
+  KNOWLEDGE_PAGE_RESOURCE,
+  URGENT_ALLOWED_CHANNELS,
+} from "./notification-event-channel-policy";
 
 type EventOverrides = Partial<
   Omit<
@@ -11,26 +21,20 @@ type EventOverrides = Partial<
   >
 >;
 
-const IA: NotificationChannel[] = ["IN_APP"];
-const IA_EMAIL: NotificationChannel[] = ["IN_APP", "EMAIL"];
-const IA_PUSH: NotificationChannel[] = ["IN_APP", "PUSH"];
-const IA_PUSH_EMAIL: NotificationChannel[] = ["IN_APP", "PUSH", "EMAIL"];
+const IA = IN_APP;
+const IA_EMAIL = IN_APP_EMAIL;
+const IA_PUSH = IN_APP_PUSH;
+const IA_PUSH_EMAIL = IN_APP_PUSH_EMAIL;
+const KB_PAGE = KNOWLEDGE_PAGE_RESOURCE;
+const BUILD_TICKET = BUILD_TICKET_RESOURCE;
+const ALLOWED_DEFAULT = DEFAULT_ALLOWED_CHANNELS;
+const ALLOWED_URGENT = URGENT_ALLOWED_CHANNELS;
+
 /**
  * PIPE-003 resource kinds. An event carrying one is delivered only to recipients
  * who can still see the record, re-checked per recipient immediately before render.
  * The owning module registers the resolver; a declared kind with no resolver denies.
  */
-const KB_PAGE = "kb.page";
-const BUILD_TICKET = "build.ticket";
-
-const ALLOWED_DEFAULT: NotificationChannel[] = ["IN_APP", "EMAIL", "PUSH"];
-const ALLOWED_URGENT: NotificationChannel[] = [
-  "IN_APP",
-  "EMAIL",
-  "PUSH",
-  "SMS",
-  "WHATSAPP",
-];
 
 // REG-005: generic on the key so every entry keeps its literal type, which is what
 // makes NotificationEventKey below a real union instead of `string`.

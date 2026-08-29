@@ -16,8 +16,6 @@ import {
   count,
   desc,
   eq,
-  ilike,
-  inArray,
   isNull,
   lte,
   ne,
@@ -69,6 +67,7 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { AblyService } from "../../realtime/ably.service";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { randomUUID } from "node:crypto";
+import { OrgMembershipReadService } from "./org-membership-read.service";
 
 const PG_FK_VIOLATION = "23503";
 
@@ -102,6 +101,7 @@ export class OrgMembershipService {
     private readonly access: AccessService,
     private readonly email: EmailService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly membershipRead: OrgMembershipReadService,
   ) {}
 
   private readonly logger = new Logger(OrgMembershipService.name);
@@ -566,73 +566,9 @@ export class OrgMembershipService {
       "org:members:list",
       hash,
       () =>
-        this.fetchMembers(orgId, page, limit, search, userIds, includeInactive),
+        this.membershipRead.list(orgId, page, limit, search, userIds, includeInactive),
       60,
     );
-  }
-
-  private async fetchMembers(
-    orgId: string,
-    page: number,
-    limit: number,
-    search: string | undefined,
-    userIds: string[] | undefined,
-    includeInactive: boolean,
-  ) {
-    const offset = (page - 1) * limit;
-    const baseConditions = [eq(organizationMembers.orgId, orgId)];
-    if (!includeInactive) {
-      baseConditions.push(eq(organizationMembers.status, "ACTIVE"));
-    }
-    if (userIds && userIds.length > 0) {
-      baseConditions.push(inArray(organizationMembers.userId, userIds));
-    }
-    const searchConditions = search
-      ? [
-          ...baseConditions,
-          or(
-            ilike(users.name, `%${search}%`),
-            ilike(users.email, `%${search}%`),
-          ),
-        ]
-      : baseConditions;
-
-    const [dataResult, countResult] = await Promise.all([
-      this.db
-        .select({
-          membershipId: organizationMembers.id,
-          userId: organizationMembers.userId,
-          role: organizationMembers.role,
-          joinedAt: organizationMembers.joinedAt,
-          name: users.name,
-          email: users.email,
-          image: users.image,
-          totpEnabled: users.totpEnabled,
-        })
-        .from(organizationMembers)
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(...searchConditions))
-        .orderBy(users.name)
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(organizationMembers)
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(...searchConditions)),
-    ]);
-
-    const total = countResult[0]?.total ?? 0;
-
-    return {
-      data: dataResult,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
   }
 
   async removeMember(orgId: string, actorUserId: string, memberUserId: string) {

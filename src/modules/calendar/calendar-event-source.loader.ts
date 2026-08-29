@@ -1,6 +1,6 @@
 import { and, eq, gt, inArray, lt } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
-import { calendarEvents, eventAttendees, projects, tickets } from "../../db/schema";
+import { calendarEvents, eventAttendees, organizationMembers, projects, tickets } from "../../db/schema";
 import type { LinkedTicket } from "./calendar.types";
 
 // tickets and projects are imported solely for linked-ticket enrichment:
@@ -21,6 +21,10 @@ export class CalendarEventSourceLoader {
     linkedTicketMap: Map<number, LinkedTicket>;
   }> {
     const eventsData = await this.queryEvents(orgId, start, end);
+    const membership = await this.database.query.organizationMembers.findFirst({
+      columns: { id: true },
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")),
+    });
 
     const eventIds = eventsData.map((e) => e.id);
     const ticketEntityIds: number[] = [];
@@ -37,13 +41,14 @@ export class CalendarEventSourceLoader {
     await Promise.all([
       (async () => {
         if (eventIds.length === 0) return;
+        if (!membership) return;
         const rows = await this.database
           .select({ eventId: eventAttendees.eventId, status: eventAttendees.status })
           .from(eventAttendees)
           .where(
             and(
               eq(eventAttendees.orgId, orgId),
-              eq(eventAttendees.userId, userId),
+              eq(eventAttendees.membershipId, membership.id),
               inArray(eventAttendees.eventId, eventIds),
             ),
           );

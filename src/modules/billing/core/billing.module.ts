@@ -2,6 +2,7 @@
 import { BillingController } from "./billing.controller";
 import { RazorpayWebhookController } from "./razorpay-webhook.controller";
 import { BillingService } from "./billing.service";
+import { BillingProfileService } from "./billing-profile.service";
 import { MarketplaceService } from "./marketplace.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { AiCreditsReservationService } from "./ai-credits-reservation.service";
@@ -24,7 +25,7 @@ import { OutboxModule } from "../../../common/outbox/outbox.module";
 @Module({
   imports: [NotificationsModule, PaymentsModule, OutboxModule],
   controllers: [BillingController, RazorpayWebhookController],
-  providers: [BillingService, MarketplaceService, AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, UsageMeteringService, InvoiceSnapshotService],
+  providers: [BillingService, BillingProfileService, MarketplaceService, AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, UsageMeteringService, InvoiceSnapshotService],
   exports: [AiCreditsService, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, UsageMeteringService, InvoiceSnapshotService],
 })
 export class BillingModule {}

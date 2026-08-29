@@ -32,6 +32,7 @@ import {
 } from "./lib/input-puller";
 import { getIndiaBundleForMonth } from "./lib/statutory-registry";
 import { toPaise, fromPaise } from "./lib/money";
+import { PayrollRunCalculationGuardsService } from "./payroll-run-calculation-guards.service";
 
 type PayrollTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -45,6 +46,7 @@ export class GenerateService {
     private readonly notifications: PayrollNotificationsService,
     private readonly runLocks: PayrollRunLockService,
     private readonly efService: EmploymentFactsService,
+    private readonly calculationGuards: PayrollRunCalculationGuardsService,
   ) {}
 
   async generateRun(
@@ -105,8 +107,8 @@ export class GenerateService {
         ? await this.efService.getSensitiveFactsBatch(orgId, eligibleUserIds)
         : new Map<string, SensitiveEmploymentFacts>();
 
-    const duplicateBankAccountUserIds = this.findDuplicateBankAccounts(eligibleUserIds, sensitiveFacts);
-    const statutoryFlags = this.loadStatutoryIdFlags(eligibleUserIds, sensitiveFacts);
+    const duplicateBankAccountUserIds = this.calculationGuards.findDuplicateBankAccounts(eligibleUserIds, sensitiveFacts);
+    const statutoryFlags = this.calculationGuards.loadStatutoryIdFlags(eligibleUserIds, sensitiveFacts);
 
     const [heldUserIds, lockedPeriodId] = await Promise.all([
       this.loadHeldUserIds(orgId, runId, eligibleUserIds),
@@ -522,48 +524,6 @@ export class GenerateService {
         ),
       );
     return new Set(requirePayrollUserIds(rows.map((r) => r.userId)));
-  }
-
-  private findDuplicateBankAccounts(
-    userIds: string[],
-    sensitiveFacts: Map<string, SensitiveEmploymentFacts>,
-  ): string[] {
-    if (userIds.length < 2) return [];
-    const keyToUserIds = new Map<string, string[]>();
-    for (const userId of userIds) {
-      const facts = sensitiveFacts.get(userId);
-      const account = facts?.bankDetails?.accountNumber?.trim().toLowerCase();
-      if (!account) continue;
-      const key = `${account}|${(facts?.bankDetails?.ifsc ?? "").trim().toLowerCase()}`;
-      const list = keyToUserIds.get(key) ?? [];
-      list.push(userId);
-      keyToUserIds.set(key, list);
-    }
-    const duplicates = new Set<string>();
-    for (const list of keyToUserIds.values()) {
-      if (list.length > 1) list.forEach((id) => duplicates.add(id));
-    }
-    return [...duplicates];
-  }
-
-  private loadStatutoryIdFlags(
-    userIds: string[],
-    sensitiveFacts: Map<string, SensitiveEmploymentFacts>,
-  ): Map<string, { missingPfUan: boolean; missingEsiIp: boolean }> {
-    const map = new Map<string, { missingPfUan: boolean; missingEsiIp: boolean }>();
-    for (const userId of userIds) {
-      const facts = sensitiveFacts.get(userId);
-      const uan = facts?.bankDetails?.pfUanNumber?.trim() ?? "";
-      const ip = facts?.bankDetails?.esiIpNumber?.trim() ?? "";
-      map.set(userId, {
-        missingPfUan: !/^\d{12}$/.test(uan),
-        missingEsiIp: ip.length === 0,
-      });
-    }
-    for (const id of userIds) {
-      if (!map.has(id)) map.set(id, { missingPfUan: true, missingEsiIp: true });
-    }
-    return map;
   }
 
   async postPayrollLock(orgId: string, runId: number, tx?: PayrollTx): Promise<void> {

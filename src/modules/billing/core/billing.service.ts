@@ -9,7 +9,6 @@
 } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import {
-  billingProfiles,
   coupons,
   couponRedemptions,
   invoices,
@@ -59,6 +58,7 @@ import {
   ExternalEffectLedger,
   ExternalEffectLeaseBusyError,
 } from "../../../common/outbox/external-effect-ledger";
+import { BillingProfileService } from "./billing-profile.service";
 
 @Injectable()
 export class BillingService {
@@ -74,6 +74,7 @@ export class BillingService {
     private readonly externalEffectLedger: ExternalEffectLedger,
     private readonly paymentWebhooks: PaymentWebhookHealthService,
     private readonly paymentNotices: PaymentAnalyticsService,
+    private readonly billingProfile: BillingProfileService,
   ) {
     this.couponAdmin = new BillingCoupons(this.db);
     this.webhooks = new BillingWebhookHandler({
@@ -533,26 +534,11 @@ export class BillingService {
   }
 
   async getBillingProfile(orgId: string) {
-    const [existing] = await this.db
-      .select()
-      .from(billingProfiles)
-      .where(eq(billingProfiles.orgId, orgId));
-    if (existing) return existing;
-    const [profile] = await this.db
-      .insert(billingProfiles)
-      .values({ orgId })
-      .returning();
-    return profile;
+    return this.billingProfile.get(orgId);
   }
 
   async updateBillingProfile(orgId: string, data: UpdateBillingProfileInput) {
-    await this.getBillingProfile(orgId);
-    const [updated] = await this.db
-      .update(billingProfiles)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(billingProfiles.orgId, orgId))
-      .returning();
-    return updated;
+    return this.billingProfile.update(orgId, data);
   }
 
 

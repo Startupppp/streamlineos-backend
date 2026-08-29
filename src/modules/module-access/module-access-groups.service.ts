@@ -72,6 +72,7 @@ import type {
   RenameModuleGroupInput,
   UpdateMemberGroupsInput,
 } from "./dto/module-access.schemas";
+import { ModuleAccessGroupPolicyService } from "./module-access-group-policy.service";
 
 
 export interface ModuleRoleGroup {
@@ -134,6 +135,7 @@ export class ModuleAccessGroupsService {
     private readonly access: AccessService,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly groupPolicy: ModuleAccessGroupPolicyService,
   ) {}
 
   private async assertAccess(
@@ -169,11 +171,7 @@ export class ModuleAccessGroupsService {
   }
 
   private modulePermissionKeys(moduleKey: string): Set<string> {
-    return new Set(
-      PERMISSIONS.filter((p) => administeringModuleOf(p.name) === moduleKey).map(
-        (p) => p.name,
-      ),
-    );
+    return this.groupPolicy.permissionKeys(moduleKey);
   }
 
   private async assertGroupBelongsToModule(
@@ -181,22 +179,14 @@ export class ModuleAccessGroupsService {
     moduleKey: string,
     groupId: number,
   ): Promise<void> {
-    const role = await this.db.query.roles.findFirst({
-      where: and(
-        eq(roles.id, groupId),
-        eq(roles.orgId, orgId),
-        eq(roles.moduleKey, moduleKey),
-      ),
-      columns: { id: true },
-    });
-    if (!role) throw new NotFoundException("Group not found");
+    await this.groupPolicy.assertGroupBelongsToModule(orgId, moduleKey, groupId);
   }
 
   private async resolveModuleOwnerUserId(
     orgId: string,
     moduleKey: string,
   ): Promise<string | null> {
-    return resolveModuleOwnerUserId(this.db, orgId, moduleKey);
+    return this.groupPolicy.resolveOwnerUserId(orgId, moduleKey);
   }
 
   async listGroups(

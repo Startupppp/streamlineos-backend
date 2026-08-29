@@ -16,6 +16,7 @@ import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
 import { OrganizationLegalHoldService } from "./lifecycle/organization-legal-hold.service";
 import { OrganizationPlacementAdminService } from "./lifecycle/organization-placement-admin.service";
 import { RealtimeModule } from "../../realtime/realtime.module";
+import { OrgMembershipReadService } from "./org-membership-read.service";
 
 @Module({
   imports: [BillingModule, SessionsModule, NotificationsModule, RealtimeModule],
@@ -23,6 +24,7 @@ import { RealtimeModule } from "../../realtime/realtime.module";
   providers: [
     OrgProfileService,
     OrgMembershipService,
+    OrgMembershipReadService,
     OrgLifecycleService,
     OrganizationService,
     OrganizationSettingsService,

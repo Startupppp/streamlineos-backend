@@ -7,6 +7,7 @@ import { UserPermissionGrantsController } from "./user-permission-grants.control
 import { UserPermissionGrantsService } from "./user-permission-grants.service";
 import { ModuleStandingRosterService } from "./module-standing-roster.service";
 import { ModuleStandingMutationsService } from "./module-standing-mutations.service";
+import { ModuleAccessGroupPolicyService } from "./module-access-group-policy.service";
 
 @Module({
   imports: [AccessModule],
@@ -14,6 +15,7 @@ import { ModuleStandingMutationsService } from "./module-standing-mutations.serv
   providers: [
     ModuleAccessService,
     ModuleAccessGroupsService,
+    ModuleAccessGroupPolicyService,
     UserPermissionGrantsService,
     ModuleStandingRosterService,
     ModuleStandingMutationsService,
