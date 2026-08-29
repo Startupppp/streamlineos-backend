@@ -14,6 +14,7 @@ import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { TransitLocationService } from "../stock-engine/transit-location.service";
 import type { ListTransfersInput, CreateTransferInput, CompleteTransferInput } from "./dto/inv-stock.schemas";
+import { loadOrderableVariants } from "../products/lib/orderable-variants";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -130,6 +131,11 @@ export class InvStockTransfersService {
     if (data.fromLocationId === data.toLocationId) {
       throw new BadRequestException("From and to locations must be different");
     }
+
+    // A4. Moving a discontinued SKU between warehouses is new demand on it —
+    // the goods have to be picked, counted and put away somewhere — and the
+    // lifecycle gate covered selling but not this.
+    await loadOrderableVariants(this.db, orgId, data.lines.map((l) => l.productVariantId));
 
     const transfer = await this.db.transaction(async (tx) => {
       const referenceNumber = await this.numSeq.next(orgId, "TRANSFER", tx);

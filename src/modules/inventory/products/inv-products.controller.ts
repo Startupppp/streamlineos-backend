@@ -130,8 +130,12 @@ export class InvProductsController {
   @Get(":productId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
-  get(@Param("productId", ParseIntPipe) productId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.products.getProduct(u.orgId, productId, u.userId);
+  get(
+    @Param("productId", ParseIntPipe) productId: number,
+    @Query("includeDeleted") includeDeleted: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.products.getProduct(u.orgId, productId, u.userId, includeDeleted === "true");
   }
 
   @Post()

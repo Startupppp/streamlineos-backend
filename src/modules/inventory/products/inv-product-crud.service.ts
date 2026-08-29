@@ -5,7 +5,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from "@nestjs/common";
-import { and, eq, ilike, isNull, or, desc, sql, inArray } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { assertNoBarcodeConflict } from "./lib/barcode-conflict";
 import {
   invProducts,
@@ -114,20 +114,22 @@ export class InvProductCrudService {
     if (scope === "none")
       return { items: [], total: 0, page: filters.page, totalPages: 0 };
 
-    const { status, productType, categoryId, search, page, limit } = filters;
+    const { status, productType, categoryId, search, page, limit, includeDeleted } = filters;
     const offset = (page - 1) * limit;
     // Cost visibility is part of the key: this list is cached per org, so a
     // masked payload must not be served to a cost-permitted caller or vice versa.
     const showCost = userId ? await this.costVisibility.canSeeCost(orgId, userId) : false;
     const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
-    const hash = `${showCost ? "cost" : "nocost"}:${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${limit}:${offset}${scopeSuffix}`;
+    const hash = `${showCost ? "cost" : "nocost"}:${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${includeDeleted ? "withdeleted" : "live"}:${limit}:${offset}${scopeSuffix}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.invProductsNamespace(orgId),
       hash,
       async () => {
-        // A deleted product must not come back through a list. The partial
-        // index on (org_id, id) WHERE deleted_at IS NULL covers this predicate.
-        const conditions = [eq(invProducts.orgId, orgId), isNull(invProducts.deletedAt)];
+        // A deleted product must not come back through a list unless the caller
+        // asked for it. The partial index on (org_id, id) WHERE deleted_at IS
+        // NULL covers the default predicate.
+        const conditions = [eq(invProducts.orgId, orgId)];
+        if (!includeDeleted) conditions.push(isNull(invProducts.deletedAt));
         if (status) conditions.push(eq(invProducts.status, status));
         if (productType)
           conditions.push(eq(invProducts.productType, productType));
@@ -178,13 +180,18 @@ export class InvProductCrudService {
     );
   }
 
-  async getProduct(orgId: string, productId: number, userId?: string) {
+  /**
+   * A4. `includeDeleted` exists so a soft-deleted product can be looked at
+   * before it is restored. A list that can show one and a detail page that
+   * 404s on it is a dead end.
+   */
+  async getProduct(orgId: string, productId: number, userId?: string, includeDeleted = false) {
     const showCost = userId ? await this.costVisibility.canSeeCost(orgId, userId) : false;
     const product = await this.db.query.invProducts.findFirst({
       where: and(
         eq(invProducts.id, productId),
         eq(invProducts.orgId, orgId),
-        isNull(invProducts.deletedAt),
+        ...(includeDeleted ? [] : [isNull(invProducts.deletedAt)]),
       ),
       with: {
         category: true,
@@ -511,35 +518,80 @@ export class InvProductCrudService {
     return updated;
   }
 
+  /**
+   * A4. Bring a product back, from either way it could have gone away.
+   *
+   * This used to load its row with `deleted_at IS NULL`, so the one state it
+   * could not find was the deleted one — a soft-deleted product answered 404 to
+   * the endpoint whose entire purpose was to undo that. It also only flipped
+   * `status` back to ACTIVE and never cleared `deleted_at`, so even if the row
+   * had been found, the product would have stayed invisible to every read (they
+   * all filter deleted rows) and to the SKU uniqueness index.
+   *
+   * Restoring the variants matters as much as the product: `deleteProduct` soft
+   * deletes both, and a product whose variants are still deleted is a catalogue
+   * entry nobody can order.
+   */
   async restoreProduct(orgId: string, productId: number, userId: string) {
-    const existing = await this.db.query.invProducts.findFirst({
-      where: and(
-        eq(invProducts.id, productId),
-        eq(invProducts.orgId, orgId),
-        isNull(invProducts.deletedAt),
-      ),
-      columns: { id: true, status: true },
+    return this.db.transaction(async (tx) => {
+      const existing = await tx.query.invProducts.findFirst({
+        where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
+        columns: { id: true, sku: true, status: true, deletedAt: true },
+      });
+      if (!existing) throw new NotFoundException("Product not found");
+
+      // SKU uniqueness is a partial index over live rows, so a deleted SKU is
+      // free for reuse — and frequently reused. Restoring on top of the reuse
+      // would fail on the index with a 23505 and a message about a constraint;
+      // this says what actually happened.
+      if (existing.deletedAt !== null) {
+        const clash = await tx.query.invProducts.findFirst({
+          where: and(
+            eq(invProducts.orgId, orgId),
+            eq(invProducts.sku, existing.sku),
+            isNull(invProducts.deletedAt),
+          ),
+          columns: { id: true },
+        });
+        if (clash && clash.id !== productId) {
+          throw new ConflictException(
+            `SKU ${existing.sku} now belongs to another product. Change that product's SKU, or give this one a new SKU, before restoring it.`,
+          );
+        }
+      }
+
+      const restoredVariants = await tx
+        .update(invProductVariants)
+        .set({ deletedAt: null })
+        .where(and(
+          eq(invProductVariants.productId, productId),
+          eq(invProductVariants.orgId, orgId),
+          isNotNull(invProductVariants.deletedAt),
+        ))
+        .returning({ id: invProductVariants.id });
+
+      const [updated] = await tx
+        .update(invProducts)
+        .set({ status: "ACTIVE", deletedAt: null, updatedAt: new Date() })
+        .where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)))
+        .returning();
+
+      await this.audit.insert(tx, {
+        orgId,
+        actorUserId: userId,
+        action: "product.restore",
+        resourceType: "product",
+        resourceId: String(productId),
+        before: {
+          status: existing.status,
+          deletedAt: existing.deletedAt?.toISOString() ?? null,
+        },
+        after: { status: "ACTIVE", deletedAt: null, variantsRestored: restoredVariants.length },
+      });
+
+      await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
+      await this.cache.invalidateNamespace(CACHE_KEYS.invProductsNamespace(orgId));
+      return updated;
     });
-    if (!existing) throw new NotFoundException("Product not found");
-
-    const [updated] = await this.db
-      .update(invProducts)
-      .set({ status: "ACTIVE", updatedAt: new Date() })
-      .where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)))
-      .returning();
-
-    await this.audit.insert(this.db, {
-      orgId,
-      actorUserId: userId,
-      action: "product.restore",
-      resourceType: "product",
-      resourceId: String(productId),
-      before: { status: existing.status },
-      after: { status: "ACTIVE" },
-    });
-
-    await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invProductsNamespace(orgId));
-    return updated;
   }
 }

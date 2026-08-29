@@ -25,22 +25,37 @@ import type { Db } from "../../../../db/drizzle.module";
 
 export interface OrderableVariant {
   id: number;
+  /** The owning product, so a caller needing it does not re-query per line. */
+  productId: number;
   sku: string;
   costPrice: string;
   sellingPrice: string;
 }
 
-export async function loadOrderableVariants(
+type VariantRow = {
+  id: number;
+  productId: number;
+  sku: string;
+  costPrice: string;
+  sellingPrice: string;
+  variantActive: boolean | null;
+  productStatus: string;
+  productDeletedAt: Date | null;
+};
+
+/** Tenant-scoped load with the "no such variant here" check the callers share. */
+async function loadVariants(
   db: Db,
   orgId: string,
   variantIds: readonly number[],
-): Promise<Map<number, OrderableVariant>> {
+): Promise<VariantRow[]> {
   const wanted = [...new Set(variantIds)];
-  if (wanted.length === 0) return new Map();
+  if (wanted.length === 0) return [];
 
   const rows = await db
     .select({
       id: invProductVariants.id,
+      productId: invProductVariants.productId,
       sku: invProductVariants.sku,
       costPrice: invProductVariants.costPrice,
       sellingPrice: invProductVariants.sellingPrice,
@@ -64,52 +79,102 @@ export async function loadOrderableVariants(
       ),
     );
 
-  const found = new Map(rows.map((row) => [row.id, row]));
+  const found = new Set(rows.map((row) => row.id));
   const missing = wanted.filter((id) => !found.has(id));
   if (missing.length > 0) {
     throw new NotFoundException(
       `No such product variant in this organization: ${missing.join(", ")}`,
     );
   }
+  return rows;
+}
 
-  // Reported together rather than one at a time: an operator fixing a
-  // twelve-line order should not have to submit it twelve times to discover
-  // twelve problems.
-  const blocked = rows.filter(
-    (row) =>
-      row.productDeletedAt !== null ||
-      row.productStatus === "DISCONTINUED" ||
-      row.productStatus === "INACTIVE" ||
-      !row.variantActive,
-  );
-  if (blocked.length > 0) {
-    const detail = blocked
-      .map((row) => {
-        const reason =
-          row.productDeletedAt !== null
-            ? "archived"
-            : row.productStatus === "DISCONTINUED"
-              ? "discontinued"
-              : row.productStatus === "INACTIVE"
-                ? "inactive"
-                : "an inactive variant";
-        return `${row.sku} (${reason})`;
-      })
-      .join(", ");
-    throw new ConflictException(
-      `These SKUs can no longer be ordered: ${detail}. Existing orders are unaffected.`,
-    );
-  }
-
+function toMap(rows: readonly VariantRow[]): Map<number, OrderableVariant> {
   return new Map(
     rows.map((row) => [
       row.id,
       {
         id: row.id,
+        productId: row.productId,
         sku: row.sku,
         costPrice: row.costPrice,
         sellingPrice: row.sellingPrice,
       },
     ]),
   );
+}
+
+/**
+ * Reported together rather than one at a time: an operator fixing a twelve-line
+ * order should not have to submit it twelve times to discover twelve problems.
+ */
+function refuse(blocked: ReadonlyArray<{ sku: string; reason: string }>, verb: string): never {
+  const detail = blocked.map((b) => `${b.sku} (${b.reason})`).join(", ");
+  throw new ConflictException(
+    `These SKUs can no longer be ${verb}: ${detail}. Existing orders are unaffected.`,
+  );
+}
+
+/**
+ * The gate on **new demand** — selling, buying, moving between warehouses, and
+ * reserving by hand. A retired SKU may not be promised to anyone, ordered from
+ * a supplier, or shipped across the estate.
+ */
+export async function loadOrderableVariants(
+  db: Db,
+  orgId: string,
+  variantIds: readonly number[],
+): Promise<Map<number, OrderableVariant>> {
+  const rows = await loadVariants(db, orgId, variantIds);
+
+  const blocked = rows.flatMap((row) => {
+    // The words match the actions that produce the states. `archiveProduct` sets
+    // status INACTIVE and `deleteProduct` sets `deleted_at`, so calling a
+    // deleted product "archived" and an archived one "inactive" told the
+    // operator the opposite of which button had been pressed.
+    const reason =
+      row.productDeletedAt !== null
+        ? "deleted"
+        : row.productStatus === "DISCONTINUED"
+          ? "discontinued"
+          : row.productStatus === "INACTIVE"
+            ? "archived"
+            : row.variantActive === false
+              ? "an inactive variant"
+              : null;
+    return reason === null ? [] : [{ sku: row.sku, reason }];
+  });
+  if (blocked.length > 0) refuse(blocked, "ordered");
+
+  return toMap(rows);
+}
+
+/**
+ * A4. The gate on **correcting the record** — stock adjustments, cycle-count
+ * postings and opening balances.
+ *
+ * Deliberately weaker than the demand gate, and the difference is the point.
+ * Discontinuing a product does not make the units on its shelf disappear:
+ * writing them off, or correcting a count that found three more in a corner, is
+ * exactly what an operator does with retired stock, and refusing it would leave
+ * the record permanently unable to describe reality — the opposite of what a
+ * lifecycle status is for.
+ *
+ * What it still refuses is a product that has been deleted from the catalogue.
+ * `deleteProduct` refuses while any stock exists, so a deleted product holds
+ * none; adjusting one upward would conjure stock for a product no read can see.
+ */
+export async function loadCorrectableVariants(
+  db: Db,
+  orgId: string,
+  variantIds: readonly number[],
+): Promise<Map<number, OrderableVariant>> {
+  const rows = await loadVariants(db, orgId, variantIds);
+
+  const blocked = rows.flatMap((row) =>
+    row.productDeletedAt !== null ? [{ sku: row.sku, reason: "deleted" }] : [],
+  );
+  if (blocked.length > 0) refuse(blocked, "adjusted");
+
+  return toMap(rows);
 }

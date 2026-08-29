@@ -37,8 +37,34 @@ function makeDb(adjRow?: Partial<{ id: number; status: string; referenceNumber: 
   const defaultAdj = { id: 1, status: "PENDING_APPROVAL", referenceNumber: "ADJ-00001", reason: "DAMAGE", notes: null, lines: [] };
   const findFirst = jest.fn().mockResolvedValue(adjRow ? { ...defaultAdj, ...adjRow } : defaultAdj);
   const transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => unknown) => fn(makeTx(findFirst)));
+  // A4. `createAdjustment` now runs the correction gate before anything else, so
+  // the mock has to answer it: it loads the named variants and refuses any whose
+  // product has been deleted. Returning a live row keeps these cases about
+  // threshold routing, which is what they are for.
+  const select = jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      innerJoin: jest.fn().mockReturnValue({
+        // Ids match the line fixtures below: the gate reports any variant it
+        // did not find as missing, so a mock that answers with a different id
+        // fails the whole command rather than the case under test.
+        where: jest.fn().mockResolvedValue(
+          [1, 2].map((id) => ({
+            id,
+            productId: id,
+            sku: `SKU-${id}`,
+            costPrice: "1.0000",
+            sellingPrice: "2.0000",
+            variantActive: true,
+            productStatus: "ACTIVE",
+            productDeletedAt: null,
+          })),
+        ),
+      }),
+    }),
+  });
+
   return {
-    insert, update, transaction,
+    insert, update, transaction, select,
     query: {
       invStockAdjustments: { findFirst },
     },

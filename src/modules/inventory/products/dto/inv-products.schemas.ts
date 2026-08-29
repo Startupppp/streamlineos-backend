@@ -5,6 +5,15 @@ const DECIMAL_PATTERN = /^\d+(\.\d{1,4})?$/;
 
 export const listProductsSchema = z.object({
   status: z.enum(["ACTIVE", "INACTIVE", "DISCONTINUED"]).optional(),
+  /**
+   * A4. Show soft-deleted products too, so an operator can find one to restore.
+   *
+   * Opt-in and off by default: every ordinary read must keep excluding deleted
+   * rows, and a caller has to ask for them deliberately. Without this the
+   * restore endpoint's whole reason for existing was unreachable — nothing
+   * could show a deleted product for somebody to press restore on.
+   */
+  includeDeleted: z.coerce.boolean().optional(),
   productType: z.enum(["STOCKABLE", "CONSUMABLE", "SERVICE"]).optional(),
   categoryId: z.coerce.number().int().positive().optional(),
   search: z.string().trim().max(200).optional(),

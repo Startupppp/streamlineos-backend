@@ -10,6 +10,7 @@ import { ReservationService } from "../stock-engine/reservation.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import type { ListReservationsInput, CreateReservationInput, ReleaseReservationInput, OpeningStockInput } from "./dto/inv-stock.schemas";
+import { loadOrderableVariants, loadCorrectableVariants } from "../products/lib/orderable-variants";
 
 @Injectable()
 export class InvStockReservationsService {
@@ -88,6 +89,12 @@ export class InvStockReservationsService {
     input: CreateReservationInput,
     idempotencyKey: string,
   ) {
+    // A4. A reservation raised by hand is new demand and takes the demand gate.
+    // Reservations created *for an existing document* go through
+    // `createReservationInTx` and are deliberately not gated — discontinuing a
+    // product must not strand an order already taken.
+    await loadOrderableVariants(this.db, orgId, [input.productVariantId]);
+
     const reservationId = await this.db.transaction((tx) =>
       runIdempotent(
         tx,
@@ -159,6 +166,10 @@ export class InvStockReservationsService {
   }
 
   async createOpeningBalance(orgId: string, userId: string, input: OpeningStockInput, idempotencyKey: string) {
+    // Opening stock states what is already on the shelf, so it takes the
+    // correction gate rather than the demand one.
+    await loadCorrectableVariants(this.db, orgId, input.lines.map((l) => l.productVariantId));
+
     return this.engine.execute(orgId, userId, {
       idempotencyKey,
       sourceType: "opening_balance",

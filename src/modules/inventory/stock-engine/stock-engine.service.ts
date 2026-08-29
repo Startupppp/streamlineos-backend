@@ -16,6 +16,7 @@ import { lockLevels, levelKey } from "./stock-level-locks";
 import { MovementCostingService } from "./movement-costing.service";
 import { InventoryAccountingBridge } from "./accounting-bridge";
 import { loadCostingContext } from "./costing-context";
+import { emitStockMovementPosted } from "./stock-events";
 import {
   INV_ERRORS,
   type StockMovement,
@@ -395,6 +396,13 @@ export class StockEngineService {
     await this.movementCosting.emitLowStock(tx, orgId, decreasedVariantIds, levels, cmd.sourceType, cmd.sourceId);
 
     const engineResult: StockEngineResult = { transactionIds: txnIds, levels };
+
+    // A5. Inside the transaction, so the movement and the event commit together
+    // or not at all — an event published for a movement that rolled back has
+    // every consumer acting on stock that does not exist. A replayed command
+    // returned above and never reaches here, which is what makes a retry emit
+    // nothing.
+    await emitStockMovementPosted(tx, orgId, userId, cmd, engineResult, postingDate);
     const responsePayload: Record<string, unknown> = { ...engineResult };
     await tx
       .update(invIdempotencyKeys)
@@ -743,6 +751,11 @@ export class StockEngineService {
           transactionIds: txnIds,
           levels: cmdLevels,
         };
+
+        // A5, as in executeInTx: one event per accepted command.
+        await emitStockMovementPosted(
+          tx, orgId, userId, cmd, engineResult, resolvePostingDate(cmd),
+        );
         await tx
           .update(invIdempotencyKeys)
           .set({

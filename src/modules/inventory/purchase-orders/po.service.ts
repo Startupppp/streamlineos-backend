@@ -21,6 +21,7 @@ import { addDec, mulDec } from "../stock-engine/stock-engine.service";
 import type { ListPoInput, CreatePoInput, UpdatePoInput } from "./dto/inv-purchase-orders.schemas";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
 import { isPositive, subDec } from "../stock-engine/decimal";
+import { loadOrderableVariants } from "../products/lib/orderable-variants";
 
 function computePoTotals(lines: Array<{ quantity: number; unitCost: string; taxRate: string }>) {
   let subtotal = "0.0000";
@@ -186,12 +187,22 @@ export class PoService {
     poId: number,
     lines: CreatePoInput["lines"],
   ) {
+    // A4. The lifecycle gate, on buying as well as selling. A discontinued or
+    // archived SKU could be purchased freely — the status was checked when a
+    // customer ordered one and not when the warehouse ordered more of it, which
+    // is how a product nobody may sell keeps arriving on pallets.
+    //
+    // It also resolves the owning product, which this used to fetch with one
+    // query per line.
+    const orderable = await loadOrderableVariants(
+      this.db,
+      orgId,
+      lines.map((line) => line.productVariantId),
+    );
+
     return Promise.all(
       lines.map(async (line) => {
-        const variant = await this.db.query.invProductVariants.findFirst({
-          where: and(eq(invProductVariants.id, line.productVariantId), eq(invProductVariants.orgId, orgId)),
-          columns: { productId: true },
-        });
+        const variant = orderable.get(line.productVariantId);
         if (!variant) throw new BadRequestException("Product variant not found");
 
         const converted = await this.uom.convert(orgId, variant.productId, line.uomId ?? null, String(line.quantity));

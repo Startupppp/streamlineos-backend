@@ -109732,27 +109732,6 @@
         }
       },
       "indexes": {
-        "uniq_inv_variants_org_sku": {
-          "name": "uniq_inv_variants_org_sku",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sku",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_inv_variants_product": {
           "name": "idx_inv_variants_product",
           "columns": [
@@ -109798,6 +109777,28 @@
           "concurrently": false,
           "method": "gin",
           "with": {}
+        },
+        "uniq_inv_product_variants_org_sku_live": {
+          "name": "uniq_inv_product_variants_org_sku_live",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sku",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {},
+          "where": "\"deleted_at\" IS NULL"
         }
       },
       "foreignKeys": {
@@ -110040,27 +110041,6 @@
         }
       },
       "indexes": {
-        "uniq_inv_products_org_sku": {
-          "name": "uniq_inv_products_org_sku",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sku",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_inv_products_org_status": {
           "name": "idx_inv_products_org_status",
           "columns": [
@@ -110143,6 +110123,28 @@
           "concurrently": false,
           "method": "gin",
           "with": {}
+        },
+        "uniq_inv_products_org_sku_live": {
+          "name": "uniq_inv_products_org_sku_live",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sku",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {},
+          "where": "\"deleted_at\" IS NULL"
         }
       },
       "foreignKeys": {

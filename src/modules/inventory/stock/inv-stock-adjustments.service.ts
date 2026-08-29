@@ -17,6 +17,7 @@ import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { ListAdjustmentsInput, CreateAdjustmentInput } from "./dto/inv-stock.schemas";
+import { loadCorrectableVariants } from "../products/lib/orderable-variants";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -108,6 +109,11 @@ export class InvStockAdjustmentsService {
    * one transaction is a duplicate, not a nesting.
    */
   async createAdjustment(orgId: string, userId: string, data: CreateAdjustmentInput, idempotencyKey: string) {
+    // A4. The correction gate, not the demand gate: writing off or recounting a
+    // discontinued SKU is exactly what an operator does with retired stock, so
+    // only a product deleted from the catalogue is refused here.
+    await loadCorrectableVariants(this.db, orgId, data.lines.map((l) => l.productVariantId));
+
     const cfg = await this.settings.get(orgId);
     const totalAbsQty = data.lines.reduce((sum, l) => sum + Math.abs(l.quantityChange), 0);
     const threshold = cfg.adjustmentApprovalThreshold !== null ? parseFloat(cfg.adjustmentApprovalThreshold) : null;
