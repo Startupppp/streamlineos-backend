@@ -132,7 +132,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
   afterAll(async () => app.close());
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     mockModuleAccessService.listCatalog.mockResolvedValue(stubCatalog);
     mockModuleAccessService.listRoles.mockResolvedValue([stubRole]);
     mockModuleAccessService.setRolePermissions.mockResolvedValue({ success: true });

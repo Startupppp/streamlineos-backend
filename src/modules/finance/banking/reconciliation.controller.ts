@@ -16,7 +16,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ReconciliationService } from "./reconciliation.service";
 import { ReconciliationWorkspaceService } from "./reconciliation-workspace.service";
 import { ReconciliationRulesService } from "./reconciliation-rules.service";
@@ -65,10 +64,10 @@ export class ReconciliationController {
   @Post("match")
   @HttpCode(200)
   @RequirePermission("accounting:banking:reconcile")
-  @Validate({ params: bankAccountIdParams })
+  @Validate({ params: bankAccountIdParams, body: confirmMatchSchema })
   confirmMatch(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
-    @Body(new ZodValidationPipe(confirmMatchSchema)) body: ConfirmMatchInput,
+    @Body() body: ConfirmMatchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.confirmMatch(u, bankAccountId, body);
@@ -77,10 +76,10 @@ export class ReconciliationController {
   @Post("unmatch")
   @HttpCode(200)
   @RequirePermission("accounting:banking:reconcile")
-  @Validate({ params: bankAccountIdParams })
+  @Validate({ params: bankAccountIdParams, body: unmatchSchema })
   unmatch(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
-    @Body(new ZodValidationPipe(unmatchSchema)) body: UnmatchInput,
+    @Body() body: UnmatchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.unmatch(u, bankAccountId, body);
@@ -89,10 +88,10 @@ export class ReconciliationController {
   @Post("ignore")
   @HttpCode(200)
   @RequirePermission("accounting:banking:reconcile")
-  @Validate({ params: bankAccountIdParams })
+  @Validate({ params: bankAccountIdParams, body: ignoreTransactionSchema })
   ignore(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
-    @Body(new ZodValidationPipe(ignoreTransactionSchema)) body: IgnoreTransactionInput,
+    @Body() body: IgnoreTransactionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.ignoreTransaction(u, bankAccountId, body);
@@ -100,10 +99,10 @@ export class ReconciliationController {
 
   @Get("rules")
   @RequirePermission("accounting:banking:reconcile")
-  @Validate({ params: bankAccountIdParams })
+  @Validate({ params: bankAccountIdParams, query: rulesQuerySchema })
   listRules(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
-    @Query(new ZodValidationPipe(rulesQuerySchema)) query: { page: number; pageSize: number },
+    @Query() query: { page: number; pageSize: number },
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rules.listRules(u, { ...query, bankAccountId });
@@ -112,10 +111,10 @@ export class ReconciliationController {
   @Post("rules")
   @HttpCode(201)
   @RequirePermission("accounting:banking:reconcile")
-  @Validate({ params: bankAccountIdParams })
+  @Validate({ params: bankAccountIdParams, body: createReconciliationRuleSchema })
   createRule(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
-    @Body(new ZodValidationPipe(createReconciliationRuleSchema)) body: CreateReconciliationRuleInput,
+    @Body() body: CreateReconciliationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rules.createRule(u, bankAccountId, body);

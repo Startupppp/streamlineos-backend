@@ -6,7 +6,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { SupportCsatService } from "./support-csat.service";
 import { submitCsatSchema, type SubmitCsatInput } from "./dto/support.schemas";
@@ -56,10 +55,10 @@ export class SupportCsatController {
   @Public()
   @Post("csat/:token")
   @HttpCode(200)
-  @Validate({ params: tokenParams })
+  @Validate({ params: tokenParams, body: submitCsatSchema })
   async submitCsat(
     @Param("token") token: string,
-    @Body(new ZodValidationPipe(submitCsatSchema)) body: SubmitCsatInput,
+    @Body() body: SubmitCsatInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("support:csat-submit", this.getIp(req));

@@ -119,90 +119,103 @@ export class ProjectsTicketsQueryService {
           eq(projectMembers.projectId, projectId),
           eq(projectMembers.userId, u.userId),
         ),
+        columns: { id: true },
       });
       if (!member) throw new ForbiddenException("Not a project member.");
     }
 
-    if (body.status !== undefined)
-      await this.validateTicketStatus(projectId, u.orgId, body.status);
+    let updated: Array<{ id: number }> = [];
 
-    if (body.parentTicketId != null) {
-      const selectedSet = new Set(body.ticketIds);
-
-      if (selectedSet.has(body.parentTicketId))
-        throw new BadRequestException("Cannot set a ticket as its own parent.");
-
-      const parentRow = await this.db
-        .select({
-          id: tickets.id,
-          projectId: tickets.projectId,
-          parentTicketId: tickets.parentTicketId,
-        })
+    await this.db.transaction(async (tx) => {
+      const found = await tx
+        .select({ id: tickets.id })
         .from(tickets)
         .where(
           and(
-            eq(tickets.id, body.parentTicketId),
             eq(tickets.orgId, u.orgId),
+            eq(tickets.projectId, projectId),
+            inArray(tickets.id, body.ticketIds),
+            isNull(tickets.deletedAt),
+          ),
+        );
+
+      if (found.length !== body.ticketIds.length)
+        throw new NotFoundException("One or more ticket IDs not found in this project");
+
+      if (body.status !== undefined) {
+        const valid = await resolveValidTicketStatuses(tx, projectId, u.orgId);
+        if (!valid.has(body.status))
+          throw new ProjectsInvalidTicketStatusException(body.status);
+      }
+
+      if (body.parentTicketId != null) {
+        const selectedSet = new Set(body.ticketIds);
+
+        if (selectedSet.has(body.parentTicketId))
+          throw new BadRequestException("Cannot set a ticket as its own parent.");
+
+        const parentRow = await tx
+          .select({
+            id: tickets.id,
+            projectId: tickets.projectId,
+          })
+          .from(tickets)
+          .where(
+            and(
+              eq(tickets.id, body.parentTicketId),
+              eq(tickets.orgId, u.orgId),
+              isNull(tickets.deletedAt),
+            ),
+          )
+          .limit(1);
+
+        if (parentRow.length === 0)
+          throw new NotFoundException("Parent ticket not found.");
+
+        if (parentRow[0]?.projectId !== projectId)
+          throw new BadRequestException("Parent ticket must belong to the same project.");
+
+        const ancestorCheck = await tx.execute(sql`
+          WITH RECURSIVE ancestors AS (
+            SELECT id, parent_ticket_id
+            FROM build.tickets
+            WHERE id = ${parentRow[0].id} AND org_id = ${u.orgId}
+            UNION ALL
+            SELECT t.id, t.parent_ticket_id
+            FROM build.tickets t
+            INNER JOIN ancestors a ON t.id = a.parent_ticket_id
+            WHERE t.org_id = ${u.orgId}
+          )
+          SELECT count(*)::text AS count FROM ancestors
+          WHERE id IN (${sql.join(
+            body.ticketIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})
+        `);
+        if (Number(ancestorCheck[0]?.["count"] ?? "0") > 0)
+          throw new BadRequestException("Cannot set parent: this would create a cycle.");
+      }
+
+      const updateData: Partial<typeof tickets.$inferInsert> = { updatedAt: new Date() };
+      if (body.assigneeId !== undefined) updateData.assigneeId = body.assigneeId;
+      if (body.status !== undefined) updateData.status = body.status;
+      if (body.sprintId !== undefined) updateData.sprintId = body.sprintId;
+      if (body.priority !== undefined) updateData.priority = body.priority;
+      if (body.parentTicketId !== undefined) updateData.parentTicketId = body.parentTicketId;
+
+      updated = await tx
+        .update(tickets)
+        .set(updateData)
+        .where(
+          and(
+            eq(tickets.orgId, u.orgId),
+            eq(tickets.projectId, projectId),
+            inArray(tickets.id, body.ticketIds),
             isNull(tickets.deletedAt),
           ),
         )
-        .limit(1);
-
-      if (parentRow.length === 0)
-        throw new NotFoundException("Parent ticket not found.");
-
-      if (parentRow[0]?.projectId !== projectId) {
-        throw new BadRequestException(
-          "Parent ticket must belong to the same project.",
-        );
-      }
-
-      const ancestorCheck = await this.db.execute(sql`
-        WITH RECURSIVE ancestors AS (
-          SELECT id, parent_ticket_id
-          FROM build.tickets
-          WHERE id = ${parentRow[0].id} AND org_id = ${u.orgId}
-          UNION ALL
-          SELECT t.id, t.parent_ticket_id
-          FROM build.tickets t
-          INNER JOIN ancestors a ON t.id = a.parent_ticket_id
-          WHERE t.org_id = ${u.orgId}
-        )
-        SELECT count(*)::text AS count FROM ancestors
-        WHERE id IN (${sql.join(
-          body.ticketIds.map((id) => sql`${id}`),
-          sql`, `,
-        )})
-      `);
-      if (Number(ancestorCheck[0]?.["count"] ?? "0") > 0) {
-        throw new BadRequestException(
-          "Cannot set parent: this would create a cycle.",
-        );
-      }
-    }
-
-    const updateData: Partial<typeof tickets.$inferInsert> = {
-      updatedAt: new Date(),
-    };
-    if (body.assigneeId !== undefined) updateData.assigneeId = body.assigneeId;
-    if (body.status !== undefined) updateData.status = body.status;
-    if (body.sprintId !== undefined) updateData.sprintId = body.sprintId;
-    if (body.priority !== undefined) updateData.priority = body.priority;
-    if (body.parentTicketId !== undefined)
-      updateData.parentTicketId = body.parentTicketId;
-
-    const updated = await this.db
-      .update(tickets)
-      .set(updateData)
-      .where(
-        and(
-          eq(tickets.orgId, u.orgId),
-          eq(tickets.projectId, projectId),
-          inArray(tickets.id, body.ticketIds),
-          isNull(tickets.deletedAt),
-        ),
-      )
-      .returning({ id: tickets.id });
+        .returning({ id: tickets.id });
+    });
 
     void this.cache
       .del(`projects:analytics:${u.orgId}:${projectId}`)

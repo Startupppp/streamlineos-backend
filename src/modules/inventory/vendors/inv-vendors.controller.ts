@@ -5,7 +5,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { InvVendorsService } from "./inv-vendors.service";
 import {
   listVendorsSchema, createVendorSchema, updateVendorSchema,
@@ -26,8 +25,9 @@ export class InvVendorsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:read")
+  @Validate({ query: listVendorsSchema })
   list(
-    @Query(new ZodValidationPipe(listVendorsSchema)) filters: ListVendorsInput,
+    @Query() filters: ListVendorsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.vendors.listVendors(u.orgId, filters);
@@ -58,8 +58,9 @@ export class InvVendorsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:manage")
+  @Validate({ body: createVendorSchema })
   create(
-    @Body(new ZodValidationPipe(createVendorSchema)) body: CreateVendorInput,
+    @Body() body: CreateVendorInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.vendors.createVendor(u.orgId, u.userId, body);
@@ -68,10 +69,10 @@ export class InvVendorsController {
   @Patch(":vendorId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:manage")
-  @Validate({ params: vendorIdParams })
+  @Validate({ params: vendorIdParams, body: updateVendorSchema })
   update(
     @Param("vendorId", ParseIntPipe) vendorId: number,
-    @Body(new ZodValidationPipe(updateVendorSchema)) body: UpdateVendorInput,
+    @Body() body: UpdateVendorInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.vendors.updateVendor(u.orgId, vendorId, body);

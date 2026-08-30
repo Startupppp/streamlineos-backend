@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { CarriersService } from "./carriers.service";
@@ -30,8 +29,9 @@ export class CarriersController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
+  @Validate({ body: createCarrierSchema })
   create(
-    @Body(new ZodValidationPipe(createCarrierSchema)) body: CreateCarrierInput,
+    @Body() body: CreateCarrierInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.create(u.orgId, u.userId, body);
@@ -40,10 +40,10 @@ export class CarriersController {
   @Patch(":carrierId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
-  @Validate({ params: carrierIdParams })
+  @Validate({ params: carrierIdParams, body: updateCarrierSchema })
   update(
     @Param("carrierId", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(updateCarrierSchema)) body: UpdateCarrierInput,
+    @Body() body: UpdateCarrierInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.update(u.orgId, u.userId, id, body);

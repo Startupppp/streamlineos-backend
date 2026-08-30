@@ -18,6 +18,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ApprovalsService } from "./approvals.service";
+import { ApprovalsBulkService } from "./approvals-bulk.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   approvalsQuerySchema,
@@ -38,7 +39,10 @@ const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }
 @Controller("timesheets/approvals")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class ApprovalsController {
-  constructor(private readonly approvals: ApprovalsService) {}
+  constructor(
+    private readonly approvals: ApprovalsService,
+    private readonly approvalsBulk: ApprovalsBulkService,
+  ) {}
 
   @Get()
   @RequirePermission("timesheets:approvals:view")
@@ -57,7 +61,7 @@ export class ApprovalsController {
     @Body(new ZodValidationPipe(bulkApproveSchema)) body: BulkApproveInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.approvals.bulkApprove(u, body);
+    return this.approvalsBulk.bulkApprove(u, body);
   }
 
   @Post("bulk-reject")
@@ -68,7 +72,7 @@ export class ApprovalsController {
     @Body(new ZodValidationPipe(bulkRejectSchema)) body: BulkRejectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.approvals.bulkReject(u, body);
+    return this.approvalsBulk.bulkReject(u, body);
   }
 
   @Post(":periodId/approve")
@@ -93,6 +97,6 @@ export class ApprovalsController {
     @Body(new ZodValidationPipe(rejectPeriodSchema)) body: RejectPeriodInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.approvals.rejectPeriod(u, periodId, body);
+    return this.approvalsBulk.rejectPeriod(u, periodId, body);
   }
 }

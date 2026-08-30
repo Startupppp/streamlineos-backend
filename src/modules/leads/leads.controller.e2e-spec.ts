@@ -62,8 +62,7 @@ describe("Leads PermissionGuard wiring (e2e, no DB required)", () => {
   });
 });
 
-const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
-const describeWithDb = RBAC_E2E_DATABASE_URL ? describe : describe.skip;
+import { describeWithDb, RBAC_E2E_DATABASE_URL } from "test/helpers/db-describe";
 
 describeWithDb(
   "Leads RBAC data-row scope and parity (requires migration 0119 applied and seeded in RBAC_E2E_DATABASE_URL)",

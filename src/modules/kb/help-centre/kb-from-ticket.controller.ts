@@ -12,7 +12,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbFromTicketService } from "./kb-from-ticket.service";
 import { fromTicketSchema, type FromTicketInput } from "./dto/kb-from-ticket.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -28,10 +27,10 @@ export class KbFromTicketController {
   @Post("articles/from-ticket/:ticketId")
   @HttpCode(200)
   @RequirePermission("kb:articles:create")
-  @Validate({ params: ticketIdParams })
+  @Validate({ params: ticketIdParams, body: fromTicketSchema })
   async draftFromTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(fromTicketSchema)) body: FromTicketInput,
+    @Body() body: FromTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.fromTicket.draftFromTicket(u, ticketId, body);

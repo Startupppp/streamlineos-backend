@@ -40,10 +40,10 @@ export class ChatPinsController {
   @Post()
   @HttpCode(200)
   @RequirePermission("chat:messages:pin")
-  @Validate({ params: channelIdParams })
+  @Validate({ params: channelIdParams, body: pinMessageSchema })
   pin(
     @Param("channelId", ParseIntPipe) channelId: number,
-    @Body(new ZodValidationPipe(pinMessageSchema)) body: PinMessageInput,
+    @Body() body: PinMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.pins.pin(channelId, body.messageId, {

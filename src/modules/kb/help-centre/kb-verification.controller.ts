@@ -4,8 +4,8 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbVerificationService } from "./kb-verification.service";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
@@ -23,8 +23,9 @@ export class KbVerificationController {
 
   @Get("verification/queue")
   @RequirePermission("kb:articles:manage")
+  @Validate({ query: verificationQueueSchema })
   async listDue(
-    @Query(new ZodValidationPipe(verificationQueueSchema)) query: VerificationQueueInput,
+    @Query() query: VerificationQueueInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.verification.listDue(u, query.page, query.pageSize);

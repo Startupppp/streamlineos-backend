@@ -184,10 +184,10 @@ export class ModulesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:workspace:manage")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createModuleSchema })
   createModule(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createModuleSchema)) body: CreateModuleInput,
+    @Body() body: CreateModuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.modules.createModule(u.orgId, u.userId, projectId, body);
@@ -195,10 +195,10 @@ export class ModulesController {
 
   @Patch(":moduleId")
   @RequirePermission("build:workspace:manage")
-  @Validate({ params: projectAndModuleIdParams })
+  @Validate({ params: projectAndModuleIdParams, body: updateModuleSchema })
   updateModule(
     @Param("moduleId", ParseIntPipe) moduleId: number,
-    @Body(new ZodValidationPipe(updateModuleSchema)) body: UpdateModuleInput,
+    @Body() body: UpdateModuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.modules.updateModule(u.orgId, moduleId, body);
@@ -235,10 +235,10 @@ export class EpicsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:tickets:create")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createEpicSchema })
   createEpic(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createEpicSchema)) body: CreateEpicInput,
+    @Body() body: CreateEpicInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.epics.createEpic(u.orgId, u.userId, projectId, body);
@@ -246,11 +246,11 @@ export class EpicsController {
 
   @Patch(":epicId")
   @RequirePermission("build:tickets:update")
-  @Validate({ params: projectAndEpicIdParams })
+  @Validate({ params: projectAndEpicIdParams, body: updateEpicSchema })
   updateEpic(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("epicId", ParseIntPipe) epicId: number,
-    @Body(new ZodValidationPipe(updateEpicSchema)) body: UpdateEpicInput,
+    @Body() body: UpdateEpicInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.epics.updateEpic(u.orgId, projectId, epicId, body);

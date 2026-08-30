@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbMembersService } from "./kb-members.service";
 import { addMemberSchema, type AddMemberInput } from "./dto/kb-members.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -31,10 +30,10 @@ export class KbMembersController {
   @Post("spaces/:spaceId/members")
   @RequirePermission("kb:spaces:manage")
   @HttpCode(201)
-  @Validate({ params: spaceIdParams })
+  @Validate({ params: spaceIdParams, body: addMemberSchema })
   async add(
     @Param("spaceId", ParseIntPipe) spaceId: number,
-    @Body(new ZodValidationPipe(addMemberSchema)) body: AddMemberInput,
+    @Body() body: AddMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.members.add(u.orgId, spaceId, body);

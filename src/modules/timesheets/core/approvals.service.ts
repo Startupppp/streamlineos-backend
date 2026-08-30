@@ -40,15 +40,10 @@ import { resolveApprovalScope } from "./timesheets-core-scope";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
 import { canActOnPeriod } from "./lib/approval-guard";
-import type {
-  ApprovalsQuery,
-  BulkApproveInput,
-  BulkRejectInput,
-  RejectPeriodInput,
-} from "./dto/approvals.schemas";
+import type { ApprovalsQuery } from "./dto/approvals.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-function isExpectedApprovalSkip(error: unknown): boolean {
+export function isExpectedApprovalSkip(error: unknown): boolean {
   return (
     error instanceof ConflictException ||
     error instanceof NotFoundException ||
@@ -114,7 +109,7 @@ export class ApprovalsService {
     return !!row;
   }
 
-  private async assertCanActOnPeriod(
+  async assertCanActOnPeriod(
     u: CurrentUserContext,
     period: { userId: string; currentApproverId: string | null },
   ): Promise<void> {
@@ -229,7 +224,7 @@ export class ApprovalsService {
     };
   }
 
-  private async approveSinglePeriod(u: CurrentUserContext, periodId: number) {
+  async approveSinglePeriod(u: CurrentUserContext, periodId: number) {
     const [period] = await this.db
       .select()
       .from(timesheetPeriods)
@@ -404,187 +399,4 @@ export class ApprovalsService {
     return updated;
   }
 
-  async rejectPeriod(
-    u: CurrentUserContext,
-    periodId: number,
-    input: RejectPeriodInput,
-  ) {
-    const [period] = await this.db
-      .select()
-      .from(timesheetPeriods)
-      .where(
-        and(
-          eq(timesheetPeriods.id, periodId),
-          eq(timesheetPeriods.orgId, u.orgId),
-        ),
-      )
-      .limit(1);
-
-    if (!period) throw new NotFoundException("Period not found");
-    if (period.status !== "SUBMITTED")
-      throw new ConflictException("Only submitted periods can be rejected");
-    await this.assertCanActOnPeriod(u, period);
-
-    const now = new Date();
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(timesheetPeriods)
-        .set({
-          status: "REJECTED",
-          rejectedAt: now,
-          rejectionReason: input.reason,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(timesheetPeriods.id, periodId),
-            eq(timesheetPeriods.orgId, u.orgId),
-          ),
-        );
-
-      await tx
-        .update(timesheets)
-        .set({
-          status: "REJECTED",
-          rejectionReason: input.reason,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(timesheets.timesheetPeriodId, periodId),
-            eq(timesheets.orgId, u.orgId),
-            isNull(timesheets.voidedAt),
-          ),
-        );
-
-      await this.audit.record(tx, {
-        orgId: u.orgId,
-        actorUserId: u.userId,
-        entityType: "period",
-        entityId: periodId.toString(),
-        action: "period.rejected",
-        reason: input.reason,
-      });
-    });
-
-    const [updated] = await this.db
-      .select()
-      .from(timesheetPeriods)
-      .where(
-        and(
-          eq(timesheetPeriods.id, periodId),
-          eq(timesheetPeriods.orgId, u.orgId),
-        ),
-      )
-      .limit(1);
-
-    return updated;
-  }
-
-  async bulkApprove(u: CurrentUserContext, input: BulkApproveInput) {
-    let approved = 0;
-    let skipped = 0;
-    for (const periodId of input.periodIds) {
-      try {
-        await this.approveSinglePeriod(u, periodId);
-        approved++;
-      } catch (error) {
-        if (isExpectedApprovalSkip(error)) {
-          skipped++;
-          continue;
-        }
-        logger.error("bulkApprove: failed to approve period", {
-          orgId: u.orgId,
-          periodId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        throw error;
-      }
-    }
-    return { approved, skipped };
-  }
-
-  async bulkReject(u: CurrentUserContext, input: BulkRejectInput) {
-    const candidates = await this.db
-      .select({
-        id: timesheetPeriods.id,
-        status: timesheetPeriods.status,
-        userId: timesheetPeriods.userId,
-        currentApproverId: timesheetPeriods.currentApproverId,
-      })
-      .from(timesheetPeriods)
-      .where(
-        and(
-          eq(timesheetPeriods.orgId, u.orgId),
-          inArray(timesheetPeriods.id, input.periodIds),
-          eq(timesheetPeriods.status, "SUBMITTED"),
-        ),
-      );
-
-    const periods = [];
-    for (const p of candidates) {
-      try {
-        await this.assertCanActOnPeriod(u, p);
-        periods.push(p);
-      } catch (err) {
-        if (!(err instanceof ForbiddenException)) {
-          logger.warn("bulkReject: assertCanActOnPeriod failed unexpectedly", {
-            orgId: u.orgId,
-            periodId: p.id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-    }
-
-    if (periods.length === 0) return { rejected: 0 };
-
-    const now = new Date();
-    const ids = periods.map((p) => p.id);
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(timesheetPeriods)
-        .set({
-          status: "REJECTED",
-          rejectedAt: now,
-          rejectionReason: input.reason,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(timesheetPeriods.orgId, u.orgId),
-            inArray(timesheetPeriods.id, ids),
-          ),
-        );
-
-      await tx
-        .update(timesheets)
-        .set({
-          status: "REJECTED",
-          rejectionReason: input.reason,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            inArray(timesheets.timesheetPeriodId, ids),
-            eq(timesheets.orgId, u.orgId),
-            isNull(timesheets.voidedAt),
-          ),
-        );
-
-      for (const id of ids) {
-        await this.audit.record(tx, {
-          orgId: u.orgId,
-          actorUserId: u.userId,
-          entityType: "period",
-          entityId: id.toString(),
-          action: "period.rejected",
-          reason: input.reason,
-        });
-      }
-    });
-
-    return { rejected: ids.length };
-  }
 }

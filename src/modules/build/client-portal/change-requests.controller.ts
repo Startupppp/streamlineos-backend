@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ChangeRequestsService } from "./change-requests.service";
 import {
   createChangeRequestSchema,
@@ -41,10 +40,10 @@ export class ChangeRequestsController {
 
   @Get()
   @RequirePermission("build:changerequests:view")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, query: listCrQuerySchema })
   listChangeRequests(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(listCrQuerySchema)) query: ListCrQuery,
+    @Query() query: ListCrQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listChangeRequests(u.orgId, projectId, query);
@@ -64,10 +63,10 @@ export class ChangeRequestsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:changerequests:create")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createChangeRequestSchema })
   createChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createChangeRequestSchema)) body: CreateChangeRequestInput,
+    @Body() body: CreateChangeRequestInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createChangeRequest(u.orgId, u.userId, projectId, body);
@@ -75,11 +74,11 @@ export class ChangeRequestsController {
 
   @Patch(":changeRequestId")
   @RequirePermission("build:changerequests:manage")
-  @Validate({ params: projectAndChangeRequestIdParams })
+  @Validate({ params: projectAndChangeRequestIdParams, body: updateChangeRequestSchema })
   updateChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("changeRequestId", ParseIntPipe) changeRequestId: number,
-    @Body(new ZodValidationPipe(updateChangeRequestSchema)) body: UpdateChangeRequestInput,
+    @Body() body: UpdateChangeRequestInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateChangeRequest(u.orgId, u.userId, projectId, changeRequestId, body);

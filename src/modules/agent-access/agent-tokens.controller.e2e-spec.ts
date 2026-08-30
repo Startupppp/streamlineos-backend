@@ -1,4 +1,4 @@
-import type { INestApplication } from "@nestjs/common";
+import { INestApplication, NotFoundException } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "test/helpers/sign-token";
@@ -87,12 +87,12 @@ describe("Agent Tokens controller auth/RBAC (e2e)", () => {
       enabledModules: ALL_MODULES,
     });
     stubAgentTokens.revoke.mockRejectedValueOnce(
-      Object.assign(new Error("Not found"), { status: 404 }),
+      new NotFoundException("Agent token not found"),
     );
     const res = await request(app.getHttpServer())
       .delete("/agent-tokens/9999")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(404);
   });
 
   it("400 on POST /agent-tokens with invalid body", async () => {

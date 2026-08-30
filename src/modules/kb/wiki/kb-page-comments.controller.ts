@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { KbPageCommentsService } from "./kb-page-comments.service";
 import {
@@ -53,11 +52,10 @@ export class KbPageCommentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   @HttpCode(201)
-  @Validate({ params: pageIdParams })
+  @Validate({ params: pageIdParams, body: createPageCommentSchema })
   async create(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(createPageCommentSchema))
-    body: CreatePageCommentInput,
+    @Body() body: CreatePageCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.comments.create(u, pageId, body);
@@ -66,11 +64,10 @@ export class KbPageCommentsController {
   @Patch("page-comments/:commentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
-  @Validate({ params: commentIdParams })
+  @Validate({ params: commentIdParams, body: updatePageCommentSchema })
   async update(
     @Param("commentId", ParseIntPipe) commentId: number,
-    @Body(new ZodValidationPipe(updatePageCommentSchema))
-    body: UpdatePageCommentInput,
+    @Body() body: UpdatePageCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     const isAdmin = await this.access.holds(u, "kb:pages:manage");

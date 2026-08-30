@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AutomationService } from "../../automation/automation.service";
 import { SupportSettingsAuditService } from "./support-settings-audit.service";
 import {
@@ -50,8 +49,9 @@ export class SupportAutomationsController {
 
   @Get("automations")
   @RequirePermission("support:settings:manage")
+  @Validate({ query: listSupportAutomationsQuerySchema })
   listAutomations(
-    @Query(new ZodValidationPipe(listSupportAutomationsQuerySchema)) query: ListSupportAutomationsQueryInput,
+    @Query() query: ListSupportAutomationsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.listRules(u.orgId, { ...query, triggerPrefix: TICKET_TRIGGER_PREFIX });
@@ -60,8 +60,9 @@ export class SupportAutomationsController {
   @Post("automations")
   @RequirePermission("support:settings:manage")
   @HttpCode(201)
+  @Validate({ body: createAutomationRuleSchema })
   async createAutomation(
-    @Body(new ZodValidationPipe(createAutomationRuleSchema)) body: CreateAutomationRuleInput,
+    @Body() body: CreateAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!body.triggerEvent.startsWith(TICKET_TRIGGER_PREFIX)) {
@@ -74,10 +75,10 @@ export class SupportAutomationsController {
 
   @Patch("automations/:automationId")
   @RequirePermission("support:settings:manage")
-  @Validate({ params: automationIdParams })
+  @Validate({ params: automationIdParams, body: updateAutomationRuleSchema })
   async updateAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
-    @Body(new ZodValidationPipe(updateAutomationRuleSchema)) body: UpdateAutomationRuleInput,
+    @Body() body: UpdateAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.automations.updateRule(u.orgId, automationId, body);
@@ -97,10 +98,10 @@ export class SupportAutomationsController {
   @Post("automations/:automationId/test")
   @RequirePermission("support:settings:manage")
   @HttpCode(200)
-  @Validate({ params: automationIdParams })
+  @Validate({ params: automationIdParams, body: testAutomationSchema })
   testAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
-    @Body(new ZodValidationPipe(testAutomationSchema)) body: TestAutomationInput,
+    @Body() body: TestAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.testRule(u.orgId, automationId, body.payload);

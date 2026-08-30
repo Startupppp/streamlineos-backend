@@ -8,7 +8,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
@@ -42,8 +41,9 @@ export class InvPurchaseOrdersController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
+  @Validate({ query: listPoSchema })
   async list(
-    @Query(new ZodValidationPipe(listPoSchema)) filters: ListPoInput,
+    @Query() filters: ListPoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveInvPoScope(this.access, u);
@@ -65,8 +65,9 @@ export class InvPurchaseOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:create")
   @Idempotent("inventory.purchase-order.create")
+  @Validate({ body: createPoSchema })
   create(
-    @Body(new ZodValidationPipe(createPoSchema)) body: CreatePoInput,
+    @Body() body: CreatePoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.pos.createPo(u.orgId, u.userId, body);
@@ -75,10 +76,10 @@ export class InvPurchaseOrdersController {
   @Patch(":poId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:update")
-  @Validate({ params: poIdParams })
+  @Validate({ params: poIdParams, body: updatePoSchema })
   update(
     @Param("poId", ParseIntPipe) poId: number,
-    @Body(new ZodValidationPipe(updatePoSchema)) body: UpdatePoInput,
+    @Body() body: UpdatePoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.pos.updatePo(u.orgId, poId, body);
@@ -138,10 +139,10 @@ export class InvPurchaseOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)
-  @Validate({ params: poIdParams })
+  @Validate({ params: poIdParams, body: createGrnSchema })
   receiveGoods(
     @Param("poId", ParseIntPipe) poId: number,
-    @Body(new ZodValidationPipe(createGrnSchema)) body: CreateGrnInput,
+    @Body() body: CreateGrnInput,
     @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {

@@ -14,6 +14,7 @@ const mockDb = {
     chatChannelMembers: { findFirst: jest.fn(), findMany: jest.fn() },
     chatHuddleParticipants: { findMany: jest.fn() },
     chatChannels: { findFirst: jest.fn() },
+    organizationMembers: { findFirst: jest.fn() },
   },
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
@@ -43,6 +44,7 @@ describe("ChatHuddlesService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: 1 });
     mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 50 });
     mockPlanLimits.resolveTier.mockResolvedValue({ tier: "PAID", plan: "STARTER" });
     const module: TestingModule = await Test.createTestingModule({
@@ -63,19 +65,26 @@ describe("ChatHuddlesService", () => {
     it("throws ForbiddenException if not member", async () => {
       mockDb.query.chatChannelMembers.findFirst.mockResolvedValue(null);
       mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
-      await expect(service["assertMember"](1, "user1")).rejects.toThrow(ForbiddenException);
+      await expect(service["assertMember"](1, "user1", "org1")).rejects.toThrow(ForbiddenException);
+    });
+
+    it("throws ForbiddenException if org membership is not active (departed member)", async () => {
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user1", role: "MEMBER" });
+      mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
+      await expect(service["assertMember"](1, "user1", "org1")).rejects.toThrow(ForbiddenException);
     });
 
     it("throws ForbiddenException if channel is archived", async () => {
       mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user1", role: "MEMBER" });
       mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: true });
-      await expect(service["assertMember"](1, "user1")).rejects.toThrow(ForbiddenException);
+      await expect(service["assertMember"](1, "user1", "org1")).rejects.toThrow(ForbiddenException);
     });
 
     it("returns member if valid", async () => {
       mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user1", role: "MEMBER" });
       mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
-      const result = await service["assertMember"](1, "user1");
+      const result = await service["assertMember"](1, "user1", "org1");
       expect(result).toEqual({ userId: "user1", role: "MEMBER" });
     });
   });

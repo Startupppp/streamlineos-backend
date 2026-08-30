@@ -1,11 +1,11 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
+  organizationPeople,
   projects,
   ticketCommentReactions,
   ticketComments,
   tickets,
-  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -129,13 +129,21 @@ export class ProjectsTicketCommentsService {
         createdAt: ticketComments.createdAt,
         updatedAt: ticketComments.updatedAt,
         parentCommentId: ticketComments.parentCommentId,
-        authorId: users.id,
-        authorName: users.name,
-        authorImage: users.image,
+        authorUserId: ticketComments.userId,
+        authorDisplayName: organizationPeople.displayName,
+        authorFirstName: organizationPeople.firstName,
+        authorLastName: organizationPeople.lastName,
+        authorImage: organizationPeople.avatarUrl,
         projectKey: projects.key,
       })
       .from(ticketComments)
-      .leftJoin(users, eq(users.id, ticketComments.userId))
+      .leftJoin(
+        organizationPeople,
+        and(
+          eq(organizationPeople.userId, ticketComments.userId),
+          eq(organizationPeople.organizationId, u.orgId),
+        ),
+      )
       .leftJoin(projects, and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)))
       .where(
         and(
@@ -150,6 +158,9 @@ export class ProjectsTicketCommentsService {
     const row = rows[0];
     if (!row) throw new ProjectsCommentNotFoundException();
 
+    const fallbackName = `${row.authorFirstName ?? ""} ${row.authorLastName ?? ""}`.trim();
+    const authorName = row.authorDisplayName ?? (fallbackName.length > 0 ? fallbackName : null);
+
     return {
       id: row.id,
       content: row.content,
@@ -157,9 +168,9 @@ export class ProjectsTicketCommentsService {
       updatedAt: row.updatedAt,
       parentCommentId: row.parentCommentId,
       author: {
-        id: row.authorId,
-        name: row.authorName,
-        image: row.authorImage,
+        id: row.authorUserId ?? null,
+        name: authorName,
+        image: row.authorImage ?? null,
       },
       ticket: {
         id: ticket.id,

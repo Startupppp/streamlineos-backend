@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbCommentsService } from "./kb-comments.service";
 import {
   createCommentSchema,
@@ -47,10 +46,10 @@ export class KbCommentsController {
   @Post("articles/:articleId/comments")
   @RequirePermission("kb:articles:create")
   @HttpCode(201)
-  @Validate({ params: articleIdParams })
+  @Validate({ params: articleIdParams, body: createCommentSchema })
   async create(
     @Param("articleId", ParseIntPipe) articleId: number,
-    @Body(new ZodValidationPipe(createCommentSchema)) body: CreateCommentInput,
+    @Body() body: CreateCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.comments.create(u.orgId, articleId, u.userId, body);
@@ -58,10 +57,10 @@ export class KbCommentsController {
 
   @Patch("comments/:commentId")
   @RequirePermission("kb:articles:update")
-  @Validate({ params: commentIdParams })
+  @Validate({ params: commentIdParams, body: updateCommentSchema })
   async update(
     @Param("commentId", ParseIntPipe) commentId: number,
-    @Body(new ZodValidationPipe(updateCommentSchema)) body: UpdateCommentInput,
+    @Body() body: UpdateCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.comments.update(u.orgId, commentId, u.userId, body);

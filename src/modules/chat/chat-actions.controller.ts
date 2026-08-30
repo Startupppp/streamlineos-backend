@@ -3,7 +3,6 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import {
   createTaskFromMessageSchema,
@@ -19,17 +18,8 @@ import {
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { actorOf } from "../entity-reference/entity-actor";
 import type { EntityActionResult } from "../entity-reference/entity-reference.types";
+import { Validate } from "../../common/validation/validate.decorator";
 
-/**
- * What is left after the generic entity-action route took the rest: turning a
- * chat message into a record is chat-specific, because the server reads the
- * message's own text to fill the new record's description and the seam has no
- * business knowing what a chat message is.
- *
- * The three routes that were pure entity actions — status, assign, due date —
- * are gone. They carried `build:tickets:*` keys, which on a route the seam
- * serves could only ever exclude the modules the seam exists to include.
- */
 @RequireModule("chat")
 @Controller("chat/actions")
 @UseGuards(JwtAuthGuard)
@@ -44,8 +34,9 @@ export class ChatActionsController {
 
   @Post("create-task-from-message")
   @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
+  @Validate({ body: createTaskFromMessageSchema })
   async createTaskFromMessage(
-    @Body(new ZodValidationPipe(createTaskFromMessageSchema))
+    @Body()
     body: CreateTaskFromMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {

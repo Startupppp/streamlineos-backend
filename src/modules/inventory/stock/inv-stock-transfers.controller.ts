@@ -7,7 +7,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { resolveInvStockScope } from "../stock-engine/inventory-scope";
 import { InvStockTransfersService } from "./inv-stock-transfers.service";
@@ -32,8 +31,9 @@ export class InvStockTransfersController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: listTransfersSchema })
   async listTransfers(
-    @Query(new ZodValidationPipe(listTransfersSchema)) filters: ListTransfersInput,
+    @Query() filters: ListTransfersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveInvStockScope(this.access, u);
@@ -55,8 +55,9 @@ export class InvStockTransfersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Idempotent("inventory.stock.transfer.create")
+  @Validate({ body: createTransferSchema })
   createTransfer(
-    @Body(new ZodValidationPipe(createTransferSchema)) body: CreateTransferInput,
+    @Body() body: CreateTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.transfers.createTransfer(u.orgId, u.userId, body);
@@ -91,11 +92,11 @@ export class InvStockTransfersController {
   @Post(":transferId/complete")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
-  @Validate({ params: transferIdParams })
+  @Validate({ params: transferIdParams, body: completeTransferSchema })
   completeTransfer(
     @Headers("idempotency-key") idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
-    @Body(new ZodValidationPipe(completeTransferSchema)) body: CompleteTransferInput,
+    @Body() body: CompleteTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");

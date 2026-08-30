@@ -18,7 +18,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { KbPagesService } from "./kb-pages.service";
 import { KbPageVersionsService } from "./kb-page-versions.service";
@@ -62,8 +61,9 @@ export class KbPagesController {
 
   @Get("pages/tree")
   @RequirePermission("kb:pages:view")
+  @Validate({ query: listPagesSchema })
   async getTree(
-    @Query(new ZodValidationPipe(listPagesSchema)) query: ListPagesInput,
+    @Query() query: ListPagesInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.tree.getTree(u, query.projectId);
@@ -89,8 +89,9 @@ export class KbPagesController {
 
   @Get("pages/search")
   @RequirePermission("kb:pages:view")
+  @Validate({ query: searchPagesSchema })
   async search(
-    @Query(new ZodValidationPipe(searchPagesSchema)) query: SearchPagesInput,
+    @Query() query: SearchPagesInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.pages.search(u, query.q);
@@ -99,8 +100,9 @@ export class KbPagesController {
   @Post("pages")
   @HttpCode(201)
   @RequirePermission("kb:pages:create")
+  @Validate({ body: createPageSchema })
   async create(
-    @Body(new ZodValidationPipe(createPageSchema)) body: CreatePageInput,
+    @Body() body: CreatePageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.pages.create(u, body);
@@ -119,10 +121,10 @@ export class KbPagesController {
 
   @Patch("pages/:pageId")
   @RequirePermission("kb:pages:update")
-  @Validate({ params: pageIdParams })
+  @Validate({ params: pageIdParams, body: updatePageSchema })
   async update(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(updatePageSchema)) body: UpdatePageInput,
+    @Body() body: UpdatePageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     const canManage = await this.resolveCanManage(u);
@@ -132,10 +134,10 @@ export class KbPagesController {
   @Post("pages/:pageId/move")
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
-  @Validate({ params: pageIdParams })
+  @Validate({ params: pageIdParams, body: movePageSchema })
   async move(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(movePageSchema)) body: MovePageInput,
+    @Body() body: MovePageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.tree.move(u, pageId, body);
@@ -269,10 +271,10 @@ export class KbPagesController {
 
   @Patch("pages/:pageId/lock")
   @RequirePermission("kb:pages:manage")
-  @Validate({ params: pageIdParams })
+  @Validate({ params: pageIdParams, body: lockPageSchema })
   async lock(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(lockPageSchema)) body: LockPageInput,
+    @Body() body: LockPageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.pages.lock(u, pageId, body.isLocked);
@@ -280,10 +282,10 @@ export class KbPagesController {
 
   @Patch("pages/:pageId/visibility")
   @RequirePermission("kb:pages:update")
-  @Validate({ params: pageIdParams })
+  @Validate({ params: pageIdParams, body: setVisibilitySchema })
   async setVisibility(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(setVisibilitySchema)) body: SetVisibilityInput,
+    @Body() body: SetVisibilityInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     const canManage = await this.resolveCanManage(u);
@@ -327,10 +329,10 @@ export class KbPagesController {
   @Post("pages/:pageId/verify")
   @HttpCode(200)
   @RequirePermission("kb:pages:manage")
-  @Validate({ params: pageIdParams })
+  @Validate({ params: pageIdParams, body: verifyPageSchema })
   async verify(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(verifyPageSchema)) body: VerifyPageInput,
+    @Body() body: VerifyPageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.pages.verify(u, pageId, body);

@@ -18,7 +18,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { KbArticlesService } from "./kb-articles.service";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
@@ -50,8 +49,9 @@ export class KbArticlesController {
 
   @Get("articles")
   @RequirePermission("kb:articles:view")
+  @Validate({ query: listArticlesSchema })
   async list(
-    @Query(new ZodValidationPipe(listArticlesSchema)) query: ListArticlesInput,
+    @Query() query: ListArticlesInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     const scope = await resolveKbArticlesViewScope(this.access, u);
@@ -61,8 +61,9 @@ export class KbArticlesController {
   @Post("articles")
   @HttpCode(HttpStatus.CREATED)
   @RequirePermission("kb:articles:create")
+  @Validate({ body: createArticleSchema })
   async create(
-    @Body(new ZodValidationPipe(createArticleSchema)) body: CreateArticleInput,
+    @Body() body: CreateArticleInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.articles.create(u, body);
@@ -80,10 +81,10 @@ export class KbArticlesController {
 
   @Patch("articles/:articleId")
   @RequirePermission("kb:articles:update")
-  @Validate({ params: articleIdParams })
+  @Validate({ params: articleIdParams, body: updateArticleSchema })
   async update(
     @Param("articleId", ParseIntPipe) articleId: number,
-    @Body(new ZodValidationPipe(updateArticleSchema)) body: UpdateArticleInput,
+    @Body() body: UpdateArticleInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.articles.update(u, articleId, body);
@@ -125,10 +126,10 @@ export class KbArticlesController {
   @Post("articles/:articleId/verify")
   @RequirePermission("kb:articles:manage")
   @HttpCode(200)
-  @Validate({ params: articleIdParams })
+  @Validate({ params: articleIdParams, body: verifyArticleSchema })
   async verify(
     @Param("articleId", ParseIntPipe) articleId: number,
-    @Body(new ZodValidationPipe(verifyArticleSchema)) body: VerifyArticleInput,
+    @Body() body: VerifyArticleInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.articles.verify(u, articleId, body);
@@ -137,10 +138,10 @@ export class KbArticlesController {
   @Post("articles/:articleId/vote")
   @RequirePermission("kb:articles:view")
   @HttpCode(200)
-  @Validate({ params: articleIdParams })
+  @Validate({ params: articleIdParams, body: voteArticleSchema })
   async vote(
     @Param("articleId", ParseIntPipe) articleId: number,
-    @Body(new ZodValidationPipe(voteArticleSchema)) body: VoteArticleInput,
+    @Body() body: VoteArticleInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.articles.vote(u, articleId, body);

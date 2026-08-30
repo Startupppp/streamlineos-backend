@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbTagsService } from "./kb-tags.service";
 import {
   createTagSchema,
@@ -43,8 +42,9 @@ export class KbTagsController {
   @Post("tags")
   @RequirePermission("kb:articles:manage")
   @HttpCode(201)
+  @Validate({ body: createTagSchema })
   async create(
-    @Body(new ZodValidationPipe(createTagSchema)) body: CreateTagInput,
+    @Body() body: CreateTagInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.tags.create(u.orgId, body);
@@ -72,10 +72,10 @@ export class KbTagsController {
 
   @Put("articles/:articleId/tags")
   @RequirePermission("kb:articles:update")
-  @Validate({ params: articleIdParams })
+  @Validate({ params: articleIdParams, body: setArticleTagsSchema })
   async setArticleTags(
     @Param("articleId", ParseIntPipe) articleId: number,
-    @Body(new ZodValidationPipe(setArticleTagsSchema)) body: SetArticleTagsInput,
+    @Body() body: SetArticleTagsInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.tags.setArticleTags(u.orgId, articleId, body);

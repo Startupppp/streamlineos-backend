@@ -74,10 +74,10 @@ export class SurveyPublicController {
 
   @Public()
   @Patch(":collectorToken/session/:sessionId")
-  @Validate({ params: collectorTokensessionIdParams })
+  @Validate({ params: collectorTokensessionIdParams, body: patchSessionSchema })
   async saveAnswers(
     @Param("sessionId") sessionId: string,
-    @Body(new ZodValidationPipe(patchSessionSchema)) body: PatchSessionInput,
+    @Body() body: PatchSessionInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("survey:public-submit", this.getIp(req));
@@ -86,10 +86,10 @@ export class SurveyPublicController {
 
   @Public()
   @Post(":collectorToken/session/:sessionId/submit")
-  @Validate({ params: collectorTokensessionIdParams })
+  @Validate({ params: collectorTokensessionIdParams, body: submitSessionSchema })
   async submit(
     @Param("sessionId") sessionId: string,
-    @Body(new ZodValidationPipe(submitSessionSchema)) body: SubmitSessionInput,
+    @Body() body: SubmitSessionInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("survey:public-submit", this.getIp(req));
@@ -114,10 +114,10 @@ export class SurveyPublicController {
   @Public()
   @Post("live/:sessionCode/join")
   @HttpCode(201)
-  @Validate({ params: sessionCodeParams })
+  @Validate({ params: sessionCodeParams, body: joinLiveSessionSchema })
   async joinLiveSession(
     @Param("sessionCode") sessionCode: string,
-    @Body(new ZodValidationPipe(joinLiveSessionSchema)) body: JoinLiveSessionInput,
+    @Body() body: JoinLiveSessionInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("survey:public-start", this.getIp(req));
@@ -126,10 +126,10 @@ export class SurveyPublicController {
 
   @Public()
   @Post("live/:sessionCode/answer")
-  @Validate({ params: sessionCodeParams })
+  @Validate({ params: sessionCodeParams, body: submitLiveAnswerSchema })
   async submitLiveAnswer(
     @Param("sessionCode") sessionCode: string,
-    @Body(new ZodValidationPipe(submitLiveAnswerSchema)) body: SubmitLiveAnswerInput,
+    @Body() body: SubmitLiveAnswerInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("survey:public-submit", this.getIp(req));

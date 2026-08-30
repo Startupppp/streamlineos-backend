@@ -7,7 +7,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { resolveInvStockScope } from "../stock-engine/inventory-scope";
 import { InvStockAdjustmentsService } from "./inv-stock-adjustments.service";
@@ -32,8 +31,9 @@ export class InvStockAdjustmentsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: listAdjustmentsSchema })
   async listAdjustments(
-    @Query(new ZodValidationPipe(listAdjustmentsSchema)) filters: ListAdjustmentsInput,
+    @Query() filters: ListAdjustmentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveInvStockScope(this.access, u);
@@ -43,9 +43,10 @@ export class InvStockAdjustmentsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
+  @Validate({ body: createAdjustmentSchema })
   createAdjustment(
     @Headers("idempotency-key") idempotencyKey: string,
-    @Body(new ZodValidationPipe(createAdjustmentSchema)) body: CreateAdjustmentInput,
+    @Body() body: CreateAdjustmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");

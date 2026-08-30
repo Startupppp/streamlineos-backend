@@ -17,8 +17,7 @@ import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
-const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
-const describeWithDb = RBAC_E2E_DATABASE_URL ? describe : describe.skip;
+import { describeWithDb, RBAC_E2E_DATABASE_URL } from "test/helpers/db-describe";
 
 describeWithDb(
   "Projects list scope enforcement (e2e, requires RBAC_E2E_DATABASE_URL)",

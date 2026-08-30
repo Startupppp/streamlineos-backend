@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccountingStatementsService } from "./accounting-statements.service";
 import {
   balanceSheetQuerySchema,
@@ -15,6 +14,7 @@ import {
   type TrialBalanceQuery,
 } from "./dto/accounting.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("accounting")
 @Controller("accounting/reports")
@@ -25,8 +25,9 @@ export class AccountingStatementsController {
   @Get("trial-balance")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: trialBalanceQuerySchema })
   trialBalance(
-    @Query(new ZodValidationPipe(trialBalanceQuerySchema)) query: TrialBalanceQuery,
+    @Query() query: TrialBalanceQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.statements.trialBalance(u.orgId, query);
@@ -35,8 +36,9 @@ export class AccountingStatementsController {
   @Get("profit-loss")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: profitLossQuerySchema })
   profitLoss(
-    @Query(new ZodValidationPipe(profitLossQuerySchema)) query: ProfitLossQuery,
+    @Query() query: ProfitLossQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.statements.profitLoss(u.orgId, query);
@@ -45,8 +47,9 @@ export class AccountingStatementsController {
   @Get("balance-sheet")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: balanceSheetQuerySchema })
   balanceSheet(
-    @Query(new ZodValidationPipe(balanceSheetQuerySchema)) query: BalanceSheetQuery,
+    @Query() query: BalanceSheetQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.statements.balanceSheet(u.orgId, query);
@@ -55,8 +58,9 @@ export class AccountingStatementsController {
   @Get("cash-flow")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: profitLossQuerySchema })
   cashFlow(
-    @Query(new ZodValidationPipe(profitLossQuerySchema)) query: ProfitLossQuery,
+    @Query() query: ProfitLossQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.statements.cashFlow(u.orgId, query);

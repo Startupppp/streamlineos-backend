@@ -14,7 +14,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbTranslationsService } from "./kb-translations.service";
 import {
   upsertTranslationSchema,
@@ -54,11 +53,11 @@ export class KbTranslationsController {
 
   @Put("articles/:articleId/translations/:locale")
   @RequirePermission("kb:articles:update")
-  @Validate({ params: articleIdlocaleParams })
+  @Validate({ params: articleIdlocaleParams, body: upsertTranslationSchema })
   async upsert(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("locale") locale: string,
-    @Body(new ZodValidationPipe(upsertTranslationSchema)) body: UpsertTranslationInput,
+    @Body() body: UpsertTranslationInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.translations.upsert(u.orgId, articleId, locale, body);

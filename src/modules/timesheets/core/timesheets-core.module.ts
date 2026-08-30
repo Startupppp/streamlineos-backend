@@ -11,6 +11,7 @@ import { TimerController } from "./timer.controller";
 import { PeriodsService } from "./periods.service";
 import { PeriodsController } from "./periods.controller";
 import { ApprovalsService } from "./approvals.service";
+import { ApprovalsBulkService } from "./approvals-bulk.service";
 import { ApprovalsController } from "./approvals.controller";
 import { BillingService } from "./billing.service";
 import { BillingController } from "./billing.controller";
@@ -60,6 +61,7 @@ import { AiModule } from "../../ai/core/ai.module";
     TimerService,
     PeriodsService,
     ApprovalsService,
+    ApprovalsBulkService,
     BillingService,
     ReportsService,
     TimesheetAnalyticsService,

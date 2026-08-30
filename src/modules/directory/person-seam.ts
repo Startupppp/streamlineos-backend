@@ -279,6 +279,7 @@ export type PersonIdentity = {
   firstName: string | null;
   lastName: string | null;
   workEmail: string | null;
+  avatarUrl: string | null;
   isMember: boolean;
   isPayeeWorker: boolean;
 };
@@ -323,6 +324,7 @@ export async function resolvePeopleIdentities(
       firstName: organizationPeople.firstName,
       lastName: organizationPeople.lastName,
       workEmail: organizationPeople.workEmail,
+      avatarUrl: organizationPeople.avatarUrl,
       workerId: workers.workerId,
       isPayee: workers.isPayee,
       membershipId: organizationMembers.id,
@@ -360,6 +362,7 @@ export async function resolvePeopleIdentities(
       firstName: row.firstName ?? null,
       lastName: row.lastName ?? null,
       workEmail: row.workEmail ?? null,
+      avatarUrl: row.avatarUrl ?? null,
       isMember: row.membershipId !== null && row.membershipId !== undefined,
       isPayeeWorker: row.isPayee === true,
     };

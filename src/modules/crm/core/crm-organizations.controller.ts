@@ -18,7 +18,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { CrmOrganizationsService } from "./crm-organizations.service";
 import { CrmOrganizationsMergeService } from "./crm-organizations-merge.service";
@@ -55,8 +54,9 @@ export class CrmOrganizationsController {
 
   @Get()
   @RequirePermission("crm:organizations:view")
+  @Validate({ query: organizationListSchema })
   list(
-    @Query(new ZodValidationPipe(organizationListSchema)) query: OrganizationListInput,
+    @Query() query: OrganizationListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.orgs.list(u.orgId, query);
@@ -66,8 +66,9 @@ export class CrmOrganizationsController {
   @RequirePermission("crm:organizations:manage")
   @HttpCode(201)
   @Idempotent("crm.org.create")
+  @Validate({ body: organizationCreateSchema })
   create(
-    @Body(new ZodValidationPipe(organizationCreateSchema)) body: OrganizationCreateInput,
+    @Body() body: OrganizationCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.orgs.create(u.orgId, body);
@@ -75,8 +76,9 @@ export class CrmOrganizationsController {
 
   @Get("duplicates")
   @RequirePermission("crm:organizations:view")
+  @Validate({ query: orgDuplicatesQuerySchema })
   getDuplicates(
-    @Query(new ZodValidationPipe(orgDuplicatesQuerySchema)) query: OrgDuplicatesQueryInput,
+    @Query() query: OrgDuplicatesQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.orgs.getDuplicateOrgs(u.orgId, query);
@@ -89,8 +91,9 @@ export class CrmOrganizationsController {
    */
   @Get("duplicate-check")
   @RequirePermission("crm:organizations:view")
+  @Validate({ query: orgDuplicateCheckSchema })
   checkDuplicate(
-    @Query(new ZodValidationPipe(orgDuplicateCheckSchema)) query: OrgDuplicateCheckInput,
+    @Query() query: OrgDuplicateCheckInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.orgs.findPotentialDuplicates(u.orgId, query);
@@ -99,8 +102,9 @@ export class CrmOrganizationsController {
   @Post("merge")
   @HttpCode(200)
   @RequirePermission("crm:organizations:merge")
+  @Validate({ body: mergeOrgsSchema })
   mergeOrganizations(
-    @Body(new ZodValidationPipe(mergeOrgsSchema)) body: MergeOrgsInput,
+    @Body() body: MergeOrgsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.orgMerges.mergeOrganizations(u.orgId, body, u.userId);
@@ -120,10 +124,10 @@ export class CrmOrganizationsController {
 
   @Patch(":organizationId")
   @RequirePermission("crm:organizations:manage")
-  @Validate({ params: organizationIdParams })
+  @Validate({ params: organizationIdParams, body: organizationUpdateSchema })
   async update(
     @Param("organizationId", ParseIntPipe) organizationId: number,
-    @Body(new ZodValidationPipe(organizationUpdateSchema)) body: OrganizationUpdateInput,
+    @Body() body: OrganizationUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const exists = await this.orgs.exists(u.orgId, organizationId);

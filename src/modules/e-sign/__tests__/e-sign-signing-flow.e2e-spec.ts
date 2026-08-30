@@ -1,5 +1,5 @@
 import { Test } from "@nestjs/testing";
-import { INestApplication, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, INestApplication, NotFoundException } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import { PDFDocument } from "pdf-lib";
 import { AppModule } from "../../../app.module";
@@ -232,7 +232,7 @@ describe("SignOS signing flow integration (e2e)", () => {
 
     const session = await publicSvc.getSession(token, {});
     expect(session.state).toBe("expired");
-    await expect(publicSvc.complete(token, {})).rejects.toThrow();
+    await expect(publicSvc.complete(token, {})).rejects.toThrow(ForbiddenException);
   }, 45_000);
 
   it("revokes every outstanding signing link when the envelope is voided", async () => {
@@ -244,7 +244,7 @@ describe("SignOS signing flow integration (e2e)", () => {
 
     const session = await publicSvc.getSession(token, {});
     expect(session.state).toBe("envelope_voided");
-    await expect(publicSvc.complete(token, {})).rejects.toThrow();
+    await expect(publicSvc.complete(token, {})).rejects.toThrow(ForbiddenException);
   }, 45_000);
 
   it("records a decline, moves the envelope to declined, and blocks further signing on that link", async () => {
@@ -262,7 +262,7 @@ describe("SignOS signing flow integration (e2e)", () => {
     const events = await auditSvc.listForEnvelope(ORG_ID, envelope.id);
     expect(events.some((e) => e.eventType === "recipient_declined")).toBe(true);
 
-    await expect(publicSvc.complete(token, {})).rejects.toThrow();
+    await expect(publicSvc.complete(token, {})).rejects.toThrow(ForbiddenException);
   }, 45_000);
 
   it("stamps the final PDF as watermarked when a matching tenant watermark policy is configured", async () => {

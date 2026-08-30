@@ -15,7 +15,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { DealsCompetitorsService } from "./deals-competitors.service";
 import {
   createCompetitorSchema,
@@ -49,10 +48,10 @@ export class DealsCompetitorsController {
   @Post(":dealId/competitors")
   @HttpCode(201)
   @RequirePermission("crm:deals:update")
-  @Validate({ params: dealIdParams })
+  @Validate({ params: dealIdParams, body: createCompetitorSchema })
   create(
     @Param("dealId", ParseIntPipe) dealId: number,
-    @Body(new ZodValidationPipe(createCompetitorSchema)) body: CreateCompetitorInput,
+    @Body() body: CreateCompetitorInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.competitors.create(u.orgId, dealId, body);
@@ -60,11 +59,11 @@ export class DealsCompetitorsController {
 
   @Patch(":dealId/competitors/:competitorId")
   @RequirePermission("crm:deals:update")
-  @Validate({ params: dealIdcompetitorIdParams })
+  @Validate({ params: dealIdcompetitorIdParams, body: updateCompetitorSchema })
   update(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("competitorId") competitorId: string,
-    @Body(new ZodValidationPipe(updateCompetitorSchema)) body: UpdateCompetitorInput,
+    @Body() body: UpdateCompetitorInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.competitors.update(u.orgId, dealId, competitorId, body);

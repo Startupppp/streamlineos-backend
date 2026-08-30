@@ -18,7 +18,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { authorize } from "../../access/authorize";
 import { SupportTicketsService } from "./support-tickets.service";
@@ -69,8 +68,9 @@ export class SupportTicketsController {
 
   @Get()
   @RequirePermission("support:tickets:view")
+  @Validate({ query: listTicketsSchema })
   async listTickets(
-    @Query(new ZodValidationPipe(listTicketsSchema)) query: ListTicketsInput,
+    @Query() query: ListTicketsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveSupportTicketsViewScope(this.access, u);
@@ -81,8 +81,9 @@ export class SupportTicketsController {
   @Idempotent("support:ticket.create")
   @RequirePermission("support:tickets:create")
   @HttpCode(201)
+  @Validate({ body: createTicketSchema })
   createTicket(
-    @Body(new ZodValidationPipe(createTicketSchema)) body: CreateTicketInput,
+    @Body() body: CreateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.createTicket(u.orgId, u.userId, body);
@@ -106,10 +107,10 @@ export class SupportTicketsController {
 
   @Patch(":supportTicketId")
   @RequirePermission("support:tickets:manage")
-  @Validate({ params: supportTicketIdParams })
+  @Validate({ params: supportTicketIdParams, body: updateTicketSchema })
   updateTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
-    @Body(new ZodValidationPipe(updateTicketSchema)) body: UpdateTicketInput,
+    @Body() body: UpdateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.updateTicket(u.orgId, supportTicketId, u.userId, body);
@@ -129,10 +130,10 @@ export class SupportTicketsController {
   @Idempotent("support:ticket.reply")
   @RequirePermission("support:tickets:reply")
   @HttpCode(201)
-  @Validate({ params: supportTicketIdParams })
+  @Validate({ params: supportTicketIdParams, body: replyMessageSchema })
   async addMessage(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
-    @Body(new ZodValidationPipe(replyMessageSchema)) body: ReplyMessageInput,
+    @Body() body: ReplyMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (body.isInternal) {
@@ -165,10 +166,10 @@ export class SupportTicketsController {
   @Post(":supportTicketId/links")
   @RequirePermission("support:tickets:manage")
   @HttpCode(201)
-  @Validate({ params: supportTicketIdParams })
+  @Validate({ params: supportTicketIdParams, body: createTicketLinkSchema })
   addTicketLink(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
-    @Body(new ZodValidationPipe(createTicketLinkSchema)) body: CreateTicketLinkInput,
+    @Body() body: CreateTicketLinkInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.addTicketLink(u.orgId, supportTicketId, u.userId, body);
@@ -178,10 +179,10 @@ export class SupportTicketsController {
   @Idempotent("support:ticket.merge")
   @RequirePermission("support:tickets:manage")
   @HttpCode(200)
-  @Validate({ params: supportTicketIdParams })
+  @Validate({ params: supportTicketIdParams, body: mergeTicketSchema })
   mergeTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
-    @Body(new ZodValidationPipe(mergeTicketSchema)) body: MergeTicketInput,
+    @Body() body: MergeTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.mergeTicket(u.orgId, supportTicketId, u.userId, body);
@@ -190,10 +191,10 @@ export class SupportTicketsController {
   @Post(":supportTicketId/snooze")
   @RequirePermission("support:tickets:manage")
   @HttpCode(200)
-  @Validate({ params: supportTicketIdParams })
+  @Validate({ params: supportTicketIdParams, body: snoozeTicketSchema })
   snoozeTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
-    @Body(new ZodValidationPipe(snoozeTicketSchema)) body: SnoozeTicketInput,
+    @Body() body: SnoozeTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.snoozeTicket(u.orgId, supportTicketId, u.userId, body);
@@ -212,10 +213,10 @@ export class SupportTicketsController {
   @Post(":supportTicketId/split")
   @RequirePermission("support:tickets:manage")
   @HttpCode(201)
-  @Validate({ params: supportTicketIdParams })
+  @Validate({ params: supportTicketIdParams, body: splitTicketSchema })
   splitTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
-    @Body(new ZodValidationPipe(splitTicketSchema)) body: SplitTicketInput,
+    @Body() body: SplitTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.splitTicket(u.orgId, supportTicketId, u.userId, body);
@@ -233,10 +234,10 @@ export class SupportTicketsController {
 
   @Put(":supportTicketId/draft")
   @RequirePermission("support:tickets:reply")
-  @Validate({ params: supportTicketIdParams })
+  @Validate({ params: supportTicketIdParams, body: upsertDraftSchema })
   upsertDraft(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
-    @Body(new ZodValidationPipe(upsertDraftSchema)) body: UpsertDraftInput,
+    @Body() body: UpsertDraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.drafts.upsertDraft(u.orgId, supportTicketId, u.userId, body);
@@ -265,10 +266,10 @@ export class SupportTicketsController {
   @Post(":supportTicketId/external-links")
   @RequirePermission("support:tickets:manage")
   @HttpCode(201)
-  @Validate({ params: supportTicketIdParams })
+  @Validate({ params: supportTicketIdParams, body: createExternalLinkSchema })
   addExternalLink(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
-    @Body(new ZodValidationPipe(createExternalLinkSchema)) body: CreateExternalLinkInput,
+    @Body() body: CreateExternalLinkInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.integrations.addLink(u.orgId, supportTicketId, u.userId, body);

@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PackagesService } from "./packages.service";
@@ -30,8 +29,9 @@ export class PackagesController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
+  @Validate({ query: listPackagesQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listPackagesQuerySchema)) query: ListPackagesQueryInput,
+    @Query() query: ListPackagesQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, query);
@@ -51,8 +51,9 @@ export class PackagesController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
+  @Validate({ body: createPackageSchema })
   create(
-    @Body(new ZodValidationPipe(createPackageSchema)) body: CreatePackageInput,
+    @Body() body: CreatePackageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.create(u.orgId, u.userId, body);
@@ -61,10 +62,10 @@ export class PackagesController {
   @Patch(":packageId/lines")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
-  @Validate({ params: packageIdParams })
+  @Validate({ params: packageIdParams, body: updatePackageLinesSchema })
   updateLines(
     @Param("packageId", ParseIntPipe) packageId: number,
-    @Body(new ZodValidationPipe(updatePackageLinesSchema)) body: UpdatePackageLinesInput,
+    @Body() body: UpdatePackageLinesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateLines(u.orgId, u.userId, packageId, body);

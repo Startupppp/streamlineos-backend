@@ -19,7 +19,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ChatChannelsService } from "./chat-channels.service";
 import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatTypingService } from "./chat-typing.service";
@@ -44,6 +43,7 @@ import { Validate } from "../../common/validation/validate.decorator";
 const entityTypeentityIdParams = z.object({ entityType: z.string().min(1), entityId: z.string().min(1) }).strict();
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 const channelIduserIdParams = z.object({ channelId: z.coerce.number().int().positive(), userId: z.string().min(1) }).strict();
+const memberRoleSchema = z.object({ role: z.enum(["ADMIN", "MEMBER"]) }).strict();
 
 @ApiTags("Chat Channels")
 @ApiBearerAuth()
@@ -99,8 +99,9 @@ export class ChatChannelsController {
   @ApiResponse({ status: 200, description: "Existing channel returned" })
   @Post()
   @RequirePermission("chat:channels:write")
+  @Validate({ body: createChannelSchema })
   async create(
-    @Body(new ZodValidationPipe(createChannelSchema)) body: CreateChannelInput,
+    @Body() body: CreateChannelInput,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -128,10 +129,10 @@ export class ChatChannelsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Patch(":channelId")
   @RequirePermission("chat:channels:write")
-  @Validate({ params: channelIdParams })
+  @Validate({ params: channelIdParams, body: updateChannelSchema })
   update(
     @Param("channelId", ParseIntPipe) channelId: number,
-    @Body(new ZodValidationPipe(updateChannelSchema)) body: UpdateChannelInput,
+    @Body() body: UpdateChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.updateChannel(channelId, u.userId, body, u.orgId);
@@ -154,10 +155,10 @@ export class ChatChannelsController {
   @Post(":channelId/members")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
-  @Validate({ params: channelIdParams })
+  @Validate({ params: channelIdParams, body: addMemberSchema })
   addMember(
     @Param("channelId", ParseIntPipe) channelId: number,
-    @Body(new ZodValidationPipe(addMemberSchema)) body: AddMemberInput,
+    @Body() body: AddMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.addMember(channelId, body.userId, u.userId);
@@ -267,10 +268,10 @@ export class ChatChannelsController {
   @Post(":channelId/mute")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
-  @Validate({ params: channelIdParams })
+  @Validate({ params: channelIdParams, body: muteChannelSchema })
   mute(
     @Param("channelId", ParseIntPipe) channelId: number,
-    @Body(new ZodValidationPipe(muteChannelSchema)) body: MuteChannelInput,
+    @Body() body: MuteChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.muteChannel(channelId, u.userId, body.duration);
@@ -314,10 +315,10 @@ export class ChatChannelsController {
   @Post(":channelId/notification-preference")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
-  @Validate({ params: channelIdParams })
+  @Validate({ params: channelIdParams, body: notificationPreferenceSchema })
   setNotificationPreference(
     @Param("channelId", ParseIntPipe) channelId: number,
-    @Body(new ZodValidationPipe(notificationPreferenceSchema)) body: NotificationPreferenceInput,
+    @Body() body: NotificationPreferenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.setNotificationPreference(channelId, u.userId, body.preference);
@@ -370,11 +371,11 @@ export class ChatChannelsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Patch(":channelId/members/:userId/role")
   @RequirePermission("chat:channels:write")
-  @Validate({ params: channelIduserIdParams })
+  @Validate({ params: channelIduserIdParams, body: memberRoleSchema })
   updateRole(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("userId") targetUserId: string,
-    @Body(new ZodValidationPipe(z.object({ role: z.enum(["ADMIN", "MEMBER"]) }))) body: { role: string },
+    @Body() body: { role: string },
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.updateMemberRole(channelId, targetUserId, u.userId, body.role);

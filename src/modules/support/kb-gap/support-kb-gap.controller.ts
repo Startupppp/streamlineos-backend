@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
@@ -81,11 +80,11 @@ export class SupportKbGapController {
 
   @Patch(":gapId")
   @RequirePermission("support:knowledge-gaps:manage")
-  @Validate({ params: gapIdParams })
+  @Validate({ params: gapIdParams, body: patchSchema })
   patchGap(
     @Param("gapId", ParseIntPipe) gapId: number,
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(patchSchema)) body: PatchInput,
+    @Body() body: PatchInput,
   ) {
     if (body.action === "dismiss") {
       return this.service.dismissGap(u.orgId, gapId);

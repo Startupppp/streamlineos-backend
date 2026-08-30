@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbCategoriesService } from "./kb-categories.service";
 import {
   createCategorySchema,
@@ -47,10 +46,10 @@ export class KbCategoriesController {
   @Post("spaces/:spaceId/categories")
   @RequirePermission("kb:categories:manage")
   @HttpCode(201)
-  @Validate({ params: spaceIdParams })
+  @Validate({ params: spaceIdParams, body: createCategorySchema })
   async create(
     @Param("spaceId", ParseIntPipe) spaceId: number,
-    @Body(new ZodValidationPipe(createCategorySchema)) body: CreateCategoryInput,
+    @Body() body: CreateCategoryInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.categories.create(u, spaceId, body);
@@ -58,10 +57,10 @@ export class KbCategoriesController {
 
   @Patch("categories/:categoryId")
   @RequirePermission("kb:categories:manage")
-  @Validate({ params: categoryIdParams })
+  @Validate({ params: categoryIdParams, body: updateCategorySchema })
   async update(
     @Param("categoryId", ParseIntPipe) categoryId: number,
-    @Body(new ZodValidationPipe(updateCategorySchema)) body: UpdateCategoryInput,
+    @Body() body: UpdateCategoryInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.categories.update(u, categoryId, body);

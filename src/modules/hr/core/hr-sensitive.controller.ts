@@ -16,7 +16,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrSensitiveService } from "./hr-sensitive.service";
 import { updateSensitiveSchema, type UpdateSensitiveInput } from "./dto/hr-core.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";

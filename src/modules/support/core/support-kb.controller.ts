@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { SupportKbService } from "./support-kb.service";
 import { KbAskService } from "../../kb/retrieval/kb-ask.service";
 import { KbArticleReindexService } from "../../kb/retrieval/kb-article-reindex.service";
@@ -72,8 +71,9 @@ export class SupportKbController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @HttpCode(201)
+  @Validate({ body: createKbCategorySchema })
   createCategory(
-    @Body(new ZodValidationPipe(createKbCategorySchema)) body: CreateKbCategoryInput,
+    @Body() body: CreateKbCategoryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.kb.createCategory(u.orgId, body);
@@ -82,9 +82,10 @@ export class SupportKbController {
   @Patch("categories/:categoryId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
+  @Validate({ body: updateKbCategorySchema })
   updateCategory(
     @Param("categoryId", ParseIntPipe) categoryId: number,
-    @Body(new ZodValidationPipe(updateKbCategorySchema)) body: UpdateKbCategoryInput,
+    @Body() body: UpdateKbCategoryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.kb.updateCategory(u.orgId, categoryId, body);
@@ -103,8 +104,9 @@ export class SupportKbController {
   @Get("articles")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
+  @Validate({ query: listKbArticlesSchema })
   listArticles(
-    @Query(new ZodValidationPipe(listKbArticlesSchema)) query: ListKbArticlesInput,
+    @Query() query: ListKbArticlesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.kb.listArticles(u.orgId, query);
@@ -114,8 +116,9 @@ export class SupportKbController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @HttpCode(201)
+  @Validate({ body: createKbArticleSchema })
   createArticle(
-    @Body(new ZodValidationPipe(createKbArticleSchema)) body: CreateKbArticleInput,
+    @Body() body: CreateKbArticleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.kb.createArticle(u.orgId, u.userId, body);
@@ -134,9 +137,10 @@ export class SupportKbController {
   @Patch("articles/:articleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
+  @Validate({ body: updateKbArticleSchema })
   updateArticle(
     @Param("articleId", ParseIntPipe) articleId: number,
-    @Body(new ZodValidationPipe(updateKbArticleSchema)) body: UpdateKbArticleInput,
+    @Body() body: UpdateKbArticleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.kb.updateArticle(u.orgId, articleId, body);
@@ -176,9 +180,10 @@ export class SupportKbController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @HttpCode(201)
+  @Validate({ body: createKbCommentSchema })
   createComment(
     @Param("articleId", ParseIntPipe) articleId: number,
-    @Body(new ZodValidationPipe(createKbCommentSchema)) body: CreateKbCommentInput,
+    @Body() body: CreateKbCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.kb.createComment(u.orgId, articleId, u.userId, body);
@@ -209,10 +214,10 @@ export class SupportKbController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @HttpCode(201)
-  @Validate({ params: articleIdParams })
+  @Validate({ params: articleIdParams, body: createKbAttachmentSchema })
   createAttachment(
     @Param("articleId", ParseIntPipe) articleId: number,
-    @Body(new ZodValidationPipe(createKbAttachmentSchema)) body: CreateKbAttachmentInput,
+    @Body() body: CreateKbAttachmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.kb.createAttachment(u.orgId, articleId, u.userId, body);
@@ -234,8 +239,9 @@ export class SupportKbController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
   @HttpCode(200)
+  @Validate({ body: kbAskSchema })
   askQuestion(
-    @Body(new ZodValidationPipe(kbAskSchema)) body: KbAskInput,
+    @Body() body: KbAskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ask.ask(u, { question: body.question });

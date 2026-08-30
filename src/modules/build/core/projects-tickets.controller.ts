@@ -126,6 +126,7 @@ export class ProjectsTicketsController {
   @Post(":projectId/tickets/bulk")
   @RequirePermission("build:tickets:update")
   @HttpCode(200)
+  @Idempotent("build.ticket.bulk-update")
   @Validate({ params: projectIdParams })
   bulkUpdate(
     @Param("projectId", ParseIntPipe) projectId: number,

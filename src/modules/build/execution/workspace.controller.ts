@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import {
   IntakeService,
   MilestonesService,
@@ -73,10 +72,10 @@ export class MilestonesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:workspace:manage")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createMilestoneSchema })
   createMilestone(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createMilestoneSchema)) body: CreateMilestoneInput,
+    @Body() body: CreateMilestoneInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.milestones.createMilestone(u.orgId, u.userId, projectId, body);
@@ -84,10 +83,10 @@ export class MilestonesController {
 
   @Patch(":milestoneId")
   @RequirePermission("build:workspace:manage")
-  @Validate({ params: projectAndMilestoneIdParams })
+  @Validate({ params: projectAndMilestoneIdParams, body: updateMilestoneSchema })
   updateMilestone(
     @Param("milestoneId", ParseIntPipe) milestoneId: number,
-    @Body(new ZodValidationPipe(updateMilestoneSchema)) body: UpdateMilestoneInput,
+    @Body() body: UpdateMilestoneInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.milestones.updateMilestone(u.orgId, milestoneId, body);
@@ -113,10 +112,10 @@ export class IntakeController {
 
   @Get()
   @RequirePermission("build:view")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, query: intakeListQuerySchema })
   listIntake(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(intakeListQuerySchema)) query: IntakeListQuery,
+    @Query() query: IntakeListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.intake.listIntake(u.orgId, projectId, query);
@@ -125,10 +124,10 @@ export class IntakeController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:workspace:manage")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createIntakeSchema })
   createIntake(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createIntakeSchema)) body: CreateIntakeInput,
+    @Body() body: CreateIntakeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.intake.createIntake(u.orgId, projectId, body);
@@ -136,10 +135,10 @@ export class IntakeController {
 
   @Patch(":requestId")
   @RequirePermission("build:workspace:manage")
-  @Validate({ params: projectAndRequestIdParams })
+  @Validate({ params: projectAndRequestIdParams, body: updateIntakeSchema })
   updateIntake(
     @Param("requestId", ParseIntPipe) requestId: number,
-    @Body(new ZodValidationPipe(updateIntakeSchema)) body: UpdateIntakeInput,
+    @Body() body: UpdateIntakeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.intake.updateIntake(u.orgId, u.userId, requestId, body);
@@ -165,10 +164,10 @@ export class ViewsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:workspace:manage")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createViewSchema })
   createView(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createViewSchema)) body: CreateViewInput,
+    @Body() body: CreateViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.views.createView(u.orgId, u.userId, projectId, body);
@@ -176,10 +175,10 @@ export class ViewsController {
 
   @Patch(":viewId")
   @RequirePermission("build:workspace:manage")
-  @Validate({ params: projectAndViewIdParams })
+  @Validate({ params: projectAndViewIdParams, body: updateViewSchema })
   updateView(
     @Param("viewId", ParseIntPipe) viewId: number,
-    @Body(new ZodValidationPipe(updateViewSchema)) body: UpdateViewInput,
+    @Body() body: UpdateViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.views.updateView(u.orgId, u.userId, viewId, body);
@@ -212,8 +211,9 @@ export class WorkspaceViewsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:workspace:manage")
+  @Validate({ body: createViewSchema })
   createWorkspaceView(
-    @Body(new ZodValidationPipe(createViewSchema)) body: CreateViewInput,
+    @Body() body: CreateViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.views.createWorkspaceView(u.orgId, u.userId, body);
@@ -221,10 +221,10 @@ export class WorkspaceViewsController {
 
   @Patch(":viewId")
   @RequirePermission("build:workspace:manage")
-  @Validate({ params: viewIdParams })
+  @Validate({ params: viewIdParams, body: updateViewSchema })
   updateWorkspaceView(
     @Param("viewId", ParseIntPipe) viewId: number,
-    @Body(new ZodValidationPipe(updateViewSchema)) body: UpdateViewInput,
+    @Body() body: UpdateViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.views.updateWorkspaceView(u.orgId, u.userId, viewId, body);
@@ -274,10 +274,10 @@ export class WhiteboardsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:whiteboards:manage")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createWhiteboardSchema })
   createWhiteboard(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createWhiteboardSchema)) body: CreateWhiteboardInput,
+    @Body() body: CreateWhiteboardInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.whiteboards.createWhiteboard(u, projectId, body);
@@ -296,11 +296,11 @@ export class WhiteboardsController {
 
   @Patch(":whiteboardId")
   @RequirePermission("build:whiteboards:manage")
-  @Validate({ params: projectAndWhiteboardIdParams })
+  @Validate({ params: projectAndWhiteboardIdParams, body: updateWhiteboardSchema })
   updateWhiteboard(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
-    @Body(new ZodValidationPipe(updateWhiteboardSchema)) body: UpdateWhiteboardInput,
+    @Body() body: UpdateWhiteboardInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.whiteboards.updateWhiteboard(u, projectId, whiteboardId, body);

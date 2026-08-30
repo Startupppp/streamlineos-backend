@@ -15,7 +15,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbPageTemplatesService } from "./kb-page-templates.service";
 import {
   createPageTemplateSchema,
@@ -40,8 +39,9 @@ export class KbPageTemplatesController {
 
   @Post("page-templates")
   @RequirePermission("kb:templates:manage")
+  @Validate({ body: createPageTemplateSchema })
   async create(
-    @Body(new ZodValidationPipe(createPageTemplateSchema)) body: CreatePageTemplateInput,
+    @Body() body: CreatePageTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.templates.create(u, body);

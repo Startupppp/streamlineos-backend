@@ -13,7 +13,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ClientVisibilityService } from "./client-visibility.service";
 import { toggleVisibilitySchema, type ToggleVisibilityInput } from "./dto/client-portal.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -43,11 +42,11 @@ export class ClientVisibilityController {
 
   @Patch("tickets/:ticketId")
   @RequirePermission("build:clientvisibility:manage")
-  @Validate({ params: projectAndTicketIdParams })
+  @Validate({ params: projectAndTicketIdParams, body: toggleVisibilitySchema })
   toggleTicketVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(toggleVisibilitySchema)) body: ToggleVisibilityInput,
+    @Body() body: ToggleVisibilityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.toggleTicketVisibility(u.orgId, u.userId, projectId, ticketId, body.clientVisible);
@@ -55,11 +54,11 @@ export class ClientVisibilityController {
 
   @Patch("milestones/:milestoneId")
   @RequirePermission("build:clientvisibility:manage")
-  @Validate({ params: projectAndMilestoneIdParams })
+  @Validate({ params: projectAndMilestoneIdParams, body: toggleVisibilitySchema })
   toggleMilestoneVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("milestoneId", ParseIntPipe) milestoneId: number,
-    @Body(new ZodValidationPipe(toggleVisibilitySchema)) body: ToggleVisibilityInput,
+    @Body() body: ToggleVisibilityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.toggleMilestoneVisibility(u.orgId, u.userId, projectId, milestoneId, body.clientVisible);
@@ -67,11 +66,11 @@ export class ClientVisibilityController {
 
   @Patch("comments/:commentId")
   @RequirePermission("build:clientvisibility:manage")
-  @Validate({ params: projectAndCommentIdParams })
+  @Validate({ params: projectAndCommentIdParams, body: toggleVisibilitySchema })
   toggleCommentVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
-    @Body(new ZodValidationPipe(toggleVisibilitySchema)) body: ToggleVisibilityInput,
+    @Body() body: ToggleVisibilityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.toggleCommentVisibility(u.orgId, u.userId, projectId, commentId, body.clientVisible);
@@ -79,11 +78,11 @@ export class ClientVisibilityController {
 
   @Patch("attachments/:attachmentId")
   @RequirePermission("build:clientvisibility:manage")
-  @Validate({ params: projectAndAttachmentIdParams })
+  @Validate({ params: projectAndAttachmentIdParams, body: toggleVisibilitySchema })
   toggleAttachmentVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("attachmentId", ParseIntPipe) attachmentId: number,
-    @Body(new ZodValidationPipe(toggleVisibilitySchema)) body: ToggleVisibilityInput,
+    @Body() body: ToggleVisibilityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.toggleAttachmentVisibility(u.orgId, u.userId, projectId, attachmentId, body.clientVisible);
