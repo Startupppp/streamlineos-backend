@@ -2,6 +2,8 @@ import { Module } from "@nestjs/common";
 import { BillingModule } from "../../billing/core/billing.module";
 import { SessionsModule } from "../../sessions/sessions.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
+import { IntegrationsModule } from "../../integrations/core/integrations.module";
 import { OrganizationController } from "./organization.controller";
 import { OrganizationService } from "./organization.service";
 import { OrgProfileService } from "./org-profile.service";
@@ -19,9 +21,10 @@ import { RealtimeModule } from "../../realtime/realtime.module";
 import { OrgMembershipReadService } from "./org-membership-read.service";
 import { OrgMembershipStatusService } from "./org-membership-status.service";
 import { OrgMemberDepartureService } from "./org-member-departure.service";
+import { IntegrationConnectionDisconnectedConsumer } from "./integration-connection-disconnected-consumer.service";
 
 @Module({
-  imports: [BillingModule, SessionsModule, NotificationsModule, RealtimeModule],
+  imports: [BillingModule, SessionsModule, NotificationsModule, RealtimeModule, OutboxModule, IntegrationsModule],
   controllers: [OrganizationController],
   providers: [
     OrgProfileService,
@@ -39,6 +42,7 @@ import { OrgMemberDepartureService } from "./org-member-departure.service";
     OrganizationSagaService,
     OrganizationLegalHoldService,
     OrganizationPlacementAdminService,
+    IntegrationConnectionDisconnectedConsumer,
   ],
   exports: [
     InvitationsService,
