@@ -70,6 +70,12 @@ const grnLotLineSchema = z.object({
   discrepancyReason: z.enum(["SHORT", "OVER", "DAMAGED", "WRONG_ITEM"]).optional(),
   qualityStatus: z.enum(["ACCEPTED", "REJECTED"]).default("ACCEPTED"),
   rejectionReason: z.string().max(500).optional(),
+  /**
+   * NEO-4 - the handling unit this line was counted onto. Optional: most
+   * receipts are loose into a bin, and demanding a pallet for those would be a
+   * form field with no purpose.
+   */
+  handlingUnitId: z.number().int().positive().optional(),
   lotNumber: z.string().max(100).optional(),
   expiryDate: isoDate.optional(),
   manufactureDate: isoDate.optional(),

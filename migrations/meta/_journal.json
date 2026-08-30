@@ -2437,6 +2437,13 @@
       "when": 1788134409024,
       "tag": "0581_inventory_quick_commerce_asn",
       "breakpoints": true
+    },
+    {
+      "idx": 349,
+      "version": "7",
+      "when": 1788134409025,
+      "tag": "0582_inventory_handling_units",
+      "breakpoints": true
     }
   ]
 }

@@ -30,6 +30,7 @@ import { InvSettingsModule } from "./settings/inv-settings.module";
 import { InvPickingModule } from "./picking/inv-picking.module";
 import { InvPutawayModule } from "./putaway/inv-putaway.module";
 import { InvSyncModule } from "./sync/inv-sync.module";
+import { InvHandlingUnitsModule } from "./handling-units/inv-handling-units.module";
 
 const INVENTORY_MODULES = [
   InvProductsModule,
@@ -63,6 +64,7 @@ const INVENTORY_MODULES = [
   InvPickingModule,
   InvPutawayModule,
   InvSyncModule,
+  InvHandlingUnitsModule,
 ];
 
 @Module({

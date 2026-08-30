@@ -12,6 +12,14 @@ export interface PickGrain {
   locationId: number;
   lotId: number | null;
   serialId: number | null;
+  /**
+   * NEO-4 - the handling unit picked from, or null for loose stock.
+   *
+   * Part of the grain for the same reason lot and serial are: `EXPECTED_OUTGOING`
+   * matches a pick line against a stock-level row on that row's full natural key,
+   * and the handling unit is now in it.
+   */
+  handlingUnitId: number | null;
 }
 
 export interface PickLineRow {
@@ -21,6 +29,7 @@ export interface PickLineRow {
   locationId: number | null;
   lotId: number | null;
   serialId: number | null;
+  handlingUnitId: number | null;
   quantityToPick: string;
   quantityPicked: string;
   exceptionReason: PickExceptionReason | null;
@@ -44,6 +53,7 @@ export async function loadPickLine(
       locationId: invPickListLines.locationId,
       lotId: invPickListLines.lotId,
       serialId: invPickListLines.serialId,
+      handlingUnitId: invPickListLines.handlingUnitId,
       quantityToPick: invPickListLines.quantityToPick,
       quantityPicked: invPickListLines.quantityPicked,
       exceptionReason: invPickListLines.exceptionReason,

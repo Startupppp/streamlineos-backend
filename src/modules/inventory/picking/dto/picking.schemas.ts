@@ -62,6 +62,12 @@ export const confirmPickSchema = z
     quantityPicked: positiveDecimalQuantity,
     locationId: z.number().int().positive().optional(),
     /**
+     * NEO-4 - the handling unit the picker took the goods off, when they scanned
+     * a pallet label. Absent means loose stock at the bin, which is what the line
+     * already assumed before handling units existed.
+     */
+    handlingUnitId: z.number().int().positive().optional(),
+    /**
      * What the scanner read, if the picker scanned. The server compares it to
      * the line rather than trusting the device to have done so: the screen is
      * showing the task, so it agrees with itself whatever is in the picker's

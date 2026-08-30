@@ -131,9 +131,11 @@ export class SoLifecycleService {
       location_id: number;
       lot_id: number | null;
       serial_id: number | null;
+      handling_unit_id: number | null;
       quantity: string;
     }>(sql`
       SELECT pll.product_variant_id, pll.location_id, pll.lot_id, pll.serial_id,
+             pll.handling_unit_id,
              pll.quantity_picked::text AS quantity
         FROM inv_pick_list_lines pll
         JOIN inv_so_lines sol ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
@@ -146,6 +148,7 @@ export class SoLifecycleService {
       -- columns rather than folded into quantity_picked, so it needs its own
       -- release or the swapped-in units stay unsellable.
       SELECT pll.substitute_variant_id, pll.location_id, pll.lot_id, pll.serial_id,
+             pll.handling_unit_id,
              pll.substitute_quantity::text
         FROM inv_pick_list_lines pll
         JOIN inv_so_lines sol ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
@@ -185,6 +188,7 @@ export class SoLifecycleService {
           locationId: row.location_id,
           lotId: row.lot_id,
           serialId: row.serial_id,
+          handlingUnitId: row.handling_unit_id,
         });
       }
     });

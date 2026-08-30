@@ -212,6 +212,7 @@ export async function releaseSoLineReservations(
         locationId: released.locationId,
         lotId: released.lotId,
         serialId: released.serialId,
+        handlingUnitId: released.handlingUnitId,
       });
     }
   }
@@ -305,6 +306,10 @@ export async function rewriteSoLineDemand(
         locationId: args.grain.locationId,
         lotId: args.grain.lotId,
         serialId: null,
+        // A substitute is a different SKU, so it is not on the pallet the
+        // original came off: it is picked loose from the bin the substitution
+        // resolved to.
+        handlingUnitId: null,
       },
     ],
   };

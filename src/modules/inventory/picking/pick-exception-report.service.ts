@@ -158,6 +158,7 @@ export class PickExceptionReportService {
         locationId: line.locationId,
         lotId: line.lotId,
         serialId: line.serialId,
+        handlingUnitId: line.handlingUnitId,
       });
     }
 
@@ -197,6 +198,10 @@ export class PickExceptionReportService {
           locationId: foundLocationId,
           lotId: null,
           serialId: null,
+          // NEO-4. Found somewhere else means the pallet the wave believed in is
+          // not where the goods are either, so the unit goes back to unresolved
+          // with the lot and serial and is settled by the scan at confirm.
+          handlingUnitId: null,
         });
       }
       // Deliberately no reservation change. The units are somewhere in the

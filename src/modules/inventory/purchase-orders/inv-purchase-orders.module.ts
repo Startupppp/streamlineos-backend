@@ -10,6 +10,7 @@ import { AccountingModule } from "../../accounting/core/accounting.module";
 import { InvQualityModule } from "../quality/inv-quality.module";
 import { InvProductsModule } from "../products/inv-products.module";
 import { InvQuickCommerceModule } from "../channels/quick-commerce/inv-quick-commerce.module";
+import { InvHandlingUnitsModule } from "../handling-units/inv-handling-units.module";
 
 @Module({
   // E3/E4. Receiving asks the catalogue module whether a line may be received
@@ -20,7 +21,7 @@ import { InvQuickCommerceModule } from "../channels/quick-commerce/inv-quick-com
   // NEO-2. `InvQuickCommerceModule` for `assertReceivable` — the rule that a
   // delivery may not be received against a purchase order nobody announced. It
   // lives with the ASN rather than here so there is one copy of it.
-  imports: [InvQualityModule, InvStockEngineModule, AccountingModule, InvProductsModule, InvQuickCommerceModule],
+  imports: [InvQualityModule, InvStockEngineModule, AccountingModule, InvProductsModule, InvQuickCommerceModule, InvHandlingUnitsModule],
   controllers: [InvPurchaseOrdersController, GrnController],
   providers: [PoService, GrnService, GrnPostingService, GrnReadService],
   exports: [PoService, GrnService, GrnPostingService, GrnReadService],

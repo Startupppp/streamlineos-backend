@@ -694,3 +694,30 @@ export const invAsnStatusEnum = pgEnum("inv_asn_status", [
   "CLOSED",
   "CANCELLED",
 ]);
+
+/**
+ * NEO-4 - what kind of thing the label is stuck to. Descriptive only: the engine
+ * treats every kind identically, and the distinction is for the floor and for
+ * carrier paperwork.
+ */
+export const invHandlingUnitKindEnum = pgEnum("inv_handling_unit_kind", [
+  "PALLET",
+  "CARTON",
+  "CAGE",
+  "TOTE",
+]);
+
+/**
+ * NEO-4 - a handling unit's life.
+ *
+ * `OPEN` accepts more stock; `CLOSED` is built and may still be moved or picked
+ * from; `SHIPPED` has left; `EMPTY` held stock and no longer does, kept rather
+ * than deleted so a label that is scanned again resolves to its history instead
+ * of to nothing.
+ */
+export const invHandlingUnitStatusEnum = pgEnum("inv_handling_unit_status", [
+  "OPEN",
+  "CLOSED",
+  "SHIPPED",
+  "EMPTY",
+]);

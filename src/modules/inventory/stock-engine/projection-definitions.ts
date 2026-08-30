@@ -43,6 +43,7 @@ export const EXPECTED_COMMITTED: SQL = sql`
        AND res.location_id IS NOT DISTINCT FROM sl.location_id
        AND res.lot_id IS NOT DISTINCT FROM sl.lot_id
        AND res.serial_id IS NOT DISTINCT FROM sl.serial_id
+       AND res.handling_unit_id IS NOT DISTINCT FROM sl.handling_unit_id
        AND res.status = 'ACTIVE'
   ), 0)`;
 
@@ -56,6 +57,11 @@ export const EXPECTED_COMMITTED: SQL = sql`
  * Matched on lot and serial as well as location. The earlier version matched
  * `(variant, location)` only, deliberately, because that was the writer's own
  * `WHERE` — which meant the check was built to agree with the bug.
+ *
+ * NEO-4 added the handling unit to the level's natural key, so it is matched
+ * here too. Leaving it out would repeat the original defect one grain deeper:
+ * two units picked off a pallet would zero the `outgoing_qty` of the loose stock
+ * on the same shelf, and re-offer units that are standing in a tote.
  *
  * Sales-order statuses are enumerated **positively** so a status added later
  * defaults to "no longer on the bench" rather than silently inflating the
@@ -97,6 +103,7 @@ export const EXPECTED_OUTGOING: SQL = sql`
        AND pll.location_id IS NOT DISTINCT FROM sl.location_id
        AND pll.lot_id IS NOT DISTINCT FROM sl.lot_id
        AND pll.serial_id IS NOT DISTINCT FROM sl.serial_id
+       AND pll.handling_unit_id IS NOT DISTINCT FROM sl.handling_unit_id
        AND pl.status <> 'CANCELLED'
        AND so.status IN (
          'DRAFT', 'CONFIRMED', 'PARTIALLY_RESERVED', 'RESERVED',

@@ -67,6 +67,8 @@ export class StockProjectionService {
       locationId: number;
       lotId?: number | null;
       serialId?: number | null;
+      /** NEO-4 - part of the level's natural key, so it is part of this one. */
+      handlingUnitId?: number | null;
     },
   ): Promise<void> {
     await tx.execute(sql`
@@ -77,6 +79,7 @@ export class StockProjectionService {
          AND sl.location_id = ${grain.locationId}
          AND sl.lot_id IS NOT DISTINCT FROM ${grain.lotId ?? null}
          AND sl.serial_id IS NOT DISTINCT FROM ${grain.serialId ?? null}
+         AND sl.handling_unit_id IS NOT DISTINCT FROM ${grain.handlingUnitId ?? null}
     `);
   }
 

@@ -33,6 +33,7 @@ export interface ReleasedReservation {
   locationId: number | null;
   lotId: number | null;
   serialId: number | null;
+  handlingUnitId: number | null;
   reservedQty: string;
 }
 
@@ -41,6 +42,8 @@ interface CommittedKey {
   locationId: number;
   lotId: number | null;
   serialId: number | null;
+  /** NEO-4. The pallet, or null for loose. Part of the key for the same reason. */
+  handlingUnitId: number | null;
   reservedQty: string;
 }
 
@@ -59,6 +62,7 @@ async function releaseCommitted(tx: Tx, orgId: string, key: CommittedKey): Promi
       AND location_id = ${key.locationId}
       AND (lot_id IS NOT DISTINCT FROM ${key.lotId})
       AND (serial_id IS NOT DISTINCT FROM ${key.serialId})
+      AND (handling_unit_id IS NOT DISTINCT FROM ${key.handlingUnitId})
   `);
 }
 
@@ -86,6 +90,7 @@ export class ReservationService {
       orgId, productVariantId: input.productVariantId,
       locationId: input.locationId, lotId: input.lotId ?? null,
       serialId: input.serialId ?? null,
+      handlingUnitId: input.handlingUnitId ?? null,
       onHand: "0", committed: "0", onOrder: "0",
       blockedQty: "0", qualityHoldQty: "0", outgoingQty: "0",
     }).onConflictDoNothing();
@@ -109,6 +114,7 @@ export class ReservationService {
         AND sl.location_id = ${input.locationId}
         AND (sl.lot_id IS NOT DISTINCT FROM ${input.lotId ?? null})
         AND (sl.serial_id IS NOT DISTINCT FROM ${input.serialId ?? null})
+        AND (sl.handling_unit_id IS NOT DISTINCT FROM ${input.handlingUnitId ?? null})
       FOR UPDATE OF sl
     `);
 
@@ -162,6 +168,7 @@ export class ReservationService {
       warehouseId: input.warehouseId ?? null,
       locationId: input.locationId ?? null,
       lotId: input.lotId ?? null, serialId: input.serialId ?? null,
+      handlingUnitId: input.handlingUnitId ?? null,
       reservedQty: input.qty, status: "ACTIVE",
       expiresAt: input.expiresAt ?? null,
     }).returning();
@@ -175,10 +182,11 @@ export class ReservationService {
     const [reservation] = await tx.execute<{
       id: number; source_type: string; source_id: string;
       location_id: number | null; product_variant_id: number;
-      lot_id: number | null; serial_id: number | null; reserved_qty: string; status: string;
+      lot_id: number | null; serial_id: number | null; handling_unit_id: number | null;
+      reserved_qty: string; status: string;
     }>(sql`
       SELECT id, source_type, source_id, location_id, product_variant_id,
-             lot_id, serial_id, reserved_qty, status
+             lot_id, serial_id, handling_unit_id, reserved_qty, status
       FROM inv_stock_reservations
       WHERE id = ${reservationId} AND org_id = ${orgId}
       FOR UPDATE
@@ -196,6 +204,7 @@ export class ReservationService {
         locationId: reservation.location_id,
         lotId: reservation.lot_id,
         serialId: reservation.serial_id,
+        handlingUnitId: reservation.handling_unit_id,
         reservedQty: reservation.reserved_qty,
       });
     }
@@ -208,6 +217,7 @@ export class ReservationService {
       locationId: reservation.location_id === null ? null : Number(reservation.location_id),
       lotId: reservation.lot_id === null ? null : Number(reservation.lot_id),
       serialId: reservation.serial_id === null ? null : Number(reservation.serial_id),
+      handlingUnitId: reservation.handling_unit_id === null ? null : Number(reservation.handling_unit_id),
       reservedQty: reservation.reserved_qty,
     };
   }
@@ -223,10 +233,11 @@ export class ReservationService {
       const [reservation] = await tx.execute<{
         id: number; source_type: string; source_id: string;
         location_id: number | null; product_variant_id: number;
-        lot_id: number | null; serial_id: number | null; reserved_qty: string; status: string;
+        lot_id: number | null; serial_id: number | null; handling_unit_id: number | null;
+        reserved_qty: string; status: string;
       }>(sql`
         SELECT id, source_type, source_id, location_id, product_variant_id,
-               lot_id, serial_id, reserved_qty, status
+               lot_id, serial_id, handling_unit_id, reserved_qty, status
         FROM inv_stock_reservations WHERE id = ${reservationId} AND org_id = ${orgId}
         FOR UPDATE
       `);
@@ -241,6 +252,7 @@ export class ReservationService {
           locationId: reservation.location_id,
           lotId: reservation.lot_id,
           serialId: reservation.serial_id,
+          handlingUnitId: reservation.handling_unit_id,
           reservedQty: reservation.reserved_qty,
         });
       }
@@ -286,6 +298,7 @@ export class ReservationService {
       productVariantId: number;
       lotId?: number | null;
       serialId?: number | null;
+      handlingUnitId?: number | null;
       reservedQty: string;
     }>,
   ): Promise<number[]> {
@@ -309,6 +322,7 @@ export class ReservationService {
         locationId: r.locationId!,
         lotId: r.lotId ?? null,
         serialId: r.serialId ?? null,
+        handlingUnitId: r.handlingUnitId ?? null,
         reservedQty: r.reservedQty,
       });
     }
@@ -320,9 +334,10 @@ export class ReservationService {
     return this.db.transaction(async (tx) => {
       const stale = await tx.execute<{
         id: number; location_id: number | null; product_variant_id: number;
-        lot_id: number | null; serial_id: number | null; reserved_qty: string;
+        lot_id: number | null; serial_id: number | null; handling_unit_id: number | null;
+        reserved_qty: string;
       }>(sql`
-        SELECT id, location_id, product_variant_id, lot_id, serial_id, reserved_qty
+        SELECT id, location_id, product_variant_id, lot_id, serial_id, handling_unit_id, reserved_qty
         FROM inv_stock_reservations
         WHERE org_id = ${orgId}
           AND status = 'ACTIVE'
@@ -347,6 +362,7 @@ export class ReservationService {
           locationId: r.location_id,
           lotId: r.lot_id,
           serialId: r.serial_id,
+          handlingUnitId: r.handling_unit_id,
           reservedQty: r.reserved_qty,
         });
       }

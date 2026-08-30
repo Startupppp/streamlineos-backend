@@ -114,9 +114,10 @@ export class PickCompletionService {
       product_variant_id: number;
       lot_id: number | null;
       serial_id: number | null;
+      handling_unit_id: number | null;
       reserved_qty: string;
     }>(sql`
-      SELECT id, location_id, product_variant_id, lot_id, serial_id, reserved_qty
+      SELECT id, location_id, product_variant_id, lot_id, serial_id, handling_unit_id, reserved_qty
         FROM inv_stock_reservations
        WHERE org_id = ${orgId}
          AND source_type = 'inv_sales_order'
@@ -137,6 +138,7 @@ export class PickCompletionService {
         productVariantId: Number(r.product_variant_id),
         lotId: r.lot_id === null ? null : Number(r.lot_id),
         serialId: r.serial_id === null ? null : Number(r.serial_id),
+        handlingUnitId: r.handling_unit_id === null ? null : Number(r.handling_unit_id),
         reservedQty: r.reserved_qty,
       })),
     );
@@ -168,6 +170,9 @@ export class PickCompletionService {
               productVariantId: Number(r.product_variant_id),
               locationId: Number(r.location_id),
               lotId: r.lot_id === null ? null : Number(r.lot_id),
+              handlingUnitId: r.handling_unit_id === null || r.handling_unit_id === undefined
+                ? null
+                : Number(r.handling_unit_id),
               serialId: r.serial_id === null ? null : Number(r.serial_id),
             },
           ],
@@ -256,7 +261,13 @@ export class PickCompletionService {
   async syncGrains(tx: Tx, orgId: string, grains: PickGrain[]): Promise<void> {
     const seen = new Set<string>();
     for (const grain of grains) {
-      const key = `${grain.productVariantId}:${grain.locationId}:${grain.lotId ?? ""}:${grain.serialId ?? ""}`;
+      const key = [
+        grain.productVariantId,
+        grain.locationId,
+        grain.lotId ?? "",
+        grain.serialId ?? "",
+        grain.handlingUnitId ?? "",
+      ].join(":");
       if (seen.has(key)) continue;
       seen.add(key);
       await this.projection.syncOutgoing(tx, orgId, grain);

@@ -30,9 +30,11 @@ function recordingTx(rows: Record<string, unknown>[] = []): Recorder {
   return rec;
 }
 
-const GRAIN_A: LevelGrain = { productVariantId: 7, locationId: 3, lotId: null, serialId: null };
-const GRAIN_B: LevelGrain = { productVariantId: 2, locationId: 9, lotId: 4, serialId: null };
-const GRAIN_C: LevelGrain = { productVariantId: 2, locationId: 9, lotId: 1, serialId: null };
+const GRAIN_A: LevelGrain = { productVariantId: 7, locationId: 3, lotId: null, serialId: null, handlingUnitId: null };
+const GRAIN_B: LevelGrain = { productVariantId: 2, locationId: 9, lotId: 4, serialId: null, handlingUnitId: null };
+const GRAIN_C: LevelGrain = { productVariantId: 2, locationId: 9, lotId: 1, serialId: null, handlingUnitId: null };
+/** NEO-4. Same bin, same lot, different pallet: a distinct grain, and it sorts last. */
+const GRAIN_D: LevelGrain = { productVariantId: 2, locationId: 9, lotId: 4, serialId: null, handlingUnitId: 11 };
 
 describe("lockLevels", () => {
   it("creates missing rows in the same order however the caller sends them", async () => {

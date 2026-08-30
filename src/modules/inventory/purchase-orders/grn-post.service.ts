@@ -48,6 +48,8 @@ interface PendingMovement {
   locationId: number;
   lotId: number | undefined;
   serialId: number | undefined;
+  /** NEO-4 - the pallet the counter built this line onto, or null for loose. */
+  handlingUnitId: number | null;
   quantityDelta: string;
   unitCost: string | undefined;
 }
@@ -328,6 +330,7 @@ export class GrnPostingService {
             locationId,
             lotId: undefined,
             serialId,
+            handlingUnitId: line.handlingUnitId ?? null,
             quantityDelta: "1.0000",
             unitCost: poLine.unitCost ?? undefined,
           });
@@ -339,6 +342,7 @@ export class GrnPostingService {
           locationId,
           lotId,
           serialId: undefined,
+          handlingUnitId: line.handlingUnitId ?? null,
           quantityDelta: line.quantityReceived,
           unitCost: poLine.unitCost ?? undefined,
         });

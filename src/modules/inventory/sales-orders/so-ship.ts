@@ -99,6 +99,8 @@ interface ShipMovement {
   locationId: number;
   lotId: number | null;
   serialId: number | null;
+  /** NEO-4 - the pallet these units left, or null for loose stock. */
+  handlingUnitId: number | null;
   quantity: string;
 }
 
@@ -107,10 +109,17 @@ interface OutgoingGrain {
   locationId: number;
   lotId: number | null;
   serialId: number | null;
+  handlingUnitId: number | null;
 }
 
 function grainKey(grain: OutgoingGrain): string {
-  return `${grain.productVariantId}|${grain.locationId}|${grain.lotId ?? ""}|${grain.serialId ?? ""}`;
+  return [
+    grain.productVariantId,
+    grain.locationId,
+    grain.lotId ?? "",
+    grain.serialId ?? "",
+    grain.handlingUnitId ?? "",
+  ].join("|");
 }
 
 /**
@@ -169,9 +178,11 @@ export async function postShipment(
     product_variant_id: number;
     lot_id: number | null;
     serial_id: number | null;
+    handling_unit_id: number | null;
     reserved_qty: string;
   }>(sql`
-    SELECT id, source_line_id, location_id, product_variant_id, lot_id, serial_id, reserved_qty
+    SELECT id, source_line_id, location_id, product_variant_id, lot_id, serial_id,
+           handling_unit_id, reserved_qty
       FROM inv_stock_reservations
      WHERE org_id = ${orgId}
        AND source_type = 'inv_sales_order'
@@ -196,6 +207,7 @@ export async function postShipment(
       locationId: line.locationId,
       lotId: line.lotId,
       serialId: line.serialId,
+      handlingUnitId: line.handlingUnitId,
       quantity: line.quantity,
     });
   }
@@ -217,6 +229,10 @@ export async function postShipment(
         locationId: Number(locationId),
         lotId: reservation?.lot_id === null || reservation?.lot_id === undefined ? null : Number(reservation.lot_id),
         serialId: reservation?.serial_id === null || reservation?.serial_id === undefined ? null : Number(reservation.serial_id),
+        handlingUnitId:
+          reservation?.handling_unit_id === null || reservation?.handling_unit_id === undefined
+            ? null
+            : Number(reservation.handling_unit_id),
         quantity: line.quantity,
       });
     }
@@ -252,6 +268,7 @@ export async function postShipment(
       locationId: m.locationId,
       lotId: m.lotId ?? undefined,
       serialId: m.serialId ?? undefined,
+      handlingUnitId: m.handlingUnitId,
       quantityDelta: `-${m.quantity}`,
     })),
   });
@@ -270,6 +287,7 @@ export async function postShipment(
       // standing for good.
       lotId: r.lot_id === null ? null : Number(r.lot_id),
       serialId: r.serial_id === null ? null : Number(r.serial_id),
+      handlingUnitId: r.handling_unit_id === null ? null : Number(r.handling_unit_id),
       reservedQty: r.reserved_qty,
     })),
   );
@@ -386,6 +404,7 @@ export async function postShipment(
       locationId: line.locationId,
       lotId: line.lotId,
       serialId: line.serialId,
+      handlingUnitId: line.handlingUnitId,
     };
     grains.set(grainKey(grain), grain);
   }
@@ -395,6 +414,7 @@ export async function postShipment(
       locationId: m.locationId,
       lotId: m.lotId,
       serialId: m.serialId,
+      handlingUnitId: m.handlingUnitId,
     };
     grains.set(grainKey(grain), grain);
   }

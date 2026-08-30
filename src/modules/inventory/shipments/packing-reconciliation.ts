@@ -60,6 +60,8 @@ export interface ShelfLine {
   locationId: number | null;
   lotId: number | null;
   serialId: number | null;
+  /** NEO-4 - the pallet these units came off, or null for loose stock. */
+  handlingUnitId: number | null;
   quantity: string;
   substituted: boolean;
 }
@@ -76,6 +78,7 @@ export async function shelfLines(
     location_id: number | null;
     lot_id: number | null;
     serial_id: number | null;
+    handling_unit_id: number | null;
     quantity: string;
     substituted: boolean;
   }>(sql`
@@ -85,6 +88,7 @@ export async function shelfLines(
            pll.location_id,
            pll.lot_id,
            pll.serial_id,
+           pll.handling_unit_id,
            pll.quantity_picked::text AS quantity,
            false             AS substituted
       FROM inv_pick_list_lines pll
@@ -102,6 +106,7 @@ export async function shelfLines(
            pll.location_id,
            pll.lot_id,
            pll.serial_id,
+           pll.handling_unit_id,
            pll.substitute_quantity::text,
            true
       FROM inv_pick_list_lines pll
@@ -124,6 +129,7 @@ export async function shelfLines(
     locationId: row.location_id === null ? null : Number(row.location_id),
     lotId: row.lot_id === null ? null : Number(row.lot_id),
     serialId: row.serial_id === null ? null : Number(row.serial_id),
+    handlingUnitId: row.handling_unit_id === null ? null : Number(row.handling_unit_id),
     quantity: String(row.quantity),
     substituted: row.substituted === true,
   }));

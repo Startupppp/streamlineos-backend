@@ -29,6 +29,7 @@ import { PoService } from "./po.service";
 import { GrnPostingService } from "./grn-post.service";
 import { GrnReadService } from "./grn-read.service";
 import { QuickCommerceInboundService } from "../channels/quick-commerce/quick-commerce-inbound.service";
+import { HandlingUnitService } from "../handling-units/handling-unit.service";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -84,6 +85,7 @@ export class GrnService {
     private readonly posting: GrnPostingService,
     private readonly reads: GrnReadService,
     private readonly quickCommerce: QuickCommerceInboundService,
+    private readonly handlingUnits: HandlingUnitService,
   ) {}
 
   /**
@@ -416,6 +418,10 @@ export class GrnService {
         line.quantityReceived,
       );
 
+      if (line.handlingUnitId !== undefined) {
+        await this.handlingUnits.assertCanHoldStockInTx(tx, orgId, line.handlingUnitId);
+      }
+
       const converted = await this.uom.convert(
         orgId,
         poLine.productVariant.productId,
@@ -436,6 +442,10 @@ export class GrnService {
           qualityStatus: line.qualityStatus,
           rejectionReason: line.rejectionReason,
           discrepancyReason: line.discrepancyReason,
+          // NEO-4. The unit is checked, not merely stored: a pallet that already
+          // contains cartons may not also hold loose stock of its own, and the
+          // rule lives in `HandlingUnitService` so there is one copy of it.
+          handlingUnitId: line.handlingUnitId ?? null,
           lotNumber: line.lotNumber,
           expiryDate: line.expiryDate,
           manufactureDate: line.manufactureDate,

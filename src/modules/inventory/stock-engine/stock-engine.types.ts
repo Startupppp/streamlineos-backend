@@ -26,6 +26,12 @@ export interface StockMovement {
   locationId: number;
   lotId?: number;
   serialId?: number;
+  /**
+   * NEO-4 - the handling unit this movement is against, or absent for loose
+   * stock in the bin. Part of the level's natural key, so a receipt into a
+   * pallet and a receipt onto the shelf beside it land on different rows.
+   */
+  handlingUnitId?: number | null;
   quantityDelta: string;
   unitCost?: string;
   qualityBucket?: QualityBucket;
@@ -100,6 +106,8 @@ export interface ReservationInput {
   locationId?: number;
   lotId?: number;
   serialId?: number;
+  /** NEO-4 - the handling unit the promise is against. See `reservations.ts`. */
+  handlingUnitId?: number | null;
   qty: string;
   expiresAt?: Date;
   /**

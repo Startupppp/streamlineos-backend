@@ -188,6 +188,7 @@ export class MovementApplyService {
         locationId: movement.locationId,
         lotId: movement.lotId ?? null,
         serialId: movement.serialId ?? null,
+        handlingUnitId: movement.handlingUnitId ?? null,
       });
       const level = levels.get(key);
 
@@ -272,6 +273,7 @@ export class MovementApplyService {
           locationId: movement.locationId,
           lotId: movement.lotId ?? null,
           serialId: movement.serialId ?? null,
+          handlingUnitId: movement.handlingUnitId ?? null,
           transactionType:
             movement.transactionType as (typeof invStockTransactions.$inferInsert)["transactionType"],
           quantityBucket: bucket,

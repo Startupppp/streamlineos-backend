@@ -187,6 +187,15 @@ export const invGrnLines = pgTable("inv_grn_lines", {
   expiryDate: date("expiry_date"),
   manufactureDate: date("manufacture_date"),
   /**
+   * NEO-4 - the handling unit the counter built this line onto.
+   *
+   * Held on the line rather than the header because one delivery routinely
+   * builds several pallets, and "which pallet is this SKU on" is the question
+   * the putaway after it has to answer. Nullable: most receipts are loose into a
+   * bin, and demanding a pallet for those would be a form field with no purpose.
+   */
+  handlingUnitId: integer("handling_unit_id"),
+  /**
    * E2 — the tax inputs as they stood when the goods were received.
    *
    * Taken again at receipt rather than read off the purchase order: months can

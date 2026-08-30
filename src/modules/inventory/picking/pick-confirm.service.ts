@@ -158,6 +158,10 @@ export class PickConfirmService {
         locationId: pickedAt,
         lotId: pickedLot,
         serialId: scanned.serialId,
+        // NEO-4. The unit the picker took the goods off, carried onto the line so
+        // the projection can key on it. `target` resolves it the same way it
+        // resolves the bin and the lot.
+        handlingUnitId: target.handlingUnitId,
       })
       .where(
         and(
@@ -175,6 +179,7 @@ export class PickConfirmService {
         locationId: pickedAt,
         lotId: pickedLot,
         serialId: scanned.serialId,
+        handlingUnitId: target.handlingUnitId,
       },
     ];
     // B5. The bin the line *used* to stand on, when the picker took the goods
@@ -186,13 +191,15 @@ export class PickConfirmService {
       line.locationId !== null &&
       (line.locationId !== pickedAt ||
         line.lotId !== pickedLot ||
-        line.serialId !== scanned.serialId)
+        line.serialId !== scanned.serialId ||
+        line.handlingUnitId !== target.handlingUnitId)
     ) {
       grains.push({
         productVariantId: line.productVariantId,
         locationId: line.locationId,
         lotId: line.lotId,
         serialId: line.serialId,
+        handlingUnitId: line.handlingUnitId,
       });
     }
 
@@ -273,9 +280,16 @@ export class PickConfirmService {
     pickListId: number,
     line: PickLineRow,
     input: ConfirmPickInput,
-  ): Promise<{ locationId: number; lotId: number | null }> {
+  ): Promise<{ locationId: number; lotId: number | null; handlingUnitId: number | null }> {
+    // NEO-4. The handling unit comes from the confirm when the picker scanned a
+    // pallet label, and otherwise from whatever the line already carried. The
+    // auto-allocation branch below resolves a bin and a lot but never a pallet:
+    // choosing which of two pallets at a bin to break into is a decision for the
+    // person standing in front of them, so it stays null rather than being
+    // guessed at, and those units are then picked as loose from that bin.
+    const handlingUnitId = input.handlingUnitId ?? line.handlingUnitId;
     const stated = input.locationId ?? line.locationId;
-    if (stated !== null) return { locationId: stated, lotId: line.lotId };
+    if (stated !== null) return { locationId: stated, lotId: line.lotId, handlingUnitId };
 
     const wave = await loadWaveContext(tx, orgId, pickListId);
     const settings = await this.settings.get(orgId);
@@ -312,7 +326,7 @@ export class PickConfirmService {
       });
     }
 
-    return { locationId: allocation.locationId, lotId: line.lotId ?? allocation.lotId };
+    return { locationId: allocation.locationId, lotId: line.lotId ?? allocation.lotId, handlingUnitId };
   }
 
 

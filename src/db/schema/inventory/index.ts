@@ -16,3 +16,4 @@ export * from "./planning";
 export * from "./admin";
 export * from "./channel-pools";
 export * from "./quick-commerce";
+export * from "./handling-units";

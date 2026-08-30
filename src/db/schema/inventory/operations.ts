@@ -201,6 +201,17 @@ export const invPickListLines = pgTable("inv_pick_list_lines", {
   locationId: integer("location_id").references(() => invLocations.id),
   lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
+  /**
+   * NEO-4 - the handling unit picked from, or null for loose stock in the bin.
+   *
+   * It has to be here for the same reason lot and serial are: `EXPECTED_OUTGOING`
+   * matches a pick line against a stock-level row on the row's full natural key,
+   * and the handling unit is now part of that key. Without it, two units off a
+   * pallet would zero the `outgoing_qty` of the loose stock on the same shelf and
+   * re-offer units that are standing in a tote - the exact defect that comment in
+   * `projection-definitions.ts` was written about.
+   */
+  handlingUnitId: integer("handling_unit_id"),
   quantityToPick: decimal("quantity_to_pick", { precision: 18, scale: 4 }).notNull(),
   quantityPicked: decimal("quantity_picked", { precision: 18, scale: 4 }).default("0").notNull(),
   /**

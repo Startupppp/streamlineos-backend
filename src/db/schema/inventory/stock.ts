@@ -13,6 +13,17 @@ export const invStockLevels = pgTable("inv_stock_levels", {
   locationId: integer("location_id").references(() => invLocations.id, { onDelete: "cascade" }).notNull(),
   lotId: integer("lot_id").references(() => invLots.id, { onDelete: "restrict" }),
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "restrict" }),
+  /**
+   * NEO-4 - the handling unit these units are standing on, or null for loose
+   * stock in the bin.
+   *
+   * Part of the natural key, so a pallet's twelve and the four loose on the same
+   * shelf are two rows and stay tellable apart. Stock is only ever held against a
+   * **leaf** handling unit; a parent's contents are its children's, computed,
+   * never stored - which is what makes a nested carton impossible to
+   * double-count. See `handling-units.ts`.
+   */
+  handlingUnitId: integer("handling_unit_id"),
   onHand: decimal("on_hand", { precision: 18, scale: 4 }).default("0").notNull(),
   committed: decimal("committed", { precision: 18, scale: 4 }).default("0").notNull(),
   onOrder: decimal("on_order", { precision: 18, scale: 4 }).default("0").notNull(),
@@ -27,7 +38,20 @@ export const invStockLevels = pgTable("inv_stock_levels", {
   index("idx_inv_stock_location").on(table.locationId),
   index("idx_inv_stock_lot").on(table.lotId),
   index("idx_inv_stock_serial").on(table.serialId),
-  uniqueIndex("uniq_inv_stock_levels_natural_key").on(table.orgId, table.productVariantId, table.locationId, sql`coalesce(${table.lotId}, 0)`, sql`coalesce(${table.serialId}, 0)`),
+  // NEO-4 extends the natural key with the handling unit. `coalesce` because
+  // Postgres treats NULLs as distinct, so loose stock would otherwise be able to
+  // exist twice at one bin - the same reason lot and serial are coalesced here.
+  uniqueIndex("uniq_inv_stock_levels_natural_key").on(
+    table.orgId,
+    table.productVariantId,
+    table.locationId,
+    sql`coalesce(${table.lotId}, 0)`,
+    sql`coalesce(${table.serialId}, 0)`,
+    sql`coalesce(${table.handlingUnitId}, 0)`,
+  ),
+  index("idx_inv_stock_levels_org_hu")
+    .on(table.orgId, table.handlingUnitId)
+    .where(sql`${table.handlingUnitId} IS NOT NULL`),
   unique("uniq_inv_stock_levels_org_id").on(table.orgId, table.id),
 ]);
 
@@ -43,6 +67,8 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   quantityAfter: decimal("quantity_after", { precision: 18, scale: 4 }).notNull(),
   lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
+  /** NEO-4 - the handling unit the movement was against, when there was one. */
+  handlingUnitId: integer("handling_unit_id"),
   unitCost: decimal("unit_cost", { precision: 18, scale: 4 }),
   totalCost: decimal("total_cost", { precision: 18, scale: 4 }),
   idempotencyKey: text("idempotency_key"),
@@ -74,6 +100,9 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   index("idx_inv_txn_org_created_id").on(table.orgId, desc(table.createdAt), desc(table.id)),
   index("idx_inv_txn_org_variant_type_created").on(table.orgId, table.productVariantId, table.transactionType, table.createdAt),
   index("idx_inv_txn_org_posting_date").on(table.orgId, table.postingDate),
+  index("idx_inv_txn_org_hu")
+    .on(table.orgId, table.handlingUnitId, desc(table.createdAt))
+    .where(sql`${table.handlingUnitId} IS NOT NULL`),
   // D1. The genealogy walk's three access paths. Before 0542 nothing indexed
   // `lot_id` or `serial_id` at all, so every lot-anchored ledger read scanned
   // the organisation's whole ledger; and `idx_inv_txn_reference` does not lead

@@ -356,9 +356,13 @@ export class PutawayCompleteService {
       resolved.push({ line, destinationId, quantity: requested.quantity });
     }
 
+    // NEO-4. A putaway task moves loose stock; moving a handling unit is
+    // `HandlingUnitService.move`, which re-keys the whole unit in one command
+    // rather than line by line. Explicit null rather than omitted, so this reads
+    // as a decision instead of an oversight.
     const grains: LevelGrain[] = resolved.flatMap((plan) => [
-      { productVariantId: plan.line.product_variant_id, locationId: context.fromLocationId, lotId: plan.line.lot_id, serialId: plan.line.serial_id },
-      { productVariantId: plan.line.product_variant_id, locationId: plan.destinationId, lotId: plan.line.lot_id, serialId: plan.line.serial_id },
+      { productVariantId: plan.line.product_variant_id, locationId: context.fromLocationId, lotId: plan.line.lot_id, serialId: plan.line.serial_id, handlingUnitId: null },
+      { productVariantId: plan.line.product_variant_id, locationId: plan.destinationId, lotId: plan.line.lot_id, serialId: plan.line.serial_id, handlingUnitId: null },
     ]);
     const locked = await lockLevels(tx, orgId, grains);
 
@@ -369,6 +373,7 @@ export class PutawayCompleteService {
           locationId: context.fromLocationId,
           lotId: plan.line.lot_id,
           serialId: plan.line.serial_id,
+          handlingUnitId: null,
         }),
       );
       // A reservation holds units *at a location*, so putting them away moves
