@@ -125,7 +125,7 @@ export class SignRecipientsService {
       throw new ForbiddenException("Recipients can only be removed from a draft envelope");
     }
 
-    await this.db.delete(signRecipients).where(eq(signRecipients.id, recipientId));
+    await this.db.delete(signRecipients).where(and(eq(signRecipients.id, recipientId), eq(signRecipients.orgId, orgId)));
 
     await this.audit.record({
       orgId,

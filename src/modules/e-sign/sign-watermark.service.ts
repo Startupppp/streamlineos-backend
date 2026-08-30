@@ -59,7 +59,7 @@ export class SignWatermarkService {
     const [updated] = await this.db
       .update(signWatermarkPolicies)
       .set({ ...input, updatedAt: new Date() })
-      .where(eq(signWatermarkPolicies.id, id))
+      .where(and(eq(signWatermarkPolicies.id, id), eq(signWatermarkPolicies.orgId, orgId)))
       .returning();
 
     await this.audit.record({
@@ -74,7 +74,7 @@ export class SignWatermarkService {
 
   async remove(orgId: string, id: number, userId: string) {
     await this.get(orgId, id);
-    await this.db.delete(signWatermarkPolicies).where(eq(signWatermarkPolicies.id, id));
+    await this.db.delete(signWatermarkPolicies).where(and(eq(signWatermarkPolicies.id, id), eq(signWatermarkPolicies.orgId, orgId)));
     await this.audit.record({
       orgId,
       actorType: "internal_user",

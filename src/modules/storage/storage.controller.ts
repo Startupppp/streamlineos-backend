@@ -17,7 +17,7 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
-import { eq, ilike } from "drizzle-orm";
+import { ilike } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
@@ -27,7 +27,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
   documents,
-  organizationMembers,
   onboardingDocuments,
   expenses,
   reimbursements,
@@ -177,10 +176,7 @@ export class StorageController {
       throw new BadRequestException("Invalid file reference");
     }
 
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: eq(organizationMembers.userId, u.userId),
-    });
-    const orgId = member?.orgId ?? u.orgId;
+    const orgId = u.orgId;
 
     const fileOwner = await this.resolveFileOwner(fileKey);
     if (fileOwner !== null) {
@@ -222,20 +218,15 @@ export class StorageController {
       throw new ServiceUnavailableException("Storage not available");
     }
 
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: eq(organizationMembers.userId, u.userId),
-    });
-    if (!member) throw new ForbiddenException("Forbidden");
-
     if (isSensitiveKey(keyParam)) {
       const fileOwner = await this.resolveFileOwner(keyParam);
-      if (fileOwner === null || fileOwner.orgId !== (member.orgId ?? u.orgId)) {
+      if (fileOwner === null || fileOwner.orgId !== u.orgId) {
         throw new NotFoundException("Not found");
       }
       if (requiresDedicatedAccess(fileOwner)) throw new ForbiddenException("Access denied");
     }
 
-    const stream = await this.openStream(member.orgId ?? u.orgId, keyParam, "Not found");
+    const stream = await this.openStream(u.orgId, keyParam, "Not found");
     res.setHeader("Content-Type", stream.contentType || this.storage.getMimeType(keyParam));
     res.setHeader("Cache-Control", "public, max-age=86400, immutable");
     this.pipe(stream.body, res);

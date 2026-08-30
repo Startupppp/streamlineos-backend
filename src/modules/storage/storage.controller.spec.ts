@@ -52,7 +52,6 @@ describe("StorageController.download — cross-org file isolation", () => {
   }) {
     return {
       query: {
-        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ orgId: "org-A" }) },
         documents: { findFirst: jest.fn().mockResolvedValue(records.documents ?? null) },
         onboardingDocuments: { findFirst: jest.fn().mockResolvedValue(records.onboardingDocuments ?? null) },
         expenses: { findFirst: jest.fn().mockResolvedValue(records.expenses ?? null) },
@@ -196,6 +195,47 @@ describe("StorageController.download — cross-org file isolation", () => {
         mockRes(),
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("DENY — JWT org governs file access: org-A actor cannot access org-B expense receipt even if membership lookup would return org-B", async () => {
+    const db = {
+      query: {
+        documents: { findFirst: jest.fn().mockResolvedValue(null) },
+        onboardingDocuments: { findFirst: jest.fn().mockResolvedValue(null) },
+        expenses: { findFirst: jest.fn().mockResolvedValue({ orgId: "org-B" }) },
+        reimbursements: { findFirst: jest.fn().mockResolvedValue(null) },
+        handbookVersions: { findFirst: jest.fn().mockResolvedValue(null) },
+        payslipPublications: { findFirst: jest.fn().mockResolvedValue(null) },
+        candidateDocumentsVault: { findFirst: jest.fn().mockResolvedValue(null) },
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ orgId: "org-B" }) },
+      },
+    };
+    const controller = new StorageController(
+      db as never,
+      buildStorage() as never,
+      audit as never,
+      access as never,
+    );
+
+    await expect(
+      controller.download(undefined, "receipts/expense.pdf", undefined, undefined, ctx("org-A"), mockRes()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("ALLOW — same-org generic file download succeeds (control for cross-org denial)", async () => {
+    const db = buildDb({ expenses: { orgId: "org-A" } });
+    const storage = buildStorage();
+    const controller = new StorageController(
+      db as never,
+      storage as never,
+      audit as never,
+      access as never,
+    );
+    const res = mockRes();
+
+    await controller.download(undefined, "receipts/expense.pdf", undefined, undefined, ctx("org-A"), res);
+
+    expect(res.json).toHaveBeenCalledWith({ url: "https://signed.example.com/file" });
   });
 
   it("rejects a protected-folder upload without its feature permission", async () => {
