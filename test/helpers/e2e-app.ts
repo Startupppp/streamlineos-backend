@@ -11,6 +11,7 @@ import { AccessService } from "src/modules/access/access.service";
 import type { DataScope } from "src/modules/access/access.types";
 import { moduleAvailabilityResolver } from "src/common/rbac/module-availability";
 import { moduleDefinition, moduleIdFromStored } from "src/common/rbac/module-registry";
+import { ADMINISTRABLE_MODULES } from "src/common/rbac/module-vocabulary";
 import { RegionRegistry, setRegionRegistry } from "src/common/region/region-registry";
 import type { RegionDefinition } from "src/common/region/region.config";
 import type { Db } from "src/db/drizzle.types";
@@ -106,6 +107,25 @@ const entitlementsStub = {
   isCoreModule: (moduleKey: string): boolean =>
     moduleDefinition(moduleIdFromStored(moduleKey)) === undefined,
   getPlanLockedModules: async (): Promise<readonly string[]> => [],
+  /**
+   * Derived from the two answers above rather than given its own.
+   *
+   * `GET /entitlements/modules` calls this, and without it the route threw
+   * "listModules is not a function" and answered 500. Building the list from
+   * `isCoreModule` and the token's `enabledModules` keeps it from becoming a
+   * third source of truth for "is this module on" that can drift from the two
+   * the guards ask.
+   */
+  listModules: async (): Promise<
+    { moduleKey: string; enabled: boolean; core?: true }[]
+  > => {
+    const enabled = current().enabledModules;
+    return ADMINISTRABLE_MODULES.map((moduleKey) =>
+      moduleDefinition(moduleIdFromStored(moduleKey)) === undefined
+        ? { moduleKey, enabled: true, core: true as const }
+        : { moduleKey, enabled: enabled.includes(moduleKey.toLowerCase()) },
+    );
+  },
 };
 
 /** `CurrentUserContext.isOrgOwner`, as the guard chain populates it. */
@@ -120,6 +140,38 @@ const accessStub = {
     new Map(current().permissions.map((key) => [key, "all" as DataScope])),
   isModuleEnabled: entitlementsStub.isModuleEnabled,
   getUserDeniedModules: async (): Promise<ReadonlySet<string>> => new Set<string>(),
+  /**
+   * Nobody but the caller, because a token-driven fixture has no other members.
+   *
+   * The real method reads `organization_members` inside a tenant transaction to
+   * find everyone holding a key — a question this fixture has no seeded data to
+   * answer. Its absence, though, was not a missing answer but a 500: the client
+   * accounts service calls it while assigning support ownership, and threw
+   * "membersWithPermission is not a function" mid-request. An empty list is the
+   * honest reading of an org whose only member is the token.
+   */
+  membersWithPermission: async (): Promise<
+    { userId: string; membershipId: number }[]
+  > => [],
+  /**
+   * The version the real service bumps when an org's permissions change.
+   *
+   * Its absence was not silently harmless: `SearchService.search` calls it on
+   * every query, so `/search` threw "getPermissionsVersion is not a function"
+   * and answered 500 — under a suite whose cases only assert 401 and 403, which
+   * is why the whole thing stayed green while the endpoint was broken.
+   *
+   * It is derived from the current permission set rather than pinned to a
+   * constant because search folds this number into its cache key precisely so a
+   * permission change invalidates it. A constant would let one case's results
+   * answer the next case's identical query under a different set of grants.
+   */
+  getPermissionsVersion: async (): Promise<number> => {
+    const keys = [...current().permissions].sort().join("|");
+    let hash = 0;
+    for (let i = 0; i < keys.length; i += 1) hash = (hash * 31 + keys.charCodeAt(i)) | 0;
+    return Math.abs(hash);
+  },
   // Keep the E2E fixture on AccessService's canonical resolver surface. The
   // calendar source registry and PermissionGuard both consume these methods;
   // resolving them from the token preserves the fixture's existing semantics.
