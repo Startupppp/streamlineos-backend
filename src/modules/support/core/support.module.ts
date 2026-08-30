@@ -5,7 +5,7 @@ import { RealtimeModule } from "../../realtime/realtime.module";
 import { AutomationModule } from "../../automation/automation.module";
 import { AiModule } from "../../ai/core/ai.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
-import { OutboxModule } from "../../common/outbox/outbox.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { SupportKbController } from "./support-kb.controller";
 import { SupportMacrosController } from "./support-macros.controller";
 import { SupportWorkspaceController } from "./support-workspace.controller";
