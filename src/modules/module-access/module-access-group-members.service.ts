@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
+  Injectable,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import {
@@ -8,6 +10,7 @@ import {
   roleAssignments,
   users,
 } from "../../db/schema";
+import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
@@ -25,9 +28,10 @@ export interface ModuleGroupMember {
   avatarUrl: string | null;
 }
 
+@Injectable()
 export class ModuleAccessGroupMembersService {
   constructor(
-    private readonly db: Db,
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly groupPolicy: ModuleAccessGroupPolicyService,

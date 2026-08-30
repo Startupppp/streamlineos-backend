@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
+  Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
@@ -11,10 +13,20 @@ import {
   ownershipTransfers,
   users,
 } from "../../db/schema";
+import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import {
+  assertManagedModule,
+  assertModuleEnabled,
+  moduleAccessPolicyDeps,
+} from "./module-access.helpers";
+import { canTransferModuleOwnership } from "./module-standing";
+import { moduleOwnershipDenied } from "./module-access-errors";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { AccessService } from "../access/access.service";
 
 export interface ModuleOwnership {
   moduleKey: string;
@@ -30,26 +42,49 @@ export interface ModuleOwnership {
   } | null;
 }
 
+@Injectable()
 export class ModuleAccessOwnershipService {
   constructor(
-    private readonly db: Db,
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
-  async getOwnership(orgId: string, moduleKey: string): Promise<ModuleOwnership> {
+  private async assertOwnershipRights(
+    actor: CurrentUserContext,
+    moduleKey: string,
+  ): Promise<void> {
+    assertManagedModule(moduleKey);
+    await assertModuleEnabled(
+      moduleAccessPolicyDeps(this.db, this.access),
+      actor.orgId,
+      moduleKey,
+    );
+    if (await canTransferModuleOwnership(this.db, actor, moduleKey)) return;
+    throw moduleOwnershipDenied();
+  }
+
+  async getOwnership(
+    actor: CurrentUserContext,
+    moduleKey: string,
+  ): Promise<ModuleOwnership> {
+    await this.assertOwnershipRights(actor, moduleKey);
     return this.cache.cached(
-      CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey),
-      () => this.fetchOwnership(orgId, moduleKey),
+      CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey),
+      () => this.fetchOwnership(actor.orgId, moduleKey),
       60,
     );
   }
 
   async initiateTransfer(
-    orgId: string,
+    actor: CurrentUserContext,
     moduleKey: string,
-    actorUserId: string,
     toUserId: string,
   ): Promise<{ success: true }> {
+    await this.assertOwnershipRights(actor, moduleKey);
+    const orgId = actor.orgId;
+    const actorUserId = actor.userId;
+
     const [actorMembership, toMembership] = await Promise.all([
       this.db.query.organizationMembers.findFirst({
         where: and(
@@ -128,6 +163,77 @@ export class ModuleAccessOwnershipService {
     await Promise.all([
       this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey)),
       this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
+    ]);
+
+    return { success: true };
+  }
+
+  async cancelTransfer(
+    actor: CurrentUserContext,
+    moduleKey: string,
+  ): Promise<{ success: true }> {
+    await this.assertOwnershipRights(actor, moduleKey);
+
+    const [transfer] = await this.db
+      .select({
+        id: ownershipTransfers.id,
+        fromMembershipId: ownershipTransfers.fromMembershipId,
+      })
+      .from(ownershipTransfers)
+      .where(
+        and(
+          eq(ownershipTransfers.orgId, actor.orgId),
+          eq(ownershipTransfers.moduleKey, moduleKey),
+          eq(ownershipTransfers.scope, "MODULE"),
+          eq(ownershipTransfers.status, "PENDING"),
+        ),
+      )
+      .limit(1);
+
+    if (!transfer)
+      throw new NotFoundException("No pending transfer found for this module");
+
+    if (!actor.isOrgOwner) {
+      const actorMembership = await this.db.query.organizationMembers.findFirst(
+        {
+          where: and(
+            eq(organizationMembers.orgId, actor.orgId),
+            eq(organizationMembers.userId, actor.userId),
+          ),
+          columns: { id: true },
+        },
+      );
+      if (
+        !actorMembership ||
+        actorMembership.id !== transfer.fromMembershipId
+      ) {
+        throw new ForbiddenException(
+          "Only the transfer initiator or an org owner may cancel this transfer",
+        );
+      }
+    }
+
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx
+          .update(ownershipTransfers)
+          .set({ status: "CANCELLED" })
+          .where(
+            and(
+              eq(ownershipTransfers.id, transfer.id),
+              eq(ownershipTransfers.orgId, actor.orgId),
+            ),
+          );
+      },
+      { orgId: actor.orgId },
+    );
+
+    await Promise.all([
+      this.cache.invalidate(
+        CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey),
+      ),
+      this.cache.invalidateNamespace(`ownership:transfers:${actor.orgId}`),
     ]);
 
     return { success: true };

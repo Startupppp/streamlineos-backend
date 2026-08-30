@@ -206,6 +206,206 @@ export const MEMBERSHIP_ARTIFACTS = [
     reason:
       "The resolved permission snapshot, the membership status entry and the account entry are what a request actually reads; without a bust the person keeps their old answer for the cache lifetime.",
   },
+  {
+    id: "event_attendees",
+    mechanism: "database-write",
+    table: "event_attendees",
+    keyedBy: "membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key is RESTRICT: a member who is an event attendee cannot be removed until the attendee row is deleted first. The FK must change to CASCADE in a migration; until then removal is refused with a misleading FK-violation error.",
+  },
+  {
+    id: "tickets",
+    mechanism: "database-write",
+    table: "tickets",
+    keyedBy: "assignee_membership_id / reporter_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "Both assignee and reporter carry RESTRICT foreign keys: a member who is assigned to or has reported a ticket cannot be removed. Both FKs must change to SET NULL in a migration so historical attribution is preserved and the operation is unblocked.",
+  },
+  {
+    id: "ticket_assignees",
+    mechanism: "database-write",
+    table: "ticket_assignees",
+    keyedBy: "membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key is RESTRICT: a member with any ticket assignment row cannot be removed. The FK must change to CASCADE so that leaving the organisation automatically drops the assignment link.",
+  },
+  {
+    id: "project_members",
+    mechanism: "database-write",
+    table: "project_members",
+    keyedBy: "membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key is RESTRICT: a member who belongs to any project cannot be removed while that row exists. The FK must change to CASCADE; under suspension the org-membership gate already denies every request.",
+  },
+  {
+    id: "project_approvals",
+    mechanism: "database-write",
+    table: "project_approvals",
+    keyedBy: "approver_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key is RESTRICT: any approval row (including completed ones) prevents membership deletion. The FK must change to SET NULL so historical approver attribution survives while removal is unblocked.",
+  },
+  {
+    id: "wfh_requests",
+    mechanism: "database-write",
+    table: "wfh_requests",
+    keyedBy: "approver_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key is RESTRICT on the approver column: even a completed WFH request blocks removal of the approver. The FK must change to SET NULL to preserve historical records while unblocking the operation.",
+  },
+  {
+    id: "helpdesk_tickets",
+    mechanism: "database-write",
+    table: "helpdesk_tickets",
+    keyedBy: "assignee_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key is RESTRICT: a member assigned to any helpdesk ticket cannot be removed. The FK must change to SET NULL so the ticket survives but the assignee slot is cleared.",
+  },
+  {
+    id: "leave_requests",
+    mechanism: "database-write",
+    table: "leave_requests",
+    keyedBy: "approver_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key on the approver column is RESTRICT: any leave request that names this member as approver blocks removal, including decided ones. The FK must change to SET NULL; the created_by and updated_by columns carry the same RESTRICT FK and likewise need changing.",
+  },
+  {
+    id: "performance_reviews",
+    mechanism: "database-write",
+    table: "performance_reviews",
+    keyedBy: "reviewer_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key is RESTRICT: a member named as reviewer on any performance review cannot be removed. The FK must change to SET NULL so attribution survives and removal is unblocked.",
+  },
+  {
+    id: "chat_channel_members",
+    mechanism: "database-write",
+    table: "chat_channel_members",
+    keyedBy: "membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key is NO ACTION (effectively RESTRICT): a member in any chat channel cannot be removed. The FK must change to CASCADE so the channel-membership row is automatically dropped.",
+  },
+  {
+    id: "chat_messages",
+    mechanism: "database-write",
+    table: "chat_messages",
+    keyedBy: "sender_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "There is no foreign key on sender_membership_id; the column is attribution tracking who sent the message. On removal the revocation path sets it to null so the message remains renderable via the sender_id user reference without a dangling membership pointer.",
+  },
+  {
+    id: "chat_message_reactions",
+    mechanism: "database-write",
+    table: "chat_message_reactions",
+    keyedBy: "membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key is NO ACTION (effectively RESTRICT): a member who has ever reacted to a message cannot be removed. The FK must change to CASCADE so reactions are automatically removed with the membership.",
+  },
+  {
+    id: "chat_saved_messages",
+    mechanism: "database-write",
+    table: "chat_saved_messages",
+    keyedBy: "membership_id",
+    onRemoval: "delete",
+    onSuspension: "retain",
+    reason:
+      "There is no foreign key on membership_id; the rows are personal bookmarks that are not authority. On removal the revocation path deletes them so no dangling pointer outlives the membership.",
+  },
+  {
+    id: "chat_huddle_participants",
+    mechanism: "database-write",
+    table: "chat_huddle_participants",
+    keyedBy: "membership_id",
+    onRemoval: "delete",
+    onSuspension: "retain",
+    reason:
+      "There is no foreign key to organization_members; the row records current session participation. On removal the revocation path deletes it so a departed member is not shown as an active participant.",
+  },
+  {
+    id: "chat_reply_reminders",
+    mechanism: "database-write",
+    table: "chat_reply_reminders",
+    keyedBy: "recipient_membership_id / sender_membership_id",
+    onRemoval: "delete",
+    onSuspension: "retain",
+    reason:
+      "There is no foreign key on either membership column; a pending reminder naming a removed member as recipient would otherwise fire a notification to someone no longer in the org. The revocation path deletes all reminders involving the membership's user in either role.",
+  },
+  {
+    id: "kb_pages",
+    mechanism: "database-write",
+    table: "kb_pages",
+    keyedBy: "owner_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key on owner_membership_id is NO ACTION (RESTRICT): a member who owns any KB page cannot be removed. The FK must change to SET NULL and ownership should be reassigned or cleared by a pre-removal step.",
+  },
+  {
+    id: "kb_page_favorites",
+    mechanism: "database-write",
+    table: "kb_page_favorites",
+    keyedBy: "membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key is NO ACTION (RESTRICT): a member with any KB page favourite cannot be removed. These are personal bookmarks with no authority impact; the FK must change to CASCADE to unblock removal.",
+  },
+  {
+    id: "kb_page_visits",
+    mechanism: "database-write",
+    table: "kb_page_visits",
+    keyedBy: "membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key is NO ACTION (RESTRICT): any KB page visit record blocks removal. These are read-history records with no authority impact; the FK must change to CASCADE.",
+  },
+  {
+    id: "kb_page_reviews",
+    mechanism: "database-cascade",
+    table: "kb_page_reviews",
+    keyedBy: "reviewer_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The foreign key on reviewer_membership_id is ON DELETE SET NULL, so the database automatically clears the reviewer reference when the membership is removed while keeping the review record intact.",
+  },
+  {
+    id: "expenses",
+    mechanism: "database-write",
+    table: "expenses",
+    keyedBy: "approver_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The foreign key is RESTRICT: a member who has approved or been assigned to approve any expense cannot be removed. The FK must change to SET NULL to preserve the expense record while unblocking the operation.",
+  },
 ] as const satisfies readonly MembershipArtifact[];
 
 export const MEMBERSHIP_ARTIFACT_IDS = MEMBERSHIP_ARTIFACTS.map(

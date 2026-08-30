@@ -1,7 +1,9 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ModuleAccessService } from "../module-access.service";
-import { ModuleAccessGroupsService } from "../module-access-groups.service";
+import { ModuleAccessRosterService } from "../module-access-roster.service";
+import { ModuleAccessFlatMembersService } from "../module-access-flat-members.service";
+import { ModuleAccessOwnershipService } from "../module-access-ownership.service";
 import { ModuleAccessGroupPolicyService } from "../module-access-group-policy.service";
 import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -188,7 +190,7 @@ describe("ModuleAccessService.getCallerPermissions", () => {
   });
 });
 
-describe("ModuleAccessGroupsService.listMembers — access guard", () => {
+describe("ModuleAccessRosterService.listMembers — access guard", () => {
   it("throws ForbiddenException for a caller without module view access", async () => {
     const resolveUserPermissions = jest.fn().mockResolvedValue(new Map<string, string>());
 
@@ -206,7 +208,7 @@ describe("ModuleAccessGroupsService.listMembers — access guard", () => {
 
     const m = await Test.createTestingModule({
       providers: [
-        ModuleAccessGroupsService,
+        ModuleAccessRosterService,
         ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
@@ -215,10 +217,10 @@ describe("ModuleAccessGroupsService.listMembers — access guard", () => {
       ],
     }).compile();
 
-    const groupsSvc = m.get(ModuleAccessGroupsService);
+    const rosterSvc = m.get(ModuleAccessRosterService);
 
     await expect(
-      groupsSvc.listMembers(makeActor({ isOrgOwner: false}), "hr", {
+      rosterSvc.listMembers(makeActor({ isOrgOwner: false}), "hr", {
         page: 1,
         pageSize: 20,
       }),
@@ -242,7 +244,7 @@ describe("ModuleAccessGroupsService.listMembers — access guard", () => {
     };
     const m = await Test.createTestingModule({
       providers: [
-        ModuleAccessGroupsService,
+        ModuleAccessRosterService,
         ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
@@ -252,7 +254,7 @@ describe("ModuleAccessGroupsService.listMembers — access guard", () => {
     }).compile();
 
     await expect(
-      m.get(ModuleAccessGroupsService).listMembers(makeActor(), "hr", {
+      m.get(ModuleAccessRosterService).listMembers(makeActor(), "hr", {
         page: 1,
         pageSize: 20,
         userId: "u-target",
@@ -261,7 +263,7 @@ describe("ModuleAccessGroupsService.listMembers — access guard", () => {
   });
 });
 
-describe("ModuleAccessGroupsService.listMemberCandidates — access guard", () => {
+describe("ModuleAccessRosterService.listMemberCandidates — access guard", () => {
   it("requires manage access", async () => {
     const resolveUserPermissions = jest.fn().mockResolvedValue(
       new Map([["hr:access:view", "all"]]),
@@ -279,7 +281,7 @@ describe("ModuleAccessGroupsService.listMemberCandidates — access guard", () =
     };
     const m = await Test.createTestingModule({
       providers: [
-        ModuleAccessGroupsService,
+        ModuleAccessRosterService,
         ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
@@ -289,12 +291,12 @@ describe("ModuleAccessGroupsService.listMemberCandidates — access guard", () =
     }).compile();
 
     await expect(
-      m.get(ModuleAccessGroupsService).listMemberCandidates(makeActor(), "hr"),
+      m.get(ModuleAccessRosterService).listMemberCandidates(makeActor(), "hr"),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
 
-describe("ModuleAccessGroupsService.removeMember — module owner protection", () => {
+describe("ModuleAccessFlatMembersService.removeMember — module owner protection", () => {
   it("refuses to remove the module owner regardless of actor privileges", async () => {
     const resolveUserPermissions = jest.fn().mockResolvedValue(
       new Map([["hr:access:manage", "all"]]),
@@ -310,7 +312,7 @@ describe("ModuleAccessGroupsService.removeMember — module owner protection", (
 
     const m = await Test.createTestingModule({
       providers: [
-        ModuleAccessGroupsService,
+        ModuleAccessFlatMembersService,
         ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
@@ -319,15 +321,15 @@ describe("ModuleAccessGroupsService.removeMember — module owner protection", (
       ],
     }).compile();
 
-    const groupsSvc = m.get(ModuleAccessGroupsService);
+    const flatSvc = m.get(ModuleAccessFlatMembersService);
 
     await expect(
-      groupsSvc.removeMember(makeActor({ isOrgOwner: true }), "hr", "u-module-owner"),
+      flatSvc.removeMember(makeActor({ isOrgOwner: true }), "hr", "u-module-owner"),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
 
-describe("ModuleAccessGroupsService.addMember — self-assignment block", () => {
+describe("ModuleAccessFlatMembersService.addMember — self-assignment block", () => {
   it("blocks a non-owner actor from adding themselves to a module", async () => {
     const resolveUserPermissions = jest.fn().mockResolvedValue(
       new Map([["hr:access:manage", "all"]]),
@@ -343,7 +345,7 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
 
     const m = await Test.createTestingModule({
       providers: [
-        ModuleAccessGroupsService,
+        ModuleAccessFlatMembersService,
         ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
@@ -352,10 +354,10 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
       ],
     }).compile();
 
-    const groupsSvc = m.get(ModuleAccessGroupsService);
+    const flatSvc = m.get(ModuleAccessFlatMembersService);
 
     await expect(
-      groupsSvc.addMember(
+      flatSvc.addMember(
         makeActor({ userId: "u-actor", isOrgOwner: false}),
         "hr",
         { userId: "u-actor", groupIds: [] },
@@ -396,7 +398,7 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
 
     const m = await Test.createTestingModule({
       providers: [
-        ModuleAccessGroupsService,
+        ModuleAccessFlatMembersService,
         ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
@@ -405,9 +407,9 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
       ],
     }).compile();
 
-    const groupsSvc = m.get(ModuleAccessGroupsService);
+    const flatSvc = m.get(ModuleAccessFlatMembersService);
 
-    const result = await groupsSvc.addMember(
+    const result = await flatSvc.addMember(
       makeActor({ userId: "u-actor", isOrgOwner: true }),
       "hr",
       { userId: "u-actor", groupIds: [9] },
@@ -453,7 +455,7 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
 
     const m = await Test.createTestingModule({
       providers: [
-        ModuleAccessGroupsService,
+        ModuleAccessFlatMembersService,
         ModuleAccessGroupPolicyService,
         { provide: DRIZZLE, useValue: mockDb },
         {
@@ -468,7 +470,7 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
       ],
     }).compile();
 
-    await m.get(ModuleAccessGroupsService).addMember(
+    await m.get(ModuleAccessFlatMembersService).addMember(
       makeActor({ userId: "u-actor", isOrgOwner: true }),
       "hr",
       { userId: "u-target", groupIds },
@@ -488,8 +490,8 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
   });
 });
 
-describe("ModuleAccessGroupsService ownership authority", () => {
-  const ownership = {
+describe("ModuleAccessOwnershipService authority", () => {
+  const ownershipResult = {
     moduleKey: "hr",
     ownerId: "u-owner",
     ownerDisplayName: "Module Owner",
@@ -497,13 +499,13 @@ describe("ModuleAccessGroupsService ownership authority", () => {
     pendingTransfer: null,
   };
 
-  async function buildOwnershipService(ownerUserId = "u-owner") {
+  async function buildOwnershipSvc(ownerUserId = "u-owner") {
     const select = jest
       .fn()
       .mockReturnValue(
         makeFlexChain([{ userId: ownerUserId, ownerMembershipId: 11 }]),
       );
-    const cached = jest.fn().mockResolvedValue(ownership);
+    const cached = jest.fn().mockResolvedValue(ownershipResult);
     const resolveUserPermissions = jest
       .fn()
       .mockResolvedValue(new Map([["hr:access:manage", "all"]]));
@@ -523,7 +525,7 @@ describe("ModuleAccessGroupsService ownership authority", () => {
 
     const m = await Test.createTestingModule({
       providers: [
-        ModuleAccessGroupsService,
+        ModuleAccessOwnershipService,
         ModuleAccessGroupPolicyService,
         {
           provide: DRIZZLE,
@@ -552,7 +554,7 @@ describe("ModuleAccessGroupsService ownership authority", () => {
     }).compile();
 
     return {
-      svc: m.get(ModuleAccessGroupsService),
+      svc: m.get(ModuleAccessOwnershipService),
       cached,
       resolveUserPermissions,
       select,
@@ -562,39 +564,39 @@ describe("ModuleAccessGroupsService ownership authority", () => {
   }
 
   it("allows the actual module owner to read ownership details", async () => {
-    const { svc, cached } = await buildOwnershipService();
+    const { svc, cached } = await buildOwnershipSvc();
 
     await expect(
       svc.getOwnership(makeActor({ userId: "u-owner" }), "hr"),
-    ).resolves.toEqual(ownership);
+    ).resolves.toEqual(ownershipResult);
     expect(cached).toHaveBeenCalledTimes(1);
   });
 
   it("allows the organization owner as the documented break-glass owner", async () => {
-    const { svc, cached, select } = await buildOwnershipService();
+    const { svc, cached, select } = await buildOwnershipSvc();
 
     await expect(
       svc.getOwnership(
         makeActor({ userId: "u-org-owner", isOrgOwner: true }),
         "hr",
       ),
-    ).resolves.toEqual(ownership);
+    ).resolves.toEqual(ownershipResult);
     expect(cached).toHaveBeenCalledTimes(1);
     expect(select).not.toHaveBeenCalled();
   });
 
   it("allows the actual module owner to initiate an ownership transfer", async () => {
-    const { svc, findFirst, insertValues } = await buildOwnershipService();
+    const { svc, findFirst, insertValues } = await buildOwnershipSvc();
     findFirst
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ id: 11 })
       .mockResolvedValueOnce({ id: 12, status: "ACTIVE" });
 
     await expect(
-      svc.initiateOwnershipTransfer(
+      svc.initiateTransfer(
         makeActor({ userId: "u-owner" }),
         "hr",
-        { toUserId: "u-target" },
+        "u-target",
       ),
     ).resolves.toEqual({ success: true });
     expect(insertValues).toHaveBeenCalledWith(
@@ -616,7 +618,7 @@ describe("ModuleAccessGroupsService ownership authority", () => {
     "denies ownership details to a non-owner %s even when manage is effectively granted",
     async (_label, overrides) => {
       const { svc, cached, resolveUserPermissions } =
-        await buildOwnershipService("u-owner");
+        await buildOwnershipSvc("u-owner");
 
       await expect(
         svc.getOwnership(makeActor(overrides), "hr"),
@@ -629,15 +631,13 @@ describe("ModuleAccessGroupsService ownership authority", () => {
   it.each(["initiate", "cancel"] as const)(
     "denies a Module Admin attempting to %s an ownership transfer",
     async (operation) => {
-      const { svc } = await buildOwnershipService("u-owner");
+      const { svc } = await buildOwnershipSvc("u-owner");
       const moduleAdmin = makeActor({ userId: "u-module-admin" });
 
       const request =
         operation === "initiate"
-          ? svc.initiateOwnershipTransfer(moduleAdmin, "hr", {
-              toUserId: "u-target",
-            })
-          : svc.cancelOwnershipTransfer(moduleAdmin, "hr");
+          ? svc.initiateTransfer(moduleAdmin, "hr", "u-target")
+          : svc.cancelTransfer(moduleAdmin, "hr");
 
       await expect(request).rejects.toBeInstanceOf(ForbiddenException);
     },

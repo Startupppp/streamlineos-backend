@@ -13,6 +13,7 @@ import { PaymentProviderAdapterRegistry } from "../../payments/payment-provider-
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../../payments/payment-provider-resolver.service";
 import { PaymentWebhookHealthService } from "../../payments/payment-webhook-health.service";
 import { PaymentAnalyticsService } from "../../payments/payment-analytics.service";
+import { BillingProfileService } from "../billing-profile.service";
 import { RevenueAnalyticsService } from "../revenue-analytics.service";
 import { ExternalEffectLedger } from "../../../../common/outbox/external-effect-ledger";
 import { FakeProviderAdapter, FAKE_VALID_PAYMENT_SIG } from "../../payments/testing/fake-provider-adapter";
@@ -123,6 +124,7 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
         { provide: ExternalEffectLedger, useValue: makeEffectLedger() },
         { provide: PaymentWebhookHealthService, useValue: { recordSignatureFailure: jest.fn() } },
         { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
+        { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
         { provide: APP_CONFIG, useValue: { RAZORPAY_WEBHOOK_SECRET: "test-secret" } },
       ],
     }).compile();

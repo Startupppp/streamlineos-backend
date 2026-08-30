@@ -10,8 +10,7 @@ import {
   userDelegationPermissions,
 } from "../../db/schema";
 import { PERMISSIONS } from "./permissions";
-import { isDelegablePermission } from "../../common/rbac/grantability";
-import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
+import { buildPermissionCatalogRows } from "./permission-catalog-rows";
 
 type SupportedScope = "all" | "team" | "own";
 
@@ -73,22 +72,7 @@ export class PermissionCatalogSyncService implements OnModuleInit {
 
     await this.db
       .insert(permissions)
-      .values(
-        PERMISSIONS.map((permission) => {
-          const administering = administeringModuleOf(permission.name);
-          return {
-            name: permission.name,
-            resource: permission.resource,
-            action: permission.action,
-            description: permission.description ?? null,
-            moduleKey: administering,
-            administeringModuleKey: catalogModules.has(administering)
-              ? administering
-              : null,
-            isDelegable: isDelegablePermission(permission.name),
-          };
-        }),
-      )
+      .values(buildPermissionCatalogRows(catalogModules))
       .onConflictDoUpdate({
         target: permissions.name,
         set: {

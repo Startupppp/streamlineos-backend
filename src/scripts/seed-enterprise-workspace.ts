@@ -33,6 +33,8 @@ import {
   hrWorkflowStepActions,
 } from "../db/schema/hr/workflow-engine";
 import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions";
+import { buildPermissionCatalogRows } from "../modules/rbac/permission-catalog-rows";
+import { modulesCatalog } from "../db/schema/common/modules";
 import { DEFAULT_REGION } from "../common/region/region-registry";
 
 type Db = PostgresJsDatabase<typeof schema>;
@@ -66,14 +68,24 @@ function normalizeDatabaseUrl(url: string): string {
 
 async function seedRbac(db: Db, orgId: string, memberUserId: string, memberRole: string): Promise<void> {
   if (PERMISSIONS.length > 0) {
-    await db.insert(permissions).values(
-      PERMISSIONS.map((p) => ({
-        name: p.name,
-        resource: p.resource,
-        action: p.action,
-        description: p.description ?? null,
-      })),
-    ).onConflictDoNothing();
+    const catalogModules = new Set(
+      (await db.select({ moduleKey: modulesCatalog.moduleKey }).from(modulesCatalog))
+        .map((row) => row.moduleKey),
+    );
+    await db
+      .insert(permissions)
+      .values(buildPermissionCatalogRows(catalogModules))
+      .onConflictDoUpdate({
+        target: permissions.name,
+        set: {
+          resource: sql.raw("excluded.resource"),
+          action: sql.raw("excluded.action"),
+          description: sql.raw("excluded.description"),
+          moduleKey: sql.raw("excluded.module_key"),
+          administeringModuleKey: sql.raw("excluded.administering_module_key"),
+          isDelegable: sql.raw("excluded.is_delegable"),
+        },
+      });
   }
 
   const catalogRows = await db.select({ name: permissions.name }).from(permissions);

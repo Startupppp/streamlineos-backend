@@ -2,6 +2,10 @@ import { Logger } from "@nestjs/common";
 import { and, count, eq, isNull, ne, or } from "drizzle-orm";
 import {
   agentTokens,
+  chatHuddleParticipants,
+  chatMessages,
+  chatReplyReminders,
+  chatSavedMessages,
   invitationEvents,
   invitations,
   kbSpaceGrants,
@@ -223,6 +227,43 @@ export class OrgMembershipAccessRevocation {
               );
             }
           }
+
+          await tx
+            .update(chatMessages)
+            .set({ senderMembershipId: null })
+            .where(
+              and(
+                eq(chatMessages.orgId, orgId),
+                eq(chatMessages.senderId, memberUserId),
+              ),
+            );
+          await tx
+            .delete(chatSavedMessages)
+            .where(
+              and(
+                eq(chatSavedMessages.orgId, orgId),
+                eq(chatSavedMessages.userId, memberUserId),
+              ),
+            );
+          await tx
+            .delete(chatReplyReminders)
+            .where(
+              and(
+                eq(chatReplyReminders.orgId, orgId),
+                or(
+                  eq(chatReplyReminders.recipientUserId, memberUserId),
+                  eq(chatReplyReminders.senderUserId, memberUserId),
+                ),
+              ),
+            );
+          await tx
+            .delete(chatHuddleParticipants)
+            .where(
+              and(
+                eq(chatHuddleParticipants.orgId, orgId),
+                eq(chatHuddleParticipants.userId, memberUserId),
+              ),
+            );
         }
 
         const updatedConns = await tx

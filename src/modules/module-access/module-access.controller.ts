@@ -22,6 +22,9 @@ import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { ModuleAccessService } from "./module-access.service";
 import { ModuleAccessGroupsService } from "./module-access-groups.service";
+import { ModuleAccessRosterService } from "./module-access-roster.service";
+import { ModuleAccessFlatMembersService } from "./module-access-flat-members.service";
+import { ModuleAccessOwnershipService } from "./module-access-ownership.service";
 import { ModuleStandingRosterService } from "./module-standing-roster.service";
 import { ModuleStandingMutationsService } from "./module-standing-mutations.service";
 import {
@@ -68,6 +71,9 @@ export class ModuleAccessController {
   constructor(
     private readonly svc: ModuleAccessService,
     private readonly groups: ModuleAccessGroupsService,
+    private readonly roster: ModuleAccessRosterService,
+    private readonly flatMembers: ModuleAccessFlatMembersService,
+    private readonly ownership: ModuleAccessOwnershipService,
     private readonly standing: ModuleStandingRosterService,
     private readonly mutations: ModuleStandingMutationsService,
   ) {}
@@ -247,7 +253,7 @@ export class ModuleAccessController {
     @Query(new ZodValidationPipe(listMembersQuerySchema)) query: ListMembersQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.groups.listMembers(u, params.moduleKey, query);
+    return this.roster.listMembers(u, params.moduleKey, query);
   }
 
   @Post(":moduleKey/members")
@@ -259,7 +265,7 @@ export class ModuleAccessController {
     @Body(new ZodValidationPipe(addFlatMemberSchema)) body: AddFlatMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.groups.addMember(u, params.moduleKey, body);
+    return this.flatMembers.addMember(u, params.moduleKey, body);
   }
 
   @Patch(":moduleKey/members/:userId")
@@ -270,7 +276,7 @@ export class ModuleAccessController {
     @Body(new ZodValidationPipe(updateMemberGroupsSchema)) body: UpdateMemberGroupsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.groups.updateMemberGroups(u, params.moduleKey, params.userId, body);
+    return this.flatMembers.updateMemberGroups(u, params.moduleKey, params.userId, body);
   }
 
   @Delete(":moduleKey/members/:userId")
@@ -281,7 +287,7 @@ export class ModuleAccessController {
     @Param(new ZodValidationPipe(flatMemberParamSchema)) params: FlatMemberParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.groups.removeMember(u, params.moduleKey, params.userId);
+    return this.flatMembers.removeMember(u, params.moduleKey, params.userId);
   }
 
   @Get(":moduleKey/audit-log")
@@ -299,7 +305,7 @@ export class ModuleAccessController {
     @Query(new ZodValidationPipe(memberCandidatesQuerySchema)) query: MemberCandidatesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.groups.listMemberCandidates(u, params.moduleKey, query);
+    return this.roster.listMemberCandidates(u, params.moduleKey, query);
   }
 
   @Get(":moduleKey/ownership")
@@ -307,7 +313,7 @@ export class ModuleAccessController {
     @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.groups.getOwnership(u, params.moduleKey);
+    return this.ownership.getOwnership(u, params.moduleKey);
   }
 
   @Post(":moduleKey/ownership/transfer")
@@ -320,7 +326,7 @@ export class ModuleAccessController {
     @Body(new ZodValidationPipe(initiateOwnershipTransferSchema)) body: InitiateOwnershipTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.groups.initiateOwnershipTransfer(u, params.moduleKey, body);
+    return this.ownership.initiateTransfer(u, params.moduleKey, body.toUserId);
   }
 
   @Delete(":moduleKey/ownership/transfer")
@@ -332,6 +338,6 @@ export class ModuleAccessController {
     @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.groups.cancelOwnershipTransfer(u, params.moduleKey);
+    return this.ownership.cancelTransfer(u, params.moduleKey);
   }
 }

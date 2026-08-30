@@ -9,6 +9,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { outboxEvents, platformPayments } from "../../../db/schema";
 import { providerWebhookEvents } from "../../../db/schema/billing/provider-webhook-events";
 import { BillingService } from "./billing.service";
+import { BillingProfileService } from "./billing-profile.service";
 import { RazorpayWebhookController } from "./razorpay-webhook.controller";
 import { AiCreditsService } from "./ai-credits.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -218,6 +219,7 @@ async function buildHarness(options: {
       { provide: ExternalEffectLedger, useValue: ledger },
       { provide: PaymentWebhookHealthService, useValue: webhookHealth },
       { provide: PaymentAnalyticsService, useValue: notices },
+      { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
     ],
   }).compile();
 

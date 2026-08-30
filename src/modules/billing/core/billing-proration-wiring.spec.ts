@@ -15,6 +15,7 @@ import {
   FAKE_VALID_PAYMENT_SIG,
 } from "../payments/testing/fake-provider-adapter";
 import { AiCreditsService } from "./ai-credits.service";
+import { BillingProfileService } from "./billing-profile.service";
 import { BillingService } from "./billing.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { ProrationLedgerService } from "./proration-ledger.service";
@@ -158,6 +159,7 @@ async function buildService(options: {
       },
       { provide: PaymentWebhookHealthService, useValue: { recordSignatureFailure: jest.fn() } },
       { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
+      { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
     ],
   }).compile();
 

@@ -18,6 +18,8 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SettingsService } from "./settings.service";
+import { SettingsAutomationsService } from "./settings-automations.service";
+import { SettingsCustomFieldsService } from "./settings-custom-fields.service";
 import {
   createApiKeySchema,
   createAutomationSchema,
@@ -48,7 +50,11 @@ import {
 @Controller("settings")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class SettingsController {
-  constructor(private readonly settings: SettingsService) {}
+  constructor(
+    private readonly settings: SettingsService,
+    private readonly automations: SettingsAutomationsService,
+    private readonly customFields: SettingsCustomFieldsService,
+  ) {}
 
   @RequirePermission("settings:view")
   @Get("provenance")
@@ -102,7 +108,7 @@ export class SettingsController {
     @Query(new ZodValidationPipe(listAutomationsQuerySchema)) query: ListAutomationsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.listAutomations(u.orgId, query);
+    return this.automations.listAutomations(u.orgId, query);
   }
 
   @Post("automations")
@@ -113,7 +119,7 @@ export class SettingsController {
     body: CreateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.createAutomation(u.orgId, u.userId, body);
+    return this.automations.createAutomation(u.orgId, u.userId, body);
   }
 
   @Get("automations/:ruleId")
@@ -122,7 +128,7 @@ export class SettingsController {
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.getAutomation(u.orgId, ruleId);
+    return this.automations.getAutomation(u.orgId, ruleId);
   }
 
   @Patch("automations/:ruleId")
@@ -133,7 +139,7 @@ export class SettingsController {
     body: UpdateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.updateAutomation(u.orgId, ruleId, body);
+    return this.automations.updateAutomation(u.orgId, ruleId, body);
   }
 
   @Delete("automations/:ruleId")
@@ -142,7 +148,7 @@ export class SettingsController {
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.deleteAutomation(u.orgId, ruleId);
+    return this.automations.deleteAutomation(u.orgId, ruleId);
   }
 
   @Get("automations/:ruleId/runs")
@@ -151,7 +157,7 @@ export class SettingsController {
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.listAutomationRuns(u.orgId, ruleId);
+    return this.automations.listAutomationRuns(u.orgId, ruleId);
   }
 
   @Get("custom-fields")
@@ -161,7 +167,7 @@ export class SettingsController {
     query: CustomFieldsListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.listCustomFields(u.orgId, query.entityType);
+    return this.customFields.listCustomFields(u.orgId, query.entityType);
   }
 
   @Post("custom-fields")
@@ -172,7 +178,7 @@ export class SettingsController {
     body: CreateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.createCustomField(u.orgId, u.userId, body);
+    return this.customFields.createCustomField(u.orgId, u.userId, body);
   }
 
   @Patch("custom-fields/:fieldId")
@@ -183,7 +189,7 @@ export class SettingsController {
     body: UpdateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.updateCustomField(u.orgId, fieldId, body);
+    return this.customFields.updateCustomField(u.orgId, fieldId, body);
   }
 
   @Delete("custom-fields/:fieldId")
@@ -192,7 +198,7 @@ export class SettingsController {
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.deleteCustomField(u.orgId, fieldId);
+    return this.customFields.deleteCustomField(u.orgId, fieldId);
   }
 
   @RequirePermission("settings:view")

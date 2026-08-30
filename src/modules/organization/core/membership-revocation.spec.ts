@@ -12,6 +12,10 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { AccessService } from "../../access/access.service";
 import {
   agentTokens,
+  chatHuddleParticipants,
+  chatMessages,
+  chatReplyReminders,
+  chatSavedMessages,
   invitationEvents,
   invitations,
   kbSpaceGrants,
@@ -529,6 +533,74 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
       expect(mockRegisterAfterCommit).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("chat session artifact cleanup on removal (no-FK tables)", () => {
+    it("nulls sender_membership_id on chat_messages authored by the removed user", async () => {
+      const { tx, updateFn } = buildTx();
+      mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
+      const { service } = await buildService();
+
+      await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
+
+      expect(updateFn).toHaveBeenCalledWith(chatMessages);
+    });
+
+    it("deletes chat_saved_messages for the removed user in the org", async () => {
+      const { tx, deleteFn } = buildTx();
+      mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
+      const { service } = await buildService();
+
+      await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
+
+      expect(deleteFn).toHaveBeenCalledWith(chatSavedMessages);
+    });
+
+    it("deletes chat_reply_reminders where the removed user is recipient or sender", async () => {
+      const { tx, deleteFn } = buildTx();
+      mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
+      const { service } = await buildService();
+
+      await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
+
+      expect(deleteFn).toHaveBeenCalledWith(chatReplyReminders);
+    });
+
+    it("deletes chat_huddle_participants for the removed user", async () => {
+      const { tx, deleteFn } = buildTx();
+      mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
+      const { service } = await buildService();
+
+      await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
+
+      expect(deleteFn).toHaveBeenCalledWith(chatHuddleParticipants);
+    });
+
+    it("does NOT touch chat session artifacts on suspension (retention is reversible)", async () => {
+      const { tx, deleteFn, updateFn } = buildTx();
+      mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
+      const { service } = await buildService();
+
+      await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "suspended");
+
+      expect(deleteFn).not.toHaveBeenCalledWith(chatSavedMessages);
+      expect(deleteFn).not.toHaveBeenCalledWith(chatReplyReminders);
+      expect(deleteFn).not.toHaveBeenCalledWith(chatHuddleParticipants);
+      expect(updateFn).not.toHaveBeenCalledWith(chatMessages);
+    });
+
+    it("still cleans up chat session artifacts when membership row was already deleted before revocation runs", async () => {
+      const { tx, deleteFn, updateFn } = buildTx({ membershipFound: false });
+      mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
+      const { service } = await buildService();
+
+      await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
+
+      expect(updateFn).toHaveBeenCalledWith(chatMessages);
+      expect(deleteFn).toHaveBeenCalledWith(chatSavedMessages);
+      expect(deleteFn).toHaveBeenCalledWith(chatReplyReminders);
+      expect(deleteFn).toHaveBeenCalledWith(chatHuddleParticipants);
     });
   });
 });

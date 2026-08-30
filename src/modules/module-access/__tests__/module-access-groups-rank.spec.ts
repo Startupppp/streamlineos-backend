@@ -7,6 +7,7 @@ import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
 import { ModuleAccessGroupCrudService } from "../module-access-group-crud.service";
+import { ModuleAccessGroupMembersService } from "../module-access-group-members.service";
 import { ModuleAccessGroupPolicyService } from "../module-access-group-policy.service";
 import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -98,6 +99,7 @@ async function buildSvc(
     providers: [
       ModuleAccessGroupsService,
       ModuleAccessGroupCrudService,
+      ModuleAccessGroupMembersService,
       ModuleAccessGroupPolicyService,
       { provide: DRIZZLE, useValue: mockDb },
       {

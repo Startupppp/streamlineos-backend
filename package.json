@@ -129,6 +129,8 @@
     "check:tenant-isolation:self-test": "node src/scripts/check-tenant-isolation-coverage.mjs --self-test",
     "check:log-secrets": "node src/scripts/check-log-secrets.mjs",
     "check:log-secrets:self-test": "node src/scripts/check-log-secrets.mjs --self-test",
+    "check:outbox-consumers": "node src/scripts/check-outbox-consumers.mjs",
+    "check:outbox-consumers:self-test": "node src/scripts/check-outbox-consumers.mjs --self-test",
     "compliance:drill": "node --env-file-if-exists=.env src/scripts/compliance-drill.mjs",
     "scan:legacy-actors": "node src/scripts/scan-legacy-org-actors.mjs",
     "scan:legacy-actors:check": "node src/scripts/scan-legacy-org-actors.mjs --check",

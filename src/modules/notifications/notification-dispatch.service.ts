@@ -308,21 +308,6 @@ export class NotificationDispatchService {
     return row ? 1 : 0;
   }
 
-  /**
-   * `dedupeKey` identifies one emission, so a redelivery of that same emission lands on
-   * the same key and is refused by the unique index. Without it, an event that opts out
-   * of the time window (`dedupeWindowSeconds: 0` — mentions, DMs, chat, where repeats are
-   * legitimate) falls back to a fresh uuid and has no dedupe at all, so a relay replay
-   * after a half-finished drain would deliver a second copy.
-   */
-  private buildIdempotencyKey(input: DispatchEventInput, userId: string, channel: NotificationChannel, dedupeWindowSeconds: number): string {
-    const entity = `${input.entityType ?? ""}:${input.entityId ?? ""}`;
-    const windowBucket =
-      dedupeWindowSeconds > 0 ? Math.floor(Date.now() / (dedupeWindowSeconds * 1000)).toString() : randomUUID();
-    const bucket = input.dedupeKey ?? windowBucket;
-    return `org:${input.orgId}:event:${input.eventKey}:user:${userId}:entity:${entity}:channel:${channel}:dedupe:${bucket}`;
-  }
-
   private async persistForUser(
     input: DispatchEventInput,
     definition: NotificationEventDefinition,
