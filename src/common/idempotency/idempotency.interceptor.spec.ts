@@ -25,7 +25,15 @@ interface DbMockOptions {
 
 function makeDb(opts: DbMockOptions) {
   const setCalls: Record<string, unknown>[] = [];
-  const db = {
+  const db: Record<string, unknown> = {
+    /*
+      `transaction` and `execute`, because the reads open the organisation's own
+      transaction now — the tables they touch are under row-level security, and a
+      bare read matches nothing. The double runs the body against itself, so what
+      each case observes is unchanged.
+    */
+    transaction: (body: (handle: unknown) => Promise<unknown>) => body(db),
+    execute: () => Promise.resolve([]),
     insert: () => ({
       values: () => ({
         onConflictDoNothing: () => ({
