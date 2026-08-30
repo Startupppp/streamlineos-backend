@@ -67,22 +67,15 @@ class MessageStore {
   }
 }
 
-/**
- * Reads the cursor back out of the compiled predicate.
- *
- * `and(eq(channelId), lt(id, cursor))` binds two parameters; without a cursor it
- * binds one. The shape assertion is the point — if the service stops expressing
- * the bound as `"chat_messages"."id" <`, this throws instead of quietly reading
- * the wrong parameter.
- */
 function cursorFromPredicate(where: SQL): number | undefined {
   const { sql: text, params } = dialect.sqlToQuery(where);
-  const bounded = /"chat_messages"\."id"\s*<\s*\$/i.test(text);
-  if (!bounded) {
-    if (params.length !== 1) throw new Error(`unbounded read bound ${params.length} params: ${text}`);
-    return undefined;
-  }
-  const value = params[1];
+  if (!/"chat_messages"\."org_id"\s*=\s*\$/i.test(text))
+    throw new Error(`read is not tenant-bound: ${text}`);
+  if (!/"chat_messages"\."channel_id"\s*=\s*\$/i.test(text))
+    throw new Error(`read is not channel-bound: ${text}`);
+  const bound = /"chat_messages"\."id"\s*<\s*\$(\d+)/i.exec(text);
+  if (!bound) return undefined;
+  const value = params[Number(bound[1]) - 1];
   if (typeof value !== "number") throw new Error(`cursor parameter was ${typeof value}: ${text}`);
   return value;
 }
@@ -96,10 +89,19 @@ interface Harness {
 function buildHarness(store: MessageStore): Harness {
   let afterRead: (() => void) | undefined;
 
+  const selectChain = {
+    from: () => selectChain,
+    innerJoin: () => selectChain,
+    leftJoin: () => selectChain,
+    where: () => Promise.resolve([]),
+  };
+
   const db = {
+    select: jest.fn().mockReturnValue(selectChain),
     query: {
       chatChannels: { findFirst: jest.fn().mockResolvedValue({ id: CHANNEL_ID }) },
       chatChannelMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
       chatMessages: {
         findMany: jest.fn().mockImplementation(({ where, limit }: { where: SQL; limit: number }) => {
           const rows = store.newestFirst(cursorFromPredicate(where), limit);

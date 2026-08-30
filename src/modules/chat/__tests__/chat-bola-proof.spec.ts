@@ -131,6 +131,7 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 describe("ChatReplyRemindersService — orgId in member lookup", () => {
   function makeDb(members: { userId: string }[]) {
     const findMany = jest.fn().mockResolvedValue(members);
+    const memberFindFirst = jest.fn().mockResolvedValue({ id: 1 });
     const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
     const values = jest.fn().mockReturnValue({ onConflictDoNothing });
     const insert = jest.fn().mockReturnValue({ values });
@@ -138,18 +139,21 @@ describe("ChatReplyRemindersService — orgId in member lookup", () => {
       set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
     });
     const db = {
-      query: { chatChannelMembers: { findMany } },
+      query: {
+        chatChannelMembers: { findMany },
+        organizationMembers: { findFirst: memberFindFirst },
+      },
       update,
       insert,
     };
-    return { db, findMany, insert, values };
+    return { db, findMany, memberFindFirst, insert, values };
   }
 
   const dispatch = {} as unknown as NotificationDispatchService;
   const config = { CHAT_REPLY_REMINDER_MINUTES: 15 };
 
   it("DENY: scheduleForMessage member lookup binds orgId — attacker org returns no rows", async () => {
-    const { db, findMany } = makeDb([]);
+    const { db, findMany, memberFindFirst } = makeDb([]);
     const module = await Test.createTestingModule({
       providers: [
         ChatReplyRemindersService,
@@ -164,6 +168,9 @@ describe("ChatReplyRemindersService — orgId in member lookup", () => {
 
     const [opts] = findMany.mock.calls[0] ?? [];
     expect(flatValues(opts?.where)).toContain(ORG_ATTACKER);
+
+    const [memberOpts] = memberFindFirst.mock.calls[0] ?? [];
+    expect(flatValues(memberOpts?.where)).toContain(ORG_ATTACKER);
   });
 
   it("CONTROL: scheduleForMessage inserts reminders for OWNER_ORG members only", async () => {

@@ -126,7 +126,7 @@ export class ChatMessageTimelineService {
       throw new ForbiddenException("You are not a member of this channel");
 
     const safeLimit = Math.min(Math.max(1, limit), 100);
-    const conditions = [eq(chatMessages.channelId, channelId)];
+    const conditions = [eq(chatMessages.orgId, actor.orgId), eq(chatMessages.channelId, channelId)];
     if (cursor) conditions.push(lt(chatMessages.id, cursor));
 
     const rawMessages = await this.db.query.chatMessages.findMany({
@@ -168,6 +168,7 @@ export class ChatMessageTimelineService {
 
     const rawMessages = await this.db.query.chatMessages.findMany({
       where: and(
+        eq(chatMessages.orgId, actor.orgId),
         eq(chatMessages.channelId, channelId),
         gt(chatMessages.createdAt, since),
       ),
@@ -217,7 +218,7 @@ export class ChatMessageTimelineService {
       throw new ForbiddenException("You are not a member of this channel");
 
     const safeLimit = Math.min(Math.max(1, limit), 100);
-    const conditions = [eq(chatMessages.replyToId, parentMessageId)];
+    const conditions = [eq(chatMessages.orgId, actor.orgId), eq(chatMessages.replyToId, parentMessageId)];
     if (cursor) conditions.push(lt(chatMessages.id, cursor));
 
     const rawReplies = await this.db.query.chatMessages.findMany({

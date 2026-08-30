@@ -317,6 +317,7 @@ describe("ChatReplyRemindersService — tenant isolation", () => {
     const db = {
       query: {
         chatChannelMembers: { findMany: jest.fn().mockResolvedValue(memberRows) },
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
       },
       update,
       insert,

@@ -169,7 +169,6 @@ export class ChatHuddlesService {
           orgId,
           eventId: calEvent.id,
           membershipId: member.membershipId,
-          userId: member.userId,
         })));
       }
 
@@ -235,7 +234,7 @@ export class ChatHuddlesService {
 
   async joinHuddle(huddleId: number, userId: string, orgId: string) {
     const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
     });
     if (!huddle) throw new NotFoundException("Huddle not found or already ended");
 
@@ -290,7 +289,7 @@ export class ChatHuddlesService {
 
   async leaveHuddle(huddleId: number, userId: string, orgId: string) {
     const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
     });
     if (!huddle) throw new NotFoundException("Huddle not found or already ended");
 
@@ -337,7 +336,7 @@ export class ChatHuddlesService {
 
   async setMute(huddleId: number, userId: string, muted: boolean, orgId: string) {
     const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
     });
     if (!huddle) throw new NotFoundException("Huddle not found");
     await this.assertMember(huddle.channelId, userId, orgId);
@@ -359,7 +358,7 @@ export class ChatHuddlesService {
 
   async setDeafen(huddleId: number, userId: string, orgId: string, deafened: boolean) {
     const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
     });
     if (!huddle) throw new NotFoundException("Huddle not found");
     await this.assertMember(huddle.channelId, userId, orgId);
@@ -371,7 +370,7 @@ export class ChatHuddlesService {
 
   async raiseHand(huddleId: number, userId: string, raised: boolean, orgId: string) {
     const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
     });
     if (!huddle) throw new NotFoundException("Huddle not found");
     await this.assertMember(huddle.channelId, userId, orgId);
@@ -393,7 +392,7 @@ export class ChatHuddlesService {
 
   async sendSignal(huddleId: number, fromUserId: string, signal: HuddleSignalInput, orgId: string) {
     const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
     });
     if (!huddle) throw new NotFoundException("Huddle not found");
     await this.assertMember(huddle.channelId, fromUserId, orgId);
@@ -407,12 +406,13 @@ export class ChatHuddlesService {
     return { ok: true };
   }
 
-  async heartbeat(huddleId: number, userId: string): Promise<{ ok: boolean }> {
+  async heartbeat(huddleId: number, userId: string, orgId: string): Promise<{ ok: boolean }> {
     await this.db
       .update(chatHuddleParticipants)
       .set({ lastSeenAt: sql`now()` })
       .where(
         and(
+          eq(chatHuddleParticipants.orgId, orgId),
           eq(chatHuddleParticipants.huddleId, huddleId),
           eq(chatHuddleParticipants.userId, userId),
           isNull(chatHuddleParticipants.leftAt),
@@ -423,7 +423,7 @@ export class ChatHuddlesService {
 
   async setScreenShare(huddleId: number, userId: string, isScreenSharing: boolean, orgId: string) {
     const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
     });
     if (!huddle) throw new NotFoundException("Huddle not found");
     await this.assertMember(huddle.channelId, userId, orgId);
@@ -437,7 +437,7 @@ export class ChatHuddlesService {
 
   async kickParticipant(huddleId: number, userId: string, targetUserId: string, orgId: string) {
     const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
     });
     if (!huddle) throw new NotFoundException("Huddle not found");
     await this.assertMember(huddle.channelId, userId, orgId);
@@ -462,7 +462,7 @@ export class ChatHuddlesService {
 
   async inviteToHuddle(huddleId: number, fromUserId: string, orgId: string, targetUserIds: string[]) {
     const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
     });
     if (!huddle) throw new NotFoundException("Huddle not found");
     await this.assertMember(huddle.channelId, fromUserId, orgId);

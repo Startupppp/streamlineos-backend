@@ -273,7 +273,7 @@ export class ChatMessagesService {
 
   async edit(messageId: number, userId: string, orgId: string, content: string) {
     const message = await this.db.query.chatMessages.findFirst({
-      where: and(eq(chatMessages.id, messageId), eq(chatMessages.isDeleted, false)),
+      where: and(eq(chatMessages.id, messageId), eq(chatMessages.orgId, orgId), eq(chatMessages.isDeleted, false)),
     });
     if (!message) throw new NotFoundException("Message not found");
 
@@ -317,7 +317,7 @@ export class ChatMessagesService {
 
   async remove(messageId: number, userId: string, isOrgAdmin: boolean, orgId: string) {
     const message = await this.db.query.chatMessages.findFirst({
-      where: and(eq(chatMessages.id, messageId), eq(chatMessages.isDeleted, false)),
+      where: and(eq(chatMessages.id, messageId), eq(chatMessages.orgId, orgId), eq(chatMessages.isDeleted, false)),
     });
     if (!message) throw new NotFoundException("Message not found");
 

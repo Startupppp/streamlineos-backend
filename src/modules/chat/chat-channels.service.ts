@@ -16,6 +16,7 @@ import type { CreateChannelInput } from "./dto/chat.schemas";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
+import { resolvePeopleIdentities, subjectKey } from "../directory/person-seam";
 
 export function entityChannelFallbackName(
   entityType: string,
@@ -193,21 +194,29 @@ export class ChatChannelsService {
         .selectDistinctOn([chatMessages.channelId], {
           channelId: chatMessages.channelId,
           content: chatMessages.content,
-          senderName: users.name,
+          senderId: chatMessages.senderId,
           createdAt: chatMessages.createdAt,
         })
         .from(chatMessages)
-        .leftJoin(users, eq(users.id, chatMessages.senderId))
         .where(
           and(inArray(chatMessages.channelId, channelIds), eq(chatMessages.isDeleted, false)),
         )
         .orderBy(chatMessages.channelId, desc(chatMessages.createdAt));
 
+      const lastMsgSenderIds = [...new Set(lastMessageRows.map((r) => r.senderId).filter((id): id is string => id !== null))];
+      const senderIdentities = await resolvePeopleIdentities(
+        this.db,
+        orgId,
+        lastMsgSenderIds.map((userId) => ({ kind: "user" as const, userId })),
+      );
+
       const lastMsgMap = new Map(
-        lastMessageRows.map((r) => [
-          r.channelId,
-          { content: r.content, senderName: r.senderName, createdAt: r.createdAt },
-        ]),
+        lastMessageRows.map((r) => {
+          const identity = r.senderId ? senderIdentities.get(subjectKey({ kind: "user", userId: r.senderId })) : undefined;
+          const parts = [identity?.firstName, identity?.lastName].filter(Boolean).join(" ");
+          const senderName = identity?.displayName ?? (parts || null);
+          return [r.channelId, { content: r.content, senderName, createdAt: r.createdAt }];
+        }),
       );
 
       const resolutions = await Promise.allSettled(

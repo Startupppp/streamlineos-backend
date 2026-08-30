@@ -176,7 +176,7 @@ export class ChatHuddlesController {
   ) {
     const rl = await this.rateLimit.check("chat:huddle-heartbeat", u.userId);
     if (!rl.allowed) throw new HttpException(`Rate limited. Retry after ${rl.retryAfterSecs}s`, HttpStatus.TOO_MANY_REQUESTS);
-    return this.huddles.heartbeat(huddleId, u.userId);
+    return this.huddles.heartbeat(huddleId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Toggle screen share on/off in a huddle" })
