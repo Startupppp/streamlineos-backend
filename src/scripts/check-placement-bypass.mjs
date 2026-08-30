@@ -125,6 +125,14 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
     "org listing, switching, and restoration run under user identity before the target org's tenant context is known",
   ],
   [
+    "src/modules/organization/core/org-purge.service.ts",
+    "split out of org-lifecycle.service: resolveReplacementOrgIds asks, for each departing member, which org they should land in next, which is a cross-org question about that member's own memberships and cannot be answered inside the purged org's tenant context",
+  ],
+  [
+    "src/modules/organization/setup/org-setup-resolver.service.ts",
+    "split out of org-setup.service: listSetupMemberships enumerates a user's memberships to choose a setup target, so it necessarily runs before one org is chosen",
+  ],
+  [
     "src/modules/organization/core/org-membership.service.ts",
     "membership switch reads under user identity to exit the ambient admin transaction before the switch completes",
   ],
