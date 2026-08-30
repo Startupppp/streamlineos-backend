@@ -131,6 +131,14 @@ export const invGrns = pgTable("inv_grns", {
    * behind it, so the status is the answer to "has this moved anything".
    */
   status: invGrnStatusEnum("status").default("DRAFT").notNull(),
+  /**
+   * NEO-2 — the advance shipping notice this delivery fulfils, when there was
+   * one. Nullable and untyped as a FK column here rather than an import, because
+   * `quick-commerce.ts` imports this file: the constraint is declared there,
+   * where both tables are already in scope, and the column is declared here
+   * because it belongs to this table.
+   */
+  asnId: integer("asn_id"),
   postedBy: text("posted_by").references(() => users.id),
   postedAt: timestamp("posted_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
@@ -141,6 +149,7 @@ export const invGrns = pgTable("inv_grns", {
   unique("uniq_inv_grns_org_id").on(table.orgId, table.id),
   index("idx_inv_grn_po").on(table.poId),
   index("idx_inv_grn_org_status").on(table.orgId, table.status, table.receivedDate),
+  index("idx_inv_grn_org_asn").on(table.orgId, table.asnId),
 ]);
 
 export const invGrnLines = pgTable("inv_grn_lines", {

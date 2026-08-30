@@ -667,3 +667,30 @@ export const invitationStatusEnum = pgEnum("invitation_status", ["PENDING", "ACC
 export const broadcastAudienceTypeEnum = pgEnum("broadcast_audience_type", ["all", "roles", "departments", "users"]);
 export const templateApprovalStatusEnum = pgEnum("template_approval_status", ["NOT_REQUIRED", "PENDING", "APPROVED", "REJECTED"]);
 export const emailOutboxScopeEnum = pgEnum("email_outbox_scope", ["PLATFORM", "TENANT"]);
+
+/**
+ * NEO-2 — the quick-commerce networks a seller receives purchase orders from.
+ *
+ * These are *inbound* platforms: Streamline is the brand's system, and Blinkit,
+ * Instamart and Zepto each run their own dark-store WMS. What crosses the
+ * boundary is a purchase order and an advance shipping notice, never stock.
+ */
+export const invQcProviderEnum = pgEnum("inv_qc_provider", ["BLINKIT", "INSTAMART", "ZEPTO"]);
+
+/** NEO-2. Where an ingested platform purchase order stands. */
+export const invPlatformPoStatusEnum = pgEnum("inv_platform_po_status", [
+  "RECEIVED",
+  "REJECTED",
+  "ACCEPTED",
+  "CANCELLED",
+]);
+
+/** NEO-2. An advance shipping notice's life, from raised to received. */
+export const invAsnStatusEnum = pgEnum("inv_asn_status", [
+  "DRAFT",
+  "CONFIRMED",
+  "IN_TRANSIT",
+  "ARRIVED",
+  "CLOSED",
+  "CANCELLED",
+]);

@@ -30,6 +30,7 @@ const toSettingsRow = (row: InvSettingsSelect | InvSettingsInsert): InvSettingsR
     kirana: row.packKirana ?? false,
     pharmacy: row.packPharmacy ?? false,
     gst: row.packGst ?? false,
+    quickCommerce: row.packQuickCommerce ?? false,
   },
   gstMode: row.gstMode ?? "REGULAR",
   nearExpiryPolicy: row.nearExpiryPolicy ?? "DEPRIORITIZE",
@@ -39,6 +40,8 @@ const toSettingsRow = (row: InvSettingsSelect | InvSettingsInsert): InvSettingsR
   tallyExportEnabled: row.tallyExportEnabled ?? false,
   complianceAdapter: row.complianceAdapter ?? "stub",
   pharmacyH1RegisterEnabled: row.pharmacyH1RegisterEnabled ?? false,
+  qcZeptoEmailPoEnabled: row.qcZeptoEmailPoEnabled ?? false,
+  asnRequiredForGrn: row.asnRequiredForGrn ?? false,
 });
 
 const buildDefaults = (orgId: string): InvSettingsInsert => ({
@@ -61,6 +64,7 @@ const buildDefaults = (orgId: string): InvSettingsInsert => ({
   packKirana: false,
   packPharmacy: false,
   packGst: false,
+  packQuickCommerce: false,
   gstMode: "REGULAR",
   nearExpiryPolicy: "DEPRIORITIZE",
   nearExpiryWindowDays: 30,
@@ -69,6 +73,8 @@ const buildDefaults = (orgId: string): InvSettingsInsert => ({
   tallyExportEnabled: false,
   complianceAdapter: "stub",
   pharmacyH1RegisterEnabled: false,
+  qcZeptoEmailPoEnabled: false,
+  asnRequiredForGrn: false,
 });
 
 /**

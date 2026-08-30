@@ -189,6 +189,7 @@ export class SoCoreService {
           shippingAddress: data.shippingAddress,
           warehouseId: data.warehouseId,
           channelId: data.channelId ?? null,
+          platformPoId: data.platformPoId ?? null,
           subtotal,
           taxAmount,
           discount: "0",
@@ -236,6 +237,7 @@ export class SoCoreService {
       patch.shippingAddress = data.shippingAddress;
     if (data.warehouseId !== undefined) patch.warehouseId = data.warehouseId;
     if (data.channelId !== undefined) patch.channelId = data.channelId;
+    if (data.platformPoId !== undefined) patch.platformPoId = data.platformPoId;
     if (data.currency !== undefined) patch.currency = data.currency;
     if (data.notes !== undefined) patch.notes = data.notes;
 

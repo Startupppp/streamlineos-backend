@@ -2430,6 +2430,13 @@
       "when": 1788134409023,
       "tag": "0580_inventory_channel_pools",
       "breakpoints": true
+    },
+    {
+      "idx": 348,
+      "version": "7",
+      "when": 1788134409024,
+      "tag": "0581_inventory_quick_commerce_asn",
+      "breakpoints": true
     }
   ]
 }

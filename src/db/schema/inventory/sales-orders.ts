@@ -29,6 +29,17 @@ export const invSalesOrders = pgTable("inv_sales_orders", {
    * holding and an order that does not, does not.
    */
   channelId: integer("channel_id").references(() => invChannels.id, { onDelete: "set null" }),
+  /**
+   * NEO-3 — the platform purchase order this order fulfils.
+   *
+   * A real referential link rather than a join on dates and hope. Fill-rate is
+   * "of what they ordered, how much did we ship", and without this the two
+   * halves of that sentence are only guessable — which is how a fill-rate report
+   * ends up being a number nobody trusts. Nullable, and declared as a bare
+   * column because `quick-commerce.ts` imports this file; the constraint is
+   * declared there.
+   */
+  platformPoId: integer("platform_po_id"),
   subtotal: decimal("subtotal", { precision: 18, scale: 4 }).default("0").notNull(),
   taxAmount: decimal("tax_amount", { precision: 18, scale: 4 }).default("0").notNull(),
   discount: decimal("discount", { precision: 18, scale: 4 }).default("0").notNull(),
@@ -53,6 +64,7 @@ export const invSalesOrders = pgTable("inv_sales_orders", {
   index("idx_inv_so_client").on(table.clientId),
   index("idx_inv_so_warehouse").on(table.warehouseId),
   index("idx_inv_so_org_channel").on(table.orgId, table.channelId),
+  index("idx_inv_so_org_platform_po").on(table.orgId, table.platformPoId),
   foreignKey({
     columns: [table.orgId, table.channelId],
     foreignColumns: [invChannels.orgId, invChannels.id],

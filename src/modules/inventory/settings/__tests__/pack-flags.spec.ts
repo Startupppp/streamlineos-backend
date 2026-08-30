@@ -50,7 +50,7 @@ function buildService(
 }
 
 describe("E1 pack flags", () => {
-  const warehouseOnly = { warehouse: true, kirana: false, pharmacy: false, gst: false };
+  const warehouseOnly = { warehouse: true, kirana: false, pharmacy: false, gst: false, quickCommerce: false };
 
   it("defaults to warehouse only", async () => {
     const { service } = buildService(warehouseOnly);
@@ -77,6 +77,7 @@ describe("E1 pack flags", () => {
       kirana: true,
       pharmacy: false,
       gst: false,
+      quickCommerce: false,
     });
     await service.updateSettings("org1", "u1", { packWarehouse: false });
     expect(update).toHaveBeenCalledWith("org1", { packWarehouse: false }, "u1");
@@ -89,6 +90,7 @@ describe("E1 pack flags", () => {
     const { service, update } = buildService({
       warehouse: false,
       kirana: false,
+      quickCommerce: false,
       pharmacy: true,
       gst: false,
     });
@@ -119,7 +121,7 @@ describe("E1 pack flags", () => {
     // the mode is already COMPOSITION and the patch only touches the pack, so
     // nothing in the request mentions GST mode at all.
     const { service, update } = buildService(
-      { warehouse: true, kirana: false, pharmacy: false, gst: true },
+      { warehouse: true, kirana: false, pharmacy: false, gst: true, quickCommerce: false },
       "COMPOSITION",
     );
     await expect(
@@ -137,8 +139,8 @@ describe("E1 pack flags", () => {
  * worse than one that will not save.
  */
 describe("E3 H1 register jurisdiction flag", () => {
-  const warehouseOnly = { warehouse: true, kirana: false, pharmacy: false, gst: false };
-  const withPharmacy = { warehouse: true, kirana: false, pharmacy: true, gst: false };
+  const warehouseOnly = { warehouse: true, kirana: false, pharmacy: false, gst: false, quickCommerce: false };
+  const withPharmacy = { warehouse: true, kirana: false, pharmacy: true, gst: false, quickCommerce: false };
 
   it("refuses the register while the pharmacy pack is off", async () => {
     const { service, update } = buildService(warehouseOnly);

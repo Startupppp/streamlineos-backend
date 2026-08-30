@@ -155,6 +155,17 @@ export interface InvSettingsRow {
    * comment on `inv_settings.pharmacy_h1_register_enabled`.
    */
   pharmacyH1RegisterEnabled: boolean;
+  /**
+   * NEO-2. Zepto's purchase orders arrive as email, so the parser is heuristic
+   * where the JSON ones are not. Its own switch, not implied by the pack.
+   */
+  qcZeptoEmailPoEnabled: boolean;
+  /**
+   * NEO-2/NEO-12. Whether a delivery may be received without having been
+   * announced. Off by default: most warehouses receive against a purchase order
+   * and nothing else.
+   */
+  asnRequiredForGrn: boolean;
 }
 
 /** D2 — short-dated, not expired. See `invNearExpiryPolicyEnum`. */
@@ -166,6 +177,11 @@ export interface InvPackFlags {
   warehouse: boolean;
   kirana: boolean;
   pharmacy: boolean;
+  /**
+   * NEO-2. Platform purchase orders, ASNs and fill-rate. Off by default like the
+   * other optional packs; off means the ingest endpoint refuses before parsing.
+   */
+  quickCommerce: boolean;
   gst: boolean;
 }
 

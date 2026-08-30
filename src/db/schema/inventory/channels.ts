@@ -8,6 +8,7 @@ import {
   invChannelDeliveryStatusEnum,
   invChannelSnapshotDiffStatusEnum,
   invChannelSnapshotPolicyEnum,
+  invQcProviderEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { invProductVariants } from "./core";
@@ -38,12 +39,26 @@ export const invChannels = pgTable("inv_channels", {
    * somewhere nobody chose.
    */
   reconciliationLocationId: integer("reconciliation_location_id"),
+  /**
+   * NEO-2 — which quick-commerce network this channel *is*, when it is one.
+   *
+   * It is what ties an ingested Blinkit purchase order to a Streamline channel,
+   * and therefore to that channel's reserved pool (NEO-1): accepting the PO
+   * claims the stock for Blinkit, so the same units stop being offered on the
+   * storefront. Null for every ordinary channel, which is most of them.
+   */
+  qcProvider: invQcProviderEnum("qc_provider"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_channels_org_name").on(table.orgId, table.name),
   unique("uniq_inv_channels_org_id").on(table.orgId, table.id),
   index("idx_inv_channels_org_status").on(table.orgId, table.status),
+  // One channel per provider per organisation: two Blinkit channels would make
+  // "which pool does this PO claim into" a question with two answers.
+  uniqueIndex("uniq_inv_channels_org_qc_provider")
+    .on(table.orgId, table.qcProvider)
+    .where(sql`qc_provider IS NOT NULL`),
   foreignKey({
     columns: [table.orgId, table.reconciliationLocationId],
     foreignColumns: [invLocations.orgId, invLocations.id],

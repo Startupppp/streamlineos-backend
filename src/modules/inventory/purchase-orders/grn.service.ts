@@ -28,6 +28,7 @@ import type {
 import { PoService } from "./po.service";
 import { GrnPostingService } from "./grn-post.service";
 import { GrnReadService } from "./grn-read.service";
+import { QuickCommerceInboundService } from "../channels/quick-commerce/quick-commerce-inbound.service";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -82,6 +83,7 @@ export class GrnService {
     private readonly warehouseScope: WarehouseScopeService,
     private readonly posting: GrnPostingService,
     private readonly reads: GrnReadService,
+    private readonly quickCommerce: QuickCommerceInboundService,
   ) {}
 
   /**
@@ -105,7 +107,16 @@ export class GrnService {
         orgId,
         idempotencyKey,
         { command: "inventory.receiving.draft", ...data, locationId },
-        () => this.createDraftInTx(tx, orgId, userId, po, locationId, data.receivedDate, data.notes, data.lines),
+        async () => {
+          // NEO-2. The `asn_required_for_grn` rule has one home, in the
+          // quick-commerce service; receiving asks it rather than carrying a
+          // copy. Inside the claim, so a refused first attempt rolls the claim
+          // back with it.
+          await this.quickCommerce.assertReceivable(tx, orgId, { poId: po.id, asnId: data.asnId ?? null });
+          return this.createDraftInTx(
+            tx, orgId, userId, po, locationId, data.receivedDate, data.notes, data.lines, data.asnId ?? null,
+          );
+        },
         this.revivedGrnId,
       ),
     );
@@ -236,8 +247,9 @@ export class GrnService {
         idempotencyKey,
         { poId, locationId, receivedDate: data.receivedDate, notes: data.notes, lines: data.lines },
         async () => {
+          await this.quickCommerce.assertReceivable(tx, orgId, { poId: po.id, asnId: data.asnId ?? null });
           const created = await this.createDraftInTx(
-            tx, orgId, userId, po, locationId, data.receivedDate, data.notes, data.lines,
+            tx, orgId, userId, po, locationId, data.receivedDate, data.notes, data.lines, data.asnId ?? null,
           );
           return this.posting.postInTx(tx, orgId, created, userId, idempotencyKey);
         },
@@ -322,6 +334,7 @@ export class GrnService {
     receivedDate: string,
     notes: string | undefined,
     lines: readonly GrnDraftLine[],
+    asnId: number | null,
   ): Promise<number> {
     const grnNumber = await this.numSeq.next(orgId, "GRN", tx);
 
@@ -334,6 +347,7 @@ export class GrnService {
         locationId,
         notes,
         status: "DRAFT",
+        asnId,
         createdBy: userId,
         receivedDate,
       })

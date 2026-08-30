@@ -55,6 +55,26 @@ export const invSettings = pgTable("inv_settings", {
   packPharmacy: boolean("pack_pharmacy").default(false).notNull(),
   packGst: boolean("pack_gst").default(false).notNull(),
   /**
+   * NEO-2 — the quick-commerce pack: platform purchase orders, ASNs and
+   * fill-rate. Off by default like every other optional pack, and off means the
+   * ingest endpoint refuses before it parses anything.
+   */
+  packQuickCommerce: boolean("pack_quick_commerce").default(false).notNull(),
+  /**
+   * NEO-2 — Zepto's purchase orders arrive as email, not as an API call, so the
+   * parser is heuristic in a way the JSON ones are not. It gets its own flag
+   * because "we read a text file and believed it" is a decision an organisation
+   * should make deliberately, not inherit from switching the pack on.
+   */
+  qcZeptoEmailPoEnabled: boolean("qc_zepto_email_po_enabled").default(false).notNull(),
+  /**
+   * NEO-2/NEO-12 — whether a delivery may be received without having been
+   * announced. Off by default: most warehouses receive against a purchase order
+   * and nothing else, and demanding an ASN they do not raise would stop
+   * receiving altogether.
+   */
+  asnRequiredForGrn: boolean("asn_required_for_grn").default(false).notNull(),
+  /**
    * D2 — short-dated stock is a different question from expired stock.
    *
    * `expiry_reservation_policy` decides whether an already-expired lot may be

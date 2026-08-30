@@ -95,6 +95,8 @@ export const createGrnSchema = z.object({
   receivedDate: isoDate,
   locationId: z.number().int().positive().optional(),
   notes: z.string().max(2000).optional(),
+  /** NEO-2 — the ASN this delivery fulfils. See `createGrnDraftSchema`. */
+  asnId: z.number().int().positive().optional(),
   lines: z.array(grnLotLineSchema).min(1),
 }).strict();
 export type CreateGrnInput = z.infer<typeof createGrnSchema>;
@@ -111,6 +113,13 @@ export const createGrnDraftSchema = z.object({
   receivedDate: isoDate,
   locationId: z.number().int().positive().optional(),
   notes: z.string().max(2000).optional(),
+  /**
+   * NEO-2 — the advance shipping notice this delivery fulfils, when there is
+   * one. Optional even where `asn_required_for_grn` is on: the rule then accepts
+   * any open ASN for the purchase order, because a driver arriving with a
+   * paper docket knows the PO and not our ASN number.
+   */
+  asnId: z.number().int().positive().optional(),
   lines: z.array(grnLotLineSchema).min(1),
 }).strict();
 export type CreateGrnDraftInput = z.infer<typeof createGrnDraftSchema>;

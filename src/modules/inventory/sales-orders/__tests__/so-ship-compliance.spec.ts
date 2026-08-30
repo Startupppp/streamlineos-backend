@@ -65,8 +65,10 @@ function settings(overrides: Partial<InvSettingsRow> = {}): InvSettingsRow {
     allowPartialShipment: true,
     packageRequiredForShipping: false,
     channelPublishPolicy: null,
-    packs: { warehouse: true, kirana: false, pharmacy: false, gst: true },
+    packs: { warehouse: true, kirana: false, pharmacy: false, gst: true, quickCommerce: false },
     pharmacyH1RegisterEnabled: false,
+    qcZeptoEmailPoEnabled: false,
+    asnRequiredForGrn: false,
     gstMode: "REGULAR",
     nearExpiryPolicy: "DEPRIORITIZE",
     nearExpiryWindowDays: 30,
@@ -178,7 +180,7 @@ describe("E5 — with the flags off, nothing statutory happens", () => {
     // a misconfiguration, not an instruction.
     const { service, register } = makeService(
       settings({
-        packs: { warehouse: true, kirana: false, pharmacy: false, gst: false },
+        packs: { warehouse: true, kirana: false, pharmacy: false, gst: false, quickCommerce: false },
         gstEinvoiceEnabled: true,
         gstEwaybillEnabled: true,
       }),
