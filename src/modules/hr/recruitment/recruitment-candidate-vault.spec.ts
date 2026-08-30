@@ -137,12 +137,12 @@ describe("the access-log reader no longer depends on the document surviving", ()
 
 describe("the schema keeps the audit row alive", () => {
   const schema = readFileSync(
-    join(__dirname, "../../../db/schema/hr/hiring.ts"),
+    join(__dirname, "../../../db/schema/hr/hiring-candidates.ts"),
     "utf8",
   );
   const block = schema.slice(
     schema.indexOf('export const vaultAccessLogs = pgTable("vault_access_logs"'),
-    schema.indexOf('export const interviewSlas'),
+    schema.indexOf('export const candidateReferenceChecks'),
   );
 
   const documentReference = block
