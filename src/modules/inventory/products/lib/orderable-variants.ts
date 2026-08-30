@@ -30,6 +30,14 @@ export interface OrderableVariant {
   sku: string;
   costPrice: string;
   sellingPrice: string;
+  /**
+   * NEO-10 — whether this SKU is sold by weight. Carried here because every
+   * caller that raises a document line already loads this row, and a document
+   * line for a catch-weight SKU is invalid without a piece count: making them
+   * re-query the product to find that out is how the sales side ended up not
+   * checking at all.
+   */
+  measureMode: "PIECES" | "CATCH_WEIGHT";
 }
 
 type VariantRow = {
@@ -38,6 +46,7 @@ type VariantRow = {
   sku: string;
   costPrice: string;
   sellingPrice: string;
+  measureMode: "PIECES" | "CATCH_WEIGHT";
   variantActive: boolean | null;
   productStatus: string;
   productDeletedAt: Date | null;
@@ -59,6 +68,7 @@ async function loadVariants(
       sku: invProductVariants.sku,
       costPrice: invProductVariants.costPrice,
       sellingPrice: invProductVariants.sellingPrice,
+      measureMode: invProducts.measureMode,
       variantActive: invProductVariants.isActive,
       productStatus: invProducts.status,
       productDeletedAt: invProducts.deletedAt,
@@ -99,6 +109,7 @@ function toMap(rows: readonly VariantRow[]): Map<number, OrderableVariant> {
         sku: row.sku,
         costPrice: row.costPrice,
         sellingPrice: row.sellingPrice,
+        measureMode: row.measureMode,
       },
     ]),
   );

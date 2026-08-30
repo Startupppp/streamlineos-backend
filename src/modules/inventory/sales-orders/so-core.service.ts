@@ -22,7 +22,8 @@ import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { SoLifecycleService } from "./so-lifecycle.service";
 import { addDec, mulDec } from "../stock-engine/stock-engine.service";
-import { loadOrderableVariants } from "../products/lib/orderable-variants";
+import { loadOrderableVariants, type OrderableVariant } from "../products/lib/orderable-variants";
+import { assertCatchWeightLine } from "../stock-types/catch-weight";
 import { availableQty } from "../stock-engine/decimal";
 import type {
   CreateSoInput,
@@ -47,6 +48,56 @@ function computeSoTotals(
     subtotal,
     taxAmount,
     total: addDec(subtotal, taxAmount),
+  };
+}
+
+/**
+ * NEO-10 — the order line as it is stored, with the catch-weight rule applied.
+ *
+ * A catch-weight SKU is sold by weight and handled in pieces. `quantity` is the
+ * weight and `amount` is `unitPrice x weight` — which is what the arithmetic
+ * above already did, because for this kind of SKU the ledger quantity *is* the
+ * weight. What was missing is the other half of the fact: how many bags.
+ *
+ * The receipt side has refused a catch-weight line with no piece count since
+ * NEO-10 was built (`grn.service.ts`); the sales side accepted one, and then
+ * dropped the field on the floor even when a caller sent it. So an order could
+ * be raised for 5.10 kg of chicken with nothing telling the picker whether that
+ * was one bag or four, and `inv_so_lines.quantity_pieces` was a column nothing
+ * ever wrote. Both halves are fixed here: the rule is asserted, and the answer
+ * is stored.
+ */
+function toSoLineValues(
+  orgId: string,
+  soId: number,
+  line: {
+    productVariantId: number;
+    quantity: number;
+    quantityPieces?: number;
+    unitPrice: string;
+    taxRate: string;
+    lineOrder: number;
+  },
+  variants: Map<number, OrderableVariant>,
+) {
+  const quantity = line.quantity.toFixed(4);
+  const quantityPieces = line.quantityPieces === undefined ? null : line.quantityPieces.toFixed(4);
+  assertCatchWeightLine(variants.get(line.productVariantId)?.measureMode ?? "PIECES", {
+    quantity,
+    quantityPieces,
+  });
+
+  return {
+    orgId,
+    soId,
+    productVariantId: line.productVariantId,
+    quantity: line.quantity.toString(),
+    quantityPieces,
+    unitPrice: line.unitPrice,
+    taxRate: line.taxRate,
+    amount: mulDec(quantity, line.unitPrice),
+    costAtTime: variants.get(line.productVariantId)?.costPrice ?? "0",
+    lineOrder: line.lineOrder,
   };
 }
 
@@ -173,9 +224,6 @@ export class SoCoreService {
     // and a discontinued SKU was as orderable as a live one.
     const variantIds = data.lines.map((l) => l.productVariantId);
     const orderable = await loadOrderableVariants(this.db, orgId, variantIds);
-    const variantCostMap = new Map(
-      [...orderable.values()].map((v) => [v.id, v.costPrice]),
-    );
 
     const so = await this.db.transaction(async (tx) => {
       const [header] = await (tx as Db)
@@ -201,17 +249,7 @@ export class SoCoreService {
         .returning();
 
       await (tx as Db).insert(invSoLines).values(
-        data.lines.map((line) => ({
-          orgId,
-          soId: header.id,
-          productVariantId: line.productVariantId,
-          quantity: line.quantity.toString(),
-          unitPrice: line.unitPrice,
-          taxRate: line.taxRate,
-          amount: mulDec(line.quantity.toFixed(4), line.unitPrice),
-          costAtTime: variantCostMap.get(line.productVariantId) ?? "0",
-          lineOrder: line.lineOrder,
-        })),
+        data.lines.map((line) => toSoLineValues(orgId, header.id, line, orderable)),
       );
 
       return header;
@@ -241,7 +279,7 @@ export class SoCoreService {
     if (data.currency !== undefined) patch.currency = data.currency;
     if (data.notes !== undefined) patch.notes = data.notes;
 
-    let variantCostMap = new Map<number, string>();
+    let orderable = new Map<number, OrderableVariant>();
     if (data.lines) {
       const { subtotal, taxAmount, total } = computeSoTotals(data.lines);
       patch.subtotal = subtotal;
@@ -253,10 +291,7 @@ export class SoCoreService {
       // editing a draft order was a way to put another organisation's variant --
       // or a discontinued one -- onto a line that creating the order refuses.
       const variantIds = data.lines.map((l) => l.productVariantId);
-      const orderable = await loadOrderableVariants(this.db, orgId, variantIds);
-      variantCostMap = new Map(
-        [...orderable.values()].map((v) => [v.id, v.costPrice]),
-      );
+      orderable = await loadOrderableVariants(this.db, orgId, variantIds);
     }
 
     await this.db.transaction(async (tx) => {
@@ -269,17 +304,7 @@ export class SoCoreService {
           .where(and(eq(invSoLines.orgId, orgId), eq(invSoLines.soId, soId)));
 
         await (tx as Db).insert(invSoLines).values(
-          (data.lines ?? []).map((line) => ({
-            orgId,
-            soId,
-            productVariantId: line.productVariantId,
-            quantity: line.quantity.toString(),
-            unitPrice: line.unitPrice,
-            taxRate: line.taxRate,
-            amount: mulDec(line.quantity.toFixed(4), line.unitPrice),
-            costAtTime: variantCostMap.get(line.productVariantId) ?? "0",
-            lineOrder: line.lineOrder,
-          })),
+          (data.lines ?? []).map((line) => toSoLineValues(orgId, soId, line, orderable)),
         );
       }
 

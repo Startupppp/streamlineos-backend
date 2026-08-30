@@ -90,6 +90,8 @@ interface Scene {
   componentBId: number;
   /** NEO-8: never stocked. It arrives and leaves on the same shift. */
   crossDockVariantId: number;
+  /** NEO-10: sold by weight, handled in bags. */
+  catchWeightVariantId: number;
   channelId: number;
 }
 
@@ -107,6 +109,9 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
   let crossDockSoId: number;
   let crossDockPoId: number;
   let crossDockPoLineId: number;
+  let catchWeightPoId: number;
+  let catchWeightPoLineId: number;
+  let catchWeightSoId: number;
 
   const asTenant = <T>(work: () => Promise<T>): Promise<T> =>
     runInNewTenantTransaction(app.app.get<Db>(DRIZZLE), scene.orgId, work);
@@ -161,6 +166,24 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
     }));
   };
 
+  /**
+   * NEO-10 - on hand as the database holds it, not as a float rounds it.
+   *
+   * `onHandAt` returns a `number` and that is right for counting bags. A weight
+   * is the one quantity this repository forbids float arithmetic on, so the
+   * catch-weight slice compares the decimal string itself: 5.2500 is either the
+   * remainder or it is not, and `toBeCloseTo` would let 5.249999 pass.
+   */
+  const onHandTextAt = async (variantId: number, locationId: number): Promise<string> => {
+    const [row] = await asTenant(() =>
+      db().execute<{ qty: string }>(sql`
+        SELECT COALESCE(SUM(on_hand), 0)::numeric(18,4)::text AS qty FROM inv_stock_levels
+        WHERE org_id = ${scene.orgId} AND product_variant_id = ${variantId}
+          AND location_id = ${locationId}`),
+    );
+    return row!.qty;
+  };
+
   /** NEO-8: what is actually being held for an order, and where. */
   const reservationsFor = async (
     soId: number,
@@ -206,10 +229,16 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
         INSERT INTO inv_uom (org_id, name, abbreviation, is_base)
         VALUES (${seeded.orgId}, ${`Each ${tag}`}, ${`E${tag}`}, true) RETURNING id`);
 
-      const makeVariant = async (name: string, code: string) => {
+      const makeVariant = async (
+        name: string,
+        code: string,
+        /** NEO-10: weight in the ledger, pieces on the document. */
+        measureMode: "PIECES" | "CATCH_WEIGHT" = "PIECES",
+      ) => {
         const product = await one<{ id: number }>(sql`
-          INSERT INTO inv_products (org_id, uom_id, name, sku, created_by)
-          VALUES (${seeded.orgId}, ${uom.id}, ${name}, ${`${code}-${tag}`}, ${userId}) RETURNING id`);
+          INSERT INTO inv_products (org_id, uom_id, name, sku, measure_mode, created_by)
+          VALUES (${seeded.orgId}, ${uom.id}, ${name}, ${`${code}-${tag}`}, ${measureMode}, ${userId})
+          RETURNING id`);
         const variant = await one<{ id: number }>(sql`
           INSERT INTO inv_product_variants (org_id, product_id, name, sku)
           VALUES (${seeded.orgId}, ${product.id}, 'Default', ${`${code}-${tag}-V`}) RETURNING id`);
@@ -221,6 +250,7 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
       const componentAId = await makeVariant("NEO component A", "NEOCA");
       const componentBId = await makeVariant("NEO component B", "NEOCB");
       const crossDockVariantId = await makeVariant("NEO cross-dock case", "NEOXD");
+      const catchWeightVariantId = await makeVariant("NEO chicken", "NEOCW", "CATCH_WEIGHT");
 
       // NEO-2 matches a platform line on the barcode both sides agreed on.
       const ean = `890${tag.replace(/\D/g, "0").padEnd(10, "0").slice(0, 10)}`;
@@ -287,6 +317,7 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
         componentAId,
         componentBId,
         crossDockVariantId,
+        catchWeightVariantId,
         channelId: channel.id,
       };
     });
@@ -818,6 +849,163 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
       (await levelsFor(scene.crossDockVariantId)).filter((l) => l.onHand !== 0),
     ).toEqual([]);
     await expectReconciled("NEO-8 cross-dock shipped");
+  }, SLICE_TIMEOUT_MS);
+
+  /**
+   * NEO-10 — catch-weight, received and sold.
+   *
+   * The rules had unit coverage and no SKU had ever been through them. What a
+   * walk adds is the arithmetic across two movements: 10.35 kg in, 5.10 kg out,
+   * 5.25 kg left, and an invoice raised on the weight rather than on the two
+   * bags it arrived in. Every figure here is compared as a decimal string —
+   * a weight is the one quantity this repository forbids floats on, and
+   * `toBeCloseTo` would let 5.249999 through.
+   */
+  it("NEO-10: refuses a catch-weight receipt that does not say how many bags", async () => {
+    const po = await asTenant(() =>
+      app.app.get(PoService).createPo(scene.orgId, scene.userId, {
+        vendorId: scene.vendorId,
+        orderDate: "2026-09-05",
+        warehouseId: scene.warehouseId,
+        currency: "INR",
+        lines: [
+          {
+            productVariantId: scene.catchWeightVariantId,
+            quantity: 10.35,
+            unitCost: "200.0000",
+            taxRate: "0",
+            lineOrder: 0,
+          },
+        ],
+      }),
+    );
+    catchWeightPoId = (po as { id: number }).id;
+    await asTenant(() => app.app.get(PoService).sendPo(scene.orgId, catchWeightPoId, scene.userId));
+
+    const [line] = await asTenant(() =>
+      db().execute<{ id: number }>(sql`
+        SELECT id FROM inv_po_lines WHERE org_id = ${scene.orgId} AND po_id = ${catchWeightPoId}`),
+    );
+    catchWeightPoLineId = line!.id;
+
+    // A weight with no piece count cannot be picked: nobody knows how many bags
+    // to take off the shelf.
+    await expect(
+      asTenant(() =>
+        app.app
+          .get(GrnService)
+          .receiveGoods(scene.orgId, catchWeightPoId, scene.userId, `neo-cw-bad-${scene.tag}`, {
+            receivedDate: "2026-09-05",
+            locationId: scene.receivingId,
+            lines: [
+              {
+                poLineId: catchWeightPoLineId,
+                quantityReceived: "10.3500",
+                qualityStatus: "ACCEPTED",
+              },
+            ],
+          }),
+      ),
+    ).rejects.toThrow(/pieces/i);
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-10: receives two bags weighing 10.35 kg, and the ledger holds the weight", async () => {
+    await asTenant(() =>
+      app.app
+        .get(GrnService)
+        .receiveGoods(scene.orgId, catchWeightPoId, scene.userId, `neo-cw-receive-${scene.tag}`, {
+          receivedDate: "2026-09-05",
+          locationId: scene.receivingId,
+          lines: [
+            {
+              poLineId: catchWeightPoLineId,
+              quantityReceived: "10.3500",
+              quantityPieces: "2.0000",
+              qualityStatus: "ACCEPTED",
+            },
+          ],
+        }),
+    );
+
+    // The ledger holds the weight, exactly.
+    expect(await onHandTextAt(scene.catchWeightVariantId, scene.receivingId)).toBe("10.3500");
+
+    // The bags ride alongside on the document, for the person counting them.
+    const [grnLine] = await asTenant(() =>
+      db().execute<{ quantity_received: string; quantity_pieces: string | null }>(sql`
+        SELECT gl.quantity_received::text, gl.quantity_pieces::text
+          FROM inv_grn_lines gl
+          JOIN inv_grns g ON g.org_id = gl.org_id AND g.id = gl.grn_id
+         WHERE gl.org_id = ${scene.orgId} AND g.po_id = ${catchWeightPoId}`),
+    );
+    expect(grnLine!.quantity_received).toBe("10.3500");
+    expect(grnLine!.quantity_pieces).toBe("2.0000");
+
+    await expectReconciled("NEO-10 catch-weight received");
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-10: prices the sale from the weight and not from the number of bags", async () => {
+    const so = await asTenant(() =>
+      app.app.get(SoCoreService).createSo(scene.orgId, scene.userId, {
+        orderDate: "2026-09-06",
+        warehouseId: scene.warehouseId,
+        currency: "INR",
+        lines: [
+          {
+            productVariantId: scene.catchWeightVariantId,
+            // One bag, and the bag weighed 5.10 kg. Both facts, because neither
+            // derives from the other.
+            quantity: 5.1,
+            quantityPieces: 1,
+            unitPrice: "250.0000",
+            taxRate: "0",
+            lineOrder: 0,
+          },
+        ],
+      }),
+    );
+    catchWeightSoId = (so as { id: number }).id;
+
+    const [soLine] = await asTenant(() =>
+      db().execute<{ quantity: string; quantity_pieces: string | null; amount: string }>(sql`
+        SELECT quantity::text, quantity_pieces::text, amount::text FROM inv_so_lines
+        WHERE org_id = ${scene.orgId} AND so_id = ${catchWeightSoId}`),
+    );
+
+    expect(soLine!.quantity).toBe("5.1000");
+    // The whole point of catch-weight: 250 a kilo times 5.10 kg is 1275, and it
+    // is emphatically not 250 for the one bag.
+    expect(soLine!.amount).toBe("1275.0000");
+    expect(soLine!.amount).not.toBe("250.0000");
+    // And the picker is told how many bags to take.
+    expect(soLine!.quantity_pieces).toBe("1.0000");
+
+    const [header] = await asTenant(() =>
+      db().execute<{ subtotal: string; total: string }>(sql`
+        SELECT subtotal::text, total::text FROM inv_sales_orders
+        WHERE org_id = ${scene.orgId} AND id = ${catchWeightSoId}`),
+    );
+    expect(header!.subtotal).toBe("1275.0000");
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-10: ships one bag and leaves 5.25 kg on the shelf", async () => {
+    await asTenant(() =>
+      app.app
+        .get(SoLifecycleService)
+        .confirmSo(scene.orgId, catchWeightSoId, scene.userId, `neo-cw-confirm-${scene.tag}`),
+    );
+    await asTenant(() =>
+      app.app
+        .get(SoFulfillmentService)
+        .shipSo(scene.orgId, catchWeightSoId, scene.userId, `neo-cw-ship-${scene.tag}`, {
+          shipDate: "2026-09-06",
+        }),
+    );
+
+    // 10.3500 - 5.1000. Compared as the string the database holds, so a float
+    // remainder cannot round itself right.
+    expect(await onHandTextAt(scene.catchWeightVariantId, scene.receivingId)).toBe("5.2500");
+    await expectReconciled("NEO-10 catch-weight shipped");
   }, SLICE_TIMEOUT_MS);
 
   it("NEO-11: consigned stock is on hand and is never promisable", async () => {
