@@ -24,11 +24,13 @@ describe("DashboardAnnouncementsService — cross-tenant isolation", () => {
 
   function makeDb(): { db: Db; wheres: unknown[] } {
     const wheres: unknown[] = [];
+    const joinResult = { where: jest.fn().mockImplementation((a: unknown) => { wheres.push(a); return makeChain(); }) };
     const db = {
       select: jest.fn().mockImplementation(() => ({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockImplementation((a: unknown) => { wheres.push(a); return makeChain(); }),
-          leftJoin: jest.fn().mockReturnValue({ where: jest.fn().mockImplementation((a: unknown) => { wheres.push(a); return makeChain(); }) }),
+          leftJoin: jest.fn().mockReturnValue(joinResult),
+          innerJoin: jest.fn().mockReturnValue(joinResult),
         }),
       })),
     } as unknown as Db;

@@ -40,8 +40,8 @@ describe("DashboardBirthdaysService — cross-tenant isolation", () => {
 
   it("scopes birthday query to the requesting org (tenant isolation)", async () => {
     const { db, wheres } = makeDb();
-    const cache = { cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()) } as never;
-    const access = { holds: jest.fn().mockResolvedValue(true) } as never;
+    const cache = { cachedForOrg: jest.fn().mockImplementation((_orgId: unknown, _k: unknown, fn: () => unknown) => fn()) } as never;
+    const access = { holds: jest.fn().mockResolvedValue(true), getPermissionsVersion: jest.fn().mockResolvedValue(1) } as never;
     const svc = new DashboardBirthdaysService(db, cache, access);
 
     await svc.getBirthdays(ATTACKER);
@@ -52,8 +52,8 @@ describe("DashboardBirthdaysService — cross-tenant isolation", () => {
 
   it("returns birthdays for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
-    const cache = { cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()) } as never;
-    const access = { holds: jest.fn().mockResolvedValue(true) } as never;
+    const cache = { cachedForOrg: jest.fn().mockImplementation((_orgId: unknown, _k: unknown, fn: () => unknown) => fn()) } as never;
+    const access = { holds: jest.fn().mockResolvedValue(true), getPermissionsVersion: jest.fn().mockResolvedValue(1) } as never;
     const svc = new DashboardBirthdaysService(db, cache, access);
 
     const result = await svc.getBirthdays(OWNER);

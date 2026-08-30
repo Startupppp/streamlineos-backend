@@ -143,15 +143,14 @@ describe("PayslipTemplatesService — cross-tenant isolation", () => {
   it("scopes template update to org (cross-tenant isolation — update checks orgId + templateId)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayslipTemplatesService(db);
-    const result = await svc.update(ATTACKER, 999, { name: "hacked" } as never);
-    expect(result).toBeUndefined();
+    await expect(svc.update(ATTACKER, 999, { name: "hacked" } as never)).rejects.toThrow();
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 
   it("scopes template delete to org (cross-tenant isolation — delete checks orgId + templateId)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayslipTemplatesService(db);
-    await svc.delete(ATTACKER, 999);
+    await expect(svc.delete(ATTACKER, 999)).rejects.toThrow();
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 });

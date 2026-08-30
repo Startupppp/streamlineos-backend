@@ -5,7 +5,13 @@ import { PayoutValidationService } from "./payout-validation.service";
 describe("PayoutValidationService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
-  const efService = { getWorkerForUser: jest.fn().mockResolvedValue(null), getDirectReportUserIds: jest.fn().mockResolvedValue([]) } as never;
+  const efService = {
+    getWorkerForUser: jest.fn().mockResolvedValue(null),
+    getDirectReportUserIds: jest.fn().mockResolvedValue([]),
+    getFactsBatch: jest.fn().mockResolvedValue(new Map()),
+    getSensitiveFactsBatch: jest.fn().mockResolvedValue(new Map()),
+    getSensitiveFactsByPersonBatch: jest.fn().mockResolvedValue(new Map()),
+  } as never;
 
   it("throws NotFoundException for validatePayout when run belongs to a different org (cross-tenant isolation)", async () => {
     const db = {
@@ -19,8 +25,19 @@ describe("PayoutValidationService — cross-tenant isolation", () => {
 
   it("proceeds for the owning org (same-tenant control)", async () => {
     const run = { id: 1, status: "APPROVED" };
-    const where = jest.fn().mockResolvedValue([]);
-    const from = jest.fn().mockReturnValue({ where });
+    const chain = Object.assign(Promise.resolve([]), {
+      leftJoin: jest.fn(),
+      innerJoin: jest.fn(),
+      where: jest.fn(),
+      orderBy: jest.fn(),
+      limit: jest.fn(),
+    });
+    chain.leftJoin.mockReturnValue(chain);
+    chain.innerJoin.mockReturnValue(chain);
+    chain.where.mockReturnValue(chain);
+    chain.orderBy.mockReturnValue(chain);
+    chain.limit.mockReturnValue(chain);
+    const from = jest.fn().mockReturnValue(chain);
     const select = jest.fn().mockReturnValue({ from });
     const db = {
       query: {

@@ -41,11 +41,12 @@ function makeDb(rows: unknown[]) {
   builder.innerJoin.mockReturnValue(builder);
   builder.groupBy.mockReturnValue(builder);
   const queryProxy = new Proxy({} as Record<string, unknown>, { get: () => ({ findMany, findFirst }) });
+  const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) });
   const txDb = {
     select: jest.fn().mockReturnValue(builder),
     query: queryProxy,
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) }),
-    update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) }) }),
+    update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(rows) }),
     execute: jest.fn().mockResolvedValue(rows),
   } as unknown as Db;
@@ -53,14 +54,15 @@ function makeDb(rows: unknown[]) {
     ...txDb,
     transaction: jest.fn().mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn(txDb)),
   } as unknown as Db;
-  return { db, where, findMany, findFirst };
+  return { db, where, findMany, findFirst, updateWhere };
 }
 
-function allArgs(where: jest.Mock, findFirst: jest.Mock, findMany?: jest.Mock): unknown[] {
+function allArgs(where: jest.Mock, findFirst: jest.Mock, findMany?: jest.Mock, updateWhere?: jest.Mock): unknown[] {
   const wh = where.mock.calls.flatMap((c) => sqlValues(c[0]));
   const ff = findFirst.mock.calls.flatMap((c) => sqlValues((c[0] as Record<string, unknown> | undefined)?.["where"]));
   const fm = findMany ? findMany.mock.calls.flatMap((c) => sqlValues((c[0] as Record<string, unknown> | undefined)?.["where"])) : [];
-  return [...wh, ...ff, ...fm];
+  const uw = updateWhere ? updateWhere.mock.calls.flatMap((c) => sqlValues(c[0])) : [];
+  return [...wh, ...ff, ...fm, ...uw];
 }
 
 describe("PayrollRunLockService — cross-tenant isolation", () => {
@@ -68,19 +70,26 @@ describe("PayrollRunLockService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
 
   it("scopes lock acquire to attacker org (cross-tenant isolation)", async () => {
-    const { db, where, findFirst, findMany } = makeDb([]);
+    const { db, where, findFirst, findMany, updateWhere } = makeDb([]);
     const svc = new PayrollRunLockService(db);
-    await svc.acquire(ATTACKER, 999);
-    expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
+    await expect(svc.acquire(ATTACKER, 999)).rejects.toThrow();
+    expect(allArgs(where, findFirst, findMany, updateWhere)).toContain(ATTACKER);
   });
 
   it("scopes lock acquire to owner org (control — same-tenant acquire works)", async () => {
-    const ROW = { id: 999, orgId: OWNER, generationLockToken: null, status: "DRAFT", month: "2024-01", netTotal: "0" };
-    const { db, where, findFirst, findMany } = makeDb([ROW]);
-    const svc = new PayrollRunLockService(db);
+    let capturedToken: string | null = null;
+    const returning = jest.fn().mockImplementation(() => Promise.resolve([{ id: 999, generationLockToken: capturedToken }]));
+    const updateWhere = jest.fn().mockReturnValue({ returning });
+    const updateSet = jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+      capturedToken = vals["generationLockToken"] as string;
+      return { where: updateWhere };
+    });
+    const { db } = makeDb([]);
+    const dbWithCapture = { ...db, update: jest.fn().mockReturnValue({ set: updateSet }) } as unknown as Db;
+    const svc = new PayrollRunLockService(dbWithCapture);
     const token = await svc.acquire(OWNER, 999);
     expect(typeof token).toBe("string");
-    expect(allArgs(where, findFirst, findMany)).toContain(OWNER);
+    expect(sqlValues(updateWhere.mock.calls[0]?.[0])).toContain(OWNER);
   });
 
   it("scopes assertNoOtherActiveGeneration to org (cross-tenant isolation)", async () => {
@@ -123,36 +132,16 @@ describe("RunBatchLoaderService — cross-tenant isolation", () => {
   it("scopes batch load to attacker org (cross-tenant isolation)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new RunBatchLoaderService(db);
-    await svc.loadRunBatchData({
-      orgId: ATTACKER,
-      runId: 999,
-      month: "2024-01",
-      userIds: [],
-      profileIds: [],
-      employeeRunIds: [],
-      lockedPeriodId: null,
-      financialYear: "2024-25",
-      includeAttendance: false,
-      includeLeave: false,
-    });
+    const profile = { id: 1, userId: "u1", workerId: null, workerType: "EMPLOYEE" as const, currency: "INR", payoutCurrency: null, annualCtc: "0", taxRegime: null };
+    await svc.loadRunBatchData(ATTACKER, 999, "2024-01", {} as never, [profile], null);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 
   it("scopes batch load to owner org (control — same-tenant returns empty batch)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new RunBatchLoaderService(db);
-    await svc.loadRunBatchData({
-      orgId: OWNER,
-      runId: 1,
-      month: "2024-01",
-      userIds: [],
-      profileIds: [],
-      employeeRunIds: [],
-      lockedPeriodId: null,
-      financialYear: "2024-25",
-      includeAttendance: false,
-      includeLeave: false,
-    });
+    const profile = { id: 1, userId: "u1", workerId: null, workerType: "EMPLOYEE" as const, currency: "INR", payoutCurrency: null, annualCtc: "0", taxRegime: null };
+    await svc.loadRunBatchData(OWNER, 1, "2024-01", {} as never, [profile], null);
     expect(allArgs(where, findFirst, findMany)).toContain(OWNER);
   });
 });

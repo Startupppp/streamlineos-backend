@@ -33,22 +33,24 @@ function makeDb(rows: unknown[]) {
   builder.innerJoin.mockReturnValue(builder);
   builder.groupBy.mockReturnValue(builder);
   const queryProxy = new Proxy({} as Record<string, unknown>, { get: () => ({ findMany, findFirst }) });
+  const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) });
   const db = {
     select: jest.fn().mockReturnValue(builder),
     query: queryProxy,
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) }),
-    update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) }) }),
+    update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
     execute: jest.fn().mockResolvedValue(rows),
     transaction: jest.fn().mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn({ select: jest.fn().mockReturnValue(builder), query: queryProxy } as unknown as Db)),
   } as unknown as Db;
-  return { db, where, findMany, findFirst };
+  return { db, where, findMany, findFirst, updateWhere };
 }
 
-function allArgs(where: jest.Mock, findFirst: jest.Mock, findMany?: jest.Mock): unknown[] {
+function allArgs(where: jest.Mock, findFirst: jest.Mock, findMany?: jest.Mock, updateWhere?: jest.Mock): unknown[] {
   const wh = where.mock.calls.flatMap((c) => sqlValues(c[0]));
   const ff = findFirst.mock.calls.flatMap((c) => sqlValues((c[0] as Record<string, unknown> | undefined)?.["where"]));
   const fm = findMany ? findMany.mock.calls.flatMap((c) => sqlValues((c[0] as Record<string, unknown> | undefined)?.["where"])) : [];
-  return [...wh, ...ff, ...fm];
+  const uw = updateWhere ? updateWhere.mock.calls.flatMap((c) => sqlValues(c[0])) : [];
+  return [...wh, ...ff, ...fm, ...uw];
 }
 
 describe("PeriodReconciliationService — cross-tenant isolation", () => {
@@ -77,29 +79,29 @@ describe("TaxAdminService — cross-tenant isolation", () => {
   it("scopes tax declaration list to attacker org (cross-tenant isolation)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new TaxAdminService(db);
-    await svc.list(ATTACKER, {});
+    await svc.listDeclarations(ATTACKER, {});
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 
   it("scopes tax declaration list to owner org (control — same-tenant access works)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new TaxAdminService(db);
-    await svc.list(OWNER, {});
+    await svc.listDeclarations(OWNER, {});
     expect(allArgs(where, findFirst, findMany)).toContain(OWNER);
   });
 
   it("scopes approve to attacker org (cross-tenant isolation — approve checks orgId)", async () => {
-    const { db, where, findFirst, findMany } = makeDb([]);
+    const { db, where, findFirst, findMany, updateWhere } = makeDb([]);
     const svc = new TaxAdminService(db);
-    await svc.approve(ATTACKER, "verifier-1", 999);
-    expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
+    await expect(svc.approve(ATTACKER, "verifier-1", 999)).rejects.toThrow();
+    expect(allArgs(where, findFirst, findMany, updateWhere)).toContain(ATTACKER);
   });
 
   it("scopes reject to attacker org (cross-tenant isolation — reject checks orgId)", async () => {
-    const { db, where, findFirst, findMany } = makeDb([]);
+    const { db, where, findFirst, findMany, updateWhere } = makeDb([]);
     const svc = new TaxAdminService(db);
-    await svc.reject(ATTACKER, 999, "not eligible");
-    expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
+    await expect(svc.reject(ATTACKER, 999, "not eligible")).rejects.toThrow();
+    expect(allArgs(where, findFirst, findMany, updateWhere)).toContain(ATTACKER);
   });
 });
 
@@ -116,7 +118,7 @@ describe("TeamRewardsService — cross-tenant isolation", () => {
     };
     const svc = new TeamRewardsService(db, mockEss as never, mockEmploymentFacts as never);
     const result = await svc.getTeamRewards(ATTACKER, "manager-1");
-    expect(result.directReports).toHaveLength(0);
+    expect(result.members).toHaveLength(0);
     expect((mockEmploymentFacts.getDirectReportUserIds as jest.Mock).mock.calls[0]).toContain(ATTACKER);
   });
 

@@ -16,10 +16,15 @@ describe("FnfService — cross-tenant isolation", () => {
     expect(result).toHaveLength(0);
     const call = (db.query.fnfSettlements.findMany as jest.Mock).mock.calls[0]?.[0];
     const vals: unknown[] = [];
+    const seen = new Set<object>();
     function collect(v: unknown): void {
       if (typeof v === "string") vals.push(v);
       else if (Array.isArray(v)) v.forEach(collect);
-      else if (v && typeof v === "object") Object.values(v as Record<string, unknown>).forEach(collect);
+      else if (v && typeof v === "object") {
+        if (seen.has(v as object)) return;
+        seen.add(v as object);
+        Object.values(v as Record<string, unknown>).forEach(collect);
+      }
     }
     collect(call?.where);
     expect(vals).toContain(ATTACKER_ORG);

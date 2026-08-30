@@ -35,7 +35,7 @@ function makeDb(rows: unknown[]) {
   const txDb = {
     select: jest.fn().mockReturnValue(builder),
     query: queryProxy,
-    insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) }),
+    insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1 }]) }) }),
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) }) }),
     execute: jest.fn().mockResolvedValue(rows),
   } as unknown as Db;

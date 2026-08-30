@@ -32,8 +32,13 @@ describe("DashboardCrmService — cross-tenant isolation", () => {
 
   function makeDb(): { db: Db; wheres: unknown[] } {
     const wheres: unknown[] = [];
+    const crmFindMany = jest.fn().mockImplementation((opts: { where?: unknown } = {}) => {
+      if (opts.where) wheres.push(opts.where);
+      return Promise.resolve([]);
+    });
     const db = {
       select: jest.fn().mockImplementation(() => ({ from: jest.fn().mockImplementation(() => makeFrom(wheres)) })),
+      query: { crmActivities: { findMany: crmFindMany } },
     } as unknown as Db;
     return { db, wheres };
   }
