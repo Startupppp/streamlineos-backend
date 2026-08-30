@@ -14,6 +14,7 @@ import {
 } from "./providers/mail-normalizers";
 import { MailAccountsService, type MailAccount } from "./mail-accounts.service";
 import { MailMetadataService } from "./mail-metadata.service";
+import { MailSyncCheckpointService } from "./mail-sync-checkpoint.service";
 import type {
   MailDownloadResponse,
   MailFolder,
@@ -32,6 +33,7 @@ export class MailService {
     private readonly outlook: OutlookMailProvider,
     private readonly cache: CacheService,
     private readonly metadata: MailMetadataService,
+    private readonly checkpoints: MailSyncCheckpointService,
   ) {}
 
   async listAccounts(orgId: string, userId: string) {
@@ -201,6 +203,7 @@ export class MailService {
 
       if (!query && result.messages.length > 0) {
         this.metadata.deferUpsertBatch(acc.id, userId, orgId, folder, result.messages);
+        void this.checkpoints.savePosition(orgId, acc.id, folder, result.nextPageToken ?? null);
       }
 
       return result;

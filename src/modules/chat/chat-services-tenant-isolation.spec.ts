@@ -16,7 +16,7 @@ import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import type { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { AblyService } from "../realtime/ably.service";
-import type { ChatOrgSettingsService } from "./chat-org-settings.service";
+import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import type { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 import type { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
@@ -345,5 +345,48 @@ describe("ChatReplyRemindersService — tenant isolation", () => {
     const [batch] = values.mock.calls[0] as [{ orgId: string; recipientUserId: string }[]];
     expect(batch).toHaveLength(1);
     expect(batch[0]).toMatchObject({ orgId: OWNER_ORG, recipientUserId: "u2", senderUserId: "sender-owner" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ChatOrgSettingsService
+// ---------------------------------------------------------------------------
+
+describe("ChatOrgSettingsService — tenant isolation", () => {
+  function makeDb(findFirstResult: unknown) {
+    let capturedWhere: unknown;
+    const db = {
+      query: {
+        chatOrgSettings: {
+          findFirst: jest.fn().mockImplementation((opts: unknown) => {
+            capturedWhere = (opts as { where?: unknown })?.where;
+            return Promise.resolve(findFirstResult);
+          }),
+        },
+      },
+    } as unknown as Db;
+    return { db, getWhere: () => capturedWhere };
+  }
+
+  it("DENY: getSettings binds predicate to ATTACKER_ORG and returns default when no row found", async () => {
+    const { db, getWhere } = makeDb(null);
+    const service = new ChatOrgSettingsService(db);
+
+    const result = await service.getSettings(ATTACKER_ORG);
+
+    expect(sqlValues(getWhere())).toContain(ATTACKER_ORG);
+    expect(sqlValues(getWhere())).not.toContain(OWNER_ORG);
+    expect(result).toMatchObject({ orgId: ATTACKER_ORG });
+  });
+
+  it("CONTROL: getSettings binds predicate to OWNER_ORG and returns the stored row", async () => {
+    const row = { orgId: OWNER_ORG, defaultNotificationPreference: "MENTIONS", maxAttachmentSizeMb: 10, maxHuddleParticipants: 20 };
+    const { db, getWhere } = makeDb(row);
+    const service = new ChatOrgSettingsService(db);
+
+    const result = await service.getSettings(OWNER_ORG);
+
+    expect(sqlValues(getWhere())).toContain(OWNER_ORG);
+    expect(result).toMatchObject({ orgId: OWNER_ORG, defaultNotificationPreference: "MENTIONS" });
   });
 });

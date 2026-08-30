@@ -15,7 +15,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ChatPresenceService } from "./chat-presence.service";
 import {
   searchQuerySchema,
@@ -24,6 +23,7 @@ import {
   type StatusInput,
 } from "./dto/chat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
 
 @ApiTags("Chat Presence")
 @ApiBearerAuth()
@@ -54,8 +54,9 @@ export class ChatPresenceController {
   @ApiResponse({ status: 200, description: "OK" })
   @Put("status")
   @RequirePermission("chat:messages:write")
+  @Validate({ body: statusSchema })
   setStatus(
-    @Body(new ZodValidationPipe(statusSchema)) body: StatusInput,
+    @Body() body: StatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.presence.setStatus(u.userId, u.orgId, body);
@@ -74,8 +75,9 @@ export class ChatPresenceController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get("search")
   @RequirePermission("chat:messages:read")
+  @Validate({ query: searchQuerySchema })
   search(
-    @Query(new ZodValidationPipe(searchQuerySchema)) query: SearchQuery,
+    @Query() query: SearchQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (query.query.length < 2) {
