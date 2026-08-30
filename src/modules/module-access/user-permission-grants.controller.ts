@@ -12,7 +12,6 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { UserPermissionGrantsService } from "./user-permission-grants.service";
 import {
   setUserPermissionGrantsSchema,
@@ -41,12 +40,11 @@ export class UserPermissionGrantsController {
   }
 
   @Put()
-  @Validate({ params: grantBaseParams })
+  @Validate({ params: grantBaseParams, body: setUserPermissionGrantsSchema })
   async set(
     @Param("moduleKey") moduleKey: string,
     @Param("membershipId", ParseIntPipe) membershipId: number,
-    @Body(new ZodValidationPipe(setUserPermissionGrantsSchema))
-    body: SetUserPermissionGrantsInput,
+    @Body() body: SetUserPermissionGrantsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.grants.setGrants(u, moduleKey, membershipId, body);

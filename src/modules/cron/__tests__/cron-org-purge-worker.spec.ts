@@ -21,7 +21,6 @@ const MEMBER_ID = "user-bbbbbbbb-0000-0000-0000-000000000001";
 const mockAudit = { log: jest.fn() };
 const mockCache = {
   invalidate: jest.fn().mockResolvedValue(undefined),
-  invalidatePattern: jest.fn().mockResolvedValue(undefined),
   invalidateNamespace: jest.fn().mockResolvedValue(undefined),
 };
 const mockOrgMembership = {

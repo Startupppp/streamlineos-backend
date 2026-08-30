@@ -46,7 +46,6 @@ const mockCache = {
   ),
   invalidate: jest.fn().mockResolvedValue(undefined),
   invalidateNamespace: jest.fn().mockResolvedValue(undefined),
-  invalidatePattern: jest.fn().mockResolvedValue(undefined),
 };
 
 const mockMacros = {

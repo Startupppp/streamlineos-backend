@@ -19,7 +19,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { TasksService, isSequenceNotFound, isSequenceNoSteps } from "./tasks.service";
 import {
   analyticsSchema,
@@ -51,8 +50,9 @@ export class TasksController {
 
   @Get()
   @RequirePermission("tasks:read")
+  @Validate({ query: listSchema })
   list(
-    @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
+    @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tasks.list(u, filters);
@@ -61,8 +61,9 @@ export class TasksController {
   @Post()
   @HttpCode(201)
   @RequirePermission("tasks:write")
+  @Validate({ body: createSchema })
   async create(
-    @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
+    @Body() body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const created = await this.tasks.create(u.orgId, u.userId, body);
@@ -72,8 +73,9 @@ export class TasksController {
 
   @Get("analytics")
   @RequirePermission("tasks:read")
+  @Validate({ query: analyticsSchema })
   analytics(
-    @Query(new ZodValidationPipe(analyticsSchema)) query: AnalyticsInput,
+    @Query() query: AnalyticsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tasks.analytics(u.orgId, query);
@@ -81,8 +83,9 @@ export class TasksController {
 
   @Get("sequences")
   @RequirePermission("tasks:read")
+  @Validate({ query: sequenceListSchema })
   listSequences(
-    @Query(new ZodValidationPipe(sequenceListSchema)) query: SequenceListInput,
+    @Query() query: SequenceListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tasks.listSequences(u.orgId, query);
@@ -91,8 +94,9 @@ export class TasksController {
   @Post("sequences")
   @HttpCode(201)
   @RequirePermission("tasks:write")
+  @Validate({ body: sequenceCreateSchema })
   createSequence(
-    @Body(new ZodValidationPipe(sequenceCreateSchema)) body: SequenceCreateInput,
+    @Body() body: SequenceCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tasks.createSequence(u.orgId, u.userId, body);
@@ -113,10 +117,10 @@ export class TasksController {
   @Post("sequences/:sequenceId/apply")
   @HttpCode(201)
   @RequirePermission("tasks:write")
-  @Validate({ params: sequenceIdParams })
+  @Validate({ params: sequenceIdParams, body: sequenceApplySchema })
   async applySequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
-    @Body(new ZodValidationPipe(sequenceApplySchema)) body: SequenceApplyInput,
+    @Body() body: SequenceApplyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.tasks.applySequence(u.orgId, u.userId, sequenceId, body);
@@ -127,10 +131,10 @@ export class TasksController {
 
   @Patch(":taskId")
   @RequirePermission("tasks:write")
-  @Validate({ params: taskIdParams })
+  @Validate({ params: taskIdParams, body: updateSchema })
   async update(
     @Param("taskId", ParseIntPipe) taskId: number,
-    @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
+    @Body() body: UpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.tasks.update(u.orgId, taskId, u.userId, body);
@@ -152,10 +156,10 @@ export class TasksController {
 
   @Post(":taskId/complete")
   @RequirePermission("tasks:write")
-  @Validate({ params: taskIdParams })
+  @Validate({ params: taskIdParams, body: completeSchema })
   async complete(
     @Param("taskId", ParseIntPipe) taskId: number,
-    @Body(new ZodValidationPipe(completeSchema)) body: CompleteInput,
+    @Body() body: CompleteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.tasks.complete(u.orgId, taskId, body);

@@ -359,7 +359,7 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
       invalidateForOrg(o: string, k: string) {
       return this.invalidate(`${o}:${k}`);
     },
-      invalidatePattern: jest.fn().mockResolvedValue(undefined),
+      invalidateNamespace: jest.fn().mockResolvedValue(undefined),
     };
     const entitlements = {
       isModuleEnabled: jest.fn().mockResolvedValue(true),
@@ -387,7 +387,7 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
     await bumpPermissionsVersion(db as unknown as DbOrTx, "org-bump");
 
     expect(svc["membershipAccessCache"].has("org-bump:user-bump")).toBe(false);
-    expect(cache.invalidatePattern).not.toHaveBeenCalled();
+    expect(cache.invalidateNamespace).not.toHaveBeenCalled();
     expect(cache.invalidate).toHaveBeenCalledWith("org-bump:rbac:members");
     expect(cache.invalidate).toHaveBeenCalledWith(
       "org-bump:module-access:candidates",
@@ -396,11 +396,11 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
     expect(db.query.accessVersions.findFirst).toHaveBeenCalledTimes(2);
 
     svc["versionCache"].delete("org-bump");
-    cache.invalidatePattern.mockClear();
+    cache.invalidateNamespace.mockClear();
     cache.invalidate.mockClear();
     currentVersion = 3;
     await bumpPermissionsVersion(db as unknown as DbOrTx, "org-bump");
-    expect(cache.invalidatePattern).not.toHaveBeenCalled();
+    expect(cache.invalidateNamespace).not.toHaveBeenCalled();
 
     svc.onModuleDestroy();
   });

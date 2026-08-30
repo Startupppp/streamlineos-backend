@@ -4,11 +4,9 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequirePermission } from "./require-permission.decorator";
 import { PermissionGuard } from "./permission.guard";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { UserModuleAccessService } from "./user-module-access.service";
 import {
   setUserModuleAccessSchema,
-  userModuleAccessParamsSchema,
   type SetUserModuleAccessInput,
   type UserModuleAccessParams,
 } from "./dto/user-module-access.schemas";
@@ -26,8 +24,7 @@ export class UserModuleAccessController {
   @RequirePermission("settings:view")
   @Validate({ params: userIdParams })
   getModuleAccess(
-    @Param(new ZodValidationPipe(userModuleAccessParamsSchema))
-    params: UserModuleAccessParams,
+    @Param() params: UserModuleAccessParams,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.userModuleAccess.getUserModuleAccess(u.orgId, params.userId);
@@ -35,12 +32,10 @@ export class UserModuleAccessController {
 
   @Patch(":userId")
   @RequirePermission("settings:organization:manage")
-  @Validate({ params: userIdParams })
+  @Validate({ params: userIdParams, body: setUserModuleAccessSchema })
   setModuleAccess(
-    @Param(new ZodValidationPipe(userModuleAccessParamsSchema))
-    params: UserModuleAccessParams,
-    @Body(new ZodValidationPipe(setUserModuleAccessSchema))
-    body: SetUserModuleAccessInput,
+    @Param() params: UserModuleAccessParams,
+    @Body() body: SetUserModuleAccessInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.userModuleAccess.setUserModuleAccess(

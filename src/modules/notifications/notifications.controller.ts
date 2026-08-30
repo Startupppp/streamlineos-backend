@@ -21,7 +21,6 @@ import { Universal } from "../../common/auth/universal.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { NotificationsService } from "./notifications.service";
 import { NotificationEventService } from "./notification-event.service";
@@ -49,8 +48,9 @@ export class NotificationsController {
 
   @Get()
   @Universal()
+  @Validate({ query: listSchema })
   list(
-    @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
+    @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.notifications.list(u.orgId, u.userId, filters);
@@ -100,8 +100,9 @@ export class NotificationsController {
   @Post("bulk/read")
   @Universal()
   @HttpCode(200)
+  @Validate({ body: bulkActionSchema })
   bulkMarkRead(
-    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
+    @Body() body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.notifications.bulkMarkRead(u.orgId, u.userId, body);
@@ -110,8 +111,9 @@ export class NotificationsController {
   @Post("bulk/archive")
   @Universal()
   @HttpCode(200)
+  @Validate({ body: bulkActionSchema })
   bulkArchive(
-    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
+    @Body() body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.notifications.bulkArchive(u.orgId, u.userId, body);
@@ -120,8 +122,9 @@ export class NotificationsController {
   @Post("bulk/delete")
   @Universal()
   @HttpCode(200)
+  @Validate({ body: bulkActionSchema })
   bulkDelete(
-    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
+    @Body() body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.notifications.bulkDelete(u.orgId, u.userId, body);
@@ -189,10 +192,10 @@ export class NotificationsController {
 
   @Patch(":notificationId/snooze")
   @Universal()
-  @Validate({ params: notificationIdParams })
+  @Validate({ params: notificationIdParams, body: snoozeSchema })
   snooze(
     @Param("notificationId", ParseIntPipe) notificationId: number,
-    @Body(new ZodValidationPipe(snoozeSchema)) body: SnoozeInput,
+    @Body() body: SnoozeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.notifications.snooze(u.orgId, u.userId, notificationId, body);

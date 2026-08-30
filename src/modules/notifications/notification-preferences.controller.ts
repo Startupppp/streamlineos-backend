@@ -3,7 +3,6 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Universal } from "../../common/auth/universal.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { NotificationPreferencesService } from "./notification-preferences.service";
 import { NotificationPreferenceRulesService } from "./notification-preference-rules.service";
 import { preferenceRuleSchema, type PreferenceRuleBody } from "./dto/preference-rule.schemas";
@@ -37,8 +36,9 @@ export class NotificationPreferencesController {
 
   @Patch()
   @Universal()
+  @Validate({ body: updatePreferenceSchema })
   update(
-    @Body(new ZodValidationPipe(updatePreferenceSchema)) body: UpdatePreferenceInput,
+    @Body() body: UpdatePreferenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.preferences.update(u.orgId, u.userId, body);
@@ -54,8 +54,9 @@ export class NotificationPreferencesController {
   @Put("rules")
   @Universal()
   @HttpCode(200)
+  @Validate({ body: preferenceRuleSchema })
   setRule(
-    @Body(new ZodValidationPipe(preferenceRuleSchema)) body: PreferenceRuleBody,
+    @Body() body: PreferenceRuleBody,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rules.set(u.orgId, u.userId, body);
@@ -69,10 +70,10 @@ export class NotificationPreferencesController {
 
   @Patch("events/:eventKey")
   @Universal()
-  @Validate({ params: eventKeyParams })
+  @Validate({ params: eventKeyParams, body: eventPreferenceSchema })
   updateEvent(
     @Param("eventKey") eventKey: string,
-    @Body(new ZodValidationPipe(eventPreferenceSchema)) body: EventPreferenceInput,
+    @Body() body: EventPreferenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.preferences.updateEventPreference(u.orgId, u.userId, eventKey, body);
@@ -93,8 +94,9 @@ export class NotificationPreferencesController {
 
   @Post("suppressions")
   @Universal()
+  @Validate({ body: createSuppressionSchema })
   createSuppression(
-    @Body(new ZodValidationPipe(createSuppressionSchema)) body: CreateSuppressionInput,
+    @Body() body: CreateSuppressionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.preferences.createSuppression(u.orgId, u.userId, body);

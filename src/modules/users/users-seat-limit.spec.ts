@@ -116,7 +116,6 @@ describe("UsersService direct member creation", () => {
             invalidateForOrg: jest.fn(),
             invalidateNamespace: jest.fn(),
             invalidateNamespaceForOrg: jest.fn(),
-            invalidatePattern: jest.fn(),
             del: jest.fn(),
             get: jest.fn(),
             set: jest.fn(),

@@ -275,6 +275,16 @@ export class KbSearchService {
     return row !== undefined;
   }
 
+  private async vectorChunkIds(vector: string, cap: number): Promise<number[]> {
+    const boost = cap + 1;
+    const annRows = await this.db.execute(
+      sql`SELECT id FROM kb_article_chunks ORDER BY embedding <=> ${vector}::vector LIMIT ${boost}`,
+    );
+    if (annRows.length >= cap) return annRows.slice(0, cap).map(r => Number(r["id"]));
+    const fenceRows = await this.db.execute(sql`SELECT app.search_kb_chunk_ids(${vector}::vector, ${cap}) AS id`);
+    return fenceRows.map(r => Number(r["id"]));
+  }
+
   private async articleVectorCandidates(
     orgId: string,
     spaceIds: number[],
@@ -285,9 +295,8 @@ export class KbSearchService {
   ): Promise<number[]> {
     try {
       const cap = pool * 4;
-      const chunkRows = await this.db.execute(sql`SELECT app.search_kb_chunk_ids(${vector}::vector, ${cap}) AS id`);
-      if (chunkRows.length === 0) return [];
-      const chunkIds = chunkRows.map(r => Number(r["id"]));
+      const chunkIds = await this.vectorChunkIds(vector, cap);
+      if (chunkIds.length === 0) return [];
 
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const conditions: SQL[] = [
@@ -370,9 +379,8 @@ export class KbSearchService {
   ): Promise<number[]> {
     try {
       const cap = pool * 4;
-      const chunkRows = await this.db.execute(sql`SELECT app.search_kb_chunk_ids(${vector}::vector, ${cap}) AS id`);
-      if (chunkRows.length === 0) return [];
-      const chunkIds = chunkRows.map(r => Number(r["id"]));
+      const chunkIds = await this.vectorChunkIds(vector, cap);
+      if (chunkIds.length === 0) return [];
 
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const rows = await this.db
@@ -520,9 +528,8 @@ export class KbSearchService {
       const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
 
       const cap = limit * 4;
-      const chunkRows = await this.db.execute(sql`SELECT app.search_kb_chunk_ids(${vector}::vector, ${cap}) AS id`);
-      if (chunkRows.length === 0) return [];
-      const chunkIds = chunkRows.map(r => Number(r["id"]));
+      const chunkIds = await this.vectorChunkIds(vector, cap);
+      if (chunkIds.length === 0) return [];
 
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
 

@@ -5,7 +5,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { WorkflowsService } from "./workflows.service";
 import {
   CreateWorkflowSchema,
@@ -47,8 +46,9 @@ export class WorkflowsController {
 
   @Get()
   @RequirePermission("workflows:workflows:view")
+  @Validate({ query: WorkflowListQuerySchema })
   listWorkflows(
-    @Query(new ZodValidationPipe(WorkflowListQuerySchema)) query: WorkflowListQueryDto,
+    @Query() query: WorkflowListQueryDto,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workflowsService.listWorkflows(u.orgId, query);
@@ -57,8 +57,9 @@ export class WorkflowsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("workflows:workflows:create")
+  @Validate({ body: CreateWorkflowSchema })
   createWorkflow(
-    @Body(new ZodValidationPipe(CreateWorkflowSchema)) body: CreateWorkflowDto,
+    @Body() body: CreateWorkflowDto,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workflowsService.createWorkflow(u.orgId, u.userId, body);
@@ -85,10 +86,10 @@ export class WorkflowsController {
   @Post("approvals/:approvalId/action")
   @RequirePermission("workflows:approvals:manage")
   @HttpCode(200)
-  @Validate({ params: approvalIdParams })
+  @Validate({ params: approvalIdParams, body: ApprovalActionSchema })
   handleApproval(
     @Param("approvalId") approvalId: string,
-    @Body(new ZodValidationPipe(ApprovalActionSchema)) body: ApprovalActionDto,
+    @Body() body: ApprovalActionDto,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workflowsService.handleApproval(u.orgId, u.userId, approvalId, body);
@@ -96,8 +97,9 @@ export class WorkflowsController {
 
   @Get("executions")
   @RequirePermission("workflows:executions:view")
+  @Validate({ query: WorkflowExecutionQuerySchema })
   listAllExecutions(
-    @Query(new ZodValidationPipe(WorkflowExecutionQuerySchema)) query: WorkflowExecutionQueryDto,
+    @Query() query: WorkflowExecutionQueryDto,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workflowsService.listAllExecutions(u.orgId, query);
@@ -118,8 +120,9 @@ export class WorkflowsController {
   @Post("secrets")
   @HttpCode(201)
   @RequirePermission("workflows:secrets:manage")
+  @Validate({ body: CreateSecretSchema })
   createGlobalSecret(
-    @Body(new ZodValidationPipe(CreateSecretSchema)) body: CreateSecretDto,
+    @Body() body: CreateSecretDto,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workflowsService.createGlobalSecret(u.orgId, body);
@@ -162,10 +165,10 @@ export class WorkflowsController {
 
   @Patch(":workflowId")
   @RequirePermission("workflows:workflows:update")
-  @Validate({ params: workflowIdParams })
+  @Validate({ params: workflowIdParams, body: UpdateWorkflowSchema })
   updateWorkflow(
     @Param("workflowId") workflowId: string,
-    @Body(new ZodValidationPipe(UpdateWorkflowSchema)) body: UpdateWorkflowDto,
+    @Body() body: UpdateWorkflowDto,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workflowsService.updateWorkflow(u.orgId, u.userId, workflowId, body);
@@ -182,10 +185,10 @@ export class WorkflowsController {
   @Post(":workflowId/publish")
   @Idempotent("workflows.workflow.publish")
   @RequirePermission("workflows:workflows:publish")
-  @Validate({ params: workflowIdParams })
+  @Validate({ params: workflowIdParams, body: PublishWorkflowSchema })
   publishWorkflow(
     @Param("workflowId") workflowId: string,
-    @Body(new ZodValidationPipe(PublishWorkflowSchema)) body: PublishWorkflowDto,
+    @Body() body: PublishWorkflowDto,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workflowsService.publishWorkflow(u.orgId, u.userId, workflowId, body);
@@ -216,10 +219,10 @@ export class WorkflowsController {
 
   @Post(":workflowId/trigger")
   @RequirePermission("workflows:executions:manage")
-  @Validate({ params: workflowIdParams })
+  @Validate({ params: workflowIdParams, body: TriggerWorkflowSchema })
   triggerWorkflow(
     @Param("workflowId") workflowId: string,
-    @Body(new ZodValidationPipe(TriggerWorkflowSchema)) body: TriggerWorkflowDto,
+    @Body() body: TriggerWorkflowDto,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workflowsService.triggerWorkflow(u.orgId, u.userId, workflowId, body);
@@ -227,10 +230,10 @@ export class WorkflowsController {
 
   @Get(":workflowId/executions")
   @RequirePermission("workflows:executions:view")
-  @Validate({ params: workflowIdParams })
+  @Validate({ params: workflowIdParams, query: WorkflowExecutionQuerySchema })
   listExecutions(
     @Param("workflowId") workflowId: string,
-    @Query(new ZodValidationPipe(WorkflowExecutionQuerySchema)) query: WorkflowExecutionQueryDto,
+    @Query() query: WorkflowExecutionQueryDto,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workflowsService.listExecutions(u.orgId, workflowId, query);
@@ -269,10 +272,10 @@ export class WorkflowsController {
   @Post(":workflowId/schedules")
   @HttpCode(201)
   @RequirePermission("workflows:schedules:manage")
-  @Validate({ params: workflowIdParams })
+  @Validate({ params: workflowIdParams, body: CreateScheduleSchema })
   createSchedule(
     @Param("workflowId") workflowId: string,
-    @Body(new ZodValidationPipe(CreateScheduleSchema)) body: CreateScheduleDto,
+    @Body() body: CreateScheduleDto,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workflowsService.createSchedule(u.orgId, workflowId, body);
@@ -280,11 +283,11 @@ export class WorkflowsController {
 
   @Patch(":workflowId/schedules/:scheduleId")
   @RequirePermission("workflows:schedules:manage")
-  @Validate({ params: workflowIdscheduleIdParams })
+  @Validate({ params: workflowIdscheduleIdParams, body: UpdateScheduleSchema })
   updateSchedule(
     @Param("workflowId") workflowId: string,
     @Param("scheduleId") scheduleId: string,
-    @Body(new ZodValidationPipe(UpdateScheduleSchema)) body: UpdateScheduleDto,
+    @Body() body: UpdateScheduleDto,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workflowsService.updateSchedule(u.orgId, workflowId, scheduleId, body);
@@ -312,10 +315,10 @@ export class WorkflowsController {
   @Post(":workflowId/secrets")
   @HttpCode(201)
   @RequirePermission("workflows:secrets:manage")
-  @Validate({ params: workflowIdParams })
+  @Validate({ params: workflowIdParams, body: CreateSecretSchema })
   createSecret(
     @Param("workflowId") workflowId: string,
-    @Body(new ZodValidationPipe(CreateSecretSchema)) body: CreateSecretDto,
+    @Body() body: CreateSecretDto,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workflowsService.createSecret(u.orgId, workflowId, body);

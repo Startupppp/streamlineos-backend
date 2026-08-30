@@ -7,7 +7,6 @@
   Req,
   Res,
   } from "@nestjs/common";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import type { Request, Response } from "express";
 import { Public } from "../../common/auth/public.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
@@ -70,8 +69,9 @@ export class PlatformController {
   @Public()
   @Post("contact")
   @HttpCode(200)
+  @Validate({ body: contactFormSchema })
   submitContact(
-    @Body(new ZodValidationPipe(contactFormSchema)) body: ContactFormInput,
+    @Body() body: ContactFormInput,
   ) {
     return this.platform.submitContactForm(body);
   }

@@ -12,7 +12,7 @@ import { Universal } from "../../common/auth/universal.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { PushService } from "./push.service";
 import {
   subscribeSchema,
@@ -34,8 +34,9 @@ export class PushController {
 
   @Post("subscribe")
   @Universal()
+  @Validate({ body: subscribeSchema })
   subscribe(
-    @Body(new ZodValidationPipe(subscribeSchema)) body: SubscribeInput,
+    @Body() body: SubscribeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.push.subscribe(u.orgId, u.userId, body);
@@ -43,8 +44,9 @@ export class PushController {
 
   @Delete("subscribe")
   @Universal()
+  @Validate({ query: unsubscribeSchema })
   unsubscribe(
-    @Query(new ZodValidationPipe(unsubscribeSchema)) query: UnsubscribeInput,
+    @Query() query: UnsubscribeInput,
   ) {
     return this.push.unsubscribe(query.endpoint);
   }

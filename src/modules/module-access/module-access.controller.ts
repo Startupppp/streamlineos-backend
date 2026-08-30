@@ -16,7 +16,6 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
@@ -33,17 +32,11 @@ import {
   auditLogQuerySchema,
   createModuleGroupSchema,
   directTransferOwnerSchema,
-  flatMemberParamSchema,
   initiateOwnershipTransferSchema,
   listMembersQuerySchema,
   memberCandidatesQuerySchema,
-  moduleGroupMemberParamSchema,
-  moduleGroupParamSchema,
-  moduleKeyParamSchema,
-  moduleRoleParamSchema,
   renameModuleGroupSchema,
   setModuleRolePermissionsSchema,
-  standingMemberParamSchema,
   updateMemberGroupsSchema,
   type AddFlatMemberInput,
   type AddModuleGroupMemberInput,
@@ -90,7 +83,7 @@ export class ModuleAccessController {
   @Get(":moduleKey/standing")
   @Validate({ params: moduleKeyParams })
   listStanding(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.standing.listStanding(u, params.moduleKey);
@@ -99,7 +92,7 @@ export class ModuleAccessController {
   @Get(":moduleKey/standing/grantable")
   @Validate({ params: moduleKeyParams })
   describeGrantable(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.standing.describeGrantable(u, params.moduleKey);
@@ -109,10 +102,10 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:ownership-transfer")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParams, body: directTransferOwnerSchema })
   directTransferOwnership(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
-    @Body(new ZodValidationPipe(directTransferOwnerSchema)) body: DirectTransferOwnerInput,
+    @Param() params: ModuleKeyParam,
+    @Body() body: DirectTransferOwnerInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mutations.directTransferOwnership(u, params.moduleKey, body.toMembershipId);
@@ -124,7 +117,7 @@ export class ModuleAccessController {
   @UseRateLimit("module-access:group-mutate")
   @Validate({ params: moduleKeymembershipIdParams })
   grantAdminStanding(
-    @Param(new ZodValidationPipe(standingMemberParamSchema)) params: StandingMemberParam,
+    @Param() params: StandingMemberParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mutations.grantAdminStanding(u, params.moduleKey, params.membershipId);
@@ -136,7 +129,7 @@ export class ModuleAccessController {
   @UseRateLimit("module-access:group-mutate")
   @Validate({ params: moduleKeymembershipIdParams })
   revokeStanding(
-    @Param(new ZodValidationPipe(standingMemberParamSchema)) params: StandingMemberParam,
+    @Param() params: StandingMemberParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mutations.revokeStanding(u, params.moduleKey, params.membershipId);
@@ -145,7 +138,7 @@ export class ModuleAccessController {
   @Get(":moduleKey/catalog")
   @Validate({ params: moduleKeyParams })
   catalog(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listCatalog(u, params.moduleKey);
@@ -154,7 +147,7 @@ export class ModuleAccessController {
   @Get(":moduleKey/roles")
   @Validate({ params: moduleKeyParams })
   roles(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listRoles(u, params.moduleKey);
@@ -163,10 +156,10 @@ export class ModuleAccessController {
   @Put(":moduleKey/roles/:roleId/permissions")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeyroleIdParams })
+  @Validate({ params: moduleKeyroleIdParams, body: setModuleRolePermissionsSchema })
   setRolePermissions(
-    @Param(new ZodValidationPipe(moduleRoleParamSchema)) params: ModuleRoleParam,
-    @Body(new ZodValidationPipe(setModuleRolePermissionsSchema)) body: SetModuleRolePermissionsInput,
+    @Param() params: ModuleRoleParam,
+    @Body() body: SetModuleRolePermissionsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.setRolePermissions(u, params.moduleKey, params.roleId, body);
@@ -175,7 +168,7 @@ export class ModuleAccessController {
   @Get(":moduleKey/groups")
   @Validate({ params: moduleKeyParams })
   listGroups(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.groups.listGroups(u, params.moduleKey);
@@ -185,10 +178,10 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParams, body: createModuleGroupSchema })
   createGroup(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
-    @Body(new ZodValidationPipe(createModuleGroupSchema)) body: CreateModuleGroupInput,
+    @Param() params: ModuleKeyParam,
+    @Body() body: CreateModuleGroupInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.groups.createGroup(u, params.moduleKey, body);
@@ -197,10 +190,10 @@ export class ModuleAccessController {
   @Patch(":moduleKey/groups/:groupId")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeygroupIdParams })
+  @Validate({ params: moduleKeygroupIdParams, body: renameModuleGroupSchema })
   renameGroup(
-    @Param(new ZodValidationPipe(moduleGroupParamSchema)) params: ModuleGroupParam,
-    @Body(new ZodValidationPipe(renameModuleGroupSchema)) body: RenameModuleGroupInput,
+    @Param() params: ModuleGroupParam,
+    @Body() body: RenameModuleGroupInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.groups.renameGroup(u, params.moduleKey, params.groupId, body);
@@ -212,7 +205,7 @@ export class ModuleAccessController {
   @UseRateLimit("module-access:group-mutate")
   @Validate({ params: moduleKeygroupIdParams })
   deleteGroup(
-    @Param(new ZodValidationPipe(moduleGroupParamSchema)) params: ModuleGroupParam,
+    @Param() params: ModuleGroupParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.groups.deleteGroup(u, params.moduleKey, params.groupId);
@@ -221,10 +214,10 @@ export class ModuleAccessController {
   @Put(":moduleKey/groups/:groupId/permissions")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeygroupIdParams })
+  @Validate({ params: moduleKeygroupIdParams, body: setModuleRolePermissionsSchema })
   setGroupPermissions(
-    @Param(new ZodValidationPipe(moduleGroupParamSchema)) params: ModuleGroupParam,
-    @Body(new ZodValidationPipe(setModuleRolePermissionsSchema)) body: SetModuleRolePermissionsInput,
+    @Param() params: ModuleGroupParam,
+    @Body() body: SetModuleRolePermissionsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.setRolePermissions(u, params.moduleKey, params.groupId, body);
@@ -233,7 +226,7 @@ export class ModuleAccessController {
   @Get(":moduleKey/groups/:groupId/members")
   @Validate({ params: moduleKeygroupIdParams })
   listGroupMembers(
-    @Param(new ZodValidationPipe(moduleGroupParamSchema)) params: ModuleGroupParam,
+    @Param() params: ModuleGroupParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.groups.listGroupMembers(u, params.moduleKey, params.groupId);
@@ -243,10 +236,10 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeygroupIdParams })
+  @Validate({ params: moduleKeygroupIdParams, body: addModuleGroupMemberSchema })
   addGroupMember(
-    @Param(new ZodValidationPipe(moduleGroupParamSchema)) params: ModuleGroupParam,
-    @Body(new ZodValidationPipe(addModuleGroupMemberSchema)) body: AddModuleGroupMemberInput,
+    @Param() params: ModuleGroupParam,
+    @Body() body: AddModuleGroupMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.groups.addGroupMember(u, params.moduleKey, params.groupId, body);
@@ -258,7 +251,7 @@ export class ModuleAccessController {
   @UseRateLimit("module-access:group-mutate")
   @Validate({ params: moduleKeygroupIduserIdParams })
   removeGroupMember(
-    @Param(new ZodValidationPipe(moduleGroupMemberParamSchema)) params: ModuleGroupMemberParam,
+    @Param() params: ModuleGroupMemberParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.groups.removeGroupMember(u, params.moduleKey, params.groupId, params.userId);
@@ -267,17 +260,17 @@ export class ModuleAccessController {
   @Get(":moduleKey/me/permissions")
   @Validate({ params: moduleKeyParams })
   getCallerPermissions(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.getCallerPermissions(u, params.moduleKey);
   }
 
   @Get(":moduleKey/members")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParams, query: listMembersQuerySchema })
   listMembers(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
-    @Query(new ZodValidationPipe(listMembersQuerySchema)) query: ListMembersQuery,
+    @Param() params: ModuleKeyParam,
+    @Query() query: ListMembersQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roster.listMembers(u, params.moduleKey, query);
@@ -287,10 +280,10 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParams, body: addFlatMemberSchema })
   addMember(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
-    @Body(new ZodValidationPipe(addFlatMemberSchema)) body: AddFlatMemberInput,
+    @Param() params: ModuleKeyParam,
+    @Body() body: AddFlatMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.flatMembers.addMember(u, params.moduleKey, body);
@@ -299,10 +292,10 @@ export class ModuleAccessController {
   @Patch(":moduleKey/members/:userId")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeyuserIdParams })
+  @Validate({ params: moduleKeyuserIdParams, body: updateMemberGroupsSchema })
   updateMemberGroups(
-    @Param(new ZodValidationPipe(flatMemberParamSchema)) params: FlatMemberParam,
-    @Body(new ZodValidationPipe(updateMemberGroupsSchema)) body: UpdateMemberGroupsInput,
+    @Param() params: FlatMemberParam,
+    @Body() body: UpdateMemberGroupsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.flatMembers.updateMemberGroups(u, params.moduleKey, params.userId, body);
@@ -314,27 +307,27 @@ export class ModuleAccessController {
   @UseRateLimit("module-access:group-mutate")
   @Validate({ params: moduleKeyuserIdParams })
   removeMember(
-    @Param(new ZodValidationPipe(flatMemberParamSchema)) params: FlatMemberParam,
+    @Param() params: FlatMemberParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.flatMembers.removeMember(u, params.moduleKey, params.userId);
   }
 
   @Get(":moduleKey/audit-log")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParams, query: auditLogQuerySchema })
   getAuditLog(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
-    @Query(new ZodValidationPipe(auditLogQuerySchema)) query: AuditLogQuery,
+    @Param() params: ModuleKeyParam,
+    @Query() query: AuditLogQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.getAuditLog(u, params.moduleKey, query);
   }
 
   @Get(":moduleKey/member-candidates")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParams, query: memberCandidatesQuerySchema })
   listMemberCandidates(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
-    @Query(new ZodValidationPipe(memberCandidatesQuerySchema)) query: MemberCandidatesQuery,
+    @Param() params: ModuleKeyParam,
+    @Query() query: MemberCandidatesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roster.listMemberCandidates(u, params.moduleKey, query);
@@ -343,7 +336,7 @@ export class ModuleAccessController {
   @Get(":moduleKey/ownership")
   @Validate({ params: moduleKeyParams })
   getOwnership(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ownership.getOwnership(u, params.moduleKey);
@@ -354,10 +347,10 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:ownership-transfer")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParams, body: initiateOwnershipTransferSchema })
   initiateOwnershipTransfer(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
-    @Body(new ZodValidationPipe(initiateOwnershipTransferSchema)) body: InitiateOwnershipTransferInput,
+    @Param() params: ModuleKeyParam,
+    @Body() body: InitiateOwnershipTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ownership.initiateTransfer(u, params.moduleKey, body.toUserId);
@@ -370,7 +363,7 @@ export class ModuleAccessController {
   @UseRateLimit("module-access:ownership-transfer")
   @Validate({ params: moduleKeyParams })
   cancelOwnershipTransfer(
-    @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ownership.cancelTransfer(u, params.moduleKey);

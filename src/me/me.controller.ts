@@ -3,7 +3,7 @@ import { CurrentUser } from "../common/auth/current-user.decorator";
 import { Universal } from "../common/auth/universal.decorator";
 import { AllowWithoutMfa } from "../common/auth/allow-without-mfa.decorator";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
-import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
+import { Validate } from "../common/validation/validate.decorator";
 import { AccessService } from "../modules/access/access.service";
 import type { AccessSnapshot } from "../modules/access/access.types";
 import { MeService } from "./me.service";
@@ -50,8 +50,9 @@ export class MeController {
 
   @Patch("profile")
   @Universal()
+  @Validate({ body: updateProfileSchema })
   updateProfile(
-    @Body(new ZodValidationPipe(updateProfileSchema)) body: UpdateProfileInput,
+    @Body() body: UpdateProfileInput,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<{ success: true }> {
     return this.meService.updateProfile(user.userId, user.orgId ?? null, body);

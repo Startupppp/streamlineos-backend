@@ -10,7 +10,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { UsersService } from "./users.service";
 import { UserProfileService } from "./user-profile.service";
 import { UserActivityService } from "./user-activity.service";
@@ -21,11 +20,11 @@ import {
   listUsersSchema, updateUserSchema, updateUserStatusSchema,
   inviteUserSchema, bulkInviteSchema, updatePreferencesSchema,
   updateMembershipSchema, bulkActionSchema, listLoginHistorySchema,
-  bulkUpdateUsersSchema, listAuditSchema, importUsersRowSchema, createUserSchema,
+  bulkUpdateUsersSchema, listAuditSchema, importUsersBodySchema, createUserSchema,
   type ListUsersInput, type UpdateUserInput, type UpdateUserStatusInput,
   type InviteUserInput, type BulkInviteInput, type UpdatePreferencesInput,
   type UpdateMembershipInput, type BulkActionInput, type ListLoginHistoryInput,
-  type BulkUpdateUsersInput, type ListAuditInput, type ImportUsersRow, type CreateUserInput,
+  type BulkUpdateUsersInput, type ListAuditInput, type ImportUsersBody, type CreateUserInput,
   changeInviteRoleSchema,
   type ChangeInviteRoleInput,
   listInvitationsSchema,
@@ -199,9 +198,9 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Post("import")
+  @Validate({ body: importUsersBodySchema })
   importUsers(
-    @Body(new ZodValidationPipe(z.object({ rows: z.array(importUsersRowSchema).min(1).max(500) })))
-    body: { rows: ImportUsersRow[] },
+    @Body() body: ImportUsersBody,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.userOps.importUsers(u.orgId, body.rows, { userId: u.userId, isOrgOwner: u.isOrgOwner });

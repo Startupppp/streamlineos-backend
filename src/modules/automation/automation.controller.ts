@@ -4,7 +4,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AutomationService } from "./automation.service";
 import { testAutomationSchema, type TestAutomationInput } from "./dto/automation.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
@@ -20,10 +19,10 @@ export class AutomationController {
   @Post(":ruleId/test")
   @HttpCode(200)
   @RequirePermission("settings:automations:manage")
-  @Validate({ params: ruleIdParams })
+  @Validate({ params: ruleIdParams, body: testAutomationSchema })
   testAutomation(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Body(new ZodValidationPipe(testAutomationSchema)) body: TestAutomationInput,
+    @Body() body: TestAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automation.testRule(u.orgId, ruleId, body.payload);

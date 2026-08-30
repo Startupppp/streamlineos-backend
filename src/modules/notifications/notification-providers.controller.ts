@@ -4,7 +4,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { NotificationProvidersService } from "./notification-providers.service";
 import {
   createProviderSchema,
@@ -33,8 +32,9 @@ export class NotificationProvidersController {
   @Post()
   @HttpCode(201)
   @RequirePermission("notifications:providers:manage")
+  @Validate({ body: createProviderSchema })
   create(
-    @Body(new ZodValidationPipe(createProviderSchema)) body: CreateProviderInput,
+    @Body() body: CreateProviderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.providers.create(u.orgId, u.userId, body);
@@ -42,10 +42,10 @@ export class NotificationProvidersController {
 
   @Patch(":providerId")
   @RequirePermission("notifications:providers:manage")
-  @Validate({ params: providerIdParams })
+  @Validate({ params: providerIdParams, body: updateProviderSchema })
   update(
     @Param("providerId", ParseIntPipe) providerId: number,
-    @Body(new ZodValidationPipe(updateProviderSchema)) body: UpdateProviderInput,
+    @Body() body: UpdateProviderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.providers.update(u.orgId, u.userId, providerId, body);
@@ -53,10 +53,10 @@ export class NotificationProvidersController {
 
   @Post(":providerId/test")
   @RequirePermission("notifications:providers:manage")
-  @Validate({ params: providerIdParams })
+  @Validate({ params: providerIdParams, body: testProviderSchema })
   test(
     @Param("providerId", ParseIntPipe) providerId: number,
-    @Body(new ZodValidationPipe(testProviderSchema)) body: TestProviderInput,
+    @Body() body: TestProviderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.providers.test(u.orgId, u.userId, providerId, body);

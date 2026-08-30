@@ -114,6 +114,8 @@ export const importUsersRowSchema = z.object({
   phone: z.string().optional(),
 });
 export type ImportUsersRow = z.infer<typeof importUsersRowSchema>;
+export const importUsersBodySchema = z.object({ rows: z.array(importUsersRowSchema).min(1).max(500) }).strict();
+export type ImportUsersBody = z.infer<typeof importUsersBodySchema>;
 
 export const bulkUpdateUsersSchema = z.object({
   userIds: z.array(z.string()).min(1).max(200),

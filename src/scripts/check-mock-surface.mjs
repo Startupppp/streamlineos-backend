@@ -721,7 +721,29 @@ function getClassMethodsFromFile(filePath, className) {
   if (fileMethodsCache.has(key)) return fileMethodsCache.get(key);
   const src = readFileSync(filePath, "utf8");
   const methods = extractClassPublicMethods(src, className);
-  fileMethodsCache.set(key, methods);
+  fileMethodsCache.set(key, methods); // set early to prevent inheritance cycles
+  if (methods) {
+    const escaped = className.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const extendsRe = new RegExp(
+      `\\bclass\\s+${escaped}(?:<[^>]*>)?\\s+extends\\s+([A-Z][a-zA-Z0-9_$]*)`,
+    );
+    const m = extendsRe.exec(src);
+    if (m) {
+      const parentName = m[1];
+      const parentInSameFile = extractClassPublicMethods(src, parentName);
+      if (parentInSameFile) {
+        for (const pm of parentInSameFile) methods.add(pm);
+      } else {
+        const parentFiles = classToAllFiles.get(parentName) ?? [];
+        if (parentFiles.length === 1) {
+          const parentMethods = getClassMethodsFromFile(parentFiles[0], parentName);
+          if (parentMethods) {
+            for (const pm of parentMethods) methods.add(pm);
+          }
+        }
+      }
+    }
+  }
   return methods;
 }
 

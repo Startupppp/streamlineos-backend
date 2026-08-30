@@ -18,7 +18,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BroadcastsService } from "./broadcasts.service";
 import {
   createBroadcastSchema,
@@ -49,8 +48,9 @@ export class BroadcastsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:view")
+  @Validate({ query: listBroadcastsSchema })
   list(
-    @Query(new ZodValidationPipe(listBroadcastsSchema)) filters: ListBroadcastsInput,
+    @Query() filters: ListBroadcastsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.broadcastsService.list(u.orgId, filters);
@@ -63,8 +63,9 @@ export class BroadcastsController {
    */
   @Get("inbox")
   @Universal()
+  @Validate({ query: listBroadcastInboxSchema })
   listInbox(
-    @Query(new ZodValidationPipe(listBroadcastInboxSchema)) query: ListBroadcastInboxInput,
+    @Query() query: ListBroadcastInboxInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.broadcastsService.listInbox(u.orgId, u.userId, query.limit);
@@ -74,8 +75,9 @@ export class BroadcastsController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
+  @Validate({ body: createBroadcastSchema })
   create(
-    @Body(new ZodValidationPipe(createBroadcastSchema)) dto: CreateBroadcastInput,
+    @Body() dto: CreateBroadcastInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.broadcastsService.create(u.orgId, u.userId, dto);
@@ -84,10 +86,10 @@ export class BroadcastsController {
   @Patch(":broadcastId")
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
-  @Validate({ params: broadcastIdParams })
+  @Validate({ params: broadcastIdParams, body: updateBroadcastSchema })
   update(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
-    @Body(new ZodValidationPipe(updateBroadcastSchema)) dto: UpdateBroadcastInput,
+    @Body() dto: UpdateBroadcastInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.broadcastsService.update(u.orgId, broadcastId, u.userId, dto);

@@ -17,7 +17,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { NotificationTemplatesService } from "./notification-templates.service";
 import {
   createTemplateSchema,
@@ -45,8 +44,9 @@ export class NotificationTemplatesController {
 
   @Get()
   @RequirePermission("notifications:templates:view")
+  @Validate({ query: listTemplatesSchema })
   list(
-    @Query(new ZodValidationPipe(listTemplatesSchema)) filters: ListTemplatesInput,
+    @Query() filters: ListTemplatesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.list(u.orgId, filters);
@@ -55,8 +55,9 @@ export class NotificationTemplatesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("notifications:templates:manage")
+  @Validate({ body: createTemplateSchema })
   create(
-    @Body(new ZodValidationPipe(createTemplateSchema)) dto: CreateTemplateInput,
+    @Body() dto: CreateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.create(u.orgId, u.userId, dto);
@@ -64,26 +65,21 @@ export class NotificationTemplatesController {
 
   @Patch(":templateId")
   @RequirePermission("notifications:templates:manage")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: updateTemplateSchema })
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(updateTemplateSchema)) dto: UpdateTemplateInput,
+    @Body() dto: UpdateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.update(u.orgId, templateId, u.userId, dto);
   }
 
-  /**
-   * COMP-004 / COMP-005. Without this the approval gates on WhatsApp and SMS could never
-   * be opened: `approval_status` defaults to NOT_REQUIRED and no other endpoint writes it,
-   * so a registered template would still have been refused at send time forever.
-   */
   @Patch(":templateId/approval")
   @RequirePermission("notifications:templates:manage")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: setTemplateApprovalSchema })
   setApproval(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(setTemplateApprovalSchema)) dto: SetTemplateApprovalInput,
+    @Body() dto: SetTemplateApprovalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.setApproval(u.orgId, templateId, dto);
@@ -102,10 +98,10 @@ export class NotificationTemplatesController {
   @Post(":templateId/preview")
   @HttpCode(200)
   @RequirePermission("notifications:templates:view")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: previewTemplateSchema })
   preview(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(previewTemplateSchema)) dto: PreviewTemplateInput,
+    @Body() dto: PreviewTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.preview(u.orgId, templateId, dto);
@@ -115,10 +111,10 @@ export class NotificationTemplatesController {
   @Idempotent("notifications.template.test-send")
   @HttpCode(200)
   @RequirePermission("notifications:templates:manage")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: testSendTemplateSchema })
   testSend(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(testSendTemplateSchema)) dto: TestSendTemplateInput,
+    @Body() dto: TestSendTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.testSend(u.orgId, u.userId, templateId, dto);

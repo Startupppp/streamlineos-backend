@@ -4,6 +4,7 @@ import { projects } from "../build/core";
 import { tickets } from "../build/tasks";
 import { timesheets } from "./entries";
 import { timesheetPeriods } from "./periods";
+import { timesheetExports } from "./exports";
 import { timerSessions } from "./timer";
 import { timesheetRateCards, timesheetRates } from "./rates";
 import { timesheetBudgets } from "./budgets";
