@@ -118,6 +118,11 @@ function buildService(options: {
     findAvailableLotForLine: jest.fn().mockResolvedValue(options.foundLot ?? null),
   };
 
+  // NEO-7's labour recorder. A no-op double rather than a jest.fn assertion
+  // target: this spec is about which location a confirm resolves to, and the
+  // labour record is asserted where it belongs, in `labor.spec.ts`.
+  const labor = { recordInTx: jest.fn(async () => undefined) };
+
   const svc = new PickConfirmService(
     db as never,
     barcode as never,
@@ -125,6 +130,7 @@ function buildService(options: {
     audit as never,
     settings as never,
     soCore as never,
+    labor as never,
   );
   return { svc, tx, completion, soCore, audit };
 }

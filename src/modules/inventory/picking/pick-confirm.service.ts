@@ -10,6 +10,7 @@ import { SoCoreService } from "../sales-orders/so-core.service";
 import { runIdempotent } from "../stock-engine/idempotency";
 import { addDec, cmpDec } from "../stock-engine/decimal";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
+import { LaborService } from "../labor/labor.service";
 import { allocateFromAvailableStock } from "./pick-allocation";
 import type { ConfirmPickInput } from "./dto/picking.schemas";
 import {
@@ -88,6 +89,7 @@ export class PickConfirmService {
     private readonly audit: InventoryAuditService,
     private readonly settings: InventorySettingsService,
     private readonly soCore: SoCoreService,
+    private readonly labor: LaborService,
   ) {}
 
   /**
@@ -202,6 +204,23 @@ export class PickConfirmService {
         handlingUnitId: line.handlingUnitId,
       });
     }
+
+    // NEO-7. Written from inside the command that finished the work, so a record
+    // cannot exist for a confirmation that rolled back and a confirmation cannot
+    // happen without one. It is observation, not control: nothing here can refuse
+    // the pick, because a picker whose confirmation was rejected by a measurement
+    // would rightly stop trusting the device.
+    const wave = await loadWaveContext(tx, orgId, pickListId);
+    await this.labor.recordInTx(tx, orgId, {
+      warehouseId: wave.warehouseId ?? null,
+      taskKind: "PICK",
+      taskId: pickListId,
+      taskLineId: input.pickLineId,
+      userId,
+      locationId: pickedAt,
+      unitsDone: input.quantityPicked,
+      scanCount: input.scannedPayload ? 1 : 0,
+    });
 
     // Step 1 of the hand-off. Before the recompute, always.
     const released = await this.completion.consumeCoveredReservations(

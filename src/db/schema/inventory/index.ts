@@ -17,3 +17,5 @@ export * from "./admin";
 export * from "./channel-pools";
 export * from "./quick-commerce";
 export * from "./handling-units";
+export * from "./slotting";
+export * from "./labor";

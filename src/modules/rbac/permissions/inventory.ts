@@ -352,6 +352,14 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     description: "Print barcode labels, goods-receipt notes and pick lists",
   },
   {
+    name: "inventory:labor:read",
+    resource: "inventory:labor",
+    action: "read",
+    description:
+      "Read the warehouse labour board: units per hour and performance against standard, by named person",
+    scopable: true,
+  },
+  {
     name: "inventory:ai:read",
     resource: "inventory:ai",
     action: "read",

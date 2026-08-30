@@ -5,6 +5,8 @@ import type { Db } from "../../../db/drizzle.module";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import type { SuggestPutawayInput } from "./dto/inv-warehouses.schemas";
 import { cmpDec, subDec } from "../stock-engine/decimal";
+import { SlottingService } from "../slotting/slotting.service";
+import { rankBySlot, type SlottedSuggestion } from "../slotting/slotting-rules";
 
 export interface PutawaySuggestion {
   locationId: number;
@@ -24,6 +26,7 @@ export class PutawayService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly slotting: SlottingService,
   ) {}
 
   /**
@@ -35,20 +38,30 @@ export class PutawayService {
    *   1. Locations where the quantity actually fits, because a suggestion that
    *      cannot be accepted is worse than no suggestion — the engine will
    *      refuse the putaway and the operator has walked for nothing.
-   *   2. Among those, locations already holding this variant, so a SKU does not
-   *      scatter across a building one delivery at a time. Consolidation is
+   *   2. **NEO-6.** Bins inside the zone the slotting rules point at for this
+   *      SKU. Above consolidation deliberately: putting a fast mover beside its
+   *      own existing stock in a back aisle is exactly the outcome slotting
+   *      exists to stop.
+   *   3. Among the rest, locations already holding this variant, so a SKU does
+   *      not scatter across a building one delivery at a time. Consolidation is
    *      what makes a later pick one walk instead of three.
-   *   3. Most remaining room first, so the building fills evenly rather than
+   *   4. Most remaining room first, so the building fills evenly rather than
    *      wedging every delivery into the first bin with a gap.
    *
    * Unlimited locations sort as unlimited rather than as "very large", so a bin
    * with no capacity recorded does not silently outrank every measured one.
+   *
+   * An organisation that has written no rules matches nothing, so rank 2 is a
+   * constant and the order is precisely the INV-202 one it had before — which is
+   * why NEO-6 is a re-rank rather than a replacement. The ordering itself lives
+   * in `slotting/slotting-rules.ts` as a pure function, because it is the part
+   * with an opinion and the part worth testing on its own.
    */
   async suggest(
     orgId: string,
     userId: string,
     input: SuggestPutawayInput,
-  ): Promise<PutawaySuggestion[]> {
+  ): Promise<SlottedSuggestion[]> {
     const scope = await this.warehouseScope.forUser(orgId, userId);
     if (scope.isEmpty) return [];
 
@@ -99,18 +112,15 @@ export class PutawayService {
     });
 
     // Order matters and the comment above is the contract: a bin that does not
-    // fit is useless whatever else is true of it, so `fits` sorts first; among
-    // bins that fit, consolidation wins. The earlier version documented
-    // consolidation as the first key and implemented it as the second, which is
-    // the kind of disagreement that survives review because both halves read
-    // reasonably on their own.
-    return suggestions.sort((a, b) => {
-      if (a.fits !== b.fits) return a.fits ? -1 : 1;
-      if (a.holdsVariant !== b.holdsVariant) return a.holdsVariant ? -1 : 1;
-      if (a.remaining === null && b.remaining === null) return 0;
-      if (a.remaining === null) return 1;
-      if (b.remaining === null) return -1;
-      return cmpDec(b.remaining, a.remaining);
+    // fit is useless whatever else is true of it, so `fits` sorts first; then the
+    // slot; then consolidation. The earlier version documented consolidation as
+    // the first key and implemented it as the second, which is the kind of
+    // disagreement that survives review because both halves read reasonably on
+    // their own — so the ordering is now one pure function with its own spec.
+    const slot = await this.slotting.slotFor(this.db, orgId, {
+      warehouseId: input.warehouseId,
+      productVariantId: input.productVariantId,
     });
+    return rankBySlot(suggestions, slot);
   }
 }

@@ -619,6 +619,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "inventory:transit:abandon",
       "inventory:allocation:override",
       "inventory:labels:print",
+      "inventory:labor:read",
     ],
   },
   {

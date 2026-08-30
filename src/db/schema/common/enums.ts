@@ -721,3 +721,47 @@ export const invHandlingUnitStatusEnum = pgEnum("inv_handling_unit_status", [
   "SHIPPED",
   "EMPTY",
 ]);
+
+/**
+ * NEO-6 - how fast a SKU moves, as three buckets.
+ *
+ * ABC is the warehouse's own vocabulary and predates every WMS: A is the small
+ * fraction of SKUs that account for most of the picks, C is the long tail. It is
+ * derived from the ledger on a window, never entered by hand, because a class
+ * somebody typed in last March is a class that is now wrong.
+ */
+export const invVelocityClassEnum = pgEnum("inv_velocity_class", ["A", "B", "C"]);
+
+/** NEO-6. What a slotting rule matches on. */
+export const invSlottingMatchEnum = pgEnum("inv_slotting_match", [
+  "VELOCITY_CLASS",
+  "CATEGORY",
+  "PRODUCT_VARIANT",
+]);
+
+/**
+ * NEO-6. A re-slot recommendation's life.
+ *
+ * `PENDING` until a person looks at it. Approving creates the work; nothing here
+ * ever moves stock on its own, which is the difference between a slotting
+ * *recommendation* and a warehouse that rearranges itself overnight.
+ */
+export const invSlottingRecommendationStatusEnum = pgEnum("inv_slotting_recommendation_status", [
+  "PENDING",
+  "APPROVED",
+  "DISMISSED",
+  "SUPERSEDED",
+]);
+
+/**
+ * NEO-7 - which kind of work a labour record is about.
+ *
+ * Deliberately the four the floor actually walks. A record with no task behind it
+ * is a timesheet, and timesheets are another module's problem.
+ */
+export const invLaborTaskKindEnum = pgEnum("inv_labor_task_kind", [
+  "PICK",
+  "PUTAWAY",
+  "COUNT",
+  "RECEIVE",
+]);

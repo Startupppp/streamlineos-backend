@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { InvLaborModule } from "../labor/inv-labor.module";
 import { PutawayTaskController } from "./putaway-task.controller";
 import { PutawayTaskService } from "./putaway-task.service";
 import { PutawayCompleteService } from "./putaway-complete.service";
@@ -12,7 +13,7 @@ import { InvWarehousesModule } from "../warehouses/inv-warehouses.module";
   // adds StockEngineService and StockProjectionService. Nest resolves all of
   // these at runtime; typecheck cannot see a missing import, and the application
   // simply fails to boot.
-  imports: [InvStockEngineModule, InvWarehousesModule],
+  imports: [InvStockEngineModule, InvWarehousesModule, InvLaborModule],
   controllers: [PutawayTaskController],
   providers: [PutawayTaskService, PutawayCompleteService],
   exports: [PutawayTaskService, PutawayCompleteService],

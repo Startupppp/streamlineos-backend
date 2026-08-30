@@ -31,6 +31,8 @@ import { InvPickingModule } from "./picking/inv-picking.module";
 import { InvPutawayModule } from "./putaway/inv-putaway.module";
 import { InvSyncModule } from "./sync/inv-sync.module";
 import { InvHandlingUnitsModule } from "./handling-units/inv-handling-units.module";
+import { InvSlottingModule } from "./slotting/inv-slotting.module";
+import { InvLaborModule } from "./labor/inv-labor.module";
 
 const INVENTORY_MODULES = [
   InvProductsModule,
@@ -65,6 +67,8 @@ const INVENTORY_MODULES = [
   InvPutawayModule,
   InvSyncModule,
   InvHandlingUnitsModule,
+  InvSlottingModule,
+  InvLaborModule,
 ];
 
 @Module({

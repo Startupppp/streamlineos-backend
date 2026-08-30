@@ -12,6 +12,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
+import { LaborService } from "../labor/labor.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { lockLevels, levelKey, type LevelGrain } from "../stock-engine/stock-level-locks";
 import { runIdempotent } from "../stock-engine/idempotency";
@@ -105,6 +106,7 @@ export class PutawayCompleteService {
     private readonly projection: StockProjectionService,
     private readonly warehouseScope: WarehouseScopeService,
     private readonly audit: InventoryAuditService,
+    private readonly labor: LaborService,
   ) {}
 
   /**
@@ -210,6 +212,20 @@ export class PutawayCompleteService {
         .update(invPutawayTaskLines)
         .set({ quantityMoved: addDec(plan.line.quantity_moved, plan.quantity), toLocationId: plan.destinationId })
         .where(and(eq(invPutawayTaskLines.orgId, orgId), eq(invPutawayTaskLines.id, plan.line.id)));
+
+      // NEO-7. Inside the command that finished the work, so a record cannot
+      // exist for a putaway that rolled back. The destination is the bin the
+      // operator walked to, which is what the distance proxy measures.
+      await this.labor.recordInTx(tx, orgId, {
+        warehouseId,
+        taskKind: "PUTAWAY",
+        taskId,
+        taskLineId: plan.line.id,
+        userId,
+        locationId: plan.destinationId,
+        unitsDone: plan.quantity,
+        scanCount: 1,
+      });
     }
 
     const [remaining] = await tx.execute<{ open: number }>(sql`
