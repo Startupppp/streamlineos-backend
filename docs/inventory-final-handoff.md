@@ -133,6 +133,24 @@ constraint is right and the data is wrong. But it is a failure that could not
 happen before, and it will present as "0575 broke the build" rather than as
 "migration N wrote a bad row".
 
+**Editing an already-applied migration orphans its bookkeeping row.**
+`scripts/apply-migration-file.mjs` keys on `sha256` of the file contents, so
+changing an applied file — *even to fix a comment* — makes it a different
+migration as far as `drizzle.__drizzle_migrations` is concerned. Re-applying
+inserts the new hash and leaves the old one behind, growing exactly the
+unbooked/unmatched drift the reconciler exists to measure. Delete the stale row
+explicitly before re-applying, then confirm each hash appears exactly once:
+
+```bash
+for f in migrations/0576*.sql; do
+  h=$(shasum -a 256 "$f" | cut -d' ' -f1)
+  node scripts/db-query.mjs "SELECT count(*) FROM drizzle.__drizzle_migrations WHERE hash='$h'"
+done
+```
+
+Found while correcting a comment in `0576`/`0577`. It is a general hazard for
+anyone touching an applied file, not specific to those two.
+
 **The FKs land after every table exists, so a cold build has a window without
 them.** `0575` runs last by necessity — a constraint cannot precede its tables —
 which means every earlier migration in a fresh build runs with no composite
@@ -514,14 +532,18 @@ abstract.
    - `fk_kb_pages_org_owner_membership`
 
    All four reference `organization_members(org_id, id)`. **Why they are
-   `NOT VALID` is not established.** The assumption was orphaned membership
-   references, but checked on 2026-08-30 all four have **zero** violating rows,
-   so nothing prevents validating them today. That may mean the data was cleaned,
-   or that the cold rebuild this branch went through took the offending rows with
-   it — this database was rebuilt empty mid-programme (§6). Do not validate them
-   on that evidence alone: a production database may hold rows this one does not,
-   and the reason they were left unvalidated has an owner who is not this
-   programme. **Whoever owns chat and KB should decide**, and the check is:
+   `NOT VALID` is not established, and this database cannot establish it.** The
+   assumption was orphaned membership references. Checked 2026-08-30, all four
+   have zero violating rows — but `chat_channels`, `chat_messages` and
+   `kb_pages` are **all empty** (0 rows, against 6 `organization_members`), so
+   the zero is explained entirely by there being nothing to violate. It is not
+   weak evidence that the constraints hold; it is no evidence in either
+   direction, and validating them here would succeed for a reason that says
+   nothing while the same statement could fail on a populated database.
+
+   That makes "reproduce, don't improve" the right call on firmer ground than
+   the reason originally given for it. **Whoever owns chat and KB should
+   decide**, counting against data that exists:
 
    ```sql
    SELECT count(*) FROM kb_pages t
