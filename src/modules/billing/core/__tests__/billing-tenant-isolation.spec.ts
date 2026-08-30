@@ -209,13 +209,15 @@ describe("EnterpriseQuotesService — cross-tenant isolation", () => {
 
   it("findOne returns the quote for the owning org (control)", async () => {
     const fakeRow = {
-      enterprise_quotes: {
-        id: 1, orgId: OWNER_ORG, status: "PENDING", ref: "EQ-0001", approverId: null,
+      quote: {
+        id: 1, orgId: OWNER_ORG, status: "PENDING", quoteRef: "EQ-0001", approverId: null,
         negotiatedSeats: 10, pricePerSeatInPaise: 100, contractTermMonths: 12,
       },
-      deals: null,
-      client_accounts: null,
-      users: null,
+      dealId: null,
+      dealName: null,
+      clientId: null,
+      clientName: null,
+      approverName: null,
     };
     const db = {
       select: jest.fn().mockReturnValue({

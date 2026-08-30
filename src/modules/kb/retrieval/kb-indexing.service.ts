@@ -18,6 +18,7 @@ import {
   isExtractableMime,
 } from "./kb-attachment-extract.util";
 import { sha256, chunkText, streamToBuffer } from "./kb-chunk-utils";
+import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
 
 export function isPageIndexable(page: {
   status: string;
@@ -34,34 +35,8 @@ export class KbIndexingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly embeddings: EmbeddingsService,
     private readonly storage: StorageService,
+    private readonly checkpoint: KbIngestionCheckpointService,
   ) {}
-
-  private async isContentUnchanged(
-    orgId: string,
-    filter: { articleId: number } | { pageId: number },
-    source: "article_body" | "page_body",
-    newText: string,
-  ): Promise<boolean> {
-    const idCondition =
-      "articleId" in filter
-        ? eq(kbArticleChunks.articleId, filter.articleId)
-        : eq(kbArticleChunks.pageId, filter.pageId);
-
-    const [existing] = await this.db
-      .select({ contentHash: kbArticleChunks.contentHash })
-      .from(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.orgId, orgId),
-          idCondition,
-          eq(kbArticleChunks.source, source),
-        ),
-      )
-      .limit(1);
-
-    if (!existing?.contentHash) return false;
-    return existing.contentHash === sha256(newText);
-  }
 
   private async getPageChunkState(
     orgId: string,
@@ -96,6 +71,42 @@ export class KbIndexingService {
     return existing ?? null;
   }
 
+  private async embedWithResumption(
+    orgId: string,
+    contentType: string,
+    contentId: number,
+    contentHash: string,
+    chunks: string[],
+  ): Promise<number[][]> {
+    const cached = await this.checkpoint.loadCheckpoints(
+      orgId,
+      contentType,
+      contentId,
+      contentHash,
+    );
+
+    const embeddings: number[][] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const hit = cached.get(i);
+      if (hit !== undefined) {
+        embeddings.push(hit);
+        continue;
+      }
+      const emb = await this.embeddings.embedQuery(chunks[i]);
+      await this.checkpoint.saveCheckpoint(
+        orgId,
+        contentType,
+        contentId,
+        contentHash,
+        i,
+        chunks[i],
+        emb,
+      );
+      embeddings.push(emb);
+    }
+    return embeddings;
+  }
+
   async indexArticle(orgId: string, articleId: number): Promise<void> {
     const article = await this.db.query.kbArticles.findFirst({
       where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
@@ -117,27 +128,38 @@ export class KbIndexingService {
       return;
     }
 
-    const unchanged = await this.isContentUnchanged(
-      orgId,
-      { articleId: articleId },
-      "article_body",
-      article.contentText,
-    );
-    if (unchanged) return;
-
     const chunks = chunkText(article.contentText);
     const contentHash = sha256(article.contentText);
-    const contentRevision = article.contentRevision;
-    const aclRevision = article.aclRevision;
 
     if (chunks.length === 0) {
       await this.removeArticleChunks(orgId, articleId);
       return;
     }
 
-    const embeddings = await Promise.all(
-      chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
+    const [firstExisting] = await this.db
+      .select({ contentHash: kbArticleChunks.contentHash })
+      .from(kbArticleChunks)
+      .where(
+        and(
+          eq(kbArticleChunks.orgId, orgId),
+          eq(kbArticleChunks.articleId, articleId),
+          eq(kbArticleChunks.source, "article_body"),
+        ),
+      )
+      .limit(1);
+
+    if (firstExisting?.contentHash === contentHash) return;
+
+    const embeddings = await this.embedWithResumption(
+      orgId,
+      "article",
+      articleId,
+      contentHash,
+      chunks,
     );
+
+    const contentRevision = article.contentRevision;
+    const aclRevision = article.aclRevision;
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -167,6 +189,7 @@ export class KbIndexingService {
       }));
 
       await tx.insert(kbArticleChunks).values(valuesToInsert);
+      await this.checkpoint.clearCheckpoints(tx, orgId, "article", articleId);
     });
   }
 
@@ -237,8 +260,12 @@ export class KbIndexingService {
       return 0;
     }
 
-    const embeddings = await Promise.all(
-      chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
+    const embeddings = await this.embedWithResumption(
+      orgId,
+      "page",
+      pageId,
+      contentHash,
+      chunks,
     );
 
     await this.db.transaction(async (tx) => {
@@ -273,6 +300,7 @@ export class KbIndexingService {
       }));
 
       await tx.insert(kbArticleChunks).values(valuesToInsert);
+      await this.checkpoint.clearCheckpoints(tx, orgId, "page", pageId);
     });
 
     return chunks.length;

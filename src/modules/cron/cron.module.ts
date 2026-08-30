@@ -29,6 +29,7 @@ import { CronBillingController } from "./cron-billing.controller";
 import { CronInvitationExpiryController } from "./cron-invitation-expiry.controller";
 import { CronHrController } from "./cron-hr.controller";
 import { CronPlatformController } from "./cron-platform.controller";
+import { CronNotificationsController } from "./cron-notifications.controller";
 import { CronOutboxController } from "./cron-outbox.controller";
 import { CronSupportController } from "./cron-support.controller";
 import { CronBuildController } from "./cron-build.controller";
@@ -105,6 +106,7 @@ import { CalendarModule } from "../calendar/calendar.module";
     CronBillingController,
     CronHrController,
     CronPlatformController,
+    CronNotificationsController,
     CronOutboxController,
     CronSupportController,
     CronBuildController,

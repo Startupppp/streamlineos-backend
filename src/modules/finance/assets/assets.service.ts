@@ -42,22 +42,8 @@ export class AssetsService {
       const [items, totals] = await Promise.all([
         this.db
           .select({
-            id: accFixedAssets.id,
-            assetNumber: accFixedAssets.assetNumber,
-            name: accFixedAssets.name,
-            categoryId: accFixedAssets.categoryId,
+            asset: accFixedAssets,
             categoryName: accAssetCategories.name,
-            acquisitionDate: accFixedAssets.acquisitionDate,
-            acquisitionCost: accFixedAssets.acquisitionCost,
-            salvageValue: accFixedAssets.salvageValue,
-            usefulLifeMonths: accFixedAssets.usefulLifeMonths,
-            depreciationMethod: accFixedAssets.depreciationMethod,
-            vendorId: accFixedAssets.vendorId,
-            billId: accFixedAssets.billId,
-            status: accFixedAssets.status,
-            accumulatedDepreciation: accFixedAssets.accumulatedDepreciation,
-            createdAt: accFixedAssets.createdAt,
-            updatedAt: accFixedAssets.updatedAt,
           })
           .from(accFixedAssets)
           .leftJoin(accAssetCategories, eq(accFixedAssets.categoryId, accAssetCategories.id))

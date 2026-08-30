@@ -1,5 +1,7 @@
 ﻿import { Module } from "@nestjs/common";
 import { BillingController } from "./billing.controller";
+import { BillingMarketplaceController } from "./billing-marketplace.controller";
+import { BillingEnterpriseController } from "./billing-enterprise.controller";
 import { RazorpayWebhookController } from "./razorpay-webhook.controller";
 import { BillingService } from "./billing.service";
 import { BillingProfileService } from "./billing-profile.service";
@@ -24,7 +26,7 @@ import { OutboxModule } from "../../../common/outbox/outbox.module";
 
 @Module({
   imports: [NotificationsModule, PaymentsModule, OutboxModule],
-  controllers: [BillingController, RazorpayWebhookController],
+  controllers: [BillingController, BillingMarketplaceController, BillingEnterpriseController, RazorpayWebhookController],
   providers: [BillingService, BillingProfileService, MarketplaceService, AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, UsageMeteringService, InvoiceSnapshotService],
   exports: [AiCreditsService, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, UsageMeteringService, InvoiceSnapshotService],
 })

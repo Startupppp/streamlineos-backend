@@ -15,7 +15,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PortalAccessService } from "./portal-access.service";
 import {
@@ -46,9 +45,9 @@ export class PortalAccessController {
 
   @Get("memberships")
   @RequirePermission("build:portal:view")
+  @Validate({ query: listMembershipsQuerySchema })
   listMemberships(
-    @Query(new ZodValidationPipe(listMembershipsQuerySchema))
-    query: ListMembershipsQuery,
+    @Query() query: ListMembershipsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listMemberships(u.orgId, query);
@@ -58,9 +57,9 @@ export class PortalAccessController {
   @HttpCode(201)
   @RequirePermission("build:clientvisibility:manage")
   @Idempotent("portal.createMembership")
+  @Validate({ body: createMembershipSchema })
   createMembership(
-    @Body(new ZodValidationPipe(createMembershipSchema))
-    body: CreateMembershipInput,
+    @Body() body: CreateMembershipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createMembership(u.orgId, u.userId, body);
@@ -68,11 +67,10 @@ export class PortalAccessController {
 
   @Patch("memberships/:portalMembershipId/status")
   @RequirePermission("build:clientvisibility:manage")
-  @Validate({ params: portalMembershipIdParams })
+  @Validate({ params: portalMembershipIdParams, body: updateMembershipStatusSchema })
   setMembershipStatus(
     @Param("portalMembershipId") portalMembershipId: string,
-    @Body(new ZodValidationPipe(updateMembershipStatusSchema))
-    body: UpdateMembershipStatusInput,
+    @Body() body: UpdateMembershipStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.setMembershipStatus(
@@ -85,8 +83,9 @@ export class PortalAccessController {
 
   @Get("grants")
   @RequirePermission("build:portal:view")
+  @Validate({ query: listGrantsQuerySchema })
   listGrants(
-    @Query(new ZodValidationPipe(listGrantsQuerySchema)) query: ListGrantsQuery,
+    @Query() query: ListGrantsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listGrants(u.orgId, query);
@@ -96,8 +95,9 @@ export class PortalAccessController {
   @HttpCode(201)
   @RequirePermission("build:clientvisibility:manage")
   @Idempotent("portal.createGrant")
+  @Validate({ body: createGrantSchema })
   createGrant(
-    @Body(new ZodValidationPipe(createGrantSchema)) body: CreateGrantInput,
+    @Body() body: CreateGrantInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createGrant(u.orgId, u.userId, body);
@@ -105,10 +105,10 @@ export class PortalAccessController {
 
   @Patch("grants/:projectClientGrantId")
   @RequirePermission("build:clientvisibility:manage")
-  @Validate({ params: projectClientGrantIdParams })
+  @Validate({ params: projectClientGrantIdParams, body: updateGrantSchema })
   updateGrant(
     @Param("projectClientGrantId") projectClientGrantId: string,
-    @Body(new ZodValidationPipe(updateGrantSchema)) body: UpdateGrantInput,
+    @Body() body: UpdateGrantInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateGrant(u.orgId, u.userId, projectClientGrantId, body);

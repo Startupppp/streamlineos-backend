@@ -859,4 +859,20 @@ export const BUDGETS = [
       { kind: "forbid-seq-scan", relation: "support_tickets" },
     ],
   },
+  {
+    id: "timesheets-pending-org",
+    ceiling: 8_000,
+    minRows: 50,
+    rowCountSql: `SELECT count(*)::int FROM timesheets WHERE org_id = $1`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT id, date, status, count(*) OVER () total
+      FROM timesheets
+      WHERE org_id = $1 AND status = 'PENDING'
+      ORDER BY date DESC
+      LIMIT 50 OFFSET 0`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "timesheets" },
+    ],
+  },
 ];

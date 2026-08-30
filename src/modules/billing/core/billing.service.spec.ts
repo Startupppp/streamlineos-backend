@@ -14,6 +14,7 @@ import { OutboxConsumerRegistry } from "../../../common/outbox/outbox-consumer.r
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import { PaymentWebhookHealthService } from "../payments/payment-webhook-health.service";
+import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { BillingProfileService } from "./billing-profile.service";
 import { PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
@@ -191,6 +192,7 @@ async function buildService(
           }),
         },
       },
+      { provide: PaymentWebhookReceiverService, useValue: { recordSignatureFailure: jest.fn() } },
       { provide: PaymentWebhookHealthService, useValue: { recordSignatureFailure: jest.fn() } },
       { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
       { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },

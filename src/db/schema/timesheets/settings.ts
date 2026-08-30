@@ -8,13 +8,14 @@ import {
   integer,
   jsonb,
   uniqueIndex,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import {
   timesheetRoundingRuleEnum,
   timesheetApprovalModeEnum,
   timesheetPayPeriodEnum,
 } from "./enums";
-import { organizations, users } from "../common";
+import { organizations, users, organizationMembers } from "../common";
 
 export const timesheetSettingsHistory = pgTable("timesheet_settings_history", {
   id: serial("id").primaryKey(),
@@ -24,10 +25,16 @@ export const timesheetSettingsHistory = pgTable("timesheet_settings_history", {
   version: integer("version").notNull(),
   settings: jsonb("settings").notNull(),
   changedBy: text("changed_by").references(() => users.id, { onDelete: "set null" }),
+  changedByMembershipId: integer("changed_by_membership_id"),
   changeReason: text("change_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   uniqueIndex("uniq_ts_settings_history_version").on(t.orgId, t.version),
+  foreignKey({
+    columns: [t.orgId, t.changedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_ts_settings_history_changed_by_membership",
+  }).onDelete("set null"),
 ]);
 
 export const timesheetSettings = pgTable("timesheet_settings", {

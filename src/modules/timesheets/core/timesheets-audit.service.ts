@@ -3,12 +3,13 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheetAuditEvents, users } from "../../../db/schema";
+import { timesheetAuditEvents, users, organizationMembers } from "../../../db/schema";
 import type { AuditQuery } from "./dto/audit.schemas";
 
 export interface AuditEventParams {
   orgId: string;
   actorUserId: string;
+  actorMembershipId?: number | null;
   entityType: string;
   entityId: string;
   action: string;
@@ -75,6 +76,7 @@ export class TimesheetsAuditService {
     await dbOrTx.insert(timesheetAuditEvents).values({
       orgId: params.orgId,
       actorUserId: params.actorUserId,
+      actorMembershipId: params.actorMembershipId ?? null,
       entityType: params.entityType,
       entityId: params.entityId,
       action: params.action,

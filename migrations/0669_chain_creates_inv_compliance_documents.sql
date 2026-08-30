@@ -22,16 +22,30 @@ CREATE TABLE IF NOT EXISTS inv_compliance_documents (
   updated_at timestamp without time zone NOT NULL DEFAULT now()
 );
 --> statement-breakpoint
-ALTER TABLE inv_compliance_documents
-  ADD CONSTRAINT fk_inv_compliance_documents_org
-  FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE NOT VALID;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_inv_compliance_documents_org'
+  ) THEN
+    ALTER TABLE inv_compliance_documents
+      ADD CONSTRAINT fk_inv_compliance_documents_org
+      FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
 ALTER TABLE inv_compliance_documents
   VALIDATE CONSTRAINT fk_inv_compliance_documents_org;
 --> statement-breakpoint
-ALTER TABLE inv_compliance_documents
-  ADD CONSTRAINT fk_inv_compliance_documents_created_by
-  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL NOT VALID;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_inv_compliance_documents_created_by'
+  ) THEN
+    ALTER TABLE inv_compliance_documents
+      ADD CONSTRAINT fk_inv_compliance_documents_created_by
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
 ALTER TABLE inv_compliance_documents
   VALIDATE CONSTRAINT fk_inv_compliance_documents_created_by;

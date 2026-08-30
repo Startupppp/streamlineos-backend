@@ -13,6 +13,7 @@ import {
   timesheetPeriods,
   timesheets,
   timesheetSettings,
+  organizationMembers,
   users,
   projects,
 } from "../../../db/schema";
@@ -395,7 +396,7 @@ export class PeriodsService {
 
       await tx
         .update(timesheets)
-        .set({ lockedAt: null, lockedBy: null, updatedAt: new Date() })
+        .set({ lockedAt: null, lockedBy: null, lockedByMembershipId: null, updatedAt: new Date() })
         .where(
           and(
             eq(timesheets.timesheetPeriodId, periodId),
@@ -422,6 +423,13 @@ export class PeriodsService {
     if (!row) throw new NotFoundException("Period not found");
 
     await this.db.transaction(async (tx) => {
+      const [actorMember] = await tx
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
+        .limit(1);
+      const lockedByMembershipId = actorMember?.id ?? null;
+
       await tx
         .update(timesheetPeriods)
         .set({ lockedAt: new Date(), updatedAt: new Date() })
@@ -429,7 +437,7 @@ export class PeriodsService {
 
       await tx
         .update(timesheets)
-        .set({ lockedAt: new Date(), lockedBy: u.userId, updatedAt: new Date() })
+        .set({ lockedAt: new Date(), lockedBy: u.userId, lockedByMembershipId, updatedAt: new Date() })
         .where(
           and(
             eq(timesheets.timesheetPeriodId, periodId),
@@ -440,6 +448,7 @@ export class PeriodsService {
       await this.audit.record(tx, {
         orgId: u.orgId,
         actorUserId: u.userId,
+        actorMembershipId: lockedByMembershipId,
         entityType: "period",
         entityId: periodId.toString(),
         action: "period.locked",
@@ -463,7 +472,7 @@ export class PeriodsService {
 
       await tx
         .update(timesheets)
-        .set({ lockedAt: null, lockedBy: null, updatedAt: new Date() })
+        .set({ lockedAt: null, lockedBy: null, lockedByMembershipId: null, updatedAt: new Date() })
         .where(
           and(
             eq(timesheets.timesheetPeriodId, periodId),

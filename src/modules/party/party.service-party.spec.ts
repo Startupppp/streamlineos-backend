@@ -9,7 +9,6 @@ const ORG_ID = "org-111";
 const OTHER_ORG = "org-999";
 const USER_ID = "user-abc";
 const PARTY_ID = "party-uuid-1";
-const CONTACT_ID = "contact-uuid-1";
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 const mockCache = { invalidateNamespace: jest.fn() } as unknown as CacheService;
@@ -35,36 +34,10 @@ function makeParty(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeContact(overrides: Record<string, unknown> = {}) {
-  return {
-    partyContactId: CONTACT_ID,
-    organizationId: ORG_ID,
-    partyId: PARTY_ID,
-    firstName: "John",
-    lastName: "Doe",
-    email: "john@acme.com",
-    phone: null,
-    title: null,
-    isPrimary: false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    deletedAt: null,
-    ...overrides,
-  };
-}
-
-describe("PartyService", () => {
+describe("PartyService — party CRUD", () => {
   let svc: PartyService;
   let mockDb: Record<string, unknown>;
 
-  /**
-   * `where` answers two shapes now, because the party writer asks two questions.
-   *
-   * A single-record load ends in `.limit(1)` and gets `rows`. The mirror refresh
-   * awaits `.where(...)` directly to ask which legacy ids a party answers for,
-   * and gets `legacyIds` -- empty by default, so a test that is not about the
-   * mirror sees no mirror writes.
-   */
   function makeSelectChain(rows: unknown[], legacyIds: unknown[] = []) {
     const whereChain = Object.assign(Promise.resolve(legacyIds), {
       limit: jest.fn().mockResolvedValue(rows),
@@ -82,9 +55,6 @@ describe("PartyService", () => {
       insert: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
-      // Party writes now open a savepoint so the row and its legacy mirror commit
-      // together. The callback must actually run, or every assertion inside it is
-      // silently void.
       transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(mockDb)),
       query: {},
     };
@@ -94,8 +64,6 @@ describe("PartyService", () => {
         PartyService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
-        // Companies are cached under the CRM namespaces since ticket 25 made
-        // `/crm/organizations` this list under a filter; a write here bumps them.
         { provide: CacheService, useValue: mockCache },
       ],
     }).compile();
@@ -103,9 +71,6 @@ describe("PartyService", () => {
     svc = module.get(PartyService);
   });
 
-  // ---------------------------------------------------------------------------
-  // getParty / loadParty — BOLA cross-tenant isolation
-  // ---------------------------------------------------------------------------
   describe("getParty — BOLA cross-tenant isolation", () => {
     it("throws 404 when the party belongs to a different tenant", async () => {
       const { selectChain } = makeSelectChain([]);
@@ -135,9 +100,6 @@ describe("PartyService", () => {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // createParty — unique violation → ConflictException, audit on success
-  // ---------------------------------------------------------------------------
   describe("createParty — unique violation → 409, audit on success", () => {
     it("maps Postgres 23505 to ConflictException", async () => {
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
@@ -170,10 +132,6 @@ describe("PartyService", () => {
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
         values: jest.fn().mockReturnValue({
           returning: jest.fn().mockResolvedValue([row]),
-          // The party's contact columns are claimed as identifiers in the same
-          // statement stream, so `resolve-party` can find this record when the
-          // customer writes in. Conflicts are ignored: a value another party
-          // already holds is left with them rather than failing the save.
           onConflictDoNothing: jest.fn().mockResolvedValue([]),
         }),
       });
@@ -197,9 +155,6 @@ describe("PartyService", () => {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // updateParty — re-asserts access before writing
-  // ---------------------------------------------------------------------------
   describe("updateParty — re-asserts access before writing", () => {
     it("throws 404 (via loadParty) when party is in a different tenant", async () => {
       const { selectChain } = makeSelectChain([]);
@@ -258,9 +213,6 @@ describe("PartyService", () => {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // softDeleteParty — BOLA guard + audit
-  // ---------------------------------------------------------------------------
   describe("softDeleteParty — BOLA guard + soft-delete", () => {
     it("throws 404 when party is in a different tenant (no update)", async () => {
       const { selectChain } = makeSelectChain([]);
@@ -279,8 +231,6 @@ describe("PartyService", () => {
 
       const setSpy = jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({
-          // The delete returns the row now: the mirror is derived from what the
-          // party became, not from what the caller asked for.
           returning: jest.fn().mockResolvedValue([makeParty({ deletedAt: new Date() })]),
         }),
       });
@@ -303,9 +253,6 @@ describe("PartyService", () => {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // listParties — pagination envelope
-  // ---------------------------------------------------------------------------
   describe("listParties — pagination envelope", () => {
     it("returns { data, pagination } with correct totalPages", async () => {
       const rows = [makeParty(), makeParty({ partyId: "party-2", name: "Beta LLC" })];
@@ -317,8 +264,6 @@ describe("PartyService", () => {
           return {
             from: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue({
-                // The list is ordered now: LIMIT/OFFSET without ORDER BY gives a
-                // non-repeatable page, and the cursor branch needs the same order.
                 orderBy: jest.fn().mockReturnValue({
                   limit: jest.fn().mockReturnValue({
                     offset: jest.fn().mockResolvedValue(rows),
@@ -379,201 +324,6 @@ describe("PartyService", () => {
       expect(result.data).toHaveLength(0);
       expect(result.pagination.total).toBe(0);
       expect(result.pagination.totalPages).toBe(0);
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // listContacts — party guard
-  // ---------------------------------------------------------------------------
-  describe("listContacts — party guard", () => {
-    it("throws 404 when the parent party is not found", async () => {
-      const { selectChain } = makeSelectChain([]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
-
-      await expect(
-        svc.listContacts(OTHER_ORG, PARTY_ID),
-      ).rejects.toBeInstanceOf(NotFoundException);
-    });
-
-    it("returns contacts for a valid party", async () => {
-      const party = makeParty();
-      const contacts = [makeContact(), makeContact({ partyContactId: "contact-2" })];
-
-      let selectCount = 0;
-      (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
-        selectCount++;
-        if (selectCount === 1) {
-          // loadParty chain: .from().where().limit()
-          const whereChain = { limit: jest.fn().mockResolvedValue([party]) };
-          const fromChain = { where: jest.fn().mockReturnValue(whereChain) };
-          return { from: jest.fn().mockReturnValue(fromChain) };
-        }
-        // listContacts chain: .from().where() — no .limit() call
-        return {
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockResolvedValue(contacts),
-          }),
-        };
-      });
-
-      const result = await svc.listContacts(ORG_ID, PARTY_ID);
-      expect(result).toHaveLength(2);
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // createContact — party guard + unique violation + audit
-  // ---------------------------------------------------------------------------
-  describe("createContact — party guard + unique violation", () => {
-    it("throws 404 when the parent party does not exist", async () => {
-      const { selectChain } = makeSelectChain([]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
-
-      await expect(
-        svc.createContact(ORG_ID, USER_ID, {
-          partyId: "nonexistent",
-          firstName: "Jane",
-        }),
-      ).rejects.toBeInstanceOf(NotFoundException);
-      expect((mockDb as { insert: jest.Mock }).insert).not.toHaveBeenCalled();
-    });
-
-    it("maps Postgres 23505 to ConflictException", async () => {
-      const party = makeParty();
-      const { selectChain } = makeSelectChain([party]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
-
-      (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
-        values: jest.fn().mockReturnValue({
-          returning: jest.fn().mockRejectedValue({ code: "23505" }),
-        }),
-      });
-
-      await expect(
-        svc.createContact(ORG_ID, USER_ID, {
-          partyId: PARTY_ID,
-          firstName: "Jane",
-        }),
-      ).rejects.toBeInstanceOf(ConflictException);
-      expect(mockAudit.log).not.toHaveBeenCalled();
-    });
-
-    it("inserts and audit-logs on success", async () => {
-      const party = makeParty();
-      const contact = makeContact({ partyContactId: "new-contact-id" });
-
-      const { selectChain } = makeSelectChain([party]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
-      (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
-        values: jest.fn().mockReturnValue({
-          returning: jest.fn().mockResolvedValue([contact]),
-        }),
-      });
-
-      const result = await svc.createContact(ORG_ID, USER_ID, {
-        partyId: PARTY_ID,
-        firstName: "Jane",
-        email: "jane@acme.com",
-      });
-
-      expect(result).toMatchObject({
-        partyContactId: "new-contact-id",
-        partyId: PARTY_ID,
-      });
-      expect(mockAudit.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: "party.contact.created",
-          userId: USER_ID,
-          orgId: ORG_ID,
-          resourceType: "party_contact",
-        }),
-      );
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // updateContact — loadContact BOLA guard + audit
-  // ---------------------------------------------------------------------------
-  describe("updateContact — BOLA guard + audit", () => {
-    it("throws 404 when contact belongs to a different tenant", async () => {
-      const { selectChain } = makeSelectChain([]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
-
-      await expect(
-        svc.updateContact(OTHER_ORG, USER_ID, CONTACT_ID, { firstName: "X" }),
-      ).rejects.toBeInstanceOf(NotFoundException);
-      expect((mockDb as { update: jest.Mock }).update).not.toHaveBeenCalled();
-    });
-
-    it("applies patch and audit-logs when contact exists", async () => {
-      const existing = makeContact();
-      const updated = makeContact({ firstName: "Jane Updated" });
-
-      const { selectChain } = makeSelectChain([existing]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
-      (mockDb as { update: jest.Mock }).update.mockReturnValue({
-        set: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            returning: jest.fn().mockResolvedValue([updated]),
-          }),
-        }),
-      });
-
-      const result = await svc.updateContact(ORG_ID, USER_ID, CONTACT_ID, {
-        firstName: "Jane Updated",
-      });
-
-      expect(result).toMatchObject({ firstName: "Jane Updated" });
-      expect(mockAudit.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: "party.contact.updated",
-          orgId: ORG_ID,
-          userId: USER_ID,
-          resourceType: "party_contact",
-          resourceId: CONTACT_ID,
-        }),
-      );
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // softDeleteContact — loadContact BOLA guard + audit
-  // ---------------------------------------------------------------------------
-  describe("softDeleteContact — BOLA guard + soft-delete", () => {
-    it("throws 404 when contact is in a different tenant (no update)", async () => {
-      const { selectChain } = makeSelectChain([]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
-
-      await expect(
-        svc.softDeleteContact(OTHER_ORG, USER_ID, CONTACT_ID),
-      ).rejects.toBeInstanceOf(NotFoundException);
-      expect((mockDb as { update: jest.Mock }).update).not.toHaveBeenCalled();
-    });
-
-    it("sets deletedAt and audit-logs when contact exists", async () => {
-      const existing = makeContact();
-      const { selectChain } = makeSelectChain([existing]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
-
-      const setSpy = jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue(undefined),
-      });
-      (mockDb as { update: jest.Mock }).update.mockReturnValue({ set: setSpy });
-
-      await svc.softDeleteContact(ORG_ID, USER_ID, CONTACT_ID);
-
-      expect(setSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ deletedAt: expect.any(Date) }),
-      );
-      expect(mockAudit.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: "party.contact.deleted",
-          orgId: ORG_ID,
-          userId: USER_ID,
-          resourceType: "party_contact",
-          resourceId: CONTACT_ID,
-        }),
-      );
     });
   });
 });

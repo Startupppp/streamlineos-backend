@@ -2,16 +2,19 @@ import {
   pgTable,
   text,
   serial,
+  integer,
   timestamp,
   jsonb,
   index,
+  foreignKey,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 
 export const timesheetAuditEvents = pgTable("timesheet_audit_events", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorMembershipId: integer("actor_membership_id"),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),
   action: text("action").notNull(),
@@ -23,4 +26,9 @@ export const timesheetAuditEvents = pgTable("timesheet_audit_events", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   index("idx_timesheet_audit_entity").on(t.orgId, t.entityType, t.entityId, t.createdAt),
+  foreignKey({
+    columns: [t.orgId, t.actorMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_timesheet_audit_actor_membership",
+  }).onDelete("set null"),
 ]);

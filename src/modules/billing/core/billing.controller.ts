@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { Universal } from "../../../common/auth/universal.decorator";
@@ -9,14 +9,6 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { BillingService } from "./billing.service";
-import { MarketplaceService } from "./marketplace.service";
-import { AiCreditsService } from "./ai-credits.service";
-import { AiCreditsUsageService } from "./ai-credits-usage.service";
-import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
-import { AffiliateService } from "./affiliate.service";
-import { ReferralService } from "./referral.service";
-import { RevenueAnalyticsService } from "./revenue-analytics.service";
-import { EnterpriseQuotesService } from "./enterprise-quotes.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import {
   createCouponSchema,
@@ -34,24 +26,9 @@ import {
   type UpdateCouponInput,
   type VerifyPaymentInput,
 } from "./dto/billing.schemas";
-import { aiCreditsUsageQuerySchema, autoTopUpSchema, listTransactionsSchema, purchaseAiPackSchema, type PurchaseAiPackInput } from "./dto/ai-credits.schemas";
-import { createReferralSchema } from "./dto/affiliate.schemas";
-import { analyticsQuerySchema } from "./dto/analytics.schemas";
-import {
-  listEnterpriseQuotesSchema,
-  createEnterpriseQuoteSchema,
-  approveEnterpriseQuoteSchema,
-  rejectEnterpriseQuoteSchema,
-  type ListEnterpriseQuotesQuery,
-  type CreateEnterpriseQuoteInput,
-  type ApproveEnterpriseQuoteInput,
-  type RejectEnterpriseQuoteInput,
-} from "./dto/enterprise-quotes.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const appIdParams = z.object({ appId: z.coerce.number().int().positive() }).strict();
-const quoteIdParams = z.object({ quoteId: z.coerce.number().int().positive() }).strict();
 const couponIdParams = z.object({ couponId: z.coerce.number().int().positive() }).strict();
 
 @Controller("billing")
@@ -59,14 +36,6 @@ const couponIdParams = z.object({ couponId: z.coerce.number().int().positive() }
 export class BillingController {
   constructor(
     private readonly billing: BillingService,
-    private readonly marketplace: MarketplaceService,
-    private readonly aiCredits: AiCreditsService,
-    private readonly aiCreditsUsage: AiCreditsUsageService,
-    private readonly providers: PaymentProviderResolver,
-    private readonly affiliate: AffiliateService,
-    private readonly referral: ReferralService,
-    private readonly analytics: RevenueAnalyticsService,
-    private readonly enterpriseQuotes: EnterpriseQuotesService,
     private readonly planLimits: PlanLimitsService,
   ) {}
 
@@ -127,7 +96,6 @@ export class BillingController {
     return this.planLimits.getEntitlements(u.orgId);
   }
 
-  // Stuck provisioning is subscription state, so it reuses that key rather than adding an ungranted one.
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:view")
   @Get("provisioning-failures")
@@ -144,9 +112,8 @@ export class BillingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const parsedPlan = planSchema.safeParse(plan);
-    if (!parsedPlan.success) {
+    if (!parsedPlan.success)
       return { valid: false, message: "Invalid plan" };
-    }
     return this.billing.validateCoupon(code ?? "", u.orgId, parsedPlan.data as Plan);
   }
 
@@ -180,121 +147,6 @@ export class BillingController {
     return this.billing.verifyAndActivate(u.orgId, u.userId, body);
   }
 
-  @Get("marketplace/apps")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:marketplace:view")
-  listApps(@CurrentUser() u: CurrentUserContext) {
-    return this.marketplace.listApps(u.orgId);
-  }
-
-  @Post("marketplace/:appId/install")
-  @Idempotent("billing.marketplace.install")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:marketplace:install")
-  @Validate({ params: appIdParams })
-  installApp(
-    @Param("appId", ParseIntPipe) appId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.marketplace.installApp(u.orgId, u.userId, appId);
-  }
-
-  @Delete("marketplace/:appId/install")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:marketplace:install")
-  @Validate({ params: appIdParams })
-  uninstallApp(
-    @Param("appId", ParseIntPipe) appId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.marketplace.uninstallApp(u.orgId, appId);
-  }
-
-  @Post("marketplace/:appId/trial")
-  @Idempotent("billing.marketplace.trial")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:marketplace:install")
-  @Validate({ params: appIdParams })
-  startTrial(
-    @Param("appId", ParseIntPipe) appId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.marketplace.startAppTrial(u.orgId, u.userId, appId);
-  }
-
-  @Get("ai-credits")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:ai-credits:view")
-  async getAiCredits(@CurrentUser() u: CurrentUserContext) {
-    const [wallet, packs] = await Promise.all([
-      this.aiCredits.getWallet(u.orgId),
-      this.aiCredits.listPacks(),
-    ]);
-    return { ...wallet, packs };
-  }
-
-  @Get("ai-credits/transactions")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:ai-credits:view")
-  listAiCreditTransactions(
-    @Query(new ZodValidationPipe(listTransactionsSchema)) query: ReturnType<typeof listTransactionsSchema.parse>,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.aiCredits.listTransactions(u.orgId, query.page, query.limit);
-  }
-
-  @Get("ai-credits/usage")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:ai-credits:view")
-  getAiCreditsUsage(
-    @Query(new ZodValidationPipe(aiCreditsUsageQuerySchema)) query: ReturnType<typeof aiCreditsUsageQuerySchema.parse>,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.aiCreditsUsage.getUsage(u.orgId, query.days);
-  }
-
-  @Post("ai-credits/auto-topup")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:ai-credits:purchase")
-  async configureAutoTopUp(
-    @Body(new ZodValidationPipe(autoTopUpSchema)) body: ReturnType<typeof autoTopUpSchema.parse>,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.aiCredits.updateAutoTopUp(
-      u.orgId,
-      body.enabled,
-      body.packId,
-      body.threshold,
-    );
-  }
-
-  @Post("ai-credits/purchase")
-  @Idempotent("billing.ai-credits.purchase")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:ai-credits:purchase")
-  async purchaseAiCredits(
-    @Body(new ZodValidationPipe(purchaseAiPackSchema)) body: PurchaseAiPackInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (body.paymentId) {
-      const adapter = await this.providers.resolveConfigured(u.orgId);
-      const valid =
-        adapter?.verifyPaymentSignature({
-          orderId: body.orderId ?? "",
-          paymentId: body.paymentId,
-          signature: body.signature ?? "",
-        }) ?? false;
-      if (!valid) throw new BadRequestException("Invalid payment signature");
-      return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId, false, body.paymentId);
-    }
-    if ((await this.providers.resolveConfigured(u.orgId))?.isReady() ?? false) {
-      return this.billing.purchaseAddon(u.orgId, `ai_pack_${body.packId}`, 1);
-    }
-    return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId);
-  }
-
   @Get("profile")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:profile:view")
@@ -317,160 +169,6 @@ export class BillingController {
   @RequirePermission("billing:seats:view")
   getSeatInfo(@CurrentUser() u: CurrentUserContext) {
     return this.billing.getSeatInfo(u.orgId);
-  }
-
-  @Post("affiliate/register")
-  @Idempotent("billing.affiliate.register")
-  @HttpCode(201)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:affiliate:manage")
-  registerAffiliate(@CurrentUser() u: CurrentUserContext) {
-    return this.affiliate.register(u.userId, u.orgId);
-  }
-
-  @Get("affiliate")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:affiliate:manage")
-  getAffiliateDashboard(@CurrentUser() u: CurrentUserContext) {
-    return this.affiliate.getDashboard(u.userId);
-  }
-
-  @Post("affiliate/payout-request")
-  @Idempotent("billing.affiliate.payout-request")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:affiliate:manage")
-  requestAffiliatePayoutRequest(@CurrentUser() u: CurrentUserContext) {
-    return this.billing.requestAffiliatePayoutRequest(u.orgId);
-  }
-
-  @Post("referrals")
-  @Idempotent("billing.referral.create")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:referrals:manage")
-  async createReferral(
-    @Body(new ZodValidationPipe(createReferralSchema)) body: ReturnType<typeof createReferralSchema.parse>,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.referral.createReferral(u.orgId, u.userId, body.email);
-  }
-
-  @Get("referrals")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:referrals:view")
-  listReferrals(@CurrentUser() u: CurrentUserContext) {
-    return this.referral.listReferrals(u.orgId);
-  }
-
-  @Get("analytics")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:analytics:view")
-  async getAnalytics(@Query(new ZodValidationPipe(analyticsQuerySchema)) query: ReturnType<typeof analyticsQuerySchema.parse>) {
-    const [metrics, timeSeries] = await Promise.all([
-      this.analytics.getMetrics(),
-      this.analytics.getTimeSeriesData(query.period),
-    ]);
-    return { metrics, timeSeries };
-  }
-
-  @Get("enterprise-quotes")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:view")
-  listEnterpriseQuotes(
-    @CurrentUser() u: CurrentUserContext,
-    @Query() query: ListEnterpriseQuotesQuery,
-  ) {
-    const parsed = listEnterpriseQuotesSchema.parse(query);
-    return this.enterpriseQuotes.list(u.orgId, parsed);
-  }
-
-  @Post("enterprise-quotes")
-  @HttpCode(201)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:create")
-  createEnterpriseQuote(
-    @Body(new ZodValidationPipe(createEnterpriseQuoteSchema)) body: CreateEnterpriseQuoteInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.create(u.orgId, u.userId, body);
-  }
-
-  @Get("enterprise-quotes/:quoteId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:view")
-  @Validate({ params: quoteIdParams })
-  getEnterpriseQuote(
-    @Param("quoteId", ParseIntPipe) quoteId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.findOne(u.orgId, quoteId);
-  }
-
-  @Post("enterprise-quotes/:quoteId/submit")
-  @Idempotent("billing.enterprise-quote.submit")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:create")
-  @Validate({ params: quoteIdParams })
-  submitEnterpriseQuote(
-    @Param("quoteId", ParseIntPipe) quoteId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.submit(u.orgId, quoteId);
-  }
-
-  @Post("enterprise-quotes/:quoteId/approve")
-  @Idempotent("billing.enterprise-quote.approve")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:approve")
-  @Validate({ params: quoteIdParams })
-  approveEnterpriseQuote(
-    @Param("quoteId", ParseIntPipe) quoteId: number,
-    @Body(new ZodValidationPipe(approveEnterpriseQuoteSchema)) body: ApproveEnterpriseQuoteInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.approve(u.orgId, quoteId, u.userId, body);
-  }
-
-  @Post("enterprise-quotes/:quoteId/reject")
-  @Idempotent("billing.enterprise-quote.reject")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:approve")
-  @Validate({ params: quoteIdParams })
-  rejectEnterpriseQuote(
-    @Param("quoteId", ParseIntPipe) quoteId: number,
-    @Body(new ZodValidationPipe(rejectEnterpriseQuoteSchema)) body: RejectEnterpriseQuoteInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.reject(u.orgId, quoteId, u.userId, body);
-  }
-
-  @Post("enterprise-quotes/:quoteId/send")
-  @Idempotent("billing.enterprise-quote.send")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:approve")
-  @Validate({ params: quoteIdParams })
-  sendEnterpriseQuote(
-    @Param("quoteId", ParseIntPipe) quoteId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.send(u.orgId, quoteId);
-  }
-
-  @Post("enterprise-quotes/:quoteId/accept")
-  @Idempotent("billing.enterprise-quote.accept")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:view")
-  @Validate({ params: quoteIdParams })
-  acceptEnterpriseQuote(
-    @Param("quoteId", ParseIntPipe) quoteId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.accept(u.orgId, quoteId);
   }
 
   @Get("addons")
