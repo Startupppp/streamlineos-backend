@@ -35,7 +35,7 @@ describe("WorkflowsController (e2e)", () => {
   });
 
   describe("Module disabled", () => {
-    it("403 GET /workflows when WORKFLOWS module is disabled", async () => {
+    it("402 GET /workflows when WORKFLOWS module is disabled", async () => {
       const token = await signToken({
         permissions: ["workflows:workflows:view"],
         enabledModules: ALL_MODULES.filter((m) => m !== WORKFLOW_MODULE),
@@ -43,10 +43,10 @@ describe("WorkflowsController (e2e)", () => {
       const res = await request(app.getHttpServer())
         .get("/workflows")
         .set("Authorization", `Bearer ${token}`);
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(402);
     });
 
-    it("403 GET /workflows/analytics when WORKFLOWS module is disabled", async () => {
+    it("402 GET /workflows/analytics when WORKFLOWS module is disabled", async () => {
       const token = await signToken({
         permissions: ["workflows:analytics:view"],
         enabledModules: ALL_MODULES.filter((m) => m !== WORKFLOW_MODULE),
@@ -54,7 +54,7 @@ describe("WorkflowsController (e2e)", () => {
       const res = await request(app.getHttpServer())
         .get("/workflows/analytics")
         .set("Authorization", `Bearer ${token}`);
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(402);
     });
   });
 

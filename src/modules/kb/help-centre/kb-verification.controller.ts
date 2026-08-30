@@ -6,6 +6,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbVerificationService } from "./kb-verification.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { z } from "zod";
 import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
@@ -18,6 +19,7 @@ type VerificationQueueInput = z.infer<typeof verificationQueueSchema>;
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@RequireModule("kb")
 export class KbVerificationController {
   constructor(private readonly verification: KbVerificationService) {}
 

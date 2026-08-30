@@ -37,7 +37,7 @@ describe("Surveys module auth/RBAC (e2e)", () => {
     ["get", `/surveys/${SURVEY_ID}/collectors`],
     ["post", `/surveys/${SURVEY_ID}/collectors`],
     ["get", `/surveys/${SURVEY_ID}/participants`],
-    ["post", `/surveys/${SURVEY_ID}/participants`],
+    ["post", `/surveys/${SURVEY_ID}/participants/invite`],
     ["post", `/surveys/${SURVEY_ID}/live-sessions`],
   ];
 

@@ -20,6 +20,8 @@ export async function seedOrg(db: Db, id: string, slug: string): Promise<void> {
   if (existing) return;
 
   await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.organization_id', ${id}, true)`);
+
     const seqRows = await tx.execute(
       sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
     );

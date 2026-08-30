@@ -1,35 +1,24 @@
-import { Test } from "@nestjs/testing";
-import { INestApplication } from "@nestjs/common";
+import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../app.module";
-import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
-import { signToken } from "../../../test/helpers/sign-token";
-import { stubMembershipState } from "../../../test/helpers/membership-state";
+import { createE2eApp } from "test/helpers/e2e-app";
+import { signToken, ALL_MODULES } from "test/helpers/sign-token";
 
 describe("/roles (e2e)", () => {
   let app: INestApplication;
   let ownerToken: string;
   let memberToken: string;
-  let _rbacManagerToken: string;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const moduleRef = await stubMembershipState(
-      Test.createTestingModule({ imports: [AppModule] }),
-      {
-        owner_rbac_1: { role: "OWNER", isOwner: true },
-        member_rbac_1: { role: "MEMBER" },
-        manager_rbac_1: { role: "MANAGER" },
-      },
-    ).compile();
-    app = moduleRef.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
-
-    ownerToken = await signToken({ sub: "owner_rbac_1", orgId: "org_rbac_01" });
-    memberToken = await signToken({ sub: "member_rbac_1", orgId: "org_rbac_01" });
-    _rbacManagerToken = await signToken({ sub: "manager_rbac_1", orgId: "org_rbac_01" });
+    app = await createE2eApp();
+    ownerToken = await signToken({
+      permissions: ["settings:rbac:manage"],
+      enabledModules: ALL_MODULES,
+      isOrgOwner: true,
+    });
+    memberToken = await signToken({
+      permissions: [],
+      enabledModules: ALL_MODULES,
+    });
   });
 
   afterAll(async () => app.close());

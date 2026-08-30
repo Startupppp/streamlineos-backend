@@ -7,9 +7,11 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAnalyticsService } from "./kb-analytics.service";
 import { rangeSchema, type RangeInput } from "./dto/kb-analytics.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@RequireModule("kb")
 export class KbAnalyticsController {
   constructor(private readonly analytics: KbAnalyticsService) {}
 

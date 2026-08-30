@@ -31,12 +31,14 @@ import {
   kbConversationsListQuerySchema,
 } from "./dto/kb-ai.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { z } from "zod";
 
 const conversationIdParams = z.object({ conversationId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@RequireModule("kb")
 export class KbAskController {
   constructor(
     private readonly ask: KbAskService,

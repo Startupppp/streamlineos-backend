@@ -6,6 +6,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import {
+  layoutKeySchema,
   saveLayoutAdjustmentSchema,
   type SaveLayoutAdjustmentInput,
 } from "./dto/record-layouts.schemas";
@@ -13,7 +14,7 @@ import { RecordLayoutsService } from "./record-layouts.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const layoutKeyParams = z.object({ layoutKey: z.string().min(1) }).strict();
+const layoutKeyParams = z.object({ layoutKey: layoutKeySchema }).strict();
 
 @Controller("renderer/layouts")
 export class RecordLayoutsController {

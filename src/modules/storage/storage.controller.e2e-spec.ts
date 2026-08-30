@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "test/helpers/sign-token";
+import { signToken, ALL_MODULES } from "test/helpers/sign-token";
 
 describe("Storage auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -44,15 +44,17 @@ describe("Storage auth/RBAC (e2e)", () => {
     expect(res.status).not.toBe(401);
   });
 
-  const vaultRoutes: ReadonlyArray<[Method, string]> = [
-    ["post", "/hr/recruitment/candidates/1/vault/2/url"],
-    ["delete", "/hr/recruitment/candidates/1/vault/2"],
-  ];
-
-  it.each(vaultRoutes)("403 on %s %s for a caller without hr:documents:manage", async (method, path) => {
-    const token = await signToken({ sub: "user_1" });
-    const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
+  it("403 on post /hr/recruitment/candidates/1/vault/2/url for a caller without hr:documents:manage", async () => {
+    const token = await signToken({ sub: "user_1", permissions: [], enabledModules: ALL_MODULES });
+    const res = await callRoute("post", "/hr/recruitment/candidates/1/vault/2/url").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Forbidden" });
+  });
+
+  it("403 on delete /hr/recruitment/candidates/1/vault/2 for a caller without hr:documents:manage", async () => {
+    const token = await signToken({ sub: "user_1", permissions: [], enabledModules: ALL_MODULES });
+    const res = await callRoute("delete", "/hr/recruitment/candidates/1/vault/2").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 });

@@ -275,7 +275,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Idempotency-Key", `e2e-own-3-${Date.now()}`)
         .send({ toMembershipId: 99 });
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("org owner") });
+      expect(res.body).toMatchObject({ code: "OWNER_ONLY_OPERATION", message: expect.stringContaining("organization owner") });
     });
 
     it("PUT /ownership/modules/hr/owner → 403 when non-owner holds ownership:modules:manage permission", async () => {
@@ -288,7 +288,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({ ownerMembershipId: 5 });
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("org owner") });
+      expect(res.body).toMatchObject({ code: "OWNER_ONLY_OPERATION", message: expect.stringContaining("organization owner") });
     });
 
     it("non-owner with ownership:org:transfer permission is still blocked by controller-level owner check", async () => {
@@ -302,7 +302,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Idempotency-Key", `e2e-own-4-${Date.now()}`)
         .send({ toMembershipId: 99 });
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("org owner") });
+      expect(res.body).toMatchObject({ code: "OWNER_ONLY_OPERATION", message: expect.stringContaining("organization owner") });
     });
   });
 

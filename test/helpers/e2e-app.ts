@@ -131,12 +131,17 @@ export const accessStub = {
     if (isCoreModuleKey(moduleKey)) return true;
     return current().enabledModules.includes(moduleKey.toLowerCase()) ? true : undefined;
   },
-  scopeFor: async (_user: unknown, permissionKey: string): Promise<DataScope> =>
-    current().permissions.includes(permissionKey) ? "all" : "none",
-  holds: async (_user: unknown, permissionKey: string): Promise<boolean> =>
-    current().permissions.includes(permissionKey),
+  scopeFor: async (_user: unknown, permissionKey: string): Promise<DataScope> => {
+    const f = current();
+    if (f.isOrgOwner) return "all";
+    return f.permissions.includes(permissionKey) ? "all" : "none";
+  },
+  holds: async (_user: unknown, permissionKey: string): Promise<boolean> => {
+    const f = current();
+    if (f.isOrgOwner) return true;
+    return f.permissions.includes(permissionKey);
+  },
   moduleAvailability: async (_user: unknown, moduleKey: string) => {
-    if (isCoreModuleKey(moduleKey)) return { available: true as const };
     return current().enabledModules.includes(moduleKey.toLowerCase())
       ? { available: true as const }
       : { available: false as const, reason: "org-disabled" as const };
@@ -146,7 +151,6 @@ export const accessStub = {
     _userId: string,
     moduleKey: string,
   ) => {
-    if (isCoreModuleKey(moduleKey)) return { available: true as const };
     return current().enabledModules.includes(moduleKey.toLowerCase())
       ? { available: true as const }
       : { available: false as const, reason: "org-disabled" as const };

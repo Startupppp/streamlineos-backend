@@ -14,9 +14,11 @@ import {
   type SummarizeInput,
 } from "./dto/kb-authoring.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 
 @Controller("kb/ai")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@RequireModule("kb")
 export class KbAuthoringController {
   constructor(private readonly authoring: KbAuthoringService) {}
 

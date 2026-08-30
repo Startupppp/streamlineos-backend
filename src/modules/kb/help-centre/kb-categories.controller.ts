@@ -23,6 +23,7 @@ import {
   type UpdateCategoryInput,
 } from "../core/dto/kb.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { z } from "zod";
 
 const spaceIdParams = z.object({ spaceId: z.coerce.number().int().positive() }).strict();
@@ -30,6 +31,7 @@ const categoryIdParams = z.object({ categoryId: z.coerce.number().int().positive
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@RequireModule("kb")
 export class KbCategoriesController {
   constructor(private readonly categories: KbCategoriesService) {}
 

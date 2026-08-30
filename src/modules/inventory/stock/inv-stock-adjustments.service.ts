@@ -14,6 +14,7 @@ import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import type { ListAdjustmentsInput, CreateAdjustmentInput } from "./dto/inv-stock.schemas";
+import { sqlstateOf } from "../../../common/observability/error-classification";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -96,29 +97,36 @@ export class InvStockAdjustmentsService {
     const threshold = cfg.adjustmentApprovalThreshold !== null ? parseFloat(cfg.adjustmentApprovalThreshold) : null;
     const needsApproval = threshold !== null && totalAbsQty > threshold;
 
-    const referenceNumber = await this.db.transaction(async (tx) => {
-      const refNum = await this.numSeq.next(orgId, "ADJUSTMENT", tx);
-      const [adj] = await tx.insert(invStockAdjustments).values({
-        orgId,
-        referenceNumber: refNum,
-        reason: data.reason,
-        notes: data.notes,
-        status: needsApproval ? "PENDING_APPROVAL" : "PENDING_POST",
-        createdBy: userId,
-      }).returning({ id: invStockAdjustments.id, refNum: invStockAdjustments.referenceNumber });
+    let referenceNumber: string;
+    try {
+      referenceNumber = await this.db.transaction(async (tx) => {
+        const refNum = await this.numSeq.next(orgId, "ADJUSTMENT", tx);
+        const [adj] = await tx.insert(invStockAdjustments).values({
+          orgId,
+          referenceNumber: refNum,
+          reason: data.reason,
+          notes: data.notes,
+          status: needsApproval ? "PENDING_APPROVAL" : "PENDING_POST",
+          createdBy: userId,
+        }).returning({ id: invStockAdjustments.id, refNum: invStockAdjustments.referenceNumber });
 
-      await tx.insert(invStockAdjustmentLines).values(
-        data.lines.map((line) => ({
-          adjustmentId: adj!.id,
-          productVariantId: line.productVariantId,
-          locationId: line.locationId,
-          quantityChange: line.quantityChange.toString(),
-          notes: line.notes,
-        }))
-      );
+        await tx.insert(invStockAdjustmentLines).values(
+          data.lines.map((line) => ({
+            adjustmentId: adj!.id,
+            productVariantId: line.productVariantId,
+            locationId: line.locationId,
+            quantityChange: line.quantityChange.toString(),
+            notes: line.notes,
+          }))
+        );
 
-      return refNum;
-    });
+        return refNum;
+      });
+    } catch (err) {
+      if (sqlstateOf(err) === "23503")
+        throw new BadRequestException("One or more product variants or locations referenced in the adjustment lines do not exist");
+      throw err;
+    }
 
     if (!needsApproval) {
       const adj = await this.db.query.invStockAdjustments.findFirst({

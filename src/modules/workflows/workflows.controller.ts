@@ -29,6 +29,7 @@ import {
   type CreateSecretDto,
 } from "./dto/workflow.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { z } from "zod";
 
 const approvalIdParams = z.object({ approvalId: z.string().min(1) }).strict();
@@ -41,6 +42,7 @@ const workflowIdsecretIdParams = z.object({ workflowId: z.string().min(1), secre
 
 @Controller("workflows")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@RequireModule("workflows")
 export class WorkflowsController {
   constructor(private readonly workflowsService: WorkflowsService) {}
 

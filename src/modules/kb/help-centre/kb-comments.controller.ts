@@ -23,6 +23,7 @@ import {
   type UpdateCommentInput,
 } from "./dto/kb-comments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { z } from "zod";
 
 const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
@@ -30,6 +31,7 @@ const commentIdParams = z.object({ commentId: z.coerce.number().int().positive()
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@RequireModule("kb")
 export class KbCommentsController {
   constructor(private readonly comments: KbCommentsService) {}
 
