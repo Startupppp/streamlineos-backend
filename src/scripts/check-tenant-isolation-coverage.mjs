@@ -252,7 +252,11 @@ console.log(`Service files with db handle   ${serviceFilesWithDb.length}`);
 console.log(`  — tenant-owned               ${tenantServices.length}`);
 console.log(`  — global/platform            ${globalServices.length}`);
 console.log(`Isolation test files found     ${isolationSpecFiles.length}`);
-console.log(`Covered tenant services        ${covered.length} / ${tenantServices.length}  (${coveragePercent}%)`);
+console.log(`Services with a DECLARED test  ${covered.length} / ${tenantServices.length}  (${coveragePercent}%)`);
+console.log("");
+console.log("NOTE: this gate is static. It matches a spec file that names the service and does not");
+console.log("      run it, so a spec that throws before its first expectation still counts here.");
+console.log("      Execution proof is `pnpm check:tenant-isolation:run`; both are required.");
 console.log("");
 
 if (uncovered.length > 0) {
@@ -290,4 +294,5 @@ if (uncovered.length > 0) {
 }
 
 console.log("OK — every enumerated tenant-owned service maps to at least one isolation test.");
+console.log("     This says the test EXISTS, not that it passes. Run check:tenant-isolation:run.");
 process.exit(0);

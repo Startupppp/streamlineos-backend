@@ -171,7 +171,8 @@
     "browser:measure": "node --env-file-if-exists=.env src/scripts/browser-driver.mjs",
     "browser:measure:self-test": "node src/scripts/browser-driver.mjs --self-test",
     "db:apply-one": "node --env-file=.env src/scripts/apply-journalled-migration.mjs",
-    "scan:legacy-actors:catalog": "node --env-file=.env src/scripts/scan-legacy-org-actors.mjs --catalog"
+    "scan:legacy-actors:catalog": "node --env-file=.env src/scripts/scan-legacy-org-actors.mjs --catalog",
+    "check:tenant-isolation:run": "node ./node_modules/jest/bin/jest.js --testPathPattern=\"tenant-isolation|isolation.spec\" --maxWorkers=2"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",
