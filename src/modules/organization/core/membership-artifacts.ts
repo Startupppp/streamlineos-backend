@@ -297,6 +297,26 @@ export const MEMBERSHIP_ARTIFACTS = [
       "The foreign key is RESTRICT: a member named as reviewer on any performance review cannot be removed. The FK must change to SET NULL so attribution survives and removal is unblocked.",
   },
   {
+    id: "chat_user_presence",
+    mechanism: "database-cascade",
+    table: "chat_user_presence",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key is ON DELETE SET NULL, so removal detaches the presence row rather than deleting it. Nothing in the revocation path clears presence, and nothing needs to: presence is ephemeral heartbeat state that goes stale on its own once the member can no longer authenticate. Retained through a suspension because the suspension is reversible.",
+  },
+  {
+    id: "calendar_source_preferences",
+    mechanism: "database-cascade",
+    table: "calendar_source_preferences",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key is ON DELETE SET NULL. These are per-person calendar source toggles, not authority: the row also carries user_id, so the preference survives detached and is restored if the person rejoins. Retained through a suspension so a reactivated member keeps their calendar configuration.",
+  },
+  {
     id: "chat_channel_members",
     mechanism: "database-write",
     table: "chat_channel_members",
