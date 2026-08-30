@@ -18,7 +18,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PayrollFilingsService } from "./filings.service";
 import {
   prepareFilingSchema,
@@ -117,20 +116,21 @@ export class PayrollFilingsController {
   @Post("export")
   @HttpCode(201)
   @RequirePermission("payroll:tax:manage")
+  @Validate({ body: prepareFilingSchema })
   prepare(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(prepareFilingSchema)) body: PrepareFilingInput,
+    @Body() body: PrepareFilingInput,
   ) {
     return this.service.prepareExport(u.orgId, u.userId, body);
   }
 
   @Patch(":filingId/acknowledgement")
   @RequirePermission("payroll:tax:manage")
-  @Validate({ params: filingIdParams })
+  @Validate({ params: filingIdParams, body: attachAcknowledgementSchema })
   ack(
     @CurrentUser() u: CurrentUserContext,
     @Param("filingId", ParseIntPipe) filingId: number,
-    @Body(new ZodValidationPipe(attachAcknowledgementSchema)) body: AttachAcknowledgementInput,
+    @Body() body: AttachAcknowledgementInput,
   ) {
     return this.service.attachAcknowledgement(u.orgId, filingId, body);
   }

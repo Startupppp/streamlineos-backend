@@ -8,7 +8,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { BudgetsService } from "./budgets.service";
 import { BvaService } from "./bva.service";
@@ -36,8 +35,9 @@ export class BudgetsController {
 
   @Get("budgets")
   @RequirePermission("accounting:budgets:read")
+  @Validate({ query: listBudgetsQuerySchema })
   listBudgets(
-    @Query(new ZodValidationPipe(listBudgetsQuerySchema)) query: ListBudgetsQuery,
+    @Query() query: ListBudgetsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.budgets.listBudgets(u.orgId, query);
@@ -46,8 +46,9 @@ export class BudgetsController {
   @Post("budgets")
   @RequirePermission("accounting:budgets:create")
   @HttpCode(201)
+  @Validate({ body: createBudgetSchema })
   createBudget(
-    @Body(new ZodValidationPipe(createBudgetSchema)) body: CreateBudgetInput,
+    @Body() body: CreateBudgetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.budgets.createBudget(u.orgId, u.userId, body);
@@ -65,10 +66,10 @@ export class BudgetsController {
 
   @Patch("budgets/:budgetId")
   @RequirePermission("accounting:budgets:update")
-  @Validate({ params: budgetIdParams })
+  @Validate({ params: budgetIdParams, body: updateBudgetSchema })
   updateBudget(
     @Param("budgetId", ParseIntPipe) budgetId: number,
-    @Body(new ZodValidationPipe(updateBudgetSchema)) body: UpdateBudgetInput,
+    @Body() body: UpdateBudgetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.budgets.updateBudget(u.orgId, budgetId, u.userId, body);
@@ -77,10 +78,10 @@ export class BudgetsController {
   @Put("budgets/:budgetId/lines")
   @RequirePermission("accounting:budgets:update")
   @HttpCode(200)
-  @Validate({ params: budgetIdParams })
+  @Validate({ params: budgetIdParams, body: replaceBudgetLinesSchema })
   replaceBudgetLines(
     @Param("budgetId", ParseIntPipe) budgetId: number,
-    @Body(new ZodValidationPipe(replaceBudgetLinesSchema)) body: ReplaceBudgetLinesInput,
+    @Body() body: ReplaceBudgetLinesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.budgets.replaceBudgetLines(u.orgId, budgetId, u.userId, body);
@@ -90,10 +91,10 @@ export class BudgetsController {
   @Idempotent("finance.budget.submit")
   @RequirePermission("accounting:budgets:update")
   @HttpCode(200)
-  @Validate({ params: budgetIdParams })
+  @Validate({ params: budgetIdParams, body: budgetWorkflowSchema })
   submitBudget(
     @Param("budgetId", ParseIntPipe) budgetId: number,
-    @Body(new ZodValidationPipe(budgetWorkflowSchema)) body: BudgetWorkflowInput,
+    @Body() body: BudgetWorkflowInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.budgets.submitBudget(u.orgId, budgetId, u.userId, body);
@@ -103,10 +104,10 @@ export class BudgetsController {
   @Idempotent("finance.budget.approve")
   @RequirePermission("accounting:budgets:approve")
   @HttpCode(200)
-  @Validate({ params: budgetIdParams })
+  @Validate({ params: budgetIdParams, body: budgetWorkflowSchema })
   approveBudget(
     @Param("budgetId", ParseIntPipe) budgetId: number,
-    @Body(new ZodValidationPipe(budgetWorkflowSchema)) body: BudgetWorkflowInput,
+    @Body() body: BudgetWorkflowInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.budgets.approveBudget(u.orgId, budgetId, u.userId, body);
@@ -125,10 +126,10 @@ export class BudgetsController {
   @Post("budgets/:budgetId/duplicate")
   @RequirePermission("accounting:budgets:create")
   @HttpCode(201)
-  @Validate({ params: budgetIdParams })
+  @Validate({ params: budgetIdParams, body: duplicateBudgetSchema })
   duplicateBudget(
     @Param("budgetId", ParseIntPipe) budgetId: number,
-    @Body(new ZodValidationPipe(duplicateBudgetSchema)) body: DuplicateBudgetInput,
+    @Body() body: DuplicateBudgetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.budgets.duplicateBudget(u.orgId, budgetId, u.userId, body);
@@ -136,10 +137,10 @@ export class BudgetsController {
 
   @Get("budgets/:budgetId/vs-actual")
   @RequirePermission("accounting:budgets:read")
-  @Validate({ params: budgetIdParams })
+  @Validate({ params: budgetIdParams, query: bvaQuerySchema })
   getBva(
     @Param("budgetId", ParseIntPipe) budgetId: number,
-    @Query(new ZodValidationPipe(bvaQuerySchema)) query: BvaQuery,
+    @Query() query: BvaQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.bva.getBva(u.orgId, budgetId, query, u.userId);

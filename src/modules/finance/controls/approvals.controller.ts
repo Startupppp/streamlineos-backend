@@ -15,7 +15,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ApprovalsService } from "./approvals.service";
 import {
   listApprovalsSchema,
@@ -36,8 +35,9 @@ export class ApprovalsController {
 
   @Get()
   @RequirePermission("accounting:approvals:read")
+  @Validate({ query: listApprovalsSchema })
   list(
-    @Query(new ZodValidationPipe(listApprovalsSchema)) query: ListApprovalsQuery,
+    @Query() query: ListApprovalsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, query);
@@ -52,10 +52,10 @@ export class ApprovalsController {
   @Post(":requestId/approve")
   @HttpCode(200)
   @RequirePermission("accounting:approvals:decide")
-  @Validate({ params: requestIdParams })
+  @Validate({ params: requestIdParams, body: approvalDecisionSchema })
   approve(
     @Param("requestId", ParseIntPipe) requestId: number,
-    @Body(new ZodValidationPipe(approvalDecisionSchema)) body: ApprovalDecisionInput,
+    @Body() body: ApprovalDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.approve(u.orgId, u.userId, requestId, body);
@@ -64,10 +64,10 @@ export class ApprovalsController {
   @Post(":requestId/reject")
   @HttpCode(200)
   @RequirePermission("accounting:approvals:decide")
-  @Validate({ params: requestIdParams })
+  @Validate({ params: requestIdParams, body: approvalDecisionSchema })
   reject(
     @Param("requestId", ParseIntPipe) requestId: number,
-    @Body(new ZodValidationPipe(approvalDecisionSchema)) body: ApprovalDecisionInput,
+    @Body() body: ApprovalDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.reject(u.orgId, u.userId, requestId, body);

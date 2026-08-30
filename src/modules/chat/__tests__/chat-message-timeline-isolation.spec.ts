@@ -39,6 +39,10 @@ describe("ChatMessageTimelineService — cross-tenant isolation", () => {
       chatChannelMembers: { findFirst: jest.Mock };
       chatMessages: { findMany: jest.Mock; findFirst: jest.Mock };
     };
+    select: jest.Mock;
+    from: jest.Mock;
+    leftJoin: jest.Mock;
+    where: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -49,6 +53,10 @@ describe("ChatMessageTimelineService — cross-tenant isolation", () => {
         chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
         chatMessages: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn().mockResolvedValue(null) },
       },
+      select: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue([]),
     };
     const module = await Test.createTestingModule({
       providers: [
@@ -141,7 +149,7 @@ describe("ChatMessageTimelineService — cross-tenant isolation", () => {
     });
 
     it("CONTROL: member of org-a can read thread replies in their channel", async () => {
-      db.query.chatMessages.findFirst.mockResolvedValue({ id: MESSAGE_ID, channelId: CHANNEL_ID });
+      db.query.chatMessages.findFirst.mockResolvedValue({ id: MESSAGE_ID, channelId: CHANNEL_ID, senderId: USER_A, replyTo: null });
       db.query.chatChannelMembers.findFirst.mockResolvedValue({ id: MEMBERSHIP_A });
       db.query.chatMessages.findMany.mockResolvedValue([]);
       const actor = makeActor(ORG_A);

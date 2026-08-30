@@ -16,7 +16,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { BankAccountsService } from "./bank-accounts.service";
 import {
   bankAccountsQuerySchema,
@@ -41,8 +40,9 @@ export class BankAccountsController {
 
   @Get()
   @RequirePermission("accounting:banking:read")
+  @Validate({ query: bankAccountsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(bankAccountsQuerySchema)) query: BankAccountsQuery,
+    @Query() query: BankAccountsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.list(u, query);
@@ -51,8 +51,9 @@ export class BankAccountsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("accounting:banking:manage")
+  @Validate({ body: createBankAccountSchema })
   create(
-    @Body(new ZodValidationPipe(createBankAccountSchema)) body: CreateBankAccountInput,
+    @Body() body: CreateBankAccountInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.create(u, body);
@@ -60,10 +61,10 @@ export class BankAccountsController {
 
   @Patch(":bankAccountId")
   @RequirePermission("accounting:banking:manage")
-  @Validate({ params: bankAccountIdParams })
+  @Validate({ params: bankAccountIdParams, body: updateBankAccountSchema })
   update(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
-    @Body(new ZodValidationPipe(updateBankAccountSchema)) body: UpdateBankAccountInput,
+    @Body() body: UpdateBankAccountInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.update(u, bankAccountId, body);
@@ -71,10 +72,10 @@ export class BankAccountsController {
 
   @Get(":bankAccountId/transactions")
   @RequirePermission("accounting:banking:read")
-  @Validate({ params: bankAccountIdParams })
+  @Validate({ params: bankAccountIdParams, query: bankTransactionsQuerySchema })
   listTransactions(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
-    @Query(new ZodValidationPipe(bankTransactionsQuerySchema)) query: BankTransactionsQuery,
+    @Query() query: BankTransactionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listTransactions(u, bankAccountId, query);

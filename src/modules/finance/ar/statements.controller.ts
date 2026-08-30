@@ -6,7 +6,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { StatementsService } from "./statements.service";
 import { customerStatementSchema, type CustomerStatementQuery } from "./dto/finance-ar.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -22,10 +21,10 @@ export class StatementsController {
 
   @Get(":clientId")
   @RequirePermission("accounting:receivables:read")
-  @Validate({ params: clientIdParams })
+  @Validate({ params: clientIdParams, query: customerStatementSchema })
   async statement(
     @Param("clientId", ParseIntPipe) clientId: number,
-    @Query(new ZodValidationPipe(customerStatementSchema)) query: CustomerStatementQuery,
+    @Query() query: CustomerStatementQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {

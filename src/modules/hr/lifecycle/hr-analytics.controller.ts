@@ -4,10 +4,10 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { HrAnalyticsService } from "./hr-analytics.service";
 import { attendanceAnalyticsQuerySchema, type AttendanceAnalyticsQuery } from "./dto/hr-lifecycle.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("hr")
 @Controller("hr/analytics")
@@ -22,8 +22,9 @@ export class HrAnalyticsController {
   }
 
   @Get("attendance")
+  @Validate({ query: attendanceAnalyticsQuerySchema })
   attendance(
-    @Query(new ZodValidationPipe(attendanceAnalyticsQuerySchema)) query: AttendanceAnalyticsQuery,
+    @Query() query: AttendanceAnalyticsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.attendance(u.orgId, query.year, query.month);

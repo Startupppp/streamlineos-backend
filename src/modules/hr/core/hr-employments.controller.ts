@@ -50,8 +50,9 @@ export class HrEmploymentsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
+  @Validate({ query: listEmploymentsSchema })
   async list(
-    @Query(new ZodValidationPipe(listEmploymentsSchema)) query: ListEmploymentsInput,
+    @Query() query: ListEmploymentsInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveEmployeesScope(this.access, currentUser);
@@ -92,8 +93,9 @@ export class HrEmploymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @Validate({ body: createEmploymentSchema })
   create(
-    @Body(new ZodValidationPipe(createEmploymentSchema)) body: CreateEmploymentInput,
+    @Body() body: CreateEmploymentInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.employments.create(
@@ -106,10 +108,10 @@ export class HrEmploymentsController {
   @Patch(":employmentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: employmentIdParams })
+  @Validate({ params: employmentIdParams, body: updateEmploymentSchema })
   update(
     @Param("employmentId", ParseIntPipe) employmentId: number,
-    @Body(new ZodValidationPipe(updateEmploymentSchema)) body: UpdateEmploymentInput,
+    @Body() body: UpdateEmploymentInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.employments.update(
@@ -124,10 +126,10 @@ export class HrEmploymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(200)
-  @Validate({ params: employmentIdParams })
+  @Validate({ params: employmentIdParams, body: transitionStatusSchema })
   transition(
     @Param("employmentId", ParseIntPipe) employmentId: number,
-    @Body(new ZodValidationPipe(transitionStatusSchema)) body: TransitionStatusInput,
+    @Body() body: TransitionStatusInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.employments.transition(

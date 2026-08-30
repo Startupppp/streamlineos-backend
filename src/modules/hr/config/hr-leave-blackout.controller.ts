@@ -17,7 +17,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrLeaveBlackoutService } from "./hr-leave-blackout.service";
 import {
   blackoutListQuerySchema,
@@ -39,8 +39,9 @@ export class HrLeaveBlackoutController {
   constructor(private readonly blackout: HrLeaveBlackoutService) {}
 
   @Get()
+  @Validate({ query: blackoutListQuerySchema })
   list(
-    @Query(new ZodValidationPipe(blackoutListQuerySchema)) query: BlackoutListQuery,
+    @Query() query: BlackoutListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.blackout.list(u.orgId, query);
@@ -48,8 +49,9 @@ export class HrLeaveBlackoutController {
 
   @Post()
   @HttpCode(201)
+  @Validate({ body: createBlackoutSchema })
   create(
-    @Body(new ZodValidationPipe(createBlackoutSchema)) body: CreateBlackoutInput,
+    @Body() body: CreateBlackoutInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (body.startDate > body.endDate) {

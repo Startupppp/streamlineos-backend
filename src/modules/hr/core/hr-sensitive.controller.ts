@@ -44,10 +44,10 @@ export class HrSensitiveController {
 
   @Patch(":employeeId/sensitive")
   @RequirePermission("hr:sensitive:manage")
-  @Validate({ params: employeeIdParams })
+  @Validate({ params: employeeIdParams, body: updateSensitiveSchema })
   update(
     @Param("employeeId", ParseIntPipe) employeeId: number,
-    @Body(new ZodValidationPipe(updateSensitiveSchema)) body: UpdateSensitiveInput,
+    @Body() body: UpdateSensitiveInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {

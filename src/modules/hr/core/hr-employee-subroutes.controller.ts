@@ -47,10 +47,10 @@ export class HrEmployeeSubroutesController {
   @Get(":employeeId/timeline")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
-  @Validate({ params: employeeIdParams })
+  @Validate({ params: employeeIdParams, query: listTimelineSchema })
   async getTimeline(
     @Param("employeeId", ParseIntPipe) employeeId: number,
-    @Query(new ZodValidationPipe(listTimelineSchema)) query: ListTimelineInput,
+    @Query() query: ListTimelineInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveEmployeesScope(this.access, u);
@@ -63,10 +63,10 @@ export class HrEmployeeSubroutesController {
   @Get(":employeeId/history")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
-  @Validate({ params: employeeIdParams })
+  @Validate({ params: employeeIdParams, query: historyTypeSchema })
   async getHistory(
     @Param("employeeId", ParseIntPipe) employeeId: number,
-    @Query(new ZodValidationPipe(historyTypeSchema)) query: HistoryTypeInput,
+    @Query() query: HistoryTypeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveEmployeesScope(this.access, u);

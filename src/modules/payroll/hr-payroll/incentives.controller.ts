@@ -18,7 +18,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { IncentivesService } from "./incentives.service";
 import {
@@ -42,8 +41,9 @@ export class IncentivesController {
 
   @Get()
   @RequirePermission("hr:payroll:view")
+  @Validate({ query: incentivesQuerySchema })
   list(
-    @Query(new ZodValidationPipe(incentivesQuerySchema)) query: IncentivesQueryInput,
+    @Query() query: IncentivesQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.incentives.getIncentives(u.orgId, query);
@@ -58,8 +58,9 @@ export class IncentivesController {
   @Post("config")
   @HttpCode(201)
   @RequirePermission("hr:payroll:approve")
+  @Validate({ body: createIncentiveConfigSchema })
   createConfig(
-    @Body(new ZodValidationPipe(createIncentiveConfigSchema)) body: CreateIncentiveConfigInput,
+    @Body() body: CreateIncentiveConfigInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.incentives.createConfig(u, body.incentiveRate);
@@ -74,10 +75,10 @@ export class IncentivesController {
   @Patch(":incentiveId/approve")
   @Idempotent("payroll.incentive.approve")
   @RequirePermission("hr:payroll:approve")
-  @Validate({ params: incentiveIdParams })
+  @Validate({ params: incentiveIdParams, body: approveIncentiveSchema })
   async approve(
     @Param("incentiveId", ParseIntPipe) incentiveId: number,
-    @Body(new ZodValidationPipe(approveIncentiveSchema)) body: ApproveIncentiveInput,
+    @Body() body: ApproveIncentiveInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.incentives.approveIncentive(u, incentiveId, body);

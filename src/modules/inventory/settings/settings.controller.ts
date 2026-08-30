@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { SettingsService } from "./settings.service";
@@ -35,8 +34,9 @@ export class SettingsController {
   @Patch()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
+  @Validate({ body: updateSettingsSchema })
   updateSettings(
-    @Body(new ZodValidationPipe(updateSettingsSchema)) body: UpdateSettingsInput,
+    @Body() body: UpdateSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateSettings(u.orgId, u.userId, body);
@@ -52,10 +52,10 @@ export class SettingsController {
   @Patch("number-sequences/:sequenceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
-  @Validate({ params: sequenceIdParams })
+  @Validate({ params: sequenceIdParams, body: updateNumberSequenceSchema })
   updateNumberSequence(
     @Param("sequenceId", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(updateNumberSequenceSchema)) body: UpdateNumberSequenceInput,
+    @Body() body: UpdateNumberSequenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateNumberSequence(u.orgId, u.userId, id, body);

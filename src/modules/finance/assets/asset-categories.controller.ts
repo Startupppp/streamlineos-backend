@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AssetCategoriesService } from "./asset-categories.service";
 import {
   createCategorySchema,
@@ -29,8 +28,9 @@ export class AssetCategoriesController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:read")
+  @Validate({ query: listCategoriesQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listCategoriesQuerySchema)) query: ListCategoriesQuery,
+    @Query() query: ListCategoriesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.categories.list(u.orgId, query);
@@ -40,8 +40,9 @@ export class AssetCategoriesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:manage")
   @HttpCode(201)
+  @Validate({ body: createCategorySchema })
   create(
-    @Body(new ZodValidationPipe(createCategorySchema)) body: CreateCategoryInput,
+    @Body() body: CreateCategoryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.categories.create(u.orgId, body);
@@ -50,10 +51,10 @@ export class AssetCategoriesController {
   @Patch(":categoryId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:manage")
-  @Validate({ params: categoryIdParams })
+  @Validate({ params: categoryIdParams, body: updateCategorySchema })
   update(
     @Param("categoryId", ParseIntPipe) categoryId: number,
-    @Body(new ZodValidationPipe(updateCategorySchema)) body: UpdateCategoryInput,
+    @Body() body: UpdateCategoryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.categories.update(u.orgId, categoryId, body);

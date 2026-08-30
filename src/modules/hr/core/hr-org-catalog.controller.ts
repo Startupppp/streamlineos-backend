@@ -89,8 +89,9 @@ export class HrOrgCatalogController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @Validate({ body: createCatalogSchema })
   createJobRole(
-    @Body(new ZodValidationPipe(createCatalogSchema)) body: CreateCatalogInput,
+    @Body() body: CreateCatalogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.catalog.createJobRole(u.orgId, body);
@@ -99,10 +100,10 @@ export class HrOrgCatalogController {
   @Patch("roles/:roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: roleIdParams })
+  @Validate({ params: roleIdParams, body: updateCatalogSchema })
   updateJobRole(
     @Param("roleId", ParseIntPipe) roleId: number,
-    @Body(new ZodValidationPipe(updateCatalogSchema)) body: UpdateCatalogInput,
+    @Body() body: UpdateCatalogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.catalog.updateJobRole(u.orgId, roleId, body);
@@ -131,8 +132,9 @@ export class HrOrgCatalogController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @Validate({ body: createCatalogSchema })
   createJobLevel(
-    @Body(new ZodValidationPipe(createCatalogSchema)) body: CreateCatalogInput,
+    @Body() body: CreateCatalogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.catalog.createJobLevel(u.orgId, body);
@@ -141,10 +143,10 @@ export class HrOrgCatalogController {
   @Patch("levels/:levelId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: levelIdParams })
+  @Validate({ params: levelIdParams, body: updateCatalogSchema })
   updateJobLevel(
     @Param("levelId", ParseIntPipe) levelId: number,
-    @Body(new ZodValidationPipe(updateCatalogSchema)) body: UpdateCatalogInput,
+    @Body() body: UpdateCatalogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.catalog.updateJobLevel(u.orgId, levelId, body);

@@ -329,6 +329,6 @@ describe("HrAutomationActionsService — call_webhook SSRF", () => {
   it("returns error for invalid URL", async () => {
     const result = await callWebhookAction("not-a-url");
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/Invalid URL/i);
+    expect(result.error).toMatch(/invalid.url/i);
   });
 });

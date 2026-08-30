@@ -20,7 +20,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -43,8 +42,9 @@ export class PayrollExportController {
   @HttpCode(202)
   @Idempotent("payroll.runs.export.create")
   @RequirePermission("payroll:reports:export")
+  @Validate({ query: exportRunsQuerySchema })
   async createExportJob(
-    @Query(new ZodValidationPipe(exportRunsQuerySchema)) filters: ExportRunsQuery,
+    @Query() filters: ExportRunsQuery,
     @Headers("idempotency-key") idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {

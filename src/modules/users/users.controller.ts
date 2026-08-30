@@ -13,6 +13,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { UsersService } from "./users.service";
 import { UserProfileService } from "./user-profile.service";
+import { UserActivityService } from "./user-activity.service";
 import { UserOpsService } from "./user-ops.service";
 import { InvitationsService } from "../organization/core/invitations.service";
 import { InvitationsReadService } from "../organization/core/invitations-read.service";
@@ -43,6 +44,7 @@ export class UsersController {
   constructor(
     private readonly users: UsersService,
     private readonly userProfile: UserProfileService,
+    private readonly userActivity: UserActivityService,
     private readonly userOps: UserOpsService,
     private readonly invitations: InvitationsService,
     private readonly invitationsRead: InvitationsReadService,
@@ -105,7 +107,7 @@ export class UsersController {
     @Query(new ZodValidationPipe(listAuditSchema)) query: ListAuditInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.userProfile.getAuditLog(u.orgId, query);
+    return this.userActivity.getAuditLog(u.orgId, query);
   }
 
   // ── Static POST routes ──
@@ -320,7 +322,7 @@ export class UsersController {
   @Get(":userId/activity")
   @Validate({ params: userIdParams })
   getActivity(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.userProfile.getUserActivity(u.orgId, userId);
+    return this.userActivity.getUserActivity(u.orgId, userId);
   }
 
   @RequirePermission("settings:view")
@@ -387,6 +389,6 @@ export class UsersController {
     @Query(new ZodValidationPipe(listAuditSchema)) query: ListAuditInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.userProfile.getUserAuditLog(u.orgId, userId, query);
+    return this.userActivity.getUserAuditLog(u.orgId, userId, query);
   }
 }

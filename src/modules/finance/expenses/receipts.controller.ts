@@ -14,7 +14,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ReceiptsService } from "./receipts.service";
 import {
   receiptListSchema,
@@ -35,8 +34,9 @@ export class ReceiptsController {
 
   @Get()
   @RequirePermission("accounting:reimbursements:read")
+  @Validate({ query: receiptListSchema })
   async list(
-    @Query(new ZodValidationPipe(receiptListSchema)) filters: ReceiptListInput,
+    @Query() filters: ReceiptListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.receipts.listReceiptInbox(u.orgId, filters);
@@ -44,10 +44,10 @@ export class ReceiptsController {
 
   @Patch(":expenseId")
   @RequirePermission("accounting:reimbursements:manage")
-  @Validate({ params: expenseIdParams })
+  @Validate({ params: expenseIdParams, body: patchReceiptSchema })
   async patchMetadata(
     @Param("expenseId", ParseIntPipe) expenseId: number,
-    @Body(new ZodValidationPipe(patchReceiptSchema)) body: PatchReceiptInput,
+    @Body() body: PatchReceiptInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.receipts.patchReceiptMetadata(u.orgId, u.userId, expenseId, body);

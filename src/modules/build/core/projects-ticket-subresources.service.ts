@@ -6,14 +6,12 @@ import {
 import { and, desc, eq, isNull, lt } from "drizzle-orm";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import {
-  organizationMembers,
   organizationPeople,
   ticketActivityLog,
   ticketAttachments,
   ticketLabelMappings,
   tickets,
   ticketWatchers,
-  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -153,21 +151,15 @@ export class ProjectsTicketSubresourcesService {
         toValue: ticketActivityLog.toValue,
         createdAt: ticketActivityLog.createdAt,
         userId: ticketActivityLog.userId,
-        userMembershipId: ticketActivityLog.userMembershipId,
         displayName: organizationPeople.displayName,
         firstName: organizationPeople.firstName,
         lastName: organizationPeople.lastName,
         avatarUrl: organizationPeople.avatarUrl,
       })
       .from(ticketActivityLog)
-      .leftJoin(organizationMembers, and(
-        eq(organizationMembers.orgId, ticketActivityLog.orgId),
-        eq(organizationMembers.id, ticketActivityLog.userMembershipId),
-      ))
       .leftJoin(organizationPeople, and(
-        eq(organizationPeople.organizationId, organizationMembers.orgId),
-        eq(organizationPeople.userId, organizationMembers.userId),
-        isNull(organizationPeople.deletedAt),
+        eq(organizationPeople.organizationId, ticketActivityLog.orgId),
+        eq(organizationPeople.userId, ticketActivityLog.userId),
       ))
       .where(and(...conditions))
       .orderBy(desc(ticketActivityLog.id))

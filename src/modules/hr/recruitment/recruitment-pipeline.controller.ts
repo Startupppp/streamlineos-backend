@@ -4,10 +4,10 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RecruitmentPipelineService } from "./recruitment-pipeline.service";
 import { diversityReportQuerySchema, type DiversityReportQueryInput } from "./dto/candidates.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -23,8 +23,9 @@ export class RecruitmentPipelineController {
 
   @Get("diversity-report")
   @RequirePermission("hr:employees:view")
+  @Validate({ query: diversityReportQuerySchema })
   diversityReport(
-    @Query(new ZodValidationPipe(diversityReportQuerySchema)) query: DiversityReportQueryInput,
+    @Query() query: DiversityReportQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.pipeline.diversityReport(u.orgId, query);

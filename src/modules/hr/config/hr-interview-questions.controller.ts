@@ -17,7 +17,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrInterviewQuestionsService } from "./hr-interview-questions.service";
 import {
   createInterviewQuestionSchema,
@@ -41,8 +41,9 @@ export class HrInterviewQuestionsController {
 
   @Get()
   @RequirePermission("hr:employees:view")
+  @Validate({ query: interviewQuestionListQuerySchema })
   list(
-    @Query(new ZodValidationPipe(interviewQuestionListQuerySchema)) query: InterviewQuestionListQuery,
+    @Query() query: InterviewQuestionListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.interviewQuestions.list(u.orgId, query);
@@ -51,8 +52,9 @@ export class HrInterviewQuestionsController {
   @Post()
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @Validate({ body: createInterviewQuestionSchema })
   create(
-    @Body(new ZodValidationPipe(createInterviewQuestionSchema)) body: CreateInterviewQuestionInput,
+    @Body() body: CreateInterviewQuestionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.interviewQuestions.create(u.orgId, u.userId, body);
@@ -60,10 +62,10 @@ export class HrInterviewQuestionsController {
 
   @Patch(":questionId")
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: questionIdParams })
+  @Validate({ params: questionIdParams, body: updateInterviewQuestionSchema })
   async update(
     @Param("questionId", ParseIntPipe) questionId: number,
-    @Body(new ZodValidationPipe(updateInterviewQuestionSchema)) body: UpdateInterviewQuestionInput,
+    @Body() body: UpdateInterviewQuestionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const existing = await this.interviewQuestions.getById(u.orgId, questionId);

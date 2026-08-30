@@ -18,7 +18,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { EmployeesService } from "./employees.service";
 import { EmployeeMutationsService } from "./employee-mutations.service";
 import { EmployeeOnboardingService } from "./employee-onboarding.service";
@@ -73,8 +73,9 @@ export class EmployeesController {
   @Post("onboard")
   @RequirePermission("hr:onboarding:manage")
   @HttpCode(201)
+  @Validate({ body: onboardEmployeeSchema })
   onboard(
-    @Body(new ZodValidationPipe(onboardEmployeeSchema)) body: OnboardEmployeeInput,
+    @Body() body: OnboardEmployeeInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.onboarding.onboardEmployee(currentUser, body);
@@ -86,8 +87,9 @@ export class EmployeesController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("hr:employee-bulk-onboard")
   @HttpCode(200)
+  @Validate({ body: bulkOnboardEmployeesSchema })
   onboardBulk(
-    @Body(new ZodValidationPipe(bulkOnboardEmployeesSchema)) body: BulkOnboardEmployeesInput,
+    @Body() body: BulkOnboardEmployeesInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.bulkOnboarding.onboardEmployeesBulk(currentUser, body.employees);
@@ -95,8 +97,9 @@ export class EmployeesController {
 
   @Get()
   @RequirePermission("hr:employees:view")
+  @Validate({ query: listEmployeesSchema })
   async listEmployees(
-    @Query(new ZodValidationPipe(listEmployeesSchema)) query: ListEmployeesInput,
+    @Query() query: ListEmployeesInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveEmployeesScope(this.access, currentUser);
@@ -145,8 +148,9 @@ export class EmployeesController {
 
   @Get("availability")
   @RequirePermission("hr:employees:view")
+  @Validate({ query: availabilitySchema })
   async availability(
-    @Query(new ZodValidationPipe(availabilitySchema)) query: AvailabilityInput,
+    @Query() query: AvailabilityInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveEmployeesScope(this.access, currentUser);
@@ -170,8 +174,9 @@ export class EmployeesController {
 
   @Get("find-expert")
   @RequirePermission("hr:employees:view")
+  @Validate({ query: findExpertSchema })
   async findExpert(
-    @Query(new ZodValidationPipe(findExpertSchema)) query: FindExpertInput,
+    @Query() query: FindExpertInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveEmployeesScope(this.access, currentUser);
@@ -180,9 +185,9 @@ export class EmployeesController {
 
   @Get("skills-matrix")
   @RequirePermission("hr:employees:view")
+  @Validate({ query: skillsMatrixQuerySchema })
   async skillsMatrix(
-    @Query(new ZodValidationPipe(skillsMatrixQuerySchema))
-    query: SkillsMatrixQueryInput,
+    @Query() query: SkillsMatrixQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveEmployeesScope(this.access, currentUser);
@@ -280,10 +285,10 @@ export class EmployeesController {
 
   @Patch(":employeeId")
   @RequirePermission("hr:employees:update")
-  @Validate({ params: employeeIdParams })
+  @Validate({ params: employeeIdParams, body: updateEmployeeSchema })
   updateEmployee(
     @Param("employeeId") employeeId: string,
-    @Body(new ZodValidationPipe(updateEmployeeSchema)) body: UpdateEmployeeInput,
+    @Body() body: UpdateEmployeeInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.mutations.updateEmployee(currentUser, employeeId, body);

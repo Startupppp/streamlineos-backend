@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PayoutBatchesService } from "./payout-batches.service";
 import { BatchCreatorService } from "./batch-creator.service";
@@ -67,10 +66,10 @@ export class PayoutRunController {
   @Post("batches")
   @HttpCode(201)
   @RequirePermission("payroll:bank:manage")
-  @Validate({ params: runIdParams })
+  @Validate({ params: runIdParams, body: createBatchSchema })
   createBatch(
     @Param("runId", ParseIntPipe) runId: number,
-    @Body(new ZodValidationPipe(createBatchSchema)) body: CreateBatchInput,
+    @Body() body: CreateBatchInput,
     @Headers("idempotency-key") idempotencyKey: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -89,8 +88,9 @@ export class PayoutBatchesController {
 
   @Get("batches")
   @RequirePermission("payroll:bank:manage")
+  @Validate({ query: batchesQuerySchema })
   listBatches(
-    @Query(new ZodValidationPipe(batchesQuerySchema)) query: BatchesQueryInput,
+    @Query() query: BatchesQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.batches.listBatches(u.orgId, query.runId, query.cursor, query.limit);
@@ -130,10 +130,10 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/mark-paid")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
-  @Validate({ params: batchIdParams })
+  @Validate({ params: batchIdParams, body: markBatchPaidSchema })
   markBatchPaid(
     @Param("batchId", ParseIntPipe) batchId: number,
-    @Body(new ZodValidationPipe(markBatchPaidSchema)) body: MarkBatchPaidInput,
+    @Body() body: MarkBatchPaidInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.batchStatus.markBatchPaid(u.orgId, batchId, body.transactionRef, u.userId);
@@ -143,10 +143,10 @@ export class PayoutBatchesController {
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
   @Idempotent("payroll.bank-return.import")
-  @Validate({ params: batchIdParams })
+  @Validate({ params: batchIdParams, body: bankReturnImportSchema })
   importReturn(
     @Param("batchId", ParseIntPipe) batchId: number,
-    @Body(new ZodValidationPipe(bankReturnImportSchema)) body: BankReturnImportInput,
+    @Body() body: BankReturnImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.batchStatus.importBankReturn(u.orgId, batchId, u.userId, body.csv);
@@ -155,11 +155,11 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/items/:itemId/mark-paid")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
-  @Validate({ params: batchItemIdParams })
+  @Validate({ params: batchItemIdParams, body: markItemPaidSchema })
   markItemPaid(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Param("itemId", ParseIntPipe) itemId: number,
-    @Body(new ZodValidationPipe(markItemPaidSchema)) body: MarkItemPaidInput,
+    @Body() body: MarkItemPaidInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.batchStatus.markItemPaid(u.orgId, batchId, itemId, body.transactionRef, u.userId);

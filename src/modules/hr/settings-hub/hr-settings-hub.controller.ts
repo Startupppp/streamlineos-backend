@@ -5,9 +5,9 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { HrSettingsHubService } from "./hr-settings-hub.service";
 import { effectiveRulesQuerySchema, versionsQuerySchema } from "./dto/hr-settings-hub.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 import type { EffectiveRulesQuery, VersionsQuery } from "./dto/hr-settings-hub.schemas";
 
 @RequireModule("hr")
@@ -18,8 +18,9 @@ export class HrSettingsHubController {
 
   @Get("effective-rules")
   @RequirePermission("hr:policies:view")
+  @Validate({ query: effectiveRulesQuerySchema })
   getEffectiveRules(
-    @Query(new ZodValidationPipe(effectiveRulesQuerySchema)) query: EffectiveRulesQuery,
+    @Query() query: EffectiveRulesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.getEffectiveRules(u.orgId, query.employeeId, query.date);
@@ -27,8 +28,9 @@ export class HrSettingsHubController {
 
   @Get("versions")
   @RequirePermission("hr:policies:view")
+  @Validate({ query: versionsQuerySchema })
   getVersions(
-    @Query(new ZodValidationPipe(versionsQuerySchema)) query: VersionsQuery,
+    @Query() query: VersionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.getVersions(u.orgId, query.entity, query.id);

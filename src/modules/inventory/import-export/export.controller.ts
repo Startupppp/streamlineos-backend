@@ -7,7 +7,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { ExportService } from "./export.service";
@@ -31,8 +30,9 @@ export class ExportController {
   @Post("jobs")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:export")
+  @Validate({ body: createExportJobSchema })
   createJob(
-    @Body(new ZodValidationPipe(createExportJobSchema)) body: CreateExportJobInput,
+    @Body() body: CreateExportJobInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createExportJob(u.orgId, u.userId, body);
@@ -41,8 +41,9 @@ export class ExportController {
   @Get("jobs")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:export")
+  @Validate({ query: listJobsQuerySchema })
   listJobs(
-    @Query(new ZodValidationPipe(listJobsQuerySchema)) q: ListJobsQueryInput,
+    @Query() q: ListJobsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, q);

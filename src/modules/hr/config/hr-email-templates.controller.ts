@@ -15,7 +15,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrEmailTemplatesService } from "./hr-email-templates.service";
 import {
   createEmailTemplateSchema,
@@ -45,18 +45,19 @@ export class HrEmailTemplatesController {
 
   @Post()
   @HttpCode(201)
+  @Validate({ body: createEmailTemplateSchema })
   create(
-    @Body(new ZodValidationPipe(createEmailTemplateSchema)) body: CreateEmailTemplateInput,
+    @Body() body: CreateEmailTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.emailTemplates.create(u.orgId, u.userId, body);
   }
 
   @Patch(":templateId")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: updateEmailTemplateSchema })
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(updateEmailTemplateSchema)) body: UpdateEmailTemplateInput,
+    @Body() body: UpdateEmailTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.emailTemplates.update(u.orgId, templateId, body);
@@ -74,8 +75,9 @@ export class HrEmailTemplatesController {
 
   @Post("generate-ai")
   @HttpCode(200)
+  @Validate({ body: generateEmailTemplateAiSchema })
   generateAi(
-    @Body(new ZodValidationPipe(generateEmailTemplateAiSchema)) body: GenerateEmailTemplateAiInput,
+    @Body() body: GenerateEmailTemplateAiInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.emailTemplates.generateWithAi(u.orgId, u.userId, body);

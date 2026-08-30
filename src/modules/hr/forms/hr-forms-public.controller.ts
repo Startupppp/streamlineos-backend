@@ -11,7 +11,6 @@ import {
   Request,
 } from "@nestjs/common";
 import { Public } from "../../../common/auth/public.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { HrFormsSubmissionsService } from "./hr-forms-submissions.service";
 import { submitHrFormSchema, type SubmitHrFormInput } from "./dto/hr-forms.schemas";
@@ -65,11 +64,11 @@ export class HrFormsPublicController {
   @Public()
   @Post(":orgId/:slug/submit")
   @HttpCode(201)
-  @Validate({ params: orgIdslugParams })
+  @Validate({ params: orgIdslugParams, body: submitHrFormSchema })
   async submitPublicForm(
     @Param("orgId") orgId: string,
     @Param("slug") slug: string,
-    @Body(new ZodValidationPipe(submitHrFormSchema)) body: SubmitHrFormInput,
+    @Body() body: SubmitHrFormInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("hr-form:public-submit", this.getIp(req));

@@ -15,7 +15,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { VendorCreditsService } from "./vendor-credits.service";
 import {
   createVendorCreditSchema,
@@ -39,8 +38,9 @@ export class VendorCreditsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:vendor-credits:read")
+  @Validate({ query: listVendorCreditsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listVendorCreditsQuerySchema)) query: ListVendorCreditsQuery,
+    @Query() query: ListVendorCreditsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listVendorCredits(u.orgId, query);
@@ -50,8 +50,9 @@ export class VendorCreditsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:vendor-credits:create")
   @HttpCode(201)
+  @Validate({ body: createVendorCreditSchema })
   create(
-    @Body(new ZodValidationPipe(createVendorCreditSchema)) body: CreateVendorCreditInput,
+    @Body() body: CreateVendorCreditInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createVendorCredit(u.orgId, u.userId, body);
@@ -84,10 +85,10 @@ export class VendorCreditsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:vendor-credits:manage")
   @HttpCode(200)
-  @Validate({ params: vendorCreditIdParams })
+  @Validate({ params: vendorCreditIdParams, body: applyVendorCreditSchema })
   apply(
     @Param("vendorCreditId", ParseIntPipe) vendorCreditId: number,
-    @Body(new ZodValidationPipe(applyVendorCreditSchema)) body: ApplyVendorCreditInput,
+    @Body() body: ApplyVendorCreditInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.applyVendorCredit(u, vendorCreditId, body);

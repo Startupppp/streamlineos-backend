@@ -13,7 +13,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ExchangeRatesService } from "./exchange-rates.service";
 import {
   upsertExchangeRateSchema,
@@ -21,6 +20,7 @@ import {
   type UpsertExchangeRateInput,
   type ListExchangeRatesQuery,
 } from "./dto/finance-controls.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("accounting")
 @Controller("accounting/exchange-rates")
@@ -30,8 +30,9 @@ export class ExchangeRatesController {
 
   @Get()
   @RequirePermission("accounting:settings:read")
+  @Validate({ query: listExchangeRatesSchema })
   list(
-    @Query(new ZodValidationPipe(listExchangeRatesSchema)) query: ListExchangeRatesQuery,
+    @Query() query: ListExchangeRatesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, query);
@@ -40,8 +41,9 @@ export class ExchangeRatesController {
   @Post()
   @HttpCode(200)
   @RequirePermission("accounting:settings:manage")
+  @Validate({ body: upsertExchangeRateSchema })
   upsert(
-    @Body(new ZodValidationPipe(upsertExchangeRateSchema)) body: UpsertExchangeRateInput,
+    @Body() body: UpsertExchangeRateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.upsert(u.orgId, u.userId, body);

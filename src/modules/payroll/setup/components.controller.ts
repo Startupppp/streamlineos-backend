@@ -18,7 +18,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PayrollComponentsService } from "./components.service";
 import {
   listComponentsSchema,
@@ -41,8 +40,9 @@ export class PayrollComponentsController {
 
   @Get()
   @RequirePermission("payroll:components:view")
+  @Validate({ query: listComponentsSchema })
   async list(
-    @Query(new ZodValidationPipe(listComponentsSchema)) query: ListComponentsInput,
+    @Query() query: ListComponentsInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.list(u.orgId, query);
@@ -51,8 +51,9 @@ export class PayrollComponentsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("payroll:components:manage")
+  @Validate({ body: createComponentSchema })
   async create(
-    @Body(new ZodValidationPipe(createComponentSchema)) body: CreateComponentInput,
+    @Body() body: CreateComponentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.create(u, body);
@@ -60,10 +61,10 @@ export class PayrollComponentsController {
 
   @Patch(":componentId")
   @RequirePermission("payroll:components:manage")
-  @Validate({ params: componentIdParams })
+  @Validate({ params: componentIdParams, body: updateComponentSchema })
   async update(
     @Param("componentId", ParseIntPipe) componentId: number,
-    @Body(new ZodValidationPipe(updateComponentSchema)) body: UpdateComponentInput,
+    @Body() body: UpdateComponentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.update(u, componentId, body);

@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { LockingService } from "./locking.service";
@@ -51,10 +50,10 @@ export class LockingController {
   @Post("reopen")
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
-  @Validate({ params: runIdParams })
+  @Validate({ params: runIdParams, body: reopenRunSchema })
   async reopen(
     @Param("runId", ParseIntPipe) runId: number,
-    @Body(new ZodValidationPipe(reopenRunSchema)) body: ReopenRunInput,
+    @Body() body: ReopenRunInput,
     @CurrentUser() u: CurrentUserContext,
     @Headers("idempotency-key") idempotencyKey?: string,
   ) {

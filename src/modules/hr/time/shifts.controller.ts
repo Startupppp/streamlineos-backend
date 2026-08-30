@@ -5,7 +5,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { ShiftsService } from "./shifts.service";
 import {
   createShiftSchema,
@@ -40,20 +40,21 @@ export class ShiftsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ body: createShiftSchema })
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createShiftSchema)) body: CreateShiftInput,
+    @Body() body: CreateShiftInput,
   ) {
     return this.service.createShift(u.orgId, body);
   }
 
   @Patch(":shiftId")
   @RequirePermission("hr:attendance:manage")
-  @Validate({ params: shiftIdParams })
+  @Validate({ params: shiftIdParams, body: updateShiftSchema })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("shiftId", ParseIntPipe) shiftId: number,
-    @Body(new ZodValidationPipe(updateShiftSchema)) body: UpdateShiftInput,
+    @Body() body: UpdateShiftInput,
   ) {
     return this.service.updateShift(u.orgId, shiftId, body);
   }
@@ -75,9 +76,10 @@ export class ShiftsController {
   @Post("assignments")
   @HttpCode(201)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ body: assignShiftSchema })
   assign(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(assignShiftSchema)) body: AssignShiftInput,
+    @Body() body: AssignShiftInput,
   ) {
     return this.service.assignShift(u.orgId, body);
   }
@@ -91,20 +93,21 @@ export class ShiftsController {
   @Post("swaps")
   @HttpCode(201)
   @RequirePermission("hr:attendance:view")
+  @Validate({ body: createSwapRequestSchema })
   createSwap(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createSwapRequestSchema)) body: CreateSwapRequestInput,
+    @Body() body: CreateSwapRequestInput,
   ) {
     return this.service.createSwapRequest(u.orgId, { ...body, requesterId: u.userId });
   }
 
   @Patch("swaps/:swapId")
   @RequirePermission("hr:attendance:manage")
-  @Validate({ params: swapIdParams })
+  @Validate({ params: swapIdParams, body: updateSwapStatusSchema })
   updateSwap(
     @CurrentUser() u: CurrentUserContext,
     @Param("swapId", ParseIntPipe) swapId: number,
-    @Body(new ZodValidationPipe(updateSwapStatusSchema)) body: UpdateSwapStatusInput,
+    @Body() body: UpdateSwapStatusInput,
   ) {
     return this.service.updateSwapStatus(u.orgId, swapId, body.status, u.userId);
   }

@@ -17,7 +17,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrFormsService } from "./hr-forms.service";
 import { HrFormsSubmissionsService } from "./hr-forms-submissions.service";
 import {
@@ -51,8 +51,9 @@ export class HrFormsController {
 
   @Get()
   @RequirePermission("hr:forms:view")
+  @Validate({ query: listHrFormsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listHrFormsQuerySchema)) query: ListHrFormsQuery,
+    @Query() query: ListHrFormsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listForms(u.orgId, query);
@@ -77,8 +78,9 @@ export class HrFormsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:forms:manage")
+  @Validate({ body: createHrFormSchema })
   create(
-    @Body(new ZodValidationPipe(createHrFormSchema)) body: CreateHrFormInput,
+    @Body() body: CreateHrFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createForm(u.orgId, u.userId, body);
@@ -86,10 +88,10 @@ export class HrFormsController {
 
   @Patch(":formId")
   @RequirePermission("hr:forms:manage")
-  @Validate({ params: formIdParams })
+  @Validate({ params: formIdParams, body: updateHrFormSchema })
   update(
     @Param("formId", ParseIntPipe) formId: number,
-    @Body(new ZodValidationPipe(updateHrFormSchema)) body: UpdateHrFormInput,
+    @Body() body: UpdateHrFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateForm(u.orgId, formId, body);
@@ -129,10 +131,10 @@ export class HrFormsController {
   @Post(":formId/submissions")
   @HttpCode(201)
   @RequirePermission("hr:forms:view")
-  @Validate({ params: formIdParams })
+  @Validate({ params: formIdParams, body: submitHrFormSchema })
   submit(
     @Param("formId", ParseIntPipe) formId: number,
-    @Body(new ZodValidationPipe(submitHrFormSchema)) body: SubmitHrFormInput,
+    @Body() body: SubmitHrFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.submissions.submit(u.orgId, formId, body, u.userId, false);
@@ -140,10 +142,10 @@ export class HrFormsController {
 
   @Get(":formId/submissions")
   @RequirePermission("hr:forms:view")
-  @Validate({ params: formIdParams })
+  @Validate({ params: formIdParams, query: listSubmissionsQuerySchema })
   listSubmissions(
     @Param("formId", ParseIntPipe) formId: number,
-    @Query(new ZodValidationPipe(listSubmissionsQuerySchema)) query: ListSubmissionsQuery,
+    @Query() query: ListSubmissionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.submissions.listSubmissions(u.orgId, formId, query, false);
@@ -151,10 +153,10 @@ export class HrFormsController {
 
   @Get(":formId/submissions/sensitive")
   @RequirePermission("hr:sensitive:view")
-  @Validate({ params: formIdParams })
+  @Validate({ params: formIdParams, query: listSubmissionsQuerySchema })
   listSubmissionsSensitive(
     @Param("formId", ParseIntPipe) formId: number,
-    @Query(new ZodValidationPipe(listSubmissionsQuerySchema)) query: ListSubmissionsQuery,
+    @Query() query: ListSubmissionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.submissions.listSubmissions(u.orgId, formId, query, true);
@@ -162,10 +164,10 @@ export class HrFormsController {
 
   @Patch("submissions/:submissionId/status")
   @RequirePermission("hr:forms:manage")
-  @Validate({ params: submissionIdParams })
+  @Validate({ params: submissionIdParams, body: updateSubmissionStatusSchema })
   updateStatus(
     @Param("submissionId", ParseIntPipe) submissionId: number,
-    @Body(new ZodValidationPipe(updateSubmissionStatusSchema)) body: UpdateSubmissionStatusInput,
+    @Body() body: UpdateSubmissionStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.submissions.updateSubmissionStatus(u.orgId, submissionId, body, u.userId);

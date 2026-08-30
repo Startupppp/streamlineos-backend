@@ -16,7 +16,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrHandbookService } from "./hr-handbook.service";
 import {
   createHandbookSchema,
@@ -45,8 +45,9 @@ export class HrHandbookController {
   @Post()
   @RequirePermission("hr:handbook:manage")
   @HttpCode(201)
+  @Validate({ body: createHandbookSchema })
   create(
-    @Body(new ZodValidationPipe(createHandbookSchema)) body: CreateHandbookInput,
+    @Body() body: CreateHandbookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.handbook.create(u.orgId, body);
@@ -54,10 +55,10 @@ export class HrHandbookController {
 
   @Patch(":handbookId")
   @RequirePermission("hr:handbook:manage")
-  @Validate({ params: handbookIdParams })
+  @Validate({ params: handbookIdParams, body: updateHandbookSchema })
   async update(
     @Param("handbookId", ParseIntPipe) handbookId: number,
-    @Body(new ZodValidationPipe(updateHandbookSchema)) body: UpdateHandbookInput,
+    @Body() body: UpdateHandbookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const existing = await this.handbook.getById(u.orgId, handbookId);

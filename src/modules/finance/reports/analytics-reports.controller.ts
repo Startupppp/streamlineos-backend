@@ -6,7 +6,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AnalyticsReportsService } from "./analytics-reports.service";
 import { buildCsv } from "./finance-reports-csv.util";
 import {
@@ -19,6 +18,7 @@ import {
   type WorkingCapitalQuery,
   type CashRunwayQuery,
 } from "./dto/finance-reports.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -33,8 +33,9 @@ export class AnalyticsReportsController {
   @Get("project-profitability")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: dateRangeSchema })
   getProjectProfitability(
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analyticsService.projectProfitability(u.orgId, query.from, query.to);
@@ -43,8 +44,9 @@ export class AnalyticsReportsController {
   @Get("project-profitability/export")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:export")
+  @Validate({ query: dateRangeSchema })
   async exportProjectProfitability(
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
@@ -61,8 +63,9 @@ export class AnalyticsReportsController {
   @Get("department-profitability")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: dateRangeSchema })
   getDepartmentProfitability(
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analyticsService.departmentProfitability(u.orgId, query.from, query.to);
@@ -71,8 +74,9 @@ export class AnalyticsReportsController {
   @Get("department-profitability/export")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:export")
+  @Validate({ query: dateRangeSchema })
   async exportDepartmentProfitability(
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
@@ -89,8 +93,9 @@ export class AnalyticsReportsController {
   @Get("budget-vs-actual")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: budgetVsActualQuerySchema })
   getBudgetVsActual(
-    @Query(new ZodValidationPipe(budgetVsActualQuerySchema)) query: BudgetVsActualQuery,
+    @Query() query: BudgetVsActualQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analyticsService.budgetVsActual(u.orgId, query.budgetId, query.from, query.to);
@@ -99,8 +104,9 @@ export class AnalyticsReportsController {
   @Get("budget-vs-actual/export")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:export")
+  @Validate({ query: budgetVsActualQuerySchema })
   async exportBudgetVsActual(
-    @Query(new ZodValidationPipe(budgetVsActualQuerySchema)) query: BudgetVsActualQuery,
+    @Query() query: BudgetVsActualQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
@@ -117,8 +123,9 @@ export class AnalyticsReportsController {
   @Get("working-capital")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: workingCapitalQuerySchema })
   getWorkingCapital(
-    @Query(new ZodValidationPipe(workingCapitalQuerySchema)) query: WorkingCapitalQuery,
+    @Query() query: WorkingCapitalQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const asOf = query.asOf ?? todayIso();
@@ -135,8 +142,9 @@ export class AnalyticsReportsController {
   @Get("cash-runway")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: cashRunwayQuerySchema })
   getCashRunway(
-    @Query(new ZodValidationPipe(cashRunwayQuerySchema)) query: CashRunwayQuery,
+    @Query() query: CashRunwayQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analyticsService.cashRunway(u.orgId, query.months);

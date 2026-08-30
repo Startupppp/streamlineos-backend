@@ -8,7 +8,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { GrnService } from "./grn.service";
@@ -30,8 +29,9 @@ export class GrnController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
+  @Validate({ query: listGrnSchema })
   list(
-    @Query(new ZodValidationPipe(listGrnSchema)) filters: ListGrnInput,
+    @Query() filters: ListGrnInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.grns.listGrns(u.orgId, filters);
@@ -52,10 +52,10 @@ export class GrnController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)
-  @Validate({ params: grnIdParams })
+  @Validate({ params: grnIdParams, body: reverseGrnSchema })
   reverse(
     @Param("grnId", ParseIntPipe) grnId: number,
-    @Body(new ZodValidationPipe(reverseGrnSchema)) body: ReverseGrnInput,
+    @Body() body: ReverseGrnInput,
     @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {

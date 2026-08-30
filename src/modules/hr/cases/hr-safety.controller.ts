@@ -19,7 +19,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrSafetyService } from "./hr-safety.service";
 import { AccessService } from "../../access/access.service";
 import {
@@ -50,9 +50,10 @@ export class HrSafetyController {
 
   @Get("incidents")
   @RequirePermission("hr:safety:view")
+  @Validate({ query: listIncidentsSchema })
   listIncidents(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listIncidentsSchema)) query: ListIncidentsInput,
+    @Query() query: ListIncidentsInput,
   ) {
     return this.safety.listIncidents(user.orgId, query);
   }
@@ -71,9 +72,10 @@ export class HrSafetyController {
   @Post("incidents")
   @HttpCode(201)
   @RequirePermission("hr:safety:manage")
+  @Validate({ body: createIncidentSchema })
   createIncident(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createIncidentSchema)) body: CreateIncidentInput,
+    @Body() body: CreateIncidentInput,
     @Req() req: Request,
   ) {
     return this.safety.createIncident(user.orgId, user.userId, body, req.ip);

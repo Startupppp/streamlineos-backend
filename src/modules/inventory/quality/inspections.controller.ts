@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { InspectionsService } from "./quality-inspections.service";
@@ -34,8 +33,9 @@ export class InspectionsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
+  @Validate({ query: listInspectionsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listInspectionsQuerySchema)) q: ListInspectionsQueryInput,
+    @Query() q: ListInspectionsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, q);
@@ -55,8 +55,9 @@ export class InspectionsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Validate({ body: createInspectionSchema })
   create(
-    @Body(new ZodValidationPipe(createInspectionSchema)) body: CreateInspectionInput,
+    @Body() body: CreateInspectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.create(u.orgId, u.userId, body);
@@ -89,10 +90,10 @@ export class InspectionsController {
   @Post(":inspectionId/fail")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
-  @Validate({ params: inspectionIdParams })
+  @Validate({ params: inspectionIdParams, body: failInspectionSchema })
   fail(
     @Param("inspectionId", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(failInspectionSchema)) body: FailInspectionInput,
+    @Body() body: FailInspectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.fail(u.orgId, u.userId, id, body);
@@ -101,11 +102,11 @@ export class InspectionsController {
   @Post(":inspectionId/dispose")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
-  @Validate({ params: inspectionIdParams })
+  @Validate({ params: inspectionIdParams, body: disposeInspectionSchema })
   dispose(
     @Param("inspectionId", ParseIntPipe) id: number,
     @Headers("idempotency-key") idempotencyKey: string | undefined,
-    @Body(new ZodValidationPipe(disposeInspectionSchema)) body: DisposeInspectionInput,
+    @Body() body: DisposeInspectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");

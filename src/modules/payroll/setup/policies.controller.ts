@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PayrollPoliciesService } from "./policies.service";
 import {
   createPolicySchema,
@@ -52,8 +51,9 @@ export class PayrollPoliciesController {
 
   @Get("toggle-impact")
   @RequirePermission("payroll:policies:view")
+  @Validate({ query: toggleImpactSchema })
   async toggleImpact(
-    @Query(new ZodValidationPipe(toggleImpactSchema)) query: ToggleImpactInput,
+    @Query() query: ToggleImpactInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.toggleImpact(u.orgId, query);
@@ -62,8 +62,9 @@ export class PayrollPoliciesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("payroll:policies:manage")
+  @Validate({ body: createPolicySchema })
   async create(
-    @Body(new ZodValidationPipe(createPolicySchema)) body: CreatePolicyInput,
+    @Body() body: CreatePolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.create(u, body);
@@ -71,8 +72,9 @@ export class PayrollPoliciesController {
 
   @Post("preview")
   @RequirePermission("payroll:policies:view")
+  @Validate({ body: policyPreviewSchema })
   async preview(
-    @Body(new ZodValidationPipe(policyPreviewSchema)) body: PolicyPreviewInput,
+    @Body() body: PolicyPreviewInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.preview(u.orgId, body);
@@ -80,10 +82,10 @@ export class PayrollPoliciesController {
 
   @Patch(":policyId")
   @RequirePermission("payroll:policies:manage")
-  @Validate({ params: policyIdParams })
+  @Validate({ params: policyIdParams, body: updatePolicySchema })
   async update(
     @Param("policyId", ParseIntPipe) policyId: number,
-    @Body(new ZodValidationPipe(updatePolicySchema)) body: UpdatePolicyInput,
+    @Body() body: UpdatePolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.update(u, policyId, body);
@@ -92,10 +94,10 @@ export class PayrollPoliciesController {
   @Post(":policyId/activate")
   @HttpCode(200)
   @RequirePermission("payroll:policies:manage")
-  @Validate({ params: policyIdParams })
+  @Validate({ params: policyIdParams, body: activatePolicySchema })
   async activate(
     @Param("policyId", ParseIntPipe) policyId: number,
-    @Body(new ZodValidationPipe(activatePolicySchema)) body: ActivatePolicyInput,
+    @Body() body: ActivatePolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.activate(u, policyId, body);

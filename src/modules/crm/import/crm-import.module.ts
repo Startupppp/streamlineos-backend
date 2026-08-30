@@ -3,6 +3,9 @@ import { WorkflowModule } from "../../../common/workflow/workflow.module";
 import { IntegrationsModule } from "../../integrations/core/integrations.module";
 import { CrmImportController } from "./crm-import.controller";
 import { CrmImportService } from "./crm-import.service";
+import { CrmImportCommitService } from "./crm-import-commit.service";
+import { CrmImportPreviewService } from "./crm-import-preview.service";
+import { CrmImportRevertService } from "./crm-import-revert.service";
 import { CrmExportService } from "./crm-export.service";
 import { CrmImportWorkflow } from "./crm-import.workflow";
 import { ImportPump } from "./import-pump";
@@ -26,6 +29,9 @@ import { CrmConnectorWorkflow } from "./crm-connector.workflow";
   controllers: [CrmImportController],
   providers: [
     CrmImportService,
+    CrmImportCommitService,
+    CrmImportPreviewService,
+    CrmImportRevertService,
     CrmExportService,
     CrmImportWorkflow,
     CrmConnectorService,
@@ -34,6 +40,6 @@ import { CrmConnectorWorkflow } from "./crm-connector.workflow";
     CrmConnectorWorkflow,
     ImportPump,
   ],
-  exports: [CrmImportService, CrmExportService, CrmConnectorService],
+  exports: [CrmImportService, CrmImportCommitService, CrmImportPreviewService, CrmImportRevertService, CrmExportService, CrmConnectorService],
 })
 export class CrmImportModule {}

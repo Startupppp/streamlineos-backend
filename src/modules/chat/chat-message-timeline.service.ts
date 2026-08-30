@@ -11,6 +11,19 @@ import type { Db } from "../../db/drizzle.module";
 import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
+import {
+  resolvePeopleIdentities,
+  subjectKey,
+  type PersonIdentity,
+} from "../directory/person-seam";
+
+type ChatSender = { id: string | null; name: string | null; image: string | null };
+
+function senderFromIdentity(identity: PersonIdentity | undefined): ChatSender {
+  const parts = [identity?.firstName, identity?.lastName].filter(Boolean).join(" ");
+  const name = identity?.displayName ?? (parts || null);
+  return { id: identity?.userId ?? null, name: name ?? null, image: identity?.avatarUrl ?? null };
+}
 
 @Injectable()
 export class ChatMessageTimelineService {
@@ -56,6 +69,45 @@ export class ChatMessageTimelineService {
     return this.entities.withResolvedReferences(actor, messages);
   }
 
+  private async resolveIdentities(
+    orgId: string,
+    senderIds: Set<string>,
+  ): Promise<Map<string, PersonIdentity>> {
+    if (senderIds.size === 0) return new Map();
+    const subjects = [...senderIds].map((userId) => ({
+      kind: "user" as const,
+      userId,
+    }));
+    return resolvePeopleIdentities(this.db, orgId, subjects);
+  }
+
+  private enrich<
+    M extends {
+      senderId: string;
+      replyTo: ({ senderId: string } & Record<string, unknown>) | null;
+    },
+  >(
+    msg: M,
+    identities: Map<string, PersonIdentity>,
+  ) {
+    return {
+      ...msg,
+      sender: senderFromIdentity(
+        identities.get(subjectKey({ kind: "user", userId: msg.senderId })),
+      ),
+      replyTo: msg.replyTo
+        ? {
+            ...msg.replyTo,
+            sender: senderFromIdentity(
+              identities.get(
+                subjectKey({ kind: "user", userId: msg.replyTo.senderId }),
+              ),
+            ),
+          }
+        : null,
+    };
+  }
+
   async list(
     channelId: number,
     actor: EntityActor,
@@ -77,20 +129,27 @@ export class ChatMessageTimelineService {
     const conditions = [eq(chatMessages.channelId, channelId)];
     if (cursor) conditions.push(lt(chatMessages.id, cursor));
 
-    const messages = await this.db.query.chatMessages.findMany({
+    const rawMessages = await this.db.query.chatMessages.findMany({
       where: and(...conditions),
       orderBy: [desc(chatMessages.id)],
       limit: safeLimit + 1,
       with: {
-        sender: { columns: { id: true, name: true, image: true } },
         attachments: true,
-        replyTo: { with: { sender: { columns: { id: true, name: true } } } },
+        replyTo: true,
       },
     });
 
-    const page = buildIdCursorPage(messages, safeLimit, (m) => m.id);
+    const page = buildIdCursorPage(rawMessages, safeLimit, (m) => m.id);
+    const senderIds = new Set<string>();
+    for (const m of page.data) {
+      senderIds.add(m.senderId);
+      if (m.replyTo?.senderId) senderIds.add(m.replyTo.senderId);
+    }
+    const identities = await this.resolveIdentities(actor.orgId, senderIds);
+    const enriched = page.data.reverse().map((m) => this.enrich(m, identities));
+
     return {
-      messages: await this.withResolvedReferences(actor, page.data.reverse()),
+      messages: await this.withResolvedReferences(actor, enriched),
       nextCursor: page.nextCursor,
     };
   }
@@ -107,7 +166,7 @@ export class ChatMessageTimelineService {
     )
       throw new ForbiddenException("You are not a member of this channel");
 
-    const messages = await this.db.query.chatMessages.findMany({
+    const rawMessages = await this.db.query.chatMessages.findMany({
       where: and(
         eq(chatMessages.channelId, channelId),
         gt(chatMessages.createdAt, since),
@@ -115,13 +174,20 @@ export class ChatMessageTimelineService {
       orderBy: [desc(chatMessages.createdAt)],
       limit: 100,
       with: {
-        sender: { columns: { id: true, name: true, image: true } },
         attachments: true,
-        replyTo: { with: { sender: { columns: { id: true, name: true } } } },
+        replyTo: true,
       },
     });
 
-    return this.withResolvedReferences(actor, messages.reverse());
+    const senderIds = new Set<string>();
+    for (const m of rawMessages) {
+      senderIds.add(m.senderId);
+      if (m.replyTo?.senderId) senderIds.add(m.replyTo.senderId);
+    }
+    const identities = await this.resolveIdentities(actor.orgId, senderIds);
+    const enriched = rawMessages.reverse().map((m) => this.enrich(m, identities));
+
+    return this.withResolvedReferences(actor, enriched);
   }
 
   async listThreadReplies(
@@ -130,20 +196,19 @@ export class ChatMessageTimelineService {
     cursor: number | undefined,
     limit: number,
   ) {
-    const parentMessage = await this.db.query.chatMessages.findFirst({
+    const rawParent = await this.db.query.chatMessages.findFirst({
       where: and(eq(chatMessages.id, parentMessageId), eq(chatMessages.orgId, actor.orgId)),
       with: {
-        sender: { columns: { id: true, name: true, image: true } },
         attachments: true,
-        replyTo: { with: { sender: { columns: { id: true, name: true } } } },
+        replyTo: true,
       },
     });
 
-    if (!parentMessage) throw new NotFoundException("Message not found");
+    if (!rawParent) throw new NotFoundException("Message not found");
 
     if (
       !(await this.isMember(
-        parentMessage.channelId,
+        rawParent.channelId,
         actor.orgId,
         actor.membershipId,
         actor.userId,
@@ -155,24 +220,33 @@ export class ChatMessageTimelineService {
     const conditions = [eq(chatMessages.replyToId, parentMessageId)];
     if (cursor) conditions.push(lt(chatMessages.id, cursor));
 
-    const replies = await this.db.query.chatMessages.findMany({
+    const rawReplies = await this.db.query.chatMessages.findMany({
       where: and(...conditions),
       orderBy: [desc(chatMessages.id)],
       limit: safeLimit + 1,
       with: {
-        sender: { columns: { id: true, name: true, image: true } },
         attachments: true,
-        replyTo: { with: { sender: { columns: { id: true, name: true } } } },
+        replyTo: true,
       },
     });
 
-    const page = buildIdCursorPage(replies, safeLimit, (r) => r.id);
-    const [resolvedParent] = await this.withResolvedReferences(actor, [
-      parentMessage,
-    ]);
+    const senderIds = new Set<string>();
+    senderIds.add(rawParent.senderId);
+    if (rawParent.replyTo?.senderId) senderIds.add(rawParent.replyTo.senderId);
+    const page = buildIdCursorPage(rawReplies, safeLimit, (r) => r.id);
+    for (const r of page.data) {
+      senderIds.add(r.senderId);
+      if (r.replyTo?.senderId) senderIds.add(r.replyTo.senderId);
+    }
+
+    const identities = await this.resolveIdentities(actor.orgId, senderIds);
+    const parentMessage = this.enrich(rawParent, identities);
+    const enrichedReplies = page.data.reverse().map((r) => this.enrich(r, identities));
+
+    const [resolvedParent] = await this.withResolvedReferences(actor, [parentMessage]);
     return {
       parentMessage: resolvedParent ?? parentMessage,
-      replies: await this.withResolvedReferences(actor, page.data.reverse()),
+      replies: await this.withResolvedReferences(actor, enrichedReplies),
       nextCursor: page.nextCursor,
     };
   }

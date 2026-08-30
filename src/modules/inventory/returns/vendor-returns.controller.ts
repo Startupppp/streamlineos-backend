@@ -7,7 +7,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { VendorReturnsService } from "./vendor-returns.service";
@@ -29,8 +28,9 @@ export class VendorReturnsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
+  @Validate({ query: listReturnsSchema })
   list(
-    @Query(new ZodValidationPipe(listReturnsSchema)) filters: ListReturnsInput,
+    @Query() filters: ListReturnsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.list(u.orgId, filters);
@@ -50,8 +50,9 @@ export class VendorReturnsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
+  @Validate({ body: createVendorReturnSchema })
   create(
-    @Body(new ZodValidationPipe(createVendorReturnSchema)) body: CreateVendorReturnInput,
+    @Body() body: CreateVendorReturnInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.create(u.orgId, u.userId, body);
@@ -61,10 +62,10 @@ export class VendorReturnsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
   @HttpCode(HttpStatus.OK)
-  @Validate({ params: returnIdParams })
+  @Validate({ params: returnIdParams, body: postVendorReturnSchema })
   post(
     @Param("returnId", ParseIntPipe) returnId: number,
-    @Body(new ZodValidationPipe(postVendorReturnSchema)) body: PostVendorReturnInput,
+    @Body() body: PostVendorReturnInput,
     @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {

@@ -13,7 +13,7 @@ import {
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import {

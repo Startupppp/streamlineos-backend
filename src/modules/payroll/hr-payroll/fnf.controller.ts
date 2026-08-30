@@ -18,7 +18,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { FnfService } from "./fnf.service";
 import {
@@ -45,9 +44,10 @@ export class FnfController {
 
   @Get()
   @RequirePermission("hr:payroll:view")
+  @Validate({ query: listPageQuerySchema })
   async list(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listPageQuerySchema)) query: ListPageQueryInput,
+    @Query() query: ListPageQueryInput,
   ) {
     let isAdmin = u.isOrgOwner;
     if (!isAdmin) {
@@ -60,8 +60,9 @@ export class FnfController {
   @Post()
   @RequirePermission("hr:exit:manage")
   @HttpCode(201)
+  @Validate({ body: createFnfSchema })
   async create(
-    @Body(new ZodValidationPipe(createFnfSchema)) body: CreateFnfInput,
+    @Body() body: CreateFnfInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.fnf.createFnf(u.orgId, body);
@@ -71,10 +72,10 @@ export class FnfController {
 
   @Patch(":fnfId")
   @RequirePermission("hr:exit:manage")
-  @Validate({ params: fnfIdParams })
+  @Validate({ params: fnfIdParams, body: patchFnfSchema })
   async update(
     @Param("fnfId", ParseIntPipe) fnfId: number,
-    @Body(new ZodValidationPipe(patchFnfSchema)) body: PatchFnfInput,
+    @Body() body: PatchFnfInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.fnf.updateFnf(u.orgId, u.userId, fnfId, body);

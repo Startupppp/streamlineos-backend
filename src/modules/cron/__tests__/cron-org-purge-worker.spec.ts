@@ -8,6 +8,13 @@ import { logger } from "../../../common/logger/logger.service";
 import { PURGE_ADAPTERS } from "../../../db/schema/common/organization-purge";
 import { PURGE_ADAPTER_REGISTRY } from "../../organization/core/lifecycle/organization-purge-adapters";
 
+jest.mock("../../../common/relocation/relocation-traffic-tracker", () => ({
+  refreshRelocationTargets: jest.fn().mockResolvedValue(undefined),
+  isRelocationTarget: () => false,
+  recordTargetRequest: jest.fn().mockResolvedValue(undefined),
+  countRequestIfRelocationTarget: jest.fn().mockResolvedValue(undefined),
+}));
+
 const ORG_ID = "org-aaaaaaaa-0000-0000-0000-000000000001";
 const MEMBER_ID = "user-bbbbbbbb-0000-0000-0000-000000000001";
 

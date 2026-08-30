@@ -5,11 +5,12 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { WorkforceCostingService } from "./workforce-costing.service";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
 const costByDeptSchema = z.object({ periodKey: z.string().min(7) });
+const forecastedCostQuerySchema = z.object({ cycleId: z.coerce.number().int().positive() });
 
 @RequireModule("hr")
 @Controller("hr/enterprise/comp/costing")
@@ -27,8 +28,9 @@ export class WorkforceCostingController {
   @Get("by-department")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:analytics:read")
+  @Validate({ query: costByDeptSchema })
   byDepartment(
-    @Query(new ZodValidationPipe(costByDeptSchema)) query: { periodKey: string },
+    @Query() query: { periodKey: string },
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.costByDepartment(u.orgId, query.periodKey);
@@ -44,8 +46,9 @@ export class WorkforceCostingController {
   @Get("forecasted")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:view")
+  @Validate({ query: forecastedCostQuerySchema })
   forecasted(
-    @Query(new ZodValidationPipe(z.object({ cycleId: z.coerce.number().int().positive() }))) query: { cycleId: number },
+    @Query() query: { cycleId: number },
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.forecastedCost(u.orgId, query.cycleId);

@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { ManagerInboxService } from "./manager-inbox.service";
 import { TeamRewardsService } from "./team-rewards.service";
@@ -79,11 +78,11 @@ export class ManagerInboxController {
   @Idempotent("payroll.reimbursement.reject")
   @HttpCode(200)
   @RequirePermission("self:payroll")
-  @Validate({ params: reimbursementIdParams })
+  @Validate({ params: reimbursementIdParams, body: managerRejectSchema })
   rejectReimbursement(
     @CurrentUser() u: CurrentUserContext,
     @Param("reimbursementId", ParseIntPipe) reimbursementId: number,
-    @Body(new ZodValidationPipe(managerRejectSchema)) body: ManagerReject,
+    @Body() body: ManagerReject,
   ) {
     return this.inbox.rejectReimbursement(
       u.orgId,

@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseG
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -41,9 +41,9 @@ export class AttendanceRegularizationController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:regularize")
+  @Validate({ body: createAttendanceRegularizationSchema })
   create(
-    @Body(new ZodValidationPipe(createAttendanceRegularizationSchema))
-    body: CreateAttendanceRegularizationInput,
+    @Body() body: CreateAttendanceRegularizationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.regularizationService.create(u, body);
@@ -52,8 +52,9 @@ export class AttendanceRegularizationController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
+  @Validate({ query: listRegularizationsSchema })
   list(
-    @Query(new ZodValidationPipe(listRegularizationsSchema)) query: z.infer<typeof listRegularizationsSchema>,
+    @Query() query: z.infer<typeof listRegularizationsSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.regularizationService.list(u, query);
@@ -76,10 +77,10 @@ export class AttendanceRegularizationController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
-  @Validate({ params: regularizationIdParams })
+  @Validate({ params: regularizationIdParams, body: rejectRegularizationSchema })
   reject(
     @Param("regularizationId", ParseIntPipe) regularizationId: number,
-    @Body(new ZodValidationPipe(rejectRegularizationSchema)) body: z.infer<typeof rejectRegularizationSchema>,
+    @Body() body: z.infer<typeof rejectRegularizationSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.regularizationService.reject(u, regularizationId, body.rejectionReason);

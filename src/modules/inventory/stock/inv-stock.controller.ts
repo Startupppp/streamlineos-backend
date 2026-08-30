@@ -5,7 +5,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvStockService } from "./inv-stock.service";
 import { InvStockReservationsService } from "./inv-stock-reservations.service";
@@ -16,6 +15,7 @@ import {
   type ListReservationsInput, type CreateReservationInput, type ReleaseReservationInput,
   type OpeningStockInput,
 } from "./dto/inv-stock.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("inventory")
 @Controller("inventory/stock")
@@ -29,8 +29,9 @@ export class InvStockController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: listStockLevelsSchema })
   listLevels(
-    @Query(new ZodValidationPipe(listStockLevelsSchema)) filters: ListStockLevelsInput,
+    @Query() filters: ListStockLevelsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.stock.listStockLevels(u.orgId, u.userId, filters);
@@ -39,8 +40,9 @@ export class InvStockController {
   @Get("transactions")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: listTransactionsSchema })
   listTransactions(
-    @Query(new ZodValidationPipe(listTransactionsSchema)) filters: ListTransactionsInput,
+    @Query() filters: ListTransactionsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.stock.listTransactions(u.orgId, u.userId, filters);
@@ -49,8 +51,9 @@ export class InvStockController {
   @Get("availability")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: availabilityQuerySchema })
   getAvailability(
-    @Query(new ZodValidationPipe(availabilityQuerySchema)) query: AvailabilityQueryInput,
+    @Query() query: AvailabilityQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.stock.getAvailability(u.orgId, u.userId, query);
@@ -59,8 +62,9 @@ export class InvStockController {
   @Get("reservations")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: listReservationsSchema })
   listReservations(
-    @Query(new ZodValidationPipe(listReservationsSchema)) filters: ListReservationsInput,
+    @Query() filters: ListReservationsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reservations.listReservations(u.orgId, filters);
@@ -69,9 +73,10 @@ export class InvStockController {
   @Post("reserve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reserve")
+  @Validate({ body: createReservationSchema })
   createReservation(
     @Headers("idempotency-key") idempotencyKey: string,
-    @Body(new ZodValidationPipe(createReservationSchema)) body: CreateReservationInput,
+    @Body() body: CreateReservationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
@@ -81,8 +86,9 @@ export class InvStockController {
   @Post("release-reservation")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reserve")
+  @Validate({ body: releaseReservationSchema })
   releaseReservation(
-    @Body(new ZodValidationPipe(releaseReservationSchema)) body: ReleaseReservationInput,
+    @Body() body: ReleaseReservationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reservations.releaseReservation(u.orgId, u.userId, body);
@@ -91,9 +97,10 @@ export class InvStockController {
   @Post("opening")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
+  @Validate({ body: openingStockSchema })
   createOpeningBalance(
     @Headers("idempotency-key") idempotencyKey: string,
-    @Body(new ZodValidationPipe(openingStockSchema)) body: OpeningStockInput,
+    @Body() body: OpeningStockInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");

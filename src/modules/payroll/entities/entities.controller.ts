@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PayrollEntitiesService } from "./entities.service";
 import { createEntitySchema, type CreateEntityInput } from "./dto/entities.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -65,9 +64,10 @@ export class PayrollEntitiesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("payroll:policies:manage")
+  @Validate({ body: createEntitySchema })
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createEntitySchema)) body: CreateEntityInput,
+    @Body() body: CreateEntityInput,
   ) {
     return this.service.create(u.orgId, u.userId, body);
   }

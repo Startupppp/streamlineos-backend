@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { BudgetsService } from "./budgets.service";
 import {
   createBudgetSchema,
@@ -45,8 +44,9 @@ export class BudgetsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("timesheets:budgets:manage")
+  @Validate({ body: createBudgetSchema })
   create(
-    @Body(new ZodValidationPipe(createBudgetSchema)) body: CreateBudgetInput,
+    @Body() body: CreateBudgetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.budgets.create(u.orgId, u.userId, body);
@@ -54,10 +54,10 @@ export class BudgetsController {
 
   @Patch(":budgetId")
   @RequirePermission("timesheets:budgets:manage")
-  @Validate({ params: budgetIdParams })
+  @Validate({ params: budgetIdParams, body: updateBudgetSchema })
   update(
     @Param("budgetId", ParseIntPipe) budgetId: number,
-    @Body(new ZodValidationPipe(updateBudgetSchema)) body: UpdateBudgetInput,
+    @Body() body: UpdateBudgetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.budgets.update(u.orgId, u.userId, budgetId, body);

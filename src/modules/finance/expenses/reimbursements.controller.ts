@@ -15,7 +15,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { ReimbursementsService } from "./reimbursements.service";
 import {
@@ -39,8 +38,9 @@ export class ReimbursementsController {
 
   @Get()
   @RequirePermission("accounting:reimbursements:read")
+  @Validate({ query: batchListSchema })
   async list(
-    @Query(new ZodValidationPipe(batchListSchema)) filters: BatchListInput,
+    @Query() filters: BatchListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reimbursements.listBatches(u.orgId, filters);
@@ -50,8 +50,9 @@ export class ReimbursementsController {
   @HttpCode(201)
   @RequirePermission("accounting:reimbursements:manage")
   @Idempotent("accounting.reimbursement-batch.create")
+  @Validate({ body: createBatchSchema })
   async create(
-    @Body(new ZodValidationPipe(createBatchSchema)) body: CreateBatchInput,
+    @Body() body: CreateBatchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reimbursements.createBatch(u, body);
@@ -83,10 +84,10 @@ export class ReimbursementsController {
   @HttpCode(200)
   @RequirePermission("accounting:reimbursements:manage")
   @Idempotent("accounting.reimbursement-batch.pay")
-  @Validate({ params: batchIdParams })
+  @Validate({ params: batchIdParams, body: payBatchSchema })
   async pay(
     @Param("batchId", ParseIntPipe) batchId: number,
-    @Body(new ZodValidationPipe(payBatchSchema)) body: PayBatchInput,
+    @Body() body: PayBatchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reimbursements.payBatch(u, batchId, body);

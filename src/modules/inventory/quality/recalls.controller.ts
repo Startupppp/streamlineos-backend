@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RecallsService } from "./quality-recalls.service";
@@ -24,8 +23,9 @@ export class RecallsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
+  @Validate({ query: listRecallsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listRecallsQuerySchema)) q: ListRecallsQueryInput,
+    @Query() q: ListRecallsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, q);
@@ -45,8 +45,9 @@ export class RecallsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:recall")
+  @Validate({ body: createRecallSchema })
   create(
-    @Body(new ZodValidationPipe(createRecallSchema)) body: CreateRecallInput,
+    @Body() body: CreateRecallInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.create(u.orgId, u.userId, body);
@@ -55,10 +56,10 @@ export class RecallsController {
   @Patch(":recallId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:recall")
-  @Validate({ params: recallIdParams })
+  @Validate({ params: recallIdParams, body: updateRecallSchema })
   update(
     @Param("recallId", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(updateRecallSchema)) body: UpdateRecallInput,
+    @Body() body: UpdateRecallInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.update(u.orgId, u.userId, id, body);

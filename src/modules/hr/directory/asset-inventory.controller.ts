@@ -15,7 +15,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { AssetInventoryService } from "./asset-inventory.service";
 import {
   assignAssetSchema,
@@ -41,8 +41,9 @@ export class AssetInventoryController {
 
   @Get("assets")
   @RequirePermission("hr:assets:view")
+  @Validate({ query: listAssetsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listAssetsQuerySchema)) query: ListAssetsQueryInput,
+    @Query() query: ListAssetsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.assets.list(u.orgId, query);
@@ -51,8 +52,9 @@ export class AssetInventoryController {
   @Post("assets")
   @HttpCode(201)
   @RequirePermission("hr:assets:manage")
+  @Validate({ body: createAssetSchema })
   create(
-    @Body(new ZodValidationPipe(createAssetSchema)) body: CreateAssetInput,
+    @Body() body: CreateAssetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.assets.create(u.orgId, body);
@@ -60,10 +62,10 @@ export class AssetInventoryController {
 
   @Patch("assets/:assetId")
   @RequirePermission("hr:assets:manage")
-  @Validate({ params: assetIdParams })
+  @Validate({ params: assetIdParams, body: patchAssetSchema })
   update(
     @Param("assetId", ParseIntPipe) assetId: number,
-    @Body(new ZodValidationPipe(patchAssetSchema)) body: PatchAssetInput,
+    @Body() body: PatchAssetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.assets.update(u.orgId, assetId, body);
@@ -71,8 +73,9 @@ export class AssetInventoryController {
 
   @Patch("assets")
   @RequirePermission("hr:assets:manage")
+  @Validate({ body: assignAssetSchema })
   assign(
-    @Body(new ZodValidationPipe(assignAssetSchema)) body: AssignAssetInput,
+    @Body() body: AssignAssetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.assets.assign(u.orgId, body);

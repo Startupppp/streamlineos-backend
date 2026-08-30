@@ -13,7 +13,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { TeamEventsService } from "./team-events.service";
 import { createTeamEventSchema, type CreateTeamEventInput } from "./dto/hr-directory.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -37,8 +37,9 @@ export class TeamEventsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ body: createTeamEventSchema })
   createEvent(
-    @Body(new ZodValidationPipe(createTeamEventSchema)) body: CreateTeamEventInput,
+    @Body() body: CreateTeamEventInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.teamEvents.create(u.orgId, u.userId, body);

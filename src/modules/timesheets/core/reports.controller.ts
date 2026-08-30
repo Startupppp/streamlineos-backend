@@ -6,7 +6,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ReportsService } from "./reports.service";
 import { TimesheetAnalyticsService } from "./timesheet-analytics.service";
 import {
@@ -15,6 +14,7 @@ import {
   type OverviewQuery,
   type ReportRangeQuery,
 } from "./dto/reports.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("build")
 @Controller("timesheets/reports")
@@ -27,8 +27,9 @@ export class ReportsController {
 
   @Get("overview")
   @RequirePermission("timesheets:reports:view")
+  @Validate({ query: overviewQuerySchema })
   overview(
-    @Query(new ZodValidationPipe(overviewQuerySchema)) query: OverviewQuery,
+    @Query() query: OverviewQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.getOverview(u, query);
@@ -36,8 +37,9 @@ export class ReportsController {
 
   @Get("utilization")
   @RequirePermission("timesheets:reports:view")
+  @Validate({ query: reportRangeQuerySchema })
   utilization(
-    @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
+    @Query() query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.getUtilization(u, query);
@@ -45,8 +47,9 @@ export class ReportsController {
 
   @Get("client-profitability")
   @RequirePermission("timesheets:reports:view")
+  @Validate({ query: reportRangeQuerySchema })
   clientProfitability(
-    @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
+    @Query() query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.getClientProfitability(u, query);
@@ -54,8 +57,9 @@ export class ReportsController {
 
   @Get("compliance")
   @RequirePermission("timesheets:reports:view")
+  @Validate({ query: reportRangeQuerySchema })
   compliance(
-    @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
+    @Query() query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.getCompliance(u, query);
@@ -63,8 +67,9 @@ export class ReportsController {
 
   @Get("approval-sla")
   @RequirePermission("timesheets:reports:view")
+  @Validate({ query: reportRangeQuerySchema })
   approvalSla(
-    @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
+    @Query() query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.getApprovalSla(u, query);
@@ -72,8 +77,9 @@ export class ReportsController {
 
   @Get("billing-leakage")
   @RequirePermission("timesheets:reports:view")
+  @Validate({ query: reportRangeQuerySchema })
   billingLeakage(
-    @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
+    @Query() query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.getBillingLeakage(u, query);

@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { TaxPaymentsService } from "./tax-payments.service";
 import {
@@ -28,8 +27,9 @@ export class TaxPaymentsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:read")
+  @Validate({ query: listTaxPaymentsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listTaxPaymentsQuerySchema)) query: ListTaxPaymentsQuery,
+    @Query() query: ListTaxPaymentsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.taxPayments.list(u.orgId, query);
@@ -40,8 +40,9 @@ export class TaxPaymentsController {
   @RequirePermission("accounting:taxes:pay")
   @HttpCode(201)
   @Idempotent("accounting.tax-payment.create")
+  @Validate({ body: createTaxPaymentSchema })
   create(
-    @Body(new ZodValidationPipe(createTaxPaymentSchema)) body: CreateTaxPaymentInput,
+    @Body() body: CreateTaxPaymentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.taxPayments.create(u, body);

@@ -6,7 +6,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { RostersService } from "./rosters.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -47,9 +47,10 @@ export class RostersController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ body: createRosterSchema })
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createRosterSchema)) body: CreateRosterInput,
+    @Body() body: CreateRosterInput,
   ) {
     return this.service.createRoster(u.orgId, u.userId, body);
   }
@@ -66,11 +67,11 @@ export class RostersController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
-  @Validate({ params: rosterIdParams })
+  @Validate({ params: rosterIdParams, body: upsertRosterEntrySchema })
   upsertEntry(
     @CurrentUser() u: CurrentUserContext,
     @Param("rosterId", ParseIntPipe) rosterId: number,
-    @Body(new ZodValidationPipe(upsertRosterEntrySchema)) body: UpsertRosterEntryInput,
+    @Body() body: UpsertRosterEntryInput,
   ) {
     return this.service.upsertRosterEntry(u.orgId, { rosterId, ...body });
   }

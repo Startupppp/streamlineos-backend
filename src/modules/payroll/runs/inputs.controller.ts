@@ -19,7 +19,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { resolvePayrollRunsViewScope } from "../payroll-scope";
 import { InputsService } from "./inputs.service";
@@ -46,10 +45,10 @@ export class InputsController {
 
   @Get()
   @RequirePermission("payroll:runs:view")
-  @Validate({ params: runIdParams })
+  @Validate({ params: runIdParams, query: inputsQuerySchema })
   async list(
     @Param("runId", ParseIntPipe) runId: number,
-    @Query(new ZodValidationPipe(inputsQuerySchema)) query: InputsQuery,
+    @Query() query: InputsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolvePayrollRunsViewScope(this.access, u);
@@ -60,11 +59,11 @@ export class InputsController {
 
   @Patch(":inputId")
   @RequirePermission("payroll:runs:update")
-  @Validate({ params: runAndInputIdParams })
+  @Validate({ params: runAndInputIdParams, body: patchInputSchema })
   async patchInput(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("inputId", ParseIntPipe) inputId: number,
-    @Body(new ZodValidationPipe(patchInputSchema)) body: PatchInputInput,
+    @Body() body: PatchInputInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.inputsService.patchInput(u.orgId, runId, inputId, u.userId, body);

@@ -18,7 +18,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { ExitService } from "./exit.service";
 import { ExitWriteService } from "./exit-write.service";
 import { ExperienceLetterService } from "./experience-letter.service";

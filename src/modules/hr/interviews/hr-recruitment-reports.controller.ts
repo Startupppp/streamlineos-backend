@@ -14,7 +14,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { HrRecruitmentReportsService } from "./hr-recruitment-reports.service";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import {
@@ -37,8 +36,9 @@ export class HrRecruitmentReportsController {
   @Post("reports/generate")
   @HttpCode(200)
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: generateReportSchema })
   generateReport(
-    @Body(new ZodValidationPipe(generateReportSchema)) body: GenerateReportInput,
+    @Body() body: GenerateReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.generateReport(u.orgId, body);
@@ -53,8 +53,9 @@ export class HrRecruitmentReportsController {
   @Post("reports/scheduled")
   @HttpCode(201)
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: createScheduledReportSchema })
   createScheduled(
-    @Body(new ZodValidationPipe(createScheduledReportSchema)) body: CreateScheduledReportInput,
+    @Body() body: CreateScheduledReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.createScheduledReport(u.orgId, u.userId, body);

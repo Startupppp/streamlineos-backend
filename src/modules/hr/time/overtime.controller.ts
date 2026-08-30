@@ -7,7 +7,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { OvertimeService } from "./overtime.service";
 import { createOvertimeSchema, type CreateOvertimeInput } from "./dto/overtime.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
@@ -28,9 +28,10 @@ export class OvertimeController {
 
   @Get()
   @RequirePermission("hr:attendance:view")
+  @Validate({ query: listQuerySchema })
   list(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listQuerySchema)) query: z.infer<typeof listQuerySchema>,
+    @Query() query: z.infer<typeof listQuerySchema>,
   ) {
     return this.service.listRequests(u.orgId, query);
   }
@@ -38,9 +39,10 @@ export class OvertimeController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:attendance:view")
+  @Validate({ body: createOvertimeSchema })
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createOvertimeSchema)) body: CreateOvertimeInput,
+    @Body() body: CreateOvertimeInput,
   ) {
     return this.service.createRequest(u.orgId, u.userId, body);
   }

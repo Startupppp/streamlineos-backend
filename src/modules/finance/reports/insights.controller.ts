@@ -5,9 +5,9 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { InsightsService } from "./insights.service";
 import { insightsQuerySchema, type InsightsQuery } from "./dto/insights.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("accounting")
 @Controller("accounting/insights")
@@ -18,8 +18,9 @@ export class InsightsController {
   @Get("anomalies")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: insightsQuerySchema })
   getAnomalies(
-    @Query(new ZodValidationPipe(insightsQuerySchema)) query: InsightsQuery,
+    @Query() query: InsightsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.insights.getAnomalies(u.orgId, query);

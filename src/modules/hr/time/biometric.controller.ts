@@ -6,7 +6,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { BiometricService } from "./biometric.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 
@@ -42,9 +42,10 @@ export class BiometricController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ body: createDeviceSchema })
   createDevice(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createDeviceSchema)) body: CreateDeviceInput,
+    @Body() body: CreateDeviceInput,
   ) {
     return this.service.createDevice(u.orgId, body);
   }
@@ -52,11 +53,11 @@ export class BiometricController {
   @Patch("devices/:deviceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
-  @Validate({ params: deviceIdParams })
+  @Validate({ params: deviceIdParams, body: updateDeviceSchema })
   updateDevice(
     @CurrentUser() u: CurrentUserContext,
     @Param("deviceId", ParseIntPipe) deviceId: number,
-    @Body(new ZodValidationPipe(updateDeviceSchema)) body: UpdateDeviceInput,
+    @Body() body: UpdateDeviceInput,
   ) {
     return this.service.updateDevice(u.orgId, deviceId, body);
   }

@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { HoldsService } from "./quality-holds.service";
@@ -24,8 +23,9 @@ export class HoldsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
+  @Validate({ query: listHoldsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listHoldsQuerySchema)) q: ListHoldsQueryInput,
+    @Query() q: ListHoldsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, u.userId, q);
@@ -45,9 +45,10 @@ export class HoldsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Validate({ body: createHoldSchema })
   create(
     @Headers("idempotency-key") idempotencyKey: string | undefined,
-    @Body(new ZodValidationPipe(createHoldSchema)) body: CreateHoldInput,
+    @Body() body: CreateHoldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");

@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvTraceabilityService } from "./inv-traceability.service";
@@ -39,8 +38,9 @@ export class InvTraceabilityController {
   @Get("lots")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: listLotsSchema })
   async listLots(
-    @Query(new ZodValidationPipe(listLotsSchema)) filters: ListLotsInput,
+    @Query() filters: ListLotsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.traceability.listLots(u.orgId, filters);
@@ -60,10 +60,10 @@ export class InvTraceabilityController {
   @Patch("lots/:lotId/status")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
-  @Validate({ params: lotIdParams })
+  @Validate({ params: lotIdParams, body: updateLotStatusSchema })
   async updateLotStatus(
     @Param("lotId", ParseIntPipe) lotId: number,
-    @Body(new ZodValidationPipe(updateLotStatusSchema)) body: UpdateLotStatusInput,
+    @Body() body: UpdateLotStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.traceability.updateLotStatus(u.orgId, lotId, body);
@@ -72,8 +72,9 @@ export class InvTraceabilityController {
   @Get("serials")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: listSerialsSchema })
   async listSerials(
-    @Query(new ZodValidationPipe(listSerialsSchema)) filters: ListSerialsInput,
+    @Query() filters: ListSerialsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.traceability.listSerials(u.orgId, filters);
@@ -93,8 +94,9 @@ export class InvTraceabilityController {
   @Get("expiry")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: expiryQuerySchema })
   async getExpiryList(
-    @Query(new ZodValidationPipe(expiryQuerySchema)) query: ExpiryQueryInput,
+    @Query() query: ExpiryQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.traceability.getExpiryReport(u.orgId, query.withinDays);
@@ -103,8 +105,9 @@ export class InvTraceabilityController {
   @Get("traceability")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: traceabilityQuerySchema })
   async getTraceabilityChain(
-    @Query(new ZodValidationPipe(traceabilityQuerySchema)) query: TraceabilityQueryInput,
+    @Query() query: TraceabilityQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.chain.getChain(u.orgId, query);

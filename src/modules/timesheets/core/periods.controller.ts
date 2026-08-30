@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PeriodsService } from "./periods.service";
 import { periodsQuerySchema, type PeriodsQuery } from "./dto/periods.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
@@ -32,8 +31,9 @@ export class PeriodsController {
 
   @Get()
   @RequirePermission("timesheets:entries:view")
+  @Validate({ query: periodsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(periodsQuerySchema)) query: PeriodsQuery,
+    @Query() query: PeriodsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.periods.listPeriods(u, query);

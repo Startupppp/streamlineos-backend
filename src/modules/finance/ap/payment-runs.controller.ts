@@ -16,7 +16,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PaymentRunsService } from "./payment-runs.service";
 import { PaymentRunExecutorService } from "./payment-run-executor.service";
@@ -46,8 +45,9 @@ export class PaymentRunsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:read")
+  @Validate({ query: listPaymentRunsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listPaymentRunsQuerySchema)) query: ListPaymentRunsQuery,
+    @Query() query: ListPaymentRunsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listRuns(u.orgId, query);
@@ -69,8 +69,9 @@ export class PaymentRunsController {
   @RequirePermission("accounting:payment-runs:manage")
   @HttpCode(201)
   @Idempotent("accounting.payment-run.create")
+  @Validate({ body: createPaymentRunSchema })
   create(
-    @Body(new ZodValidationPipe(createPaymentRunSchema)) body: CreatePaymentRunInput,
+    @Body() body: CreatePaymentRunInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createRun(u.orgId, u.userId, body);
@@ -117,11 +118,11 @@ export class PaymentRunsController {
   @Patch(":runId/items/:itemId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:manage")
-  @Validate({ params: runIditemIdParams })
+  @Validate({ params: runIditemIdParams, body: updatePaymentRunItemSchema })
   updateItem(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("itemId", ParseIntPipe) itemId: number,
-    @Body(new ZodValidationPipe(updatePaymentRunItemSchema)) body: UpdatePaymentRunItemInput,
+    @Body() body: UpdatePaymentRunItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateRunItem(u.orgId, u.userId, runId, itemId, body);

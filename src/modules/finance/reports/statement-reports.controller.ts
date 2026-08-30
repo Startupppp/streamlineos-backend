@@ -6,7 +6,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { StatementReportsService } from "./statement-reports.service";
 import { buildCsv } from "./finance-reports-csv.util";
 import { dateRangeSchema, type DateRangeQuery } from "./dto/finance-reports.schemas";
@@ -25,10 +24,10 @@ export class StatementReportsController {
   @Get("vendor-statement/:vendorId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
-  @Validate({ params: vendorIdParams })
+  @Validate({ params: vendorIdParams, query: dateRangeSchema })
   getVendorStatement(
     @Param("vendorId", ParseIntPipe) vendorId: number,
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.statementsService.vendorStatement(u.orgId, vendorId, query.from, query.to);
@@ -37,10 +36,10 @@ export class StatementReportsController {
   @Get("vendor-statement/:vendorId/export")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:export")
-  @Validate({ params: vendorIdParams })
+  @Validate({ params: vendorIdParams, query: dateRangeSchema })
   async exportVendorStatement(
     @Param("vendorId", ParseIntPipe) vendorId: number,
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
@@ -57,10 +56,10 @@ export class StatementReportsController {
   @Get("customer-statement/:clientId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
-  @Validate({ params: clientIdParams })
+  @Validate({ params: clientIdParams, query: dateRangeSchema })
   getCustomerStatement(
     @Param("clientId", ParseIntPipe) clientId: number,
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.statementsService.customerStatement(u.orgId, clientId, query.from, query.to);
@@ -69,10 +68,10 @@ export class StatementReportsController {
   @Get("customer-statement/:clientId/export")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:export")
-  @Validate({ params: clientIdParams })
+  @Validate({ params: clientIdParams, query: dateRangeSchema })
   async exportCustomerStatement(
     @Param("clientId", ParseIntPipe) clientId: number,
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
@@ -89,8 +88,9 @@ export class StatementReportsController {
   @Get("sales-by-customer")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: dateRangeSchema })
   getSalesByCustomer(
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.statementsService.salesByCustomer(u.orgId, query.from, query.to);
@@ -99,8 +99,9 @@ export class StatementReportsController {
   @Get("sales-by-customer/export")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:export")
+  @Validate({ query: dateRangeSchema })
   async exportSalesByCustomer(
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
@@ -117,8 +118,9 @@ export class StatementReportsController {
   @Get("sales-by-item")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: dateRangeSchema })
   getSalesByItem(
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.statementsService.salesByItem(u.orgId, query.from, query.to);
@@ -127,8 +129,9 @@ export class StatementReportsController {
   @Get("sales-by-item/export")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:export")
+  @Validate({ query: dateRangeSchema })
   async exportSalesByItem(
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
@@ -145,8 +148,9 @@ export class StatementReportsController {
   @Get("expense-by-category")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: dateRangeSchema })
   getExpenseByCategory(
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.statementsService.expenseByCategory(u.orgId, query.from, query.to);
@@ -155,8 +159,9 @@ export class StatementReportsController {
   @Get("expense-by-category/export")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:export")
+  @Validate({ query: dateRangeSchema })
   async exportExpenseByCategory(
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
@@ -173,8 +178,9 @@ export class StatementReportsController {
   @Get("tax-summary")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: dateRangeSchema })
   getTaxSummary(
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.statementsService.taxSummary(u.orgId, query.from, query.to);
@@ -183,8 +189,9 @@ export class StatementReportsController {
   @Get("tax-summary/export")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:export")
+  @Validate({ query: dateRangeSchema })
   async exportTaxSummary(
-    @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
+    @Query() query: DateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {

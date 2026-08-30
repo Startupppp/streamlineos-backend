@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CrmMetadataService } from "./crm-metadata.service";
 import { CrmValidationRulesService } from "./crm-validation-rules.service";
 import { CrmBlueprintsService } from "./crm-blueprints.service";
@@ -55,17 +54,16 @@ export class CrmMetadataController {
 
   @Get("pipelines")
   @RequirePermission("crm:settings:view")
-  listPipelines(
-    @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listPipelinesSchema)) _: unknown,
-  ) {
+  @Validate({ query: listPipelinesSchema })
+  listPipelines(@CurrentUser() u: CurrentUserContext) {
     return this.svc.listPipelines(u.orgId);
   }
 
   @Post("pipelines")
   @RequirePermission("crm:settings:manage")
+  @Validate({ body: createPipelineSchema })
   createPipeline(
-    @Body(new ZodValidationPipe(createPipelineSchema)) body: CreatePipelineInput,
+    @Body() body: CreatePipelineInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createPipeline(u, body);
@@ -73,10 +71,10 @@ export class CrmMetadataController {
 
   @Patch("pipelines/:pipelineId")
   @RequirePermission("crm:settings:manage")
-  @Validate({ params: pipelineIdParams })
+  @Validate({ params: pipelineIdParams, body: updatePipelineSchema })
   updatePipeline(
     @Param("pipelineId") pipelineId: string,
-    @Body(new ZodValidationPipe(updatePipelineSchema)) body: UpdatePipelineInput,
+    @Body() body: UpdatePipelineInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updatePipeline(u, pipelineId, body);
@@ -104,10 +102,10 @@ export class CrmMetadataController {
 
   @Post("pipelines/:pipelineId/stages")
   @RequirePermission("crm:settings:manage")
-  @Validate({ params: pipelineIdParams })
+  @Validate({ params: pipelineIdParams, body: createStageSchema })
   createStage(
     @Param("pipelineId") pipelineId: string,
-    @Body(new ZodValidationPipe(createStageSchema)) body: CreateStageInput,
+    @Body() body: CreateStageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createStage(u, pipelineId, body);
@@ -115,10 +113,10 @@ export class CrmMetadataController {
 
   @Post("pipelines/:pipelineId/stages/reorder")
   @RequirePermission("crm:settings:manage")
-  @Validate({ params: pipelineIdParams })
+  @Validate({ params: pipelineIdParams, body: reorderStagesSchema })
   reorderStages(
     @Param("pipelineId") pipelineId: string,
-    @Body(new ZodValidationPipe(reorderStagesSchema)) body: ReorderStagesInput,
+    @Body() body: ReorderStagesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.reorderStages(u, pipelineId, body);
@@ -126,10 +124,10 @@ export class CrmMetadataController {
 
   @Patch("stages/:stageId")
   @RequirePermission("crm:settings:manage")
-  @Validate({ params: stageIdParams })
+  @Validate({ params: stageIdParams, body: updateStageSchema })
   updateStage(
     @Param("stageId") stageId: string,
-    @Body(new ZodValidationPipe(updateStageSchema)) body: UpdateStageInput,
+    @Body() body: UpdateStageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateStage(u, stageId, body);
@@ -149,7 +147,7 @@ export class CrmMetadataController {
   @RequirePermission("crm:leads:view")
   @Validate({ params: optionTypeParams })
   listOptions(
-    @Param("optionType", new ZodValidationPipe(optionTypeSchema)) optionType: string,
+    @Param("optionType") optionType: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listOptions(u.orgId, optionType);
@@ -157,10 +155,10 @@ export class CrmMetadataController {
 
   @Post("options/:optionType")
   @RequirePermission("crm:settings:manage")
-  @Validate({ params: optionTypeParams })
+  @Validate({ params: optionTypeParams, body: createOptionSchema })
   createOption(
-    @Param("optionType", new ZodValidationPipe(optionTypeSchema)) optionType: string,
-    @Body(new ZodValidationPipe(createOptionSchema)) body: CreateOptionInput,
+    @Param("optionType") optionType: string,
+    @Body() body: CreateOptionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createOption(u, optionType, body);
@@ -168,11 +166,11 @@ export class CrmMetadataController {
 
   @Patch("options/:optionType/:optionId")
   @RequirePermission("crm:settings:manage")
-  @Validate({ params: optionTypeoptionIdParams })
+  @Validate({ params: optionTypeoptionIdParams, body: updateOptionSchema })
   updateOption(
-    @Param("optionType", new ZodValidationPipe(optionTypeSchema)) optionType: string,
+    @Param("optionType") optionType: string,
     @Param("optionId") optionId: string,
-    @Body(new ZodValidationPipe(updateOptionSchema)) body: UpdateOptionInput,
+    @Body() body: UpdateOptionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateOption(u, optionType, optionId, body);
@@ -182,7 +180,7 @@ export class CrmMetadataController {
   @RequirePermission("crm:settings:manage")
   @Validate({ params: optionTypeoptionIdParams })
   deleteOption(
-    @Param("optionType", new ZodValidationPipe(optionTypeSchema)) optionType: string,
+    @Param("optionType") optionType: string,
     @Param("optionId") optionId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -197,8 +195,9 @@ export class CrmMetadataController {
 
   @Post("validation-rules")
   @RequirePermission("crm:settings:manage")
+  @Validate({ body: createValidationRuleSchema })
   createValidationRule(
-    @Body(new ZodValidationPipe(createValidationRuleSchema)) body: CreateValidationRuleInput,
+    @Body() body: CreateValidationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.validationRulesSvc.create(u, body);
@@ -206,10 +205,10 @@ export class CrmMetadataController {
 
   @Patch("validation-rules/:ruleId")
   @RequirePermission("crm:settings:manage")
-  @Validate({ params: ruleIdParams })
+  @Validate({ params: ruleIdParams, body: updateValidationRuleSchema })
   updateValidationRule(
     @Param("ruleId") ruleId: string,
-    @Body(new ZodValidationPipe(updateValidationRuleSchema)) body: UpdateValidationRuleInput,
+    @Body() body: UpdateValidationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.validationRulesSvc.update(u, ruleId, body);
@@ -227,8 +226,9 @@ export class CrmMetadataController {
 
   @Post("validation-rules/test")
   @RequirePermission("crm:settings:view")
+  @Validate({ body: testValidationSchema })
   testValidationRule(
-    @Body(new ZodValidationPipe(testValidationSchema)) body: TestValidationInput,
+    @Body() body: TestValidationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.validationRulesSvc.testValidation(u, body);
@@ -242,8 +242,9 @@ export class CrmMetadataController {
 
   @Post("blueprints")
   @RequirePermission("crm:settings:manage")
+  @Validate({ body: createBlueprintSchema })
   createBlueprint(
-    @Body(new ZodValidationPipe(createBlueprintSchema)) body: CreateBlueprintInput,
+    @Body() body: CreateBlueprintInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.blueprintsSvc.create(u, body);
@@ -251,10 +252,10 @@ export class CrmMetadataController {
 
   @Patch("blueprints/:blueprintId")
   @RequirePermission("crm:settings:manage")
-  @Validate({ params: blueprintIdParams })
+  @Validate({ params: blueprintIdParams, body: updateBlueprintSchema })
   updateBlueprint(
     @Param("blueprintId") blueprintId: string,
-    @Body(new ZodValidationPipe(updateBlueprintSchema)) body: UpdateBlueprintInput,
+    @Body() body: UpdateBlueprintInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.blueprintsSvc.update(u, blueprintId, body);
@@ -272,10 +273,10 @@ export class CrmMetadataController {
 
   @Post("blueprints/:blueprintId/test-transition")
   @RequirePermission("crm:settings:view")
-  @Validate({ params: blueprintIdParams })
+  @Validate({ params: blueprintIdParams, body: testTransitionSchema })
   testBlueprintTransition(
     @Param("blueprintId") blueprintId: string,
-    @Body(new ZodValidationPipe(testTransitionSchema)) body: TestTransitionInput,
+    @Body() body: TestTransitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.blueprintsSvc.testTransition(u.orgId, blueprintId, body.fromStageKey, body.toStageKey, body.record);
@@ -283,10 +284,10 @@ export class CrmMetadataController {
 
   @Post("blueprints/:blueprintId/test")
   @RequirePermission("crm:settings:view")
-  @Validate({ params: blueprintIdParams })
+  @Validate({ params: blueprintIdParams, body: testTransitionSchema })
   testBlueprintTransitionAlias(
     @Param("blueprintId") blueprintId: string,
-    @Body(new ZodValidationPipe(testTransitionSchema)) body: TestTransitionInput,
+    @Body() body: TestTransitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.blueprintsSvc.testTransition(u.orgId, blueprintId, body.fromStageKey, body.toStageKey, body.record);
@@ -304,10 +305,10 @@ export class CrmMetadataController {
 
   @Post("blueprints/:blueprintId/transitions")
   @RequirePermission("crm:settings:manage")
-  @Validate({ params: blueprintIdParams })
+  @Validate({ params: blueprintIdParams, body: createTransitionSchema })
   createBlueprintTransition(
     @Param("blueprintId") blueprintId: string,
-    @Body(new ZodValidationPipe(createTransitionSchema)) body: CreateTransitionInput,
+    @Body() body: CreateTransitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.blueprintsSvc.createTransition(u, blueprintId, body);
@@ -315,11 +316,11 @@ export class CrmMetadataController {
 
   @Patch("blueprints/:blueprintId/transitions/:transitionId")
   @RequirePermission("crm:settings:manage")
-  @Validate({ params: blueprintIdtransitionIdParams })
+  @Validate({ params: blueprintIdtransitionIdParams, body: updateTransitionSchema })
   updateBlueprintTransition(
     @Param("blueprintId") blueprintId: string,
     @Param("transitionId") transitionId: string,
-    @Body(new ZodValidationPipe(updateTransitionSchema)) body: UpdateTransitionInput,
+    @Body() body: UpdateTransitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.blueprintsSvc.updateTransition(u, blueprintId, transitionId, body);

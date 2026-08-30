@@ -13,7 +13,6 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CrmConsentService } from "./crm-consent.service";
 import { Public } from "../../../common/auth/public.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
@@ -43,7 +42,7 @@ export class CrmConsentController {
   @RequirePermission("crm:contacts:view")
   @Validate({ params: contactIdParams })
   listForContact(
-    @Param(new ZodValidationPipe(contactParamSchema)) params: ContactParam,
+    @Param() params: ContactParam,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.consent.listForContact(u.orgId, params.contactId);
@@ -52,10 +51,10 @@ export class CrmConsentController {
   @Post("contacts/:contactId")
   @HttpCode(200)
   @RequirePermission("crm:contacts:manage")
-  @Validate({ params: contactIdParams })
+  @Validate({ params: contactIdParams, body: recordConsentSchema })
   async record(
-    @Param(new ZodValidationPipe(contactParamSchema)) params: ContactParam,
-    @Body(new ZodValidationPipe(recordConsentSchema)) body: RecordConsentInput,
+    @Param() params: ContactParam,
+    @Body() body: RecordConsentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.consent.record(u.orgId, {
@@ -74,8 +73,9 @@ export class CrmConsentController {
 
   @Get("missing")
   @RequirePermission("crm:contacts:view")
+  @Validate({ query: missingConsentQuerySchema })
   async countMissing(
-    @Query(new ZodValidationPipe(missingConsentQuerySchema)) query: MissingConsentQuery,
+    @Query() query: MissingConsentQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return { channel: query.channel, count: await this.consent.countMissingConsent(u.orgId, query.channel) };
@@ -96,8 +96,9 @@ export class CrmPublicConsentController {
   @HttpCode(200)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("crm:public-unsubscribe")
+  @Validate({ body: unsubscribeSchema })
   async unsubscribe(
-    @Body(new ZodValidationPipe(unsubscribeSchema)) body: UnsubscribeInput,
+    @Body() body: UnsubscribeInput,
   ) {
     const payload = verifyUnsubscribeToken(body.token);
 

@@ -7,7 +7,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { CustomerReturnsService } from "./customer-returns.service";
@@ -29,8 +28,9 @@ export class CustomerReturnsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
+  @Validate({ query: listReturnsSchema })
   list(
-    @Query(new ZodValidationPipe(listReturnsSchema)) filters: ListReturnsInput,
+    @Query() filters: ListReturnsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.list(u.orgId, filters);
@@ -50,8 +50,9 @@ export class CustomerReturnsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
+  @Validate({ body: createCustomerReturnSchema })
   create(
-    @Body(new ZodValidationPipe(createCustomerReturnSchema)) body: CreateCustomerReturnInput,
+    @Body() body: CreateCustomerReturnInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.create(u.orgId, u.userId, body);
@@ -61,10 +62,10 @@ export class CustomerReturnsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
   @HttpCode(HttpStatus.OK)
-  @Validate({ params: returnIdParams })
+  @Validate({ params: returnIdParams, body: postCustomerReturnSchema })
   post(
     @Param("returnId", ParseIntPipe) returnId: number,
-    @Body(new ZodValidationPipe(postCustomerReturnSchema)) body: PostCustomerReturnInput,
+    @Body() body: PostCustomerReturnInput,
     @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {

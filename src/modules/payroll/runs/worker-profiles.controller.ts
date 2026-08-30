@@ -18,7 +18,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProfilesService } from "./profiles.service";
 import {
   createProfileSchema,
@@ -52,10 +51,10 @@ export class WorkerProfilesController {
   @Post(":workerId/profiles")
   @HttpCode(201)
   @RequirePermission("payroll:salaries:update")
-  @Validate({ params: workerIdParams })
+  @Validate({ params: workerIdParams, body: createProfileSchema })
   async createProfile(
     @Param("workerId") workerId: string,
-    @Body(new ZodValidationPipe(createProfileSchema)) body: CreateProfileInput,
+    @Body() body: CreateProfileInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.profilesService.createProfileByWorker(u.orgId, workerId, u.userId, body);
@@ -63,11 +62,11 @@ export class WorkerProfilesController {
 
   @Patch(":workerId/profiles/:profileId")
   @RequirePermission("payroll:salaries:update")
-  @Validate({ params: workerIdprofileIdParams })
+  @Validate({ params: workerIdprofileIdParams, body: patchProfileSchema })
   async patchProfile(
     @Param("workerId") workerId: string,
     @Param("profileId", ParseIntPipe) profileId: number,
-    @Body(new ZodValidationPipe(patchProfileSchema)) body: PatchProfileInput,
+    @Body() body: PatchProfileInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.profilesService.patchProfileByWorker(

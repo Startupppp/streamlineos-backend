@@ -17,7 +17,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { AccessService } from "../../access/access.service";
 import { resolvePerformanceScope } from "./performance-scope";
 import { PerformanceGoalsService } from "./performance-goals.service";
@@ -82,8 +82,9 @@ export class PerformanceController {
   @Post("goals")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: createGoalSchema })
   createGoal(
-    @Body(new ZodValidationPipe(createGoalSchema)) body: CreateGoalInput,
+    @Body() body: CreateGoalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.goalsService.createGoal(u.orgId, body);
@@ -91,8 +92,9 @@ export class PerformanceController {
 
   @Patch("goals")
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: updateGoalCollectionSchema })
   updateGoalCollection(
-    @Body(new ZodValidationPipe(updateGoalCollectionSchema)) body: UpdateGoalCollectionInput,
+    @Body() body: UpdateGoalCollectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.goalsService.updateGoalFromCollection(u.orgId, body);
@@ -100,10 +102,10 @@ export class PerformanceController {
 
   @Patch("goals/:goalId")
   @RequirePermission("hr:performance:view")
-  @Validate({ params: goalIdParams })
+  @Validate({ params: goalIdParams, body: updateGoalItemSchema })
   async updateGoal(
     @Param("goalId", ParseIntPipe) goalId: number,
-    @Body(new ZodValidationPipe(updateGoalItemSchema)) body: UpdateGoalItemInput,
+    @Body() body: UpdateGoalItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.goalsService.updateGoalItem(u.orgId, u.userId, await this.canManagePerformance(u), goalId, body);
@@ -134,8 +136,9 @@ export class PerformanceController {
   @Post("key-results")
   @HttpCode(201)
   @RequirePermission("hr:performance:view")
+  @Validate({ body: createKeyResultSchema })
   async createKeyResult(
-    @Body(new ZodValidationPipe(createKeyResultSchema)) body: CreateKeyResultInput,
+    @Body() body: CreateKeyResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.goalsService.createKeyResult(u.orgId, u.userId, await this.canManagePerformance(u), body);
@@ -143,8 +146,9 @@ export class PerformanceController {
 
   @Patch("key-results")
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: updateKeyResultSchema })
   updateKeyResult(
-    @Body(new ZodValidationPipe(updateKeyResultSchema)) body: UpdateKeyResultInput,
+    @Body() body: UpdateKeyResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.goalsService.updateKeyResult(u.orgId, body);
@@ -162,8 +166,9 @@ export class PerformanceController {
   @Post("one-on-ones")
   @HttpCode(201)
   @RequirePermission("hr:performance:view")
+  @Validate({ body: createOneOnOneSchema })
   createOneOnOne(
-    @Body(new ZodValidationPipe(createOneOnOneSchema)) body: CreateOneOnOneInput,
+    @Body() body: CreateOneOnOneInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.createOneOnOne(u.orgId, u.userId, body);

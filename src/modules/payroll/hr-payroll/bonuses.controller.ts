@@ -19,7 +19,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { BonusesService } from "./bonuses.service";
 import {
@@ -46,9 +45,10 @@ export class BonusesController {
 
   @Get()
   @RequirePermission("hr:payroll:view")
+  @Validate({ query: listPageQuerySchema })
   async list(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listPageQuerySchema)) query: ListPageQueryInput,
+    @Query() query: ListPageQueryInput,
   ) {
     let isAdmin = u.isOrgOwner;
     if (!isAdmin) {
@@ -61,8 +61,9 @@ export class BonusesController {
   @Post()
   @RequirePermission("hr:bonuses:manage")
   @HttpCode(201)
+  @Validate({ body: createBonusSchema })
   create(
-    @Body(new ZodValidationPipe(createBonusSchema)) body: CreateBonusInput,
+    @Body() body: CreateBonusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.bonuses.createBonus(u.orgId, body);
@@ -70,10 +71,10 @@ export class BonusesController {
 
   @Patch(":bonusId")
   @RequirePermission("hr:bonuses:manage")
-  @Validate({ params: bonusIdParams })
+  @Validate({ params: bonusIdParams, body: patchBonusSchema })
   async update(
     @Param("bonusId", ParseIntPipe) bonusId: number,
-    @Body(new ZodValidationPipe(patchBonusSchema)) body: PatchBonusInput,
+    @Body() body: PatchBonusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.bonuses.updateBonus(u.orgId, u.userId, bonusId, body);

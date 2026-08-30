@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { HrWebhooksService } from "./hr-webhooks.service";
 import {
@@ -70,8 +69,9 @@ export class HrWebhooksController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:integrations:manage")
+  @Validate({ body: createHrWebhookSchema })
   create(
-    @Body(new ZodValidationPipe(createHrWebhookSchema)) body: CreateHrWebhookInput,
+    @Body() body: CreateHrWebhookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.webhooks.createSubscription(u.orgId, u.userId, body);
@@ -79,10 +79,10 @@ export class HrWebhooksController {
 
   @Patch(":subscriptionId")
   @RequirePermission("hr:integrations:manage")
-  @Validate({ params: subscriptionIdParams })
+  @Validate({ params: subscriptionIdParams, body: updateHrWebhookSchema })
   update(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
-    @Body(new ZodValidationPipe(updateHrWebhookSchema)) body: UpdateHrWebhookInput,
+    @Body() body: UpdateHrWebhookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.webhooks.updateSubscription(u.orgId, subscriptionId, body);
@@ -112,11 +112,11 @@ export class HrWebhooksController {
 
   @Get(":subscriptionId/deliveries")
   @RequirePermission("hr:integrations:manage")
-  @Validate({ params: subscriptionIdParams })
+  @Validate({ params: subscriptionIdParams, query: listDeliveriesSchema })
   listDeliveries(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listDeliveriesSchema)) query: ListDeliveriesInput,
+    @Query() query: ListDeliveriesInput,
   ) {
     return this.webhooks.listDeliveries(u.orgId, subscriptionId, query);
   }

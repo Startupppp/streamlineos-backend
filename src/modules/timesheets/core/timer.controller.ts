@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TimerService } from "./timer.service";
 import {
   startTimerSchema,
@@ -43,8 +42,9 @@ export class TimerController {
   @Post("start")
   @HttpCode(201)
   @RequirePermission("timesheets:entries:create")
+  @Validate({ body: startTimerSchema })
   start(
-    @Body(new ZodValidationPipe(startTimerSchema)) body: StartTimerInput,
+    @Body() body: StartTimerInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.timer.startTimer(u, body);
@@ -97,10 +97,10 @@ export class TimerController {
   @Post(":timerId/convert")
   @HttpCode(201)
   @RequirePermission("timesheets:entries:create")
-  @Validate({ params: timerIdParams })
+  @Validate({ params: timerIdParams, body: convertTimerSchema })
   convert(
     @Param("timerId", ParseIntPipe) timerId: number,
-    @Body(new ZodValidationPipe(convertTimerSchema)) body: ConvertTimerInput,
+    @Body() body: ConvertTimerInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.timer.convertTimer(u, timerId, body);

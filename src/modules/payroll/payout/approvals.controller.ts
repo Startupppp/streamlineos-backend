@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ApprovalsService } from "./approvals.service";
 import { PayrollCommandReceiptsService } from "../command-receipts.service";
 import {
@@ -86,11 +85,11 @@ export class ApprovalsController {
   @Post("approvals/:approvalId/approve")
   @HttpCode(200)
   @RequirePermission("payroll:runs:approve")
-  @Validate({ params: runAndApprovalIdParams })
+  @Validate({ params: runAndApprovalIdParams, body: approvalActionSchema })
   async approveStage(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
-    @Body(new ZodValidationPipe(approvalActionSchema)) body: ApprovalActionInput,
+    @Body() body: ApprovalActionInput,
     @CurrentUser() u: CurrentUserContext,
     @Headers("idempotency-key") idempotencyKey?: string,
   ) {
@@ -120,11 +119,11 @@ export class ApprovalsController {
   @Post("approvals/:approvalId/reject")
   @HttpCode(200)
   @RequirePermission("payroll:runs:approve")
-  @Validate({ params: runAndApprovalIdParams })
+  @Validate({ params: runAndApprovalIdParams, body: rejectActionSchema })
   async rejectStage(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
-    @Body(new ZodValidationPipe(rejectActionSchema)) body: RejectActionInput,
+    @Body() body: RejectActionInput,
     @CurrentUser() u: CurrentUserContext,
     @Headers("idempotency-key") idempotencyKey?: string,
   ) {

@@ -46,9 +46,9 @@ export class HrOrgStructureCompatController {
   @Post("locations")
   @RequirePermission("settings:organization:manage")
   @HttpCode(201)
+  @Validate({ body: createOrgLocationSchema })
   createLocation(
-    @Body(new ZodValidationPipe(createOrgLocationSchema))
-    body: CreateOrgLocationInput,
+    @Body() body: CreateOrgLocationInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.catalog.createLocation(user.orgId, user.userId, body);
@@ -56,11 +56,10 @@ export class HrOrgStructureCompatController {
 
   @Patch("locations/:locationId")
   @RequirePermission("settings:organization:manage")
-  @Validate({ params: locationIdParams })
+  @Validate({ params: locationIdParams, body: updateOrgLocationSchema })
   updateLocation(
     @Param("locationId") locationId: string,
-    @Body(new ZodValidationPipe(updateOrgLocationSchema))
-    body: UpdateOrgLocationInput,
+    @Body() body: UpdateOrgLocationInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.catalog.updateLocation(
@@ -91,8 +90,9 @@ export class HrOrgStructureCompatController {
   @Post("teams")
   @RequirePermission("settings:organization:manage")
   @HttpCode(201)
+  @Validate({ body: createOrgTeamSchema })
   createTeam(
-    @Body(new ZodValidationPipe(createOrgTeamSchema)) body: CreateOrgTeamInput,
+    @Body() body: CreateOrgTeamInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.catalog.createTeam(user.orgId, user.userId, body);
@@ -100,10 +100,10 @@ export class HrOrgStructureCompatController {
 
   @Patch("teams/:teamId")
   @RequirePermission("settings:organization:manage")
-  @Validate({ params: teamIdParams })
+  @Validate({ params: teamIdParams, body: updateOrgTeamSchema })
   updateTeam(
     @Param("teamId") teamId: string,
-    @Body(new ZodValidationPipe(updateOrgTeamSchema)) body: UpdateOrgTeamInput,
+    @Body() body: UpdateOrgTeamInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.catalog.updateTeam(user.orgId, user.userId, teamId, body);

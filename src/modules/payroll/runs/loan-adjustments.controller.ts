@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { LoanAdjustmentsService } from "./loan-adjustments.service";
@@ -33,10 +32,10 @@ export class LoanAdjustmentsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("payroll:runs:update")
-  @Validate({ params: runIdParams })
+  @Validate({ params: runIdParams, body: loanAdjustmentSchema })
   async create(
     @Param("runId", ParseIntPipe) runId: number,
-    @Body(new ZodValidationPipe(loanAdjustmentSchema)) body: LoanAdjustmentInput,
+    @Body() body: LoanAdjustmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.loanAdjustmentsService.createAdjustment(u.orgId, runId, u.userId, body);

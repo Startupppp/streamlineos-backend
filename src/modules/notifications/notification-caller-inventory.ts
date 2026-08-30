@@ -164,6 +164,11 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "membership-removed and membership-suspended notices target the affected member; no org-member notification recipient",
     ),
     EXEMPT(
+      "modules/platform/platform-admin.service.ts",
+      DeliveryClass.OPERATOR_ALERT,
+      "platform admin contact-form reply has no tenant-member product recipient",
+    ),
+    EXEMPT(
       "modules/platform/platform.service.ts",
       DeliveryClass.OPERATOR_ALERT,
       "platform-level operator alert has no tenant-member product recipient",

@@ -15,7 +15,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrInterviewSchedulingService } from "./hr-interview-scheduling.service";
 import { HrInterviewResultsService } from "./hr-interview-results.service";
 import {

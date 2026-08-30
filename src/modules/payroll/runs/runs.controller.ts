@@ -20,7 +20,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { resolvePayrollRunsViewScope } from "../payroll-scope";
 import { RunsService } from "./runs.service";
@@ -58,8 +57,9 @@ export class RunsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("payroll:runs:create")
+  @Validate({ body: createRunSchema })
   async create(
-    @Body(new ZodValidationPipe(createRunSchema)) body: CreateRunInput,
+    @Body() body: CreateRunInput,
     @CurrentUser() u: CurrentUserContext,
     @Headers("idempotency-key") idempotencyKey?: string,
   ) {
@@ -115,8 +115,9 @@ export class RunsController {
 
   @Get()
   @RequirePermission("payroll:runs:view")
+  @Validate({ query: listRunsQuerySchema })
   async list(
-    @Query(new ZodValidationPipe(listRunsQuerySchema)) query: ListRunsQuery,
+    @Query() query: ListRunsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.runsService.listRuns(u.orgId, query);
@@ -207,10 +208,10 @@ export class RunsController {
 
   @Get(":runId/employees")
   @RequirePermission("payroll:runs:view")
-  @Validate({ params: runIdParams })
+  @Validate({ params: runIdParams, query: listRunEmployeesQuerySchema })
   async listEmployees(
     @Param("runId", ParseIntPipe) runId: number,
-    @Query(new ZodValidationPipe(listRunEmployeesQuerySchema)) query: ListRunEmployeesQuery,
+    @Query() query: ListRunEmployeesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolvePayrollRunsViewScope(this.access, u);
@@ -235,11 +236,11 @@ export class RunsController {
   @Post(":runId/employees/:runEmployeeId/adjustments")
   @HttpCode(201)
   @RequirePermission("payroll:runs:manage")
-  @Validate({ params: runIdrunEmployeeIdParams })
+  @Validate({ params: runIdrunEmployeeIdParams, body: addRunAdjustmentSchema })
   async addAdjustment(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("runEmployeeId", ParseIntPipe) runEmployeeId: number,
-    @Body(new ZodValidationPipe(addRunAdjustmentSchema)) body: AddRunAdjustmentInput,
+    @Body() body: AddRunAdjustmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.runsService.addRunAdjustment(u.orgId, runId, runEmployeeId, body, u.userId);
@@ -253,11 +254,11 @@ export class RunsController {
   @Post(":runId/employees/:runEmployeeId/hold")
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
-  @Validate({ params: runIdrunEmployeeIdParams })
+  @Validate({ params: runIdrunEmployeeIdParams, body: setEmployeeHoldSchema })
   async setEmployeeHold(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("runEmployeeId", ParseIntPipe) runEmployeeId: number,
-    @Body(new ZodValidationPipe(setEmployeeHoldSchema)) body: SetEmployeeHoldInput,
+    @Body() body: SetEmployeeHoldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.runsService.setEmployeeHold(

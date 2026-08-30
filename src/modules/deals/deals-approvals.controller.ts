@@ -16,7 +16,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { isStructuralOrgAdminContext } from "../../common/rbac/is-structural-org-admin";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { DealsApprovalsService } from "./deals-approvals.service";
 import {
   approvalsListSchema,
@@ -27,6 +26,7 @@ import {
   type SubmitApprovalInput,
 } from "./dto/deals.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
 
 @RequireModule("crm")
 @Controller("deals")
@@ -43,8 +43,9 @@ export class DealsApprovalsController {
   @Post("approval-rules")
   @HttpCode(201)
   @RequirePermission("settings:manage")
+  @Validate({ body: createApprovalRuleSchema })
   createRule(
-    @Body(new ZodValidationPipe(createApprovalRuleSchema)) body: CreateApprovalRuleInput,
+    @Body() body: CreateApprovalRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.approvals.createRule(u.orgId, body);
@@ -52,8 +53,9 @@ export class DealsApprovalsController {
 
   @Get("approvals")
   @RequirePermission("crm:deals:read")
+  @Validate({ query: approvalsListSchema })
   listApprovals(
-    @Query(new ZodValidationPipe(approvalsListSchema)) query: ApprovalsListInput,
+    @Query() query: ApprovalsListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.approvals.listApprovals(u.orgId, query);
@@ -61,8 +63,9 @@ export class DealsApprovalsController {
 
   @Post("approvals")
   @RequirePermission("crm:deals:update")
+  @Validate({ body: submitApprovalSchema })
   async submitApproval(
-    @Body(new ZodValidationPipe(submitApprovalSchema)) body: SubmitApprovalInput,
+    @Body() body: SubmitApprovalInput,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {

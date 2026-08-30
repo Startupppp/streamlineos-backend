@@ -16,7 +16,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { RecruitmentCandidatesService } from "./recruitment-candidates.service";
 import { RecruitmentCandidateOpsService } from "./recruitment-candidate-ops.service";
 import {
@@ -62,8 +62,9 @@ export class RecruitmentCandidatesController {
 
   @Get()
   @RequirePermission("hr:employees:view")
+  @Validate({ query: candidateListSchema })
   list(
-    @Query(new ZodValidationPipe(candidateListSchema)) query: CandidateListInput,
+    @Query() query: CandidateListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.candidates.list(u.orgId, query);
@@ -72,8 +73,9 @@ export class RecruitmentCandidatesController {
   @Post()
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @Validate({ body: createCandidateSchema })
   create(
-    @Body(new ZodValidationPipe(createCandidateSchema)) body: CreateCandidateInput,
+    @Body() body: CreateCandidateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.candidates.create(u.orgId, body);
@@ -82,8 +84,9 @@ export class RecruitmentCandidatesController {
   @Post("bulk-import")
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ body: bulkImportSchema })
   bulkImport(
-    @Body(new ZodValidationPipe(bulkImportSchema)) body: BulkImportInput,
+    @Body() body: BulkImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ops.bulkImport(u.orgId, body);
@@ -92,8 +95,9 @@ export class RecruitmentCandidatesController {
   @Post("import")
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ body: importSchema })
   importCandidates(
-    @Body(new ZodValidationPipe(importSchema)) body: ImportInput,
+    @Body() body: ImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ops.importCandidates(u.orgId, body);

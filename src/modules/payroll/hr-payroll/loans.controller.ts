@@ -19,7 +19,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { LoansService } from "./loans.service";
 import {
@@ -52,9 +51,10 @@ export class LoansController {
 
   @Get()
   @RequirePermission("hr:payroll:view")
+  @Validate({ query: listPageQuerySchema })
   async list(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listPageQuerySchema)) query: ListPageQueryInput,
+    @Query() query: ListPageQueryInput,
   ) {
     return this.loans.listLoans(u.orgId, u.userId, await this.isLoanAdmin(u), query.page ?? 1, query.limit ?? 100);
   }
@@ -62,8 +62,9 @@ export class LoansController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:payroll:view")
+  @Validate({ body: createLoanSchema })
   async create(
-    @Body(new ZodValidationPipe(createLoanSchema)) body: CreateLoanInput,
+    @Body() body: CreateLoanInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.loans.createLoan(u.orgId, u.userId, await this.isLoanAdmin(u), body);
@@ -71,10 +72,10 @@ export class LoansController {
 
   @Patch(":loanId")
   @RequirePermission("hr:payroll:view")
-  @Validate({ params: loanIdParams })
+  @Validate({ params: loanIdParams, body: updateLoanSchema })
   async update(
     @Param("loanId", ParseIntPipe) loanId: number,
-    @Body(new ZodValidationPipe(updateLoanSchema)) body: UpdateLoanInput,
+    @Body() body: UpdateLoanInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!(await this.isLoanAdmin(u))) {

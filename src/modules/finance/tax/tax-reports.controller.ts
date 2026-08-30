@@ -6,9 +6,9 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TaxReportsService, type OutputTaxLine, type InputTaxLine } from "./tax-reports.service";
 import { taxDateRangeQuerySchema, type TaxDateRangeQuery } from "./dto/tax-reports.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 function toCsvRow(line: OutputTaxLine | InputTaxLine): string {
   return [
@@ -37,8 +37,9 @@ export class TaxReportsController {
   @Get("output")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:read")
+  @Validate({ query: taxDateRangeQuerySchema })
   async outputReport(
-    @Query(new ZodValidationPipe(taxDateRangeQuerySchema)) query: TaxDateRangeQuery,
+    @Query() query: TaxDateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -55,8 +56,9 @@ export class TaxReportsController {
   @Get("input")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:read")
+  @Validate({ query: taxDateRangeQuerySchema })
   async inputReport(
-    @Query(new ZodValidationPipe(taxDateRangeQuerySchema)) query: TaxDateRangeQuery,
+    @Query() query: TaxDateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -73,8 +75,9 @@ export class TaxReportsController {
   @Get("liability-summary")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:read")
+  @Validate({ query: taxDateRangeQuerySchema })
   liabilitySummary(
-    @Query(new ZodValidationPipe(taxDateRangeQuerySchema)) query: TaxDateRangeQuery,
+    @Query() query: TaxDateRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.getLiabilitySummary(u.orgId, query);

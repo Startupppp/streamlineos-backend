@@ -1,6 +1,6 @@
 import { Body, Controller, HttpCode, Param, Post } from "@nestjs/common";
 import { Public } from "../../../common/auth/public.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrInterviewBookingService } from "./hr-interview-booking.service";
 import { bookInterviewSchema, type BookInterviewInput } from "./dto/interview-scheduling.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";

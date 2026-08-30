@@ -14,7 +14,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TransfersService } from "./transfers.service";
 import {
   createBankTransferSchema,
@@ -22,6 +21,7 @@ import {
   type CreateBankTransferInput,
   type TransfersQuery,
 } from "./dto/transfers.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("accounting")
 @Controller("finance/transfers")
@@ -31,8 +31,9 @@ export class TransfersController {
 
   @Get()
   @RequirePermission("accounting:banking:read")
+  @Validate({ query: transfersQuerySchema })
   list(
-    @Query(new ZodValidationPipe(transfersQuerySchema)) query: TransfersQuery,
+    @Query() query: TransfersQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.list(u, query);
@@ -42,8 +43,9 @@ export class TransfersController {
   @Idempotent("accounting.bank-transfer.create")
   @HttpCode(201)
   @RequirePermission("accounting:banking:manage")
+  @Validate({ body: createBankTransferSchema })
   create(
-    @Body(new ZodValidationPipe(createBankTransferSchema)) body: CreateBankTransferInput,
+    @Body() body: CreateBankTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.create(u, body);

@@ -15,7 +15,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { DealsMeetingsService } from "./deals-meetings.service";
 import {
   createMeetingSchema,
@@ -49,10 +48,10 @@ export class DealsMeetingsController {
   @Post(":dealId/meetings")
   @RequirePermission("crm:deals:update")
   @HttpCode(201)
-  @Validate({ params: dealIdParams })
+  @Validate({ params: dealIdParams, body: createMeetingSchema })
   createMeeting(
     @Param("dealId", ParseIntPipe) dealId: number,
-    @Body(new ZodValidationPipe(createMeetingSchema)) body: CreateMeetingInput,
+    @Body() body: CreateMeetingInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.meetings.createMeeting(u.orgId, u.userId, dealId, body);
@@ -60,11 +59,11 @@ export class DealsMeetingsController {
 
   @Patch(":dealId/meetings/:meetingId")
   @RequirePermission("crm:deals:update")
-  @Validate({ params: dealIdmeetingIdParams })
+  @Validate({ params: dealIdmeetingIdParams, body: updateMeetingSchema })
   updateMeeting(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
-    @Body(new ZodValidationPipe(updateMeetingSchema)) body: UpdateMeetingInput,
+    @Body() body: UpdateMeetingInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.meetings.updateMeeting(u.orgId, dealId, meetingId, body);

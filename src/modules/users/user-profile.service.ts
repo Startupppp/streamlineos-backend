@@ -4,12 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, gte, ilike, lte } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import {
-  auditLogs,
   loginHistory,
   organizationMembers,
   orgUnitMembers,
@@ -19,7 +18,6 @@ import {
   users,
 } from "../../db/schema";
 import type {
-  ListAuditInput,
   ListLoginHistoryInput,
   UpdateMembershipInput,
   UpdatePreferencesInput,
@@ -33,8 +31,8 @@ import {
   type CanonicalEmploymentPatch,
 } from "../../common/hr/sync-canonical-employment-fields";
 import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
+import { UserActivityService } from "./user-activity.service";
 
-/** Caps the history arrays so one export cannot pull an unbounded audit trail. */
 const EXPORT_HISTORY_LIMIT = 500;
 
 @Injectable()
@@ -44,6 +42,7 @@ export class UserProfileService {
     private readonly audit: AuditService,
     private readonly sessions: SessionsService,
     private readonly employment: EmploymentFactsService,
+    private readonly activity: UserActivityService,
   ) {}
 
   private async assertMember(orgId: string, userId: string): Promise<void> {
@@ -116,60 +115,6 @@ export class UserProfileService {
       targetType: "user",
     });
     return { success: true };
-  }
-
-  async getUserActivity(
-    orgId: string,
-    userId: string,
-    params?: { page?: number; limit?: number },
-  ) {
-    await this.assertMember(orgId, userId);
-
-    const page = params?.page ?? 1;
-    const limit = Math.min(params?.limit ?? 20, 100);
-    const offset = (page - 1) * limit;
-
-    const rows = await this.db
-      .select({
-        id: auditLogs.id,
-        orgId: auditLogs.orgId,
-        targetId: auditLogs.targetId,
-        actorUserId: auditLogs.actorUserId,
-        action: auditLogs.action,
-        resourceType: auditLogs.resourceType,
-        resourceId: auditLogs.resourceId,
-        metadata: auditLogs.metadata,
-        ipAddress: auditLogs.ipAddress,
-        createdAt: auditLogs.createdAt,
-      })
-      .from(auditLogs)
-      .where(
-        and(
-          eq(auditLogs.orgId, orgId),
-          eq(auditLogs.targetId, userId),
-          eq(auditLogs.targetType, "user"),
-        ),
-      )
-      .orderBy(desc(auditLogs.createdAt))
-      .limit(limit)
-      .offset(offset);
-
-    return {
-      data: rows.map((row) => ({
-        id: String(row.id),
-        orgId: row.orgId ?? "",
-        userId: row.targetId ?? "",
-        actorUserId: row.actorUserId ?? null,
-        action: row.action,
-        resourceType: row.resourceType ?? null,
-        resourceId: row.resourceId ?? null,
-        metadata: row.metadata ?? {},
-        ipAddress: row.ipAddress ?? null,
-        createdAt: row.createdAt,
-      })),
-      page,
-      limit,
-    };
   }
 
   async getPreferences(orgId: string, userId: string) {
@@ -419,7 +364,7 @@ export class UserProfileService {
       this.getPreferences(orgId, userId),
       this.getUserSessions(orgId, userId),
       this.getLoginHistory(orgId, userId, { page: 1, limit: EXPORT_HISTORY_LIMIT, success: undefined }),
-      this.getUserAuditLog(orgId, userId, { page: 1, limit: EXPORT_HISTORY_LIMIT }),
+      this.activity.getUserAuditLog(orgId, userId, { page: 1, limit: EXPORT_HISTORY_LIMIT }),
     ]);
 
     return {
@@ -444,124 +389,4 @@ export class UserProfileService {
     };
   }
 
-  async getAuditLog(orgId: string, params: ListAuditInput) {
-    const { page, limit, actorUserId, action, from, to } = params;
-    const offset = (page - 1) * limit;
-
-    const conditions = [
-      eq(auditLogs.orgId, orgId),
-      eq(auditLogs.targetType, "user"),
-    ];
-    if (actorUserId) conditions.push(eq(auditLogs.actorUserId, actorUserId));
-    if (action) conditions.push(ilike(auditLogs.action, `%${action}%`));
-    if (from) conditions.push(gte(auditLogs.createdAt, new Date(from)));
-    if (to) conditions.push(lte(auditLogs.createdAt, new Date(to)));
-
-    const [rows, countResult] = await Promise.all([
-      this.db
-        .select({
-          id: auditLogs.id,
-          orgId: auditLogs.orgId,
-          targetId: auditLogs.targetId,
-          actorUserId: auditLogs.actorUserId,
-          action: auditLogs.action,
-          resourceType: auditLogs.resourceType,
-          resourceId: auditLogs.resourceId,
-          metadata: auditLogs.metadata,
-          ipAddress: auditLogs.ipAddress,
-          createdAt: auditLogs.createdAt,
-        })
-        .from(auditLogs)
-        .where(and(...conditions))
-        .orderBy(desc(auditLogs.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(auditLogs)
-        .where(and(...conditions)),
-    ]);
-
-    return {
-      data: rows.map((row) => ({
-        id: String(row.id),
-        orgId: row.orgId ?? "",
-        userId: row.targetId ?? "",
-        actorUserId: row.actorUserId ?? null,
-        action: row.action,
-        resourceType: row.resourceType ?? null,
-        resourceId: row.resourceId ?? null,
-        metadata: row.metadata ?? {},
-        ipAddress: row.ipAddress ?? null,
-        createdAt: row.createdAt,
-      })),
-      pagination: {
-        page,
-        limit,
-        total: countResult[0]?.total ?? 0,
-        totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit),
-      },
-    };
-  }
-
-  async getUserAuditLog(orgId: string, userId: string, params: ListAuditInput) {
-    await this.assertMember(orgId, userId);
-
-    const { page, limit, from, to } = params;
-    const offset = (page - 1) * limit;
-
-    const conditions = [
-      eq(auditLogs.orgId, orgId),
-      eq(auditLogs.targetId, userId),
-      eq(auditLogs.targetType, "user"),
-    ];
-    if (from) conditions.push(gte(auditLogs.createdAt, new Date(from)));
-    if (to) conditions.push(lte(auditLogs.createdAt, new Date(to)));
-
-    const [rows, countResult] = await Promise.all([
-      this.db
-        .select({
-          id: auditLogs.id,
-          orgId: auditLogs.orgId,
-          targetId: auditLogs.targetId,
-          actorUserId: auditLogs.actorUserId,
-          action: auditLogs.action,
-          resourceType: auditLogs.resourceType,
-          resourceId: auditLogs.resourceId,
-          metadata: auditLogs.metadata,
-          ipAddress: auditLogs.ipAddress,
-          createdAt: auditLogs.createdAt,
-        })
-        .from(auditLogs)
-        .where(and(...conditions))
-        .orderBy(desc(auditLogs.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(auditLogs)
-        .where(and(...conditions)),
-    ]);
-
-    return {
-      data: rows.map((row) => ({
-        id: String(row.id),
-        orgId: row.orgId ?? "",
-        userId: row.targetId ?? "",
-        actorUserId: row.actorUserId ?? null,
-        action: row.action,
-        resourceType: row.resourceType ?? null,
-        resourceId: row.resourceId ?? null,
-        metadata: row.metadata ?? {},
-        ipAddress: row.ipAddress ?? null,
-        createdAt: row.createdAt,
-      })),
-      pagination: {
-        page,
-        limit,
-        total: countResult[0]?.total ?? 0,
-        totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit),
-      },
-    };
-  }
 }

@@ -53,8 +53,9 @@ export class HrPeopleController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
+  @Validate({ query: listPeopleSchema })
   async list(
-    @Query(new ZodValidationPipe(listPeopleSchema)) query: ListPeopleInput,
+    @Query() query: ListPeopleInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveEmployeesScope(this.access, currentUser);
@@ -109,8 +110,9 @@ export class HrPeopleController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @Validate({ body: createPersonSchema })
   create(
-    @Body(new ZodValidationPipe(createPersonSchema)) body: CreatePersonInput,
+    @Body() body: CreatePersonInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.people.create(currentUser.orgId, currentUser.userId, body);
@@ -119,10 +121,10 @@ export class HrPeopleController {
   @Patch(":personId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: personIdParams })
+  @Validate({ params: personIdParams, body: updatePersonSchema })
   update(
     @Param("personId", ParseIntPipe) personId: number,
-    @Body(new ZodValidationPipe(updatePersonSchema)) body: UpdatePersonInput,
+    @Body() body: UpdatePersonInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.people.update(
