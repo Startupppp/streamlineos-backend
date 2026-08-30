@@ -7,11 +7,19 @@ describe("RoleMemberService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
   const ROLE_ID = 5;
 
+  function makeSelectChain(): object {
+    const chain: Record<string, jest.Mock> = {};
+    chain.innerJoin = jest.fn().mockReturnValue(chain);
+    chain.leftJoin = jest.fn().mockReturnValue(chain);
+    chain.where = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) });
+    return chain;
+  }
+
   function makeDb(roleRow: unknown): Db {
     const findFirst = jest.fn().mockResolvedValue(roleRow);
     return {
       query: { roles: { findFirst } },
-      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }) }) }),
+      select: jest.fn().mockImplementation(() => ({ from: jest.fn().mockReturnValue(makeSelectChain()) })),
       execute: jest.fn().mockResolvedValue([]),
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
         query: { roles: { findFirst } },
@@ -22,10 +30,10 @@ describe("RoleMemberService — cross-tenant isolation", () => {
 
   it("throws NotFoundException when role belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const mockCache = { invalidate: jest.fn() } as any;
-    const mockAudit = { log: jest.fn() } as any;
-    const mockDispatch = { emit: jest.fn() } as any;
-    const mockAccess = {} as any;
+    const mockCache = { invalidate: jest.fn() } as never;
+    const mockAudit = { log: jest.fn() } as never;
+    const mockDispatch = { emit: jest.fn() } as never;
+    const mockAccess = {} as never;
     const svc = new RoleMemberService(db, mockCache, mockAudit, mockDispatch, mockAccess);
     await expect(svc.getRoleMembers(ATTACKER, ROLE_ID)).rejects.toThrow(NotFoundException);
   });
@@ -33,10 +41,10 @@ describe("RoleMemberService — cross-tenant isolation", () => {
   it("returns members for a role in the owning org (control — same-tenant)", async () => {
     const roleRow = { id: ROLE_ID, orgId: OWNER, name: "Devs", slug: "devs" };
     const db = makeDb(roleRow);
-    const mockCache = { invalidate: jest.fn() } as any;
-    const mockAudit = { log: jest.fn() } as any;
-    const mockDispatch = { emit: jest.fn() } as any;
-    const mockAccess = {} as any;
+    const mockCache = { invalidate: jest.fn() } as never;
+    const mockAudit = { log: jest.fn() } as never;
+    const mockDispatch = { emit: jest.fn() } as never;
+    const mockAccess = {} as never;
     const svc = new RoleMemberService(db, mockCache, mockAudit, mockDispatch, mockAccess);
     const result = await svc.getRoleMembers(OWNER, ROLE_ID);
     expect(result).toBeDefined();

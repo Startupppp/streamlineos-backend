@@ -3,6 +3,11 @@ jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
 }));
 
+jest.mock("../../../integrations/core/composio.gateway", () => ({
+  ComposioGateway: class {},
+  ComposioToolError: class extends Error {},
+}));
+
 import { NotFoundException } from "@nestjs/common";
 import { KbRagService } from "./kb-rag.service";
 import { SurveyAiService } from "./survey-ai.service";

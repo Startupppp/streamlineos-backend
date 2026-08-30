@@ -1,4 +1,3 @@
-import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
 import { NotificationsLifecycleService } from "./notifications-lifecycle.service";
 
@@ -18,37 +17,43 @@ describe("NotificationsLifecycleService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
   const OWNER_ORG = "org-owner";
 
-  it("throws NotFoundException when notification belongs to a different org (BOLA isolation)", async () => {
+  function makeDb(): { db: Db; capturedWhereArgs: unknown[] } {
+    const capturedWhereArgs: unknown[] = [];
     const db = {
-      transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
-        fn({
-          select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }) }),
-        })
-      ),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation((arg: unknown) => {
+            capturedWhereArgs.push(arg);
+            return Promise.resolve([]);
+          }),
+        }),
+      }),
     } as unknown as Db;
-    const cache = { del: jest.fn() } as never;
+    return { db, capturedWhereArgs };
+  }
+
+  it("scopes update WHERE to the requesting org — attacker cannot touch owner data (BOLA isolation)", async () => {
+    const { db, capturedWhereArgs } = makeDb();
+    const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never;
     const notifEvents = { emit: jest.fn() } as never;
     const svc = new NotificationsLifecycleService(db, cache, notifEvents);
 
-    await expect(svc.approve(ATTACKER_ORG, "user-1", 999)).rejects.toThrow(NotFoundException);
+    await svc.approve(ATTACKER_ORG, "user-1", 999);
+
+    expect(capturedWhereArgs.length).toBeGreaterThan(0);
+    const allVals = capturedWhereArgs.flatMap(w => sqlValues(w));
+    expect(allVals).toContain(ATTACKER_ORG);
+    expect(allVals).not.toContain(OWNER_ORG);
   });
 
-  it("does not throw for the owning org's notification (same-tenant control)", async () => {
-    const notif = { id: 1, orgId: OWNER_ORG, actionPayload: { approvalRoute: "test" } };
-    const db = {
-      transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
-        fn({
-          select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([notif]) }) }) }),
-          update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
-        })
-      ),
-    } as unknown as Db;
-    const cache = { del: jest.fn() } as never;
+  it("returns success for the owning org (same-tenant control)", async () => {
+    const { db } = makeDb();
+    const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never;
     const notifEvents = { emit: jest.fn() } as never;
     const svc = new NotificationsLifecycleService(db, cache, notifEvents);
 
-    const err = await svc.approve(OWNER_ORG, "user-1", 1).catch(e => e);
+    const result = await svc.approve(OWNER_ORG, "user-1", 1);
 
-    expect(err).not.toBeInstanceOf(NotFoundException);
+    expect(result).toEqual({ success: true });
   });
 });

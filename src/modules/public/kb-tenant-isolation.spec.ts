@@ -10,26 +10,27 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
 }
 
-function makeChainableDb(rows: unknown[]): { db: Db; where: jest.Mock } {
-  const where = jest.fn().mockResolvedValue(rows);
-  const builder: Record<string, jest.Mock> = {
-    from: jest.fn(),
-    where,
-    leftJoin: jest.fn(),
-    innerJoin: jest.fn(),
-    orderBy: jest.fn(),
-    limit: jest.fn().mockResolvedValue(rows),
-    offset: jest.fn().mockResolvedValue(rows),
-  };
-  builder.from.mockReturnValue(builder);
-  builder.leftJoin.mockReturnValue(builder);
-  builder.innerJoin.mockReturnValue(builder);
-  builder.orderBy.mockReturnValue(builder);
-  builder.limit.mockReturnValue(builder);
-  builder.offset.mockReturnValue(builder);
-  builder.where.mockReturnValue(builder);
-  const db = { select: jest.fn().mockReturnValue(builder) } as unknown as Db;
-  return { db, where };
+interface Chain extends PromiseLike<unknown[]> {
+  from: jest.Mock;
+  where: jest.Mock;
+  innerJoin: jest.Mock;
+  leftJoin: jest.Mock;
+  orderBy: jest.Mock;
+  limit: jest.Mock;
+  offset: jest.Mock;
+}
+
+function makeChain(rows: unknown[]): Chain {
+  const chain = {} as Chain;
+  chain.from = jest.fn().mockReturnValue(chain);
+  chain.where = jest.fn().mockReturnValue(chain);
+  chain.innerJoin = jest.fn().mockReturnValue(chain);
+  chain.leftJoin = jest.fn().mockReturnValue(chain);
+  chain.orderBy = jest.fn().mockReturnValue(chain);
+  chain.limit = jest.fn().mockReturnValue(chain);
+  chain.offset = jest.fn().mockResolvedValue(rows);
+  chain.then = (resolve, reject) => Promise.resolve(rows).then(resolve ?? undefined, reject ?? undefined);
+  return chain;
 }
 
 describe("KbService — cross-tenant isolation", () => {
@@ -37,18 +38,41 @@ describe("KbService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
 
   it("returns empty list for a different org's KB (cross-tenant isolation)", async () => {
-    const { db, where } = makeChainableDb([]);
+    let selectCallCount = 0;
+    const categoriesChain = makeChain([]);
+    const articlesChain = makeChain([]);
+
+    const db = {
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        return selectCallCount === 1 ? categoriesChain : articlesChain;
+      }),
+    } as unknown as Db;
+
     const svc = new KbService(db);
     const result = await svc.list({ org: ATTACKER, page: 1, pageSize: 10 });
+
     expect(result.articles).toHaveLength(0);
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
+    expect(categoriesChain.where).toHaveBeenCalled();
+    const allVals = sqlValues(categoriesChain.where.mock.calls[0]?.[0]);
+    expect(allVals).toContain(ATTACKER);
   });
 
   it("returns articles for the owning org (control — same-tenant)", async () => {
-    const { db } = makeChainableDb([{ id: 1, title: "Article" }]);
+    let selectCallCount = 0;
+    const categoriesChain = makeChain([]);
+    const articlesChain = makeChain([{ id: 1, title: "Article" }]);
+
+    const db = {
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        return selectCallCount === 1 ? categoriesChain : articlesChain;
+      }),
+    } as unknown as Db;
+
     const svc = new KbService(db);
     const result = await svc.list({ org: OWNER, page: 1, pageSize: 10 });
+
     expect(result).toHaveProperty("articles");
   });
 });

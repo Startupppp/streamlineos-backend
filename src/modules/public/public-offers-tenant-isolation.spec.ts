@@ -44,6 +44,6 @@ describe("PublicOffersService — cross-tenant isolation", () => {
     const db = makeDb(offerRow);
     const svc = new PublicOffersService(db);
     const result = await svc.getOffer(VALID_TOKEN);
-    expect(result).toHaveProperty("offer");
+    expect(result).toHaveProperty("offerStatus");
   });
 });

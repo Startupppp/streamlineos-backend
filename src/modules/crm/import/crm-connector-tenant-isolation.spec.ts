@@ -1,3 +1,8 @@
+jest.mock("../../integrations/core/composio.gateway", () => ({
+  ComposioGateway: class {},
+  ComposioToolError: class extends Error {},
+}));
+
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.types";
 import { CrmConnectorService } from "./crm-connector.service";
@@ -49,12 +54,23 @@ describe("CrmConnectorService — cross-tenant isolation", () => {
       lastError: null,
       consecutiveFailures: 0,
     };
+    let selectCallCount = 0;
     const db = {
-      select: jest.fn().mockImplementation(() => ({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([syncRow]) }),
-        }),
-      })),
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        if (selectCallCount === 1) {
+          return {
+            from: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([syncRow]) }),
+            }),
+          };
+        }
+        return {
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue([{ count: 0 }]),
+          }),
+        };
+      }),
       execute: jest.fn().mockResolvedValue([]),
     } as unknown as Db;
     const mockComposio = {} as any;

@@ -62,17 +62,32 @@ describe("CrmCopilotService — cross-tenant isolation", () => {
     ).runInTenantTransaction;
   });
 
+  function makeTxChain(rows: unknown[]) {
+    const chain = {
+      then: (
+        resolve: ((value: unknown) => unknown) | null | undefined,
+        reject?: ((reason: unknown) => unknown) | null | undefined,
+      ) => Promise.resolve(rows).then(resolve ?? undefined, reject ?? undefined),
+      orderBy: () => chain,
+      limit: () => Promise.resolve(rows),
+    } as Record<string, unknown>;
+    chain.orderBy = () => chain;
+    chain.limit = () => Promise.resolve(rows);
+    return chain;
+  }
+
   it("dealSummary: DENY — cross-tenant deal query returns null → NotFoundException", async () => {
     const { CrmCopilotService } = await import("./crm-copilot.service");
 
     runInTenantTransaction.mockImplementation(
       async (_db: unknown, cb: (tx: unknown) => Promise<unknown>, _opts: unknown) => {
+        const emptyChain = makeTxChain([]);
         const select = () => ({
           from: () => ({
-            where: () => Promise.resolve([]),
-            innerJoin: () => ({ where: () => Promise.resolve([]) }),
+            where: () => emptyChain,
+            innerJoin: () => ({ where: () => emptyChain }),
           }),
-          distinct: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
+          distinct: () => ({ from: () => ({ where: () => emptyChain }) }),
         });
         return cb({ select, insert: () => ({ values: () => Promise.resolve() }) });
       },
@@ -80,17 +95,14 @@ describe("CrmCopilotService — cross-tenant isolation", () => {
 
     const orgFeatures = { getFlags: jest.fn().mockResolvedValue({ aiLeadScoring: true }) };
     const gateway = { invokeStructured: jest.fn(), invokeText: jest.fn() };
-    const scoring = {};
-    const content = {};
-    const pipeline = {};
     const mockDb = {} as never;
     const svc = new CrmCopilotService(
       mockDb,
       gateway as never,
       orgFeatures as never,
-      scoring as never,
-      content as never,
-      pipeline as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
 
     await expect(svc.dealSummary(ATTACKER_ORG, 999, USER_ID)).rejects.toMatchObject({
@@ -119,16 +131,24 @@ describe("CrmCopilotService — cross-tenant isolation", () => {
     runInTenantTransaction.mockImplementation(
       async (_db: unknown, cb: (tx: unknown) => Promise<unknown>, _opts: unknown) => {
         let callCount = 0;
-        const select = () => ({
-          from: () => ({
-            where: () => {
-              callCount++;
-              if (callCount === 1) return Promise.resolve([dealRow]);
-              return Promise.resolve([]);
-            },
-            innerJoin: () => ({ where: () => Promise.resolve([]) }),
-          }),
-        });
+        const select = () => {
+          callCount++;
+          const callIdx = callCount;
+          const makeChain = (rows: unknown[]) => ({
+            then: (
+              resolve: ((v: unknown) => unknown) | null | undefined,
+              reject?: ((r: unknown) => unknown) | null | undefined,
+            ) => Promise.resolve(rows).then(resolve ?? undefined, reject ?? undefined),
+            orderBy: () => makeChain(rows),
+            limit: () => Promise.resolve(rows),
+          });
+          return {
+            from: () => ({
+              where: () => (callIdx === 1 ? makeChain([dealRow]) : makeChain([])),
+              innerJoin: () => ({ where: () => makeChain([]) }),
+            }),
+          };
+        };
         return cb({ select, insert: () => ({ values: () => Promise.resolve() }) });
       },
     );
@@ -140,17 +160,14 @@ describe("CrmCopilotService — cross-tenant isolation", () => {
         data: { summary: "Deal looks good.", risks: [], recommendedPlays: [], stakeholdersGap: "None" },
       }),
     };
-    const scoring = {};
-    const content = {};
-    const pipeline = {};
     const mockDb = {} as never;
     const svc = new CrmCopilotService(
       mockDb,
       gateway as never,
       orgFeatures as never,
-      scoring as never,
-      content as never,
-      pipeline as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
 
     const result = await svc.dealSummary(OWNER_ORG, 1, USER_ID);
@@ -163,54 +180,81 @@ describe("CrmCopilotService — cross-tenant isolation", () => {
 });
 
 describe("CrmPipelineService — cross-tenant isolation", () => {
-  let runInTenantTransaction: jest.Mock;
+  beforeEach(() => jest.resetAllMocks());
 
-  beforeEach(() => {
-    jest.resetAllMocks();
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    runInTenantTransaction = jest.requireMock(
-      "../../../../common/tenant/run-in-tenant-transaction",
-    ).runInTenantTransaction;
-  });
+  function makePipelineChain(rows: unknown[]) {
+    const chain = {
+      from: () => chain,
+      where: () => chain,
+      limit: () => Promise.resolve(rows),
+      groupBy: () => chain,
+      orderBy: () => chain,
+      then: (
+        resolve: ((v: unknown) => unknown) | null | undefined,
+        reject?: ((r: unknown) => unknown) | null | undefined,
+      ) => Promise.resolve(rows).then(resolve ?? undefined, reject ?? undefined),
+    } as Record<string, unknown>;
+    chain.from = () => chain;
+    chain.where = () => chain;
+    chain.limit = () => Promise.resolve(rows);
+    chain.groupBy = () => chain;
+    chain.orderBy = () => chain;
+    return chain;
+  }
 
   it("stalePipelineDigest: DENY — cross-tenant query returns empty deals (different-org isolation)", async () => {
     const { CrmPipelineService } = await import("./crm-pipeline.service");
 
+    let selectCallCount = 0;
+    const mockDb = {
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        if (selectCallCount === 1) return makePipelineChain([{ total: 0 }]);
+        return makePipelineChain([]);
+      }),
+    };
     const orgFeatures = { getFlags: jest.fn().mockResolvedValue({ aiLeadScoring: true }) };
     const gateway = {
-      invokeText: jest.fn().mockResolvedValue({ ok: true, data: "No stale deals." }),
+      invokeStructured: jest.fn(),
     };
-    const mockDb = {} as never;
-    const svc = new CrmPipelineService(mockDb, orgFeatures as never, gateway as never);
-
-    runInTenantTransaction.mockResolvedValue([]);
+    const svc = new CrmPipelineService(mockDb as never, gateway as never, orgFeatures as never, {} as never);
 
     const result = await svc.stalePipelineDigest(ATTACKER_ORG, USER_ID);
     expect(result).toBeDefined();
-    expect(gateway.invokeText).not.toHaveBeenCalled();
+    expect(gateway.invokeStructured).not.toHaveBeenCalled();
   });
 
   it("stalePipelineDigest: CONTROL — own org deals returned and summarized", async () => {
     const { CrmPipelineService } = await import("./crm-pipeline.service");
 
-    const orgFeatures = { getFlags: jest.fn().mockResolvedValue({ aiLeadScoring: true }) };
-    const gateway = {
-      invokeText: jest.fn().mockResolvedValue({ ok: true, data: "2 stale deals need attention." }),
-    };
-    const mockDb = {} as never;
-    const svc = new CrmPipelineService(mockDb, orgFeatures as never, gateway as never);
-
+    const oldDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const staleDeals = [
-      { id: 1, name: "Deal A", stage: "PROPOSAL", value: "5000", assignedToId: null, lastActivityDate: null },
-      { id: 2, name: "Deal B", stage: "NEGOTIATION", value: "8000", assignedToId: null, lastActivityDate: null },
+      { id: 1, name: "Deal A", stage: "PROPOSAL", value: "5000", assignedToId: null, updatedAt: oldDate },
+      { id: 2, name: "Deal B", stage: "NEGOTIATION", value: "8000", assignedToId: null, updatedAt: oldDate },
     ];
 
-    runInTenantTransaction.mockResolvedValue(staleDeals);
+    let selectCallCount = 0;
+    const mockDb = {
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        if (selectCallCount === 1) return makePipelineChain([{ total: 2 }]);
+        if (selectCallCount === 2) return makePipelineChain(staleDeals);
+        return makePipelineChain([]);
+      }),
+    };
+    const orgFeatures = { getFlags: jest.fn().mockResolvedValue({ aiLeadScoring: true }) };
+    const gateway = {
+      invokeStructured: jest.fn().mockResolvedValue({
+        ok: true,
+        data: { summary: "2 stale deals need attention.", riskLevel: "medium", topRisks: [], recommendations: [] },
+      }),
+    };
+    const svc = new CrmPipelineService(mockDb as never, gateway as never, orgFeatures as never, {} as never);
 
     const result = await svc.stalePipelineDigest(OWNER_ORG, USER_ID);
     expect(result).toBeDefined();
-    expect(gateway.invokeText).toHaveBeenCalledTimes(1);
-    const callArg = gateway.invokeText.mock.calls[0][0] as { actor: { orgId: string } };
+    expect(gateway.invokeStructured).toHaveBeenCalledTimes(1);
+    const callArg = gateway.invokeStructured.mock.calls[0][0] as { actor: { orgId: string } };
     expect(callArg.actor.orgId).toBe(OWNER_ORG);
   });
 });

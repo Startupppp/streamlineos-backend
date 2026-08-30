@@ -19,13 +19,12 @@ describe("NotificationEventRegistryService — cross-tenant isolation", () => {
 
   function makeDb(): { db: Db; allWhereArgs: unknown[] } {
     const allWhereArgs: unknown[] = [];
-    const findFirst = jest.fn().mockImplementation(({ where } = {}) => {
+    const findMany = jest.fn().mockImplementation(({ where } = {}) => {
       if (where) allWhereArgs.push(where);
-      return Promise.resolve(undefined);
+      return Promise.resolve([]);
     });
     const db = {
-      query: { notificationPolicyDefaults: { findFirst } },
-      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue(Promise.resolve([])) }) }),
+      query: { notificationEvents: { findMany } },
     } as unknown as Db;
     return { db, allWhereArgs };
   }
@@ -37,12 +36,10 @@ describe("NotificationEventRegistryService — cross-tenant isolation", () => {
 
     await svc.listForOrg(ATTACKER_ORG);
 
-    if (allWhereArgs.length > 0) {
-      const allVals = allWhereArgs.flatMap(w => sqlValues(w));
-      expect(allVals).toContain(ATTACKER_ORG);
-    } else {
-      expect(true).toBe(true);
-    }
+    expect(allWhereArgs.length).toBeGreaterThan(0);
+    const allVals = allWhereArgs.flatMap(w => sqlValues(w));
+    expect(allVals).toContain(ATTACKER_ORG);
+    expect(allVals).not.toContain(OWNER_ORG);
   });
 
   it("returns event definitions for the owning org (same-tenant control)", async () => {

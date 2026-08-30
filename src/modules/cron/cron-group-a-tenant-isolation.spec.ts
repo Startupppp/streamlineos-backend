@@ -23,7 +23,7 @@ import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { RevenueAnalyticsService } from "../billing/core/revenue-analytics.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { ProjectsReportsService } from "../build/core/projects-reports.service";
-import { CrmAutomationBusService } from "../crm/automations/crm-automation-bus.service";
+import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import { HrWorkflowEngineService } from "../hr/workflows/hr-workflow-engine.service";
 import { HrEffectiveChangesService } from "../hr/core/hr-effective-changes.service";
 import { HrWebhooksService } from "../hr/automations/hr-webhooks.service";
@@ -77,7 +77,15 @@ function makeDb(rows: unknown[] = []) {
     query: new Proxy({} as Record<string, typeof handler>, { get: () => handler }),
     execute: jest.fn().mockResolvedValue(rows),
     transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
-    update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]), returning: jest.fn().mockResolvedValue([]) }) }),
+    update: jest.fn().mockReturnValue({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          then: (resolve?: ((v: unknown) => unknown) | null, reject?: ((r: unknown) => unknown) | null) =>
+            Promise.resolve([]).then(resolve ?? undefined, reject ?? undefined),
+          returning: jest.fn().mockResolvedValue([]),
+        }),
+      }),
+    }),
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]), onConflictDoNothing: jest.fn().mockResolvedValue([]) }) }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
   } as unknown as Db;
@@ -86,7 +94,10 @@ function makeDb(rows: unknown[] = []) {
 
 function setupForEachOrg(db: Db, orgId: string) {
   (forEachOrg as jest.Mock).mockImplementation(
-    async (_d: unknown, _t: string, fn: (tx: unknown, oid: string) => Promise<unknown>) => fn(db as unknown, orgId),
+    async (_d: unknown, _t: string, fn: (tx: unknown, oid: string) => Promise<unknown>) => {
+      await fn(db as unknown, orgId);
+      return { organizations: 1, failed: 0 };
+    },
   );
 }
 
@@ -211,7 +222,7 @@ describe("CronBuildSnapshotsService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
 
   it("snapshots projects only for the org in the forEachOrg callback (isolation — deny)", async () => {
-    const { db, findMany } = makeDb([]);
+    const { db, selectWhere } = makeDb([]);
     setupForEachOrg(db, ATTACKER);
     const reports = { snapshotProjects: jest.fn().mockResolvedValue({ snapped: 0 }), generateDailySnapshot: jest.fn() };
     const svc = await Test.createTestingModule({
@@ -223,13 +234,12 @@ describe("CronBuildSnapshotsService — cross-tenant isolation", () => {
     }).compile().then((m) => m.get(CronBuildSnapshotsService));
 
     await svc.snapshotAllProjects();
-    expect(findMany).toHaveBeenCalled();
-    const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-    expect(sqlValues(arg?.where)).toContain(ATTACKER);
+    expect(selectWhere).toHaveBeenCalled();
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(ATTACKER);
   });
 
   it("snapshots projects for the owning org (isolation — control)", async () => {
-    const { db, findMany } = makeDb([]);
+    const { db, selectWhere } = makeDb([]);
     setupForEachOrg(db, OWNER);
     const reports = { snapshotProjects: jest.fn().mockResolvedValue({ snapped: 0 }), generateDailySnapshot: jest.fn() };
     const svc = await Test.createTestingModule({
@@ -241,7 +251,7 @@ describe("CronBuildSnapshotsService — cross-tenant isolation", () => {
     }).compile().then((m) => m.get(CronBuildSnapshotsService));
 
     await svc.snapshotAllProjects();
-    expect(sqlValues((findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined)?.where)).toContain(OWNER);
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(OWNER);
   });
 });
 
@@ -288,23 +298,22 @@ describe("CronHolidayService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
 
   it("scopes holiday notifications to the org (isolation — deny)", async () => {
-    const { db, findMany } = makeDb([]);
+    const { db, selectWhere } = makeDb([]);
     setupForEachOrg(db, ATTACKER);
     const svc = new CronHolidayService(db);
 
     await svc.sendHolidayNotifications();
-    expect(findMany).toHaveBeenCalled();
-    const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-    expect(sqlValues(arg?.where)).toContain(ATTACKER);
+    expect(selectWhere).toHaveBeenCalled();
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(ATTACKER);
   });
 
   it("sends holiday notifications for the owning org (isolation — control)", async () => {
-    const { db, findMany } = makeDb([]);
+    const { db, selectWhere } = makeDb([]);
     setupForEachOrg(db, OWNER);
     const svc = new CronHolidayService(db);
 
     await svc.sendHolidayNotifications();
-    expect(sqlValues((findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined)?.where)).toContain(OWNER);
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(OWNER);
   });
 });
 
@@ -362,24 +371,23 @@ describe("CronHrService — cross-tenant isolation", () => {
   }
 
   it("scopes certification expiry sweep to the org (isolation — deny)", async () => {
-    const { db, findMany } = makeDb([]);
+    const { db, selectWhere } = makeDb([]);
     setupForEachOrg(db, ATTACKER);
     const svc = await buildSvc(db);
 
     const result = await svc.processCertificationExpiry();
     expect(result.fired).toBe(0);
-    expect(findMany).toHaveBeenCalled();
-    const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-    expect(sqlValues(arg?.where)).toContain(ATTACKER);
+    expect(selectWhere).toHaveBeenCalled();
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(ATTACKER);
   });
 
   it("processes certification expiry for the owning org (isolation — control)", async () => {
-    const { db, findMany } = makeDb([]);
+    const { db, selectWhere } = makeDb([]);
     setupForEachOrg(db, OWNER);
     const svc = await buildSvc(db);
 
     await svc.processCertificationExpiry();
-    expect(sqlValues((findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined)?.where)).toContain(OWNER);
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(OWNER);
   });
 });
 
