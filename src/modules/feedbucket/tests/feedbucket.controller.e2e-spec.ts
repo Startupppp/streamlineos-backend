@@ -5,7 +5,7 @@ import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 import { FeedbucketWidgetsService } from "../feedbucket-widgets.service";
 
 const widgetsStub = {
-  findAll: jest.fn().mockResolvedValue([]),
+  list: jest.fn().mockResolvedValue([]),
   findOne: jest.fn().mockRejectedValue(new NotFoundException()),
   create: jest.fn().mockResolvedValue({}),
   update: jest.fn().mockResolvedValue({}),

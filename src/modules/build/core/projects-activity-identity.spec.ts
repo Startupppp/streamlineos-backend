@@ -5,7 +5,7 @@ import type { Db } from "../../../db/drizzle.module";
 
 const OWNER_ORG = "org-owner";
 
-const mockNotifications = { send: jest.fn() } as unknown as NotificationsService;
+const mockNotifications = { create: jest.fn() } as unknown as NotificationsService;
 const mockDispatch = { emit: jest.fn() } as unknown as NotificationDispatchService;
 
 function makeLimitableWhere(value: unknown) {

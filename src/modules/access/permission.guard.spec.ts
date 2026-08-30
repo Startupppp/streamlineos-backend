@@ -60,15 +60,14 @@ describe("PermissionGuard", () => {
               if (currentUser.isOrgOwner) return "all";
               return (await resolveUserPermissions(currentUser.orgId, currentUser.userId)).get(key) ?? "none";
             },
-            buildModuleAvailabilityResolver: (getModuleMap: (orgId: string) => Promise<Record<string, boolean>>) =>
-              moduleAvailabilityResolver(
-                {
-                  isCoreModule: () => false,
-                  getModuleMap,
-                  getPlanLockedModules: async () => [],
-                },
-                { getUserDeniedModules: async () => new Set<string>() },
-              ),
+            buildModuleAvailabilityResolver: (getModuleMap: (orgId: string) => Promise<Record<string, boolean>>) => moduleAvailabilityResolver(
+              {
+                isCoreModule: () => false,
+                getModuleMap,
+                getPlanLockedModules: async () => [],
+              },
+              { getUserDeniedModules: async () => new Set<string>() },
+            ),
           },
         },
       ],

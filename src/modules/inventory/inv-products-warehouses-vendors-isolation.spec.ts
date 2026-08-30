@@ -76,7 +76,7 @@ describe("InvProductCrudService — cross-tenant isolation", () => {
         InvProductCrudService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: mockCache },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
         { provide: CostVisibilityService, useValue: { canSeeCost: jest.fn().mockResolvedValue(false) } },
       ],
     }).compile().then((m) => m.get(InvProductCrudService));
@@ -94,7 +94,7 @@ describe("InvProductCrudService — cross-tenant isolation", () => {
         InvProductCrudService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: mockCache },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
         { provide: CostVisibilityService, useValue: { canSeeCost: jest.fn().mockResolvedValue(false) } },
       ],
     }).compile().then((m) => m.get(InvProductCrudService));

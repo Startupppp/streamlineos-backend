@@ -117,9 +117,9 @@ describe("InvAiExplainService — cross-tenant isolation", () => {
       providers: [
         InvAiExplainService,
         { provide: DRIZZLE, useValue: db },
-        { provide: AiGatewayService, useValue: { chat: jest.fn(), chatWithUsage: jest.fn() } },
+        { provide: AiGatewayService, useValue: { invokeText: jest.fn(), invokeTextWithUsage: jest.fn() } },
         { provide: AiConfirmationService, useValue: { confirm: jest.fn() } },
-        { provide: InvReplenishmentService, useValue: { listRules: jest.fn(), getRecommendations: jest.fn() } },
+        { provide: InvReplenishmentService, useValue: { listRules: jest.fn(), getSuggestions: jest.fn() } },
         { provide: InvVendorsService, useValue: { listVendors: jest.fn() } },
       ],
     }).compile().then((m) => m.get(InvAiExplainService));
@@ -133,14 +133,14 @@ describe("InvAiExplainService — cross-tenant isolation", () => {
   it("processes insight for the owning org when found (isolation — control returns or calls AI)", async () => {
     const INSIGHT = { id: 99, orgId: OWNER, insightType: "LOW_STOCK", data: {} };
     const { db } = makeDb([INSIGHT]);
-    const gateway = { chat: jest.fn().mockResolvedValue({ message: "low stock" }), chatWithUsage: jest.fn() };
+    const gateway = { invokeText: jest.fn().mockResolvedValue({ ok: true, data: "low stock" }), invokeTextWithUsage: jest.fn() };
     const svc = await Test.createTestingModule({
       providers: [
         InvAiExplainService,
         { provide: DRIZZLE, useValue: db },
         { provide: AiGatewayService, useValue: gateway },
         { provide: AiConfirmationService, useValue: { confirm: jest.fn() } },
-        { provide: InvReplenishmentService, useValue: { listRules: jest.fn().mockResolvedValue({ items: [] }), getRecommendations: jest.fn() } },
+        { provide: InvReplenishmentService, useValue: { listRules: jest.fn().mockResolvedValue({ items: [] }), getSuggestions: jest.fn() } },
         { provide: InvVendorsService, useValue: { listVendors: jest.fn().mockResolvedValue({ items: [] }) } },
       ],
     }).compile().then((m) => m.get(InvAiExplainService));
@@ -222,7 +222,7 @@ describe("ImportService — cross-tenant isolation", () => {
         ImportService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn(), execute: jest.fn(), executeMany: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
       ],
     }).compile().then((m) => m.get(ImportService));
 
@@ -241,7 +241,7 @@ describe("ImportService — cross-tenant isolation", () => {
         ImportService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn(), execute: jest.fn(), executeMany: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
       ],
     }).compile().then((m) => m.get(ImportService));
 

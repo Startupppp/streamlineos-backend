@@ -65,7 +65,7 @@ function mockDeps() {
       settingsFor: jest.fn().mockResolvedValue({ holdWindowSeconds: 300, shadowSampleRate: 0, shadowDailyCap: 0 }),
     } as unknown as AutonomyScoringService,
     notifications: {
-      createAndDispatch: jest.fn().mockResolvedValue(undefined),
+      create: jest.fn().mockResolvedValue(undefined),
     } as unknown as NotificationsService,
     quotes: {} as unknown as QuotesService,
   };

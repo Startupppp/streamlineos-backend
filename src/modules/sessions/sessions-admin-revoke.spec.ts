@@ -3,6 +3,7 @@ import { UserProfileService } from "../users/user-profile.service";
 import { SessionsService } from "./sessions.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
+import { UserActivityService } from "../users/user-activity.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
 /**
@@ -43,6 +44,7 @@ async function buildService(activeSessions: { id: string }[]) {
       { provide: AuditService, useValue: { log: jest.fn() } },
       { provide: SessionsService, useValue: { publishRevocations } },
       { provide: EmploymentFactsService, useValue: { getFacts } },
+      { provide: UserActivityService, useValue: { listActivity: jest.fn().mockResolvedValue([]) } },
     ],
   }).compile();
 

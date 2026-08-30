@@ -195,8 +195,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
             invalidate: cacheInvalidate,
             invalidateNamespace: cacheInvalidateNamespace,
             invalidateForOrg: (o: string, k: string) => cacheInvalidate(`${o}:${k}`),
-            invalidateNamespaceForOrg: (o: string, n: string) =>
-              cacheInvalidateNamespace(`${o}:${n}`),
+            invalidateNamespaceForOrg: (o: string, n: string) => cacheInvalidateNamespace(`${o}:${n}`),
           },
         },
         { provide: SessionsService, useValue: { revokeAllForUser } },

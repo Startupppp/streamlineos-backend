@@ -88,15 +88,6 @@ const mockEssService = {
   getOverview: jest.fn().mockResolvedValue({ balance: "0.00", ytdGross: "0.00" }),
   getPayslips: jest.fn().mockResolvedValue([]),
   getSalaryStructure: jest.fn().mockResolvedValue({ components: [] }),
-  listReimbursements: jest.fn().mockResolvedValue([]),
-  createReimbursement: jest.fn().mockResolvedValue({ id: 1 }),
-  listLoans: jest.fn().mockResolvedValue([]),
-  createLoan: jest.fn().mockResolvedValue({ id: 1 }),
-  getTaxDeclaration: jest.fn().mockResolvedValue(null),
-  submitTaxDeclaration: jest.fn().mockResolvedValue({ id: 1 }),
-  addTaxProof: jest.fn().mockResolvedValue({ id: 1 }),
-  getBankDetails: jest.fn().mockResolvedValue({ accountNumber: "***1234", ifsc: "SBIN0001" }),
-  updateBankDetails: jest.fn().mockResolvedValue({ ok: true }),
   getOwnFnf: jest.fn().mockResolvedValue(null),
   getActiveToggles: jest.fn().mockResolvedValue({
     essAllowLoanRequests: true,
@@ -170,7 +161,6 @@ const mockDrizzle = {
 
 const alwaysOnEntitlements = {
   isModuleEnabled: async (): Promise<boolean> => true,
-  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
   getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
   getEffectiveModuleMap: async (): Promise<Record<string, boolean>> => ({}),
 };
@@ -187,6 +177,7 @@ async function buildApp(accessMock: typeof permittedAccess): Promise<INestApplic
       { provide: FnfInsightsService, useValue: mockFnfService },
       { provide: TaxWindowsService, useValue: mockTaxWindowsService },
       { provide: EssService, useValue: mockEssService },
+      { provide: EssSelfServiceService, useValue: mockEssSelfServiceService },
       { provide: AccountingMappingsService, useValue: mockAccountingMappingsService },
       { provide: CalendarService, useValue: mockCalendarService },
       { provide: DRIZZLE, useValue: mockDrizzle },

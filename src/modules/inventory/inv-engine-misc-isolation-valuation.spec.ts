@@ -230,7 +230,7 @@ describe("WebhooksService — cross-tenant isolation", () => {
       providers: [
         WebhooksService,
         { provide: DRIZZLE, useValue: db },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(WebhooksService));
 
@@ -247,7 +247,7 @@ describe("WebhooksService — cross-tenant isolation", () => {
       providers: [
         WebhooksService,
         { provide: DRIZZLE, useValue: db },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(WebhooksService));
 

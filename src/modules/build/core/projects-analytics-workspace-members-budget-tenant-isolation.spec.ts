@@ -86,7 +86,7 @@ describe("ProjectsWorkspaceMembersService — cross-tenant isolation", () => {
       }),
     } as unknown as Db;
     const audit = {} as unknown as AuditService;
-    const pmWorkspaces = { assertAccess: jest.fn().mockResolvedValue(undefined) } as unknown as PmWorkspacesService;
+    const pmWorkspaces = { resolveDefaultWorkspaceId: jest.fn().mockResolvedValue(undefined) } as unknown as PmWorkspacesService;
     const svc = new ProjectsWorkspaceMembersService(db, audit, pmWorkspaces);
 
     const result = await svc.list(ATTACKER_ORG, { page: 1, limit: 10 });
@@ -114,7 +114,7 @@ describe("ProjectsWorkspaceMembersService — cross-tenant isolation", () => {
       }),
     } as unknown as Db;
     const audit = {} as unknown as AuditService;
-    const pmWorkspaces = { assertAccess: jest.fn().mockResolvedValue(undefined) } as unknown as PmWorkspacesService;
+    const pmWorkspaces = { resolveDefaultWorkspaceId: jest.fn().mockResolvedValue(undefined) } as unknown as PmWorkspacesService;
     const svc = new ProjectsWorkspaceMembersService(db, audit, pmWorkspaces);
 
     const result = await svc.list(OWNER_ORG, { page: 1, limit: 10 });

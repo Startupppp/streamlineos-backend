@@ -133,7 +133,7 @@ describe("InvStockAdjustmentsService — cross-tenant isolation", () => {
         InvStockAdjustmentsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
         { provide: WarehouseScopeService, useValue: warehouseScope },
@@ -155,7 +155,7 @@ describe("InvStockAdjustmentsService — cross-tenant isolation", () => {
         InvStockAdjustmentsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
         { provide: WarehouseScopeService, useValue: warehouseScope },
@@ -179,7 +179,7 @@ describe("InvStockTransfersService — cross-tenant isolation", () => {
         InvStockTransfersService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: ReservationService, useValue: { createReservationInTx: jest.fn(), releaseReservation: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: WarehouseScopeService, useValue: warehouseScope },
@@ -200,7 +200,7 @@ describe("InvStockTransfersService — cross-tenant isolation", () => {
         InvStockTransfersService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: ReservationService, useValue: { createReservationInTx: jest.fn(), releaseReservation: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: WarehouseScopeService, useValue: warehouseScope },
@@ -224,7 +224,7 @@ describe("InvStockReservationsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: ReservationService, useValue: { createReservationInTx: jest.fn(), releaseReservation: jest.fn() } },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
       ],
     }).compile().then((m) => m.get(InvStockReservationsService));
 
@@ -243,7 +243,7 @@ describe("InvStockReservationsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: ReservationService, useValue: { createReservationInTx: jest.fn(), releaseReservation: jest.fn() } },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
       ],
     }).compile().then((m) => m.get(InvStockReservationsService));
 
@@ -264,7 +264,7 @@ describe("ShipmentsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
         { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
       ],
     }).compile().then((m) => m.get(ShipmentsService));
@@ -285,7 +285,7 @@ describe("ShipmentsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
         { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
       ],
     }).compile().then((m) => m.get(ShipmentsService));
@@ -307,7 +307,7 @@ describe("LoadsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(LoadsService));
 
@@ -326,7 +326,7 @@ describe("LoadsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(LoadsService));
 
@@ -347,7 +347,7 @@ describe("PackagesService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(PackagesService));
 
@@ -366,7 +366,7 @@ describe("PackagesService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(PackagesService));
 
@@ -386,7 +386,7 @@ describe("CarriersService — cross-tenant isolation", () => {
         CarriersService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CarriersService));
 
@@ -405,7 +405,7 @@ describe("CarriersService — cross-tenant isolation", () => {
         CarriersService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CarriersService));
 
@@ -425,11 +425,8 @@ describe("CustomerReturnsService — cross-tenant isolation", () => {
         CustomerReturnsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
-        { provide: JournalPostingService, useValue: { post: jest.fn() } },
-        { provide: OutboxWriter, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CustomerReturnsService));
 
@@ -447,11 +444,8 @@ describe("CustomerReturnsService — cross-tenant isolation", () => {
         CustomerReturnsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
-        { provide: JournalPostingService, useValue: { post: jest.fn() } },
-        { provide: OutboxWriter, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CustomerReturnsService));
 
@@ -471,11 +465,8 @@ describe("VendorReturnsService — cross-tenant isolation", () => {
         VendorReturnsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
-        { provide: JournalPostingService, useValue: { post: jest.fn() } },
-        { provide: OutboxWriter, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(VendorReturnsService));
 
@@ -493,11 +484,8 @@ describe("VendorReturnsService — cross-tenant isolation", () => {
         VendorReturnsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
-        { provide: JournalPostingService, useValue: { post: jest.fn() } },
-        { provide: OutboxWriter, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(VendorReturnsService));
 

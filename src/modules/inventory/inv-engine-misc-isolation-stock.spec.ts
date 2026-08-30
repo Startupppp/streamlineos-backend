@@ -220,12 +220,12 @@ describe("StockEngineService — cross-tenant isolation", () => {
         StockEngineService,
         { provide: DRIZZLE, useValue: db },
         { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
         { provide: CacheService, useValue: cache },
-        { provide: ValuationService, useValue: { getMethod: jest.fn(), computeMovementCost: jest.fn() } },
+        { provide: ValuationService, useValue: { recordReceipt: jest.fn(), recordIssue: jest.fn() } },
         { provide: WarehouseScopeService, useValue: { resolve: jest.fn().mockResolvedValue(null), warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }), locationPredicate: jest.fn().mockReturnValue({ queryChunks: [] }) } },
-        { provide: PeriodsService, useValue: { getOpenPeriod: jest.fn() } },
-        { provide: MovementCostingService, useValue: { computeLayerCost: jest.fn() } },
+        { provide: PeriodsService, useValue: { assertPeriodOpen: jest.fn() } },
+        { provide: MovementCostingService, useValue: { applyCosting: jest.fn() } },
       ],
     }).compile().then((m) => m.get(StockEngineService));
 
@@ -246,12 +246,12 @@ describe("StockEngineService — cross-tenant isolation", () => {
         StockEngineService,
         { provide: DRIZZLE, useValue: db },
         { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
         { provide: CacheService, useValue: freshCache },
-        { provide: ValuationService, useValue: { getMethod: jest.fn(), computeMovementCost: jest.fn() } },
+        { provide: ValuationService, useValue: { recordReceipt: jest.fn(), recordIssue: jest.fn() } },
         { provide: WarehouseScopeService, useValue: { resolve: jest.fn().mockResolvedValue(null), warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }), locationPredicate: jest.fn().mockReturnValue({ queryChunks: [] }) } },
-        { provide: PeriodsService, useValue: { getOpenPeriod: jest.fn() } },
-        { provide: MovementCostingService, useValue: { computeLayerCost: jest.fn() } },
+        { provide: PeriodsService, useValue: { assertPeriodOpen: jest.fn() } },
+        { provide: MovementCostingService, useValue: { applyCosting: jest.fn() } },
       ],
     }).compile().then((m) => m.get(StockEngineService));
 
@@ -274,8 +274,8 @@ describe("SettingsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: InventorySettingsService, useValue: invSettings },
         { provide: NumberSequenceService, useValue: numSeq },
-        { provide: ReservationService, useValue: { expireForOrg: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: ReservationService, useValue: { expireStale: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
         { provide: CacheService, useValue: cache },
       ],
     }).compile().then((m) => m.get(SettingsService));
@@ -295,8 +295,8 @@ describe("SettingsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: InventorySettingsService, useValue: invSettings },
         { provide: NumberSequenceService, useValue: numSeq },
-        { provide: ReservationService, useValue: { expireForOrg: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: ReservationService, useValue: { expireStale: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
         { provide: CacheService, useValue: cache },
       ],
     }).compile().then((m) => m.get(SettingsService));
@@ -317,7 +317,7 @@ describe("ChannelsService — cross-tenant isolation", () => {
         ChannelsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(ChannelsService));
 
@@ -335,7 +335,7 @@ describe("ChannelsService — cross-tenant isolation", () => {
         ChannelsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(ChannelsService));
 
@@ -355,7 +355,7 @@ describe("TplService — cross-tenant isolation", () => {
         TplService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(TplService));
 
@@ -373,7 +373,7 @@ describe("TplService — cross-tenant isolation", () => {
         TplService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(TplService));
 

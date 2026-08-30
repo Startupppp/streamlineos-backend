@@ -11,6 +11,7 @@ import { InvReportsExtendedService } from "./reports/inv-reports-extended.servic
 import { CacheService } from "../../common/cache/cache.service";
 import { WarehouseScopeService } from "./stock-engine/warehouse-scope.service";
 import { StockEngineService } from "./stock-engine/stock-engine.service";
+import { StockEngineBatchService } from "./stock-engine/stock-engine-batch.service";
 import { NumberSequenceService } from "./stock-engine/number-sequence.service";
 import { InventoryAuditService } from "./stock-engine/inventory-audit.service";
 
@@ -69,8 +70,8 @@ describe("HoldsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: WarehouseScopeService, useValue: warehouseScope },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(HoldsService));
 
@@ -89,8 +90,8 @@ describe("HoldsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: WarehouseScopeService, useValue: warehouseScope },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(HoldsService));
 
@@ -110,9 +111,9 @@ describe("InspectionsService — cross-tenant isolation", () => {
         InspectionsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(InspectionsService));
 
@@ -130,9 +131,9 @@ describe("InspectionsService — cross-tenant isolation", () => {
         InspectionsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(InspectionsService));
 
@@ -152,9 +153,9 @@ describe("RecallsService — cross-tenant isolation", () => {
         RecallsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineBatchService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(RecallsService));
 
@@ -172,9 +173,9 @@ describe("RecallsService — cross-tenant isolation", () => {
         RecallsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineBatchService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: InventoryAuditService, useValue: { log: jest.fn() } },
+        { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
       ],
     }).compile().then((m) => m.get(RecallsService));
 
@@ -195,7 +196,7 @@ describe("InvCycleCountsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: WarehouseScopeService, useValue: warehouseScope },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
       ],
     }).compile().then((m) => m.get(InvCycleCountsService));
@@ -215,7 +216,7 @@ describe("InvCycleCountsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: WarehouseScopeService, useValue: warehouseScope },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
       ],
     }).compile().then((m) => m.get(InvCycleCountsService));
@@ -237,7 +238,7 @@ describe("InvPhysicalAuditsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: WarehouseScopeService, useValue: warehouseScope },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
       ],
     }).compile().then((m) => m.get(InvPhysicalAuditsService));
@@ -257,7 +258,7 @@ describe("InvPhysicalAuditsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: WarehouseScopeService, useValue: warehouseScope },
-        { provide: StockEngineService, useValue: { post: jest.fn() } },
+        { provide: StockEngineService, useValue: { execute: jest.fn() } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
       ],
     }).compile().then((m) => m.get(InvPhysicalAuditsService));

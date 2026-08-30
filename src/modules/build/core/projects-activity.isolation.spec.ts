@@ -17,7 +17,7 @@ function makeEmptySelectMock() {
   });
 }
 
-const mockNotifications = { send: jest.fn() } as unknown as NotificationsService;
+const mockNotifications = { create: jest.fn() } as unknown as NotificationsService;
 const mockDispatch = { emit: jest.fn() } as unknown as NotificationDispatchService;
 
 beforeEach(() => {

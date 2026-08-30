@@ -7,6 +7,9 @@ import { EntitlementsService } from "../../access/entitlements.service";
 import { ApprovalsService } from "./approvals.service";
 import { LockingService } from "./locking.service";
 import { PayoutBatchesService } from "./payout-batches.service";
+import { BatchCreatorService } from "./batch-creator.service";
+import { BatchStatusService } from "./batch-status.service";
+import { PayoutValidationService } from "./payout-validation.service";
 import { PayslipTemplatesService } from "./payslip-templates.service";
 import { PublishingService } from "./publishing.service";
 import { PayrollCommandReceiptsService } from "../command-receipts.service";
@@ -63,16 +66,25 @@ const mockLockingService = {
 };
 
 const mockPayoutBatchesService = {
-  validatePayout: jest.fn().mockResolvedValue({ valid: true, blockers: [] }),
-  createBatch: jest.fn().mockResolvedValue(mockBatch),
   listBatches: jest.fn().mockResolvedValue([mockBatch]),
   getBatch: jest.fn().mockResolvedValue(mockBatch),
   getFile: jest.fn().mockResolvedValue({ content: "", filename: "batch.csv" }),
+  getBankDetails: jest.fn().mockResolvedValue({ accountNumber: "***1234", ifsc: "SBIN0001" }),
+};
+
+const mockBatchCreatorService = {
+  createBatch: jest.fn().mockResolvedValue(mockBatch),
+};
+
+const mockBatchStatusService = {
   markSent: jest.fn().mockResolvedValue({ ok: true }),
   markBatchPaid: jest.fn().mockResolvedValue({ ok: true }),
   markItemPaid: jest.fn().mockResolvedValue({ ok: true }),
   markItemFailed: jest.fn().mockResolvedValue({ ok: true }),
-  getBankDetails: jest.fn().mockResolvedValue({ accountNumber: "***1234", ifsc: "SBIN0001" }),
+};
+
+const mockPayoutValidationService = {
+  validatePayout: jest.fn().mockResolvedValue({ valid: true, blockers: [] }),
 };
 
 const mockPayslipTemplatesService = {
@@ -98,7 +110,6 @@ const mockCommandReceiptsService = {
 
 const alwaysOnEntitlements = {
   isModuleEnabled: async (): Promise<boolean> => true,
-  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
   getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
   getEffectiveModuleMap: async (): Promise<Record<string, boolean>> => ({}),
 };
@@ -139,6 +150,9 @@ async function buildApp(accessMock: typeof permittedAccess): Promise<INestApplic
       { provide: ApprovalsService, useValue: mockApprovalsService },
       { provide: LockingService, useValue: mockLockingService },
       { provide: PayoutBatchesService, useValue: mockPayoutBatchesService },
+      { provide: BatchCreatorService, useValue: mockBatchCreatorService },
+      { provide: BatchStatusService, useValue: mockBatchStatusService },
+      { provide: PayoutValidationService, useValue: mockPayoutValidationService },
       { provide: PayslipTemplatesService, useValue: mockPayslipTemplatesService },
       { provide: PublishingService, useValue: mockPublishingService },
       { provide: PayrollCommandReceiptsService, useValue: mockCommandReceiptsService },

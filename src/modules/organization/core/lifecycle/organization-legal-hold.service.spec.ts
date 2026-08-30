@@ -47,7 +47,7 @@ async function buildService() {
       .mockResolvedValue({ saga: { sagaId: "saga-123" }, steps: [] }),
     runStep: sagaRunStep,
     complete: jest.fn().mockResolvedValue(undefined),
-    fail: jest.fn().mockResolvedValue(undefined),
+    compensate: jest.fn().mockResolvedValue(undefined),
   };
   const audit = { log: auditLog };
 

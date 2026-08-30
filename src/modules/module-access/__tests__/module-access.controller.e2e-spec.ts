@@ -11,6 +11,8 @@ import { signToken } from "test/helpers/sign-token";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ModuleAccessService } from "../module-access.service";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
+import { ModuleAccessRosterService } from "../module-access-roster.service";
+import { ModuleAccessOwnershipService } from "../module-access-ownership.service";
 import { ModuleStandingMutationsService } from "../module-standing-mutations.service";
 import { ModuleStandingRosterService } from "../module-standing-roster.service";
 import { ACCESS_MANAGED_MODULES } from "src/modules/rbac/permissions/module-access";
@@ -84,10 +86,16 @@ const mockModuleAccessGroupsService = {
   listGroupMembers: jest.fn(),
   addGroupMember: jest.fn(),
   removeGroupMember: jest.fn(),
+};
+
+const mockModuleAccessRosterService = {
   listMemberCandidates: jest.fn(),
+};
+
+const mockModuleAccessOwnershipService = {
   getOwnership: jest.fn(),
-  initiateOwnershipTransfer: jest.fn(),
-  cancelOwnershipTransfer: jest.fn(),
+  initiateTransfer: jest.fn(),
+  cancelTransfer: jest.fn(),
 };
 
 const mockModuleStandingMutationsService = {
@@ -121,6 +129,8 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       overrides: [
         { provide: ModuleAccessService, useValue: mockModuleAccessService },
         { provide: ModuleAccessGroupsService, useValue: mockModuleAccessGroupsService },
+        { provide: ModuleAccessRosterService, useValue: mockModuleAccessRosterService },
+        { provide: ModuleAccessOwnershipService, useValue: mockModuleAccessOwnershipService },
         { provide: ModuleStandingMutationsService, useValue: mockModuleStandingMutationsService },
         { provide: ModuleStandingRosterService, useValue: mockModuleStandingRosterService },
         { provide: IdempotencyInterceptor, useValue: idempotencyPassThrough },
@@ -143,10 +153,10 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     mockModuleAccessGroupsService.listGroupMembers.mockResolvedValue([]);
     mockModuleAccessGroupsService.addGroupMember.mockResolvedValue({ success: true });
     mockModuleAccessGroupsService.removeGroupMember.mockResolvedValue({ success: true });
-    mockModuleAccessGroupsService.listMemberCandidates.mockResolvedValue([]);
-    mockModuleAccessGroupsService.getOwnership.mockResolvedValue(stubOwnership);
-    mockModuleAccessGroupsService.initiateOwnershipTransfer.mockResolvedValue({ success: true });
-    mockModuleAccessGroupsService.cancelOwnershipTransfer.mockResolvedValue({ success: true });
+    mockModuleAccessRosterService.listMemberCandidates.mockResolvedValue([]);
+    mockModuleAccessOwnershipService.getOwnership.mockResolvedValue(stubOwnership);
+    mockModuleAccessOwnershipService.initiateTransfer.mockResolvedValue({ success: true });
+    mockModuleAccessOwnershipService.cancelTransfer.mockResolvedValue({ success: true });
     mockModuleStandingMutationsService.grantAdminStanding.mockResolvedValue({ success: true });
     mockModuleStandingMutationsService.revokeStanding.mockResolvedValue({ success: true });
     mockModuleStandingMutationsService.directTransferOwnership.mockResolvedValue({ success: true });
@@ -487,7 +497,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     });
 
     it("DELETE /module-access/hr/ownership/transfer → 404 when no pending transfer exists", async () => {
-      mockModuleAccessGroupsService.cancelOwnershipTransfer.mockRejectedValue(
+      mockModuleAccessOwnershipService.cancelTransfer.mockRejectedValue(
         new NotFoundException("No pending transfer found for this module"),
       );
       const token = await signToken({ sub: "owner_ma_1" });
@@ -812,7 +822,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       });
 
       it("module admin: service denies ownership transfer → 403", async () => {
-        mockModuleAccessGroupsService.initiateOwnershipTransfer.mockRejectedValueOnce(
+        mockModuleAccessOwnershipService.initiateTransfer.mockRejectedValueOnce(
           new ForbiddenException("Only the module owner may initiate a transfer"),
         );
         const token = await signToken({

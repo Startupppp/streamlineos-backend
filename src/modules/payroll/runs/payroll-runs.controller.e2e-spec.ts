@@ -69,7 +69,7 @@ const mockGenerateService = {
 };
 
 const mockGeneratePipelineService = {
-  run: jest.fn().mockResolvedValue({ ok: true }),
+  runCalcAndDetect: jest.fn().mockResolvedValue({ ok: true }),
 };
 
 const mockExceptionsService = {
@@ -102,7 +102,6 @@ const mockProfilesService = {
 
 const alwaysOnEntitlements = {
   isModuleEnabled: async (): Promise<boolean> => true,
-  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
   getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
   getEffectiveModuleMap: async (): Promise<Record<string, boolean>> => ({}),
 };

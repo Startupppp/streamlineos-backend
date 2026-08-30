@@ -104,8 +104,8 @@ async function build(db: ReturnType<typeof makeDb>) {
     providers: [
       CronBillingService,
       { provide: DRIZZLE, useValue: db },
-      { provide: EmailService, useValue: { send: jest.fn(), sendTemplate: jest.fn() } },
-      { provide: AiCreditsService, useValue: { getBalance: jest.fn(), purchaseCreditsDirectly: jest.fn() } },
+      { provide: EmailService, useValue: { sendEmail: jest.fn() } },
+      { provide: AiCreditsService, useValue: { getWallet: jest.fn(), purchaseCreditsDirectly: jest.fn() } },
       { provide: PlanLimitsService, useValue: { bust: jest.fn() } },
       { provide: RevenueAnalyticsService, useValue: revenue },
       { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
