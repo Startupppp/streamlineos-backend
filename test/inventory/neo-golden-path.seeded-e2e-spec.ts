@@ -12,6 +12,9 @@ import { HandlingUnitService } from "src/modules/inventory/handling-units/handli
 import { KitService } from "src/modules/inventory/kitting/kit.service";
 import { OwnershipService } from "src/modules/inventory/stock-types/ownership.service";
 import { SlottingService } from "src/modules/inventory/slotting/slotting.service";
+import { PickWaveService } from "src/modules/inventory/picking/pick-wave.service";
+import { PickConfirmService } from "src/modules/inventory/picking/pick-confirm.service";
+import { InventorySettingsService } from "src/modules/inventory/stock-engine/inventory-settings.service";
 import { StockEngineService } from "src/modules/inventory/stock-engine/stock-engine.service";
 import { PutawayService } from "src/modules/inventory/warehouses/putaway.service";
 import { PoService } from "src/modules/inventory/purchase-orders/po.service";
@@ -92,6 +95,8 @@ interface Scene {
   crossDockVariantId: number;
   /** NEO-10: sold by weight, handled in bags. */
   catchWeightVariantId: number;
+  /** NEO-14: enough of it that four orders can all be picked. */
+  wavelessVariantId: number;
   channelId: number;
 }
 
@@ -112,6 +117,8 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
   let catchWeightPoId: number;
   let catchWeightPoLineId: number;
   let catchWeightSoId: number;
+  let waveId: number;
+  let wavelessSoB: number;
 
   const asTenant = <T>(work: () => Promise<T>): Promise<T> =>
     runInNewTenantTransaction(app.app.get<Db>(DRIZZLE), scene.orgId, work);
@@ -251,6 +258,7 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
       const componentBId = await makeVariant("NEO component B", "NEOCB");
       const crossDockVariantId = await makeVariant("NEO cross-dock case", "NEOXD");
       const catchWeightVariantId = await makeVariant("NEO chicken", "NEOCW", "CATCH_WEIGHT");
+      const wavelessVariantId = await makeVariant("NEO wave item", "NEOWV");
 
       // NEO-2 matches a platform line on the barcode both sides agreed on.
       const ean = `890${tag.replace(/\D/g, "0").padEnd(10, "0").slice(0, 10)}`;
@@ -318,6 +326,7 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
         componentBId,
         crossDockVariantId,
         catchWeightVariantId,
+        wavelessVariantId,
         channelId: channel.id,
       };
     });
@@ -1006,6 +1015,245 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
     // remainder cannot round itself right.
     expect(await onHandTextAt(scene.catchWeightVariantId, scene.receivingId)).toBe("5.2500");
     await expectReconciled("NEO-10 catch-weight shipped");
+  }, SLICE_TIMEOUT_MS);
+
+  /**
+   * NEO-14 — waveless picking, with a wave actually joined.
+   *
+   * The decision was a pure function with a spec per condition, and
+   * `proposeWaveJoin` returned it over HTTP. Its own comment said the caller
+   * "then either posts to the join route or raises a new wave" and there was no
+   * join route, so the answer had nothing to act on and no order had ever
+   * attached to an open wave.
+   *
+   * Both branches are here because "off" is the more important one: off has to
+   * mean the code path is not reached, not reached and ignored.
+   */
+  const confirmedOrderFor = async (qty: number, key: string): Promise<number> => {
+    const so = await asTenant(() =>
+      app.app.get(SoCoreService).createSo(scene.orgId, scene.userId, {
+        orderDate: "2026-09-07",
+        warehouseId: scene.warehouseId,
+        currency: "INR",
+        lines: [
+          {
+            productVariantId: scene.wavelessVariantId,
+            quantity: qty,
+            unitPrice: "3.0000",
+            taxRate: "0",
+            lineOrder: 0,
+          },
+        ],
+      }),
+    );
+    const soId = (so as { id: number }).id;
+    await asTenant(() =>
+      app.app.get(SoLifecycleService).confirmSo(scene.orgId, soId, scene.userId, key),
+    );
+    return soId;
+  };
+
+  const activeReservationCount = async (soId: number): Promise<number> => {
+    const [row] = await asTenant(() =>
+      db().execute<{ n: number }>(sql`
+        SELECT COUNT(*)::int AS n FROM inv_stock_reservations
+        WHERE org_id = ${scene.orgId} AND source_type = 'inv_sales_order'
+          AND source_id = ${String(soId)} AND status = 'ACTIVE'`),
+    );
+    return Number(row!.n);
+  };
+
+  const waveOfSo = async (soId: number): Promise<number[]> => {
+    const rows = await asTenant(() =>
+      db().execute<{ pick_list_id: number }>(sql`
+        SELECT DISTINCT pll.pick_list_id
+          FROM inv_pick_list_lines pll
+          JOIN inv_so_lines sol ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
+         WHERE pll.org_id = ${scene.orgId} AND sol.so_id = ${soId}`),
+    );
+    return rows.map((r) => Number(r.pick_list_id)).sort((a, b) => a - b);
+  };
+
+  it("NEO-14: opens a wave for the first order", async () => {
+    // Stock through the engine, like everything else here: a hand-written level
+    // row is drift the moment reconciliation looks at it.
+    await asTenant(() =>
+      app.app.get(StockEngineService).execute(scene.orgId, scene.userId, {
+        idempotencyKey: `neo-wave-stock-${scene.tag}`,
+        sourceType: "inv_opening_balance",
+        sourceId: `neo-wave-${scene.tag}`,
+        reason: "Opening stock for the waveless slice",
+        movements: [
+          {
+            transactionType: "OPENING_BALANCE",
+            productVariantId: scene.wavelessVariantId,
+            locationId: scene.backBinId,
+            quantityDelta: "40.0000",
+            unitCost: "2.0000",
+          },
+        ],
+      }),
+    );
+
+    await asTenant(() =>
+      app.app
+        .get(InventorySettingsService)
+        .update(scene.orgId, { wavelessPicking: true, wavelessMaxLines: 50 }, scene.userId),
+    );
+
+    const soA = await confirmedOrderFor(5, `neo-wave-a-${scene.tag}`);
+    const wave = await asTenant(() =>
+      app.app.get(PickWaveService).createWave(scene.orgId, scene.userId, {
+        warehouseId: scene.warehouseId,
+        soIds: [soA],
+      }),
+    );
+    waveId = wave.pickListId;
+    expect(wave.lineCount).toBe(1);
+    // Allocated, not merely listed: a wave line with no location is a task with
+    // no instruction.
+    expect(wave.unallocatedLines).toBe(0);
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-14: attaches a second order to that same open wave, and reserves nothing twice", async () => {
+    wavelessSoB = await confirmedOrderFor(6, `neo-wave-b-${scene.tag}`);
+    const reservedBefore = await activeReservationCount(wavelessSoB);
+    expect(reservedBefore).toBe(1);
+
+    const proposal = await asTenant(() =>
+      app.app.get(PickWaveService).proposeWaveJoin(scene.orgId, scene.userId, {
+        warehouseId: scene.warehouseId,
+        soIds: [wavelessSoB],
+      }),
+    );
+    expect(proposal).toEqual({ join: true, waveId, reason: null });
+
+    const joined = await asTenant(() =>
+      app.app.get(PickWaveService).joinWave(scene.orgId, scene.userId, waveId, {
+        warehouseId: scene.warehouseId,
+        soIds: [wavelessSoB],
+      }),
+    );
+    expect(joined.pickListId).toBe(waveId);
+    expect(joined.addedLineCount).toBe(1);
+    expect(joined.lineCount).toBe(2);
+    expect(joined.unallocatedLines).toBe(0);
+
+    // That wave, and no other. A join that quietly raised a second wave would
+    // look identical from the order's side unless somebody counted.
+    expect(await waveOfSo(wavelessSoB)).toEqual([waveId]);
+
+    // Joining a wave does not promise the stock again. The reservation already
+    // stands against the order line; a second one is the same units held twice.
+    expect(await activeReservationCount(wavelessSoB)).toBe(1);
+    await expectReconciled("NEO-14 wave joined");
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-14: refuses to put the same order line on the wave twice", async () => {
+    await expect(
+      asTenant(() =>
+        app.app.get(PickWaveService).joinWave(scene.orgId, scene.userId, waveId, {
+          warehouseId: scene.warehouseId,
+          soIds: [wavelessSoB],
+        }),
+      ),
+    ).rejects.toThrow(/already on a pick wave/i);
+    expect(await waveOfSo(wavelessSoB)).toEqual([waveId]);
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-14: refuses to add work behind a picker who has already started walking", async () => {
+    const [firstLine] = await asTenant(() =>
+      db().execute<{ id: number }>(sql`
+        SELECT id FROM inv_pick_list_lines
+        WHERE org_id = ${scene.orgId} AND pick_list_id = ${waveId}
+        ORDER BY id LIMIT 1`),
+    );
+
+    await asTenant(() =>
+      app.app.get(PickWaveService).claimWave(scene.orgId, scene.userId, waveId),
+    );
+    await asTenant(() =>
+      app.app.get(PickConfirmService).confirmPick(
+        scene.orgId,
+        scene.userId,
+        waveId,
+        { pickLineId: firstLine!.id, quantityPicked: "5.0000" },
+        `neo-wave-confirm-${scene.tag}`,
+      ),
+    );
+
+    const soC = await confirmedOrderFor(4, `neo-wave-c-${scene.tag}`);
+    // The proposal and the join have to agree, and the join is the one that
+    // matters: the picker started between the two calls, and the gate is taken
+    // again here rather than trusted from the answer.
+    const proposal = await asTenant(() =>
+      app.app.get(PickWaveService).proposeWaveJoin(scene.orgId, scene.userId, {
+        warehouseId: scene.warehouseId,
+        soIds: [soC],
+      }),
+    );
+    expect(proposal.join).toBe(false);
+
+    await expect(
+      asTenant(() =>
+        app.app.get(PickWaveService).joinWave(scene.orgId, scene.userId, waveId, {
+          warehouseId: scene.warehouseId,
+          soIds: [soC],
+        }),
+      ),
+    ).rejects.toThrow(/no open wave|room/i);
+    expect(await waveOfSo(soC)).toEqual([]);
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-14: with the setting off, a new order gets a new wave", async () => {
+    await asTenant(() =>
+      app.app
+        .get(InventorySettingsService)
+        .update(scene.orgId, { wavelessPicking: false }, scene.userId),
+    );
+
+    // A wave nobody has started, so the only thing standing between this order
+    // and that wave is the setting.
+    const soD = await confirmedOrderFor(3, `neo-wave-d-${scene.tag}`);
+    const fresh = await asTenant(() =>
+      app.app.get(PickWaveService).createWave(scene.orgId, scene.userId, {
+        warehouseId: scene.warehouseId,
+        soIds: [soD],
+      }),
+    );
+    const soE = await confirmedOrderFor(2, `neo-wave-e-${scene.tag}`);
+
+    const proposal = await asTenant(() =>
+      app.app.get(PickWaveService).proposeWaveJoin(scene.orgId, scene.userId, {
+        warehouseId: scene.warehouseId,
+        soIds: [soE],
+      }),
+    );
+    expect(proposal).toEqual({
+      join: false,
+      waveId: null,
+      reason: "Waveless picking is switched off",
+    });
+
+    // Off means the path is not reached, not reached and ignored.
+    await expect(
+      asTenant(() =>
+        app.app.get(PickWaveService).joinWave(scene.orgId, scene.userId, fresh.pickListId, {
+          warehouseId: scene.warehouseId,
+          soIds: [soE],
+        }),
+      ),
+    ).rejects.toThrow(/switched off/i);
+
+    const own = await asTenant(() =>
+      app.app.get(PickWaveService).createWave(scene.orgId, scene.userId, {
+        warehouseId: scene.warehouseId,
+        soIds: [soE],
+      }),
+    );
+    expect(own.pickListId).not.toBe(fresh.pickListId);
+    expect(await waveOfSo(soE)).toEqual([own.pickListId]);
+    await expectReconciled("NEO-14 waveless off");
   }, SLICE_TIMEOUT_MS);
 
   it("NEO-11: consigned stock is on hand and is never promisable", async () => {

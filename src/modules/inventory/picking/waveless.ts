@@ -44,8 +44,25 @@ export interface JoinDecision {
   reason: string | null;
 }
 
-/** Statuses in which a wave is still only a plan. */
-const UNSTARTED = new Set(["PENDING", "ASSIGNED"]);
+/**
+ * Statuses in which a wave is still only a plan.
+ *
+ * `PENDING` and nothing else, because those are the labels
+ * `inv_pick_list_status` actually has: PENDING, IN_PROGRESS, COMPLETED,
+ * CANCELLED. This set once also held `"ASSIGNED"`, which is not one of them —
+ * claiming a wave sets `assigned_to` on the row and leaves the status alone, so
+ * there is no assigned state to name. The string was harmless here (a set that
+ * never matches) and fatal in `proposeWaveJoin`, whose SQL carried the same
+ * invented label into `status IN ('PENDING', 'ASSIGNED')` and made every call
+ * to the one NEO-14 endpoint throw `invalid input value for enum`.
+ *
+ * A claimed-but-untouched wave is still joinable, and deliberately: the
+ * distinction this rule draws is between a plan and a walk somebody has begun,
+ * and picking up the paperwork is not beginning. `linesPicked === 0` is what
+ * says they have not begun; the status is the coarser half of the same test,
+ * because `confirmPick` moves the wave to IN_PROGRESS.
+ */
+const UNSTARTED = new Set(["PENDING"]);
 
 export function decideWaveJoin(params: {
   wavelessPicking: boolean;

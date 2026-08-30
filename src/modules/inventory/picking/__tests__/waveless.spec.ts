@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { BadRequestException } from "@nestjs/common";
+import { invPickListStatusEnum } from "src/db/schema/common/enums";
 import { assertNotAlreadyOnAWave, decideWaveJoin, type OpenWave } from "../waveless";
 
 function wave(overrides: Partial<OpenWave> & { id: number }): OpenWave {
@@ -12,6 +15,43 @@ function wave(overrides: Partial<OpenWave> & { id: number }): OpenWave {
 }
 
 const BASE = { maxLines: 50, warehouseId: 1, newLineCount: 3 };
+
+/**
+ * The ratchet this file was missing.
+ *
+ * `UNSTARTED` once held `"ASSIGNED"`, which is not a label of
+ * `inv_pick_list_status`. In this file that was invisible — a set entry that
+ * never matches changes no outcome, and every test below still passed. In
+ * `proposeWaveJoin` the same invented string reached Postgres as
+ * `status IN ('PENDING', 'ASSIGNED')` and every call to the one NEO-14 endpoint
+ * died `invalid input value for enum inv_pick_list_status: "ASSIGNED"`.
+ *
+ * A rule that names statuses has to name statuses that exist, and a spec built
+ * only from the rule's own vocabulary cannot tell. So this reads both files and
+ * compares them: the decision's statuses against the enum's, and the service's
+ * SQL against the same enum.
+ */
+describe("NEO-14 - the statuses named are statuses that exist", () => {
+  const LABELS = new Set<string>(invPickListStatusEnum.enumValues);
+  const src = (rel: string) => readFileSync(join(__dirname, "..", rel), "utf8");
+
+  it("names only real pick-list statuses in the join rule", () => {
+    const set = /const UNSTARTED = new Set\(\[([^\]]*)\]\)/.exec(src("waveless.ts"));
+    expect(set).not.toBeNull();
+    const named = [...set![1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
+    expect(named.length).toBeGreaterThan(0);
+    expect(named.filter((label) => !LABELS.has(label))).toEqual([]);
+  });
+
+  it("names only real pick-list statuses in the SQL that finds open waves", () => {
+    // The half that actually reaches the database, and the half that broke.
+    const sql = src("pick-wave.service.ts");
+    const quoted = [...sql.matchAll(/pl\.status\s*(?:=|IN\s*\()\s*([^)\n]+)/g)]
+      .flatMap((m) => [...m[1]!.matchAll(/'([^']+)'/g)].map((q) => q[1]!));
+    expect(quoted.length).toBeGreaterThan(0);
+    expect(quoted.filter((label) => !LABELS.has(label))).toEqual([]);
+  });
+});
 
 describe("NEO-14 - joining an open wave", () => {
   it("refuses when the setting is off, whatever else is true", () => {

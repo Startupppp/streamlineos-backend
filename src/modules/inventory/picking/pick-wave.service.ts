@@ -19,7 +19,7 @@ import { InventorySettingsService } from "../stock-engine/inventory-settings.ser
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { SoCoreService } from "../sales-orders/so-core.service";
 import { allocateWaveLines } from "./pick-allocation";
-import { decideWaveJoin } from "./waveless";
+import { assertNotAlreadyOnAWave, decideWaveJoin } from "./waveless";
 import { pickConstraintsResolver } from "./pick-allocation-constraints";
 import { assertClaimHeldBy } from "./pick-line";
 import { PICK_LINE_CLOSED_SQL } from "./pick-exception-policy";
@@ -92,7 +92,7 @@ export class PickWaveService {
       LEFT JOIN inv_pick_list_lines pll ON pll.org_id = pl.org_id AND pll.pick_list_id = pl.id
       WHERE pl.org_id = ${orgId}
         AND pl.warehouse_id = ${input.warehouseId}
-        AND pl.status IN ('PENDING', 'ASSIGNED')
+        AND pl.status = 'PENDING'
       GROUP BY pl.id, pl.warehouse_id, pl.status
       ORDER BY pl.id
       LIMIT 50
@@ -113,7 +113,15 @@ export class PickWaveService {
     });
   }
 
-  async createWave(orgId: string, userId: string, input: CreateWaveInput) {
+  /**
+   * The work `createWave` and `joinWave` share: are these orders pickable from
+   * this building, what are their lines, and where is each line's stock.
+   *
+   * Extracted rather than copied. A join that validated orders differently from
+   * a create would be a second definition of "ready to pick", and the two would
+   * drift the first time one of them was fixed.
+   */
+  private async planWaveLines(orgId: string, userId: string, input: CreateWaveInput) {
     await this.warehouseScope.assertWarehouseVisible(orgId, userId, input.warehouseId);
 
     const orders = await this.db.query.invSalesOrders.findMany({
@@ -193,6 +201,38 @@ export class PickWaveService {
         ),
     );
 
+    return { lines, allocations };
+  }
+
+  /** The wave line as it is stored, on the grain the allocator resolved. */
+  private toWaveLine(
+    orgId: string,
+    pickListId: number,
+    line: { soLineId: number; productVariantId: number; quantity: unknown },
+    allocations: Awaited<ReturnType<PickWaveService["planWaveLines"]>>["allocations"],
+  ) {
+    const at = allocations.get(line.soLineId);
+    const allocated = at?.status === "ALLOCATED" ? at : null;
+    return {
+      orgId,
+      pickListId,
+      soLineId: line.soLineId,
+      productVariantId: line.productVariantId,
+      locationId: allocated?.locationId ?? null,
+      lotId: allocated?.lotId ?? null,
+      serialId: allocated?.serialId ?? null,
+      // NEO-4. The wave line stands on the same grain the allocation
+      // resolved, or the pick empties a different row than the promise
+      // holds.
+      handlingUnitId: allocated?.handlingUnitId ?? null,
+      quantityToPick: String(line.quantity),
+      quantityPicked: "0",
+    };
+  }
+
+  async createWave(orgId: string, userId: string, input: CreateWaveInput) {
+    const { lines, allocations } = await this.planWaveLines(orgId, userId, input);
+
     const pickNumber = await this.numSeq.next(orgId, "PICK_LIST");
 
     return this.db.transaction(async (tx) => {
@@ -212,27 +252,7 @@ export class PickWaveService {
 
       const inserted = await tx
         .insert(invPickListLines)
-        .values(
-          lines.map((line) => {
-            const at = allocations.get(line.soLineId);
-            const allocated = at?.status === "ALLOCATED" ? at : null;
-            return {
-              orgId,
-              pickListId: wave!.id,
-              soLineId: line.soLineId,
-              productVariantId: line.productVariantId,
-              locationId: allocated?.locationId ?? null,
-              lotId: allocated?.lotId ?? null,
-              serialId: allocated?.serialId ?? null,
-              // NEO-4. The wave line stands on the same grain the allocation
-              // resolved, or the pick empties a different row than the promise
-              // holds.
-              handlingUnitId: allocated?.handlingUnitId ?? null,
-              quantityToPick: String(line.quantity),
-              quantityPicked: "0",
-            };
-          }),
-        )
+        .values(lines.map((line) => this.toWaveLine(orgId, wave!.id, line, allocations)))
         .returning({ id: invPickListLines.id, soLineId: invPickListLines.soLineId });
 
       // R3, item 1. Named rather than counted. A wave that comes back "3 lines
@@ -268,6 +288,120 @@ export class PickWaveService {
         lineCount: lines.length,
         // Surfaced rather than swallowed: a wave whose lines have nowhere to be
         // picked from is a stock problem the picker cannot solve at the shelf.
+        unallocatedLines: needsDecision.length,
+        linesNeedingDecision: needsDecision,
+      };
+    });
+  }
+
+  /**
+   * NEO-14 — actually join the wave `proposeWaveJoin` named.
+   *
+   * The propose endpoint has always existed and its own comment promised that
+   * "the caller then either posts to the join route or raises a new wave".
+   * There was no join route: NEO-14 shipped a decision with nothing to act on,
+   * which is why no wave had ever been joined. This is that route.
+   *
+   * ## The decision is taken again here, not trusted
+   *
+   * `proposeWaveJoin` answers a question about a moment that has passed. Between
+   * the proposal and this call a picker can claim the wave and confirm a line,
+   * and joining it then is precisely the "adding work behind somebody who is
+   * already walking" that `waveless.ts` refuses in four conditions. So the rule
+   * is re-run against *this* wave and its refusal is the caller's answer — the
+   * proposal is a hint, and this is the gate.
+   *
+   * ## A line joins exactly once
+   *
+   * `assertNotAlreadyOnAWave` was written with NEO-14 and had no caller either.
+   * The reservation already stands against the sales-order line; joining does
+   * not make a second one, and a line on two waves is the same promise on the
+   * floor twice. Refused rather than deduplicated: a caller asking for it has
+   * lost track of something.
+   */
+  async joinWave(orgId: string, userId: string, pickListId: number, input: CreateWaveInput) {
+    const wave = await this.db.query.invPickLists.findFirst({
+      where: and(eq(invPickLists.id, pickListId), eq(invPickLists.orgId, orgId)),
+      columns: { id: true, warehouseId: true, status: true, pickNumber: true },
+    });
+    if (!wave) throw new NotFoundException("Pick wave not found");
+
+    const { lines, allocations } = await this.planWaveLines(orgId, userId, input);
+
+    const [shape] = await this.db.execute<{ line_count: number; lines_picked: number }>(sql`
+      SELECT COUNT(*)::int AS line_count,
+             COUNT(*) FILTER (WHERE quantity_picked::numeric > 0)::int AS lines_picked
+        FROM inv_pick_list_lines
+       WHERE org_id = ${orgId} AND pick_list_id = ${pickListId}
+    `);
+
+    const settings = await this.settingsService.get(orgId);
+    const decision = decideWaveJoin({
+      wavelessPicking: settings.wavelessPicking,
+      maxLines: settings.wavelessMaxLines,
+      warehouseId: input.warehouseId,
+      newLineCount: lines.length,
+      openWaves: [
+        {
+          id: wave.id,
+          warehouseId: wave.warehouseId,
+          status: wave.status,
+          lineCount: Number(shape!.line_count),
+          linesPicked: Number(shape!.lines_picked),
+        },
+      ],
+    });
+    if (!decision.join || decision.waveId !== wave.id) {
+      throw new BadRequestException(decision.reason ?? "These orders cannot join that wave");
+    }
+
+    const onAWave = await this.db.execute<{ so_line_id: number }>(sql`
+      SELECT DISTINCT pll.so_line_id
+        FROM inv_pick_list_lines pll
+       WHERE pll.org_id = ${orgId}
+         AND pll.so_line_id IN (${sql.join(
+           lines.map((l) => sql`${l.soLineId}`),
+           sql`, `,
+         )})
+    `);
+    const already = new Set(onAWave.map((row) => Number(row.so_line_id)));
+    for (const line of lines) assertNotAlreadyOnAWave(line.soLineId, already);
+
+    return this.db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(invPickListLines)
+        .values(lines.map((line) => this.toWaveLine(orgId, wave.id, line, allocations)))
+        .returning({ id: invPickListLines.id, soLineId: invPickListLines.soLineId });
+
+      const needsDecision = inserted
+        .filter(
+          (row) =>
+            row.soLineId !== null &&
+            allocations.get(row.soLineId)?.status !== "ALLOCATED",
+        )
+        .map((row) => row.id);
+
+      await this.audit.insert(tx, {
+        orgId,
+        actorUserId: userId,
+        action: "inventory.pick.wave_joined",
+        resourceType: "inv_pick_lists",
+        resourceId: String(wave.id),
+        after: { pickNumber: wave.pickNumber, warehouseId: input.warehouseId, soIds: input.soIds },
+        metadata: {
+          addedLines: lines.length,
+          unallocatedLines: needsDecision.length,
+          linesNeedingDecision: needsDecision,
+        },
+      });
+
+      return {
+        pickListId: wave.id,
+        pickNumber: wave.pickNumber,
+        joined: true,
+        addedOrderCount: input.soIds.length,
+        addedLineCount: lines.length,
+        lineCount: Number(shape!.line_count) + lines.length,
         unallocatedLines: needsDecision.length,
         linesNeedingDecision: needsDecision,
       };

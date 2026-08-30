@@ -73,6 +73,26 @@ export class PickWaveController {
     return this.waves.proposeWaveJoin(u.orgId, u.userId, body);
   }
 
+  /**
+   * NEO-14 — the join route the comment above has always pointed at.
+   *
+   * It did not exist, so the proposal was a decision with nothing to act on and
+   * no wave had ever been joined. The gate is re-applied in the service against
+   * this wave as it stands now, not against the proposal: a picker can claim a
+   * wave and confirm a line between the two calls, and that is exactly the case
+   * `waveless.ts` refuses.
+   */
+  @Post("waves/:pickListId/join")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:ship")
+  joinWave(
+    @Param("pickListId", ParseIntPipe) pickListId: number,
+    @Body(new ZodValidationPipe(createWaveSchema)) body: CreateWaveInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.waves.joinWave(u.orgId, u.userId, pickListId, body);
+  }
+
   /** B4, item 5. The workbench queue: waves waiting, and waves this picker holds. */
   @Get("waves")
   @UseGuards(PermissionGuard)
