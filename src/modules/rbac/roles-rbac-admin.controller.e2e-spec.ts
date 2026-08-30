@@ -4,6 +4,7 @@ import { createE2eApp, accessStub } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../test/helpers/sign-token";
 import { AccessService } from "../access/access.service";
 import { RolesService } from "./roles.service";
+import { RolesQueryService } from "./roles-query.service";
 import type { DataScope } from "../access/access.types";
 
 const TARGET_USER_ID = "user_target_1";
@@ -56,9 +57,14 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
           provide: RolesService,
           useValue: {
             getPermissionsMatrix: async (_orgId: string) => MATRIX_RESPONSE,
-            getSimulationTarget: async () => ({ isOwner: false }),
             getRoles: async () => [],
             listTemplates: () => [],
+          },
+        },
+        {
+          provide: RolesQueryService,
+          useValue: {
+            getSimulationTarget: async () => ({ isOwner: false }),
           },
         },
       ],

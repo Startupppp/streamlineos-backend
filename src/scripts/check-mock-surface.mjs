@@ -200,6 +200,90 @@ function extractTopLevelKeys(objText) {
 }
 
 /**
+ * Within a factory function body (a braced block starting with `{`), find
+ * the position of the opening `{` of the FIRST `return {...}` statement that
+ * appears at function-depth 0 — i.e. not inside a nested arrow function or
+ * regular function body.
+ *
+ * Why this matters: Drizzle query-builder mocks embed `return { innerJoin,
+ * where, onConflictDoUpdate, … }` inside callback arrow functions (e.g.
+ * `from: (table) => { return { innerJoin: …, where: … }; }`). Those inner
+ * `return {…}` blocks are part of the builder chain, not the factory's own
+ * return value. A naive `/\breturn\s*\{/` scan finds the FIRST match
+ * anywhere in the body and misattributes the builder methods to the enclosing
+ * service class.
+ *
+ * The rule is structural, not name-based: a `{` that follows `=>` (trimming
+ * whitespace) or a `function(…)` keyword opens a nested function body and
+ * increments `functionDepth`. Any `return {` inside such a block is at
+ * `functionDepth > 0` and is excluded. Only `return {` at `functionDepth === 0`
+ * can represent the factory's own direct return value.
+ *
+ * This cannot mask a real phantom: a genuine service mock returned directly
+ * by the factory (`return { realMethod: jest.fn() }`) is still at depth 0
+ * and is still extracted. The only thing suppressed is a `return {` that is
+ * itself the body of a callback passed to a builder method — and no real
+ * service is mocked that way.
+ *
+ * Returns the index within `funcBody` of the `{` that opens the return block,
+ * or -1 if none is found at the top level.
+ */
+function findTopLevelReturnBrace(funcBody) {
+  let braceDepth = 0;
+  let functionDepth = 0;
+  const isFnBrace = [];
+  let i = 0;
+  let inStr = false, strChar = "", escaped = false;
+  let inLineComment = false, inBlockComment = false;
+
+  while (i < funcBody.length) {
+    const ch = funcBody[i];
+
+    if (inLineComment) { if (ch === "\n") inLineComment = false; i++; continue; }
+    if (inBlockComment) {
+      if (ch === "*" && funcBody[i + 1] === "/") { inBlockComment = false; i += 2; } else i++;
+      continue;
+    }
+    if (escaped) { escaped = false; i++; continue; }
+    if (inStr) {
+      if (ch === "\\") escaped = true;
+      else if (ch === strChar) inStr = false;
+      i++; continue;
+    }
+    if (ch === "/" && funcBody[i + 1] === "/") { inLineComment = true; i += 2; continue; }
+    if (ch === "/" && funcBody[i + 1] === "*") { inBlockComment = true; i += 2; continue; }
+    if (ch === '"' || ch === "'" || ch === "`") { inStr = true; strChar = ch; i++; continue; }
+
+    if (ch === "{") {
+      const before = funcBody.slice(0, i).trimEnd();
+      const opensFn =
+        before.endsWith("=>") ||
+        /\bfunction\s*(?:\w+\s*)?\([^)]*\)\s*$/.test(before);
+      isFnBrace.push(opensFn);
+      if (opensFn) functionDepth++;
+      braceDepth++;
+      i++; continue;
+    }
+
+    if (ch === "}") {
+      const wasFn = isFnBrace.pop() ?? false;
+      if (wasFn) functionDepth--;
+      braceDepth--;
+      i++; continue;
+    }
+
+    if (functionDepth === 0 && braceDepth >= 1) {
+      const remaining = funcBody.slice(i);
+      const m = /^return\s*\{/.exec(remaining);
+      if (m) return i + m[0].length - 1;
+    }
+
+    i++;
+  }
+  return -1;
+}
+
+/**
  * Extract public method names from a class body.
  * `classSrc` is the full source text of the file.
  * `className` is the class name to find.
@@ -336,9 +420,7 @@ function extractMockPairs(src, filePath) {
     const openBrace = src.indexOf("{", fm.index + fm[0].length - 1);
     if (openBrace < 0) continue;
     const funcBody = extractBracedBlock(src, openBrace);
-    const returnMatch = /\breturn\s*\{/.exec(funcBody);
-    if (!returnMatch) continue;
-    const retBrace = funcBody.indexOf("{", returnMatch.index + returnMatch[0].length - 1);
+    const retBrace = findTopLevelReturnBrace(funcBody);
     if (retBrace < 0) continue;
     const retBlock = extractBracedBlock(funcBody, retBrace);
     const keys = extractTopLevelKeys(retBlock);
@@ -626,6 +708,73 @@ Test.createTestingModule({
     failed = true;
   } else {
     console.log("  [pass] vacuity guard triggers on empty spec list");
+  }
+
+  // --- Test 8: builder-chain nested return {} NOT extracted ---
+  // A factory that returns `new ServiceClass(db)` where `db` has nested
+  // arrow-function callbacks that each `return { builderMethod: … }` must NOT
+  // have those builder methods attributed to the service class.
+  // This exercises findTopLevelReturnBrace: the inner return {} blocks are at
+  // functionDepth > 0 and must be skipped; the outer `return new X(...)` does
+  // not match `return {`, so no pair is created for the builder methods.
+  const specWithBuilderChainReturn = `
+function makeService(opts): SomeService {
+  const db = {
+    select: () => ({
+      from: (table) => {
+        return { innerJoin: () => ({ where: () => [] }), where: () => [] };
+      },
+    }),
+    insert: (tbl) => ({
+      values: (rows) => {
+        return {
+          onConflictDoNothing: () => Promise.resolve(),
+          onConflictDoUpdate: () => Promise.resolve(),
+        };
+      },
+    }),
+  };
+  return new SomeService(db);
+}
+`;
+  const builderPairs = extractMockPairs(specWithBuilderChainReturn, "builder-chain-test.spec.ts");
+  const builderPair = builderPairs.find((p) => p.className === "SomeService");
+  const builderLeaked =
+    builderPair &&
+    (builderPair.mockMethods.has("innerJoin") ||
+      builderPair.mockMethods.has("where") ||
+      builderPair.mockMethods.has("onConflictDoNothing") ||
+      builderPair.mockMethods.has("onConflictDoUpdate"));
+  if (builderLeaked) {
+    console.error("SELF-TEST FAILED: builder-chain nested return {} leaked methods into factory pair");
+    console.error("Leaked methods:", [...builderPair.mockMethods]);
+    failed = true;
+  } else {
+    console.log("  [pass] builder-chain nested return {} — builder methods not attributed to service");
+  }
+
+  // --- Test 9: top-level factory return {} IS still detected (anti-vacuity) ---
+  // Proves the fix in Test 8 does not suppress the detection of real phantoms
+  // returned directly at the top level of a factory function. If this test
+  // passes while Test 8 also passes, the rule genuinely bites on real phantoms
+  // and only suppresses the builder-chain case.
+  const specWithTopLevelReturn = `
+function makeService(): AnotherService {
+  return {
+    realMethod: jest.fn(),
+    phantomOnlyOnMock: jest.fn(),
+  };
+}
+`;
+  const tlPairs = extractMockPairs(specWithTopLevelReturn, "toplevel-return-test.spec.ts");
+  const tlPair = tlPairs.find((p) => p.className === "AnotherService");
+  if (!tlPair || !tlPair.mockMethods.has("phantomOnlyOnMock") || !tlPair.mockMethods.has("realMethod")) {
+    console.error("SELF-TEST FAILED: top-level factory return {} methods not extracted");
+    console.error("Pairs found:", tlPairs.map((p) => p.className));
+    if (tlPair) console.error("Mock methods:", [...tlPair.mockMethods]);
+    failed = true;
+  } else {
+    console.log("  [pass] top-level factory return {} — methods correctly attributed to service");
   }
 
   if (failed) {
