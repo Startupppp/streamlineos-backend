@@ -214,6 +214,7 @@ async function main() {
     }
 
     const breaches = [];
+    const unusable = [];
     let skipped = 0;
 
     for (const budget of budgets) {
@@ -222,21 +223,29 @@ async function main() {
       if (result.status === "skip") {
         if (!SELF_TEST)
           console.log(`SKIP  ${budget.id.padEnd(36)} (${result.reason})`);
+        else unusable.push(`${budget.id}: skipped — ${result.reason}`);
         skipped++;
         continue;
       }
 
       if (result.status === "seed-too-small") {
         const label = `FAIL  ${budget.id.padEnd(36)} seed too small (${result.measured} < ${result.required})`;
-        breaches.push(`${budget.id}: seed too small — ${result.measured} rows, need ${result.required}`);
-        if (!SELF_TEST) console.error(label);
+        const detail = `${budget.id}: seed too small — ${result.measured} rows, need ${result.required}`;
+        if (SELF_TEST) unusable.push(detail);
+        else {
+          breaches.push(detail);
+          console.error(label);
+        }
         continue;
       }
 
       if (result.status === "error") {
         const label = `FAIL  ${budget.id.padEnd(36)} error: ${result.message}`;
-        breaches.push(`${budget.id}: ${result.message}`);
-        if (!SELF_TEST) console.error(label);
+        if (SELF_TEST) unusable.push(`${budget.id}: ${result.message}`);
+        else {
+          breaches.push(`${budget.id}: ${result.message}`);
+          console.error(label);
+        }
         continue;
       }
 
@@ -258,6 +267,14 @@ async function main() {
     }
 
     if (SELF_TEST) {
+      if (unusable.length > 0) {
+        console.error(
+          "SELF-TEST INCONCLUSIVE: the fixture never produced a measurement, so the ceiling was never tested.",
+        );
+        for (const u of unusable) console.error(`  UNUSABLE: ${u}`);
+        process.exitCode = 1;
+        return;
+      }
       if (breaches.length > 0) {
         console.log("SELF-TEST PASS: breach detected — guard can fail");
         process.exitCode = 0;
