@@ -8,6 +8,7 @@ import { SessionsService } from "../../sessions/sessions.service";
 import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { OrgMembershipService } from "./org-membership.service";
+import { OrgMembershipReadService } from "./org-membership-read.service";
 import { AblyService } from "../../realtime/ably.service";
 
 jest.mock("../../../common/tenant/with-identity", () => ({
@@ -78,6 +79,7 @@ describe("OrgMembershipService access revocation", () => {
         },
         { provide: SessionsService, useValue: { revokeAllForUser } },
         { provide: AccessService, useValue: {} },
+        { provide: OrgMembershipReadService, useValue: {} },
       ],
     }).compile();
     const service = moduleRef.get(OrgMembershipService);

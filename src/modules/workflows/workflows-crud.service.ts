@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, ilike, count } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, sql } from "drizzle-orm";
 import {
   workflows,
   workflowVersions,
@@ -8,6 +8,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import type {
   CreateWorkflowDto,
   UpdateWorkflowDto,
@@ -20,27 +21,48 @@ export class WorkflowsCrudService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listWorkflows(orgId: string, query: WorkflowListQueryDto) {
-    const { page, limit, status, search } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, sort, direction, status, search } = query;
 
-    const conditions = [eq(workflows.orgId, orgId)];
+    const conditions: ReturnType<typeof eq>[] = [eq(workflows.orgId, orgId)];
     if (status) conditions.push(eq(workflows.status, status));
     if (search) conditions.push(ilike(workflows.name, `%${search}%`));
 
-    const where = and(...conditions);
+    const sortCol = sort === "createdAt" ? workflows.createdAt : workflows.updatedAt;
+    const decoded = decodeCursor(cursor);
 
-    const [data, [countRow]] = await Promise.all([
-      this.db
-        .select()
-        .from(workflows)
-        .where(where)
-        .orderBy(desc(workflows.updatedAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(workflows).where(where),
-    ]);
+    if (decoded) {
+      const cursorDate = new Date(decoded.sortValue);
+      const cursorId = decoded.id;
+      const cursorCond =
+        direction === "desc"
+          ? sql`(${sortCol}, ${workflows.id}::text) < (${sql.param(cursorDate, sortCol)}, ${cursorId})`
+          : sql`(${sortCol}, ${workflows.id}::text) > (${sql.param(cursorDate, sortCol)}, ${cursorId})`;
+      conditions.push(cursorCond as ReturnType<typeof eq>);
+    }
 
-    return { data, total: countRow?.total ?? 0, page, limit };
+    const orderFn = direction === "asc" ? asc : desc;
+
+    const rows = await this.db
+      .select({
+        id: workflows.id,
+        orgId: workflows.orgId,
+        name: workflows.name,
+        description: workflows.description,
+        status: workflows.status,
+        version: workflows.version,
+        createdBy: workflows.createdBy,
+        createdAt: workflows.createdAt,
+        updatedAt: workflows.updatedAt,
+      })
+      .from(workflows)
+      .where(and(...conditions))
+      .orderBy(orderFn(sortCol), orderFn(workflows.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: (sort === "createdAt" ? row.createdAt : row.updatedAt).toISOString(),
+      id: row.id,
+    }));
   }
 
   async getWorkflow(orgId: string, workflowId: string) {

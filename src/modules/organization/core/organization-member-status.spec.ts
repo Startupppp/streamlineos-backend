@@ -4,6 +4,7 @@ import { Test } from "@nestjs/testing";
 import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { OrgMembershipService } from "./org-membership.service";
+import { OrgMembershipReadService } from "./org-membership-read.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
@@ -61,6 +62,7 @@ describe("OrgMembershipService member status guards", () => {
           provide: AccessService,
           useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) },
         },
+        { provide: OrgMembershipReadService, useValue: {} },
       ],
     }).compile();
     svc = moduleRef.get(OrgMembershipService);
@@ -196,6 +198,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
           provide: AccessService,
           useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) },
         },
+        { provide: OrgMembershipReadService, useValue: {} },
       ],
     }).compile();
     return moduleRef.get(OrgMembershipService);

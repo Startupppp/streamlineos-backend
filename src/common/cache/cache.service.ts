@@ -206,6 +206,11 @@ export class CacheService {
     }
   }
 
+  async orgScopedKey(orgId: string, localKey: string): Promise<string> {
+    const prefix = await this.cellPrefixForOrg(orgId);
+    return prefix ? `${prefix}:${orgId}:${localKey}` : `${orgId}:${localKey}`;
+  }
+
   async cachedForOrg<T>(
     orgId: string,
     localKey: string,
@@ -213,8 +218,7 @@ export class CacheService {
     baseTtl = 300,
   ): Promise<T> {
     const redis = await this.redisForOrg(orgId);
-    const prefix = await this.cellPrefixForOrg(orgId);
-    const key = prefix ? `${prefix}:${orgId}:${localKey}` : `${orgId}:${localKey}`;
+    const key = await this.orgScopedKey(orgId, localKey);
     return this.cachedWithRedis(redis, key, fetcher, this.applyJitter(baseTtl));
   }
 
@@ -226,16 +230,14 @@ export class CacheService {
     baseTtl = 300,
   ): Promise<T> {
     const redis = await this.redisForOrg(orgId);
-    const prefix = await this.cellPrefixForOrg(orgId);
-    const ns = prefix ? `${prefix}:${orgId}:${namespace}` : `${orgId}:${namespace}`;
+    const ns = await this.orgScopedKey(orgId, namespace);
     const version = await this.namespaceVersionWithRedis(redis, ns);
     return this.cachedWithRedis(redis, `${ns}:v${version}:${localKey}`, fetcher, this.applyJitter(baseTtl));
   }
 
   async invalidateNamespaceForOrg(orgId: string, namespace: string): Promise<void> {
     const redis = await this.redisForOrg(orgId);
-    const prefix = await this.cellPrefixForOrg(orgId);
-    const ns = prefix ? `${prefix}:${orgId}:${namespace}` : `${orgId}:${namespace}`;
+    const ns = await this.orgScopedKey(orgId, namespace);
     if (!redis) return;
     try {
       await this.timedRedis(() => redis.incr(this.namespaceVersionKey(ns)));

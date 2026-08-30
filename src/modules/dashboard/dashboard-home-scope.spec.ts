@@ -14,15 +14,8 @@ import type { DataScope } from "../access/access.types";
 import { CacheService } from "../../common/cache/cache.service";
 
 async function cacheKeyForOrg(orgId: string, localKey: string): Promise<string> {
-  let captured = "";
   const cache = new CacheService(null);
-  const original = cache.cached.bind(cache);
-  cache.cached = async <T>(key: string, fetcher: () => Promise<T>, ttl?: number) => {
-    captured = key;
-    return original(key, fetcher, ttl);
-  };
-  await cache.cachedForOrg(orgId, localKey, async () => null);
-  return captured;
+  return cache.orgScopedKey(orgId, localKey);
 }
 
 const dialect = new PgDialect();

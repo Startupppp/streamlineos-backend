@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
   workflows,
   workflowVersions,
@@ -15,6 +15,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import type {
   WorkflowExecutionQueryDto,
   TriggerWorkflowDto,
@@ -79,29 +80,38 @@ export class WorkflowsExecutionService {
     });
     if (!workflow) throw new NotFoundException("Workflow not found");
 
-    const { page, limit, status } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, direction, status } = query;
 
-    const conditions = [
+    const conditions: ReturnType<typeof eq>[] = [
       eq(workflowExecutions.workflowId, workflowId),
       eq(workflowExecutions.orgId, orgId),
     ];
     if (status) conditions.push(eq(workflowExecutions.status, status));
 
-    const where = and(...conditions);
+    const decoded = decodeCursor(cursor);
+    if (decoded) {
+      const cursorDate = new Date(decoded.sortValue);
+      const cursorId = decoded.id;
+      const cursorCond =
+        direction === "desc"
+          ? sql`(${workflowExecutions.createdAt}, ${workflowExecutions.id}::text) < (${sql.param(cursorDate, workflowExecutions.createdAt)}, ${cursorId})`
+          : sql`(${workflowExecutions.createdAt}, ${workflowExecutions.id}::text) > (${sql.param(cursorDate, workflowExecutions.createdAt)}, ${cursorId})`;
+      conditions.push(cursorCond as ReturnType<typeof eq>);
+    }
 
-    const [data, [countRow]] = await Promise.all([
-      this.db
-        .select()
-        .from(workflowExecutions)
-        .where(where)
-        .orderBy(desc(workflowExecutions.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(workflowExecutions).where(where),
-    ]);
+    const orderFn = direction === "asc" ? asc : desc;
 
-    return { data, total: countRow?.total ?? 0, page, limit };
+    const rows = await this.db
+      .select()
+      .from(workflowExecutions)
+      .where(and(...conditions))
+      .orderBy(orderFn(workflowExecutions.createdAt), orderFn(workflowExecutions.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: row.id,
+    }));
   }
 
   async getExecution(
@@ -160,26 +170,35 @@ export class WorkflowsExecutionService {
   }
 
   async listAllExecutions(orgId: string, query: WorkflowExecutionQueryDto) {
-    const { page, limit, status } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, direction, status } = query;
 
-    const conditions = [eq(workflowExecutions.orgId, orgId)];
+    const conditions: ReturnType<typeof eq>[] = [eq(workflowExecutions.orgId, orgId)];
     if (status) conditions.push(eq(workflowExecutions.status, status));
 
-    const where = and(...conditions);
+    const decoded = decodeCursor(cursor);
+    if (decoded) {
+      const cursorDate = new Date(decoded.sortValue);
+      const cursorId = decoded.id;
+      const cursorCond =
+        direction === "desc"
+          ? sql`(${workflowExecutions.createdAt}, ${workflowExecutions.id}::text) < (${sql.param(cursorDate, workflowExecutions.createdAt)}, ${cursorId})`
+          : sql`(${workflowExecutions.createdAt}, ${workflowExecutions.id}::text) > (${sql.param(cursorDate, workflowExecutions.createdAt)}, ${cursorId})`;
+      conditions.push(cursorCond as ReturnType<typeof eq>);
+    }
 
-    const [data, [countRow]] = await Promise.all([
-      this.db
-        .select()
-        .from(workflowExecutions)
-        .where(where)
-        .orderBy(desc(workflowExecutions.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(workflowExecutions).where(where),
-    ]);
+    const orderFn = direction === "asc" ? asc : desc;
 
-    return { data, total: countRow?.total ?? 0, page, limit };
+    const rows = await this.db
+      .select()
+      .from(workflowExecutions)
+      .where(and(...conditions))
+      .orderBy(orderFn(workflowExecutions.createdAt), orderFn(workflowExecutions.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: row.id,
+    }));
   }
 
   async getApprovals(orgId: string, userId: string) {

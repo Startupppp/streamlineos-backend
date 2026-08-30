@@ -1,5 +1,6 @@
 import { Test } from "@nestjs/testing";
 import { OrgMembershipService } from "./org-membership.service";
+import { OrgMembershipReadService } from "./org-membership-read.service";
 import { MEMBERSHIP_ARTIFACTS } from "./membership-artifacts";
 import { AblyService } from "../../realtime/ably.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -141,6 +142,7 @@ async function buildService(opts: {
       { provide: EmailService, useValue: {} },
       { provide: NotificationDispatchService, useValue: {} },
       { provide: AccessService, useValue: {} },
+      { provide: OrgMembershipReadService, useValue: {} },
     ],
   }).compile();
 

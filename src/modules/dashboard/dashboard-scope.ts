@@ -6,10 +6,16 @@ import { resolveAttendanceReadScope } from "../hr/time/attendance-scope";
 
 export const DASHBOARD_EMPLOYEES_PERMISSION = "hr:employees:manage";
 export const DASHBOARD_LEAVES_PERMISSION = "hr:leaves:approve";
+export const DASHBOARD_BUILD_PERMISSION = "build:manage";
 
 export async function resolveEmployeesDashboardScope(access: AccessService, u: CurrentUserContext): Promise<DataScope> {
   if (!isScopable(DASHBOARD_EMPLOYEES_PERMISSION)) return "all";
   return access.scopeFor(u, DASHBOARD_EMPLOYEES_PERMISSION);
+}
+
+export async function resolveBuildDashboardScope(access: AccessService, u: CurrentUserContext): Promise<DataScope> {
+  if (!isScopable(DASHBOARD_BUILD_PERMISSION)) return "all";
+  return access.scopeFor(u, DASHBOARD_BUILD_PERMISSION);
 }
 
 export async function resolveLeavesDashboardScope(access: AccessService, u: CurrentUserContext): Promise<DataScope> {

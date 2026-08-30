@@ -37,7 +37,6 @@ export type CreateRunInput = z.infer<typeof createRunSchema>;
 export const listRunsQuerySchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(20, 100),
-  /** Optional legal-entity filter for multi-entity orgs. */
   entityId: z.coerce.number().int().positive().optional(),
 });
 export type ListRunsQuery = z.infer<typeof listRunsQuerySchema>;
@@ -102,8 +101,8 @@ export const listProfilesQuerySchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(20, 100),
   search: z.string().optional(),
-  workerType: z.string().optional(),
-  status: z.string().optional(),
+  workerType: z.enum(["EMPLOYEE", "CONTRACTOR", "CONSULTANT", "INTERN", "EOR"]).optional(),
+  status: z.enum(["UPCOMING", "ACTIVE", "SUPERSEDED"]).optional(),
   costCenter: z.string().optional(),
 });
 export type ListProfilesQuery = z.infer<typeof listProfilesQuerySchema>;

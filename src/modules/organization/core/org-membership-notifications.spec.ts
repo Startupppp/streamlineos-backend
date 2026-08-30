@@ -7,6 +7,7 @@ import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { SessionsService } from "../../sessions/sessions.service";
 import { OrgMembershipService } from "./org-membership.service";
+import { OrgMembershipReadService } from "./org-membership-read.service";
 import { AblyService } from "../../realtime/ably.service";
 
 const ORG = "org-a";
@@ -105,6 +106,7 @@ describe("OrgMembershipService access notifications", () => {
         },
         { provide: SessionsService, useValue: { revokeAllForUser: jest.fn() } },
         { provide: AccessService, useValue: {} },
+        { provide: OrgMembershipReadService, useValue: {} },
         {
           provide: EmailService,
           useValue: { sendMembershipRemovedEmail, sendMembershipSuspendedEmail },

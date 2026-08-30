@@ -1,6 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { ProfilesService } from "../runs/profiles.service";
+import { SalaryProfilesRepository } from "../runs/salary-profiles.repository";
 import { FnfService } from "../hr-payroll/fnf.service";
 import { SalaryStructureTemplatesService } from "../hr-payroll/salary-structure-templates.service";
 import { EssService } from "../insights/ess.service";
@@ -87,7 +88,11 @@ describe("pay-projection-exposure", () => {
       };
       const chain = makeChain([row]);
       const db = { select: jest.fn().mockReturnValue(chain) };
-      const service = new ProfilesService(db as never, {} as never);
+      const service = new ProfilesService(
+        db as never,
+        {} as never,
+        new SalaryProfilesRepository(db as never),
+      );
 
       const result = await service.listHistory("org-1", "u1");
 
@@ -122,7 +127,11 @@ describe("pay-projection-exposure", () => {
       };
       const chain = makeChain([row]);
       const db = { select: jest.fn().mockReturnValue(chain) };
-      const service = new ProfilesService(db as never, {} as never);
+      const service = new ProfilesService(
+        db as never,
+        {} as never,
+        new SalaryProfilesRepository(db as never),
+      );
 
       const result = await service.listHistoryByWorker("org-1", "w1");
 

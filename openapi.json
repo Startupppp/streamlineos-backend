@@ -47416,6 +47416,54 @@
         "description": "Exposure: public — unauthenticated"
       }
     },
+    "/cron/calendar-reminder-sweep": {
+      "get": {
+        "operationId": "CronPlatformController_getCalendarReminderSweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "CronPlatform"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated"
+      },
+      "post": {
+        "operationId": "CronPlatformController_postCalendarReminderSweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "CronPlatform"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated"
+      }
+    },
     "/cron/certification-expiry": {
       "get": {
         "operationId": "CronHrController_getCertificationExpiry",
@@ -71245,6 +71293,120 @@
         "description": "Exposure: permission — hr:expenses:read"
       }
     },
+    "/hr/expenses/export/jobs": {
+      "post": {
+        "operationId": "ExpensesController_createExportJob",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Expenses"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "hr:expenses:read",
+        "description": "Exposure: permission — hr:expenses:read",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "DRAFT",
+                      "SUBMITTED",
+                      "PENDING",
+                      "APPROVED",
+                      "REJECTED",
+                      "REIMBURSEMENT_PENDING",
+                      "REIMBURSED",
+                      "PAID"
+                    ]
+                  },
+                  "startDate": {
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-idempotency-command": "expenses.export.create",
+        "x-idempotent": true
+      }
+    },
+    "/hr/expenses/export/jobs/{jobId}": {
+      "get": {
+        "operationId": "ExpensesController_getExportJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Expenses"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "hr:expenses:read",
+        "description": "Exposure: permission — hr:expenses:read"
+      }
+    },
+    "/hr/expenses/export/jobs/{jobId}/download": {
+      "get": {
+        "operationId": "ExpensesController_downloadExportJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Expenses"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "hr:expenses:read",
+        "description": "Exposure: permission — hr:expenses:read"
+      }
+    },
     "/hr/expenses/import": {
       "post": {
         "operationId": "ExpensesImportController_importExpenses",
@@ -78193,8 +78355,8 @@
           "Incentives"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "hr:payroll:view",
-        "description": "Exposure: permission — hr:payroll:view",
+        "x-permission": "hr:payroll:approve",
+        "description": "Exposure: permission — hr:payroll:approve",
         "requestBody": {
           "required": true,
           "content": {
@@ -78245,8 +78407,8 @@
           "Incentives"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "hr:payroll:view",
-        "description": "Exposure: permission — hr:payroll:view",
+        "x-permission": "hr:payroll:approve",
+        "description": "Exposure: permission — hr:payroll:approve",
         "x-idempotency-command": "payroll.incentive.reject",
         "x-idempotent": true
       }
@@ -78279,8 +78441,8 @@
           "Incentives"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "hr:payroll:view",
-        "description": "Exposure: permission — hr:payroll:view",
+        "x-permission": "hr:payroll:approve",
+        "description": "Exposure: permission — hr:payroll:approve",
         "requestBody": {
           "required": true,
           "content": {
@@ -128805,7 +128967,14 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "EMPLOYEE",
+                "CONTRACTOR",
+                "CONSULTANT",
+                "INTERN",
+                "EOR"
+              ]
             }
           },
           {
@@ -128813,7 +128982,12 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "UPCOMING",
+                "ACTIVE",
+                "SUPERSEDED"
+              ]
             }
           },
           {

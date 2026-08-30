@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   HttpException,
@@ -26,7 +25,8 @@ import { NoTenantTransaction } from "../../../common/tenant";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { assertOwnerOnly } from "../../../common/rbac/owner-only-operations";
-import { isStructuralOrgAdminContext } from "../../../common/rbac/is-structural-org-admin";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
@@ -128,15 +128,14 @@ export class OrganizationController {
 
   @Post()
   @HttpCode(201)
-  @AuthorizedInService("createOrganization rejects a caller who is not a structural org owner or org admin, below")
+  @UseGuards(RateLimitGuard)
+  @AuthorizedInService("any authenticated user may create a new organisation; plan limits enforced in OrgProfileService.createOrganization")
+  @UseRateLimit("organization:create")
   @Idempotent("organization.create")
   createOrganization(
     @Body(new ZodValidationPipe(createOrganizationSchema)) body: CreateOrganizationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!isStructuralOrgAdminContext(u)) {
-      throw new ForbiddenException("Forbidden");
-    }
     return this.organization.createOrganization(u.userId, body);
   }
 
