@@ -11,6 +11,8 @@ import request from "supertest";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Public } from "../../common/auth/public.decorator";
 import { AccessService } from "./access.service";
+import type { DataScope } from "./access.types";
+import { moduleAvailabilityResolver } from "../../common/rbac/module-availability";
 import { PermissionGuard } from "./permission.guard";
 import { RequirePermission } from "./require-permission.decorator";
 
@@ -68,9 +70,33 @@ describe("PermissionGuard routes (e2e)", () => {
         Reflector,
         {
           provide: AccessService,
+          /**
+           * `resolveUserPermissions` is still the single fake these cases drive;
+           * the rest is what `authorize` reaches for on the way to it.
+           *
+           * The guard used to read the permission map directly. It now resolves
+           * module availability first and then asks `scopeFor` for one key — so
+           * a mock carrying only the old two names left `authorize` calling
+           * `getModuleState` on an object without one, and every case here
+           * answered 403 whatever the map said. Derived rather than given its
+           * own fake, so a test that sets the map still decides the outcome.
+           */
           useValue: {
             resolveUserPermissions,
             isModuleEnabled: jest.fn().mockResolvedValue(true),
+            getModuleState: async (): Promise<boolean> => true,
+            getUserDeniedModules: async (): Promise<ReadonlySet<string>> => new Set<string>(),
+            buildModuleAvailabilityResolver: (
+              getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+            ) =>
+              moduleAvailabilityResolver(
+                { isCoreModule: () => false, getModuleMap, getPlanLockedModules: async () => [] },
+                { getUserDeniedModules: async () => new Set<string>() },
+              ),
+            scopeFor: async (ctx: unknown, permissionKey: string): Promise<DataScope> =>
+              ((await resolveUserPermissions(ctx)) as Map<string, DataScope> | undefined)?.get(
+                permissionKey,
+              ) ?? "none",
           },
         },
       ],

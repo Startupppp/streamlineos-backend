@@ -5,6 +5,9 @@ import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
 import { signToken } from "../../../test/helpers/sign-token";
 import { stubMembershipState } from "../../../test/helpers/membership-state";
+import { installFixtureRegionRegistry } from "../../../test/helpers/e2e-app";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.types";
 
 describe("/roles (e2e)", () => {
   let app: INestApplication;
@@ -23,6 +26,19 @@ describe("/roles (e2e)", () => {
         manager_rbac_1: { role: "MANAGER" },
       },
     ).compile();
+
+    /**
+     * Place the fixture organisation before anything reads its data.
+     *
+     * `org_rbac_01` is not a row in `organizations`, so `regionForOrg` correctly
+     * refuses it and every request that reaches a handler dies with an unmapped
+     * 500 — after the guards have already allowed it, which is why the 401 and
+     * 403 cases here never noticed and the 200 ones all failed. `createE2eApp`
+     * makes the same stub for the same reason; this suite builds its own module,
+     * so it has to ask for it.
+     */
+    installFixtureRegionRegistry(moduleRef.get<Db>(DRIZZLE));
+
     app = moduleRef.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();

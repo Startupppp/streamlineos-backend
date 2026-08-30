@@ -10,6 +10,7 @@ import { EntitlementsService } from "src/modules/access/entitlements.service";
 import { AccessService } from "src/modules/access/access.service";
 import type { DataScope } from "src/modules/access/access.types";
 import { moduleAvailabilityResolver } from "src/common/rbac/module-availability";
+import { isCoreModuleKey } from "src/common/rbac/module-registry";
 import { RegionRegistry, setRegionRegistry } from "src/common/region/region-registry";
 import type { RegionDefinition } from "src/common/region/region.config";
 import type { Db } from "src/db/drizzle.types";
@@ -84,13 +85,27 @@ const entitlementsStub = {
     Object.fromEntries(current().enabledModules.map((key) => [key, true])),
   getEffectiveModuleMap: async (): Promise<Record<string, boolean>> =>
     Object.fromEntries(current().enabledModules.map((key) => [key, true])),
-  // `ModuleGuard` resolves availability from four sources, not one. The three
-  // below are pinned to the identity answer so a module's availability is still
-  // decided by the token's `enabledModules` alone, which is what every existing
-  // spec was written against.
-  isCoreModule: (): boolean => false,
+  // `ModuleGuard` resolves availability from four sources, not one. The two
+  // below keep a module's availability decided by the token's `enabledModules`,
+  // which is what every existing spec was written against.
+  //
+  // `isCoreModule` is the exception, and pinning it to `false` was wrong.
+  // `settings:` and `ownership:` are platform surfaces with no org-module toggle
+  // — `authorize` says so — so production answers `true` for them however the
+  // org is configured. A fixture answering `false` made every `settings:` and
+  // `ownership:` route 402 unless a spec happened to list a module that does not
+  // exist, which is why the rbac, roles and ownership suites asserted 403 and
+  // got 402. The real predicate is a pure function of the key.
+  isCoreModule: isCoreModuleKey,
   getPlanLockedModules: async (): Promise<readonly string[]> => [],
 };
+
+/** `CurrentUserContext.isOrgOwner`, as the guard chain populates it. */
+function isOwnerContext(user: unknown): boolean {
+  return (
+    typeof user === "object" && user !== null && (user as { isOrgOwner?: unknown }).isOrgOwner === true
+  );
+}
 
 const accessStub = {
   resolveUserPermissions: async (): Promise<Map<string, DataScope>> =>
@@ -102,10 +117,13 @@ const accessStub = {
   // resolving them from the token preserves the fixture's existing semantics.
   getModuleState: async (_orgId: string, moduleKey: string): Promise<boolean | undefined> =>
     current().enabledModules.includes(moduleKey.toLowerCase()) ? true : undefined,
-  scopeFor: async (_user: unknown, permissionKey: string): Promise<DataScope> =>
-    current().permissions.includes(permissionKey) ? "all" : "none",
-  holds: async (_user: unknown, permissionKey: string): Promise<boolean> =>
-    current().permissions.includes(permissionKey),
+  // The owner bypass first, exactly as `AccessService.scopeFor` does it: an org
+  // owner holds everything and never consults the permission map. Without this
+  // the fixture refused owners, so a case asserting "200 for org owner" got 403.
+  scopeFor: async (user: unknown, permissionKey: string): Promise<DataScope> =>
+    isOwnerContext(user) || current().permissions.includes(permissionKey) ? "all" : "none",
+  holds: async (user: unknown, permissionKey: string): Promise<boolean> =>
+    isOwnerContext(user) || current().permissions.includes(permissionKey),
   moduleAvailability: async (_user: unknown, moduleKey: string) =>
     current().enabledModules.includes(moduleKey.toLowerCase())
       ? { available: true as const }
@@ -146,7 +164,7 @@ const accessStub = {
  * membership, entitlements and access: production keeps failing closed for an
  * unplaced tenant, which is the behaviour ticket 03 exists to guarantee.
  */
-function installFixtureRegionRegistry(db: Db): void {
+export function installFixtureRegionRegistry(db: Db): void {
   const definition: RegionDefinition = {
     key: "primary",
     databaseUrl: process.env.DATABASE_URL ?? "",
@@ -173,6 +191,107 @@ export interface E2eAppOptions {
   overrides?: ReadonlyArray<{ provide: unknown; useValue: unknown }>;
 }
 
+/**
+ * The three the harness owns, and the stub each one layers onto.
+ *
+ * A spec that overrides one of these means "the same guard chain, but with these
+ * permissions" — it is not trying to remove `moduleAvailability` or `holds`. But
+ * `useValue` replaces wholesale, so a two-method mock like
+ *
+ *     { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn() }
+ *
+ * left `ModuleGuard` calling `accessSvc.moduleAvailability` on an object that
+ * has not got one. That is a `TypeError` inside a guard, which
+ * `AllExceptionsFilter` turns into a 500 — so a suite asserting 403 sees 500,
+ * and a suite asserting 200 sees 500, and neither says why.
+ *
+ * It is a slow trap rather than a mistake anyone made once: every method added
+ * to `AccessService` for the guards breaks every spec that hand-rolled a partial
+ * mock, at a distance, in a suite nobody was editing. Merging means the spec's
+ * own answers win and everything it did not mention still works.
+ */
+const HARNESS_STUBS = new Map<unknown, object>([
+  [MembershipStateService, membershipStub],
+  [EntitlementsService, entitlementsStub],
+  [AccessService, accessStub],
+]);
+
+/**
+ * A spec that answered the old question has answered the new one too.
+ *
+ * The guard chain was refactored underneath these fixtures. `ModuleGuard` used
+ * to ask `isModuleEnabled` and now asks `moduleAvailability`, which carries a
+ * reason as well as a verdict; `authorize` used to read the whole permission map
+ * and now asks `scopeFor` for one key. Eight specs still mock only the old
+ * names.
+ *
+ * Nothing warns. The old mock becomes inert, the guard falls through to the
+ * token — which those specs deliberately leave empty, because they were
+ * expressing permissions and module state through the mock instead — and the
+ * case asserting 200 gets a 402 or a 403 with nothing to say why.
+ *
+ * Derived rather than left to each spec, for the same reason `entitlementsStub`
+ * pins its three sources to one answer above: "is this module on" and "does this
+ * user hold this key" are each one question, and a fixture that can answer one
+ * of them twice differently is a fixture that eventually will. A spec that wants
+ * something the old name cannot express — a specific unavailability *reason*, or
+ * a scope of `team` rather than `all` — overrides the new name directly, and
+ * that still wins.
+ */
+function layerOverStub(stub: object, override: Record<string, unknown>): object {
+  const merged: Record<string, unknown> = withDerivedScope(stub, override) as Record<string, unknown>;
+
+  const enabled = override["isModuleEnabled"];
+  if (typeof enabled !== "function") return merged;
+
+  const answer = enabled as (orgId: string, moduleKey: string) => Promise<boolean>;
+  const verdict = async (orgId: string, moduleKey: string) =>
+    (await answer(orgId, moduleKey))
+      ? ({ available: true } as const)
+      : ({ available: false, reason: "org-disabled" } as const);
+
+  if (!("moduleAvailability" in override))
+    merged["moduleAvailability"] = (_user: unknown, moduleKey: string) =>
+      verdict("", moduleKey);
+  if (!("moduleAvailabilityFor" in override))
+    merged["moduleAvailabilityFor"] = (orgId: string, _userId: string, moduleKey: string) =>
+      verdict(orgId, moduleKey);
+  if (!("getModuleState" in override))
+    merged["getModuleState"] = async (orgId: string, moduleKey: string) =>
+      (await answer(orgId, moduleKey)) ? true : undefined;
+
+  return merged;
+}
+
+/** The permission half of the same story: `resolveUserPermissions` → `scopeFor`. */
+function withDerivedScope(stub: object, override: Record<string, unknown>): object {
+  const merged: Record<string, unknown> = { ...stub, ...override };
+
+  const resolve = override["resolveUserPermissions"];
+  if (typeof resolve !== "function") return merged;
+
+  const map = resolve as (orgId: string, userId: string) => Promise<Map<string, DataScope>>;
+
+  /**
+   * `AccessService.scopeFor`, reproduced: the owner bypass, then the map — and
+   * the map is called `(orgId, userId)`, not with the context. A derivation that
+   * got either wrong would answer "none" for an org owner, which is the one
+   * caller that holds everything.
+   */
+  const scope = async (ctx: unknown, permissionKey: string): Promise<DataScope> => {
+    if (isOwnerContext(ctx)) return "all";
+    const who = (ctx ?? {}) as { orgId?: string; userId?: string };
+    return (await map(who.orgId ?? "", who.userId ?? "")).get(permissionKey) ?? "none";
+  };
+
+  if (!("scopeFor" in override)) merged["scopeFor"] = scope;
+  if (!("holds" in override))
+    merged["holds"] = async (ctx: unknown, permissionKey: string) =>
+      (await scope(ctx, permissionKey)) !== "none";
+
+  return merged;
+}
+
 export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestApplication> {
   process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
   process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
@@ -185,8 +304,14 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
     .overrideProvider(AccessService)
     .useValue(accessStub);
 
-  for (const override of options.overrides ?? [])
-    builder = builder.overrideProvider(override.provide).useValue(override.useValue);
+  for (const override of options.overrides ?? []) {
+    const stub = HARNESS_STUBS.get(override.provide);
+    const value =
+      stub && override.useValue && typeof override.useValue === "object"
+        ? layerOverStub(stub, override.useValue as Record<string, unknown>)
+        : override.useValue;
+    builder = builder.overrideProvider(override.provide).useValue(value);
+  }
 
   const ref = await builder.compile();
   installFixtureRegionRegistry(ref.get<Db>(DRIZZLE));
