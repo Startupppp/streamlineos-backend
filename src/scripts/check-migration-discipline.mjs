@@ -27,11 +27,15 @@
  * Ratchet: historical violations are baselined explicitly. The gate fails only
  * on NEW violations. The baseline can only shrink.
  *
+ *   7. journal integrity — when values strictly increasing, idx unique, no two
+ *                      files sharing a numeric prefix, and no journal entry
+ *                      without a file on disk. A when value at or below the
+ *                      applied watermark is skipped forever while db:migrate
+ *                      still prints success; this stranded five migrations and
+ *                      six columns of schema drift on 2026-08-30.
+ *
  * NOT COVERED (see companion check:migration-chain):
- *   - Journal monotonicity (when values must be strictly increasing).
- *   - Duplicate numeric prefixes.
- *   - Missing migration files (entry in journal, no file on disk).
- *   - Applied-watermark ahead of journal (disables db:migrate silently).
+ *   - Applied-watermark ahead of journal (needs a live DB connection).
  *   - CONCURRENTLY inside a transaction.
  *   - Comments that contain keywords (e.g., "-- NOT VALID") and trick
  *     the pattern matches — this gate uses text scans, not a SQL parser.
@@ -299,6 +303,23 @@ const BASELINE_VALIDATE_BEFORE_BACKFILL = new Set([
 const BASELINE_DO_BLOCK_BREAKPOINT = new Set();
 const BASELINE_NO_JOURNAL_ENTRY = new Set();
 
+const BASELINE_JOURNAL_INTEGRITY = new Set([
+  "dup-prefix:0300_timesheets_launch_grade.sql",
+  "dup-prefix:0370_tenant_column_integrity.sql",
+  "dup-prefix:0371_drop_users_role.sql",
+  "dup-prefix:0372_timesheets_module.sql",
+  "dup-prefix:0374_tenant_guc_helper.sql",
+  "dup-prefix:0375_rls_canary_projects.sql",
+  "dup-prefix:0379_effective_dating_convention.sql",
+  "dup-prefix:0420_inv_webhook_event_subscriptions.sql",
+  "dup-prefix:0426_notification_timestamptz.sql",
+  "dup-prefix:0430_project_ticket_counters.sql",
+  "dup-prefix:0431_email_outbox_scope.sql",
+  "dup-prefix:0432_drop_quiet_hours_timezone.sql",
+  "dup-prefix:0700_timesheets_idx_org_status_date.sql",
+  "dup-prefix:0701_timesheets_attr_validate.sql",
+]);
+
 // ─── check functions ──────────────────────────────────────────────────────────
 // Each returns null (clean) or a non-empty string (violation message).
 
@@ -370,6 +391,65 @@ function readJournalTags(migrationsDir) {
   return new Set(journal.entries.map((e) => e.tag));
 }
 
+function readJournalEntries(migrationsDir) {
+  const journalPath = join(migrationsDir, "meta", "_journal.json");
+  return JSON.parse(readFileSync(journalPath, "utf8")).entries;
+}
+
+function checkJournalIntegrity(migrationsDir, sqlFiles) {
+  const entries = readJournalEntries(migrationsDir);
+  const out = [];
+
+  for (let i = 1; i < entries.length; i += 1) {
+    const prev = entries[i - 1];
+    const cur = entries[i];
+    if (cur.when <= prev.when)
+      out.push({
+        filename: `${cur.tag}.sql`,
+        label: "journal-order",
+        msg: `when=${cur.when} is not greater than the preceding entry ${prev.tag} (when=${prev.when}) — db:migrate applies in when order and skips anything at or below the applied watermark, while still printing success`,
+      });
+  }
+
+  const seenIdx = new Map();
+  for (const e of entries) {
+    if (seenIdx.has(e.idx))
+      out.push({
+        filename: `${e.tag}.sql`,
+        label: "journal-dup-idx",
+        msg: `idx ${e.idx} is already used by ${seenIdx.get(e.idx)}`,
+      });
+    else seenIdx.set(e.idx, e.tag);
+  }
+
+  const onDisk = new Set(sqlFiles);
+  for (const e of entries) {
+    if (!onDisk.has(`${e.tag}.sql`))
+      out.push({
+        filename: `${e.tag}.sql`,
+        label: "journal-missing-file",
+        msg: `journal entry ${e.tag} has no file on disk — db:migrate will fail ENOENT or silently skip it`,
+      });
+  }
+
+  const byPrefix = new Map();
+  for (const f of sqlFiles) {
+    const prefix = f.slice(0, 4);
+    if (!/^\d{4}$/.test(prefix)) continue;
+    if (!byPrefix.has(prefix)) byPrefix.set(prefix, []);
+    byPrefix.get(prefix).push(f);
+  }
+  for (const [prefix, files] of byPrefix)
+    if (files.length > 1)
+      out.push({
+        filename: files[1],
+        label: "dup-prefix",
+        msg: `migration number ${prefix} is claimed by ${files.length} files (${files.join(", ")}) — two lanes numbered independently`,
+      });
+
+  return out;
+}
+
 function scanMigrations(migrationsDir) {
   if (!existsSync(migrationsDir)) {
     console.error(`ERROR: migrations dir not found: ${migrationsDir}`);
@@ -434,6 +514,9 @@ function runScan(migrationsDir, { printBaseline = true } = {}) {
       violations.push({ filename, label: "no-journal", msg: journalMsg });
     }
   }
+
+  for (const v of checkJournalIntegrity(migrationsDir, sqlFiles))
+    if (!BASELINE_JOURNAL_INTEGRITY.has(`${v.label}:${v.filename}`)) violations.push(v);
 
   return { sqlFiles, violations };
 }
@@ -668,8 +751,9 @@ if (SELF_TEST) {
         `do-breakpoint=${BASELINE_DO_BLOCK_BREAKPOINT.size} ` +
         `no-journal=${BASELINE_NO_JOURNAL_ENTRY.size}`,
     );
-    console.log(`  Not covered by this gate: journal monotonicity, duplicate prefixes,`);
-    console.log(`  missing files (entry without disk file), applied-watermark skipping,`);
+    console.log(`  Also enforced: journal monotonicity, duplicate idx, duplicate numeric`);
+    console.log(`  prefixes, and journal entries with no file on disk.`);
+    console.log(`  Not covered: applied-watermark skipping (needs the DB),`);
     console.log(`  CONCURRENTLY inside a transaction, and keywords in SQL comments.`);
     console.log(`  Companion: check:migration-chain`);
     process.exit(0);
