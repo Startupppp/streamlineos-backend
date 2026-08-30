@@ -274,6 +274,17 @@ describe("EmployeeMutationsService — cross-tenant isolation", () => {
     const hrAutomation = { trigger: jest.fn() };
     const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) };
     const employment = makeEmploymentFactsMock();
+    // getFacts must return EmploymentFacts (never null) — real impl uses emptyEmploymentFacts as fallback
+    employment.getFacts.mockResolvedValue({
+      userId: "target-1",
+      employmentId: null,
+      employeeNumber: null,
+      designation: null,
+      joiningDate: null,
+      departmentId: null,
+      locationId: null,
+      managerUserId: null,
+    });
     const svc = new EmployeeMutationsService(
       db as never, cache as never, audit as never, hrAutomation as never, access as never, employment as never,
     );
@@ -335,26 +346,29 @@ describe("EmployeesService — cross-tenant isolation", () => {
 
 describe("OrgStructureService — cross-tenant isolation", () => {
   it("scopes directory query to the requesting org (DENY — cross-tenant isolation)", async () => {
-    const { db, where } = makeDb([]);
+    const { db, innerJoin } = makeDb([]);
     (db.query as Record<string, unknown>).orgUnits = { findMany: jest.fn().mockResolvedValue([]) };
     const cache = makeCacheMock();
     const employment = makeEmploymentFactsMock();
     const svc = new OrgStructureService(db as never, cache as never, employment as never);
     await svc.getDirectory(ATTACKER, "actor-1", "all");
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
+    // The org predicate lives in the innerJoin condition:
+    // innerJoin(organizationMembers, and(eq(userId, users.id), eq(orgId, orgId)))
+    // applyScope("all") returns sql`true`, so `where` contains no orgId.
+    expect(innerJoin).toHaveBeenCalled();
+    expect(sqlValues(innerJoin.mock.calls[0]?.[1])).toContain(ATTACKER);
   });
 
   it("returns directory for the owning org (CONTROL)", async () => {
     const memberRow = { id: "user-1", name: "Alice", firstName: "Alice", lastName: "Smith", email: "a@b.com", image: null, role: "MEMBER", phone: null, isActive: true };
-    const { db, where } = makeDb([memberRow]);
+    const { db, innerJoin } = makeDb([memberRow]);
     (db.query as Record<string, unknown>).orgUnits = { findMany: jest.fn().mockResolvedValue([]) };
     const cache = makeCacheMock();
     const employment = makeEmploymentFactsMock();
     const svc = new OrgStructureService(db as never, cache as never, employment as never);
     await svc.getDirectory(OWNER, "actor-1", "all");
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
+    expect(innerJoin).toHaveBeenCalled();
+    expect(sqlValues(innerJoin.mock.calls[0]?.[1])).toContain(OWNER);
   });
 });
 
