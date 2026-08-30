@@ -2,13 +2,48 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
+import { cleanupSeedOrgs, seedOrg } from "../../../../test/helpers/e2e-seed";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { paymentProviders } from "../../../db/schema";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import type { Db } from "../../../db/drizzle.types";
 
 describe("Billing auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
     app = await createE2eApp();
+
+    /**
+     * A provider row, so the webhook case can reach the signature check.
+     *
+     * `handlePaymentProviderWebhook` answers 503 before verifying anything when
+     * the tenant has no provider registered — correctly, since there is no
+     * secret to verify against. Without this the case asserting "rejects an
+     * invalid signature" was asserting the absence of a fixture.
+     *
+     * `not_configured` is deliberate: any status but `disabled` resolves, the
+     * adapter configures with no credentials, and an invalid signature is then
+     * refused on its merits rather than for want of setup.
+     */
+    const db = app.get<Db>(DRIZZLE);
+    await seedOrg(db, "org_1", "org-1-billing-e2e");
+    await runInNewTenantTransaction(db, "org_1", (tx) =>
+      tx
+        .insert(paymentProviders)
+        .values({
+          orgId: "org_1",
+          providerKey: "razorpay",
+          displayName: "Razorpay",
+          status: "not_configured",
+        })
+        .onConflictDoNothing(),
+    );
   });
-  afterAll(async () => app.close());
+
+  afterAll(async () => {
+    await cleanupSeedOrgs(app.get<Db>(DRIZZLE), ["org_1"]);
+    await app.close();
+  });
 
   type Method = "get" | "post" | "patch";
 
@@ -87,9 +122,13 @@ describe("Billing auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("POST /webhooks/razorpay is public and rejects an invalid signature", async () => {
+  it("POST /webhooks/razorpay/:orgId is public and rejects an invalid signature", async () => {
+    // The route carries the tenant in the path now. A payment webhook arrives
+    // from outside with no session, so which organisation it belongs to has to
+    // be on the request — there is nothing else to read it from. Without the
+    // segment this asserted 401 against a 404.
     const res = await request(app.getHttpServer())
-      .post("/webhooks/razorpay")
+      .post("/webhooks/razorpay/org_1")
       .set("x-razorpay-signature", "invalid")
       .send({ event: "payment.captured", payload: {} });
     expect(res.status).toBe(401);

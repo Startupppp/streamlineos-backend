@@ -483,7 +483,26 @@ export class BillingService {
     rawBody: string,
     signature: string,
   ): Promise<WebhookResult> {
-    const adapter = await this.providers.resolve(orgId, providerKey);
+    /**
+     * The tenant context, because `payment_providers` is behind RLS.
+     *
+     * This route is `@Public()` — a provider posts to it with no session — so
+     * nothing upstream has set `app.organization_id`, and the registry read was
+     * refused with 42501 before a signature was ever checked. Every webhook a
+     * live tenant received answered 500. It only worked at all against a
+     * connection that bypasses RLS.
+     *
+     * The org comes from the URL path, which is untrusted, and that is fine
+     * here: it selects which secret to verify against, and the verification
+     * below is what authenticates the request. Reading one tenant's provider row
+     * grants nothing on its own, and a wrong org simply fails the signature.
+     *
+     * The writes further down already run in this same context; only the read
+     * that decides how to verify was outside it.
+     */
+    const adapter = await runInNewTenantTransaction(this.db, orgId, () =>
+      this.providers.resolve(orgId, providerKey),
+    );
     if (!adapter) {
       logger.warn("[billing] no payment provider registered for webhook verification");
       return { status: 503, body: { ok: false } };
