@@ -124,6 +124,31 @@ finish: `client_party_id` on `inv_sales_orders` and `inv_customer_returns`, and
 migrations. They are a property of that throwaway database and of nothing else —
 no repository file was changed to accommodate them.
 
+### What the seeded suite actually says
+
+All 50 specs under `test/inventory/` were run against that database. **45 pass,
+5 fail — and the same 5 fail identically with this programme's work stashed**,
+with the same six tests and the same causes:
+
+```
+FAIL landed-cost   FAIL po-batching   FAIL proposal-override
+FAIL recall-simulate-execute          FAIL transit-exit
+```
+
+Four are the party columns of §3: `column invPurchaseOrders_vendor.client_party_id
+does not exist`, from migrations skipped on the cold build. The fifth
+(`transit-exit`, "leaves no stranded transit row behind") is driven entirely by
+`tl.quantity > tl.quantity_received` on the transfer *line* and touches no stock
+grain, so it is unrelated to anything NEO changed — but it has not been chased to
+a root cause here and should not be read as understood.
+
+Both golden paths — the original and NEO's — pass in that run.
+
+The wider backend unit suite reports 39 failing files (access, billing, HR,
+accounting) with **byte-identical counts** stashed and unstashed. None is in
+inventory. `pnpm exec jest --testPathPattern=inventory` is 100 suites / 1069
+tests green.
+
 ---
 
 ## 4. Migrations
