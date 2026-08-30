@@ -28,6 +28,10 @@ import {
   type CreateComponentInput,
   type UpdateComponentInput,
 } from "./dto/setup.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const componentIdParams = z.object({ componentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/components")
@@ -56,6 +60,7 @@ export class PayrollComponentsController {
 
   @Patch(":componentId")
   @RequirePermission("payroll:components:manage")
+  @Validate({ params: componentIdParams })
   async update(
     @Param("componentId", ParseIntPipe) componentId: number,
     @Body(new ZodValidationPipe(updateComponentSchema)) body: UpdateComponentInput,
@@ -67,6 +72,7 @@ export class PayrollComponentsController {
   @Delete(":componentId")
   @HttpCode(204)
   @RequirePermission("payroll:components:manage")
+  @Validate({ params: componentIdParams })
   async remove(
     @Param("componentId", ParseIntPipe) componentId: number,
     @CurrentUser() u: CurrentUserContext,

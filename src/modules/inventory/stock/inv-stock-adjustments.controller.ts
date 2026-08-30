@@ -15,6 +15,10 @@ import {
   listAdjustmentsSchema, createAdjustmentSchema,
   type ListAdjustmentsInput, type CreateAdjustmentInput,
 } from "./dto/inv-stock.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const adjustmentIdParams = z.object({ adjustmentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/stock/adjustments")
@@ -51,6 +55,7 @@ export class InvStockAdjustmentsController {
   @Get(":adjustmentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ params: adjustmentIdParams })
   getAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -62,6 +67,7 @@ export class InvStockAdjustmentsController {
   @Idempotent("inventory.stock-adjustment.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:adjustments:approve")
+  @Validate({ params: adjustmentIdParams })
   approveAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -72,6 +78,7 @@ export class InvStockAdjustmentsController {
   @Post(":adjustmentId/post")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:adjustments:post")
+  @Validate({ params: adjustmentIdParams })
   postAdjustment(
     @Headers("idempotency-key") idempotencyKey: string,
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
@@ -84,6 +91,7 @@ export class InvStockAdjustmentsController {
   @Post(":adjustmentId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
+  @Validate({ params: adjustmentIdParams })
   cancelAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,

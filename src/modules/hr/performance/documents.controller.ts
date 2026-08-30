@@ -53,6 +53,10 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const documentIdParams = z.object({ documentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr")
@@ -91,6 +95,7 @@ export class DocumentsController {
 
   @Get("documents/:documentId/file")
   @RequirePermission("hr:documents:view")
+  @Validate({ params: documentIdParams })
   async getDocumentFile(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -129,6 +134,7 @@ export class DocumentsController {
 
   @Patch("documents/:documentId")
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentIdParams })
   async updateDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @Body(new ZodValidationPipe(updateDocumentSchema)) body: UpdateDocumentInput,
@@ -147,6 +153,7 @@ export class DocumentsController {
   @Delete("documents/:documentId")
   @HttpCode(204)
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentIdParams })
   async deleteDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -219,6 +226,7 @@ export class DocumentsController {
 
   @Get("rich-documents/:documentId")
   @RequirePermission("hr:documents:view")
+  @Validate({ params: documentIdParams })
   getRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -229,6 +237,7 @@ export class DocumentsController {
   @Patch("rich-documents/:documentId/publish")
   @Idempotent("hr.performance-document.publish")
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentIdParams })
   publishRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -238,6 +247,7 @@ export class DocumentsController {
 
   @Patch("rich-documents/:documentId")
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentIdParams })
   updateRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @Body(new ZodValidationPipe(updateRichDocumentSchema)) body: UpdateRichDocumentInput,
@@ -249,6 +259,7 @@ export class DocumentsController {
   @Delete("rich-documents/:documentId")
   @HttpCode(204)
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentIdParams })
   async deleteRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,

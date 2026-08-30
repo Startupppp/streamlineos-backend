@@ -21,6 +21,10 @@ import {
   type ReserveSoInput, type PickSoInput, type PackSoInput,
   type ShipSoInput, type CancelSoInput,
 } from "./dto/inv-sales-orders.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const soIdParams = z.object({ soId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/sales-orders")
@@ -46,6 +50,7 @@ export class InvSalesOrdersController {
   @Get(":soId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:read")
+  @Validate({ params: soIdParams })
   get(
     @Param("soId", ParseIntPipe) soId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -66,6 +71,7 @@ export class InvSalesOrdersController {
   @Patch(":soId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:update")
+  @Validate({ params: soIdParams })
   update(
     @Param("soId", ParseIntPipe) soId: number,
     @Body(new ZodValidationPipe(updateSoSchema)) body: UpdateSoInput,
@@ -78,6 +84,7 @@ export class InvSalesOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:confirm")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: soIdParams })
   confirm(
     @Param("soId", ParseIntPipe) soId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +96,7 @@ export class InvSalesOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reserve")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: soIdParams })
   reserve(
     @Param("soId", ParseIntPipe) soId: number,
     @Body(new ZodValidationPipe(reserveSoSchema)) body: ReserveSoInput,
@@ -103,6 +111,7 @@ export class InvSalesOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: soIdParams })
   pick(
     @Param("soId", ParseIntPipe) soId: number,
     @Body(new ZodValidationPipe(pickSoSchema)) body: PickSoInput,
@@ -115,6 +124,7 @@ export class InvSalesOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: soIdParams })
   pack(
     @Param("soId", ParseIntPipe) soId: number,
     @Body(new ZodValidationPipe(packSoSchema)) body: PackSoInput,
@@ -127,6 +137,7 @@ export class InvSalesOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: soIdParams })
   ship(
     @Param("soId", ParseIntPipe) soId: number,
     @Body(new ZodValidationPipe(shipSoSchema)) body: ShipSoInput,
@@ -141,6 +152,7 @@ export class InvSalesOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:invoice")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: soIdParams })
   invoice(
     @Param("soId", ParseIntPipe) soId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -152,6 +164,7 @@ export class InvSalesOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:update")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: soIdParams })
   cancel(
     @Param("soId", ParseIntPipe) soId: number,
     @Body(new ZodValidationPipe(cancelSoSchema)) body: CancelSoInput,
@@ -163,6 +176,7 @@ export class InvSalesOrdersController {
   @Get(":soId/atp")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:read")
+  @Validate({ params: soIdParams })
   async getAtp(
     @Param("soId", ParseIntPipe) soId: number,
     @CurrentUser() u: CurrentUserContext,

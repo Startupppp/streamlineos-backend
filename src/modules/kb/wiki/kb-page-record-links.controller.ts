@@ -24,6 +24,11 @@ import {
   type CreateRecordLinkDto,
   type RecordLinkByRecordQuery,
 } from "./dto/kb-page-record-links.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
+const linkIdParams = z.object({ linkId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @RequireModule("kb")
@@ -33,6 +38,7 @@ export class KbPageRecordLinksController {
 
   @Get("pages/:pageId/record-links")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   list(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() user: CurrentUserContext,
@@ -43,6 +49,7 @@ export class KbPageRecordLinksController {
   @Post("pages/:pageId/record-links")
   @RequirePermission("kb:pages:update")
   @HttpCode(201)
+  @Validate({ params: pageIdParams })
   add(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(createRecordLinkSchema)) dto: CreateRecordLinkDto,
@@ -53,6 +60,7 @@ export class KbPageRecordLinksController {
 
   @Delete("record-links/:linkId")
   @RequirePermission("kb:pages:update")
+  @Validate({ params: linkIdParams })
   remove(
     @Param("linkId", ParseIntPipe) linkId: number,
     @CurrentUser() user: CurrentUserContext,

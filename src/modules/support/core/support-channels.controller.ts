@@ -41,6 +41,12 @@ import {
 } from "./dto/support.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
+const orgIdParams = z.object({ orgId: z.string().min(1) }).strict();
+const orgIdsessionTokenParams = z.object({ orgId: z.string().min(1), sessionToken: z.string().min(1) }).strict();
 
 @RequireModule("support")
 @Controller("support")
@@ -74,6 +80,7 @@ export class SupportChannelsController {
   @Patch("channels/:channelId")
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:channels:manage")
+  @Validate({ params: channelIdParams })
   async updateChannel(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body(new ZodValidationPipe(updateSupportChannelSchema)) body: UpdateSupportChannelInput,
@@ -87,6 +94,7 @@ export class SupportChannelsController {
   @Delete("channels/:channelId")
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:channels:manage")
+  @Validate({ params: channelIdParams })
   async deleteChannel(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.channels.deleteChannel(u.orgId, channelId);
     await this.audit.record(u.orgId, u.userId, "channel", channelId, "deleted");
@@ -105,6 +113,7 @@ export class SupportChannelsController {
   @Public()
   @Post("inbound/email/:orgId")
   @HttpCode(200)
+  @Validate({ params: orgIdParams })
   async inboundEmail(
     @Param("orgId") orgId: string,
     @Headers("x-webhook-secret") secret: string | undefined,
@@ -123,6 +132,7 @@ export class SupportChannelsController {
   @Public()
   @Post("inbound/whatsapp/:orgId")
   @HttpCode(200)
+  @Validate({ params: orgIdParams })
   async inboundWhatsApp(
     @Param("orgId") orgId: string,
     @Headers("x-webhook-secret") secret: string | undefined,
@@ -141,6 +151,7 @@ export class SupportChannelsController {
   @Public()
   @Post("inbound/sms/:orgId")
   @HttpCode(200)
+  @Validate({ params: orgIdParams })
   async inboundSms(
     @Param("orgId") orgId: string,
     @Headers("x-webhook-secret") secret: string | undefined,
@@ -163,6 +174,7 @@ export class SupportChannelsController {
   @Public()
   @Post("chat/:orgId/start")
   @HttpCode(201)
+  @Validate({ params: orgIdParams })
   async startChatSession(
     @Param("orgId") orgId: string,
     @Body(new ZodValidationPipe(startChatSessionSchema)) body: StartChatSessionInput,
@@ -176,6 +188,7 @@ export class SupportChannelsController {
 
   @Public()
   @Get("chat/:orgId/:sessionToken/messages")
+  @Validate({ params: orgIdsessionTokenParams })
   async getChatSession(@Param("orgId") orgId: string, @Param("sessionToken") sessionToken: string) {
     return this.channels.getChatSession(orgId, sessionToken);
   }
@@ -183,6 +196,7 @@ export class SupportChannelsController {
   @Public()
   @Post("chat/:orgId/:sessionToken/messages")
   @HttpCode(201)
+  @Validate({ params: orgIdsessionTokenParams })
   async sendChatMessage(
     @Param("orgId") orgId: string,
     @Param("sessionToken") sessionToken: string,

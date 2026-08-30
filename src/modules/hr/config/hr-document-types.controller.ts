@@ -30,6 +30,10 @@ import {
   type ListDocumentTypesInput,
   type UpdateDocumentTypeInput,
 } from "./dto/document-types.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const documentTypeIdParams = z.object({ documentTypeId: z.coerce.number().int().positive() }).strict();
 
 @Controller("hr/document-types")
 @UseGuards(JwtAuthGuard)
@@ -66,6 +70,7 @@ export class HrDocumentTypesController {
 
   @Get(":documentTypeId")
   @AuthorizedInService("a three-key check in the handler: hr:documents:manage, hr:documents:view or self:onboarding-docs")
+  @Validate({ params: documentTypeIdParams })
   async getOne(
     @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -83,6 +88,7 @@ export class HrDocumentTypesController {
   @Patch(":documentTypeId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentTypeIdParams })
   async update(
     @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
     @Body(new ZodValidationPipe(updateDocumentTypeSchema)) body: UpdateDocumentTypeInput,
@@ -97,6 +103,7 @@ export class HrDocumentTypesController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentTypeIdParams })
   async remove(
     @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
     @CurrentUser() u: CurrentUserContext,

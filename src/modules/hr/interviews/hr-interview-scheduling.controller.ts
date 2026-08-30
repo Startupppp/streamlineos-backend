@@ -31,6 +31,10 @@ import {
   type UpdateInterviewInput,
 } from "./dto/interview-scheduling.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const interviewIdParams = z.object({ interviewId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/interviews")
@@ -64,6 +68,7 @@ export class HrInterviewSchedulingController {
 
   @Patch(":interviewId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: interviewIdParams })
   update(
     @Param("interviewId", ParseIntPipe) interviewId: number,
     @Body(new ZodValidationPipe(updateInterviewSchema)) body: UpdateInterviewInput,
@@ -74,18 +79,21 @@ export class HrInterviewSchedulingController {
 
   @Delete(":interviewId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: interviewIdParams })
   remove(@Param("interviewId", ParseIntPipe) interviewId: number, @CurrentUser() u: CurrentUserContext) {
     return this.scheduling.deleteInterview(u.orgId, interviewId);
   }
 
   @Get(":interviewId/scorecard")
   @RequirePermission("hr:interviews:view")
+  @Validate({ params: interviewIdParams })
   getScorecard(@Param("interviewId", ParseIntPipe) interviewId: number, @CurrentUser() u: CurrentUserContext) {
     return this.results.getScorecard(u.orgId, u.userId, interviewId);
   }
 
   @Post(":interviewId/scorecard")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: interviewIdParams })
   submitScorecard(
     @Param("interviewId", ParseIntPipe) interviewId: number,
     @Body(new ZodValidationPipe(submitScorecardSchema)) body: SubmitScorecardInput,

@@ -34,6 +34,11 @@ import {
   type UpdateHrFormInput,
   type UpdateSubmissionStatusInput,
 } from "./dto/hr-forms.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const formIdParams = z.object({ formId: z.coerce.number().int().positive() }).strict();
+const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/forms")
@@ -61,6 +66,7 @@ export class HrFormsController {
 
   @Get(":formId")
   @RequirePermission("hr:forms:view")
+  @Validate({ params: formIdParams })
   get(
     @Param("formId", ParseIntPipe) formId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -80,6 +86,7 @@ export class HrFormsController {
 
   @Patch(":formId")
   @RequirePermission("hr:forms:manage")
+  @Validate({ params: formIdParams })
   update(
     @Param("formId", ParseIntPipe) formId: number,
     @Body(new ZodValidationPipe(updateHrFormSchema)) body: UpdateHrFormInput,
@@ -90,6 +97,7 @@ export class HrFormsController {
 
   @Post(":formId/activate")
   @RequirePermission("hr:forms:manage")
+  @Validate({ params: formIdParams })
   activate(
     @Param("formId", ParseIntPipe) formId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -99,6 +107,7 @@ export class HrFormsController {
 
   @Post(":formId/archive")
   @RequirePermission("hr:forms:manage")
+  @Validate({ params: formIdParams })
   archive(
     @Param("formId", ParseIntPipe) formId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -109,6 +118,7 @@ export class HrFormsController {
   @Delete(":formId")
   @HttpCode(204)
   @RequirePermission("hr:forms:manage")
+  @Validate({ params: formIdParams })
   delete(
     @Param("formId", ParseIntPipe) formId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -119,6 +129,7 @@ export class HrFormsController {
   @Post(":formId/submissions")
   @HttpCode(201)
   @RequirePermission("hr:forms:view")
+  @Validate({ params: formIdParams })
   submit(
     @Param("formId", ParseIntPipe) formId: number,
     @Body(new ZodValidationPipe(submitHrFormSchema)) body: SubmitHrFormInput,
@@ -129,6 +140,7 @@ export class HrFormsController {
 
   @Get(":formId/submissions")
   @RequirePermission("hr:forms:view")
+  @Validate({ params: formIdParams })
   listSubmissions(
     @Param("formId", ParseIntPipe) formId: number,
     @Query(new ZodValidationPipe(listSubmissionsQuerySchema)) query: ListSubmissionsQuery,
@@ -139,6 +151,7 @@ export class HrFormsController {
 
   @Get(":formId/submissions/sensitive")
   @RequirePermission("hr:sensitive:view")
+  @Validate({ params: formIdParams })
   listSubmissionsSensitive(
     @Param("formId", ParseIntPipe) formId: number,
     @Query(new ZodValidationPipe(listSubmissionsQuerySchema)) query: ListSubmissionsQuery,
@@ -149,6 +162,7 @@ export class HrFormsController {
 
   @Patch("submissions/:submissionId/status")
   @RequirePermission("hr:forms:manage")
+  @Validate({ params: submissionIdParams })
   updateStatus(
     @Param("submissionId", ParseIntPipe) submissionId: number,
     @Body(new ZodValidationPipe(updateSubmissionStatusSchema)) body: UpdateSubmissionStatusInput,

@@ -26,6 +26,10 @@ import {
 } from "./dto/expense.schemas";
 import { ExpensesService } from "./expenses.service";
 import { ExpensesWriteService } from "./expenses-write.service";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const expenseIdParams = z.object({ expenseId: z.coerce.number().int().positive() }).strict();
 
 @Controller("me/expenses")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -60,6 +64,7 @@ export class EmployeeExpensesController {
   }
 
   @Patch(":expenseId")
+  @Validate({ params: expenseIdParams })
   update(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @Body(new ZodValidationPipe(updateExpenseDetailsSchema))

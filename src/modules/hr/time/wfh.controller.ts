@@ -23,6 +23,10 @@ import {
   type UpdateWfhInput,
 } from "./dto/wfh.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const requestIdParams = z.object({ requestId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/wfh")
@@ -54,6 +58,7 @@ export class WfhController {
 
   @Patch(":requestId")
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: requestIdParams })
   update(
     @Param("requestId", ParseIntPipe) requestId: number,
     @Body(new ZodValidationPipe(updateWfhSchema)) body: UpdateWfhInput,

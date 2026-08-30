@@ -32,6 +32,10 @@ import {
   type UpdateInput,
 } from "./dto/lead.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const leadIdParams = z.object({ leadId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("leads")
@@ -99,6 +103,7 @@ export class LeadsController {
 
   @Get(":leadId")
   @RequirePermission("crm:leads:view")
+  @Validate({ params: leadIdParams })
   async get(@Param("leadId", ParseIntPipe) leadId: number, @CurrentUser() u: CurrentUserContext) {
     const lead = await this.leads.getLead(u.orgId, leadId);
     if (!lead) throw new NotFoundException("Lead not found");
@@ -107,6 +112,7 @@ export class LeadsController {
 
   @Patch(":leadId")
   @RequirePermission("crm:leads:update")
+  @Validate({ params: leadIdParams })
   async update(
     @Param("leadId", ParseIntPipe) leadId: number,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
@@ -120,6 +126,7 @@ export class LeadsController {
   @Delete(":leadId")
   @HttpCode(204)
   @RequirePermission("crm:leads:delete")
+  @Validate({ params: leadIdParams })
   async remove(@Param("leadId", ParseIntPipe) leadId: number, @CurrentUser() u: CurrentUserContext) {
     await this.leads.remove(u.orgId, u.userId, leadId);
   }

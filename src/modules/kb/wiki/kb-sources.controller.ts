@@ -24,6 +24,10 @@ import {
   createKbSourceNoteSchema,
   type CreateKbSourceNoteInput,
 } from "./dto/kb-sources.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const sourceIdParams = z.object({ sourceId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -66,6 +70,7 @@ export class KbSourcesController {
 
   @Delete("sources/:sourceId")
   @RequirePermission("kb:pages:delete")
+  @Validate({ params: sourceIdParams })
   async remove(
     @Param("sourceId", ParseIntPipe) sourceId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -21,6 +21,9 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { InvAiExplainService } from "./inv-ai-explain.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
 
 const reorderProposalBodySchema = z.object({ variantId: z.number().int().positive(), warehouseId: z.number().int().positive().optional() });
 const confirmProposalBodySchema = z.object({ proposalId: z.number().int().positive(), token: z.string().min(1) });
@@ -39,6 +42,7 @@ export class InvAiExplainController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")
+  @Validate({ params: insightIdParams })
   explainInsight(
     @Param("insightId", ParseIntPipe) insightId: number,
     @CurrentUser() u: CurrentUserContext,

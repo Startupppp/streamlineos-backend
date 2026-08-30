@@ -23,6 +23,10 @@ import {
   type CreateAccessRequestInput,
   type PatchAccessRequestInput,
 } from "./dto/hr-directory.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const requestIdParams = z.object({ requestId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/access-requests")
@@ -51,6 +55,7 @@ export class AccessRequestsController {
 
   @Patch(":requestId")
   @RequirePermission("hr:assets:manage")
+  @Validate({ params: requestIdParams })
   update(
     @Param("requestId") requestId: string,
     @Body(new ZodValidationPipe(patchAccessRequestSchema)) body: PatchAccessRequestInput,

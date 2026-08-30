@@ -26,6 +26,10 @@ import {
   type GenerateEmailTemplateAiInput,
 } from "./dto/email-templates.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/email-templates")
@@ -49,6 +53,7 @@ export class HrEmailTemplatesController {
   }
 
   @Patch(":templateId")
+  @Validate({ params: templateIdParams })
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(updateEmailTemplateSchema)) body: UpdateEmailTemplateInput,
@@ -59,6 +64,7 @@ export class HrEmailTemplatesController {
 
   @Delete(":templateId")
   @HttpCode(204)
+  @Validate({ params: templateIdParams })
   remove(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

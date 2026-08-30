@@ -25,6 +25,10 @@ import {
   type TransitionIssueInput,
   type UpdateIssueInput,
 } from "./dto/issues.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const issueRecordIdParams = z.object({ issueRecordId: z.string().min(1) }).strict();
 
 const MANAGE = "crm:issues:manage";
 const ESCALATE = "crm:issues:escalate";
@@ -80,6 +84,7 @@ export class IssuesController {
 
   @Get(":issueRecordId")
   @RequirePermission(ISSUES_VIEW_PERMISSION)
+  @Validate({ params: issueRecordIdParams })
   async get(
     @Param("issueRecordId") issueRecordId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -91,6 +96,7 @@ export class IssuesController {
   /** One record's history, for a surface that wants it without the record. */
   @Get(":issueRecordId/transitions")
   @RequirePermission(ISSUES_VIEW_PERMISSION)
+  @Validate({ params: issueRecordIdParams })
   async listTransitions(
     @Param("issueRecordId") issueRecordId: string,
     @Query(new ZodValidationPipe(listTransitionsQuerySchema)) query: ListTransitionsQuery,
@@ -116,6 +122,7 @@ export class IssuesController {
 
   @Patch(":issueRecordId")
   @RequirePermission(MANAGE)
+  @Validate({ params: issueRecordIdParams })
   update(
     @Param("issueRecordId") issueRecordId: string,
     @Body(new ZodValidationPipe(updateIssueSchema)) body: UpdateIssueInput,
@@ -134,6 +141,7 @@ export class IssuesController {
   @Post(":issueRecordId/stage")
   @Idempotent("crm.issues.stage")
   @RequirePermission(MANAGE)
+  @Validate({ params: issueRecordIdParams })
   transition(
     @Param("issueRecordId") issueRecordId: string,
     @Body(new ZodValidationPipe(transitionIssueSchema)) body: TransitionIssueInput,
@@ -159,6 +167,7 @@ export class IssuesController {
   @Post(":issueRecordId/escalate")
   @Idempotent("crm.issues.escalate")
   @RequirePermission(ESCALATE)
+  @Validate({ params: issueRecordIdParams })
   escalate(
     @Param("issueRecordId") issueRecordId: string,
     @Body(new ZodValidationPipe(escalateIssueSchema)) body: EscalateIssueInput,

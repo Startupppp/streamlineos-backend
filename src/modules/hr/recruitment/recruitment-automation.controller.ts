@@ -35,6 +35,12 @@ import {
   type UpdateSequenceInput,
 } from "./dto/automation.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const automationIdParams = z.object({ automationId: z.coerce.number().int().positive() }).strict();
+const messageIdParams = z.object({ messageId: z.coerce.number().int().positive() }).strict();
+const sequenceIdParams = z.object({ sequenceId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -60,6 +66,7 @@ export class RecruitmentAutomationController {
 
   @Patch("automations/:automationId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: automationIdParams })
   updateAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
     @Body(new ZodValidationPipe(updateAutomationSchema)) body: UpdateAutomationInput,
@@ -70,6 +77,7 @@ export class RecruitmentAutomationController {
 
   @Delete("automations/:automationId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: automationIdParams })
   deleteAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -104,6 +112,7 @@ export class RecruitmentAutomationController {
 
   @Patch("messages/:messageId")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: messageIdParams })
   markMessageRead(
     @Param("messageId", ParseIntPipe) messageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -129,6 +138,7 @@ export class RecruitmentAutomationController {
 
   @Get("email-sequences/:sequenceId")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: sequenceIdParams })
   getSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -138,6 +148,7 @@ export class RecruitmentAutomationController {
 
   @Patch("email-sequences/:sequenceId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: sequenceIdParams })
   updateSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @Body(new ZodValidationPipe(updateSequenceSchema)) body: UpdateSequenceInput,
@@ -148,6 +159,7 @@ export class RecruitmentAutomationController {
 
   @Delete("email-sequences/:sequenceId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: sequenceIdParams })
   deleteSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -157,6 +169,7 @@ export class RecruitmentAutomationController {
 
   @Post("email-sequences/:sequenceId/enroll")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: sequenceIdParams })
   enrollSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @Body(new ZodValidationPipe(enrollSequenceSchema)) body: EnrollSequenceInput,

@@ -46,6 +46,14 @@ import {
   settingsProvenanceQuerySchema,
   type SettingsProvenanceQuery,
 } from "./dto/settings.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const keyIdParams = z.object({ keyId: z.string().min(1) }).strict();
+const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
+const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).strict();
+const connectionIdParams = z.object({ connectionId: z.coerce.number().int().positive() }).strict();
+const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
 @Controller("settings")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -95,6 +103,7 @@ export class SettingsController {
 
   @RequirePermission("settings:api-tokens:write")
   @Delete("api-keys/:keyId")
+  @Validate({ params: keyIdParams })
   revokeApiKey(
     @Param("keyId") keyId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -124,6 +133,7 @@ export class SettingsController {
 
   @Get("automations/:ruleId")
   @RequirePermission("settings:automations:view")
+  @Validate({ params: ruleIdParams })
   getAutomation(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -133,6 +143,7 @@ export class SettingsController {
 
   @Patch("automations/:ruleId")
   @RequirePermission("settings:automations:manage")
+  @Validate({ params: ruleIdParams })
   updateAutomation(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(updateAutomationSchema))
@@ -144,6 +155,7 @@ export class SettingsController {
 
   @Delete("automations/:ruleId")
   @RequirePermission("settings:automations:manage")
+  @Validate({ params: ruleIdParams })
   deleteAutomation(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -153,6 +165,7 @@ export class SettingsController {
 
   @Get("automations/:ruleId/runs")
   @RequirePermission("settings:automations:view")
+  @Validate({ params: ruleIdParams })
   listAutomationRuns(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -183,6 +196,7 @@ export class SettingsController {
 
   @Patch("custom-fields/:fieldId")
   @RequirePermission("settings:custom-fields:manage")
+  @Validate({ params: fieldIdParams })
   updateCustomField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @Body(new ZodValidationPipe(updateCustomFieldSchema))
@@ -194,6 +208,7 @@ export class SettingsController {
 
   @Delete("custom-fields/:fieldId")
   @RequirePermission("settings:custom-fields:manage")
+  @Validate({ params: fieldIdParams })
   deleteCustomField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -235,6 +250,7 @@ export class SettingsController {
 
   @Patch("integrations/git/:connectionId")
   @RequirePermission("settings:manage")
+  @Validate({ params: connectionIdParams })
   updateGitConnection(
     @Param("connectionId", ParseIntPipe) connectionId: number,
     @Body(new ZodValidationPipe(updateGitConnectionSchema))
@@ -246,6 +262,7 @@ export class SettingsController {
 
   @Delete("integrations/git/:connectionId")
   @RequirePermission("settings:manage")
+  @Validate({ params: connectionIdParams })
   deleteGitConnection(
     @Param("connectionId", ParseIntPipe) connectionId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -255,6 +272,7 @@ export class SettingsController {
 
   @RequirePermission("settings:rbac:manage")
   @Post("users/:userId/role")
+  @Validate({ params: userIdParams })
   updateUserRole(
     @Param("userId") userId: string,
     @Body(new ZodValidationPipe(updateUserRoleSchema))

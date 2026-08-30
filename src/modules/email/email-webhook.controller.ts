@@ -12,6 +12,10 @@ import type { Request, Response } from "express";
 import { Public } from "../../common/auth/public.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { EmailWebhookService, type EmailWebhookProvider } from "./email-webhook.service";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const providerParams = z.object({ provider: z.string().min(1) }).strict();
 
 const PROVIDERS: readonly EmailWebhookProvider[] = ["resend", "zeptomail"];
 
@@ -33,6 +37,7 @@ export class EmailWebhookController {
   ) {}
 
   @Post(":provider")
+  @Validate({ params: providerParams })
   async handle(
     @Param("provider") provider: string,
     @Req() req: RawBodyRequest<Request>,

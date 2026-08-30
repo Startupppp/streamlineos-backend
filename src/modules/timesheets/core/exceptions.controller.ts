@@ -25,6 +25,10 @@ import {
   type ResolveExceptionInput,
   type DismissExceptionInput,
 } from "./dto/exceptions.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const exceptionIdParams = z.object({ exceptionId: z.coerce.number().int().positive() }).strict();
 
 @Controller("timesheets/exceptions")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -52,6 +56,7 @@ export class TimesheetExceptionsController {
   @Post(":exceptionId/resolve")
   @HttpCode(200)
   @RequirePermission("timesheets:exceptions:manage")
+  @Validate({ params: exceptionIdParams })
   resolve(
     @Param("exceptionId", ParseIntPipe) exceptionId: number,
     @Body(new ZodValidationPipe(resolveExceptionSchema)) body: ResolveExceptionInput,
@@ -63,6 +68,7 @@ export class TimesheetExceptionsController {
   @Post(":exceptionId/dismiss")
   @HttpCode(200)
   @RequirePermission("timesheets:exceptions:manage")
+  @Validate({ params: exceptionIdParams })
   dismiss(
     @Param("exceptionId", ParseIntPipe) exceptionId: number,
     @Body(new ZodValidationPipe(dismissExceptionSchema)) body: DismissExceptionInput,

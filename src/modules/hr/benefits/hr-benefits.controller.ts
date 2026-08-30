@@ -48,6 +48,13 @@ import {
   type ClaimsQuery,
 } from "./dto/benefits.schemas";
 import { AccessService } from "../../access/access.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const planIdParams = z.object({ planId: z.coerce.number().int().positive() }).strict();
+const windowIdParams = z.object({ windowId: z.coerce.number().int().positive() }).strict();
+const depIdParams = z.object({ depId: z.coerce.number().int().positive() }).strict();
+const claimIdParams = z.object({ claimId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/benefits")
@@ -86,6 +93,7 @@ export class HrBenefitsController {
   @Get("plans/:planId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
+  @Validate({ params: planIdParams })
   getPlan(
     @CurrentUser() u: CurrentUserContext,
     @Param("planId", ParseIntPipe) planId: number,
@@ -96,6 +104,7 @@ export class HrBenefitsController {
   @Get("plans/:planId/eligibility")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
+  @Validate({ params: planIdParams })
   checkEligibility(
     @CurrentUser() u: CurrentUserContext,
     @Param("planId", ParseIntPipe) planId: number,
@@ -119,6 +128,7 @@ export class HrBenefitsController {
   @Patch("plans/:planId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
+  @Validate({ params: planIdParams })
   updatePlan(
     @CurrentUser() u: CurrentUserContext,
     @Param("planId", ParseIntPipe) planId: number,
@@ -130,6 +140,7 @@ export class HrBenefitsController {
   @Delete("plans/:planId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
+  @Validate({ params: planIdParams })
   deletePlan(
     @CurrentUser() u: CurrentUserContext,
     @Param("planId", ParseIntPipe) planId: number,
@@ -158,6 +169,7 @@ export class HrBenefitsController {
   @Patch("windows/:windowId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
+  @Validate({ params: windowIdParams })
   updateWindow(
     @CurrentUser() u: CurrentUserContext,
     @Param("windowId", ParseIntPipe) windowId: number,
@@ -216,6 +228,7 @@ export class HrBenefitsController {
   @Patch("dependents/:depId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
+  @Validate({ params: depIdParams })
   updateDependent(
     @CurrentUser() u: CurrentUserContext,
     @Param("depId", ParseIntPipe) depId: number,
@@ -227,6 +240,7 @@ export class HrBenefitsController {
   @Delete("dependents/:depId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
+  @Validate({ params: depIdParams })
   deleteDependent(
     @CurrentUser() u: CurrentUserContext,
     @Param("depId", ParseIntPipe) depId: number,
@@ -259,6 +273,7 @@ export class HrBenefitsController {
   @Patch("claims/:claimId/review")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
+  @Validate({ params: claimIdParams })
   reviewClaim(
     @CurrentUser() u: CurrentUserContext,
     @Param("claimId", ParseIntPipe) claimId: number,
@@ -270,6 +285,7 @@ export class HrBenefitsController {
   @Patch("claims/:claimId/payout-route")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
+  @Validate({ params: claimIdParams })
   setPayoutRoute(
     @CurrentUser() u: CurrentUserContext,
     @Param("claimId", ParseIntPipe) claimId: number,

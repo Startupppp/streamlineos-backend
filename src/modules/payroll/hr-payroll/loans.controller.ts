@@ -30,6 +30,10 @@ import {
   listPageQuerySchema,
   type ListPageQueryInput,
 } from "./dto/payroll.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const loanIdParams = z.object({ loanId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("hr/loans")
@@ -67,6 +71,7 @@ export class LoansController {
 
   @Patch(":loanId")
   @RequirePermission("hr:payroll:view")
+  @Validate({ params: loanIdParams })
   async update(
     @Param("loanId", ParseIntPipe) loanId: number,
     @Body(new ZodValidationPipe(updateLoanSchema)) body: UpdateLoanInput,

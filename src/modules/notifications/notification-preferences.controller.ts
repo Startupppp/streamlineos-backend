@@ -15,6 +15,11 @@ import {
   type EventPreferenceInput,
   type CreateSuppressionInput,
 } from "./dto/preference.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const eventKeyParams = z.object({ eventKey: z.string().min(1) }).strict();
+const suppressionIdParams = z.object({ suppressionId: z.coerce.number().int().positive() }).strict();
 
 @Controller("notification-preferences")
 @UseGuards(JwtAuthGuard)
@@ -64,6 +69,7 @@ export class NotificationPreferencesController {
 
   @Patch("events/:eventKey")
   @Universal()
+  @Validate({ params: eventKeyParams })
   updateEvent(
     @Param("eventKey") eventKey: string,
     @Body(new ZodValidationPipe(eventPreferenceSchema)) body: EventPreferenceInput,
@@ -96,6 +102,7 @@ export class NotificationPreferencesController {
 
   @Delete("suppressions/:suppressionId")
   @Universal()
+  @Validate({ params: suppressionIdParams })
   removeSuppression(@Param("suppressionId", ParseIntPipe) suppressionId: number, @CurrentUser() u: CurrentUserContext) {
     return this.preferences.removeSuppression(u.orgId, u.userId, suppressionId);
   }

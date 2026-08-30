@@ -37,6 +37,11 @@ import {
   type UpdateReorgScenarioInput,
   type ListScenariosInput,
 } from "./positions.dto";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const positionIdParams = z.object({ positionId: z.coerce.number().int().positive() }).strict();
+const scenarioIdParams = z.object({ scenarioId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/governance")
@@ -74,6 +79,7 @@ export class PositionsController {
 
   @Patch("positions/:positionId")
   @RequirePermission("hr:positions:manage")
+  @Validate({ params: positionIdParams })
   async update(
     @CurrentUser() user: CurrentUserContext,
     @Param("positionId", ParseIntPipe) positionId: number,
@@ -86,6 +92,7 @@ export class PositionsController {
   @Delete("positions/:positionId")
   @RequirePermission("hr:positions:manage")
   @HttpCode(204)
+  @Validate({ params: positionIdParams })
   async softDelete(
     @CurrentUser() user: CurrentUserContext,
     @Param("positionId", ParseIntPipe) positionId: number,
@@ -96,6 +103,7 @@ export class PositionsController {
 
   @Post("positions/:positionId/assign")
   @RequirePermission("hr:positions:manage")
+  @Validate({ params: positionIdParams })
   async assignEmployee(
     @CurrentUser() user: CurrentUserContext,
     @Param("positionId", ParseIntPipe) positionId: number,
@@ -126,6 +134,7 @@ export class PositionsController {
 
   @Patch("scenarios/:scenarioId")
   @RequirePermission("hr:positions:manage")
+  @Validate({ params: scenarioIdParams })
   async updateScenario(
     @CurrentUser() user: CurrentUserContext,
     @Param("scenarioId", ParseIntPipe) scenarioId: number,
@@ -138,6 +147,7 @@ export class PositionsController {
   @Delete("scenarios/:scenarioId")
   @RequirePermission("hr:positions:manage")
   @HttpCode(204)
+  @Validate({ params: scenarioIdParams })
   async deleteScenario(
     @CurrentUser() user: CurrentUserContext,
     @Param("scenarioId", ParseIntPipe) scenarioId: number,
@@ -148,6 +158,7 @@ export class PositionsController {
 
   @Get("scenarios/:scenarioId/simulate")
   @RequirePermission("hr:positions:view")
+  @Validate({ params: scenarioIdParams })
   async simulateScenario(
     @CurrentUser() user: CurrentUserContext,
     @Param("scenarioId", ParseIntPipe) scenarioId: number,

@@ -30,6 +30,10 @@ import {
 } from "./dto/hr-automation.schemas";
 import { HR_AUTOMATION_EVENTS, HR_EVENT_FIELD_DOCS, HR_EVENT_SAMPLE_PAYLOADS } from "./hr-automation-events";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/automations")
@@ -83,6 +87,7 @@ export class HrAutomationsController {
 
   @Get(":ruleId")
   @RequirePermission("hr:automations:view")
+  @Validate({ params: ruleIdParams })
   getOne(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -102,6 +107,7 @@ export class HrAutomationsController {
 
   @Patch(":ruleId")
   @RequirePermission("hr:automations:manage")
+  @Validate({ params: ruleIdParams })
   update(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(updateHrAutomationRuleSchema)) body: UpdateHrAutomationRuleInput,
@@ -113,6 +119,7 @@ export class HrAutomationsController {
   @Post(":ruleId/toggle")
   @HttpCode(200)
   @RequirePermission("hr:automations:manage")
+  @Validate({ params: ruleIdParams })
   toggle(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body() body: { isEnabled: boolean },
@@ -124,6 +131,7 @@ export class HrAutomationsController {
   @Delete(":ruleId")
   @HttpCode(204)
   @RequirePermission("hr:automations:manage")
+  @Validate({ params: ruleIdParams })
   async remove(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -134,6 +142,7 @@ export class HrAutomationsController {
   @Post(":ruleId/test")
   @HttpCode(200)
   @RequirePermission("hr:automations:manage")
+  @Validate({ params: ruleIdParams })
   test(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(testHrAutomationSchema)) body: TestHrAutomationInput,
@@ -144,6 +153,7 @@ export class HrAutomationsController {
 
   @Get(":ruleId/runs")
   @RequirePermission("hr:automations:view")
+  @Validate({ params: ruleIdParams })
   listRuns(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,

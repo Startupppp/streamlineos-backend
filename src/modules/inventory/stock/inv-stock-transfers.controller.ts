@@ -15,6 +15,10 @@ import {
   listTransfersSchema, createTransferSchema, completeTransferSchema,
   type ListTransfersInput, type CreateTransferInput, type CompleteTransferInput,
 } from "./dto/inv-stock.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const transferIdParams = z.object({ transferId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/stock/transfers")
@@ -39,6 +43,7 @@ export class InvStockTransfersController {
   @Get(":transferId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ params: transferIdParams })
   getTransfer(
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -60,6 +65,7 @@ export class InvStockTransfersController {
   @Post(":transferId/reserve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
+  @Validate({ params: transferIdParams })
   reserveTransfer(
     @Headers("idempotency-key") idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
@@ -72,6 +78,7 @@ export class InvStockTransfersController {
   @Post(":transferId/dispatch")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
+  @Validate({ params: transferIdParams })
   dispatchTransfer(
     @Headers("idempotency-key") idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
@@ -84,6 +91,7 @@ export class InvStockTransfersController {
   @Post(":transferId/complete")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
+  @Validate({ params: transferIdParams })
   completeTransfer(
     @Headers("idempotency-key") idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
@@ -98,6 +106,7 @@ export class InvStockTransfersController {
   @Idempotent("inventory.stock-transfer.cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
+  @Validate({ params: transferIdParams })
   cancelTransfer(
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,

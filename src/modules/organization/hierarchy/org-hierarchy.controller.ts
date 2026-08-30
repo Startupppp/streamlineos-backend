@@ -54,6 +54,16 @@ import {
   type DependencyPreviewParamsInput,
   type DependencyPreviewQueryInput,
 } from "./dto/org-hierarchy.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const unitKindunitIdParams = z.object({ unitKind: z.string().min(1), unitId: z.string().min(1) }).strict();
+const businessUnitIdParams = z.object({ businessUnitId: z.string().min(1) }).strict();
+const branchIdParams = z.object({ branchId: z.string().min(1) }).strict();
+const departmentIdParams = z.object({ departmentId: z.string().min(1) }).strict();
+const teamIdParams = z.object({ teamId: z.string().min(1) }).strict();
+const locationIdParams = z.object({ locationId: z.string().min(1) }).strict();
+const costCenterIdParams = z.object({ costCenterId: z.string().min(1) }).strict();
 
 @Controller("org-hierarchy")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -86,6 +96,7 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("dependencies/:unitKind/:unitId")
+  @Validate({ params: unitKindunitIdParams })
   getDependencyPreview(
     @Param(new ZodValidationPipe(dependencyPreviewParamsSchema))
     params: DependencyPreviewParamsInput,
@@ -125,6 +136,7 @@ export class OrgHierarchyController {
 
   @Patch("business-units/:businessUnitId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: businessUnitIdParams })
   updateBusinessUnit(
     @Param("businessUnitId") businessUnitId: string,
     @Body(new ZodValidationPipe(updateBusinessUnitSchema))
@@ -141,6 +153,7 @@ export class OrgHierarchyController {
 
   @Delete("business-units/:businessUnitId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: businessUnitIdParams })
   async deleteBusinessUnit(
     @Param("businessUnitId") businessUnitId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -173,6 +186,7 @@ export class OrgHierarchyController {
 
   @Patch("branches/:branchId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: branchIdParams })
   updateOrgBranch(
     @Param("branchId") branchId: string,
     @Body(new ZodValidationPipe(updateOrgBranchSchema))
@@ -184,6 +198,7 @@ export class OrgHierarchyController {
 
   @Delete("branches/:branchId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: branchIdParams })
   async deleteOrgBranch(
     @Param("branchId") branchId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -216,6 +231,7 @@ export class OrgHierarchyController {
 
   @Patch("departments/:departmentId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: departmentIdParams })
   updateDepartment(
     @Param("departmentId") departmentId: string,
     @Body(new ZodValidationPipe(updateOrgDepartmentSchema))
@@ -227,6 +243,7 @@ export class OrgHierarchyController {
 
   @Delete("departments/:departmentId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: departmentIdParams })
   async deleteDepartment(
     @Param("departmentId") departmentId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -258,6 +275,7 @@ export class OrgHierarchyController {
 
   @Patch("teams/:teamId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: teamIdParams })
   updateTeam(
     @Param("teamId") teamId: string,
     @Body(new ZodValidationPipe(updateOrgTeamSchema)) body: UpdateOrgTeamInput,
@@ -268,6 +286,7 @@ export class OrgHierarchyController {
 
   @Delete("teams/:teamId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: teamIdParams })
   async deleteTeam(
     @Param("teamId") teamId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -300,6 +319,7 @@ export class OrgHierarchyController {
 
   @Patch("locations/:locationId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: locationIdParams })
   updateLocation(
     @Param("locationId") locationId: string,
     @Body(new ZodValidationPipe(updateOrgLocationSchema))
@@ -311,6 +331,7 @@ export class OrgHierarchyController {
 
   @Delete("locations/:locationId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: locationIdParams })
   async deleteLocation(
     @Param("locationId") locationId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -343,6 +364,7 @@ export class OrgHierarchyController {
 
   @Patch("cost-centers/:costCenterId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: costCenterIdParams })
   updateCostCenter(
     @Param("costCenterId") costCenterId: string,
     @Body(new ZodValidationPipe(updateCostCenterSchema))
@@ -354,6 +376,7 @@ export class OrgHierarchyController {
 
   @Delete("cost-centers/:costCenterId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: costCenterIdParams })
   async deleteCostCenter(
     @Param("costCenterId") costCenterId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -364,6 +387,7 @@ export class OrgHierarchyController {
 
   @Patch("business-units/:businessUnitId/move")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: businessUnitIdParams })
   moveBusinessUnit(
     @Param("businessUnitId") businessUnitId: string,
     @Body() body: { parentId: string | null },
@@ -378,6 +402,7 @@ export class OrgHierarchyController {
 
   @Patch("branches/:branchId/move")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: branchIdParams })
   moveBranch(
     @Param("branchId") branchId: string,
     @Body() body: { businessUnitId: string | null },
@@ -392,6 +417,7 @@ export class OrgHierarchyController {
 
   @Patch("departments/:departmentId/move")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: departmentIdParams })
   moveDepartment(
     @Param("departmentId") departmentId: string,
     @Body() body: { branchId: string | null },
@@ -406,6 +432,7 @@ export class OrgHierarchyController {
 
   @Patch("teams/:teamId/move")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: teamIdParams })
   moveTeam(
     @Param("teamId") teamId: string,
     @Body(new ZodValidationPipe(moveOrgTeamSchema)) body: MoveOrgTeamInput,

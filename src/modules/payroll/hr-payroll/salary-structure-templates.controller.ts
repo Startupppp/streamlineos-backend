@@ -25,6 +25,10 @@ import {
   type CreateSalaryStructureTemplateInput,
   type UpdateSalaryStructureTemplateInput,
 } from "./dto/payroll.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @UseGuards(JwtAuthGuard, ModuleGuard)
@@ -53,6 +57,7 @@ export class SalaryStructureTemplatesController {
   @Patch(":templateId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
+  @Validate({ params: templateIdParams })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("templateId", ParseIntPipe) templateId: number,
@@ -65,6 +70,7 @@ export class SalaryStructureTemplatesController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
+  @Validate({ params: templateIdParams })
   remove(
     @CurrentUser() u: CurrentUserContext,
     @Param("templateId", ParseIntPipe) templateId: number,

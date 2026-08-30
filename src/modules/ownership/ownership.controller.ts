@@ -37,6 +37,11 @@ import {
   type ListTransfersInput,
   type SetModuleOwnerInput,
 } from "./dto/ownership.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
+const transferIdParams = z.object({ transferId: z.string().min(1) }).strict();
 
 @Controller("ownership")
 @UseGuards(JwtAuthGuard)
@@ -57,6 +62,7 @@ export class OwnershipController {
   @Get("modules/:moduleKey")
   @UseGuards(PermissionGuard)
   @RequirePermission("ownership:modules:view")
+  @Validate({ params: moduleKeyParams })
   getModuleOwnership(
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -68,6 +74,7 @@ export class OwnershipController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
   @UseRateLimit("ownership:force-set")
+  @Validate({ params: moduleKeyParams })
   forceSetModuleOwner(
     @Param("moduleKey") moduleKey: string,
     @Body(new ZodValidationPipe(setModuleOwnerSchema)) body: SetModuleOwnerInput,
@@ -97,6 +104,7 @@ export class OwnershipController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
   @UseRateLimit("ownership:transfer")
+  @Validate({ params: moduleKeyParams })
   initiateModuleTransfer(
     @Param("moduleKey") moduleKey: string,
     @Body(new ZodValidationPipe(initiateModuleTransferSchema)) body: InitiateModuleTransferInput,
@@ -134,6 +142,7 @@ export class OwnershipController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:transfer:respond")
   @UseRateLimit("ownership:transfer")
+  @Validate({ params: transferIdParams })
   acceptTransfer(
     @Param("transferId") transferId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -147,6 +156,7 @@ export class OwnershipController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:transfer:respond")
   @UseRateLimit("ownership:transfer")
+  @Validate({ params: transferIdParams })
   declineTransfer(
     @Param("transferId") transferId: string,
     @Body(new ZodValidationPipe(declineTransferSchema)) body: DeclineTransferInput,
@@ -161,6 +171,7 @@ export class OwnershipController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
   @UseRateLimit("ownership:transfer")
+  @Validate({ params: transferIdParams })
   cancelTransfer(
     @Param("transferId") transferId: string,
     @CurrentUser() u: CurrentUserContext,

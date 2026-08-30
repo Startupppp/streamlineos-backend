@@ -46,6 +46,10 @@ import {
   type UpdateCandidateInput,
 } from "./dto/candidates.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const candidateIdParams = z.object({ candidateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/candidates")
@@ -121,6 +125,7 @@ export class RecruitmentCandidatesController {
 
   @Get(":candidateId")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: candidateIdParams })
   getOne(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -130,6 +135,7 @@ export class RecruitmentCandidatesController {
 
   @Patch(":candidateId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams })
   update(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(updateCandidateSchema)) body: UpdateCandidateInput,
@@ -141,6 +147,7 @@ export class RecruitmentCandidatesController {
   @Delete(":candidateId")
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams })
   async remove(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -150,6 +157,7 @@ export class RecruitmentCandidatesController {
 
   @Patch(":candidateId/stage")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams })
   moveStage(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(stageSchema)) body: StageInput,
@@ -160,6 +168,7 @@ export class RecruitmentCandidatesController {
 
   @Get(":candidateId/sla")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: candidateIdParams })
   getSla(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -169,6 +178,7 @@ export class RecruitmentCandidatesController {
 
   @Patch(":candidateId/sla")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams })
   resetSla(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(slaResetSchema)) body: SlaResetInput,
@@ -180,6 +190,7 @@ export class RecruitmentCandidatesController {
   @Post(":candidateId/applications")
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @Validate({ params: candidateIdParams })
   createApplication(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(createApplicationSchema)) body: CreateApplicationInput,
@@ -190,6 +201,7 @@ export class RecruitmentCandidatesController {
 
   @Post(":candidateId/link-duplicate")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams })
   linkDuplicate(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(linkDuplicateSchema)) body: LinkDuplicateInput,
@@ -200,6 +212,7 @@ export class RecruitmentCandidatesController {
 
   @Post(":candidateId/unlink-duplicate")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams })
   unlinkDuplicate(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -209,6 +222,7 @@ export class RecruitmentCandidatesController {
 
   @Patch(":candidateId/bgv-status")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams })
   updateBgvStatus(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(bgvStatusSchema)) body: BgvStatusInput,

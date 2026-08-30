@@ -9,6 +9,10 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { JournalApprovalsService } from "./journal-approvals.service";
 import { approvalDecisionSchema, type ApprovalDecisionInput } from "./dto/journal-approvals.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/journal")
@@ -21,6 +25,7 @@ export class JournalApprovalsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:create")
   @HttpCode(200)
+  @Validate({ params: entryIdParams })
   submitForApproval(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -33,6 +38,7 @@ export class JournalApprovalsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:approve")
   @HttpCode(200)
+  @Validate({ params: entryIdParams })
   approveJournal(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body(new ZodValidationPipe(approvalDecisionSchema)) body: ApprovalDecisionInput,
@@ -46,6 +52,7 @@ export class JournalApprovalsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:approve")
   @HttpCode(200)
+  @Validate({ params: entryIdParams })
   rejectJournal(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body(new ZodValidationPipe(approvalDecisionSchema)) body: ApprovalDecisionInput,

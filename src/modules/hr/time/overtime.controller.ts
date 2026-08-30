@@ -11,6 +11,9 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { OvertimeService } from "./overtime.service";
 import { createOvertimeSchema, type CreateOvertimeInput } from "./dto/overtime.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const overtimeRequestIdParams = z.object({ overtimeRequestId: z.coerce.number().int().positive() }).strict();
 
 const listQuerySchema = z.object({
   page: pageNumberField,
@@ -45,6 +48,7 @@ export class OvertimeController {
   @Patch(":overtimeRequestId/approve")
   @Idempotent("hr.overtime.approve")
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: overtimeRequestIdParams })
   approve(
     @CurrentUser() u: CurrentUserContext,
     @Param("overtimeRequestId", ParseIntPipe) overtimeRequestId: number,
@@ -55,6 +59,7 @@ export class OvertimeController {
   @Patch(":overtimeRequestId/reject")
   @Idempotent("hr.overtime.reject")
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: overtimeRequestIdParams })
   reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("overtimeRequestId", ParseIntPipe) overtimeRequestId: number,

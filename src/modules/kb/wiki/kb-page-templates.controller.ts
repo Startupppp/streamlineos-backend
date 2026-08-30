@@ -21,6 +21,10 @@ import {
   createPageTemplateSchema,
   type CreatePageTemplateInput,
 } from "./dto/kb-page-templates.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @RequireModule("kb")
@@ -46,6 +50,7 @@ export class KbPageTemplatesController {
   @Delete("page-templates/:templateId")
   @HttpCode(204)
   @RequirePermission("kb:templates:manage")
+  @Validate({ params: templateIdParams })
   async remove(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

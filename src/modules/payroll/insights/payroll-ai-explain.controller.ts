@@ -17,6 +17,10 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PayrollAiExplainService } from "./payroll-ai-explain.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const publicationIdParams = z.object({ publicationId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/me/payslips")
@@ -36,6 +40,7 @@ export class PayrollAiExplainController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("self:payslips")
+  @Validate({ params: publicationIdParams })
   explainPayslip(
     @Param("publicationId", ParseIntPipe) publicationId: number,
     @CurrentUser() u: CurrentUserContext,

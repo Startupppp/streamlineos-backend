@@ -33,6 +33,10 @@ import {
   type ListTemplatesInput,
   type SetTemplateApprovalInput,
 } from "./dto/template.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @Controller("notification-templates")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -60,6 +64,7 @@ export class NotificationTemplatesController {
 
   @Patch(":templateId")
   @RequirePermission("notifications:templates:manage")
+  @Validate({ params: templateIdParams })
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(updateTemplateSchema)) dto: UpdateTemplateInput,
@@ -75,6 +80,7 @@ export class NotificationTemplatesController {
    */
   @Patch(":templateId/approval")
   @RequirePermission("notifications:templates:manage")
+  @Validate({ params: templateIdParams })
   setApproval(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(setTemplateApprovalSchema)) dto: SetTemplateApprovalInput,
@@ -85,6 +91,7 @@ export class NotificationTemplatesController {
 
   @Delete(":templateId")
   @RequirePermission("notifications:templates:manage")
+  @Validate({ params: templateIdParams })
   remove(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -95,6 +102,7 @@ export class NotificationTemplatesController {
   @Post(":templateId/preview")
   @HttpCode(200)
   @RequirePermission("notifications:templates:view")
+  @Validate({ params: templateIdParams })
   preview(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(previewTemplateSchema)) dto: PreviewTemplateInput,
@@ -107,6 +115,7 @@ export class NotificationTemplatesController {
   @Idempotent("notifications.template.test-send")
   @HttpCode(200)
   @RequirePermission("notifications:templates:manage")
+  @Validate({ params: templateIdParams })
   testSend(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(testSendTemplateSchema)) dto: TestSendTemplateInput,

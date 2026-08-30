@@ -29,6 +29,11 @@ import {
   type ListProgramsQuery,
   type UpdateProgramInput,
 } from "./dto/portfolios.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const programIdParams = z.object({ programId: z.coerce.number().int().positive() }).strict();
+const programIdprojectIdParams = z.object({ programId: z.coerce.number().int().positive(), projectId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -47,6 +52,7 @@ export class ProgramsController {
 
   @Get("programs/:programId")
   @RequirePermission("build:programs:view")
+  @Validate({ params: programIdParams })
   getProgram(
     @Param("programId", ParseIntPipe) programId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -66,6 +72,7 @@ export class ProgramsController {
 
   @Patch("programs/:programId")
   @RequirePermission("build:programs:manage")
+  @Validate({ params: programIdParams })
   updateProgram(
     @Param("programId", ParseIntPipe) programId: number,
     @Body(new ZodValidationPipe(updateProgramSchema)) body: UpdateProgramInput,
@@ -77,6 +84,7 @@ export class ProgramsController {
   @Delete("programs/:programId")
   @HttpCode(204)
   @RequirePermission("build:programs:manage")
+  @Validate({ params: programIdParams })
   deleteProgram(
     @Param("programId", ParseIntPipe) programId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +95,7 @@ export class ProgramsController {
   @Post("programs/:programId/projects")
   @HttpCode(200)
   @RequirePermission("build:programs:manage")
+  @Validate({ params: programIdParams })
   linkProject(
     @Param("programId", ParseIntPipe) programId: number,
     @Body(new ZodValidationPipe(linkProjectSchema)) body: LinkProjectInput,
@@ -98,6 +107,7 @@ export class ProgramsController {
   @Delete("programs/:programId/projects/:projectId")
   @HttpCode(204)
   @RequirePermission("build:programs:manage")
+  @Validate({ params: programIdprojectIdParams })
   unlinkProject(
     @Param("programId", ParseIntPipe) programId: number,
     @Param("projectId", ParseIntPipe) projectId: number,

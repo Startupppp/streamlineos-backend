@@ -23,6 +23,10 @@ import {
   type CreateSubmissionInput,
   type UpdateSubmissionInput,
 } from "./dto/forms.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/forms/:formId/submissions")
@@ -54,6 +58,7 @@ export class SubmissionsController {
 
   @Patch(":submissionId")
   @RequirePermission("build:forms:manage")
+  @Validate({ params: submissionIdParams })
   updateSubmission(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("formId", ParseIntPipe) formId: number,

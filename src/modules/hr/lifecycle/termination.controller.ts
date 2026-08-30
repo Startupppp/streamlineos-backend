@@ -27,6 +27,10 @@ import {
 } from "./dto/hr-lifecycle.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const terminationIdParams = z.object({ terminationId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/termination")
@@ -61,6 +65,7 @@ export class TerminationController {
   @Post(":terminationId/send-email")
   @HttpCode(200)
   @RequirePermission("hr:exit:manage")
+  @Validate({ params: terminationIdParams })
   sendEmail(
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -70,6 +75,7 @@ export class TerminationController {
 
   @Patch(":terminationId/complete")
   @RequirePermission("hr:exit:manage")
+  @Validate({ params: terminationIdParams })
   complete(
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -79,6 +85,7 @@ export class TerminationController {
 
   @Get(":terminationId/letter")
   @RequirePermission("hr:exit:manage")
+  @Validate({ params: terminationIdParams })
   getLetter(
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +96,7 @@ export class TerminationController {
   @Patch(":terminationId/submit")
   @Idempotent("hr.termination.submit")
   @RequirePermission("hr:exit:manage")
+  @Validate({ params: terminationIdParams })
   submit(
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -98,6 +106,7 @@ export class TerminationController {
 
   @Patch(":terminationId/final-review")
   @RequirePermission("hr:exit:approve")
+  @Validate({ params: terminationIdParams })
   finalReview(
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @Body(new ZodValidationPipe(terminationReviewSchema)) body: TerminationReviewInput,
@@ -108,6 +117,7 @@ export class TerminationController {
 
   @Get(":terminationId")
   @RequirePermission("hr:exit:manage")
+  @Validate({ params: terminationIdParams })
   getOne(
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @CurrentUser() u: CurrentUserContext,

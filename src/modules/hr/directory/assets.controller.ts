@@ -30,6 +30,11 @@ import {
   type PatchDeviceInput,
 } from "./dto/hr-directory.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const returnIdParams = z.object({ returnId: z.coerce.number().int().positive() }).strict();
+const deviceIdParams = z.object({ deviceId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr")
@@ -59,6 +64,7 @@ export class AssetsController {
 
   @Patch("asset-returns/:returnId")
   @RequirePermission("hr:assets:manage")
+  @Validate({ params: returnIdParams })
   updateAssetReturn(
     @Param("returnId", ParseIntPipe) returnId: number,
     @Body(new ZodValidationPipe(patchAssetReturnSchema)) body: PatchAssetReturnInput,
@@ -85,6 +91,7 @@ export class AssetsController {
 
   @Patch("devices/:deviceId")
   @RequirePermission("hr:assets:manage")
+  @Validate({ params: deviceIdParams })
   updateDevice(
     @Param("deviceId", ParseIntPipe) deviceId: number,
     @Body(new ZodValidationPipe(patchDeviceSchema)) body: PatchDeviceInput,
@@ -96,6 +103,7 @@ export class AssetsController {
   @Delete("devices/:deviceId")
   @HttpCode(204)
   @RequirePermission("hr:assets:manage")
+  @Validate({ params: deviceIdParams })
   deleteDevice(@Param("deviceId", ParseIntPipe) deviceId: number, @CurrentUser() u: CurrentUserContext) {
     return this.assets.deleteDevice(u.orgId, deviceId);
   }

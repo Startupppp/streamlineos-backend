@@ -34,6 +34,10 @@ import {
   type CheckinInput,
   type WellnessTrendInput,
 } from "./dto/hr-safety.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const incidentIdParams = z.object({ incidentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/safety")
@@ -55,6 +59,7 @@ export class HrSafetyController {
 
   @Get("incidents/:incidentId")
   @RequirePermission("hr:safety:view")
+  @Validate({ params: incidentIdParams })
   async getIncident(
     @CurrentUser() user: CurrentUserContext,
     @Param("incidentId", ParseIntPipe) incidentId: number,
@@ -76,6 +81,7 @@ export class HrSafetyController {
 
   @Patch("incidents/:incidentId")
   @RequirePermission("hr:safety:manage")
+  @Validate({ params: incidentIdParams })
   async updateIncident(
     @CurrentUser() user: CurrentUserContext,
     @Param("incidentId", ParseIntPipe) incidentId: number,
@@ -89,6 +95,7 @@ export class HrSafetyController {
   @Delete("incidents/:incidentId")
   @RequirePermission("hr:safety:manage")
   @HttpCode(204)
+  @Validate({ params: incidentIdParams })
   async deleteIncident(
     @CurrentUser() user: CurrentUserContext,
     @Param("incidentId", ParseIntPipe) incidentId: number,

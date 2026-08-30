@@ -30,6 +30,10 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const holidayIdParams = z.object({ holidayId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/attendance")
@@ -156,6 +160,7 @@ export class AttendanceController {
 
   @Patch("holidays/:holidayId")
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: holidayIdParams })
   updateHoliday(
     @CurrentUser() u: CurrentUserContext,
     @Param("holidayId") holidayId: string,
@@ -167,6 +172,7 @@ export class AttendanceController {
   @Delete("holidays/:holidayId")
   @HttpCode(204)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: holidayIdParams })
   deleteHoliday(@CurrentUser() u: CurrentUserContext, @Param("holidayId") holidayId: string) {
     return this.attendance.deleteHoliday(u.orgId, holidayId);
   }

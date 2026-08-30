@@ -34,6 +34,11 @@ import {
   type UpdateTicketInput,
 } from "./dto/hr-helpdesk.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
+const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/helpdesk")
@@ -76,6 +81,7 @@ export class HrHelpdeskController {
 
   @Get(":ticketId")
   @RequirePermission("hr:helpdesk:view")
+  @Validate({ params: ticketIdParams })
   async getById(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -95,6 +101,7 @@ export class HrHelpdeskController {
 
   @Patch(":ticketId")
   @RequirePermission("hr:helpdesk:manage")
+  @Validate({ params: ticketIdParams })
   async update(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(updateTicketSchema)) body: UpdateTicketInput,
@@ -106,6 +113,7 @@ export class HrHelpdeskController {
   @Post(":ticketId/comments")
   @HttpCode(201)
   @RequirePermission("hr:helpdesk:view")
+  @Validate({ params: ticketIdParams })
   async addComment(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(addCommentSchema)) body: AddCommentInput,
@@ -126,6 +134,7 @@ export class HrHelpdeskController {
 
   @Delete("routing/:ruleId")
   @RequirePermission("hr:helpdesk:manage")
+  @Validate({ params: ruleIdParams })
   deleteRouting(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -41,6 +41,13 @@ import {
 } from "./dto/projects.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const projectIdticketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
+const projectIdticketNumberParams = z.object({ projectId: z.coerce.number().int().positive(), ticketNumber: z.coerce.number().int().positive() }).strict();
+const projectIdticketIdParams_ = z.object({ projectId: z.string().min(1), ticketId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -71,6 +78,7 @@ export class ProjectsTicketsController {
 
   @Get(":projectId/tickets/export")
   @RequirePermission("build:tickets:view")
+  @Validate({ params: projectIdParams })
   exportTickets(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -82,6 +90,7 @@ export class ProjectsTicketsController {
   @RequirePermission("build:tickets:create")
   @HttpCode(200)
   @Idempotent("build.ticket.import")
+  @Validate({ params: projectIdParams })
   importTickets(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(importTicketsSchema)) body: ImportTicketsInput,
@@ -92,6 +101,7 @@ export class ProjectsTicketsController {
 
   @Get(":projectId/tickets")
   @RequirePermission("build:tickets:view")
+  @Validate({ params: projectIdParams })
   listTickets(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(ticketsListQuerySchema)) query: TicketsListQuery,
@@ -104,6 +114,7 @@ export class ProjectsTicketsController {
   @RequirePermission("build:tickets:create")
   @HttpCode(201)
   @Idempotent("build.ticket.create")
+  @Validate({ params: projectIdParams })
   createTicket(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createTicketSchema)) body: CreateTicketInput,
@@ -115,6 +126,7 @@ export class ProjectsTicketsController {
   @Post(":projectId/tickets/bulk")
   @RequirePermission("build:tickets:update")
   @HttpCode(200)
+  @Validate({ params: projectIdParams })
   bulkUpdate(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(bulkUpdateSchema)) body: BulkUpdateInput,
@@ -125,6 +137,7 @@ export class ProjectsTicketsController {
 
   @Patch(":projectId/tickets/:ticketId/rank")
   @RequirePermission("build:tickets:update")
+  @Validate({ params: projectIdticketIdParams })
   rankTicket(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -136,6 +149,7 @@ export class ProjectsTicketsController {
 
   @Get(":projectId/tickets/:ticketId/activity")
   @RequirePermission("build:tickets:view")
+  @Validate({ params: projectIdticketIdParams })
   getActivity(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -150,6 +164,7 @@ export class ProjectsTicketsController {
 
   @Get(":projectId/tickets/key/:ticketNumber")
   @RequirePermission("build:tickets:view")
+  @Validate({ params: projectIdticketNumberParams })
   getTicketByKey(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketNumber", ParseIntPipe) ticketNumber: number,
@@ -160,6 +175,7 @@ export class ProjectsTicketsController {
 
   @Get(":projectId/tickets/:ticketId")
   @RequirePermission("build:tickets:view")
+  @Validate({ params: projectIdticketIdParams_ })
   getTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -169,6 +185,7 @@ export class ProjectsTicketsController {
 
   @Patch(":projectId/tickets/:ticketId")
   @RequirePermission("build:tickets:update")
+  @Validate({ params: projectIdticketIdParams_ })
   updateTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(updateTicketSchema)) body: UpdateTicketInput,
@@ -180,6 +197,7 @@ export class ProjectsTicketsController {
   @Delete(":projectId/tickets/:ticketId")
   @RequirePermission("build:tickets:delete")
   @HttpCode(204)
+  @Validate({ params: projectIdticketIdParams_ })
   deleteTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Query("force") force: string,

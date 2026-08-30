@@ -14,6 +14,10 @@ import {
   type UpdateProviderInput,
   type TestProviderInput,
 } from "./dto/provider.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const providerIdParams = z.object({ providerId: z.coerce.number().int().positive() }).strict();
 
 @Controller("notifications/admin/providers")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -38,6 +42,7 @@ export class NotificationProvidersController {
 
   @Patch(":providerId")
   @RequirePermission("notifications:providers:manage")
+  @Validate({ params: providerIdParams })
   update(
     @Param("providerId", ParseIntPipe) providerId: number,
     @Body(new ZodValidationPipe(updateProviderSchema)) body: UpdateProviderInput,
@@ -48,6 +53,7 @@ export class NotificationProvidersController {
 
   @Post(":providerId/test")
   @RequirePermission("notifications:providers:manage")
+  @Validate({ params: providerIdParams })
   test(
     @Param("providerId", ParseIntPipe) providerId: number,
     @Body(new ZodValidationPipe(testProviderSchema)) body: TestProviderInput,
@@ -58,6 +64,7 @@ export class NotificationProvidersController {
 
   @Delete(":providerId")
   @RequirePermission("notifications:providers:manage")
+  @Validate({ params: providerIdParams })
   remove(@Param("providerId", ParseIntPipe) providerId: number, @CurrentUser() u: CurrentUserContext) {
     return this.providers.remove(u.orgId, u.userId, providerId);
   }

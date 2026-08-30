@@ -15,6 +15,10 @@ import {
   type UpdateSuccessionPlanInput,
   type SuccessionListInput,
 } from "./dto/succession.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const successionIdParams = z.object({ successionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/succession")
@@ -43,6 +47,7 @@ export class SuccessionController {
 
   @Patch(":successionId")
   @RequirePermission("hr:succession:manage")
+  @Validate({ params: successionIdParams })
   update(
     @CurrentUser() user: CurrentUserContext,
     @Param("successionId", ParseIntPipe) successionId: number,
@@ -54,6 +59,7 @@ export class SuccessionController {
   @Delete(":successionId")
   @HttpCode(204)
   @RequirePermission("hr:succession:manage")
+  @Validate({ params: successionIdParams })
   async remove(@CurrentUser() user: CurrentUserContext, @Param("successionId", ParseIntPipe) successionId: number) {
     await this.successionService.remove(user.orgId, successionId);
   }

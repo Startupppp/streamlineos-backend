@@ -31,6 +31,11 @@ import {
   type ListInvitationsInput,
 } from "./dto/users.schemas";
 import { z } from "zod";
+import { Validate } from "../../common/validation/validate.decorator";
+
+const invitationIdParams = z.object({ invitationId: z.string().min(1) }).strict();
+const userIdParams = z.object({ userId: z.string().min(1) }).strict();
+const userIdsessionIdParams = z.object({ userId: z.string().min(1), sessionId: z.string().min(1) }).strict();
 
 @Controller("users")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -195,6 +200,7 @@ export class UsersController {
   @Post("invitations/:invitationId/resend")
   @Idempotent("users.invitation.resend")
   @HttpCode(200)
+  @Validate({ params: invitationIdParams })
   resendInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
     return this.invitations.resend(u.orgId, invitationId, {
       userId: u.userId,
@@ -205,6 +211,7 @@ export class UsersController {
   @RequirePermission("settings:organization:manage")
   @Patch("invitations/:invitationId/role")
   @HttpCode(200)
+  @Validate({ params: invitationIdParams })
   changeInviteRole(
     @Param("invitationId") invitationId: string,
     @Body(new ZodValidationPipe(changeInviteRoleSchema)) body: ChangeInviteRoleInput,
@@ -220,6 +227,7 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Delete("invitations/:invitationId")
+  @Validate({ params: invitationIdParams })
   cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
     return this.invitations.cancel(u.orgId, invitationId, {
       userId: u.userId,
@@ -232,6 +240,7 @@ export class UsersController {
   @RequirePermission("settings:view")
   @Version(API_VERSION_NEXT)
   @Get(":userId")
+  @Validate({ params: userIdParams })
   async getUserV2(
     @Param("userId") userId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -241,12 +250,14 @@ export class UsersController {
 
   @RequirePermission("settings:view")
   @Get(":userId")
+  @Validate({ params: userIdParams })
   getUser(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.users.getUser(u.orgId, userId);
   }
 
   @RequirePermission("settings:organization:manage")
   @Patch(":userId")
+  @Validate({ params: userIdParams })
   updateUser(
     @Param("userId") userId: string,
     @Body(new ZodValidationPipe(updateUserSchema)) body: UpdateUserInput,
@@ -257,6 +268,7 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Patch(":userId/status")
+  @Validate({ params: userIdParams })
   updateStatus(
     @Param("userId") userId: string,
     @Body(new ZodValidationPipe(updateUserStatusSchema)) body: UpdateUserStatusInput,
@@ -267,18 +279,21 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Delete(":userId")
+  @Validate({ params: userIdParams })
   deleteUser(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.users.deleteUser(u.orgId, userId, u.userId);
   }
 
   @RequirePermission("settings:organization:manage")
   @Get(":userId/sessions")
+  @Validate({ params: userIdParams })
   getSessions(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.getUserSessions(u.orgId, userId);
   }
 
   @RequirePermission("settings:organization:manage")
   @Delete(":userId/sessions/:sessionId")
+  @Validate({ params: userIdsessionIdParams })
   revokeSession(
     @Param("userId") userId: string,
     @Param("sessionId") sessionId: string,
@@ -289,30 +304,35 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Delete(":userId/sessions")
+  @Validate({ params: userIdParams })
   revokeAllSessions(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.revokeAllSessions(u.orgId, userId, u.userId);
   }
 
   @RequirePermission("settings:organization:manage")
   @Get(":userId/data-export")
+  @Validate({ params: userIdParams })
   exportUserData(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.exportUserData(u.orgId, userId);
   }
 
   @RequirePermission("settings:organization:manage")
   @Get(":userId/activity")
+  @Validate({ params: userIdParams })
   getActivity(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.getUserActivity(u.orgId, userId);
   }
 
   @RequirePermission("settings:view")
   @Get(":userId/preferences")
+  @Validate({ params: userIdParams })
   getPreferences(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.getPreferences(u.orgId, userId);
   }
 
   @RequirePermission("settings:organization:manage")
   @Patch(":userId/preferences")
+  @Validate({ params: userIdParams })
   updatePreferences(
     @Param("userId") userId: string,
     @Body(new ZodValidationPipe(updatePreferencesSchema)) body: UpdatePreferencesInput,
@@ -323,6 +343,7 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Get(":userId/login-history")
+  @Validate({ params: userIdParams })
   getLoginHistory(
     @Param("userId") userId: string,
     @Query(new ZodValidationPipe(listLoginHistorySchema)) query: ListLoginHistoryInput,
@@ -333,12 +354,14 @@ export class UsersController {
 
   @RequirePermission("settings:view")
   @Get(":userId/membership")
+  @Validate({ params: userIdParams })
   getMembership(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.getMembership(u.orgId, userId);
   }
 
   @RequirePermission("settings:organization:manage")
   @Patch(":userId/membership")
+  @Validate({ params: userIdParams })
   updateMembership(
     @Param("userId") userId: string,
     @Body(new ZodValidationPipe(updateMembershipSchema)) body: UpdateMembershipInput,
@@ -351,12 +374,14 @@ export class UsersController {
   @Post(":userId/send-signin-link")
   @Idempotent("users.signin-link.send")
   @HttpCode(200)
+  @Validate({ params: userIdParams })
   sendSigninLink(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userOps.sendSigninLink(u.orgId, userId, u.userId);
   }
 
   @RequirePermission("settings:organization:manage")
   @Get(":userId/audit")
+  @Validate({ params: userIdParams })
   getUserAuditLog(
     @Param("userId") userId: string,
     @Query(new ZodValidationPipe(listAuditSchema)) query: ListAuditInput,

@@ -37,6 +37,12 @@ import {
   type UpdatePurchaseBillStatusInput,
 } from "./dto/accounting.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const billIdParams = z.object({ billId: z.coerce.number().int().positive() }).strict();
+const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
+const clientIdParams = z.object({ clientId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting")
@@ -73,6 +79,7 @@ export class AccountingPayablesReceivablesController {
   @Get("purchase-bills/:billId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:read")
+  @Validate({ params: billIdParams })
   getPurchaseBill(
     @Param("billId", ParseIntPipe) billId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -83,6 +90,7 @@ export class AccountingPayablesReceivablesController {
   @Patch("purchase-bills/:billId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:manage")
+  @Validate({ params: billIdParams })
   updatePurchaseBill(
     @Param("billId", ParseIntPipe) billId: number,
     @Body(new ZodValidationPipe(updatePurchaseBillStatusSchema)) body: UpdatePurchaseBillStatusInput,
@@ -94,6 +102,7 @@ export class AccountingPayablesReceivablesController {
   @Get("purchase-bills/:billId/payments")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:read")
+  @Validate({ params: billIdParams })
   listBillPayments(
     @Param("billId", ParseIntPipe) billId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -105,6 +114,7 @@ export class AccountingPayablesReceivablesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:manage")
   @HttpCode(201)
+  @Validate({ params: billIdParams })
   recordBillPayment(
     @Param("billId", ParseIntPipe) billId: number,
     @Body(new ZodValidationPipe(recordVendorPaymentSchema)) body: RecordVendorPaymentInput,
@@ -126,6 +136,7 @@ export class AccountingPayablesReceivablesController {
   @Get("vendors/:vendorId/ledger")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ params: vendorIdParams })
   vendorLedger(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -146,6 +157,7 @@ export class AccountingPayablesReceivablesController {
   @Get("customers/:clientId/ledger")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ params: clientIdParams })
   customerLedger(
     @Param("clientId", ParseIntPipe) clientId: number,
     @Query(new ZodValidationPipe(listCustomerLedgerQuerySchema)) query: ListCustomerLedgerQuery,

@@ -16,6 +16,10 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvoicesService } from "./invoices.service";
 import { listInvoicesSchema, type ListInvoicesInput } from "./dto/invoice.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const invoiceIdParams = z.object({ invoiceId: z.coerce.number().int().positive() }).strict();
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -54,6 +58,7 @@ export class InvoicesController {
   @Get(":invoiceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
+  @Validate({ params: invoiceIdParams })
   async get(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -66,6 +71,7 @@ export class InvoicesController {
   @Get(":invoiceId/payments")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
+  @Validate({ params: invoiceIdParams })
   listPayments(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @CurrentUser() u: CurrentUserContext,

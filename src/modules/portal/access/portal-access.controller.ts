@@ -32,6 +32,11 @@ import {
   type CreateGrantInput,
   type UpdateGrantInput,
 } from "./dto/portal-access.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const portalMembershipIdParams = z.object({ portalMembershipId: z.string().min(1) }).strict();
+const projectClientGrantIdParams = z.object({ projectClientGrantId: z.string().min(1) }).strict();
 
 @RequireModule("build")
 @Controller("portal-access")
@@ -63,6 +68,7 @@ export class PortalAccessController {
 
   @Patch("memberships/:portalMembershipId/status")
   @RequirePermission("build:clientvisibility:manage")
+  @Validate({ params: portalMembershipIdParams })
   setMembershipStatus(
     @Param("portalMembershipId") portalMembershipId: string,
     @Body(new ZodValidationPipe(updateMembershipStatusSchema))
@@ -99,6 +105,7 @@ export class PortalAccessController {
 
   @Patch("grants/:projectClientGrantId")
   @RequirePermission("build:clientvisibility:manage")
+  @Validate({ params: projectClientGrantIdParams })
   updateGrant(
     @Param("projectClientGrantId") projectClientGrantId: string,
     @Body(new ZodValidationPipe(updateGrantSchema)) body: UpdateGrantInput,
@@ -110,6 +117,7 @@ export class PortalAccessController {
   @Post("grants/:projectClientGrantId/revoke")
   @HttpCode(200)
   @RequirePermission("build:clientvisibility:manage")
+  @Validate({ params: projectClientGrantIdParams })
   revokeGrant(
     @Param("projectClientGrantId") projectClientGrantId: string,
     @CurrentUser() u: CurrentUserContext,

@@ -14,6 +14,10 @@ import {
   type UpdateSettingsInput,
   type UpdateNumberSequenceInput,
 } from "./dto/settings.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const sequenceIdParams = z.object({ sequenceId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/settings")
@@ -48,6 +52,7 @@ export class SettingsController {
   @Patch("number-sequences/:sequenceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
+  @Validate({ params: sequenceIdParams })
   updateNumberSequence(
     @Param("sequenceId", ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(updateNumberSequenceSchema)) body: UpdateNumberSequenceInput,

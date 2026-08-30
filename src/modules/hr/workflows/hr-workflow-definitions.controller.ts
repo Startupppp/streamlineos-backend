@@ -20,6 +20,10 @@ import {
   type SimulateWorkflowDto,
 } from "./dto/workflow.schemas";
 import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const workflowIdParams = z.object({ workflowId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard)
@@ -53,6 +57,7 @@ export class HrWorkflowDefinitionsController {
   @Get(":workflowId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
+  @Validate({ params: workflowIdParams })
   get(
     @CurrentUser() u: CurrentUserContext,
     @Param("workflowId", ParseIntPipe) workflowId: number,
@@ -63,6 +68,7 @@ export class HrWorkflowDefinitionsController {
   @Patch(":workflowId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
+  @Validate({ params: workflowIdParams })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("workflowId", ParseIntPipe) workflowId: number,
@@ -75,6 +81,7 @@ export class HrWorkflowDefinitionsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(204)
+  @Validate({ params: workflowIdParams })
   remove(
     @CurrentUser() u: CurrentUserContext,
     @Param("workflowId", ParseIntPipe) workflowId: number,
@@ -86,6 +93,7 @@ export class HrWorkflowDefinitionsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(200)
+  @Validate({ params: workflowIdParams })
   activate(
     @CurrentUser() u: CurrentUserContext,
     @Param("workflowId", ParseIntPipe) workflowId: number,
@@ -97,6 +105,7 @@ export class HrWorkflowDefinitionsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(200)
+  @Validate({ params: workflowIdParams })
   archive(
     @CurrentUser() u: CurrentUserContext,
     @Param("workflowId", ParseIntPipe) workflowId: number,
@@ -107,6 +116,7 @@ export class HrWorkflowDefinitionsController {
   @Post(":workflowId/duplicate")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
+  @Validate({ params: workflowIdParams })
   duplicate(
     @CurrentUser() u: CurrentUserContext,
     @Param("workflowId", ParseIntPipe) workflowId: number,
@@ -118,6 +128,7 @@ export class HrWorkflowDefinitionsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @HttpCode(200)
+  @Validate({ params: workflowIdParams })
   simulate(
     @CurrentUser() u: CurrentUserContext,
     @Param("workflowId", ParseIntPipe) workflowId: number,
@@ -129,6 +140,7 @@ export class HrWorkflowDefinitionsController {
   @Get(":workflowId/instances")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
+  @Validate({ params: workflowIdParams })
   listInstances(
     @CurrentUser() u: CurrentUserContext,
     @Param("workflowId", ParseIntPipe) workflowId: number,

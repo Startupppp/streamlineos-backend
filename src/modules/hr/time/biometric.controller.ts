@@ -8,6 +8,9 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { BiometricService } from "./biometric.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const deviceIdParams = z.object({ deviceId: z.coerce.number().int().positive() }).strict();
 
 const createDeviceSchema = z.object({
   name: z.string().min(1).max(100),
@@ -49,6 +52,7 @@ export class BiometricController {
   @Patch("devices/:deviceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: deviceIdParams })
   updateDevice(
     @CurrentUser() u: CurrentUserContext,
     @Param("deviceId", ParseIntPipe) deviceId: number,

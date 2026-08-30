@@ -23,6 +23,10 @@ import {
   type AddWorkspaceMemberInput,
   type ListWorkspaceMembersInput,
 } from "./dto/projects-workspace-members.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
 @RequireModule("build")
 @Controller("build/members")
@@ -54,6 +58,7 @@ export class ProjectsWorkspaceMembersController {
   @Delete(":userId")
   @RequirePermission("build:members:manage")
   @HttpCode(204)
+  @Validate({ params: userIdParams })
   remove(
     @Param("userId") userId: string,
     @CurrentUser() u: CurrentUserContext,

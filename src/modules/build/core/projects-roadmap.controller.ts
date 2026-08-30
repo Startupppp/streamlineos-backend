@@ -41,6 +41,12 @@ import {
   type UpdateRoadmapInput,
 } from "./dto/projects.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const itemIdParams = z.object({ itemId: z.coerce.number().int().positive() }).strict();
+const postIdParams = z.object({ postId: z.coerce.number().int().positive() }).strict();
+const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -69,6 +75,7 @@ export class ProjectsRoadmapController {
 
   @Patch("roadmap/:itemId")
   @RequirePermission("build:roadmap:manage")
+  @Validate({ params: itemIdParams })
   updateRoadmap(
     @Param("itemId", ParseIntPipe) itemId: number,
     @Body(new ZodValidationPipe(updateRoadmapSchema)) body: UpdateRoadmapInput,
@@ -80,6 +87,7 @@ export class ProjectsRoadmapController {
   @Delete("roadmap/:itemId")
   @RequirePermission("build:roadmap:manage")
   @HttpCode(204)
+  @Validate({ params: itemIdParams })
   deleteRoadmap(
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -108,6 +116,7 @@ export class ProjectsRoadmapController {
 
   @Patch("feedback/:postId")
   @RequirePermission("build:roadmap:manage")
+  @Validate({ params: postIdParams })
   updateFeedback(
     @Param("postId", ParseIntPipe) postId: number,
     @Body(new ZodValidationPipe(updateFeedbackSchema)) body: UpdateFeedbackInput,
@@ -118,6 +127,7 @@ export class ProjectsRoadmapController {
 
   @Post("feedback/:postId/merge")
   @RequirePermission("build:roadmap:manage")
+  @Validate({ params: postIdParams })
   mergeFeedback(
     @Param("postId", ParseIntPipe) postId: number,
     @Body(new ZodValidationPipe(mergeFeedbackSchema)) body: MergeFeedbackInput,
@@ -129,6 +139,7 @@ export class ProjectsRoadmapController {
   @Delete("feedback/:postId")
   @RequirePermission("build:roadmap:manage")
   @HttpCode(204)
+  @Validate({ params: postIdParams })
   deleteFeedback(
     @Param("postId", ParseIntPipe) postId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -157,6 +168,7 @@ export class ProjectsRoadmapController {
 
   @Patch("changelog/:entryId")
   @RequirePermission("build:roadmap:manage")
+  @Validate({ params: entryIdParams })
   updateChangelog(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body(new ZodValidationPipe(updateChangelogSchema)) body: UpdateChangelogInput,
@@ -168,6 +180,7 @@ export class ProjectsRoadmapController {
   @Delete("changelog/:entryId")
   @RequirePermission("build:roadmap:manage")
   @HttpCode(204)
+  @Validate({ params: entryIdParams })
   deleteChangelog(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,

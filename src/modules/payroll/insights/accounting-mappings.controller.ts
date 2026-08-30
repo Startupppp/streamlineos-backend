@@ -25,6 +25,10 @@ import {
   type AccountingMappingUpdate,
 } from "./dto/insights.schemas";
 import { AccountingMappingsService } from "./accounting-mappings.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const mappingIdParams = z.object({ mappingId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/accounting-mappings")
@@ -48,6 +52,7 @@ export class AccountingMappingsController {
   }
 
   @Patch(":mappingId")
+  @Validate({ params: mappingIdParams })
   async update(
     @Param("mappingId", ParseIntPipe) mappingId: number,
     @Body(new ZodValidationPipe(accountingMappingUpdateSchema)) body: AccountingMappingUpdate,
@@ -58,6 +63,7 @@ export class AccountingMappingsController {
 
   @Delete(":mappingId")
   @HttpCode(204)
+  @Validate({ params: mappingIdParams })
   async remove(
     @Param("mappingId", ParseIntPipe) mappingId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -21,6 +21,10 @@ import {
   type ExportPageInput,
   type ImportPagesInput,
 } from "./dto/kb-import-export.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -45,6 +49,7 @@ export class KbImportExportController {
 
   @Post("pages/:pageId/export")
   @RequirePermission("kb:pages:export")
+  @Validate({ params: pageIdParams })
   async exportPage(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(exportPageSchema)) body: ExportPageInput,

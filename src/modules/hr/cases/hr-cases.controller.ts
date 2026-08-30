@@ -36,6 +36,10 @@ import {
   type AddDocumentInput,
 } from "./dto/hr-cases.schemas";
 import { AccessService } from "../../access/access.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const caseIdParams = z.object({ caseId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/cases")
@@ -64,6 +68,7 @@ export class HrCasesController {
 
   @Get(":caseId")
   @RequirePermission("hr:cases:view")
+  @Validate({ params: caseIdParams })
   async getById(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -95,6 +100,7 @@ export class HrCasesController {
 
   @Patch(":caseId")
   @RequirePermission("hr:cases:manage")
+  @Validate({ params: caseIdParams })
   async update(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -108,6 +114,7 @@ export class HrCasesController {
   @Delete(":caseId")
   @RequirePermission("hr:cases:manage")
   @HttpCode(204)
+  @Validate({ params: caseIdParams })
   async delete(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -118,6 +125,7 @@ export class HrCasesController {
 
   @Post(":caseId/investigate")
   @RequirePermission("hr:cases:manage")
+  @Validate({ params: caseIdParams })
   async startInvestigation(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -129,6 +137,7 @@ export class HrCasesController {
 
   @Get(":caseId/notes")
   @RequirePermission("hr:cases:view")
+  @Validate({ params: caseIdParams })
   async listNotes(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -140,6 +149,7 @@ export class HrCasesController {
   @Post(":caseId/notes")
   @HttpCode(201)
   @RequirePermission("hr:cases:manage")
+  @Validate({ params: caseIdParams })
   async addNote(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -152,6 +162,7 @@ export class HrCasesController {
 
   @Get(":caseId/documents")
   @RequirePermission("hr:cases:view")
+  @Validate({ params: caseIdParams })
   async listDocuments(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -163,6 +174,7 @@ export class HrCasesController {
   @Post(":caseId/documents")
   @HttpCode(201)
   @RequirePermission("hr:cases:manage")
+  @Validate({ params: caseIdParams })
   async addDocument(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,

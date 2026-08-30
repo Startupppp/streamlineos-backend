@@ -29,6 +29,10 @@ import {
   type BulkRejectInput,
   type RejectPeriodInput,
 } from "./dto/approvals.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("timesheets/approvals")
@@ -71,6 +75,7 @@ export class ApprovalsController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Idempotent("timesheets.approval.approve")
+  @Validate({ params: periodIdParams })
   approve(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -82,6 +87,7 @@ export class ApprovalsController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Idempotent("timesheets.approval.reject")
+  @Validate({ params: periodIdParams })
   reject(
     @Param("periodId", ParseIntPipe) periodId: number,
     @Body(new ZodValidationPipe(rejectPeriodSchema)) body: RejectPeriodInput,

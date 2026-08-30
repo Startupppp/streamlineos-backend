@@ -16,6 +16,10 @@ import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transac
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { LlmService } from "../providers/llm.service";
 import { SurveyAiService } from "../services/survey-ai.service";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
 @Controller("ai")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
@@ -33,6 +37,7 @@ export class SurveyAiController {
 
   @Post("surveys/:surveyId/summarize-responses")
   @RequirePermission("surveys:ai:use")
+  @Validate({ params: surveyIdParams })
   async summarizeResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,

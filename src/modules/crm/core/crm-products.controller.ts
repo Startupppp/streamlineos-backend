@@ -26,6 +26,10 @@ import {
   type CreateProductInput,
   type UpdateProductInput,
 } from "./dto/products.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const productIdParams = z.object({ productId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("crm")
@@ -54,6 +58,7 @@ export class CrmProductsController {
 
   @Patch("products/:productId")
   @RequirePermission("crm:products:manage")
+  @Validate({ params: productIdParams })
   async update(
     @Param("productId", ParseIntPipe) productId: number,
     @Body(new ZodValidationPipe(updateProductSchema)) body: UpdateProductInput,
@@ -67,6 +72,7 @@ export class CrmProductsController {
   @Delete("products/:productId")
   @HttpCode(204)
   @RequirePermission("crm:products:manage")
+  @Validate({ params: productIdParams })
   async remove(
     @Param("productId", ParseIntPipe) productId: number,
     @CurrentUser() u: CurrentUserContext,

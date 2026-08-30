@@ -17,6 +17,10 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TeamEventsService } from "./team-events.service";
 import { createTeamEventSchema, type CreateTeamEventInput } from "./dto/hr-directory.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/team-events")
@@ -43,6 +47,7 @@ export class TeamEventsController {
   @Post(":eventId")
   @HttpCode(201)
   @RequirePermission("hr:employees:view")
+  @Validate({ params: eventIdParams })
   joinEvent(@Param("eventId", ParseIntPipe) eventId: number, @CurrentUser() u: CurrentUserContext) {
     return this.teamEvents.joinEvent(u.orgId, u.userId, eventId);
   }

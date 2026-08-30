@@ -22,6 +22,9 @@ import {
   type InterviewerAvailabilityQuery,
   type InterviewerPerformanceQuery,
 } from "./dto/hr-interviews.schemas";
+import { z } from "zod";
+
+const linkIdParams = z.object({ linkId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -58,6 +61,7 @@ export class HrInterviewersController {
 
   @Patch("booking-links/:linkId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: linkIdParams })
   async cancelBookingLink(
     @Param("linkId", ParseIntPipe) linkId: number,
     @CurrentUser() u: CurrentUserContext,

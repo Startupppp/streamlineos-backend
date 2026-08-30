@@ -26,6 +26,10 @@ import {
   type CreateBatchInput,
   type PayBatchInput,
 } from "./dto/finance-expenses.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const batchIdParams = z.object({ batchId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/reimbursements")
@@ -55,6 +59,7 @@ export class ReimbursementsController {
 
   @Get(":batchId")
   @RequirePermission("accounting:reimbursements:read")
+  @Validate({ params: batchIdParams })
   async getOne(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -66,6 +71,7 @@ export class ReimbursementsController {
   @Idempotent("finance.reimbursement.approve")
   @HttpCode(200)
   @RequirePermission("accounting:reimbursements:approve")
+  @Validate({ params: batchIdParams })
   async approve(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -77,6 +83,7 @@ export class ReimbursementsController {
   @HttpCode(200)
   @RequirePermission("accounting:reimbursements:manage")
   @Idempotent("accounting.reimbursement-batch.pay")
+  @Validate({ params: batchIdParams })
   async pay(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body(new ZodValidationPipe(payBatchSchema)) body: PayBatchInput,

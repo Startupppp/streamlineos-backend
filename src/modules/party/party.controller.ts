@@ -33,6 +33,11 @@ import {
   type CreateContactInput,
   type UpdateContactInput,
 } from "./dto/party.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const partyIdParams = z.object({ partyId: z.string().min(1) }).strict();
+const partyContactIdParams = z.object({ partyContactId: z.string().min(1) }).strict();
 
 @Controller("party")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -85,6 +90,7 @@ export class PartyController {
 
   @Get("parties/:partyId")
   @RequirePermission("party:parties:view")
+  @Validate({ params: partyIdParams })
   getParty(
     @Param("partyId") partyId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -95,6 +101,7 @@ export class PartyController {
   @Patch("parties/:partyId")
   @Idempotent("party.update")
   @RequirePermission("party:parties:update")
+  @Validate({ params: partyIdParams })
   updateParty(
     @Param("partyId") partyId: string,
     @Body(new ZodValidationPipe(updatePartySchema)) body: UpdatePartyInput,
@@ -107,6 +114,7 @@ export class PartyController {
   @Idempotent("party.delete")
   @HttpCode(204)
   @RequirePermission("party:parties:delete")
+  @Validate({ params: partyIdParams })
   deleteParty(
     @Param("partyId") partyId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -116,6 +124,7 @@ export class PartyController {
 
   @Get("parties/:partyId/contacts")
   @RequirePermission("party:contacts:view")
+  @Validate({ params: partyIdParams })
   listContacts(
     @Param("partyId") partyId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -127,6 +136,7 @@ export class PartyController {
   @Idempotent("party.contact.create")
   @HttpCode(201)
   @RequirePermission("party:contacts:manage")
+  @Validate({ params: partyIdParams })
   createContact(
     @Param("partyId") partyId: string,
     @Body(new ZodValidationPipe(createContactSchema)) body: CreateContactInput,
@@ -138,6 +148,7 @@ export class PartyController {
   @Patch("contacts/:partyContactId")
   @Idempotent("party.contact.update")
   @RequirePermission("party:contacts:manage")
+  @Validate({ params: partyContactIdParams })
   updateContact(
     @Param("partyContactId") partyContactId: string,
     @Body(new ZodValidationPipe(updateContactSchema)) body: UpdateContactInput,
@@ -150,6 +161,7 @@ export class PartyController {
   @Idempotent("party.contact.delete")
   @HttpCode(204)
   @RequirePermission("party:contacts:manage")
+  @Validate({ params: partyContactIdParams })
   deleteContact(
     @Param("partyContactId") partyContactId: string,
     @CurrentUser() u: CurrentUserContext,

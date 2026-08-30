@@ -24,6 +24,10 @@ import {
 } from "./dto/projects.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -50,6 +54,7 @@ export class ProjectsTemplatesController {
   @Delete("templates/:templateId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @Validate({ params: templateIdParams })
   deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -61,6 +66,7 @@ export class ProjectsTemplatesController {
   @HttpCode(201)
   @RequirePermission("build:manage")
   @Idempotent("build.template.apply")
+  @Validate({ params: templateIdParams })
   applyTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(applyTemplateSchema)) body: ApplyTemplateInput,

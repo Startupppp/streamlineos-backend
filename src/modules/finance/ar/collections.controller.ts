@@ -15,6 +15,10 @@ import {
   type CreateCollectionActivityInput,
   type UpdateInvoiceCollectionInput,
 } from "./dto/finance-ar.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const invoiceIdParams = z.object({ invoiceId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/collections")
@@ -49,6 +53,7 @@ export class CollectionsController {
 
   @Patch("invoices/:invoiceId")
   @RequirePermission("accounting:collections:manage")
+  @Validate({ params: invoiceIdParams })
   updateInvoiceCollection(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @Body(new ZodValidationPipe(updateInvoiceCollectionSchema)) body: UpdateInvoiceCollectionInput,

@@ -25,6 +25,10 @@ import type {
   Create3plConnectionInput,
   Update3plConnectionInput,
 } from "./dto/channels.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const connectionIdParams = z.object({ connectionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/3pl")
@@ -52,6 +56,7 @@ export class TplController {
   @Patch("connections/:connectionId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:3pl:manage")
+  @Validate({ params: connectionIdParams })
   updateConnection(
     @Param("connectionId", ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(update3plConnectionSchema)) body: Update3plConnectionInput,
@@ -63,6 +68,7 @@ export class TplController {
   @Post("connections/:connectionId/sync")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:3pl:manage")
+  @Validate({ params: connectionIdParams })
   syncConnection(
     @Param("connectionId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,

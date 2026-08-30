@@ -26,6 +26,16 @@ import {
   type CreateBlueprintInput, type UpdateBlueprintInput, type TestTransitionInput,
   type CreateTransitionInput, type UpdateTransitionInput,
 } from "./dto/blueprints.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pipelineIdParams = z.object({ pipelineId: z.string().min(1) }).strict();
+const stageIdParams = z.object({ stageId: z.string().min(1) }).strict();
+const optionTypeParams = z.object({ optionType: z.string().min(1) }).strict();
+const optionTypeoptionIdParams = z.object({ optionType: z.string().min(1), optionId: z.string().min(1) }).strict();
+const ruleIdParams = z.object({ ruleId: z.string().min(1) }).strict();
+const blueprintIdParams = z.object({ blueprintId: z.string().min(1) }).strict();
+const blueprintIdtransitionIdParams = z.object({ blueprintId: z.string().min(1), transitionId: z.string().min(1) }).strict();
 
 @RequireModule("crm")
 @Controller("crm")
@@ -63,6 +73,7 @@ export class CrmMetadataController {
 
   @Patch("pipelines/:pipelineId")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: pipelineIdParams })
   updatePipeline(
     @Param("pipelineId") pipelineId: string,
     @Body(new ZodValidationPipe(updatePipelineSchema)) body: UpdatePipelineInput,
@@ -73,6 +84,7 @@ export class CrmMetadataController {
 
   @Delete("pipelines/:pipelineId")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: pipelineIdParams })
   deletePipeline(
     @Param("pipelineId") pipelineId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -82,6 +94,7 @@ export class CrmMetadataController {
 
   @Get("pipelines/:pipelineId/stages")
   @RequirePermission("crm:settings:view")
+  @Validate({ params: pipelineIdParams })
   listStages(
     @Param("pipelineId") pipelineId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -91,6 +104,7 @@ export class CrmMetadataController {
 
   @Post("pipelines/:pipelineId/stages")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: pipelineIdParams })
   createStage(
     @Param("pipelineId") pipelineId: string,
     @Body(new ZodValidationPipe(createStageSchema)) body: CreateStageInput,
@@ -101,6 +115,7 @@ export class CrmMetadataController {
 
   @Post("pipelines/:pipelineId/stages/reorder")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: pipelineIdParams })
   reorderStages(
     @Param("pipelineId") pipelineId: string,
     @Body(new ZodValidationPipe(reorderStagesSchema)) body: ReorderStagesInput,
@@ -111,6 +126,7 @@ export class CrmMetadataController {
 
   @Patch("stages/:stageId")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: stageIdParams })
   updateStage(
     @Param("stageId") stageId: string,
     @Body(new ZodValidationPipe(updateStageSchema)) body: UpdateStageInput,
@@ -121,6 +137,7 @@ export class CrmMetadataController {
 
   @Delete("stages/:stageId")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: stageIdParams })
   deleteStage(
     @Param("stageId") stageId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -130,6 +147,7 @@ export class CrmMetadataController {
 
   @Get("options/:optionType")
   @RequirePermission("crm:leads:view")
+  @Validate({ params: optionTypeParams })
   listOptions(
     @Param("optionType", new ZodValidationPipe(optionTypeSchema)) optionType: string,
     @CurrentUser() u: CurrentUserContext,
@@ -139,6 +157,7 @@ export class CrmMetadataController {
 
   @Post("options/:optionType")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: optionTypeParams })
   createOption(
     @Param("optionType", new ZodValidationPipe(optionTypeSchema)) optionType: string,
     @Body(new ZodValidationPipe(createOptionSchema)) body: CreateOptionInput,
@@ -149,6 +168,7 @@ export class CrmMetadataController {
 
   @Patch("options/:optionType/:optionId")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: optionTypeoptionIdParams })
   updateOption(
     @Param("optionType", new ZodValidationPipe(optionTypeSchema)) optionType: string,
     @Param("optionId") optionId: string,
@@ -160,6 +180,7 @@ export class CrmMetadataController {
 
   @Delete("options/:optionType/:optionId")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: optionTypeoptionIdParams })
   deleteOption(
     @Param("optionType", new ZodValidationPipe(optionTypeSchema)) optionType: string,
     @Param("optionId") optionId: string,
@@ -185,6 +206,7 @@ export class CrmMetadataController {
 
   @Patch("validation-rules/:ruleId")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: ruleIdParams })
   updateValidationRule(
     @Param("ruleId") ruleId: string,
     @Body(new ZodValidationPipe(updateValidationRuleSchema)) body: UpdateValidationRuleInput,
@@ -195,6 +217,7 @@ export class CrmMetadataController {
 
   @Delete("validation-rules/:ruleId")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: ruleIdParams })
   deleteValidationRule(
     @Param("ruleId") ruleId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -228,6 +251,7 @@ export class CrmMetadataController {
 
   @Patch("blueprints/:blueprintId")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: blueprintIdParams })
   updateBlueprint(
     @Param("blueprintId") blueprintId: string,
     @Body(new ZodValidationPipe(updateBlueprintSchema)) body: UpdateBlueprintInput,
@@ -238,6 +262,7 @@ export class CrmMetadataController {
 
   @Delete("blueprints/:blueprintId")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: blueprintIdParams })
   deleteBlueprint(
     @Param("blueprintId") blueprintId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -247,6 +272,7 @@ export class CrmMetadataController {
 
   @Post("blueprints/:blueprintId/test-transition")
   @RequirePermission("crm:settings:view")
+  @Validate({ params: blueprintIdParams })
   testBlueprintTransition(
     @Param("blueprintId") blueprintId: string,
     @Body(new ZodValidationPipe(testTransitionSchema)) body: TestTransitionInput,
@@ -257,6 +283,7 @@ export class CrmMetadataController {
 
   @Post("blueprints/:blueprintId/test")
   @RequirePermission("crm:settings:view")
+  @Validate({ params: blueprintIdParams })
   testBlueprintTransitionAlias(
     @Param("blueprintId") blueprintId: string,
     @Body(new ZodValidationPipe(testTransitionSchema)) body: TestTransitionInput,
@@ -267,6 +294,7 @@ export class CrmMetadataController {
 
   @Get("blueprints/:blueprintId/transitions")
   @RequirePermission("crm:settings:view")
+  @Validate({ params: blueprintIdParams })
   listBlueprintTransitions(
     @Param("blueprintId") blueprintId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -276,6 +304,7 @@ export class CrmMetadataController {
 
   @Post("blueprints/:blueprintId/transitions")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: blueprintIdParams })
   createBlueprintTransition(
     @Param("blueprintId") blueprintId: string,
     @Body(new ZodValidationPipe(createTransitionSchema)) body: CreateTransitionInput,
@@ -286,6 +315,7 @@ export class CrmMetadataController {
 
   @Patch("blueprints/:blueprintId/transitions/:transitionId")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: blueprintIdtransitionIdParams })
   updateBlueprintTransition(
     @Param("blueprintId") blueprintId: string,
     @Param("transitionId") transitionId: string,
@@ -297,6 +327,7 @@ export class CrmMetadataController {
 
   @Delete("blueprints/:blueprintId/transitions/:transitionId")
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: blueprintIdtransitionIdParams })
   deleteBlueprintTransition(
     @Param("blueprintId") blueprintId: string,
     @Param("transitionId") transitionId: string,

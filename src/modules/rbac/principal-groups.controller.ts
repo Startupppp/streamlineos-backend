@@ -30,6 +30,11 @@ import {
   type ListGroupsQuery,
   type RenameGroupInput,
 } from "./dto/principal-groups.schemas";
+import { z } from "zod";
+
+const groupIdParams = z.object({ groupId: z.string().min(1) }).strict();
+const groupIdmembershipIdParams = z.object({ groupId: z.string().min(1), membershipId: z.string().min(1) }).strict();
+const groupIdroleIdParams = z.object({ groupId: z.string().min(1), roleId: z.string().min(1) }).strict();
 
 const UUID_RE = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 
@@ -53,7 +58,7 @@ export class PrincipalGroupsController {
   }
 
   @Patch(":groupId")
-  @Validate({ body: renameGroupSchema })
+  @Validate({ body: renameGroupSchema, params: groupIdParams })
   rename(
     @Param("groupId") groupId: string,
     @Body() body: RenameGroupInput,
@@ -63,6 +68,7 @@ export class PrincipalGroupsController {
   }
 
   @Get(":groupId/members")
+  @Validate({ params: groupIdParams })
   getMembers(
     @Param("groupId") groupId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -72,7 +78,7 @@ export class PrincipalGroupsController {
 
   @Post(":groupId/members")
   @HttpCode(201)
-  @Validate({ body: addGroupMemberSchema })
+  @Validate({ body: addGroupMemberSchema, params: groupIdParams })
   addMember(
     @Param("groupId") groupId: string,
     @Body() body: AddGroupMemberInput,
@@ -82,6 +88,7 @@ export class PrincipalGroupsController {
   }
 
   @Delete(":groupId/members/:membershipId")
+  @Validate({ params: groupIdmembershipIdParams })
   removeMember(
     @Param("groupId") groupId: string,
     @Param("membershipId") membershipId: string,
@@ -95,6 +102,7 @@ export class PrincipalGroupsController {
   }
 
   @Get(":groupId/roles")
+  @Validate({ params: groupIdParams })
   getAssignedRoles(
     @Param("groupId") groupId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -104,7 +112,7 @@ export class PrincipalGroupsController {
 
   @Post(":groupId/roles")
   @HttpCode(201)
-  @Validate({ body: assignGroupRoleSchema })
+  @Validate({ body: assignGroupRoleSchema, params: groupIdParams })
   assignRole(
     @Param("groupId") groupId: string,
     @Body() body: AssignGroupRoleInput,
@@ -114,6 +122,7 @@ export class PrincipalGroupsController {
   }
 
   @Delete(":groupId/roles/:roleId")
+  @Validate({ params: groupIdroleIdParams })
   unassignRole(
     @Param("groupId") groupId: string,
     @Param("roleId") roleId: string,

@@ -34,6 +34,10 @@ import {
   type GenerateProvisioningInput,
 } from "../dto/identity.schemas";
 import { z } from "zod";
+import { Validate } from "../../../../common/validation/validate.decorator";
+
+const provisioningIdParams = z.object({ provisioningId: z.string().min(1) }).strict();
+const templateIdParams = z.object({ templateId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/identity")
@@ -72,6 +76,7 @@ export class IdentityController {
 
   @Patch("provisioning/:provisioningId")
   @RequirePermission("hr:identity:manage")
+  @Validate({ params: provisioningIdParams })
   updateProvisioning(
     @CurrentUser() user: CurrentUserContext,
     @Param("provisioningId") provisioningId: string,
@@ -98,6 +103,7 @@ export class IdentityController {
 
   @Patch("templates/:templateId")
   @RequirePermission("hr:identity:manage")
+  @Validate({ params: templateIdParams })
   updateTemplate(
     @CurrentUser() user: CurrentUserContext,
     @Param("templateId") templateId: string,
@@ -109,6 +115,7 @@ export class IdentityController {
   @Delete("templates/:templateId")
   @HttpCode(204)
   @RequirePermission("hr:identity:manage")
+  @Validate({ params: templateIdParams })
   async deleteTemplate(
     @CurrentUser() user: CurrentUserContext,
     @Param("templateId") templateId: string,

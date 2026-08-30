@@ -27,6 +27,10 @@ import {
   type ListFormsQuery,
   type UpdateFormInput,
 } from "./dto/forms.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const formIdParams = z.object({ formId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/forms")
@@ -46,6 +50,7 @@ export class FormsController {
 
   @Get(":formId")
   @RequirePermission("build:forms:view")
+  @Validate({ params: formIdParams })
   getForm(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("formId", ParseIntPipe) formId: number,
@@ -67,6 +72,7 @@ export class FormsController {
 
   @Patch(":formId")
   @RequirePermission("build:forms:manage")
+  @Validate({ params: formIdParams })
   updateForm(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("formId", ParseIntPipe) formId: number,
@@ -79,6 +85,7 @@ export class FormsController {
   @Delete(":formId")
   @RequirePermission("build:forms:manage")
   @HttpCode(204)
+  @Validate({ params: formIdParams })
   deleteForm(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("formId", ParseIntPipe) formId: number,

@@ -31,6 +31,11 @@ import {
   type UpdateTestResultInput,
   type UpdateTestRunInput,
 } from "./dto/qa.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
+const runIdresultIdParams = z.object({ runId: z.coerce.number().int().positive(), resultId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/test-runs")
@@ -50,6 +55,7 @@ export class TestRunsController {
 
   @Get(":runId")
   @RequirePermission("build:qa:view")
+  @Validate({ params: runIdParams })
   getRun(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("runId", ParseIntPipe) runId: number,
@@ -71,6 +77,7 @@ export class TestRunsController {
 
   @Patch(":runId")
   @RequirePermission("build:qa:manage")
+  @Validate({ params: runIdParams })
   updateRun(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("runId", ParseIntPipe) runId: number,
@@ -83,6 +90,7 @@ export class TestRunsController {
   @Delete(":runId")
   @RequirePermission("build:qa:manage")
   @HttpCode(204)
+  @Validate({ params: runIdParams })
   deleteRun(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("runId", ParseIntPipe) runId: number,
@@ -93,6 +101,7 @@ export class TestRunsController {
 
   @Patch(":runId/results/:resultId")
   @RequirePermission("build:qa:execute")
+  @Validate({ params: runIdresultIdParams })
   updateResult(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("runId", ParseIntPipe) runId: number,
@@ -106,6 +115,7 @@ export class TestRunsController {
   @Post(":runId/results/:resultId/bug")
   @HttpCode(201)
   @RequirePermission("build:bugs:create")
+  @Validate({ params: runIdresultIdParams })
   createBugFromResult(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("runId", ParseIntPipe) runId: number,

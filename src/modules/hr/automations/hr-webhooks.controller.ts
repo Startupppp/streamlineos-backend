@@ -27,6 +27,11 @@ import {
   type UpdateHrWebhookInput,
   type ListDeliveriesInput,
 } from "./dto/hr-webhook.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const subscriptionIdParams = z.object({ subscriptionId: z.coerce.number().int().positive() }).strict();
+const subscriptionIddeliveryIdParams = z.object({ subscriptionId: z.coerce.number().int().positive(), deliveryId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/webhooks")
@@ -54,6 +59,7 @@ export class HrWebhooksController {
 
   @Get(":subscriptionId")
   @RequirePermission("hr:integrations:manage")
+  @Validate({ params: subscriptionIdParams })
   getOne(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -73,6 +79,7 @@ export class HrWebhooksController {
 
   @Patch(":subscriptionId")
   @RequirePermission("hr:integrations:manage")
+  @Validate({ params: subscriptionIdParams })
   update(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
     @Body(new ZodValidationPipe(updateHrWebhookSchema)) body: UpdateHrWebhookInput,
@@ -84,6 +91,7 @@ export class HrWebhooksController {
   @Delete(":subscriptionId")
   @HttpCode(204)
   @RequirePermission("hr:integrations:manage")
+  @Validate({ params: subscriptionIdParams })
   async remove(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -94,6 +102,7 @@ export class HrWebhooksController {
   @Post(":subscriptionId/test")
   @HttpCode(200)
   @RequirePermission("hr:integrations:manage")
+  @Validate({ params: subscriptionIdParams })
   test(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -103,6 +112,7 @@ export class HrWebhooksController {
 
   @Get(":subscriptionId/deliveries")
   @RequirePermission("hr:integrations:manage")
+  @Validate({ params: subscriptionIdParams })
   listDeliveries(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -114,6 +124,7 @@ export class HrWebhooksController {
   @Post(":subscriptionId/deliveries/:deliveryId/redeliver")
   @HttpCode(200)
   @RequirePermission("hr:integrations:manage")
+  @Validate({ params: subscriptionIddeliveryIdParams })
   redeliver(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
     @Param("deliveryId", ParseIntPipe) deliveryId: number,

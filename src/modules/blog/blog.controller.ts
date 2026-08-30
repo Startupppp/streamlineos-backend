@@ -14,6 +14,10 @@ import {
   feedSchema,
   type FeedInput,
   } from "./dto/blog.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const slugParams = z.object({ slug: z.string().min(1) }).strict();
 
 @Controller("blog")
 @UseGuards(JwtAuthGuard)
@@ -22,6 +26,7 @@ export class BlogController {
 
   @Public()
   @Get("by-slug/:slug")
+  @Validate({ params: slugParams })
   async getPostBySlug(@Param("slug") slug: string) {
     const post = await this.blog.getPublishedPostBySlug(slug);
     if (!post) throw new NotFoundException("Post not found");
@@ -30,6 +35,7 @@ export class BlogController {
 
   @Public()
   @Get("by-slug/:slug/adjacent")
+  @Validate({ params: slugParams })
   getAdjacentPosts(@Param("slug") slug: string) {
     return this.blog.getAdjacentPosts(slug);
   }

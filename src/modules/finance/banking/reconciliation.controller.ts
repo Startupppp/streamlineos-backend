@@ -32,6 +32,9 @@ import {
 } from "./dto/reconciliation.schemas";
 import { z } from "zod";
 import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
 const rulesQuerySchema = z.object({
   page: pageNumberField,
@@ -113,6 +116,7 @@ export class ReconciliationController {
 
   @Delete("rules/:ruleId")
   @RequirePermission("accounting:banking:reconcile")
+  @Validate({ params: ruleIdParams })
   deleteRule(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
     @Param("ruleId", ParseIntPipe) ruleId: number,

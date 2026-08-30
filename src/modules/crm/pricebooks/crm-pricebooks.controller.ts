@@ -35,6 +35,12 @@ import {
   type CreateTemplateInput,
   type UpdateTemplateInput,
 } from "./dto/pricebooks.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pricebookIdParams = z.object({ pricebookId: z.string().min(1) }).strict();
+const pricebookIdentryIdParams = z.object({ pricebookId: z.string().min(1), entryId: z.string().min(1) }).strict();
+const templateIdParams = z.object({ templateId: z.string().min(1) }).strict();
 
 @RequireModule("crm")
 @Controller("crm")
@@ -70,6 +76,7 @@ export class CrmPricebooksController {
 
   @Patch("pricebooks/:pricebookId")
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: pricebookIdParams })
   updatePricebook(
     @Param("pricebookId") pricebookId: string,
     @Body(new ZodValidationPipe(updatePricebookSchema)) body: UpdatePricebookInput,
@@ -80,6 +87,7 @@ export class CrmPricebooksController {
 
   @Delete("pricebooks/:pricebookId")
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: pricebookIdParams })
   deletePricebook(
     @Param("pricebookId") pricebookId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +97,7 @@ export class CrmPricebooksController {
 
   @Get("pricebooks/:pricebookId/entries")
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: pricebookIdParams })
   listEntries(
     @Param("pricebookId") pricebookId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -99,6 +108,7 @@ export class CrmPricebooksController {
   @Post("pricebooks/:pricebookId/entries")
   @HttpCode(200)
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: pricebookIdParams })
   upsertEntry(
     @Param("pricebookId") pricebookId: string,
     @Body(new ZodValidationPipe(upsertEntrySchema)) body: UpsertEntryInput,
@@ -109,6 +119,7 @@ export class CrmPricebooksController {
 
   @Delete("pricebooks/:pricebookId/entries/:entryId")
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: pricebookIdentryIdParams })
   deleteEntry(
     @Param("pricebookId") pricebookId: string,
     @Param("entryId") entryId: string,
@@ -150,6 +161,7 @@ export class CrmPricebooksController {
 
   @Patch("quote-templates/:templateId")
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: templateIdParams })
   updateTemplate(
     @Param("templateId") templateId: string,
     @Body(new ZodValidationPipe(updateTemplateSchema)) body: UpdateTemplateInput,
@@ -160,6 +172,7 @@ export class CrmPricebooksController {
 
   @Delete("quote-templates/:templateId")
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: templateIdParams })
   deleteTemplate(
     @Param("templateId") templateId: string,
     @CurrentUser() u: CurrentUserContext,

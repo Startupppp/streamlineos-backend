@@ -34,6 +34,10 @@ import {
   type HrExportJobView,
 } from "./hr-export-jobs.service";
 import { HrExportWorkerService } from "./hr-export-worker.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const exportJobIdParams = z.object({ exportJobId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @RequirePermission("hr:export:manage")
@@ -64,6 +68,7 @@ export class HrExportController {
   }
 
   @Get(":exportJobId")
+  @Validate({ params: exportJobIdParams })
   get(
     @Param("exportJobId", new ZodValidationPipe(exportJobIdSchema)) exportJobId: string,
     @CurrentUser() user: CurrentUserContext,
@@ -74,6 +79,7 @@ export class HrExportController {
   @Get(":exportJobId/download")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("hr:employee-export")
+  @Validate({ params: exportJobIdParams })
   async download(
     @Param("exportJobId", new ZodValidationPipe(exportJobIdSchema)) exportJobId: string,
     @CurrentUser() user: CurrentUserContext,

@@ -25,6 +25,10 @@ import {
   type CreateApiTokenInput,
   type ListApiTokensQuery,
 } from "./dto/api-tokens.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const tokenIdParams = z.object({ tokenId: z.string().min(1) }).strict();
 
 @Controller("api-tokens")
 @RequireModule("crm")
@@ -58,6 +62,7 @@ export class ApiTokensController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:settings:manage")
+  @Validate({ params: tokenIdParams })
   revokeToken(
     @CurrentUser() u: CurrentUserContext,
     @Param("tokenId") tokenId: string,

@@ -19,6 +19,10 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PeriodsService } from "./periods.service";
 import { periodsQuerySchema, type PeriodsQuery } from "./dto/periods.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("timesheets/periods")
@@ -43,6 +47,7 @@ export class PeriodsController {
 
   @Get(":periodId")
   @RequirePermission("timesheets:entries:view")
+  @Validate({ params: periodIdParams })
   getPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -54,6 +59,7 @@ export class PeriodsController {
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Idempotent("timesheets.period.submit")
+  @Validate({ params: periodIdParams })
   submit(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -64,6 +70,7 @@ export class PeriodsController {
   @Post(":periodId/recall")
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
+  @Validate({ params: periodIdParams })
   recall(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +81,7 @@ export class PeriodsController {
   @Post(":periodId/reopen")
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
+  @Validate({ params: periodIdParams })
   reopen(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -84,6 +92,7 @@ export class PeriodsController {
   @Post(":periodId/lock")
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
+  @Validate({ params: periodIdParams })
   lock(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -94,6 +103,7 @@ export class PeriodsController {
   @Post(":periodId/unlock")
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
+  @Validate({ params: periodIdParams })
   unlock(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,

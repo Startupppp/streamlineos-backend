@@ -26,6 +26,11 @@ import {
   attachAcknowledgementSchema,
   type AttachAcknowledgementInput,
 } from "./dto/filings.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const filingIdParams = z.object({ filingId: z.coerce.number().int().positive() }).strict();
+const filingIduserIdParams = z.object({ filingId: z.coerce.number().int().positive(), userId: z.string().min(1) }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/filings")
@@ -47,6 +52,7 @@ export class PayrollFilingsController {
 
   @Get(":filingId/export")
   @RequirePermission("payroll:tax:view")
+  @Validate({ params: filingIdParams })
   async downloadExport(
     @CurrentUser() u: CurrentUserContext,
     @Param("filingId", ParseIntPipe) filingId: number,
@@ -64,6 +70,7 @@ export class PayrollFilingsController {
   /** Employees on a FORM16 filing (for period-summary PDF download). */
   @Get(":filingId/form16/employees")
   @RequirePermission("payroll:tax:view")
+  @Validate({ params: filingIdParams })
   listForm16Employees(
     @CurrentUser() u: CurrentUserContext,
     @Param("filingId", ParseIntPipe) filingId: number,
@@ -77,6 +84,7 @@ export class PayrollFilingsController {
    */
   @Get(":filingId/form16/:userId")
   @RequirePermission("payroll:tax:view")
+  @Validate({ params: filingIduserIdParams })
   async downloadForm16Pdf(
     @CurrentUser() u: CurrentUserContext,
     @Param("filingId", ParseIntPipe) filingId: number,
@@ -98,6 +106,7 @@ export class PayrollFilingsController {
 
   @Get(":filingId")
   @RequirePermission("payroll:tax:view")
+  @Validate({ params: filingIdParams })
   get(
     @CurrentUser() u: CurrentUserContext,
     @Param("filingId", ParseIntPipe) filingId: number,
@@ -117,6 +126,7 @@ export class PayrollFilingsController {
 
   @Patch(":filingId/acknowledgement")
   @RequirePermission("payroll:tax:manage")
+  @Validate({ params: filingIdParams })
   ack(
     @CurrentUser() u: CurrentUserContext,
     @Param("filingId", ParseIntPipe) filingId: number,

@@ -31,6 +31,10 @@ import {
   listPageQuerySchema,
   type ListPageQueryInput,
 } from "./dto/payroll.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const reimbursementIdParams = z.object({ reimbursementId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("hr/reimbursements")
@@ -63,6 +67,7 @@ export class ReimbursementsController {
 
   @Patch(":reimbursementId")
   @RequirePermission("hr:payroll:view")
+  @Validate({ params: reimbursementIdParams })
   async update(
     @Param("reimbursementId", ParseIntPipe) reimbursementId: number,
     @Body(new ZodValidationPipe(patchReimbursementSchema)) body: PatchReimbursementInput,

@@ -32,6 +32,10 @@ import {
   type TransitionStatusInput,
   type UpdateEmploymentInput,
 } from "./dto/hr-core.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const employmentIdParams = z.object({ employmentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/employments")
@@ -70,6 +74,7 @@ export class HrEmploymentsController {
   @Get(":employmentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
+  @Validate({ params: employmentIdParams })
   async getOne(
     @Param("employmentId", ParseIntPipe) employmentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -101,6 +106,7 @@ export class HrEmploymentsController {
   @Patch(":employmentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: employmentIdParams })
   update(
     @Param("employmentId", ParseIntPipe) employmentId: number,
     @Body(new ZodValidationPipe(updateEmploymentSchema)) body: UpdateEmploymentInput,
@@ -118,6 +124,7 @@ export class HrEmploymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(200)
+  @Validate({ params: employmentIdParams })
   transition(
     @Param("employmentId", ParseIntPipe) employmentId: number,
     @Body(new ZodValidationPipe(transitionStatusSchema)) body: TransitionStatusInput,
@@ -135,6 +142,7 @@ export class HrEmploymentsController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: employmentIdParams })
   remove(
     @Param("employmentId", ParseIntPipe) employmentId: number,
     @CurrentUser() currentUser: CurrentUserContext,

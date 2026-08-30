@@ -28,6 +28,11 @@ import {
   type UpdatePaymentRunItemInput,
   type ListPaymentRunsQuery,
 } from "./dto/finance-ap.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
+const runIditemIdParams = z.object({ runId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/payment-runs")
@@ -51,6 +56,7 @@ export class PaymentRunsController {
   @Get(":runId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:read")
+  @Validate({ params: runIdParams })
   getOne(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -75,6 +81,7 @@ export class PaymentRunsController {
   @RequirePermission("accounting:payment-runs:approve")
   @HttpCode(200)
   @Idempotent("accounting.payment-run.approve")
+  @Validate({ params: runIdParams })
   approve(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +94,7 @@ export class PaymentRunsController {
   @RequirePermission("accounting:payment-runs:manage")
   @HttpCode(200)
   @Idempotent("accounting.payment-run.execute")
+  @Validate({ params: runIdParams })
   execute(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -98,6 +106,7 @@ export class PaymentRunsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:manage")
   @HttpCode(200)
+  @Validate({ params: runIdParams })
   cancel(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -108,6 +117,7 @@ export class PaymentRunsController {
   @Patch(":runId/items/:itemId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:manage")
+  @Validate({ params: runIditemIdParams })
   updateItem(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("itemId", ParseIntPipe) itemId: number,

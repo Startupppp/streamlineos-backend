@@ -15,6 +15,10 @@ import {
   type ListTaxCodesQuery,
   type UpdateTaxCodeInput,
 } from "./dto/tax-codes.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const taxCodeIdParams = z.object({ taxCodeId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/tax-codes")
@@ -54,6 +58,7 @@ export class TaxCodesController {
   @Patch(":taxCodeId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:manage")
+  @Validate({ params: taxCodeIdParams })
   update(
     @Param("taxCodeId", ParseIntPipe) taxCodeId: number,
     @Body(new ZodValidationPipe(updateTaxCodeSchema)) body: UpdateTaxCodeInput,

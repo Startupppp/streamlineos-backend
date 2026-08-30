@@ -7,6 +7,10 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AutomationService } from "./automation.service";
 import { testAutomationSchema, type TestAutomationInput } from "./dto/automation.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
 @Controller("settings/automations")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -16,6 +20,7 @@ export class AutomationController {
   @Post(":ruleId/test")
   @HttpCode(200)
   @RequirePermission("settings:automations:manage")
+  @Validate({ params: ruleIdParams })
   testAutomation(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(testAutomationSchema)) body: TestAutomationInput,

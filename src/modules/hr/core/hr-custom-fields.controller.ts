@@ -36,6 +36,12 @@ import {
   type UpdateCustomFieldInput,
   type UpsertCustomFieldValuesInput,
 } from "./dto/hr-custom-fields.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).strict();
+const entityTypeentityIdParams = z.object({ entityType: z.string().min(1), entityId: z.string().min(1) }).strict();
+const entityTypeParams = z.object({ entityType: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/custom-fields")
@@ -67,6 +73,7 @@ export class HrCustomFieldsController {
 
   @Patch("definitions/:fieldId")
   @RequirePermission("hr:custom-fields:manage")
+  @Validate({ params: fieldIdParams })
   updateDefinition(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @Body(new ZodValidationPipe(updateCustomFieldSchema)) body: UpdateCustomFieldInput,
@@ -78,6 +85,7 @@ export class HrCustomFieldsController {
   @Delete("definitions/:fieldId")
   @HttpCode(204)
   @RequirePermission("hr:custom-fields:manage")
+  @Validate({ params: fieldIdParams })
   deleteDefinition(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +95,7 @@ export class HrCustomFieldsController {
 
   @Get(":entityType/:entityId/values")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: entityTypeentityIdParams })
   async getValues(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
@@ -105,6 +114,7 @@ export class HrCustomFieldsController {
 
   @Get(":entityType/:entityId/values/sensitive")
   @RequirePermission("hr:sensitive:view")
+  @Validate({ params: entityTypeentityIdParams })
   async getValuesSensitive(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
@@ -123,6 +133,7 @@ export class HrCustomFieldsController {
 
   @Put(":entityType/:entityId/values")
   @RequirePermission("hr:employees:update")
+  @Validate({ params: entityTypeentityIdParams })
   async upsertValues(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
@@ -143,6 +154,7 @@ export class HrCustomFieldsController {
 
   @Put(":entityType/:entityId/values/sensitive")
   @RequirePermission("hr:sensitive:manage")
+  @Validate({ params: entityTypeentityIdParams })
   async upsertValuesSensitive(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
@@ -163,6 +175,7 @@ export class HrCustomFieldsController {
 
   @Get(":entityType/filter")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: entityTypeParams })
   async filterByField(
     @Param("entityType") entityType: string,
     @Query(new ZodValidationPipe(filterByCustomFieldQuerySchema)) query: FilterByCustomFieldQuery,

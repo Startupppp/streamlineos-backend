@@ -2,6 +2,9 @@
 import { z } from "zod";
 import { Public } from "../../../common/auth/public.decorator";
 import { KbPagesService } from "./kb-pages.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
 const tokenParamSchema = z.string().max(64).regex(/^[a-zA-Z0-9-]+$/);
 
@@ -11,6 +14,7 @@ export class KbPublicPagesController {
   constructor(private readonly pages: KbPagesService) {}
 
   @Get(":token")
+  @Validate({ params: tokenParams })
   async getPublicPage(@Param("token") token: string): Promise<unknown> {
     const parsed = tokenParamSchema.safeParse(token);
     if (!parsed.success) throw new NotFoundException("Page not found");

@@ -34,6 +34,10 @@ import {
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const personIdParams = z.object({ personId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/people")
@@ -87,6 +91,7 @@ export class HrPeopleController {
   @Get(":personId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
+  @Validate({ params: personIdParams })
   async getOne(
     @Param("personId", ParseIntPipe) personId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -114,6 +119,7 @@ export class HrPeopleController {
   @Patch(":personId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: personIdParams })
   update(
     @Param("personId", ParseIntPipe) personId: number,
     @Body(new ZodValidationPipe(updatePersonSchema)) body: UpdatePersonInput,
@@ -131,6 +137,7 @@ export class HrPeopleController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: personIdParams })
   remove(
     @Param("personId", ParseIntPipe) personId: number,
     @CurrentUser() currentUser: CurrentUserContext,

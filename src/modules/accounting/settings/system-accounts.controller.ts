@@ -13,6 +13,10 @@ import {
   type SystemAccountPurpose,
   type UpsertSystemAccountInput,
 } from "./dto/settings.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const purposeParams = z.object({ purpose: z.string().min(1) }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/settings/system-accounts")
@@ -28,6 +32,7 @@ export class SystemAccountsController {
 
   @Put(":purpose")
   @RequirePermission("accounting:settings:manage")
+  @Validate({ params: purposeParams })
   upsertSystemAccount(
     @Param("purpose", new ZodValidationPipe(systemAccountPurposeSchema)) purpose: SystemAccountPurpose,
     @Body(new ZodValidationPipe(upsertSystemAccountSchema)) body: UpsertSystemAccountInput,

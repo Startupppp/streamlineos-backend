@@ -37,6 +37,10 @@ import {
   type JournalBatchListQuery,
   type PeriodReconQuery,
 } from "./dto/insights.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const batchIdParams = z.object({ batchId: z.coerce.number().int().positive() }).strict();
 
 const CSV_HEADERS = ["lineNo", "account", "description", "debit", "credit", "costCenter"] as const;
 
@@ -74,6 +78,7 @@ export class JournalOutboxController {
 
   @Get(":batchId")
   @RequirePermission("payroll:accounting:view")
+  @Validate({ params: batchIdParams })
   async get(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -83,6 +88,7 @@ export class JournalOutboxController {
 
   @Get(":batchId/export")
   @RequirePermission("payroll:accounting:view")
+  @Validate({ params: batchIdParams })
   async exportCsv(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -126,6 +132,7 @@ export class JournalOutboxController {
 
   @Post(":batchId/post")
   @RequirePermission("payroll:accounting:manage")
+  @Validate({ params: batchIdParams })
   async post(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -135,6 +142,7 @@ export class JournalOutboxController {
 
   @Post(":batchId/reverse")
   @RequirePermission("payroll:accounting:manage")
+  @Validate({ params: batchIdParams })
   async reverse(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body(new ZodValidationPipe(journalBatchReverseSchema)) body: JournalBatchReverse,
@@ -145,6 +153,7 @@ export class JournalOutboxController {
 
   @Post(":batchId/reconcile")
   @RequirePermission("payroll:accounting:manage")
+  @Validate({ params: batchIdParams })
   async reconcile(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body(new ZodValidationPipe(journalBatchReconcileSchema)) body: JournalBatchReconcile,

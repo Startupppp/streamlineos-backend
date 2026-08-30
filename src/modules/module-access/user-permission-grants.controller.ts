@@ -18,6 +18,10 @@ import {
   setUserPermissionGrantsSchema,
   type SetUserPermissionGrantsInput,
 } from "./dto/user-permission-grants.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const permissionKeyParams = z.object({ permissionKey: z.string().min(1) }).strict();
 
 @Controller("module-access/:moduleKey/members/:membershipId/grants")
 @UseGuards(JwtAuthGuard)
@@ -46,6 +50,7 @@ export class UserPermissionGrantsController {
   }
 
   @Delete(":permissionKey")
+  @Validate({ params: permissionKeyParams })
   async remove(
     @Param("moduleKey") moduleKey: string,
     @Param("membershipId", ParseIntPipe) membershipId: number,

@@ -17,6 +17,10 @@ import {
   type ListReminderPoliciesQuery,
   type ListReminderLogQuery,
 } from "./dto/finance-ar.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/reminders")
@@ -45,6 +49,7 @@ export class RemindersController {
 
   @Patch("policies/:policyId")
   @RequirePermission("accounting:reminders:manage")
+  @Validate({ params: policyIdParams })
   updatePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Body(new ZodValidationPipe(updateReminderPolicySchema)) body: UpdateReminderPolicyInput,
@@ -55,6 +60,7 @@ export class RemindersController {
 
   @Delete("policies/:policyId")
   @RequirePermission("accounting:reminders:manage")
+  @Validate({ params: policyIdParams })
   deletePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,

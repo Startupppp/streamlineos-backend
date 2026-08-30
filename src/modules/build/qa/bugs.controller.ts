@@ -27,6 +27,10 @@ import {
   type CreateBugInput,
   type UpdateBugInput,
 } from "./dto/bugs.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const bugIdParams = z.object({ bugId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/bugs")
@@ -46,6 +50,7 @@ export class BugsController {
 
   @Get(":bugId")
   @RequirePermission("build:bugs:view")
+  @Validate({ params: bugIdParams })
   getBug(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("bugId", ParseIntPipe) bugId: number,
@@ -67,6 +72,7 @@ export class BugsController {
 
   @Patch(":bugId")
   @RequirePermission("build:bugs:update")
+  @Validate({ params: bugIdParams })
   updateBug(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("bugId", ParseIntPipe) bugId: number,
@@ -79,6 +85,7 @@ export class BugsController {
   @Delete(":bugId")
   @RequirePermission("build:bugs:delete")
   @HttpCode(204)
+  @Validate({ params: bugIdParams })
   deleteBug(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("bugId", ParseIntPipe) bugId: number,

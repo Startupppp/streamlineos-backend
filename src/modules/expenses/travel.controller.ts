@@ -14,6 +14,10 @@ import {
   type CreateTravelRequestInput,
   type RejectTravelRequestInput,
 } from "./dto/travel.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const travelRequestIdParams = z.object({ travelRequestId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -45,6 +49,7 @@ export class TravelController {
 
   @Patch(":travelRequestId/manager-approve")
   @RequirePermission("hr:travel:manage")
+  @Validate({ params: travelRequestIdParams })
   managerApprove(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,
@@ -54,6 +59,7 @@ export class TravelController {
 
   @Patch(":travelRequestId/finance-approve")
   @RequirePermission("hr:travel:manage")
+  @Validate({ params: travelRequestIdParams })
   financeApprove(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,
@@ -64,6 +70,7 @@ export class TravelController {
   @Patch(":travelRequestId/reject")
   @Idempotent("expenses.travel.reject")
   @RequirePermission("hr:travel:manage")
+  @Validate({ params: travelRequestIdParams })
   reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,

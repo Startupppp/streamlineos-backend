@@ -16,6 +16,10 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AuditSurfaceService } from "./audit-surface.service";
 import { listAuditSchema, type ListAuditQuery } from "./dto/finance-controls.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const resourceTyperesourceIdParams = z.object({ resourceType: z.string().min(1), resourceId: z.string().min(1) }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/audit")
@@ -34,6 +38,7 @@ export class AuditController {
 
   @Get("record/:resourceType/:resourceId")
   @RequirePermission("accounting:audit:read")
+  @Validate({ params: resourceTyperesourceIdParams })
   timeline(
     @Param("resourceType") resourceType: string,
     @Param("resourceId") resourceId: string,

@@ -27,6 +27,10 @@ import {
   type ListCrQuery,
   type UpdateChangeRequestInput,
 } from "./dto/change-requests.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const changeRequestIdParams = z.object({ changeRequestId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/change-requests")
@@ -46,6 +50,7 @@ export class ChangeRequestsController {
 
   @Get(":changeRequestId")
   @RequirePermission("build:changerequests:view")
+  @Validate({ params: changeRequestIdParams })
   getChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("changeRequestId", ParseIntPipe) changeRequestId: number,
@@ -67,6 +72,7 @@ export class ChangeRequestsController {
 
   @Patch(":changeRequestId")
   @RequirePermission("build:changerequests:manage")
+  @Validate({ params: changeRequestIdParams })
   updateChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("changeRequestId", ParseIntPipe) changeRequestId: number,
@@ -79,6 +85,7 @@ export class ChangeRequestsController {
   @Delete(":changeRequestId")
   @RequirePermission("build:changerequests:manage")
   @HttpCode(204)
+  @Validate({ params: changeRequestIdParams })
   deleteChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("changeRequestId", ParseIntPipe) changeRequestId: number,

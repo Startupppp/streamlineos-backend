@@ -12,6 +12,10 @@ import {
   type SetUserModuleAccessInput,
   type UserModuleAccessParams,
 } from "./dto/user-module-access.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
 @Controller("access/user-module-access")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -20,6 +24,7 @@ export class UserModuleAccessController {
 
   @Get(":userId")
   @RequirePermission("settings:view")
+  @Validate({ params: userIdParams })
   getModuleAccess(
     @Param(new ZodValidationPipe(userModuleAccessParamsSchema))
     params: UserModuleAccessParams,
@@ -30,6 +35,7 @@ export class UserModuleAccessController {
 
   @Patch(":userId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: userIdParams })
   setModuleAccess(
     @Param(new ZodValidationPipe(userModuleAccessParamsSchema))
     params: UserModuleAccessParams,

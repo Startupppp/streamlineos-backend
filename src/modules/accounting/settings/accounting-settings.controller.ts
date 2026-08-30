@@ -25,6 +25,10 @@ import {
   type UpsertPaymentTermsInput,
 } from "./dto/settings.schemas";
 import { BadRequestException } from "@nestjs/common";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const entityTypeParams = z.object({ entityType: z.string().min(1) }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/settings")
@@ -70,6 +74,7 @@ export class AccountingSettingsController {
 
   @Patch("sequences/:entityType")
   @RequirePermission("accounting:settings:manage")
+  @Validate({ params: entityTypeParams })
   updateSequence(
     @Param("entityType") entityType: string,
     @Body(new ZodValidationPipe(updateSequenceSchema)) body: UpdateSequenceInput,

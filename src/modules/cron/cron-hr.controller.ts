@@ -19,6 +19,10 @@ import { CronHrEnginesService } from "./cron-hr-engines.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronLeaseService } from "./cron-lease.service";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const sweepNameParams = z.object({ sweepName: z.string().min(1) }).strict();
 
 @Public()
 @Controller("cron")
@@ -158,6 +162,7 @@ export class CronHrController {
 
   @Post("hr-engines-sweep/:sweepName")
   @HttpCode(200)
+  @Validate({ params: sweepNameParams })
   postHrEnginesSweepByName(
     @Headers("authorization") authorization?: string,
     @Param("sweepName") sweepName?: string,
@@ -166,6 +171,7 @@ export class CronHrController {
   }
 
   @Get("hr-engines-sweep/:sweepName")
+  @Validate({ params: sweepNameParams })
   getHrEnginesSweepByName(
     @Headers("authorization") authorization?: string,
     @Param("sweepName") sweepName?: string,

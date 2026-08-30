@@ -7,6 +7,9 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { LeavePoliciesService } from "./leave-policies.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
 const createLeavePolicySchema = z.object({
   leaveTypeId: z.number().int().positive(),
@@ -56,6 +59,7 @@ export class LeavePoliciesController {
   @Patch(":policyId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")
+  @Validate({ params: policyIdParams })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("policyId", ParseIntPipe) policyId: number,
@@ -68,6 +72,7 @@ export class LeavePoliciesController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")
+  @Validate({ params: policyIdParams })
   remove(@CurrentUser() u: CurrentUserContext, @Param("policyId", ParseIntPipe) policyId: number) {
     return this.service.remove(u.orgId, policyId);
   }

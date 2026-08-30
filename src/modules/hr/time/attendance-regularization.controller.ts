@@ -14,6 +14,9 @@ import {
   type CreateAttendanceRegularizationInput,
 } from "./dto/attendance.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const regularizationIdParams = z.object({ regularizationId: z.coerce.number().int().positive() }).strict();
 
 const listRegularizationsSchema = z.object({
   userId: z.string().optional(),
@@ -60,6 +63,7 @@ export class AttendanceRegularizationController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: regularizationIdParams })
   apply(
     @Param("regularizationId", ParseIntPipe) regularizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -72,6 +76,7 @@ export class AttendanceRegularizationController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: regularizationIdParams })
   reject(
     @Param("regularizationId", ParseIntPipe) regularizationId: number,
     @Body(new ZodValidationPipe(rejectRegularizationSchema)) body: z.infer<typeof rejectRegularizationSchema>,

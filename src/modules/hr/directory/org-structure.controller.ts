@@ -19,6 +19,10 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { AccessService } from "../../access/access.service";
 import { resolveEmployeesScope } from "./employees-scope";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const teamIdParams = z.object({ teamId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr")
@@ -65,6 +69,7 @@ export class OrgStructureController {
 
   @Get("teams/:teamId")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: teamIdParams })
   async team(
     @Param("teamId") teamId: string,
     @CurrentUser() currentUser: CurrentUserContext,

@@ -23,6 +23,11 @@ import {
   type CreateTagInput,
   type SetArticleTagsInput,
 } from "./dto/kb-tags.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const tagIdParams = z.object({ tagId: z.coerce.number().int().positive() }).strict();
+const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -47,6 +52,7 @@ export class KbTagsController {
 
   @Delete("tags/:tagId")
   @RequirePermission("kb:articles:manage")
+  @Validate({ params: tagIdParams })
   async remove(
     @Param("tagId", ParseIntPipe) tagId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -56,6 +62,7 @@ export class KbTagsController {
 
   @Get("articles/:articleId/tags")
   @RequirePermission("kb:articles:view")
+  @Validate({ params: articleIdParams })
   async getArticleTags(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -65,6 +72,7 @@ export class KbTagsController {
 
   @Put("articles/:articleId/tags")
   @RequirePermission("kb:articles:update")
+  @Validate({ params: articleIdParams })
   async setArticleTags(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body(new ZodValidationPipe(setArticleTagsSchema)) body: SetArticleTagsInput,

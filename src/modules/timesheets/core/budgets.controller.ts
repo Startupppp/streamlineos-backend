@@ -25,6 +25,10 @@ import {
   type CreateBudgetInput,
   type UpdateBudgetInput,
 } from "./dto/budgets.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const budgetIdParams = z.object({ budgetId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("timesheets/budgets")
@@ -50,6 +54,7 @@ export class BudgetsController {
 
   @Patch(":budgetId")
   @RequirePermission("timesheets:budgets:manage")
+  @Validate({ params: budgetIdParams })
   update(
     @Param("budgetId", ParseIntPipe) budgetId: number,
     @Body(new ZodValidationPipe(updateBudgetSchema)) body: UpdateBudgetInput,
@@ -61,6 +66,7 @@ export class BudgetsController {
   @Delete(":budgetId")
   @HttpCode(204)
   @RequirePermission("timesheets:budgets:manage")
+  @Validate({ params: budgetIdParams })
   remove(
     @Param("budgetId", ParseIntPipe) budgetId: number,
     @CurrentUser() u: CurrentUserContext,

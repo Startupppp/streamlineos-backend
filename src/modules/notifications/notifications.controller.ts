@@ -34,6 +34,10 @@ import {
   type SnoozeInput,
   type BulkActionInput,
 } from "./dto/notification.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const notificationIdParams = z.object({ notificationId: z.coerce.number().int().positive() }).strict();
 
 @Controller("notifications")
 @UseGuards(JwtAuthGuard)
@@ -125,6 +129,7 @@ export class NotificationsController {
 
   @Patch(":notificationId/read")
   @Universal()
+  @Validate({ params: notificationIdParams })
   markRead(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -134,6 +139,7 @@ export class NotificationsController {
 
   @Patch(":notificationId/archive")
   @Universal()
+  @Validate({ params: notificationIdParams })
   archive(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -143,6 +149,7 @@ export class NotificationsController {
 
   @Patch(":notificationId/unarchive")
   @Universal()
+  @Validate({ params: notificationIdParams })
   unarchive(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -152,6 +159,7 @@ export class NotificationsController {
 
   @Delete(":notificationId")
   @Universal()
+  @Validate({ params: notificationIdParams })
   softDelete(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -161,6 +169,7 @@ export class NotificationsController {
 
   @Patch(":notificationId/pin")
   @Universal()
+  @Validate({ params: notificationIdParams })
   pin(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -170,6 +179,7 @@ export class NotificationsController {
 
   @Patch(":notificationId/unpin")
   @Universal()
+  @Validate({ params: notificationIdParams })
   unpin(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -179,6 +189,7 @@ export class NotificationsController {
 
   @Patch(":notificationId/snooze")
   @Universal()
+  @Validate({ params: notificationIdParams })
   snooze(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @Body(new ZodValidationPipe(snoozeSchema)) body: SnoozeInput,
@@ -191,6 +202,7 @@ export class NotificationsController {
   @Idempotent("notifications.action.approve")
   @Universal()
   @HttpCode(200)
+  @Validate({ params: notificationIdParams })
   approve(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -202,6 +214,7 @@ export class NotificationsController {
   @Idempotent("notifications.action.reject")
   @Universal()
   @HttpCode(200)
+  @Validate({ params: notificationIdParams })
   reject(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,

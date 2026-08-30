@@ -19,6 +19,11 @@ import {
   type UpdateWebhookInput,
   type ListEventsQueryInput,
 } from "./dto/webhooks.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const webhookIdParams = z.object({ webhookId: z.coerce.number().int().positive() }).strict();
+const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/webhooks")
@@ -46,6 +51,7 @@ export class WebhooksController {
   @Patch(":webhookId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
+  @Validate({ params: webhookIdParams })
   update(
     @Param("webhookId", ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(updateWebhookSchema)) body: UpdateWebhookInput,
@@ -57,6 +63,7 @@ export class WebhooksController {
   @Delete(":webhookId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
+  @Validate({ params: webhookIdParams })
   remove(
     @Param("webhookId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,
@@ -67,6 +74,7 @@ export class WebhooksController {
   @Get(":webhookId/events")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
+  @Validate({ params: webhookIdParams })
   listEvents(
     @Param("webhookId", ParseIntPipe) id: number,
     @Query(new ZodValidationPipe(listEventsQuerySchema)) q: ListEventsQueryInput,
@@ -78,6 +86,7 @@ export class WebhooksController {
   @Post("events/:eventId/retry")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
+  @Validate({ params: eventIdParams })
   retryEvent(
     @Param("eventId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,

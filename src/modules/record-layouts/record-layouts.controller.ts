@@ -12,6 +12,10 @@ import {
   type SaveLayoutAdjustmentInput,
 } from "./dto/record-layouts.schemas";
 import { RecordLayoutsService } from "./record-layouts.service";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const layoutKeyParams = z.object({ layoutKey: z.string().min(1) }).strict();
 
 /**
  * Where a tenant's arrangement of a record type is read and written.
@@ -44,6 +48,7 @@ export class RecordLayoutsController {
   // Every rendered record reads this arrangement; gating it would blank the UI for anyone who cannot edit it.
   @Get(":layoutKey")
   @Universal()
+  @Validate({ params: layoutKeyParams })
   get(
     @Param("layoutKey", new ZodValidationPipe(layoutKeySchema)) layoutKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -54,6 +59,7 @@ export class RecordLayoutsController {
   @Put(":layoutKey")
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermission("settings:record-layouts:manage")
+  @Validate({ params: layoutKeyParams })
   save(
     @Param("layoutKey", new ZodValidationPipe(layoutKeySchema)) layoutKey: string,
     @Body(new ZodValidationPipe(saveLayoutAdjustmentSchema)) body: SaveLayoutAdjustmentInput,
@@ -65,6 +71,7 @@ export class RecordLayoutsController {
   @Delete(":layoutKey")
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermission("settings:record-layouts:manage")
+  @Validate({ params: layoutKeyParams })
   reset(
     @Param("layoutKey", new ZodValidationPipe(layoutKeySchema)) layoutKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -84,6 +91,7 @@ export class RecordLayoutsController {
   @Get(":layoutKey/usage")
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermission("settings:record-layouts:manage")
+  @Validate({ params: layoutKeyParams })
   usage(
     @Param("layoutKey", new ZodValidationPipe(layoutKeySchema)) layoutKey: string,
     @CurrentUser() u: CurrentUserContext,

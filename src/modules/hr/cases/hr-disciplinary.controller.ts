@@ -27,6 +27,10 @@ import {
   type ListDisciplinaryInput,
   type AcknowledgeDisciplinaryInput,
 } from "./dto/hr-cases.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const actionIdParams = z.object({ actionId: z.coerce.number().int().positive() }).strict();
 
 @Controller("hr/cases/disciplinary")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -57,6 +61,7 @@ export class HrDisciplinaryController {
 
   @Get(":actionId")
   @RequirePermission("hr:cases:view")
+  @Validate({ params: actionIdParams })
   getById(
     @CurrentUser() user: CurrentUserContext,
     @Param("actionId", ParseIntPipe) actionId: number,
@@ -79,6 +84,7 @@ export class HrDisciplinaryController {
   @Post(":actionId/acknowledge")
   @HttpCode(200)
   @RequirePermission("self:cases")
+  @Validate({ params: actionIdParams })
   acknowledge(
     @CurrentUser() user: CurrentUserContext,
     @Param("actionId", ParseIntPipe) actionId: number,
@@ -91,6 +97,7 @@ export class HrDisciplinaryController {
   @Delete(":actionId")
   @RequirePermission("hr:cases:manage")
   @HttpCode(204)
+  @Validate({ params: actionIdParams })
   async delete(
     @CurrentUser() user: CurrentUserContext,
     @Param("actionId", ParseIntPipe) actionId: number,

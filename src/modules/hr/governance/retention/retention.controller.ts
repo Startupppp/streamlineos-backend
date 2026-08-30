@@ -36,6 +36,11 @@ import {
   type ListDataRequestsInput,
 } from "./retention.dto";
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
+const requestIdParams = z.object({ requestId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/governance/retention")
@@ -64,6 +69,7 @@ export class RetentionController {
 
   @Patch("policies/:policyId")
   @RequirePermission("hr:retention:manage")
+  @Validate({ params: policyIdParams })
   async updatePolicy(
     @CurrentUser() user: CurrentUserContext,
     @Param("policyId", ParseIntPipe) policyId: number,
@@ -76,6 +82,7 @@ export class RetentionController {
   @Delete("policies/:policyId")
   @RequirePermission("hr:retention:manage")
   @HttpCode(204)
+  @Validate({ params: policyIdParams })
   async deletePolicy(
     @CurrentUser() user: CurrentUserContext,
     @Param("policyId", ParseIntPipe) policyId: number,
@@ -105,6 +112,7 @@ export class RetentionController {
 
   @Patch("requests/:requestId")
   @RequirePermission("hr:retention:manage")
+  @Validate({ params: requestIdParams })
   async updateRequest(
     @CurrentUser() user: CurrentUserContext,
     @Param("requestId", ParseIntPipe) requestId: number,
@@ -117,6 +125,7 @@ export class RetentionController {
   @Post("requests/:requestId/approve")
   @Idempotent("hr.retention.approve")
   @RequirePermission("hr:retention:manage")
+  @Validate({ params: requestIdParams })
   async approveRequest(
     @CurrentUser() user: CurrentUserContext,
     @Param("requestId", ParseIntPipe) requestId: number,
@@ -127,6 +136,7 @@ export class RetentionController {
 
   @Post("requests/:requestId/process")
   @RequirePermission("hr:retention:manage")
+  @Validate({ params: requestIdParams })
   async processRequest(
     @CurrentUser() user: CurrentUserContext,
     @Param("requestId", ParseIntPipe) requestId: number,

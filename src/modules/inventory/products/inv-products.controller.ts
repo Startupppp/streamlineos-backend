@@ -18,6 +18,13 @@ import {
   type CreateVariantInput, type UpdateVariantInput, type CreateCategoryInput, type CreateUomInput, type ListVariantsInput,
   type UpdateCategoryInput, type UpdateUomInput,
 } from "./dto/inv-products.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const categoryIdParams = z.object({ categoryId: z.coerce.number().int().positive() }).strict();
+const uomIdParams = z.object({ uomId: z.coerce.number().int().positive() }).strict();
+const productIdParams = z.object({ productId: z.coerce.number().int().positive() }).strict();
+const productIdvariantIdParams = z.object({ productId: z.coerce.number().int().positive(), variantId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/products")
@@ -76,6 +83,7 @@ export class InvProductsController {
   @Patch("categories/:categoryId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
+  @Validate({ params: categoryIdParams })
   updateCategory(
     @Param("categoryId", ParseIntPipe) categoryId: number,
     @Body(new ZodValidationPipe(updateCategorySchema)) body: UpdateCategoryInput,
@@ -87,6 +95,7 @@ export class InvProductsController {
   @Patch("uom/:uomId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
+  @Validate({ params: uomIdParams })
   updateUom(
     @Param("uomId", ParseIntPipe) uomId: number,
     @Body(new ZodValidationPipe(updateUomSchema)) body: UpdateUomInput,
@@ -109,6 +118,7 @@ export class InvProductsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: productIdParams })
   archive(
     @Param("productId", ParseIntPipe) productId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -120,6 +130,7 @@ export class InvProductsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: productIdParams })
   restore(
     @Param("productId", ParseIntPipe) productId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -130,6 +141,7 @@ export class InvProductsController {
   @Get(":productId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
+  @Validate({ params: productIdParams })
   get(@Param("productId", ParseIntPipe) productId: number, @CurrentUser() u: CurrentUserContext) {
     return this.products.getProduct(u.orgId, productId, u.userId);
   }
@@ -147,6 +159,7 @@ export class InvProductsController {
   @Patch(":productId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
+  @Validate({ params: productIdParams })
   update(
     @Param("productId", ParseIntPipe) productId: number,
     @Body(new ZodValidationPipe(updateProductSchema)) body: UpdateProductInput,
@@ -159,6 +172,7 @@ export class InvProductsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:delete")
+  @Validate({ params: productIdParams })
   async delete(@Param("productId", ParseIntPipe) productId: number, @CurrentUser() u: CurrentUserContext) {
     await this.products.deleteProduct(u.orgId, productId);
   }
@@ -166,6 +180,7 @@ export class InvProductsController {
   @Post(":productId/variants")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
+  @Validate({ params: productIdParams })
   createVariant(
     @Param("productId", ParseIntPipe) productId: number,
     @Body(new ZodValidationPipe(createVariantSchema)) body: CreateVariantInput,
@@ -177,6 +192,7 @@ export class InvProductsController {
   @Patch(":productId/variants/:variantId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
+  @Validate({ params: productIdvariantIdParams })
   updateVariant(
     @Param("productId", ParseIntPipe) _: number,
     @Param("variantId", ParseIntPipe) variantId: number,

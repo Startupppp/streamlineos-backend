@@ -20,6 +20,9 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PayrollJobsService, type PayrollJobType } from "./payroll-jobs.service";
 import { PayrollJobsWorkerService } from "./payroll-jobs-worker.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
 
 const listQuerySchema = z.object({
   failedOnly: z
@@ -64,6 +67,7 @@ export class PayrollJobsController {
 
   @Get(":jobId")
   @RequirePermission("payroll:runs:view")
+  @Validate({ params: jobIdParams })
   get(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -100,6 +104,7 @@ export class PayrollJobsController {
   @Post(":jobId/retry")
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
+  @Validate({ params: jobIdParams })
   async retry(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,

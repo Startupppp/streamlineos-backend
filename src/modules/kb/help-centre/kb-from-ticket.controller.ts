@@ -15,6 +15,10 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbFromTicketService } from "./kb-from-ticket.service";
 import { fromTicketSchema, type FromTicketInput } from "./dto/kb-from-ticket.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -24,6 +28,7 @@ export class KbFromTicketController {
   @Post("articles/from-ticket/:ticketId")
   @HttpCode(200)
   @RequirePermission("kb:articles:create")
+  @Validate({ params: ticketIdParams })
   async draftFromTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(fromTicketSchema)) body: FromTicketInput,

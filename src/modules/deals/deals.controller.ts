@@ -43,6 +43,10 @@ import {
   type UpdateDealInput,
 } from "./dto/deals.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("deals")
@@ -121,6 +125,7 @@ export class DealsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:create")
   @HttpCode(200)
+  @Validate({ params: dealIdParams })
   cloneDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -131,6 +136,7 @@ export class DealsController {
   @Get(":dealId/activities")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @Validate({ params: dealIdParams })
   listActivities(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -142,6 +148,7 @@ export class DealsController {
   @Get(":dealId/transitions")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @Validate({ params: dealIdParams })
   async listStageTransitions(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -153,6 +160,7 @@ export class DealsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
   @HttpCode(201)
+  @Validate({ params: dealIdParams })
   addActivity(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Body(new ZodValidationPipe(logActivitySchema)) body: LogActivityInput,
@@ -164,6 +172,7 @@ export class DealsController {
   @Patch(":dealId/custom-data")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @Validate({ params: dealIdParams })
   updateCustomData(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Body(new ZodValidationPipe(patchCustomDataSchema)) body: PatchCustomDataInput,
@@ -175,6 +184,7 @@ export class DealsController {
   @Patch(":dealId")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @Validate({ params: dealIdParams })
   async updateDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Body(new ZodValidationPipe(updateDealSchema)) body: UpdateDealInput,
@@ -196,6 +206,7 @@ export class DealsController {
   @Get(":dealId")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @Validate({ params: dealIdParams })
   async getDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -209,6 +220,7 @@ export class DealsController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:delete")
+  @Validate({ params: dealIdParams })
   async deleteDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,

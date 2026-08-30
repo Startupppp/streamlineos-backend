@@ -32,6 +32,12 @@ import {
   type ReorderSequenceStepsInput,
   type EnrollInSequenceInput,
 } from "./dto/automation-studio.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const sequenceIdParams = z.object({ sequenceId: z.string().min(1) }).strict();
+const sequenceIdstepIdParams = z.object({ sequenceId: z.string().min(1), stepId: z.string().min(1) }).strict();
+const sequenceIdenrollmentIdParams = z.object({ sequenceId: z.string().min(1), enrollmentId: z.string().min(1) }).strict();
 
 @RequireModule("crm")
 @Controller("crm/sequences")
@@ -57,6 +63,7 @@ export class CrmAutomationStudioController {
 
   @Get(":sequenceId")
   @RequirePermission("crm:sequences:manage")
+  @Validate({ params: sequenceIdParams })
   async getOne(
     @Param("sequenceId") sequenceId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -68,6 +75,7 @@ export class CrmAutomationStudioController {
 
   @Patch(":sequenceId")
   @RequirePermission("crm:sequences:manage")
+  @Validate({ params: sequenceIdParams })
   async update(
     @Param("sequenceId") sequenceId: string,
     @Body(new ZodValidationPipe(updateSequenceSchema)) body: UpdateSequenceInput,
@@ -80,6 +88,7 @@ export class CrmAutomationStudioController {
 
   @Delete(":sequenceId")
   @RequirePermission("crm:sequences:manage")
+  @Validate({ params: sequenceIdParams })
   remove(
     @Param("sequenceId") sequenceId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +98,7 @@ export class CrmAutomationStudioController {
 
   @Get(":sequenceId/steps")
   @RequirePermission("crm:sequences:manage")
+  @Validate({ params: sequenceIdParams })
   listSteps(
     @Param("sequenceId") sequenceId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -99,6 +109,7 @@ export class CrmAutomationStudioController {
   @Post(":sequenceId/steps")
   @RequirePermission("crm:sequences:manage")
   @HttpCode(201)
+  @Validate({ params: sequenceIdParams })
   createStep(
     @Param("sequenceId") sequenceId: string,
     @Body(new ZodValidationPipe(createSequenceStepSchema)) body: CreateSequenceStepInput,
@@ -109,6 +120,7 @@ export class CrmAutomationStudioController {
 
   @Delete(":sequenceId/steps/:stepId")
   @RequirePermission("crm:sequences:manage")
+  @Validate({ params: sequenceIdstepIdParams })
   removeStep(
     @Param("sequenceId") sequenceId: string,
     @Param("stepId") stepId: string,
@@ -119,6 +131,7 @@ export class CrmAutomationStudioController {
 
   @Patch(":sequenceId/steps/reorder")
   @RequirePermission("crm:sequences:manage")
+  @Validate({ params: sequenceIdParams })
   reorderSteps(
     @Param("sequenceId") sequenceId: string,
     @Body(new ZodValidationPipe(reorderSequenceStepsSchema)) body: ReorderSequenceStepsInput,
@@ -129,6 +142,7 @@ export class CrmAutomationStudioController {
 
   @Get(":sequenceId/enrollments")
   @RequirePermission("crm:sequences:manage")
+  @Validate({ params: sequenceIdParams })
   listEnrollments(
     @Param("sequenceId") sequenceId: string,
     @Query("page") page = "1",
@@ -142,6 +156,7 @@ export class CrmAutomationStudioController {
   @RequirePermission("crm:sequences:manage")
   @HttpCode(201)
   @Idempotent("crm.sequence.enroll")
+  @Validate({ params: sequenceIdParams })
   enroll(
     @Param("sequenceId") sequenceId: string,
     @Body(new ZodValidationPipe(enrollInSequenceSchema)) body: EnrollInSequenceInput,
@@ -152,6 +167,7 @@ export class CrmAutomationStudioController {
 
   @Patch(":sequenceId/enrollments/:enrollmentId/stop")
   @RequirePermission("crm:sequences:manage")
+  @Validate({ params: sequenceIdenrollmentIdParams })
   stopEnrollment(
     @Param("sequenceId") sequenceId: string,
     @Param("enrollmentId") enrollmentId: string,

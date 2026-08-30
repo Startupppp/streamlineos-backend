@@ -26,6 +26,11 @@ import {
   type CreateDimensionValueInput,
   type UpdateDimensionValueInput,
 } from "./dto/dimensions.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const dimensionIdParams = z.object({ dimensionId: z.coerce.number().int().positive() }).strict();
+const dimensionIdvalueIdParams = z.object({ dimensionId: z.coerce.number().int().positive(), valueId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/dimensions")
@@ -50,6 +55,7 @@ export class DimensionsController {
 
   @Patch(":dimensionId")
   @RequirePermission("accounting:dimensions:manage")
+  @Validate({ params: dimensionIdParams })
   update(
     @Param("dimensionId", ParseIntPipe) dimensionId: number,
     @Body(new ZodValidationPipe(updateDimensionSchema)) body: UpdateDimensionInput,
@@ -60,6 +66,7 @@ export class DimensionsController {
 
   @Get(":dimensionId/values")
   @RequirePermission("accounting:dimensions:read")
+  @Validate({ params: dimensionIdParams })
   listValues(
     @Param("dimensionId", ParseIntPipe) dimensionId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -69,6 +76,7 @@ export class DimensionsController {
 
   @Post(":dimensionId/values")
   @RequirePermission("accounting:dimensions:manage")
+  @Validate({ params: dimensionIdParams })
   createValue(
     @Param("dimensionId", ParseIntPipe) dimensionId: number,
     @Body(new ZodValidationPipe(createDimensionValueSchema)) body: CreateDimensionValueInput,
@@ -79,6 +87,7 @@ export class DimensionsController {
 
   @Patch(":dimensionId/values/:valueId")
   @RequirePermission("accounting:dimensions:manage")
+  @Validate({ params: dimensionIdvalueIdParams })
   updateValue(
     @Param("dimensionId", ParseIntPipe) dimensionId: number,
     @Param("valueId", ParseIntPipe) valueId: number,

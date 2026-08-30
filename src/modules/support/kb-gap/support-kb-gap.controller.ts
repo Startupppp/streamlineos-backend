@@ -23,6 +23,9 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { AiJobsService } from "../../ai/jobs/ai-jobs.service";
 import { SupportKbGapService } from "./support-kb-gap.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const gapIdParams = z.object({ gapId: z.coerce.number().int().positive() }).strict();
 
 const patchSchema = z.object({ action: z.literal("dismiss") });
 type PatchInput = z.infer<typeof patchSchema>;
@@ -67,6 +70,7 @@ export class SupportKbGapController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("support:knowledge-gaps:manage")
+  @Validate({ params: gapIdParams })
   async proposeDraft(
     @Param("gapId", ParseIntPipe) gapId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -77,6 +81,7 @@ export class SupportKbGapController {
 
   @Patch(":gapId")
   @RequirePermission("support:knowledge-gaps:manage")
+  @Validate({ params: gapIdParams })
   patchGap(
     @Param("gapId", ParseIntPipe) gapId: number,
     @CurrentUser() u: CurrentUserContext,

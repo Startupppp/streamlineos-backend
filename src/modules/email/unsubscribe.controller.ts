@@ -4,6 +4,10 @@ import { Public } from "../../common/auth/public.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { EmailSuppressionService } from "./email-suppression.service";
 import { verifyUnsubscribeToken } from "./unsubscribe-token";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
 /**
  * COMP-002. One-click unsubscribe, honoured immediately.
@@ -24,11 +28,13 @@ export class UnsubscribeController {
   ) {}
 
   @Get(":token")
+  @Validate({ params: tokenParams })
   get(@Param("token") token: string, @Req() req: Request) {
     return this.handle(token, req);
   }
 
   @Post(":token")
+  @Validate({ params: tokenParams })
   post(@Param("token") token: string, @Req() req: Request) {
     return this.handle(token, req);
   }

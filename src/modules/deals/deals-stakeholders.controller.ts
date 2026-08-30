@@ -13,6 +13,10 @@ import {
   type CreateStakeholderInput,
   type UpdateStakeholderInput,
 } from "./dto/deals.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const stakeholderIdParams = z.object({ stakeholderId: z.string().min(1) }).strict();
 
 @RequireModule("crm")
 @Controller("deals/:dealId/stakeholders")
@@ -45,6 +49,7 @@ export class DealsStakeholdersController {
   @Patch(":stakeholderId")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @Validate({ params: stakeholderIdParams })
   updateStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("stakeholderId") stakeholderId: string,
@@ -58,6 +63,7 @@ export class DealsStakeholdersController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @Validate({ params: stakeholderIdParams })
   async deleteStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("stakeholderId") stakeholderId: string,

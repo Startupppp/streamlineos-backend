@@ -50,6 +50,12 @@ import {
   upsertOccurrenceExceptionSchema,
   type UpsertOccurrenceExceptionInput,
 } from "./dto/occurrence-exception.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
+const eventIdoccurrenceStartParams = z.object({ eventId: z.coerce.number().int().positive(), occurrenceStart: z.string().min(1) }).strict();
+const sourceKeyParams = z.object({ sourceKey: z.string().min(1) }).strict();
 
 function pad(value: number): string {
   return value < 10 ? `0${value}` : String(value);
@@ -121,6 +127,7 @@ export class CalendarController {
 
   @Put("events/:eventId")
   @Universal()
+  @Validate({ params: eventIdParams })
   async updateEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Body(new ZodValidationPipe(updateEventSchema)) body: UpdateEventInput,
@@ -139,6 +146,7 @@ export class CalendarController {
 
   @Delete("events/:eventId")
   @Universal()
+  @Validate({ params: eventIdParams })
   removeEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -149,6 +157,7 @@ export class CalendarController {
   @Post("events/:eventId/rsvp")
   @Universal()
   @HttpCode(200)
+  @Validate({ params: eventIdParams })
   async rsvp(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Body(new ZodValidationPipe(rsvpSchema)) body: RsvpInput,
@@ -162,6 +171,7 @@ export class CalendarController {
   @Patch("events/:eventId/occurrences/:occurrenceStart")
   @Universal()
   @HttpCode(200)
+  @Validate({ params: eventIdoccurrenceStartParams })
   async upsertOccurrenceException(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Param("occurrenceStart") occurrenceStart: string,
@@ -183,6 +193,7 @@ export class CalendarController {
   @Delete("events/:eventId/occurrences/:occurrenceStart")
   @Universal()
   @HttpCode(200)
+  @Validate({ params: eventIdoccurrenceStartParams })
   async cancelOccurrence(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Param("occurrenceStart") occurrenceStart: string,
@@ -201,6 +212,7 @@ export class CalendarController {
   @Get("events/:eventId/rsvp")
   @UseGuards(PermissionGuard)
   @RequirePermission("calendar:read")
+  @Validate({ params: eventIdParams })
   async listAttendees(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -276,6 +288,7 @@ export class CalendarController {
   @Put("sources/:sourceKey")
   @Universal()
   @HttpCode(200)
+  @Validate({ params: sourceKeyParams })
   async setSourcePreference(
     @Param("sourceKey") sourceKey: string,
     @Body(new ZodValidationPipe(setSourcePreferenceSchema)) body: SetSourcePreferenceInput,

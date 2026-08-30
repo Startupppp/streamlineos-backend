@@ -18,6 +18,9 @@ import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transac
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { LlmService } from "../providers/llm.service";
 import { BlogAiService } from "../services/blog-ai.service";
+import { Validate } from "../../../../common/validation/validate.decorator";
+
+const postIdParams = z.object({ postId: z.string().min(1) }).strict();
 
 const improveWritingSchema = z.object({ content: z.string().min(1).max(10000) });
 const suggestTitleSchema = z.object({
@@ -46,6 +49,7 @@ export class BlogAiController {
 
   @Post("blog/posts/:postId/improve-writing")
   @RequirePermission("blog:ai:use")
+  @Validate({ params: postIdParams })
   async improveWriting(
     @Param("postId") postId: string,
     @Body(new ZodValidationPipe(improveWritingSchema)) body: ImproveWritingInput,
@@ -57,6 +61,7 @@ export class BlogAiController {
 
   @Post("blog/posts/:postId/suggest-title")
   @RequirePermission("blog:ai:use")
+  @Validate({ params: postIdParams })
   async suggestTitle(
     @Param("postId") postId: string,
     @Body(new ZodValidationPipe(suggestTitleSchema)) body: SuggestTitleInput,
@@ -68,6 +73,7 @@ export class BlogAiController {
 
   @Post("blog/posts/:postId/summarize")
   @RequirePermission("blog:ai:use")
+  @Validate({ params: postIdParams })
   async summarize(
     @Param("postId") postId: string,
     @Body(new ZodValidationPipe(summarizeSchema)) body: SummarizeInput,

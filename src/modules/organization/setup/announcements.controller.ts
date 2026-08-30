@@ -23,6 +23,10 @@ import {
   type CreateHrAnnouncementInput,
   type UpdateHrAnnouncementInput,
 } from "./dto/announcements.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const announcementIdParams = z.object({ announcementId: z.coerce.number().int().positive() }).strict();
 
 @UseGuards(JwtAuthGuard)
 @Controller("org/announcements")
@@ -61,6 +65,7 @@ export class AnnouncementsController {
   @Patch(":announcementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:announcements:manage")
+  @Validate({ params: announcementIdParams })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("announcementId", ParseIntPipe) id: number,
@@ -82,6 +87,7 @@ export class AnnouncementsController {
   @Delete(":announcementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:announcements:manage")
+  @Validate({ params: announcementIdParams })
   remove(
     @CurrentUser() u: CurrentUserContext,
     @Param("announcementId", ParseIntPipe) id: number,
@@ -91,6 +97,7 @@ export class AnnouncementsController {
 
   @Post(":announcementId/read")
   @Universal()
+  @Validate({ params: announcementIdParams })
   markRead(
     @CurrentUser() u: CurrentUserContext,
     @Param("announcementId", ParseIntPipe) id: number,

@@ -28,6 +28,10 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("support")
 @Controller("support/portal")
@@ -71,6 +75,7 @@ export class SupportPortalController {
 
   @Get("tickets/:ticketId")
   @RequirePermission("support:portal:tickets:view")
+  @Validate({ params: ticketIdParams })
   getMyTicket(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     return this.portal.getMyTicket(u.orgId, u.userId, ticketId);
   }
@@ -79,6 +84,7 @@ export class SupportPortalController {
   @Idempotent("support:portal_ticket.reply")
   @RequirePermission("support:portal:tickets:reply")
   @HttpCode(201)
+  @Validate({ params: ticketIdParams })
   addMessage(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(createPortalMessageSchema)) body: CreatePortalMessageInput,

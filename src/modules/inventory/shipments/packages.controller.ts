@@ -16,6 +16,10 @@ import {
   type CreatePackageInput,
   type UpdatePackageLinesInput,
 } from "./dto/shipments.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const packageIdParams = z.object({ packageId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/packages")
@@ -36,6 +40,7 @@ export class PackagesController {
   @Get(":packageId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
+  @Validate({ params: packageIdParams })
   findOne(
     @Param("packageId", ParseIntPipe) packageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -56,6 +61,7 @@ export class PackagesController {
   @Patch(":packageId/lines")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
+  @Validate({ params: packageIdParams })
   updateLines(
     @Param("packageId", ParseIntPipe) packageId: number,
     @Body(new ZodValidationPipe(updatePackageLinesSchema)) body: UpdatePackageLinesInput,
@@ -68,6 +74,7 @@ export class PackagesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: packageIdParams })
   close(
     @Param("packageId", ParseIntPipe) packageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -79,6 +86,7 @@ export class PackagesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: packageIdParams })
   reopen(
     @Param("packageId", ParseIntPipe) packageId: number,
     @CurrentUser() u: CurrentUserContext,

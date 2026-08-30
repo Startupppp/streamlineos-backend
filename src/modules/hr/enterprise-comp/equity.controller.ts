@@ -19,6 +19,10 @@ import {
   type CreateExerciseInput,
   type ExitTreatmentQuery,
 } from "./dto/enterprise-comp.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const grantIdParams = z.object({ grantId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/enterprise/comp/equity")
@@ -50,6 +54,7 @@ export class EquityController {
   @Get("grants/:grantId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:view")
+  @Validate({ params: grantIdParams })
   getGrant(
     @Param("grantId", ParseIntPipe) grantId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -60,6 +65,7 @@ export class EquityController {
   @Patch("grants/:grantId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:manage")
+  @Validate({ params: grantIdParams })
   updateGrant(
     @Param("grantId", ParseIntPipe) grantId: number,
     @Body(new ZodValidationPipe(updateEquityGrantSchema)) body: UpdateEquityGrantInput,
@@ -71,6 +77,7 @@ export class EquityController {
   @Get("grants/:grantId/vesting-schedule")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:view")
+  @Validate({ params: grantIdParams })
   vestingSchedule(
     @Param("grantId", ParseIntPipe) grantId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -81,6 +88,7 @@ export class EquityController {
   @Get("grants/:grantId/exit-treatment")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:view")
+  @Validate({ params: grantIdParams })
   exitTreatment(
     @Param("grantId", ParseIntPipe) grantId: number,
     @Query(new ZodValidationPipe(exitTreatmentQuerySchema)) query: ExitTreatmentQuery,

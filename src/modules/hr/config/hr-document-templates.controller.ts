@@ -31,6 +31,10 @@ import {
   type UpdateTemplateInput,
 } from "./dto/document-templates.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/documents/templates")
@@ -59,6 +63,7 @@ export class HrDocumentTemplatesController {
 
   @Get(":templateId")
   @RequirePermission("hr:documents:view")
+  @Validate({ params: templateIdParams })
   async getOne(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -70,6 +75,7 @@ export class HrDocumentTemplatesController {
 
   @Get(":templateId/preview")
   @RequirePermission("hr:documents:view")
+  @Validate({ params: templateIdParams })
   async preview(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -81,6 +87,7 @@ export class HrDocumentTemplatesController {
 
   @Get(":templateId/versions")
   @RequirePermission("hr:documents:view")
+  @Validate({ params: templateIdParams })
   async versions(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -92,6 +99,7 @@ export class HrDocumentTemplatesController {
 
   @Patch(":templateId")
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: templateIdParams })
   async setDefault(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(setDefaultTemplateSchema)) body: SetDefaultTemplateInput,
@@ -104,6 +112,7 @@ export class HrDocumentTemplatesController {
 
   @Put(":templateId")
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: templateIdParams })
   async update(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(updateTemplateSchema)) body: UpdateTemplateInput,
@@ -117,6 +126,7 @@ export class HrDocumentTemplatesController {
   @Delete(":templateId")
   @HttpCode(204)
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: templateIdParams })
   async remove(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

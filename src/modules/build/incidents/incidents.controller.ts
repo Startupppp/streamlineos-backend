@@ -29,6 +29,10 @@ import {
   type ListIncidentsQuery,
   type UpdateIncidentInput,
 } from "./dto/incidents.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const incidentIdParams = z.object({ incidentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/incidents")
@@ -48,6 +52,7 @@ export class IncidentsController {
 
   @Get(":incidentId")
   @RequirePermission("build:incidents:view")
+  @Validate({ params: incidentIdParams })
   getIncident(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("incidentId", ParseIntPipe) incidentId: number,
@@ -69,6 +74,7 @@ export class IncidentsController {
 
   @Patch(":incidentId")
   @RequirePermission("build:incidents:manage")
+  @Validate({ params: incidentIdParams })
   updateIncident(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("incidentId", ParseIntPipe) incidentId: number,
@@ -81,6 +87,7 @@ export class IncidentsController {
   @Delete(":incidentId")
   @RequirePermission("build:incidents:manage")
   @HttpCode(204)
+  @Validate({ params: incidentIdParams })
   deleteIncident(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("incidentId", ParseIntPipe) incidentId: number,
@@ -92,6 +99,7 @@ export class IncidentsController {
   @Post(":incidentId/updates")
   @HttpCode(201)
   @RequirePermission("build:incidents:manage")
+  @Validate({ params: incidentIdParams })
   addUpdate(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("incidentId", ParseIntPipe) incidentId: number,

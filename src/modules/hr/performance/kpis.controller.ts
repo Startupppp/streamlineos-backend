@@ -19,6 +19,11 @@ import {
   type UpdateFrameworkInput,
   type CreateCompetencyInput,
 } from "./dto/kpis.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const kpiIdParams = z.object({ kpiId: z.coerce.number().int().positive() }).strict();
+const frameworkIdParams = z.object({ frameworkId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -44,6 +49,7 @@ export class KpisController {
 
   @Patch(":kpiId")
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: kpiIdParams })
   updateKpi(
     @CurrentUser() u: CurrentUserContext,
     @Param("kpiId", ParseIntPipe) kpiId: number,
@@ -55,6 +61,7 @@ export class KpisController {
   @Delete(":kpiId")
   @HttpCode(204)
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: kpiIdParams })
   async deleteKpi(@CurrentUser() u: CurrentUserContext, @Param("kpiId", ParseIntPipe) kpiId: number) {
     await this.service.deleteKpi(u.orgId, kpiId);
   }
@@ -77,6 +84,7 @@ export class KpisController {
 
   @Patch("frameworks/:frameworkId")
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: frameworkIdParams })
   updateFramework(
     @CurrentUser() u: CurrentUserContext,
     @Param("frameworkId", ParseIntPipe) frameworkId: number,
@@ -87,6 +95,7 @@ export class KpisController {
 
   @Get("frameworks/:frameworkId/competencies")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: frameworkIdParams })
   listCompetencies(@Param("frameworkId", ParseIntPipe) frameworkId: number, @CurrentUser() u: CurrentUserContext) {
     return this.service.listCompetencies(u.orgId, frameworkId);
   }
@@ -94,6 +103,7 @@ export class KpisController {
   @Post("frameworks/:frameworkId/competencies")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: frameworkIdParams })
   createCompetency(
     @Param("frameworkId", ParseIntPipe) frameworkId: number,
     @Body(new ZodValidationPipe(createCompetencySchema)) body: CreateCompetencyInput,

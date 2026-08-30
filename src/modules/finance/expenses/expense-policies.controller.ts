@@ -24,6 +24,10 @@ import {
   type CreatePolicyInput,
   type UpdatePolicyInput,
 } from "./dto/finance-expenses.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/expenses/policies")
@@ -49,6 +53,7 @@ export class ExpensePoliciesController {
 
   @Patch(":policyId")
   @RequirePermission("accounting:reimbursements:manage")
+  @Validate({ params: policyIdParams })
   async update(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Body(new ZodValidationPipe(updatePolicySchema)) body: UpdatePolicyInput,
@@ -59,6 +64,7 @@ export class ExpensePoliciesController {
 
   @Delete(":policyId")
   @RequirePermission("accounting:reimbursements:manage")
+  @Validate({ params: policyIdParams })
   async remove(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,

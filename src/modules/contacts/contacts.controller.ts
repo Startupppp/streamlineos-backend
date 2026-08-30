@@ -38,6 +38,10 @@ import {
 } from "./dto/contact.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Deprecated } from "../../common/deprecation/deprecated.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const contactIdParams = z.object({ contactId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("contacts")
@@ -101,6 +105,7 @@ export class ContactsController {
 
   @Get(":contactId")
   @RequirePermission("crm:contacts:view")
+  @Validate({ params: contactIdParams })
   async get(
     @Param("contactId", ParseIntPipe) contactId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -113,6 +118,7 @@ export class ContactsController {
   @Deprecated({ sunset: "2026-10-25", link: "/party/contacts/:partyContactId" })
   @Patch(":contactId")
   @RequirePermission("crm:contacts:manage")
+  @Validate({ params: contactIdParams })
   async update(
     @Param("contactId", ParseIntPipe) contactId: number,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
@@ -127,6 +133,7 @@ export class ContactsController {
   @Delete(":contactId")
   @HttpCode(204)
   @RequirePermission("crm:contacts:manage")
+  @Validate({ params: contactIdParams })
   async remove(
     @Param("contactId", ParseIntPipe) contactId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -136,6 +143,7 @@ export class ContactsController {
 
   @Get(":contactId/vcard")
   @RequirePermission("crm:contacts:view")
+  @Validate({ params: contactIdParams })
   async vcard(
     @Param("contactId", ParseIntPipe) contactId: number,
     @CurrentUser() u: CurrentUserContext,

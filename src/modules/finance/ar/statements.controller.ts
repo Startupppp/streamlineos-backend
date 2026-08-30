@@ -9,6 +9,10 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { StatementsService } from "./statements.service";
 import { customerStatementSchema, type CustomerStatementQuery } from "./dto/finance-ar.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const clientIdParams = z.object({ clientId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/customer-statements")
@@ -18,6 +22,7 @@ export class StatementsController {
 
   @Get(":clientId")
   @RequirePermission("accounting:receivables:read")
+  @Validate({ params: clientIdParams })
   async statement(
     @Param("clientId", ParseIntPipe) clientId: number,
     @Query(new ZodValidationPipe(customerStatementSchema)) query: CustomerStatementQuery,

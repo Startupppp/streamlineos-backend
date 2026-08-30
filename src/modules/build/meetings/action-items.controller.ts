@@ -23,6 +23,10 @@ import {
   type CreateActionItemInput,
   type UpdateActionItemInput,
 } from "./dto/meetings.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const itemIdParams = z.object({ itemId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/meetings/:meetingId/action-items")
@@ -44,6 +48,7 @@ export class ActionItemsController {
 
   @Patch(":itemId")
   @RequirePermission("build:meetings:manage")
+  @Validate({ params: itemIdParams })
   updateItem(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
@@ -57,6 +62,7 @@ export class ActionItemsController {
   @Delete(":itemId")
   @RequirePermission("build:meetings:manage")
   @HttpCode(204)
+  @Validate({ params: itemIdParams })
   deleteItem(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
@@ -69,6 +75,7 @@ export class ActionItemsController {
   @Post(":itemId/convert-to-task")
   @HttpCode(201)
   @RequirePermission("build:meetings:manage")
+  @Validate({ params: itemIdParams })
   convertToTask(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,

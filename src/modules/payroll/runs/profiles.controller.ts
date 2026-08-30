@@ -31,6 +31,11 @@ import {
   type CreateProfileInput,
   type PatchProfileInput,
 } from "./dto/runs.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const employeeUserIdParams = z.object({ employeeUserId: z.string().min(1) }).strict();
+const employeeUserIdprofileIdParams = z.object({ employeeUserId: z.string().min(1), profileId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/employees")
@@ -53,6 +58,7 @@ export class ProfilesController {
 
   @Get(":employeeUserId")
   @RequirePermission("payroll:salaries:view")
+  @Validate({ params: employeeUserIdParams })
   async getOne(
     @Param("employeeUserId") employeeUserId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -65,6 +71,7 @@ export class ProfilesController {
   @Post(":employeeUserId/profiles")
   @HttpCode(201)
   @RequirePermission("payroll:salaries:update")
+  @Validate({ params: employeeUserIdParams })
   async createProfile(
     @Param("employeeUserId") employeeUserId: string,
     @Body(new ZodValidationPipe(createProfileSchema)) body: CreateProfileInput,
@@ -75,6 +82,7 @@ export class ProfilesController {
 
   @Patch(":employeeUserId/profiles/:profileId")
   @RequirePermission("payroll:salaries:update")
+  @Validate({ params: employeeUserIdprofileIdParams })
   async patchProfile(
     @Param("employeeUserId") employeeUserId: string,
     @Param("profileId", ParseIntPipe) profileId: number,
@@ -89,6 +97,7 @@ export class ProfilesController {
 
   @Get(":employeeUserId/history")
   @RequirePermission("payroll:salaries:view")
+  @Validate({ params: employeeUserIdParams })
   async getHistory(
     @Param("employeeUserId") employeeUserId: string,
     @CurrentUser() u: CurrentUserContext,

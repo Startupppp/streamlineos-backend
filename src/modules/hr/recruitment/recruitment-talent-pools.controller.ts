@@ -17,6 +17,11 @@ import {
   type ListPoolMembersQueryInput,
   type UpdateTalentPoolInput,
 } from "./dto/talent-pools.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const poolIdParams = z.object({ poolId: z.coerce.number().int().positive() }).strict();
+const poolIdcandidateIdParams = z.object({ poolId: z.coerce.number().int().positive(), candidateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/talent-pools")
@@ -42,6 +47,7 @@ export class RecruitmentTalentPoolsController {
 
   @Patch(":poolId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: poolIdParams })
   update(
     @Param("poolId", ParseIntPipe) poolId: number,
     @Body(new ZodValidationPipe(updateTalentPoolSchema)) body: UpdateTalentPoolInput,
@@ -53,12 +59,14 @@ export class RecruitmentTalentPoolsController {
   @Delete(":poolId")
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: poolIdParams })
   remove(@Param("poolId", ParseIntPipe) poolId: number, @CurrentUser() u: CurrentUserContext) {
     return this.pools.remove(u.orgId, poolId);
   }
 
   @Get(":poolId/members")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: poolIdParams })
   listMembers(
     @Param("poolId", ParseIntPipe) poolId: number,
     @Query(new ZodValidationPipe(listPoolMembersQuerySchema)) query: ListPoolMembersQueryInput,
@@ -70,6 +78,7 @@ export class RecruitmentTalentPoolsController {
   @Post(":poolId/members")
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: poolIdParams })
   addMember(
     @Param("poolId", ParseIntPipe) poolId: number,
     @Body(new ZodValidationPipe(addPoolMemberSchema)) body: AddPoolMemberInput,
@@ -81,6 +90,7 @@ export class RecruitmentTalentPoolsController {
   @Delete(":poolId/members/:candidateId")
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: poolIdcandidateIdParams })
   async removeMember(
     @Param("poolId", ParseIntPipe) poolId: number,
     @Param("candidateId", ParseIntPipe) candidateId: number,

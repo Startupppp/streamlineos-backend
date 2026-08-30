@@ -29,6 +29,10 @@ import {
   listPageQuerySchema,
   type ListPageQueryInput,
 } from "./dto/payroll.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const fnfIdParams = z.object({ fnfId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("hr/fnf")
@@ -67,6 +71,7 @@ export class FnfController {
 
   @Patch(":fnfId")
   @RequirePermission("hr:exit:manage")
+  @Validate({ params: fnfIdParams })
   async update(
     @Param("fnfId", ParseIntPipe) fnfId: number,
     @Body(new ZodValidationPipe(patchFnfSchema)) body: PatchFnfInput,

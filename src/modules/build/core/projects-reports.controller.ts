@@ -23,6 +23,10 @@ import {
   type CfdQuery,
 } from "./dto/projects.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -41,6 +45,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/analytics")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   getAnalytics(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -50,6 +55,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/burnup")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   burnup(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(burnupQuerySchema)) query: BurnupQuery,
@@ -60,6 +66,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/cfd")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   cfd(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(cfdQuerySchema)) query: CfdQuery,
@@ -70,6 +77,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/critical-path")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   criticalPath(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -79,6 +87,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/velocity")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   velocity(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -88,6 +97,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/cycle-time")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   getCycleTime(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -97,6 +107,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/lead-time")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   getLeadTime(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -107,6 +118,7 @@ export class ProjectsReportsController {
   @Post(":projectId/reports/snapshot")
   @RequirePermission("build:manage")
   @HttpCode(200)
+  @Validate({ params: projectIdParams })
   snapshot(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,

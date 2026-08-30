@@ -29,6 +29,10 @@ import {
   type UpdateProxyInput,
   type ListProxiesInput,
 } from "./delegations.dto";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const proxyIdParams = z.object({ proxyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/governance/delegations")
@@ -66,6 +70,7 @@ export class DelegationsController {
 
   @Patch(":proxyId")
   @RequirePermission("hr:workflows:view")
+  @Validate({ params: proxyIdParams })
   async update(
     @CurrentUser() user: CurrentUserContext,
     @Param("proxyId", ParseIntPipe) proxyId: number,
@@ -78,6 +83,7 @@ export class DelegationsController {
   @Delete(":proxyId")
   @RequirePermission("hr:workflows:view")
   @HttpCode(204)
+  @Validate({ params: proxyIdParams })
   async revoke(
     @CurrentUser() user: CurrentUserContext,
     @Param("proxyId", ParseIntPipe) proxyId: number,

@@ -31,6 +31,9 @@ import {
   type UpdatePolicyInput,
 } from "./dto/hr-policy.schemas";
 import type { PolicyType } from "./hr-policy-types";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
 const activatePolicySchema = z.object({
   force: z.boolean().optional().default(false),
@@ -113,6 +116,7 @@ export class HrPoliciesController {
 
   @Get(":policyId")
   @RequirePermission("hr:policies:view")
+  @Validate({ params: policyIdParams })
   getById(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -122,6 +126,7 @@ export class HrPoliciesController {
 
   @Patch(":policyId")
   @RequirePermission("hr:policies:manage")
+  @Validate({ params: policyIdParams })
   update(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Body(new ZodValidationPipe(updatePolicySchema)) body: UpdatePolicyInput,
@@ -133,6 +138,7 @@ export class HrPoliciesController {
   @Post(":policyId/versions")
   @HttpCode(201)
   @RequirePermission("hr:policies:manage")
+  @Validate({ params: policyIdParams })
   createVersion(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -143,6 +149,7 @@ export class HrPoliciesController {
   @Post(":policyId/activate")
   @HttpCode(200)
   @RequirePermission("hr:policies:manage")
+  @Validate({ params: policyIdParams })
   activate(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Body(new ZodValidationPipe(activatePolicySchema))
@@ -154,6 +161,7 @@ export class HrPoliciesController {
 
   @Get(":policyId/conflicts")
   @RequirePermission("hr:policies:view")
+  @Validate({ params: policyIdParams })
   conflicts(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -164,6 +172,7 @@ export class HrPoliciesController {
   @Post(":policyId/archive")
   @HttpCode(200)
   @RequirePermission("hr:policies:manage")
+  @Validate({ params: policyIdParams })
   archive(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -173,6 +182,7 @@ export class HrPoliciesController {
 
   @Get(":policyId/preview")
   @RequirePermission("hr:policies:view")
+  @Validate({ params: policyIdParams })
   async preview(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Query(new ZodValidationPipe(previewQuerySchema)) query: PreviewQuery,

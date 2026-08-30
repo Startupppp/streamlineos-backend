@@ -31,6 +31,10 @@ import {
   type UpdateHolidayInput,
 } from "./dto/holidays.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const holidayIdParams = z.object({ holidayId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/holidays")
@@ -75,6 +79,7 @@ export class HrHolidaysController {
 
   @Patch(":holidayId")
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: holidayIdParams })
   async update(
     @Param("holidayId", ParseIntPipe) holidayId: number,
     @Body(new ZodValidationPipe(updateHolidaySchema)) body: UpdateHolidayInput,
@@ -88,6 +93,7 @@ export class HrHolidaysController {
   @Delete(":holidayId")
   @HttpCode(204)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: holidayIdParams })
   async remove(
     @Param("holidayId", ParseIntPipe) holidayId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -10,6 +10,10 @@ import { NotificationEventRegistryService } from "./notification-event-registry.
 import { NotificationDispatchService } from "./notification-dispatch.service";
 import { updateEventPolicySchema, emitEventSchema, type UpdateEventPolicyInput, type EmitEventInput } from "./dto/event.schemas";
 import { isNotificationEventKey } from "./notification-events.catalog";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const eventKeyParams = z.object({ eventKey: z.string().min(1) }).strict();
 
 @Controller("notifications/admin/events")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -27,6 +31,7 @@ export class NotificationEventsController {
 
   @Patch(":eventKey")
   @RequirePermission("notifications:events:manage")
+  @Validate({ params: eventKeyParams })
   update(
     @Param("eventKey") eventKey: string,
     @Body(new ZodValidationPipe(updateEventPolicySchema)) body: UpdateEventPolicyInput,

@@ -56,6 +56,9 @@ import {
 } from "../dto/request.schemas";
 import { ToolAccessService } from "../tool-access.service";
 import { AI_EVENT_TIMEZONE } from "../ai-event-timezone";
+import { Validate } from "../../../../common/validation/validate.decorator";
+
+const conversationIdParams = z.object({ conversationId: z.string().min(1) }).strict();
 
 const TICKET_TYPES = ["TASK", "BUG", "STORY", "EPIC", "SUBTASK"] as const;
 const TICKET_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
@@ -153,6 +156,7 @@ export class ChatAssistantController {
 
   @Patch("conversations/:conversationId")
   @RequirePermission("ai:chat:use")
+  @Validate({ params: conversationIdParams })
   async renameConversation(
     @Param("conversationId") conversationIdParam: string,
     @Body() body: unknown,
@@ -167,6 +171,7 @@ export class ChatAssistantController {
 
   @Delete("conversations/:conversationId")
   @RequirePermission("ai:chat:use")
+  @Validate({ params: conversationIdParams })
   async deleteConversation(
     @Param("conversationId") conversationIdParam: string,
     @CurrentUser() u: CurrentUserContext,
@@ -179,6 +184,7 @@ export class ChatAssistantController {
 
   @Get("conversations/:conversationId/messages")
   @RequirePermission("ai:chat:use")
+  @Validate({ params: conversationIdParams })
   async getConversationMessages(
     @Param("conversationId") conversationIdParam: string,
     @Query() query: unknown,

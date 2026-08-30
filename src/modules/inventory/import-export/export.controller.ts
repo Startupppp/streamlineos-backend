@@ -17,6 +17,10 @@ import {
   type CreateExportJobInput,
   type ListJobsQueryInput,
 } from "./dto/import-export.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/export")
@@ -47,6 +51,7 @@ export class ExportController {
   @Get("jobs/:jobId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:export")
+  @Validate({ params: jobIdParams })
   findJob(@Param("jobId", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
     return this.svc.findOne(u.orgId, id);
   }
@@ -54,6 +59,7 @@ export class ExportController {
   @Get("jobs/:jobId/download")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:export")
+  @Validate({ params: jobIdParams })
   download(@Param("jobId", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext, @Res() res: Response) {
     return this.svc.download(u.orgId, id, res);
   }

@@ -26,6 +26,10 @@ import {
   type UpsertPortalInput,
 } from "./dto/jobs.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const platformParams = z.object({ platform: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -53,6 +57,7 @@ export class RecruitmentRecruitersController {
 
   @Post("portals/:platform/sync")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: platformParams })
   syncPortal(
     @Param("platform") platform: string,
     @CurrentUser() u: CurrentUserContext,

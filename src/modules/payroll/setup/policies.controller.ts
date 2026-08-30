@@ -33,6 +33,10 @@ import {
   type CreatePolicyVersionInput,
   type ToggleImpactInput,
 } from "./dto/setup.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/policies")
@@ -76,6 +80,7 @@ export class PayrollPoliciesController {
 
   @Patch(":policyId")
   @RequirePermission("payroll:policies:manage")
+  @Validate({ params: policyIdParams })
   async update(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Body(new ZodValidationPipe(updatePolicySchema)) body: UpdatePolicyInput,
@@ -87,6 +92,7 @@ export class PayrollPoliciesController {
   @Post(":policyId/activate")
   @HttpCode(200)
   @RequirePermission("payroll:policies:manage")
+  @Validate({ params: policyIdParams })
   async activate(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Body(new ZodValidationPipe(activatePolicySchema)) body: ActivatePolicyInput,
@@ -97,6 +103,7 @@ export class PayrollPoliciesController {
 
   @Get(":policyId/versions")
   @RequirePermission("payroll:policies:view")
+  @Validate({ params: policyIdParams })
   async listVersions(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -107,6 +114,7 @@ export class PayrollPoliciesController {
   @Post(":policyId/versions")
   @HttpCode(201)
   @RequirePermission("payroll:policies:manage")
+  @Validate({ params: policyIdParams })
   async createVersion(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Body(new ZodValidationPipe(createPolicyVersionSchema)) body: CreatePolicyVersionInput,

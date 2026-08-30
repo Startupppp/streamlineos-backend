@@ -20,6 +20,10 @@ import {
   type GeneratePoInput,
   type SuggestionsQueryInput,
 } from "./dto/replenishment.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/replenishment")
@@ -50,6 +54,7 @@ export class InvReplenishmentController {
   @Patch("rules/:ruleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Validate({ params: ruleIdParams })
   updateRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(updateRuleSchema)) body: UpdateRuleInput,
@@ -62,6 +67,7 @@ export class InvReplenishmentController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: ruleIdParams })
   deleteRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,

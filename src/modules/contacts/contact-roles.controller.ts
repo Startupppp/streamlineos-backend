@@ -28,6 +28,11 @@ import {
   type MergeContactsInput,
   type DuplicatesQueryInput,
 } from "./dto/contact-roles.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const contactIdParams = z.object({ contactId: z.coerce.number().int().positive() }).strict();
+const contactIdroleIdParams = z.object({ contactId: z.coerce.number().int().positive(), roleId: z.string().min(1) }).strict();
 
 @RequireModule("crm")
 @Controller("contacts")
@@ -56,6 +61,7 @@ export class ContactRolesController {
 
   @Get(":contactId/roles")
   @RequirePermission("crm:contacts:view")
+  @Validate({ params: contactIdParams })
   listRoles(
     @Param("contactId", ParseIntPipe) contactId: number,
     @Query(new ZodValidationPipe(contactRoleListSchema)) query: ContactRoleListInput,
@@ -67,6 +73,7 @@ export class ContactRolesController {
   @Post(":contactId/roles")
   @HttpCode(201)
   @RequirePermission("crm:contacts:manage")
+  @Validate({ params: contactIdParams })
   addRole(
     @Param("contactId", ParseIntPipe) contactId: number,
     @Body(new ZodValidationPipe(contactRoleCreateSchema)) body: ContactRoleCreateInput,
@@ -78,6 +85,7 @@ export class ContactRolesController {
   @Delete(":contactId/roles/:roleId")
   @HttpCode(204)
   @RequirePermission("crm:contacts:manage")
+  @Validate({ params: contactIdroleIdParams })
   async removeRole(
     @Param("contactId", ParseIntPipe) contactId: number,
     @Param("roleId") roleId: string,

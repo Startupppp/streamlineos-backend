@@ -49,6 +49,13 @@ import {
 } from "./dto/sourcing.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const referralIdParams = z.object({ referralId: z.coerce.number().int().positive() }).strict();
+const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
+const requestIdParams = z.object({ requestId: z.coerce.number().int().positive() }).strict();
+const referrerIdParams = z.object({ referrerId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -80,6 +87,7 @@ export class RecruitmentSourcingController {
 
   @Patch("referrals/:referralId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: referralIdParams })
   updateReferral(
     @Param("referralId", ParseIntPipe) referralId: number,
     @Body(new ZodValidationPipe(updateReferralStatusSchema)) body: UpdateReferralStatusInput,
@@ -103,6 +111,7 @@ export class RecruitmentSourcingController {
 
   @Patch("vendors/:vendorId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: vendorIdParams })
   updateVendor(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @Body(new ZodValidationPipe(updateVendorSchema)) body: UpdateVendorInput,
@@ -114,6 +123,7 @@ export class RecruitmentSourcingController {
   @Delete("vendors/:vendorId")
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: vendorIdParams })
   async deleteVendor(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
     await this.sourcing.deleteVendor(u.orgId, vendorId);
   }
@@ -121,12 +131,14 @@ export class RecruitmentSourcingController {
   @Post("vendors/:vendorId/portal-link")
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: vendorIdParams })
   generateVendorPortalLink(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
     return this.sourcing.generateVendorPortalLink(u.orgId, vendorId);
   }
 
   @Get("vendors/:vendorId/submissions")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: vendorIdParams })
   async listSubmissions(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
     const canViewFinancials =
       u.isOrgOwner || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:employees:manage");
@@ -136,6 +148,7 @@ export class RecruitmentSourcingController {
   @Post("vendors/:vendorId/submissions")
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: vendorIdParams })
   createSubmission(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @Body(new ZodValidationPipe(createSubmissionSchema)) body: CreateSubmissionInput,
@@ -146,6 +159,7 @@ export class RecruitmentSourcingController {
 
   @Patch("vendors/:vendorId/submissions")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: vendorIdParams })
   updateSubmission(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @Query(new ZodValidationPipe(submissionIdQuerySchema)) query: SubmissionIdQueryInput,
@@ -178,6 +192,7 @@ export class RecruitmentSourcingController {
 
   @Patch("headcount/:requestId")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: requestIdParams })
   updateHeadcount(
     @Param("requestId", ParseIntPipe) requestId: number,
     @Body(new ZodValidationPipe(updateHeadcountSchema)) body: UpdateHeadcountInput,
@@ -189,6 +204,7 @@ export class RecruitmentSourcingController {
   @Post("headcount/:requestId/approve")
   @Idempotent("hr.headcount.approve")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: requestIdParams })
   approveHeadcount(@Param("requestId", ParseIntPipe) requestId: number, @CurrentUser() u: CurrentUserContext) {
     return this.sourcing.approveHeadcount(u.orgId, u.userId, requestId);
   }
@@ -196,6 +212,7 @@ export class RecruitmentSourcingController {
   @Post("headcount/:requestId/reject")
   @Idempotent("hr.headcount.reject")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: requestIdParams })
   rejectHeadcount(
     @Param("requestId", ParseIntPipe) requestId: number,
     @Body(new ZodValidationPipe(rejectHeadcountSchema)) body: RejectHeadcountInput,
@@ -207,6 +224,7 @@ export class RecruitmentSourcingController {
   @Post("headcount/:requestId/create-job")
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: requestIdParams })
   createJobFromHeadcount(@Param("requestId", ParseIntPipe) requestId: number, @CurrentUser() u: CurrentUserContext) {
     return this.sourcing.createJobFromHeadcount(u.orgId, u.userId, requestId);
   }
@@ -219,6 +237,7 @@ export class RecruitmentSourcingController {
 
   @Patch("external-referrals/:referralId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: referralIdParams })
   updateExternalReferral(
     @Param("referralId", ParseIntPipe) referralId: number,
     @Body(new ZodValidationPipe(updateExternalReferralSchema)) body: UpdateExternalReferralInput,
@@ -235,6 +254,7 @@ export class RecruitmentSourcingController {
 
   @Patch("external-referrers/:referrerId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: referrerIdParams })
   updateExternalReferrerStatus(
     @Param("referrerId", ParseIntPipe) referrerId: number,
     @Body(new ZodValidationPipe(updateExternalReferrerStatusSchema)) body: UpdateExternalReferrerStatusInput,

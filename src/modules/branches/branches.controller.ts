@@ -22,6 +22,10 @@ import {
   type CreateBranchInput,
   type UpdateBranchInput,
 } from "./dto/branches.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const branchIdParams = z.object({ branchId: z.string().min(1) }).strict();
 
 @Controller("branches")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -36,6 +40,7 @@ export class BranchesController {
 
   @Get(":branchId")
   @RequirePermission("branch:view")
+  @Validate({ params: branchIdParams })
   async getOne(
     @Param("branchId") branchId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -56,6 +61,7 @@ export class BranchesController {
 
   @Patch(":branchId")
   @RequirePermission("branch:update")
+  @Validate({ params: branchIdParams })
   async update(
     @Param("branchId") branchId: string,
     @Body(new ZodValidationPipe(updateBranchSchema)) body: UpdateBranchInput,
@@ -68,6 +74,7 @@ export class BranchesController {
 
   @Delete(":branchId")
   @RequirePermission("branch:delete")
+  @Validate({ params: branchIdParams })
   async remove(
     @Param("branchId") branchId: string,
     @CurrentUser() u: CurrentUserContext,

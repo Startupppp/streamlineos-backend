@@ -26,6 +26,10 @@ import {
   type CreateBlackoutInput,
 } from "./dto/leave-blackout.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const blackoutIdParams = z.object({ blackoutId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/leaves/blackout")
@@ -56,6 +60,7 @@ export class HrLeaveBlackoutController {
 
   @Delete(":blackoutId")
   @HttpCode(204)
+  @Validate({ params: blackoutIdParams })
   async remove(
     @Param("blackoutId", ParseIntPipe) blackoutId: number,
     @CurrentUser() u: CurrentUserContext,

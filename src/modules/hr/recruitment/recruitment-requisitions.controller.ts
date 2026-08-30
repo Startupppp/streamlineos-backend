@@ -18,6 +18,10 @@ import {
   type UpdateRequisitionInput,
   type RejectRequisitionInput,
 } from "./dto/requisitions.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const requisitionIdParams = z.object({ requisitionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -47,6 +51,7 @@ export class RecruitmentRequisitionsController {
   @Patch(":requisitionId/submit")
   @Idempotent("hr.requisition.submit")
   @RequirePermission("hr:requisitions:manage")
+  @Validate({ params: requisitionIdParams })
   submit(@CurrentUser() u: CurrentUserContext, @Param("requisitionId", ParseIntPipe) requisitionId: number) {
     return this.service.submit(u.orgId, requisitionId);
   }
@@ -54,6 +59,7 @@ export class RecruitmentRequisitionsController {
   @Patch(":requisitionId/approve")
   @Idempotent("hr.requisition.approve")
   @RequirePermission("hr:requisitions:manage")
+  @Validate({ params: requisitionIdParams })
   approve(@CurrentUser() u: CurrentUserContext, @Param("requisitionId", ParseIntPipe) requisitionId: number) {
     return this.service.approve(u.orgId, requisitionId, u.userId);
   }
@@ -61,6 +67,7 @@ export class RecruitmentRequisitionsController {
   @Patch(":requisitionId/reject")
   @Idempotent("hr.requisition.reject")
   @RequirePermission("hr:requisitions:manage")
+  @Validate({ params: requisitionIdParams })
   reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("requisitionId", ParseIntPipe) requisitionId: number,
@@ -72,12 +79,14 @@ export class RecruitmentRequisitionsController {
   @Post(":requisitionId/create-job")
   @HttpCode(201)
   @RequirePermission("hr:requisitions:manage")
+  @Validate({ params: requisitionIdParams })
   createJob(@CurrentUser() u: CurrentUserContext, @Param("requisitionId", ParseIntPipe) requisitionId: number) {
     return this.service.createJobFromRequisition(u.orgId, u.userId, requisitionId);
   }
 
   @Patch(":requisitionId")
   @RequirePermission("hr:requisitions:manage")
+  @Validate({ params: requisitionIdParams })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("requisitionId", ParseIntPipe) requisitionId: number,

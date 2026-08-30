@@ -16,6 +16,10 @@ import {
   type ListCreditNotesQuery,
   type ApplyCreditNoteInput,
 } from "./dto/finance-ar.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const creditNoteIdParams = z.object({ creditNoteId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/credit-notes")
@@ -45,6 +49,7 @@ export class CreditNotesController {
 
   @Get(":creditNoteId")
   @RequirePermission("accounting:credit-notes:read")
+  @Validate({ params: creditNoteIdParams })
   get(
     @Param("creditNoteId", ParseIntPipe) creditNoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -56,6 +61,7 @@ export class CreditNotesController {
   @HttpCode(200)
   @RequirePermission("accounting:credit-notes:manage")
   @Idempotent("accounting.credit-note.post")
+  @Validate({ params: creditNoteIdParams })
   postNote(
     @Param("creditNoteId", ParseIntPipe) creditNoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -67,6 +73,7 @@ export class CreditNotesController {
   @HttpCode(200)
   @RequirePermission("accounting:credit-notes:manage")
   @Idempotent("accounting.credit-note.apply")
+  @Validate({ params: creditNoteIdParams })
   apply(
     @Param("creditNoteId", ParseIntPipe) creditNoteId: number,
     @Body(new ZodValidationPipe(applyCreditNoteSchema)) body: ApplyCreditNoteInput,

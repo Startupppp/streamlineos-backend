@@ -28,6 +28,9 @@ import {
   type UpdateWorkAuthInput,
   type ListWorkAuthInput,
 } from "./dto/hr-global.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const authIdParams = z.object({ authId: z.coerce.number().int().positive() }).strict();
 
 const daysQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(3650).default(30) });
 
@@ -60,6 +63,7 @@ export class WorkAuthorizationsController {
   @Get(":authId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
+  @Validate({ params: authIdParams })
   getOne(
     @Param("authId", ParseIntPipe) authId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -81,6 +85,7 @@ export class WorkAuthorizationsController {
   @Patch(":authId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
+  @Validate({ params: authIdParams })
   update(
     @Param("authId", ParseIntPipe) authId: number,
     @Body(new ZodValidationPipe(updateWorkAuthSchema)) body: UpdateWorkAuthInput,
@@ -92,6 +97,7 @@ export class WorkAuthorizationsController {
   @Delete(":authId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
+  @Validate({ params: authIdParams })
   remove(
     @Param("authId", ParseIntPipe) authId: number,
     @CurrentUser() u: CurrentUserContext,

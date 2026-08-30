@@ -37,6 +37,10 @@ import {
   type OrgDuplicateCheckInput,
 } from "./dto/organizations.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const organizationIdParams = z.object({ organizationId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("crm/organizations")
@@ -102,6 +106,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId")
   @RequirePermission("crm:organizations:view")
+  @Validate({ params: organizationIdParams })
   async getOne(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -113,6 +118,7 @@ export class CrmOrganizationsController {
 
   @Patch(":organizationId")
   @RequirePermission("crm:organizations:manage")
+  @Validate({ params: organizationIdParams })
   async update(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @Body(new ZodValidationPipe(organizationUpdateSchema)) body: OrganizationUpdateInput,
@@ -136,6 +142,7 @@ export class CrmOrganizationsController {
   @Delete(":organizationId")
   @HttpCode(204)
   @RequirePermission("crm:organizations:manage")
+  @Validate({ params: organizationIdParams })
   async remove(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -146,6 +153,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId/hierarchy")
   @RequirePermission("crm:organizations:view")
+  @Validate({ params: organizationIdParams })
   async hierarchy(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -157,6 +165,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId/related-leads")
   @RequirePermission("crm:organizations:view")
+  @Validate({ params: organizationIdParams })
   async relatedLeads(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -168,6 +177,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId/roll-up")
   @RequirePermission("crm:organizations:view")
+  @Validate({ params: organizationIdParams })
   rollUp(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -177,6 +187,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId/timeline")
   @RequirePermission("crm:organizations:view")
+  @Validate({ params: organizationIdParams })
   timeline(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,

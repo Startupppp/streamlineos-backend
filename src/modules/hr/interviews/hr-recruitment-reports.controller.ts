@@ -23,6 +23,10 @@ import {
   type CreateScheduledReportInput,
   type GenerateReportInput,
 } from "./dto/hr-interviews.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const reportIdParams = z.object({ reportId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -58,6 +62,7 @@ export class HrRecruitmentReportsController {
 
   @Delete("reports/scheduled/:reportId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: reportIdParams })
   deleteScheduled(
     @Param("reportId", ParseIntPipe) reportId: number,
     @CurrentUser() u: CurrentUserContext,

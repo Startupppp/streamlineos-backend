@@ -6,6 +6,10 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { enrichUserAgent } from "../../common/http/parse-user-agent";
 import { SessionsService } from "./sessions.service";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const sessionIdParams = z.object({ sessionId: z.string().min(1) }).strict();
 
 function headerString(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
@@ -38,6 +42,7 @@ export class SessionsController {
 
   @Delete(":sessionId")
   @Universal()
+  @Validate({ params: sessionIdParams })
   revokeOne(
     @Param("sessionId") sessionId: string,
     @CurrentUser() u: CurrentUserContext,

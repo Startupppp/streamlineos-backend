@@ -31,6 +31,11 @@ import {
   type LogsInput,
   type UpdateInput,
 } from "./dto/webhook.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const webhookIdParams = z.object({ webhookId: z.coerce.number().int().positive() }).strict();
+const webhookIdlogIdParams = z.object({ webhookId: z.coerce.number().int().positive(), logId: z.coerce.number().int().positive() }).strict();
 
 @Controller("webhooks")
 @UseGuards(JwtAuthGuard)
@@ -65,6 +70,7 @@ export class WebhooksController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
+  @Validate({ params: webhookIdParams })
   rotateSecret(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -75,6 +81,7 @@ export class WebhooksController {
   @Get(":webhookId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
+  @Validate({ params: webhookIdParams })
   async get(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +94,7 @@ export class WebhooksController {
   @Patch(":webhookId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
+  @Validate({ params: webhookIdParams })
   async update(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
@@ -100,6 +108,7 @@ export class WebhooksController {
   @Delete(":webhookId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
+  @Validate({ params: webhookIdParams })
   async remove(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -112,6 +121,7 @@ export class WebhooksController {
   @Get(":webhookId/logs")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
+  @Validate({ params: webhookIdParams })
   async listLogs(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @Query(new ZodValidationPipe(logsSchema)) filters: LogsInput,
@@ -127,6 +137,7 @@ export class WebhooksController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   @Idempotent("webhook.delivery.retry")
+  @Validate({ params: webhookIdlogIdParams })
   async retryLog(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @Param("logId", ParseIntPipe) logId: number,

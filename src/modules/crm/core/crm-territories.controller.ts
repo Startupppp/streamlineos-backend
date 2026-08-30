@@ -30,6 +30,10 @@ import {
   type TerritoryUpdateInput,
 } from "./dto/territories.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const territoryIdParams = z.object({ territoryId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("crm/territories")
@@ -67,6 +71,7 @@ export class CrmTerritoriesController {
 
   @Patch(":territoryId")
   @RequirePermission("crm:territories:manage")
+  @Validate({ params: territoryIdParams })
   async update(
     @Param("territoryId", ParseIntPipe) territoryId: number,
     @Body(new ZodValidationPipe(territoryUpdateSchema)) body: TerritoryUpdateInput,
@@ -80,6 +85,7 @@ export class CrmTerritoriesController {
   @Delete(":territoryId")
   @HttpCode(204)
   @RequirePermission("crm:territories:manage")
+  @Validate({ params: territoryIdParams })
   async remove(
     @Param("territoryId", ParseIntPipe) territoryId: number,
     @CurrentUser() u: CurrentUserContext,

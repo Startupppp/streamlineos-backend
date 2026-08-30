@@ -30,6 +30,10 @@ import {
   type ListImportJobsInput,
 } from "./dto/import-job.dto";
 import { z } from "zod";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const jobIdParams = z.object({ jobId: z.string().min(1) }).strict();
+const entityParams = z.object({ entity: z.string().min(1) }).strict();
 
 const entityParamSchema = z.enum(hrImportEntityValues);
 
@@ -63,6 +67,7 @@ export class HrImportController {
   @Get("hr/import/jobs/:jobId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
+  @Validate({ params: jobIdParams })
   getJob(
     @Param("jobId") jobId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -73,6 +78,7 @@ export class HrImportController {
   @Post("hr/import/jobs/:jobId/commit")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
+  @Validate({ params: jobIdParams })
   commitJob(
     @Param("jobId") jobId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -83,6 +89,7 @@ export class HrImportController {
   @Post("hr/import/jobs/:jobId/rollback")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
+  @Validate({ params: jobIdParams })
   rollbackJob(
     @Param("jobId") jobId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -93,6 +100,7 @@ export class HrImportController {
   @Get("hr/export/:entity")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:export:manage")
+  @Validate({ params: entityParams })
   async exportEntity(
     @Param("entity") entity: string,
     @Query(new ZodValidationPipe(exportQuerySchema)) query: ExportQueryInput,

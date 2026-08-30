@@ -20,6 +20,12 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { ManagerInboxService } from "./manager-inbox.service";
 import { TeamRewardsService } from "./team-rewards.service";
 import { managerRejectSchema, type ManagerReject } from "./dto/insights.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const userIdParams = z.object({ userId: z.string().min(1) }).strict();
+const reimbursementIdParams = z.object({ reimbursementId: z.coerce.number().int().positive() }).strict();
+const loanIdParams = z.object({ loanId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/manager")
@@ -49,6 +55,7 @@ export class ManagerInboxController {
   /** Full total-rewards statement for one direct report. */
   @Get("team-rewards/:userId")
   @RequirePermission("self:payroll")
+  @Validate({ params: userIdParams })
   getReportRewards(
     @CurrentUser() u: CurrentUserContext,
     @Param("userId") userId: string,
@@ -60,6 +67,7 @@ export class ManagerInboxController {
   @Idempotent("payroll.reimbursement.approve")
   @HttpCode(200)
   @RequirePermission("self:payroll")
+  @Validate({ params: reimbursementIdParams })
   approveReimbursement(
     @CurrentUser() u: CurrentUserContext,
     @Param("reimbursementId", ParseIntPipe) reimbursementId: number,
@@ -71,6 +79,7 @@ export class ManagerInboxController {
   @Idempotent("payroll.reimbursement.reject")
   @HttpCode(200)
   @RequirePermission("self:payroll")
+  @Validate({ params: reimbursementIdParams })
   rejectReimbursement(
     @CurrentUser() u: CurrentUserContext,
     @Param("reimbursementId", ParseIntPipe) reimbursementId: number,
@@ -88,6 +97,7 @@ export class ManagerInboxController {
   @Idempotent("payroll.loan.approve")
   @HttpCode(200)
   @RequirePermission("self:payroll")
+  @Validate({ params: loanIdParams })
   approveLoan(
     @CurrentUser() u: CurrentUserContext,
     @Param("loanId", ParseIntPipe) loanId: number,
@@ -99,6 +109,7 @@ export class ManagerInboxController {
   @Idempotent("payroll.loan.reject")
   @HttpCode(200)
   @RequirePermission("self:payroll")
+  @Validate({ params: loanIdParams })
   rejectLoan(
     @CurrentUser() u: CurrentUserContext,
     @Param("loanId", ParseIntPipe) loanId: number,

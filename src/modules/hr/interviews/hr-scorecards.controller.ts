@@ -27,6 +27,10 @@ import {
   type ScorecardAnalyticsQueryInput,
   type UpdateScorecardTemplateInput,
 } from "./dto/hr-interviews.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -52,6 +56,7 @@ export class HrScorecardsController {
 
   @Patch("scorecard-templates/:templateId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: templateIdParams })
   updateTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(updateScorecardTemplateSchema)) body: UpdateScorecardTemplateInput,
@@ -62,6 +67,7 @@ export class HrScorecardsController {
 
   @Delete("scorecard-templates/:templateId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: templateIdParams })
   deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -38,6 +38,12 @@ import {
   type ImproveDescriptionBodyInput,
   type DraftTicketBodyInput,
 } from "../dto/ticket-ai.schemas";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.string().min(1) }).strict();
+const projectIdticketIdParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1) }).strict();
+const projectIdmeetingIdParams = z.object({ projectId: z.string().min(1), meetingId: z.string().min(1) }).strict();
 
 function parsePositiveInt(raw: string, label: string): number {
   const id = parseInt(raw, 10);
@@ -69,6 +75,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/summary")
+  @Validate({ params: projectIdParams })
   async summary(@Param("projectId") rawId: string, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
     this.ensureLlm();
@@ -76,6 +83,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/risks")
+  @Validate({ params: projectIdParams })
   async risks(@Param("projectId") rawId: string, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
     this.ensureLlm();
@@ -83,6 +91,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/client-update")
+  @Validate({ params: projectIdParams })
   async clientUpdate(@Param("projectId") rawId: string, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
     this.ensureLlm();
@@ -90,6 +99,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/plan")
+  @Validate({ params: projectIdParams })
   async plan(
     @Param("projectId") rawId: string,
     @Body(new ZodValidationPipe(planBodySchema)) body: PlanBodyInput,
@@ -101,6 +111,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/extract-tasks")
+  @Validate({ params: projectIdParams })
   async extractTasks(
     @Param("projectId") rawId: string,
     @Body(new ZodValidationPipe(extractBodySchema)) body: ExtractBodyInput,
@@ -112,6 +123,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/ask")
+  @Validate({ params: projectIdParams })
   async ask(
     @Param("projectId") rawId: string,
     @Body(new ZodValidationPipe(askBodySchema)) body: AskBodyInput,
@@ -123,6 +135,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/tickets/draft/suggest-title")
+  @Validate({ params: projectIdParams })
   async suggestDraftTitle(
     @Param("projectId") rawPid: string,
     @Body(new ZodValidationPipe(draftTicketBodySchema)) body: DraftTicketBodyInput,
@@ -139,6 +152,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/tickets/draft/improve-description")
+  @Validate({ params: projectIdParams })
   async improveDraftDescription(
     @Param("projectId") rawPid: string,
     @Body(new ZodValidationPipe(draftTicketBodySchema)) body: DraftTicketBodyInput,
@@ -155,6 +169,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/tickets/draft/suggest-fields")
+  @Validate({ params: projectIdParams })
   async suggestDraftFields(
     @Param("projectId") rawPid: string,
     @Body(new ZodValidationPipe(draftTicketBodySchema)) body: DraftTicketBodyInput,
@@ -171,6 +186,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/summarize")
+  @Validate({ params: projectIdticketIdParams })
   async summarizeTicket(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -182,6 +198,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/summarize-comments")
+  @Validate({ params: projectIdticketIdParams })
   async summarizeTicketComments(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -198,6 +215,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/improve-description")
+  @Validate({ params: projectIdticketIdParams })
   async improveTicketDescription(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -210,6 +228,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/suggest-subtasks")
+  @Validate({ params: projectIdticketIdParams })
   async suggestTicketSubtasks(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -221,6 +240,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/generate-checklist")
+  @Validate({ params: projectIdticketIdParams })
   async generateTicketChecklist(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -237,6 +257,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/weekly-update")
+  @Validate({ params: projectIdParams })
   async weeklyUpdate(
     @Param("projectId") rawId: string,
     @Body(new ZodValidationPipe(weeklyUpdateBodySchema)) body: WeeklyUpdateBodyInput,
@@ -248,6 +269,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/meetings/:meetingId/extract-actions")
+  @Validate({ params: projectIdmeetingIdParams })
   async extractMeetingActions(
     @Param("projectId") rawPid: string,
     @Param("meetingId") rawMid: string,
@@ -259,6 +281,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/change-impact")
+  @Validate({ params: projectIdParams })
   async changeImpact(
     @Param("projectId") rawId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -269,6 +292,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/handoff")
+  @Validate({ params: projectIdticketIdParams })
   async ticketHandoff(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,

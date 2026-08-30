@@ -27,6 +27,10 @@ import {
   type TestCaseListQuery,
   type UpdateTestCaseInput,
 } from "./dto/qa.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const caseIdParams = z.object({ caseId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/test-cases")
@@ -46,6 +50,7 @@ export class TestCasesController {
 
   @Get(":caseId")
   @RequirePermission("build:qa:view")
+  @Validate({ params: caseIdParams })
   getCase(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -67,6 +72,7 @@ export class TestCasesController {
 
   @Patch(":caseId")
   @RequirePermission("build:qa:manage")
+  @Validate({ params: caseIdParams })
   updateCase(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -79,6 +85,7 @@ export class TestCasesController {
   @Delete(":caseId")
   @RequirePermission("build:qa:manage")
   @HttpCode(204)
+  @Validate({ params: caseIdParams })
   deleteCase(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("caseId", ParseIntPipe) caseId: number,

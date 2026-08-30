@@ -30,6 +30,10 @@ import type {
   ListPublicationsQueryInput,
   RetryPublicationsInput,
 } from "./dto/channels.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/channels")
@@ -57,6 +61,7 @@ export class ChannelsController {
   @Patch(":channelId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
+  @Validate({ params: channelIdParams })
   update(
     @Param("channelId", ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(updateChannelSchema)) body: UpdateChannelInput,
@@ -68,6 +73,7 @@ export class ChannelsController {
   @Post(":channelId/sync-stock")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
+  @Validate({ params: channelIdParams })
   syncStock(
     @Param("channelId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,
@@ -78,6 +84,7 @@ export class ChannelsController {
   @Get(":channelId/publications")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
+  @Validate({ params: channelIdParams })
   listPublications(
     @Param("channelId", ParseIntPipe) id: number,
     @Query(new ZodValidationPipe(listPublicationsQuerySchema)) q: ListPublicationsQueryInput,
@@ -89,6 +96,7 @@ export class ChannelsController {
   @Post(":channelId/publications/retry")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
+  @Validate({ params: channelIdParams })
   retryPublications(
     @Param("channelId", ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(retryPublicationsSchema)) body: RetryPublicationsInput,

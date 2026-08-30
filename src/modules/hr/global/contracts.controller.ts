@@ -32,6 +32,9 @@ import {
   type EndContractInput,
   type ConvertToEmployeeInput,
 } from "./dto/hr-global.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const contractIdParams = z.object({ contractId: z.coerce.number().int().positive() }).strict();
 
 const daysQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(3650).default(30) });
 
@@ -64,6 +67,7 @@ export class ContractsController {
   @Get(":contractId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:view")
+  @Validate({ params: contractIdParams })
   getOne(
     @Param("contractId", ParseIntPipe) contractId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -85,6 +89,7 @@ export class ContractsController {
   @Patch(":contractId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
+  @Validate({ params: contractIdParams })
   update(
     @Param("contractId", ParseIntPipe) contractId: number,
     @Body(new ZodValidationPipe(updateContractSchema)) body: UpdateContractInput,
@@ -97,6 +102,7 @@ export class ContractsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
   @HttpCode(200)
+  @Validate({ params: contractIdParams })
   endContract(
     @Param("contractId", ParseIntPipe) contractId: number,
     @Body(new ZodValidationPipe(endContractSchema)) body: EndContractInput,
@@ -109,6 +115,7 @@ export class ContractsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
   @HttpCode(200)
+  @Validate({ params: contractIdParams })
   convertToEmployee(
     @Param("contractId", ParseIntPipe) contractId: number,
     @Body(new ZodValidationPipe(convertToEmployeeSchema)) body: ConvertToEmployeeInput,
@@ -120,6 +127,7 @@ export class ContractsController {
   @Get(":contractId/internship-certificate")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:view")
+  @Validate({ params: contractIdParams })
   internshipCertificate(
     @Param("contractId", ParseIntPipe) contractId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -130,6 +138,7 @@ export class ContractsController {
   @Delete(":contractId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
+  @Validate({ params: contractIdParams })
   remove(
     @Param("contractId", ParseIntPipe) contractId: number,
     @CurrentUser() u: CurrentUserContext,

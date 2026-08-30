@@ -45,6 +45,11 @@ import {
 } from "./dto/candidate-records.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const checkIdParams = z.object({ checkId: z.coerce.number().int().positive() }).strict();
+const documentIdParams = z.object({ documentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/candidates/:candidateId")
@@ -206,6 +211,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Patch("reference-checks/:checkId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: checkIdParams })
   updateReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("checkId", ParseIntPipe) checkId: number,
@@ -224,6 +230,7 @@ export class RecruitmentCandidateRecordsController {
   @Delete("reference-checks/:checkId")
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: checkIdParams })
   async deleteReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("checkId", ParseIntPipe) checkId: number,
@@ -255,6 +262,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("documents/:documentId/view")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: documentIdParams })
   async viewDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,
@@ -300,6 +308,7 @@ export class RecruitmentCandidateRecordsController {
   @Delete("vault/:documentId")
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: documentIdParams })
   async deleteVaultDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,

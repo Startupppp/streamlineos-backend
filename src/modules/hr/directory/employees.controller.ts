@@ -51,6 +51,10 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const employeeIdParams = z.object({ employeeId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/employees")
@@ -205,6 +209,7 @@ export class EmployeesController {
 
   @Get(":employeeId/reports-to-me")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: employeeIdParams })
   async reportsToMe(
     @Param("employeeId") employeeId: string,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -217,6 +222,7 @@ export class EmployeesController {
 
   @Get(":employeeId/manager-scorecard")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: employeeIdParams })
   async managerScorecard(
     @Param("employeeId") employeeId: string,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -229,6 +235,7 @@ export class EmployeesController {
 
   @Get(":employeeId/profile-pdf")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: employeeIdParams })
   async profilePdf(
     @Param("employeeId") employeeId: string,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -255,6 +262,7 @@ export class EmployeesController {
 
   @Get(":employeeId")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: employeeIdParams })
   async getEmployeeDetail(
     @Param("employeeId") employeeId: string,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -272,6 +280,7 @@ export class EmployeesController {
 
   @Patch(":employeeId")
   @RequirePermission("hr:employees:update")
+  @Validate({ params: employeeIdParams })
   updateEmployee(
     @Param("employeeId") employeeId: string,
     @Body(new ZodValidationPipe(updateEmployeeSchema)) body: UpdateEmployeeInput,

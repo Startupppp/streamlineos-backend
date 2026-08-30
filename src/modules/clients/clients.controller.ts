@@ -54,6 +54,13 @@ import {
 } from "./dto/clients.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Deprecated } from "../../common/deprecation/deprecated.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const accountIdParams = z.object({ accountId: z.coerce.number().int().positive() }).strict();
+const oppIdParams = z.object({ oppId: z.coerce.number().int().positive() }).strict();
+const itemIdParams = z.object({ itemId: z.coerce.number().int().positive() }).strict();
+const clientIdParams = z.object({ clientId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("clients")
@@ -137,6 +144,7 @@ export class ClientsController {
 
   @Patch("renewals/:accountId")
   @RequirePermission("crm:clients:update")
+  @Validate({ params: accountIdParams })
   async updateRenewal(
     @Param("accountId", ParseIntPipe) accountId: number,
     @Body(new ZodValidationPipe(updateRenewalSchema)) body: UpdateRenewalInput,
@@ -170,6 +178,7 @@ export class ClientsController {
 
   @Patch("opportunities/:oppId")
   @RequirePermission("crm:clients:update")
+  @Validate({ params: oppIdParams })
   async updateOpportunity(
     @Param("oppId", ParseIntPipe) oppId: number,
     @Body(new ZodValidationPipe(updateOpportunitySchema)) body: UpdateOpportunityInput,
@@ -183,6 +192,7 @@ export class ClientsController {
   @Delete("opportunities/:oppId")
   @HttpCode(204)
   @RequirePermission("crm:clients:update")
+  @Validate({ params: oppIdParams })
   async deleteOpportunity(
     @Param("oppId", ParseIntPipe) oppId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -212,6 +222,7 @@ export class ClientsController {
 
   @Patch("onboarding/items/:itemId")
   @RequirePermission("crm:clients:update")
+  @Validate({ params: itemIdParams })
   async updateOnboardingItem(
     @Param("itemId", ParseIntPipe) itemId: number,
     @Body(new ZodValidationPipe(patchOnboardingItemSchema)) body: PatchOnboardingItemInput,
@@ -225,6 +236,7 @@ export class ClientsController {
   @Delete("onboarding/items/:itemId")
   @HttpCode(204)
   @RequirePermission("crm:clients:update")
+  @Validate({ params: itemIdParams })
   async deleteOnboardingItem(
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -252,6 +264,7 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId" })
   @Get(":clientId")
   @RequirePermission("crm:clients:read")
+  @Validate({ params: clientIdParams })
   async getClientAccount(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -265,6 +278,7 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId" })
   @Patch(":clientId")
   @RequirePermission("crm:clients:update")
+  @Validate({ params: clientIdParams })
   async updateClientStatus(
     @Param("clientId", ParseIntPipe) clientId: number,
     @Body(new ZodValidationPipe(updateClientStatusSchema)) body: UpdateClientStatusInput,
@@ -278,6 +292,7 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId/timeline" })
   @Get(":clientId/activities")
   @RequirePermission("crm:clients:read")
+  @Validate({ params: clientIdParams })
   getClientActivities(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -288,6 +303,7 @@ export class ClientsController {
   @Post(":clientId/activities")
   @HttpCode(201)
   @RequirePermission("crm:clients:update")
+  @Validate({ params: clientIdParams })
   async createClientActivity(
     @Param("clientId", ParseIntPipe) clientId: number,
     @Body(new ZodValidationPipe(createActivitySchema)) body: CreateActivityInput,
@@ -301,6 +317,7 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId/timeline" })
   @Get(":clientId/timeline")
   @RequirePermission("crm:clients:read")
+  @Validate({ params: clientIdParams })
   async getClientTimeline(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,

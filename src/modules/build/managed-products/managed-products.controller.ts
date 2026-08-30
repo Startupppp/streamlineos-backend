@@ -27,6 +27,10 @@ import {
   type ListManagedProductsQuery,
   type UpdateManagedProductInput,
 } from "./dto/managed-products.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const managedProductIdParams = z.object({ managedProductId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/managed-products")
@@ -45,6 +49,7 @@ export class ManagedProductsController {
 
   @Get(":managedProductId")
   @RequirePermission("build:managed-products:view")
+  @Validate({ params: managedProductIdParams })
   getManagedProduct(
     @Param("managedProductId", ParseIntPipe) managedProductId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -64,6 +69,7 @@ export class ManagedProductsController {
 
   @Patch(":managedProductId")
   @RequirePermission("build:managed-products:update")
+  @Validate({ params: managedProductIdParams })
   updateManagedProduct(
     @Param("managedProductId", ParseIntPipe) managedProductId: number,
     @Body(new ZodValidationPipe(updateManagedProductSchema)) body: UpdateManagedProductInput,
@@ -75,6 +81,7 @@ export class ManagedProductsController {
   @Delete(":managedProductId")
   @HttpCode(204)
   @RequirePermission("build:managed-products:delete")
+  @Validate({ params: managedProductIdParams })
   deleteManagedProduct(
     @Param("managedProductId", ParseIntPipe) managedProductId: number,
     @CurrentUser() u: CurrentUserContext,

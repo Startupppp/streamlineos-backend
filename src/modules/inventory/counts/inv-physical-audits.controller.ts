@@ -12,6 +12,10 @@ import {
   listCountsSchema, createAuditSchema, updateCountLinesSchema,
   type ListCountsInput, type CreateAuditInput, type UpdateCountLinesInput,
 } from "./dto/inv-counts.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const auditIdParams = z.object({ auditId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/physical-audits")
@@ -32,6 +36,7 @@ export class InvPhysicalAuditsController {
   @Get(":auditId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ params: auditIdParams })
   getOne(
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -52,6 +57,7 @@ export class InvPhysicalAuditsController {
   @Post(":auditId/start")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: auditIdParams })
   start(
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -62,6 +68,7 @@ export class InvPhysicalAuditsController {
   @Patch(":auditId/lines")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: auditIdParams })
   updateLines(
     @Param("auditId", ParseIntPipe) auditId: number,
     @Body(new ZodValidationPipe(updateCountLinesSchema)) body: UpdateCountLinesInput,
@@ -73,6 +80,7 @@ export class InvPhysicalAuditsController {
   @Post(":auditId/review")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: auditIdParams })
   review(
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -83,6 +91,7 @@ export class InvPhysicalAuditsController {
   @Post(":auditId/post")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: auditIdParams })
   post(
     @Headers("idempotency-key") idempotencyKey: string,
     @Param("auditId", ParseIntPipe) auditId: number,
@@ -95,6 +104,7 @@ export class InvPhysicalAuditsController {
   @Post(":auditId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: auditIdParams })
   cancel(
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,

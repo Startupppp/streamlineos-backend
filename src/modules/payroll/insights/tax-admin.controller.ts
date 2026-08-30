@@ -26,6 +26,10 @@ import {
   taxDeclarationsQuerySchema,
   type TaxDeclarationsQuery,
 } from "./dto/insights.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const declarationIdParams = z.object({ declarationId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/tax")
@@ -45,6 +49,7 @@ export class TaxAdminController {
   @Patch("declarations/:declarationId/approve")
   @Idempotent("payroll.tax-declaration.approve")
   @RequirePermission("payroll:tax:manage")
+  @Validate({ params: declarationIdParams })
   approve(
     @CurrentUser() u: CurrentUserContext,
     @Param("declarationId", ParseIntPipe) declarationId: number,
@@ -55,6 +60,7 @@ export class TaxAdminController {
   @Patch("declarations/:declarationId/reject")
   @Idempotent("payroll.tax-declaration.reject")
   @RequirePermission("payroll:tax:manage")
+  @Validate({ params: declarationIdParams })
   reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("declarationId", ParseIntPipe) declarationId: number,

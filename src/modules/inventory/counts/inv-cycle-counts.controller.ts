@@ -12,6 +12,10 @@ import {
   listCountsSchema, createCycleCountSchema, updateCountLinesSchema,
   type ListCountsInput, type CreateCycleCountInput, type UpdateCountLinesInput,
 } from "./dto/inv-counts.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const countIdParams = z.object({ countId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/cycle-counts")
@@ -32,6 +36,7 @@ export class InvCycleCountsController {
   @Get(":countId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ params: countIdParams })
   getOne(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -52,6 +57,7 @@ export class InvCycleCountsController {
   @Post(":countId/start")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: countIdParams })
   start(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -62,6 +68,7 @@ export class InvCycleCountsController {
   @Patch(":countId/lines")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: countIdParams })
   updateLines(
     @Param("countId", ParseIntPipe) countId: number,
     @Body(new ZodValidationPipe(updateCountLinesSchema)) body: UpdateCountLinesInput,
@@ -73,6 +80,7 @@ export class InvCycleCountsController {
   @Post(":countId/review")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: countIdParams })
   review(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -83,6 +91,7 @@ export class InvCycleCountsController {
   @Post(":countId/post")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: countIdParams })
   post(
     @Headers("idempotency-key") idempotencyKey: string,
     @Param("countId", ParseIntPipe) countId: number,
@@ -95,6 +104,7 @@ export class InvCycleCountsController {
   @Post(":countId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: countIdParams })
   cancel(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,

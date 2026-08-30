@@ -27,6 +27,10 @@ import {
   type ListRisksQuery,
   type UpdateRiskInput,
 } from "./dto/governance.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const riskIdParams = z.object({ riskId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/risks")
@@ -46,6 +50,7 @@ export class RisksController {
 
   @Get(":riskId")
   @RequirePermission("build:risks:view")
+  @Validate({ params: riskIdParams })
   getRisk(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("riskId", ParseIntPipe) riskId: number,
@@ -67,6 +72,7 @@ export class RisksController {
 
   @Patch(":riskId")
   @RequirePermission("build:risks:manage")
+  @Validate({ params: riskIdParams })
   updateRisk(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("riskId", ParseIntPipe) riskId: number,
@@ -79,6 +85,7 @@ export class RisksController {
   @Delete(":riskId")
   @RequirePermission("build:risks:manage")
   @HttpCode(204)
+  @Validate({ params: riskIdParams })
   softDeleteRisk(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("riskId", ParseIntPipe) riskId: number,

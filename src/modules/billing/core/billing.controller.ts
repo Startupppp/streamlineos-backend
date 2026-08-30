@@ -47,6 +47,12 @@ import {
   type ApproveEnterpriseQuoteInput,
   type RejectEnterpriseQuoteInput,
 } from "./dto/enterprise-quotes.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const appIdParams = z.object({ appId: z.coerce.number().int().positive() }).strict();
+const quoteIdParams = z.object({ quoteId: z.coerce.number().int().positive() }).strict();
+const couponIdParams = z.object({ couponId: z.coerce.number().int().positive() }).strict();
 
 @Controller("billing")
 @UseGuards(JwtAuthGuard)
@@ -185,6 +191,7 @@ export class BillingController {
   @Idempotent("billing.marketplace.install")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
+  @Validate({ params: appIdParams })
   installApp(
     @Param("appId", ParseIntPipe) appId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -195,6 +202,7 @@ export class BillingController {
   @Delete("marketplace/:appId/install")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
+  @Validate({ params: appIdParams })
   uninstallApp(
     @Param("appId", ParseIntPipe) appId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -206,6 +214,7 @@ export class BillingController {
   @Idempotent("billing.marketplace.trial")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
+  @Validate({ params: appIdParams })
   startTrial(
     @Param("appId", ParseIntPipe) appId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -389,6 +398,7 @@ export class BillingController {
   @Get("enterprise-quotes/:quoteId")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:view")
+  @Validate({ params: quoteIdParams })
   getEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -401,6 +411,7 @@ export class BillingController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:create")
+  @Validate({ params: quoteIdParams })
   submitEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -413,6 +424,7 @@ export class BillingController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
+  @Validate({ params: quoteIdParams })
   approveEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @Body(new ZodValidationPipe(approveEnterpriseQuoteSchema)) body: ApproveEnterpriseQuoteInput,
@@ -426,6 +438,7 @@ export class BillingController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
+  @Validate({ params: quoteIdParams })
   rejectEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @Body(new ZodValidationPipe(rejectEnterpriseQuoteSchema)) body: RejectEnterpriseQuoteInput,
@@ -439,6 +452,7 @@ export class BillingController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
+  @Validate({ params: quoteIdParams })
   sendEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -451,6 +465,7 @@ export class BillingController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:view")
+  @Validate({ params: quoteIdParams })
   acceptEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -483,6 +498,7 @@ export class BillingController {
   @Patch("coupons/:couponId")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
+  @Validate({ params: couponIdParams })
   updateCoupon(
     @Param("couponId", ParseIntPipe) couponId: number,
     @Body(new ZodValidationPipe(updateCouponSchema)) body: UpdateCouponInput,
@@ -493,6 +509,7 @@ export class BillingController {
   @Delete("coupons/:couponId")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
+  @Validate({ params: couponIdParams })
   deleteCoupon(@Param("couponId", ParseIntPipe) couponId: number) {
     return this.billing.deleteCoupon(couponId);
   }

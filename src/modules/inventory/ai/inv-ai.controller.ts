@@ -16,6 +16,10 @@ import {
   type ListInsightsInput,
   type UpdateInsightStatusInput,
 } from "./dto/ai-insights.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/ai")
@@ -45,6 +49,7 @@ export class InvAiController {
   @Patch("insights/:insightId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:ai:manage")
+  @Validate({ params: insightIdParams })
   updateInsightStatus(
     @Param("insightId", ParseIntPipe) insightId: number,
     @Body(new ZodValidationPipe(updateInsightStatusSchema)) body: UpdateInsightStatusInput,

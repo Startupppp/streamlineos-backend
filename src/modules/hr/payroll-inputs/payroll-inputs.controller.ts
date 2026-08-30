@@ -29,6 +29,10 @@ import {
   type CreateAdjustmentInput,
 } from "./dto/payroll-inputs.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { z } from "zod";
+
+const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
+const adjustmentIdParams = z.object({ adjustmentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/payroll-inputs")
@@ -52,6 +56,7 @@ export class PayrollInputsController {
 
   @Get("periods/:periodId")
   @RequirePermission("hr:payroll:view")
+  @Validate({ params: periodIdParams })
   getPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -61,6 +66,7 @@ export class PayrollInputsController {
 
   @Post("periods/:periodId/build")
   @RequirePermission("hr:payroll:generate")
+  @Validate({ params: periodIdParams })
   buildPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -70,6 +76,7 @@ export class PayrollInputsController {
 
   @Post("periods/:periodId/lock")
   @RequirePermission("hr:payroll:lock")
+  @Validate({ params: periodIdParams })
   lockPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -79,6 +86,7 @@ export class PayrollInputsController {
 
   @Post("periods/:periodId/unlock")
   @RequirePermission("hr:payroll:reopen")
+  @Validate({ params: periodIdParams })
   unlockPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -88,7 +96,7 @@ export class PayrollInputsController {
 
   @Get("periods/:periodId/attendance")
   @RequirePermission("hr:payroll:view")
-  @Validate({ query: sectionQuerySchema })
+  @Validate({ query: sectionQuerySchema, params: periodIdParams })
   getAttendance(
     @Param("periodId", ParseIntPipe) periodId: number,
     @Query() query: SectionQueryInput,
@@ -99,7 +107,7 @@ export class PayrollInputsController {
 
   @Get("periods/:periodId/leaves")
   @RequirePermission("hr:payroll:view")
-  @Validate({ query: sectionQuerySchema })
+  @Validate({ query: sectionQuerySchema, params: periodIdParams })
   getLeaves(
     @Param("periodId", ParseIntPipe) periodId: number,
     @Query() query: SectionQueryInput,
@@ -110,7 +118,7 @@ export class PayrollInputsController {
 
   @Get("periods/:periodId/overtime")
   @RequirePermission("hr:payroll:view")
-  @Validate({ query: sectionQuerySchema })
+  @Validate({ query: sectionQuerySchema, params: periodIdParams })
   getOvertime(
     @Param("periodId", ParseIntPipe) periodId: number,
     @Query() query: SectionQueryInput,
@@ -121,7 +129,7 @@ export class PayrollInputsController {
 
   @Get("periods/:periodId/reimbursements")
   @RequirePermission("hr:payroll:view")
-  @Validate({ query: sectionQuerySchema })
+  @Validate({ query: sectionQuerySchema, params: periodIdParams })
   getReimbursements(
     @Param("periodId", ParseIntPipe) periodId: number,
     @Query() query: SectionQueryInput,
@@ -132,7 +140,7 @@ export class PayrollInputsController {
 
   @Get("periods/:periodId/adjustments")
   @RequirePermission("hr:payroll:view")
-  @Validate({ query: sectionQuerySchema })
+  @Validate({ query: sectionQuerySchema, params: periodIdParams })
   getAdjustments(
     @Param("periodId", ParseIntPipe) periodId: number,
     @Query() query: SectionQueryInput,
@@ -152,6 +160,7 @@ export class PayrollInputsController {
   @Patch("adjustments/:adjustmentId/approve")
   @Idempotent("payroll.adjustment.approve")
   @RequirePermission("hr:payroll:approve")
+  @Validate({ params: adjustmentIdParams })
   approveAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -162,7 +171,7 @@ export class PayrollInputsController {
   @Patch("adjustments/:adjustmentId/reject")
   @Idempotent("payroll.adjustment.reject")
   @RequirePermission("hr:payroll:approve")
-  @Validate({ body: rejectAdjustmentSchema })
+  @Validate({ body: rejectAdjustmentSchema, params: adjustmentIdParams })
   rejectAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @Body() body: { reason: string },

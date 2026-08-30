@@ -20,6 +20,11 @@ import {
   upsertTranslationSchema,
   type UpsertTranslationInput,
 } from "./dto/kb-translations.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
+const articleIdlocaleParams = z.object({ articleId: z.coerce.number().int().positive(), locale: z.string().min(1) }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -28,6 +33,7 @@ export class KbTranslationsController {
 
   @Get("articles/:articleId/translations")
   @RequirePermission("kb:articles:view")
+  @Validate({ params: articleIdParams })
   async list(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -37,6 +43,7 @@ export class KbTranslationsController {
 
   @Get("articles/:articleId/translations/:locale")
   @RequirePermission("kb:articles:view")
+  @Validate({ params: articleIdlocaleParams })
   async get(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("locale") locale: string,
@@ -47,6 +54,7 @@ export class KbTranslationsController {
 
   @Put("articles/:articleId/translations/:locale")
   @RequirePermission("kb:articles:update")
+  @Validate({ params: articleIdlocaleParams })
   async upsert(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("locale") locale: string,
@@ -59,6 +67,7 @@ export class KbTranslationsController {
   @Delete("articles/:articleId/translations/:locale")
   @HttpCode(200)
   @RequirePermission("kb:articles:update")
+  @Validate({ params: articleIdlocaleParams })
   async remove(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("locale") locale: string,

@@ -26,6 +26,10 @@ import {
   type PatchCalendarEvent,
 } from "./dto/insights.schemas";
 import { CalendarService } from "./calendar.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/calendar")
@@ -66,6 +70,7 @@ export class CalendarController {
   @Patch(":eventId")
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:settings:manage")
+  @Validate({ params: eventIdParams })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("eventId", ParseIntPipe) eventId: number,
@@ -78,6 +83,7 @@ export class CalendarController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:settings:manage")
+  @Validate({ params: eventIdParams })
   remove(
     @CurrentUser() u: CurrentUserContext,
     @Param("eventId", ParseIntPipe) eventId: number,

@@ -24,6 +24,10 @@ import {
   type CreateTestSuiteInput,
   type UpdateTestSuiteInput,
 } from "./dto/qa.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const suiteIdParams = z.object({ suiteId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/test-suites")
@@ -53,6 +57,7 @@ export class TestSuitesController {
 
   @Patch(":suiteId")
   @RequirePermission("build:qa:manage")
+  @Validate({ params: suiteIdParams })
   updateSuite(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("suiteId", ParseIntPipe) suiteId: number,
@@ -65,6 +70,7 @@ export class TestSuitesController {
   @Delete(":suiteId")
   @RequirePermission("build:qa:manage")
   @HttpCode(204)
+  @Validate({ params: suiteIdParams })
   deleteSuite(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("suiteId", ParseIntPipe) suiteId: number,

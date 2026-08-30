@@ -31,6 +31,10 @@ import {
   type BroadcastInput,
   type RespondInput,
 } from "../dto/emergency.schemas";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const eventIdParams = z.object({ eventId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/emergency")
@@ -51,6 +55,7 @@ export class EmergencyController {
   @Get("events/:eventId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
+  @Validate({ params: eventIdParams })
   getEvent(
     @CurrentUser() user: CurrentUserContext,
     @Param("eventId") eventId: string,
@@ -72,6 +77,7 @@ export class EmergencyController {
   @Patch("events/:eventId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
+  @Validate({ params: eventIdParams })
   updateEvent(
     @CurrentUser() user: CurrentUserContext,
     @Param("eventId") eventId: string,
@@ -84,6 +90,7 @@ export class EmergencyController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
+  @Validate({ params: eventIdParams })
   async deleteEvent(
     @CurrentUser() user: CurrentUserContext,
     @Param("eventId") eventId: string,
@@ -94,6 +101,7 @@ export class EmergencyController {
   @Post("events/:eventId/broadcast")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
+  @Validate({ params: eventIdParams })
   broadcast(
     @CurrentUser() user: CurrentUserContext,
     @Param("eventId") eventId: string,
@@ -104,6 +112,7 @@ export class EmergencyController {
 
   @Post("events/:eventId/respond")
   @Universal()
+  @Validate({ params: eventIdParams })
   respond(
     @CurrentUser() user: CurrentUserContext,
     @Param("eventId") eventId: string,
@@ -115,6 +124,7 @@ export class EmergencyController {
   @Get("events/:eventId/status")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
+  @Validate({ params: eventIdParams })
   getEventStatus(
     @CurrentUser() user: CurrentUserContext,
     @Param("eventId") eventId: string,

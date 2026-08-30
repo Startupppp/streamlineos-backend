@@ -23,6 +23,10 @@ import {
   type CreateDeviceMappingInput,
   type ListDeviceMappingsInput,
 } from "./dto/enterprise-comp.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const deviceIdParams = z.object({ deviceId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/enterprise/comp/devices")
@@ -54,6 +58,7 @@ export class DevicesController {
   @Patch(":deviceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
+  @Validate({ params: deviceIdParams })
   update(
     @Param("deviceId", ParseIntPipe) deviceId: number,
     @Body(new ZodValidationPipe(updateTimeDeviceSchema)) body: UpdateTimeDeviceInput,
@@ -66,6 +71,7 @@ export class DevicesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
   @HttpCode(204)
+  @Validate({ params: deviceIdParams })
   remove(
     @Param("deviceId", ParseIntPipe) deviceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -104,6 +110,7 @@ export class DevicesController {
   @Get(":deviceId/duplicate-punches")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
+  @Validate({ params: deviceIdParams })
   duplicatePunches(
     @Param("deviceId", ParseIntPipe) deviceId: number,
     @CurrentUser() u: CurrentUserContext,

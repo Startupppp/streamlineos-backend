@@ -12,6 +12,10 @@ import {
   type CreateCollectorInput,
   type PatchCollectorInput,
 } from "./dto/survey-collectors.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const collectorIdParams = z.object({ collectorId: z.coerce.number().int().positive() }).strict();
 
 @Controller("surveys/:surveyId/collectors")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -37,6 +41,7 @@ export class SurveyCollectorsController {
 
   @Patch(":collectorId")
   @RequirePermission("surveys:participants:manage")
+  @Validate({ params: collectorIdParams })
   patch(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("collectorId", ParseIntPipe) collectorId: number,

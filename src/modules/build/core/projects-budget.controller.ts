@@ -16,6 +16,10 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsBudgetService } from "./projects-budget.service";
 import { updateBudgetSchema, type UpdateBudgetInput } from "./dto/projects.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -25,6 +29,7 @@ export class ProjectsBudgetController {
 
   @Get(":projectId/budget")
   @RequirePermission("build:manage")
+  @Validate({ params: projectIdParams })
   getBudget(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -34,6 +39,7 @@ export class ProjectsBudgetController {
 
   @Patch(":projectId/budget")
   @RequirePermission("build:manage")
+  @Validate({ params: projectIdParams })
   updateBudget(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(updateBudgetSchema)) body: UpdateBudgetInput,

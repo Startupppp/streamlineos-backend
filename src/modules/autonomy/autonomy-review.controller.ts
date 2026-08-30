@@ -28,6 +28,12 @@ import {
   type UpdateAutonomySettingsInput,
   type CancelHoldInput,
 } from "./dto/autonomy-review.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const decisionIdParams = z.object({ decisionId: z.string().min(1) }).strict();
+const shadowScoreIdParams = z.object({ shadowScoreId: z.string().min(1) }).strict();
+const holdIdParams = z.object({ holdId: z.string().min(1) }).strict();
 
 const REVIEW_PERMISSION = "crm:autonomy:view";
 
@@ -52,6 +58,7 @@ export class AutonomyReviewController {
 
   @Get("decisions/:decisionId")
   @RequirePermission(REVIEW_PERMISSION)
+  @Validate({ params: decisionIdParams })
   getDecision(
     @Param("decisionId") decisionId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -67,6 +74,7 @@ export class AutonomyReviewController {
   @Post("decisions/:decisionId/reverse")
   @Idempotent("crm.autonomy.reverse")
   @RequirePermission("crm:autonomy:reverse")
+  @Validate({ params: decisionIdParams })
   reverseDecision(
     @Param("decisionId") decisionId: string,
     @Body(new ZodValidationPipe(reverseDecisionSchema)) body: ReverseDecisionInput,
@@ -120,6 +128,7 @@ export class AutonomyReviewController {
   @Post("review-queue/:shadowScoreId/reviewed")
   @Idempotent("crm.autonomy.reviewed")
   @RequirePermission(REVIEW_PERMISSION)
+  @Validate({ params: shadowScoreIdParams })
   markReviewed(
     @Param("shadowScoreId") shadowScoreId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -145,6 +154,7 @@ export class AutonomyReviewController {
   @Post("holds/:holdId/cancel")
   @Idempotent("crm.autonomy.cancel-hold")
   @RequirePermission("crm:autonomy:reverse")
+  @Validate({ params: holdIdParams })
   cancelHold(
     @Param("holdId") holdId: string,
     @Body(new ZodValidationPipe(cancelHoldSchema)) body: CancelHoldInput,

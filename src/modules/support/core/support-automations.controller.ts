@@ -32,6 +32,10 @@ import {
 } from "../../automation/dto/automation.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const automationIdParams = z.object({ automationId: z.coerce.number().int().positive() }).strict();
 
 const TICKET_TRIGGER_PREFIX = "ticket.";
 
@@ -70,6 +74,7 @@ export class SupportAutomationsController {
 
   @Patch("automations/:automationId")
   @RequirePermission("support:settings:manage")
+  @Validate({ params: automationIdParams })
   async updateAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
     @Body(new ZodValidationPipe(updateAutomationRuleSchema)) body: UpdateAutomationRuleInput,
@@ -82,6 +87,7 @@ export class SupportAutomationsController {
 
   @Delete("automations/:automationId")
   @RequirePermission("support:settings:manage")
+  @Validate({ params: automationIdParams })
   async deleteAutomation(@Param("automationId", ParseIntPipe) automationId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.automations.deleteRule(u.orgId, automationId);
     await this.audit.record(u.orgId, u.userId, "automation", automationId, "deleted");
@@ -91,6 +97,7 @@ export class SupportAutomationsController {
   @Post("automations/:automationId/test")
   @RequirePermission("support:settings:manage")
   @HttpCode(200)
+  @Validate({ params: automationIdParams })
   testAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
     @Body(new ZodValidationPipe(testAutomationSchema)) body: TestAutomationInput,

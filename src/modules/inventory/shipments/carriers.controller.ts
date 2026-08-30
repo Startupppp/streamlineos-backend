@@ -9,6 +9,10 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { CarriersService } from "./carriers.service";
 import { createCarrierSchema, updateCarrierSchema, type CreateCarrierInput, type UpdateCarrierInput } from "./dto/shipments.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const carrierIdParams = z.object({ carrierId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/carriers")
@@ -36,6 +40,7 @@ export class CarriersController {
   @Patch(":carrierId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
+  @Validate({ params: carrierIdParams })
   update(
     @Param("carrierId", ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(updateCarrierSchema)) body: UpdateCarrierInput,

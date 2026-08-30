@@ -23,6 +23,10 @@ import {
   type ListApprovalsQuery,
   type ApprovalDecisionInput,
 } from "./dto/finance-controls.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const requestIdParams = z.object({ requestId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/approvals")
@@ -48,6 +52,7 @@ export class ApprovalsController {
   @Post(":requestId/approve")
   @HttpCode(200)
   @RequirePermission("accounting:approvals:decide")
+  @Validate({ params: requestIdParams })
   approve(
     @Param("requestId", ParseIntPipe) requestId: number,
     @Body(new ZodValidationPipe(approvalDecisionSchema)) body: ApprovalDecisionInput,
@@ -59,6 +64,7 @@ export class ApprovalsController {
   @Post(":requestId/reject")
   @HttpCode(200)
   @RequirePermission("accounting:approvals:decide")
+  @Validate({ params: requestIdParams })
   reject(
     @Param("requestId", ParseIntPipe) requestId: number,
     @Body(new ZodValidationPipe(approvalDecisionSchema)) body: ApprovalDecisionInput,

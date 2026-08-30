@@ -15,6 +15,10 @@ import {
   type ListCategoriesQuery,
   type UpdateCategoryInput,
 } from "./dto/assets.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const categoryIdParams = z.object({ categoryId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/assets/categories")
@@ -46,6 +50,7 @@ export class AssetCategoriesController {
   @Patch(":categoryId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:manage")
+  @Validate({ params: categoryIdParams })
   update(
     @Param("categoryId", ParseIntPipe) categoryId: number,
     @Body(new ZodValidationPipe(updateCategorySchema)) body: UpdateCategoryInput,

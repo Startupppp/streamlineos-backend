@@ -15,6 +15,10 @@ import {
   listReturnsSchema, createVendorReturnSchema, postVendorReturnSchema,
   type ListReturnsInput, type CreateVendorReturnInput, type PostVendorReturnInput,
 } from "./dto/inv-returns.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const returnIdParams = z.object({ returnId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/vendor-returns")
@@ -35,6 +39,7 @@ export class VendorReturnsController {
   @Get(":returnId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
+  @Validate({ params: returnIdParams })
   get(
     @Param("returnId", ParseIntPipe) returnId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -56,6 +61,7 @@ export class VendorReturnsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: returnIdParams })
   post(
     @Param("returnId", ParseIntPipe) returnId: number,
     @Body(new ZodValidationPipe(postVendorReturnSchema)) body: PostVendorReturnInput,
@@ -70,6 +76,7 @@ export class VendorReturnsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: returnIdParams })
   cancel(
     @Param("returnId", ParseIntPipe) returnId: number,
     @CurrentUser() u: CurrentUserContext,

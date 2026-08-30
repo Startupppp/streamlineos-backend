@@ -26,6 +26,11 @@ import {
   type ListComplianceTasksInput,
 } from "./dto/enterprise-comp.schemas";
 import { z } from "zod";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const varianceIdParams = z.object({ varianceId: z.coerce.number().int().positive() }).strict();
+const arrearIdParams = z.object({ arrearId: z.coerce.number().int().positive() }).strict();
+const taskIdParams = z.object({ taskId: z.coerce.number().int().positive() }).strict();
 
 
 @RequireModule("hr")
@@ -58,6 +63,7 @@ export class PayrollComplianceController {
   @Patch("variance/:varianceId/resolve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
+  @Validate({ params: varianceIdParams })
   resolveVariance(
     @Param("varianceId", ParseIntPipe) varianceId: number,
     @Body(new ZodValidationPipe(resolveVarianceSchema)) body: ResolveVarianceInput,
@@ -90,6 +96,7 @@ export class PayrollComplianceController {
   @Patch("arrears/:arrearId/apply")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
+  @Validate({ params: arrearIdParams })
   applyArrears(
     @Param("arrearId", ParseIntPipe) arrearId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -121,6 +128,7 @@ export class PayrollComplianceController {
   @Patch("tasks/:taskId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
+  @Validate({ params: taskIdParams })
   updateTask(
     @Param("taskId", ParseIntPipe) taskId: number,
     @Body(new ZodValidationPipe(updateComplianceTaskSchema)) body: UpdateComplianceTaskInput,

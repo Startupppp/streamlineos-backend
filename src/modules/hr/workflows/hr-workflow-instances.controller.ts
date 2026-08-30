@@ -19,6 +19,9 @@ import {
 import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const instanceIdParams = z.object({ instanceId: z.coerce.number().int().positive() }).strict();
 
 const PaginationSchema = z.object({
   page: pageNumberField,
@@ -67,6 +70,7 @@ export class HrWorkflowInstancesController {
   @Get(":instanceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
+  @Validate({ params: instanceIdParams })
   getDetail(
     @CurrentUser() u: CurrentUserContext,
     @Param("instanceId", ParseIntPipe) instanceId: number,
@@ -79,6 +83,7 @@ export class HrWorkflowInstancesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @HttpCode(200)
+  @Validate({ params: instanceIdParams })
   approve(
     @CurrentUser() u: CurrentUserContext,
     @Param("instanceId", ParseIntPipe) instanceId: number,
@@ -99,6 +104,7 @@ export class HrWorkflowInstancesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @HttpCode(200)
+  @Validate({ params: instanceIdParams })
   reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("instanceId", ParseIntPipe) instanceId: number,
@@ -118,6 +124,7 @@ export class HrWorkflowInstancesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(200)
+  @Validate({ params: instanceIdParams })
   cancel(
     @CurrentUser() u: CurrentUserContext,
     @Param("instanceId", ParseIntPipe) instanceId: number,
@@ -136,6 +143,7 @@ export class HrWorkflowInstancesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(200)
+  @Validate({ params: instanceIdParams })
   reopen(
     @CurrentUser() u: CurrentUserContext,
     @Param("instanceId", ParseIntPipe) instanceId: number,
@@ -154,6 +162,7 @@ export class HrWorkflowInstancesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @HttpCode(200)
+  @Validate({ params: instanceIdParams })
   comment(
     @CurrentUser() u: CurrentUserContext,
     @Param("instanceId", ParseIntPipe) instanceId: number,

@@ -25,6 +25,10 @@ import {
   type WebFormUpdateInput,
 } from "./dto/web-forms.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const formIdParams = z.object({ formId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("crm/web-forms")
@@ -50,6 +54,7 @@ export class CrmWebFormsController {
 
   @Patch(":formId")
   @RequirePermission("crm:web-forms:manage")
+  @Validate({ params: formIdParams })
   async update(
     @Param("formId", ParseIntPipe) formId: number,
     @Body(new ZodValidationPipe(webFormUpdateSchema)) body: WebFormUpdateInput,
@@ -63,6 +68,7 @@ export class CrmWebFormsController {
   @Delete(":formId")
   @HttpCode(204)
   @RequirePermission("crm:web-forms:manage")
+  @Validate({ params: formIdParams })
   async remove(
     @Param("formId", ParseIntPipe) formId: number,
     @CurrentUser() u: CurrentUserContext,

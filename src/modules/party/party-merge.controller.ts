@@ -7,6 +7,13 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { PartyMergeService } from "./party-merge.service";
 import { PartyRolesService } from "./party-roles.service";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const partyIdParams = z.object({ partyId: z.string().min(1) }).strict();
+const partyIdroleParams = z.object({ partyId: z.string().min(1), role: z.string().min(1) }).strict();
+const candidateIdParams = z.object({ candidateId: z.string().min(1) }).strict();
+const partyMergeIdParams = z.object({ partyMergeId: z.string().min(1) }).strict();
 
 /**
  * Roles a party holds, duplicates the system found, and merges.
@@ -26,6 +33,7 @@ export class PartyMergeController {
   @Get("parties/:partyId/roles")
   @UseGuards(PermissionGuard)
   @RequirePermission("party:parties:view")
+  @Validate({ params: partyIdParams })
   async listRoles(@CurrentUser() user: CurrentUserContext, @Param("partyId") partyId: string) {
     return { roles: await this.roles.listRoles(user.orgId, partyId) };
   }
@@ -34,6 +42,7 @@ export class PartyMergeController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:roles:manage")
   @Idempotent("party.role.add")
+  @Validate({ params: partyIdParams })
   async addRole(
     @CurrentUser() user: CurrentUserContext,
     @Param("partyId") partyId: string,
@@ -45,6 +54,7 @@ export class PartyMergeController {
   @Delete("parties/:partyId/roles/:role")
   @UseGuards(PermissionGuard)
   @RequirePermission("party:roles:manage")
+  @Validate({ params: partyIdroleParams })
   async removeRole(
     @CurrentUser() user: CurrentUserContext,
     @Param("partyId") partyId: string,
@@ -57,6 +67,7 @@ export class PartyMergeController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:merges:manage")
   @Idempotent("party.duplicates.detect")
+  @Validate({ params: partyIdParams })
   async detect(@CurrentUser() user: CurrentUserContext, @Param("partyId") partyId: string) {
     return this.roles.detectFor(user.orgId, partyId, user.userId);
   }
@@ -74,6 +85,7 @@ export class PartyMergeController {
   @Delete("duplicates/:candidateId")
   @UseGuards(PermissionGuard)
   @RequirePermission("party:merges:manage")
+  @Validate({ params: candidateIdParams })
   async dismiss(
     @CurrentUser() user: CurrentUserContext,
     @Param("candidateId") candidateId: string,
@@ -102,6 +114,7 @@ export class PartyMergeController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:merges:manage")
   @Idempotent("party.merge.revert")
+  @Validate({ params: partyMergeIdParams })
   async revert(
     @CurrentUser() user: CurrentUserContext,
     @Param("partyMergeId") partyMergeId: string,

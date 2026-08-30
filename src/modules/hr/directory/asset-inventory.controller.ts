@@ -28,6 +28,10 @@ import {
   type PatchAssetInput,
 } from "./dto/hr-directory.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const assetIdParams = z.object({ assetId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr")
@@ -56,6 +60,7 @@ export class AssetInventoryController {
 
   @Patch("assets/:assetId")
   @RequirePermission("hr:assets:manage")
+  @Validate({ params: assetIdParams })
   update(
     @Param("assetId", ParseIntPipe) assetId: number,
     @Body(new ZodValidationPipe(patchAssetSchema)) body: PatchAssetInput,

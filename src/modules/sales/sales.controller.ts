@@ -57,6 +57,11 @@ import {
   type RepComparisonInput,
 } from "./dto/sales.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const commissionIdParams = z.object({ commissionId: z.coerce.number().int().positive() }).strict();
+const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
 
 function toRange(input: { from?: string; to?: string }): DateRange {
   return {
@@ -116,6 +121,7 @@ export class SalesController {
   @Patch("commissions/:commissionId")
   @UseGuards(PermissionGuard)
   @RequirePermission("sales:manage")
+  @Validate({ params: commissionIdParams })
   async updateCommission(
     @Param("commissionId", ParseIntPipe) commissionId: number,
     @Body(new ZodValidationPipe(commissionUpdateSchema)) body: CommissionUpdateInput,
@@ -170,6 +176,7 @@ export class SalesController {
   @Patch("playbook/:entryId")
   @UseGuards(PermissionGuard)
   @RequirePermission("sales:manage")
+  @Validate({ params: entryIdParams })
   async updatePlaybookEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body(new ZodValidationPipe(playbookUpdateSchema)) body: PlaybookUpdateInput,
@@ -183,6 +190,7 @@ export class SalesController {
   @Delete("playbook/:entryId")
   @UseGuards(PermissionGuard)
   @RequirePermission("sales:manage")
+  @Validate({ params: entryIdParams })
   async removePlaybookEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,

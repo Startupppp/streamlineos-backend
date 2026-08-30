@@ -29,6 +29,12 @@ import {
   type CreateCollectiveAgreementInput, type UpdateCollectiveAgreementInput, type ListAgreementsInput, type ExpiringAgreementsInput,
   type CreateLaborCaseInput, type UpdateLaborCaseInput, type ListLaborCasesInput,
 } from "./labor.dto";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const membershipIdParams = z.object({ membershipId: z.coerce.number().int().positive() }).strict();
+const agreementIdParams = z.object({ agreementId: z.coerce.number().int().positive() }).strict();
+const caseIdParams = z.object({ caseId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/governance/labor")
@@ -57,6 +63,7 @@ export class LaborController {
 
   @Patch("memberships/:membershipId")
   @RequirePermission("hr:labor:manage")
+  @Validate({ params: membershipIdParams })
   async updateMembership(
     @CurrentUser() user: CurrentUserContext,
     @Param("membershipId", ParseIntPipe) membershipId: number,
@@ -69,6 +76,7 @@ export class LaborController {
   @Delete("memberships/:membershipId")
   @RequirePermission("hr:labor:manage")
   @HttpCode(204)
+  @Validate({ params: membershipIdParams })
   async deleteMembership(
     @CurrentUser() user: CurrentUserContext,
     @Param("membershipId", ParseIntPipe) membershipId: number,
@@ -107,6 +115,7 @@ export class LaborController {
 
   @Patch("agreements/:agreementId")
   @RequirePermission("hr:labor:manage")
+  @Validate({ params: agreementIdParams })
   async updateAgreement(
     @CurrentUser() user: CurrentUserContext,
     @Param("agreementId", ParseIntPipe) agreementId: number,
@@ -119,6 +128,7 @@ export class LaborController {
   @Delete("agreements/:agreementId")
   @RequirePermission("hr:labor:manage")
   @HttpCode(204)
+  @Validate({ params: agreementIdParams })
   async deleteAgreement(
     @CurrentUser() user: CurrentUserContext,
     @Param("agreementId", ParseIntPipe) agreementId: number,
@@ -148,6 +158,7 @@ export class LaborController {
 
   @Patch("cases/:caseId")
   @RequirePermission("hr:labor:manage")
+  @Validate({ params: caseIdParams })
   async updateLaborCase(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -160,6 +171,7 @@ export class LaborController {
   @Delete("cases/:caseId")
   @RequirePermission("hr:labor:manage")
   @HttpCode(204)
+  @Validate({ params: caseIdParams })
   async deleteLaborCase(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,

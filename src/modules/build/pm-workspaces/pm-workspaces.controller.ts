@@ -30,6 +30,11 @@ import {
   type ListWorkspacesQuery,
   type UpdateWorkspaceInput,
 } from "./dto/pm-workspaces.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pmWorkspaceIdParams = z.object({ pmWorkspaceId: z.string().min(1) }).strict();
+const pmWorkspaceIdpmWorkspaceMembershipIdParams = z.object({ pmWorkspaceId: z.string().min(1), pmWorkspaceMembershipId: z.string().min(1) }).strict();
 
 @RequireModule("build")
 @Controller("product-management/workspaces")
@@ -48,6 +53,7 @@ export class PmWorkspacesController {
 
   @Get(":pmWorkspaceId")
   @RequirePermission("build:workspaces:view")
+  @Validate({ params: pmWorkspaceIdParams })
   getWorkspace(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -67,6 +73,7 @@ export class PmWorkspacesController {
 
   @Patch(":pmWorkspaceId")
   @RequirePermission("build:workspaces:update")
+  @Validate({ params: pmWorkspaceIdParams })
   updateWorkspace(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
     @Body(new ZodValidationPipe(updateWorkspaceSchema)) body: UpdateWorkspaceInput,
@@ -78,6 +85,7 @@ export class PmWorkspacesController {
   @Delete(":pmWorkspaceId")
   @HttpCode(204)
   @RequirePermission("build:workspaces:delete")
+  @Validate({ params: pmWorkspaceIdParams })
   deleteWorkspace(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +95,7 @@ export class PmWorkspacesController {
 
   @Get(":pmWorkspaceId/members")
   @RequirePermission("build:workspaces:members:view")
+  @Validate({ params: pmWorkspaceIdParams })
   listMembers(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
     @Query(new ZodValidationPipe(listMembersQuerySchema)) query: ListMembersQuery,
@@ -98,6 +107,7 @@ export class PmWorkspacesController {
   @Post(":pmWorkspaceId/members")
   @HttpCode(201)
   @RequirePermission("build:workspaces:members:manage")
+  @Validate({ params: pmWorkspaceIdParams })
   addMember(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
     @Body(new ZodValidationPipe(addWorkspaceMemberSchema)) body: AddWorkspaceMemberInput,
@@ -109,6 +119,7 @@ export class PmWorkspacesController {
   @Delete(":pmWorkspaceId/members/:pmWorkspaceMembershipId")
   @HttpCode(200)
   @RequirePermission("build:workspaces:members:manage")
+  @Validate({ params: pmWorkspaceIdpmWorkspaceMembershipIdParams })
   removeMember(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
     @Param("pmWorkspaceMembershipId") pmWorkspaceMembershipId: string,

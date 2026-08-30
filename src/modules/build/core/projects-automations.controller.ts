@@ -13,6 +13,11 @@ import {
   type CreateAutomationInput,
   type UpdateAutomationInput,
 } from "./dto/automation.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const projectIdautomationIdParams = z.object({ projectId: z.coerce.number().int().positive(), automationId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -22,6 +27,7 @@ export class ProjectsAutomationsController {
 
   @Get(":projectId/automations")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   list(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -32,6 +38,7 @@ export class ProjectsAutomationsController {
   @Post(":projectId/automations")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @Validate({ params: projectIdParams })
   create(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createAutomationSchema)) body: CreateAutomationInput,
@@ -42,6 +49,7 @@ export class ProjectsAutomationsController {
 
   @Patch(":projectId/automations/:automationId")
   @RequirePermission("build:manage")
+  @Validate({ params: projectIdautomationIdParams })
   update(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("automationId", ParseIntPipe) automationId: number,
@@ -54,6 +62,7 @@ export class ProjectsAutomationsController {
   @Delete(":projectId/automations/:automationId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @Validate({ params: projectIdautomationIdParams })
   delete(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("automationId", ParseIntPipe) automationId: number,

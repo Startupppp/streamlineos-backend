@@ -2,6 +2,10 @@ import { Controller, Headers, Param, Post, RawBodyRequest, Req, Res } from "@nes
 import type { Request, Response } from "express";
 import { Public } from "../../../common/auth/public.decorator";
 import { PaymentWebhookReceiverService } from "./payment-webhook-receiver.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const providerKeyenvironmentorgIdParams = z.object({ providerKey: z.string().min(1), environment: z.string().min(1), orgId: z.string().min(1) }).strict();
 
 @Public()
 @Controller("webhooks/payments")
@@ -9,6 +13,7 @@ export class PaymentWebhooksPublicController {
   constructor(private readonly webhooks: PaymentWebhookReceiverService) {}
 
   @Post(":providerKey/:environment/:orgId")
+  @Validate({ params: providerKeyenvironmentorgIdParams })
   async handle(
     @Param("providerKey") providerKey: string,
     @Param("environment") environment: string,

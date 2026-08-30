@@ -16,6 +16,13 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ClientVisibilityService } from "./client-visibility.service";
 import { toggleVisibilitySchema, type ToggleVisibilityInput } from "./dto/client-portal.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
+const milestoneIdParams = z.object({ milestoneId: z.coerce.number().int().positive() }).strict();
+const commentIdParams = z.object({ commentId: z.coerce.number().int().positive() }).strict();
+const attachmentIdParams = z.object({ attachmentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/client-visibility")
@@ -34,6 +41,7 @@ export class ClientVisibilityController {
 
   @Patch("tickets/:ticketId")
   @RequirePermission("build:clientvisibility:manage")
+  @Validate({ params: ticketIdParams })
   toggleTicketVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -45,6 +53,7 @@ export class ClientVisibilityController {
 
   @Patch("milestones/:milestoneId")
   @RequirePermission("build:clientvisibility:manage")
+  @Validate({ params: milestoneIdParams })
   toggleMilestoneVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("milestoneId", ParseIntPipe) milestoneId: number,
@@ -56,6 +65,7 @@ export class ClientVisibilityController {
 
   @Patch("comments/:commentId")
   @RequirePermission("build:clientvisibility:manage")
+  @Validate({ params: commentIdParams })
   toggleCommentVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
@@ -67,6 +77,7 @@ export class ClientVisibilityController {
 
   @Patch("attachments/:attachmentId")
   @RequirePermission("build:clientvisibility:manage")
+  @Validate({ params: attachmentIdParams })
   toggleAttachmentVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("attachmentId", ParseIntPipe) attachmentId: number,

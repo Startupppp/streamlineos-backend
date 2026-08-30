@@ -30,6 +30,10 @@ import {
   type ListBroadcastsInput,
   type ListBroadcastInboxInput,
 } from "./dto/broadcast.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const broadcastIdParams = z.object({ broadcastId: z.coerce.number().int().positive() }).strict();
 
 /**
  * C21-02: PermissionGuard is on the admin methods only, not the class.
@@ -80,6 +84,7 @@ export class BroadcastsController {
   @Patch(":broadcastId")
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
+  @Validate({ params: broadcastIdParams })
   update(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @Body(new ZodValidationPipe(updateBroadcastSchema)) dto: UpdateBroadcastInput,
@@ -93,6 +98,7 @@ export class BroadcastsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
+  @Validate({ params: broadcastIdParams })
   publish(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -108,6 +114,7 @@ export class BroadcastsController {
   @Post(":broadcastId/dismiss")
   @Universal()
   @HttpCode(200)
+  @Validate({ params: broadcastIdParams })
   dismiss(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -119,6 +126,7 @@ export class BroadcastsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
+  @Validate({ params: broadcastIdParams })
   cancel(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -133,6 +141,7 @@ export class BroadcastsController {
   @Get(":broadcastId/receipts/count")
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:view")
+  @Validate({ params: broadcastIdParams })
   viewerCount(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -143,6 +152,7 @@ export class BroadcastsController {
   @Delete(":broadcastId")
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
+  @Validate({ params: broadcastIdParams })
   remove(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,

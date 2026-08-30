@@ -38,6 +38,11 @@ import {
   type SetEmployeeHoldInput,
   type AddRunAdjustmentInput,
 } from "./dto/runs.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
+const runIdrunEmployeeIdParams = z.object({ runId: z.coerce.number().int().positive(), runEmployeeId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/runs")
@@ -119,6 +124,7 @@ export class RunsController {
 
   @Get(":runId")
   @RequirePermission("payroll:runs:view")
+  @Validate({ params: runIdParams })
   async getOne(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -131,6 +137,7 @@ export class RunsController {
   @Post(":runId/generate")
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
+  @Validate({ params: runIdParams })
   async generate(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -142,6 +149,7 @@ export class RunsController {
   @Post(":runId/recalculate")
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
+  @Validate({ params: runIdParams })
   async recalculate(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -199,6 +207,7 @@ export class RunsController {
 
   @Get(":runId/employees")
   @RequirePermission("payroll:runs:view")
+  @Validate({ params: runIdParams })
   async listEmployees(
     @Param("runId", ParseIntPipe) runId: number,
     @Query(new ZodValidationPipe(listRunEmployeesQuerySchema)) query: ListRunEmployeesQuery,
@@ -212,6 +221,7 @@ export class RunsController {
 
   @Get(":runId/employees/:runEmployeeId")
   @RequirePermission("payroll:runs:view")
+  @Validate({ params: runIdrunEmployeeIdParams })
   async getEmployee(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("runEmployeeId", ParseIntPipe) runEmployeeId: number,
@@ -225,6 +235,7 @@ export class RunsController {
   @Post(":runId/employees/:runEmployeeId/adjustments")
   @HttpCode(201)
   @RequirePermission("payroll:runs:manage")
+  @Validate({ params: runIdrunEmployeeIdParams })
   async addAdjustment(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("runEmployeeId", ParseIntPipe) runEmployeeId: number,
@@ -242,6 +253,7 @@ export class RunsController {
   @Post(":runId/employees/:runEmployeeId/hold")
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
+  @Validate({ params: runIdrunEmployeeIdParams })
   async setEmployeeHold(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("runEmployeeId", ParseIntPipe) runEmployeeId: number,
@@ -262,6 +274,7 @@ export class RunsController {
 
   @Get(":runId/variance")
   @RequirePermission("payroll:runs:view")
+  @Validate({ params: runIdParams })
   async variance(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,

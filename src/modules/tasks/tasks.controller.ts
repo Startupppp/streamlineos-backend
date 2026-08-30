@@ -39,6 +39,11 @@ import {
   type SequenceListInput,
   type UpdateInput,
 } from "./dto/task.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const sequenceIdParams = z.object({ sequenceId: z.coerce.number().int().positive() }).strict();
+const taskIdParams = z.object({ taskId: z.coerce.number().int().positive() }).strict();
 @Controller("tasks")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class TasksController {
@@ -95,6 +100,7 @@ export class TasksController {
 
   @Delete("sequences/:sequenceId")
   @RequirePermission("tasks:write")
+  @Validate({ params: sequenceIdParams })
   async removeSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -107,6 +113,7 @@ export class TasksController {
   @Post("sequences/:sequenceId/apply")
   @HttpCode(201)
   @RequirePermission("tasks:write")
+  @Validate({ params: sequenceIdParams })
   async applySequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @Body(new ZodValidationPipe(sequenceApplySchema)) body: SequenceApplyInput,
@@ -120,6 +127,7 @@ export class TasksController {
 
   @Patch(":taskId")
   @RequirePermission("tasks:write")
+  @Validate({ params: taskIdParams })
   async update(
     @Param("taskId", ParseIntPipe) taskId: number,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
@@ -132,6 +140,7 @@ export class TasksController {
 
   @Delete(":taskId")
   @RequirePermission("tasks:write")
+  @Validate({ params: taskIdParams })
   async remove(
     @Param("taskId", ParseIntPipe) taskId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -143,6 +152,7 @@ export class TasksController {
 
   @Post(":taskId/complete")
   @RequirePermission("tasks:write")
+  @Validate({ params: taskIdParams })
   async complete(
     @Param("taskId", ParseIntPipe) taskId: number,
     @Body(new ZodValidationPipe(completeSchema)) body: CompleteInput,

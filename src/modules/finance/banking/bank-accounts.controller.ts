@@ -28,6 +28,10 @@ import {
   type CreateBankAccountInput,
   type UpdateBankAccountInput,
 } from "./dto/bank-accounts.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const bankAccountIdParams = z.object({ bankAccountId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("finance/bank-accounts")
@@ -56,6 +60,7 @@ export class BankAccountsController {
 
   @Patch(":bankAccountId")
   @RequirePermission("accounting:banking:manage")
+  @Validate({ params: bankAccountIdParams })
   update(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
     @Body(new ZodValidationPipe(updateBankAccountSchema)) body: UpdateBankAccountInput,
@@ -66,6 +71,7 @@ export class BankAccountsController {
 
   @Get(":bankAccountId/transactions")
   @RequirePermission("accounting:banking:read")
+  @Validate({ params: bankAccountIdParams })
   listTransactions(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
     @Query(new ZodValidationPipe(bankTransactionsQuerySchema)) query: BankTransactionsQuery,

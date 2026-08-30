@@ -18,6 +18,10 @@ import {
   type UpdateShipmentInput,
   type ShipActionInput,
 } from "./dto/shipments.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const shipmentIdParams = z.object({ shipmentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/shipments")
@@ -38,6 +42,7 @@ export class ShipmentsController {
   @Get(":shipmentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
+  @Validate({ params: shipmentIdParams })
   findOne(
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -58,6 +63,7 @@ export class ShipmentsController {
   @Patch(":shipmentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
+  @Validate({ params: shipmentIdParams })
   update(
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
     @Body(new ZodValidationPipe(updateShipmentSchema)) body: UpdateShipmentInput,
@@ -70,6 +76,7 @@ export class ShipmentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: shipmentIdParams })
   ship(
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
     @Body(new ZodValidationPipe(shipActionSchema)) body: ShipActionInput,
@@ -84,6 +91,7 @@ export class ShipmentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: shipmentIdParams })
   cancel(
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
     @CurrentUser() u: CurrentUserContext,

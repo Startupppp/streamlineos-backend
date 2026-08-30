@@ -21,6 +21,12 @@ import {
   type UpdateSubjectInput,
   type UpdateSubjectTypeInput,
 } from "./dto/subject.schemas";
+import { z } from "zod";
+
+const subjectTypeIdParams = z.object({ subjectTypeId: z.string().min(1) }).strict();
+const subjectIdParams = z.object({ subjectId: z.string().min(1) }).strict();
+const subjectPartyLinkIdParams = z.object({ subjectPartyLinkId: z.string().min(1) }).strict();
+const partyIdParams = z.object({ partyId: z.string().min(1) }).strict();
 
 /**
  * The thing a tenant transacts.
@@ -57,7 +63,7 @@ export class SubjectController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:subject-types:manage")
   @Idempotent("party.subject_type.update")
-  @Validate({ body: updateSubjectTypeSchema })
+  @Validate({ body: updateSubjectTypeSchema, params: subjectTypeIdParams })
   async updateType(
     @CurrentUser() user: CurrentUserContext,
     @Param("subjectTypeId") subjectTypeId: string,
@@ -69,6 +75,7 @@ export class SubjectController {
   @Delete("subject-types/:subjectTypeId")
   @UseGuards(PermissionGuard)
   @RequirePermission("party:subject-types:manage")
+  @Validate({ params: subjectTypeIdParams })
   async deleteType(
     @CurrentUser() user: CurrentUserContext,
     @Param("subjectTypeId") subjectTypeId: string,
@@ -88,6 +95,7 @@ export class SubjectController {
   @Get("subjects/:subjectId")
   @UseGuards(PermissionGuard)
   @RequirePermission("party:subjects:view")
+  @Validate({ params: subjectIdParams })
   async get(@CurrentUser() user: CurrentUserContext, @Param("subjectId") subjectId: string) {
     return this.subjects.getSubject(user.orgId, subjectId);
   }
@@ -105,7 +113,7 @@ export class SubjectController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:subjects:manage")
   @Idempotent("party.subject.update")
-  @Validate({ body: updateSubjectSchema })
+  @Validate({ body: updateSubjectSchema, params: subjectIdParams })
   async update(
     @CurrentUser() user: CurrentUserContext,
     @Param("subjectId") subjectId: string,
@@ -118,6 +126,7 @@ export class SubjectController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:subjects:manage")
   @Idempotent("party.subject.delete")
+  @Validate({ params: subjectIdParams })
   async remove(@CurrentUser() user: CurrentUserContext, @Param("subjectId") subjectId: string) {
     await this.subjects.deleteSubject(user.orgId, subjectId, user.userId);
     return { deleted: true };
@@ -127,7 +136,7 @@ export class SubjectController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:subjects:manage")
   @Idempotent("party.subject.link")
-  @Validate({ body: linkPartySchema })
+  @Validate({ body: linkPartySchema, params: subjectIdParams })
   async link(
     @CurrentUser() user: CurrentUserContext,
     @Param("subjectId") subjectId: string,
@@ -139,6 +148,7 @@ export class SubjectController {
   @Delete("subject-links/:subjectPartyLinkId")
   @UseGuards(PermissionGuard)
   @RequirePermission("party:subjects:manage")
+  @Validate({ params: subjectPartyLinkIdParams })
   async unlink(
     @CurrentUser() user: CurrentUserContext,
     @Param("subjectPartyLinkId") subjectPartyLinkId: string,
@@ -150,6 +160,7 @@ export class SubjectController {
   @Get("parties/:partyId/subjects")
   @UseGuards(PermissionGuard)
   @RequirePermission("party:subjects:view")
+  @Validate({ params: partyIdParams })
   async forParty(@CurrentUser() user: CurrentUserContext, @Param("partyId") partyId: string) {
     return { data: await this.subjects.listForParty(user.orgId, partyId) };
   }

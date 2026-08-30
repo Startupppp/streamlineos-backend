@@ -24,6 +24,11 @@ import {
   type CreatePageCommentInput,
   type UpdatePageCommentInput,
 } from "./dto/kb-page-comments.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
+const commentIdParams = z.object({ commentId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard)
@@ -36,6 +41,7 @@ export class KbPageCommentsController {
   @Get("pages/:pageId/comments")
   @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   async list(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -47,6 +53,7 @@ export class KbPageCommentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   @HttpCode(201)
+  @Validate({ params: pageIdParams })
   async create(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(createPageCommentSchema))
@@ -59,6 +66,7 @@ export class KbPageCommentsController {
   @Patch("page-comments/:commentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
+  @Validate({ params: commentIdParams })
   async update(
     @Param("commentId", ParseIntPipe) commentId: number,
     @Body(new ZodValidationPipe(updatePageCommentSchema))
@@ -73,6 +81,7 @@ export class KbPageCommentsController {
   @UseGuards(PermissionGuard)
   @HttpCode(204)
   @RequirePermission("kb:pages:update")
+  @Validate({ params: commentIdParams })
   async remove(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -85,6 +94,7 @@ export class KbPageCommentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
+  @Validate({ params: commentIdParams })
   async resolve(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,

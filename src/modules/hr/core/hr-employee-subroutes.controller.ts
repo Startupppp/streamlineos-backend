@@ -17,6 +17,11 @@ import { HrTimelineService } from "./hr-timeline.service";
 import { AccessService } from "../../access/access.service";
 import { resolveEmployeesScope } from "../directory/employees-scope";
 import { historyTypeSchema, listTimelineSchema, type HistoryTypeInput, type ListTimelineInput } from "./dto/hr-core.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const userIdParams = z.object({ userId: z.string().min(1) }).strict();
+const employeeIdParams = z.object({ employeeId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/employees")
@@ -30,6 +35,7 @@ export class HrEmployeeSubroutesController {
   @Get(":userId/employment")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
+  @Validate({ params: userIdParams })
   async getEmployment(
     @Param("userId") userId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -41,6 +47,7 @@ export class HrEmployeeSubroutesController {
   @Get(":employeeId/timeline")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
+  @Validate({ params: employeeIdParams })
   async getTimeline(
     @Param("employeeId", ParseIntPipe) employeeId: number,
     @Query(new ZodValidationPipe(listTimelineSchema)) query: ListTimelineInput,
@@ -56,6 +63,7 @@ export class HrEmployeeSubroutesController {
   @Get(":employeeId/history")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
+  @Validate({ params: employeeIdParams })
   async getHistory(
     @Param("employeeId", ParseIntPipe) employeeId: number,
     @Query(new ZodValidationPipe(historyTypeSchema)) query: HistoryTypeInput,

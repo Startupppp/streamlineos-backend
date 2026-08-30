@@ -23,6 +23,10 @@ import {
   listUserApiTokensSchema,
   type ListUserApiTokensInput,
 } from "./dto/user-api-tokens.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const tokenIdParams = z.object({ tokenId: z.string().min(1) }).strict();
 
 @Controller("me/api-tokens")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -57,6 +61,7 @@ export class UserApiTokensController {
   @Delete(":tokenId")
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermission("settings:api-tokens:write")
+  @Validate({ params: tokenIdParams })
   revoke(@CurrentUser() u: CurrentUserContext, @Param("tokenId") tokenId: string) {
     return this.userApiTokensService.revoke(u.userId, tokenId);
   }

@@ -25,6 +25,10 @@ import {
   type CreateSpaceInput,
   type UpdateSpaceInput,
 } from "../core/dto/kb.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const spaceIdParams = z.object({ spaceId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb/spaces")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -53,6 +57,7 @@ export class KbSpacesController {
 
   @Get(":spaceId")
   @RequirePermission("kb:spaces:view")
+  @Validate({ params: spaceIdParams })
   async get(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -62,6 +67,7 @@ export class KbSpacesController {
 
   @Patch(":spaceId")
   @RequirePermission("kb:spaces:manage")
+  @Validate({ params: spaceIdParams })
   async update(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @Body(new ZodValidationPipe(updateSpaceSchema)) body: UpdateSpaceInput,
@@ -72,6 +78,7 @@ export class KbSpacesController {
 
   @Delete(":spaceId")
   @RequirePermission("kb:spaces:manage")
+  @Validate({ params: spaceIdParams })
   async remove(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @CurrentUser() u: CurrentUserContext,

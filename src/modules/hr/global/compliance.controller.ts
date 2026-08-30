@@ -33,6 +33,11 @@ import {
   type MarkEventDoneInput,
   type SeedCountryPackInput,
 } from "./dto/hr-global.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const requirementIdParams = z.object({ requirementId: z.coerce.number().int().positive() }).strict();
+const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/global/compliance")
@@ -53,6 +58,7 @@ export class ComplianceController {
   @Get("requirements/:requirementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
+  @Validate({ params: requirementIdParams })
   getRequirement(
     @Param("requirementId", ParseIntPipe) requirementId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +80,7 @@ export class ComplianceController {
   @Patch("requirements/:requirementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
+  @Validate({ params: requirementIdParams })
   updateRequirement(
     @Param("requirementId", ParseIntPipe) requirementId: number,
     @Body(new ZodValidationPipe(updateComplianceRequirementSchema)) body: UpdateComplianceRequirementInput,
@@ -85,6 +92,7 @@ export class ComplianceController {
   @Delete("requirements/:requirementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
+  @Validate({ params: requirementIdParams })
   deleteRequirement(
     @Param("requirementId", ParseIntPipe) requirementId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -106,6 +114,7 @@ export class ComplianceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
   @HttpCode(200)
+  @Validate({ params: eventIdParams })
   markEventDone(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Body(new ZodValidationPipe(markEventDoneSchema)) body: MarkEventDoneInput,

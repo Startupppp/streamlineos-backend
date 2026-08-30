@@ -10,6 +10,11 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { StatementReportsService } from "./statement-reports.service";
 import { buildCsv } from "./finance-reports-csv.util";
 import { dateRangeSchema, type DateRangeQuery } from "./dto/finance-reports.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
+const clientIdParams = z.object({ clientId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/reports")
@@ -20,6 +25,7 @@ export class StatementReportsController {
   @Get("vendor-statement/:vendorId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ params: vendorIdParams })
   getVendorStatement(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
@@ -31,6 +37,7 @@ export class StatementReportsController {
   @Get("vendor-statement/:vendorId/export")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:export")
+  @Validate({ params: vendorIdParams })
   async exportVendorStatement(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
@@ -50,6 +57,7 @@ export class StatementReportsController {
   @Get("customer-statement/:clientId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ params: clientIdParams })
   getCustomerStatement(
     @Param("clientId", ParseIntPipe) clientId: number,
     @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,
@@ -61,6 +69,7 @@ export class StatementReportsController {
   @Get("customer-statement/:clientId/export")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:export")
+  @Validate({ params: clientIdParams })
   async exportCustomerStatement(
     @Param("clientId", ParseIntPipe) clientId: number,
     @Query(new ZodValidationPipe(dateRangeSchema)) query: DateRangeQuery,

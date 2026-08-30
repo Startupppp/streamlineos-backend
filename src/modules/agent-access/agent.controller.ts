@@ -24,6 +24,11 @@ import {
   type TicketsListQuery,
 } from "../build/core/dto/projects.schemas";
 import { agentCommentSchema, agentUpdateTicketSchema, type AgentCommentInput, type AgentUpdateTicketInput } from "./dto/agent-tokens.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 
 @Public()
 @Controller("agent/v1")
@@ -65,6 +70,7 @@ export class AgentController {
   @Post("projects/:projectId/tickets")
   @RequirePermission("build:tickets:create")
   @HttpCode(201)
+  @Validate({ params: projectIdParams })
   createTicket(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createTicketSchema)) body: CreateTicketInput,
@@ -84,6 +90,7 @@ export class AgentController {
 
   @Get("projects/:projectId/tickets")
   @RequirePermission("build:tickets:view")
+  @Validate({ params: projectIdParams })
   listTickets(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(ticketsListQuerySchema)) query: TicketsListQuery,
@@ -94,6 +101,7 @@ export class AgentController {
 
   @Get("tickets/:ticketId")
   @RequirePermission("build:tickets:view")
+  @Validate({ params: ticketIdParams })
   async getTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -104,6 +112,7 @@ export class AgentController {
 
   @Patch("tickets/:ticketId")
   @RequirePermission("build:tickets:update")
+  @Validate({ params: ticketIdParams })
   async updateTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(agentUpdateTicketSchema)) body: AgentUpdateTicketInput,
@@ -115,6 +124,7 @@ export class AgentController {
   @Post("tickets/:ticketId/comments")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
+  @Validate({ params: ticketIdParams })
   async addComment(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(agentCommentSchema)) body: AgentCommentInput,

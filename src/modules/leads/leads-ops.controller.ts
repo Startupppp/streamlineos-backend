@@ -34,6 +34,10 @@ import {
   type TopMergeInput,
 } from "./dto/lead-mutations.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const batchIdParams = z.object({ batchId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("leads")
@@ -46,6 +50,7 @@ export class LeadsOpsController {
 
   @Get("import/:batchId")
   @RequirePermission("crm:leads:view")
+  @Validate({ params: batchIdParams })
   async getImportBatch(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -35,6 +35,11 @@ import {
   type ExportQuery,
   type PreviewImportInput,
 } from "./dto/crm-import.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const crmImportIdParams = z.object({ crmImportId: z.string().min(1) }).strict();
+const crmConnectorSyncIdParams = z.object({ crmConnectorSyncId: z.string().min(1) }).strict();
 
 @Controller("crm")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -88,6 +93,7 @@ export class CrmImportController {
 
   @Get("imports/:crmImportId")
   @RequirePermission("crm:imports:manage")
+  @Validate({ params: crmImportIdParams })
   getImport(
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -114,6 +120,7 @@ export class CrmImportController {
   @Post("imports/:crmImportId/commit")
   @Idempotent("crm.import.commit")
   @RequirePermission("crm:imports:manage")
+  @Validate({ params: crmImportIdParams })
   async commit(
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -135,6 +142,7 @@ export class CrmImportController {
   @Post("imports/:crmImportId/revert")
   @Idempotent("crm.import.revert")
   @RequirePermission("crm:imports:manage")
+  @Validate({ params: crmImportIdParams })
   async revert(
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -156,6 +164,7 @@ export class CrmImportController {
    */
   @Get("imports/:crmImportId/progress")
   @RequirePermission("crm:imports:manage")
+  @Validate({ params: crmImportIdParams })
   progress(
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -214,6 +223,7 @@ export class CrmImportController {
    */
   @Get("connectors/:crmConnectorSyncId")
   @RequirePermission("crm:imports:manage")
+  @Validate({ params: crmConnectorSyncIdParams })
   connectorProgress(
     @Param("crmConnectorSyncId") crmConnectorSyncId: string,
     @CurrentUser() u: CurrentUserContext,

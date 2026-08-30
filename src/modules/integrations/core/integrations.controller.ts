@@ -23,6 +23,10 @@ import {
   type FinalizeConnectionInput,
   type InitiateConnectionInput,
 } from "./dto/integrations.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const connectionIdParams = z.object({ connectionId: z.coerce.number().int().positive() }).strict();
 
 @Controller("integrations")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -57,6 +61,7 @@ export class IntegrationsController {
 
   @Delete("connections/:connectionId")
   @RequirePermission("integrations:connections:manage")
+  @Validate({ params: connectionIdParams })
   disconnect(
     @Param("connectionId", ParseIntPipe) connectionId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -66,6 +71,7 @@ export class IntegrationsController {
 
   @Patch("connections/:connectionId/primary")
   @RequirePermission("integrations:connections:manage")
+  @Validate({ params: connectionIdParams })
   setPrimary(
     @Param("connectionId", ParseIntPipe) connectionId: number,
     @CurrentUser() u: CurrentUserContext,

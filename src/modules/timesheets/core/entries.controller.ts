@@ -29,6 +29,10 @@ import {
   type UpdateEntryInput,
   type VoidEntryInput,
 } from "./dto/entries.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("timesheets/entries")
@@ -57,6 +61,7 @@ export class EntriesController {
 
   @Patch(":entryId")
   @RequirePermission("timesheets:entries:update")
+  @Validate({ params: entryIdParams })
   update(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body(new ZodValidationPipe(updateEntrySchema)) body: UpdateEntryInput,
@@ -68,6 +73,7 @@ export class EntriesController {
   @Post(":entryId/void")
   @HttpCode(200)
   @RequirePermission("timesheets:entries:void")
+  @Validate({ params: entryIdParams })
   void(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body(new ZodValidationPipe(voidEntrySchema)) body: VoidEntryInput,

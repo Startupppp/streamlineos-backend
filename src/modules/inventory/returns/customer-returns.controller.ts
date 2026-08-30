@@ -15,6 +15,10 @@ import {
   listReturnsSchema, createCustomerReturnSchema, postCustomerReturnSchema,
   type ListReturnsInput, type CreateCustomerReturnInput, type PostCustomerReturnInput,
 } from "./dto/inv-returns.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const returnIdParams = z.object({ returnId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/customer-returns")
@@ -35,6 +39,7 @@ export class CustomerReturnsController {
   @Get(":returnId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
+  @Validate({ params: returnIdParams })
   get(
     @Param("returnId", ParseIntPipe) returnId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -56,6 +61,7 @@ export class CustomerReturnsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: returnIdParams })
   post(
     @Param("returnId", ParseIntPipe) returnId: number,
     @Body(new ZodValidationPipe(postCustomerReturnSchema)) body: PostCustomerReturnInput,
@@ -70,6 +76,7 @@ export class CustomerReturnsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: returnIdParams })
   cancel(
     @Param("returnId", ParseIntPipe) returnId: number,
     @CurrentUser() u: CurrentUserContext,

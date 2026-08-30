@@ -25,6 +25,10 @@ import {
   type ApplyVendorCreditInput,
   type ListVendorCreditsQuery,
 } from "./dto/finance-ap.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const vendorCreditIdParams = z.object({ vendorCreditId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/vendor-credits")
@@ -56,6 +60,7 @@ export class VendorCreditsController {
   @Get(":vendorCreditId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:vendor-credits:read")
+  @Validate({ params: vendorCreditIdParams })
   getOne(
     @Param("vendorCreditId", ParseIntPipe) vendorCreditId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -67,6 +72,7 @@ export class VendorCreditsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:vendor-credits:manage")
   @HttpCode(200)
+  @Validate({ params: vendorCreditIdParams })
   postCredit(
     @Param("vendorCreditId", ParseIntPipe) vendorCreditId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -78,6 +84,7 @@ export class VendorCreditsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:vendor-credits:manage")
   @HttpCode(200)
+  @Validate({ params: vendorCreditIdParams })
   apply(
     @Param("vendorCreditId", ParseIntPipe) vendorCreditId: number,
     @Body(new ZodValidationPipe(applyVendorCreditSchema)) body: ApplyVendorCreditInput,

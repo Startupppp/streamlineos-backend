@@ -27,6 +27,11 @@ import {
   type ConfirmProbationInput,
   type ListProbationReviewsInput,
 } from "./dto/probation.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const employmentIdParams = z.object({ employmentId: z.coerce.number().int().positive() }).strict();
+const reviewIdParams = z.object({ reviewId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/probation")
@@ -46,6 +51,7 @@ export class ProbationController {
   @Post(":employmentId/start-review")
   @HttpCode(200)
   @RequirePermission("hr:probation:manage")
+  @Validate({ params: employmentIdParams })
   startReview(
     @Param("employmentId", ParseIntPipe) employmentId: number,
     @Body(new ZodValidationPipe(startReviewSchema)) body: StartReviewInput,
@@ -57,6 +63,7 @@ export class ProbationController {
   @Post(":reviewId/extend")
   @HttpCode(200)
   @RequirePermission("hr:probation:manage")
+  @Validate({ params: reviewIdParams })
   extend(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @Body(new ZodValidationPipe(extendProbationSchema)) body: ExtendProbationInput,
@@ -68,6 +75,7 @@ export class ProbationController {
   @Post(":reviewId/confirm")
   @HttpCode(200)
   @RequirePermission("hr:probation:manage")
+  @Validate({ params: reviewIdParams })
   confirm(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @Body(new ZodValidationPipe(confirmProbationSchema)) body: ConfirmProbationInput,

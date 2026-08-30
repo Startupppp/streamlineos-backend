@@ -22,6 +22,10 @@ import {
   type ListDelegationsQuery,
 } from "./dto/delegation.schemas";
 import { DelegationsService } from "./delegations.service";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const delegationIdParams = z.object({ delegationId: z.string().min(1) }).strict();
 
 @Controller("access/delegations")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -62,6 +66,7 @@ export class DelegationsController {
   @Delete(":delegationId")
   @HttpCode(204)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: delegationIdParams })
   revoke(
     @Param("delegationId") delegationId: string,
     @CurrentUser() u: CurrentUserContext,

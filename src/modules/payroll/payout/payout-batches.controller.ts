@@ -35,6 +35,11 @@ import {
   type MarkItemPaidInput,
   type BankReturnImportInput,
 } from "./dto/payout.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const batchIdParams = z.object({ batchId: z.coerce.number().int().positive() }).strict();
+const batchIditemIdParams = z.object({ batchId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/runs/:runId/payout")
@@ -84,6 +89,7 @@ export class PayoutBatchesController {
 
   @Get("batches/:batchId")
   @RequirePermission("payroll:bank:manage")
+  @Validate({ params: batchIdParams })
   getBatch(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -93,6 +99,7 @@ export class PayoutBatchesController {
 
   @Get("batches/:batchId/file")
   @RequirePermission("payroll:bank:manage")
+  @Validate({ params: batchIdParams })
   getBatchFile(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -103,6 +110,7 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/mark-sent")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Validate({ params: batchIdParams })
   markSent(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -113,6 +121,7 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/mark-paid")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Validate({ params: batchIdParams })
   markBatchPaid(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body(new ZodValidationPipe(markBatchPaidSchema)) body: MarkBatchPaidInput,
@@ -129,6 +138,7 @@ export class PayoutBatchesController {
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
   @Idempotent("payroll.bank-return.import")
+  @Validate({ params: batchIdParams })
   importReturn(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body(new ZodValidationPipe(bankReturnImportSchema)) body: BankReturnImportInput,
@@ -140,6 +150,7 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/items/:itemId/mark-paid")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Validate({ params: batchIditemIdParams })
   markItemPaid(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Param("itemId", ParseIntPipe) itemId: number,
@@ -152,6 +163,7 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/items/:itemId/mark-failed")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Validate({ params: batchIditemIdParams })
   markItemFailed(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Param("itemId", ParseIntPipe) itemId: number,

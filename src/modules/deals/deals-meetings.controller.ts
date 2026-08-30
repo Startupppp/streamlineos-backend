@@ -24,6 +24,11 @@ import {
   type UpdateMeetingInput,
 } from "./dto/deals.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
+const dealIdmeetingIdParams = z.object({ dealId: z.coerce.number().int().positive(), meetingId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("deals")
@@ -33,6 +38,7 @@ export class DealsMeetingsController {
 
   @Get(":dealId/meetings")
   @RequirePermission("crm:deals:read")
+  @Validate({ params: dealIdParams })
   listMeetings(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -43,6 +49,7 @@ export class DealsMeetingsController {
   @Post(":dealId/meetings")
   @RequirePermission("crm:deals:update")
   @HttpCode(201)
+  @Validate({ params: dealIdParams })
   createMeeting(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Body(new ZodValidationPipe(createMeetingSchema)) body: CreateMeetingInput,
@@ -53,6 +60,7 @@ export class DealsMeetingsController {
 
   @Patch(":dealId/meetings/:meetingId")
   @RequirePermission("crm:deals:update")
+  @Validate({ params: dealIdmeetingIdParams })
   updateMeeting(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
@@ -65,6 +73,7 @@ export class DealsMeetingsController {
   @Delete(":dealId/meetings/:meetingId")
   @HttpCode(204)
   @RequirePermission("crm:deals:update")
+  @Validate({ params: dealIdmeetingIdParams })
   async deleteMeeting(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,

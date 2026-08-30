@@ -10,6 +10,10 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { HoldsService } from "./quality-holds.service";
 import { listHoldsQuerySchema, createHoldSchema } from "./dto/quality.schemas";
 import type { ListHoldsQueryInput, CreateHoldInput } from "./dto/quality.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const holdIdParams = z.object({ holdId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/quality/holds")
@@ -30,6 +34,7 @@ export class HoldsController {
   @Get(":holdId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
+  @Validate({ params: holdIdParams })
   findOne(
     @Param("holdId", ParseIntPipe) holdId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -52,6 +57,7 @@ export class HoldsController {
   @Post(":holdId/release")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:release")
+  @Validate({ params: holdIdParams })
   release(
     @Param("holdId", ParseIntPipe) holdId: number,
     @Headers("idempotency-key") idempotencyKey: string | undefined,

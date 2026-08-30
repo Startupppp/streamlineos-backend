@@ -23,6 +23,11 @@ import {
   type CreateCategoryInput,
   type UpdateCategoryInput,
 } from "../core/dto/kb.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const spaceIdParams = z.object({ spaceId: z.coerce.number().int().positive() }).strict();
+const categoryIdParams = z.object({ categoryId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -31,6 +36,7 @@ export class KbCategoriesController {
 
   @Get("spaces/:spaceId/categories")
   @RequirePermission("kb:spaces:view")
+  @Validate({ params: spaceIdParams })
   async list(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -41,6 +47,7 @@ export class KbCategoriesController {
   @Post("spaces/:spaceId/categories")
   @RequirePermission("kb:categories:manage")
   @HttpCode(201)
+  @Validate({ params: spaceIdParams })
   async create(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @Body(new ZodValidationPipe(createCategorySchema)) body: CreateCategoryInput,
@@ -51,6 +58,7 @@ export class KbCategoriesController {
 
   @Patch("categories/:categoryId")
   @RequirePermission("kb:categories:manage")
+  @Validate({ params: categoryIdParams })
   async update(
     @Param("categoryId", ParseIntPipe) categoryId: number,
     @Body(new ZodValidationPipe(updateCategorySchema)) body: UpdateCategoryInput,
@@ -61,6 +69,7 @@ export class KbCategoriesController {
 
   @Delete("categories/:categoryId")
   @RequirePermission("kb:categories:manage")
+  @Validate({ params: categoryIdParams })
   async remove(
     @Param("categoryId", ParseIntPipe) categoryId: number,
     @CurrentUser() u: CurrentUserContext,

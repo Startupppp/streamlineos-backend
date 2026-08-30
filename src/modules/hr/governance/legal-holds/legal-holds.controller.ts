@@ -31,6 +31,11 @@ import {
   type ListLegalHoldsInput,
   type AttachHoldItemInput,
 } from "./legal-holds.dto";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const holdIdParams = z.object({ holdId: z.coerce.number().int().positive() }).strict();
+const holdIditemIdParams = z.object({ holdId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/governance/legal-holds")
@@ -59,6 +64,7 @@ export class LegalHoldsController {
 
   @Get(":holdId")
   @RequirePermission("hr:legalhold:view")
+  @Validate({ params: holdIdParams })
   async getById(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,
@@ -68,6 +74,7 @@ export class LegalHoldsController {
 
   @Patch(":holdId")
   @RequirePermission("hr:legalhold:manage")
+  @Validate({ params: holdIdParams })
   async update(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,
@@ -79,6 +86,7 @@ export class LegalHoldsController {
 
   @Post(":holdId/release")
   @RequirePermission("hr:legalhold:manage")
+  @Validate({ params: holdIdParams })
   async release(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,
@@ -90,6 +98,7 @@ export class LegalHoldsController {
   @Delete(":holdId")
   @RequirePermission("hr:legalhold:manage")
   @HttpCode(204)
+  @Validate({ params: holdIdParams })
   async softDelete(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,
@@ -100,6 +109,7 @@ export class LegalHoldsController {
 
   @Get(":holdId/items")
   @RequirePermission("hr:legalhold:view")
+  @Validate({ params: holdIdParams })
   async listItems(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,
@@ -109,6 +119,7 @@ export class LegalHoldsController {
 
   @Post(":holdId/items")
   @RequirePermission("hr:legalhold:manage")
+  @Validate({ params: holdIdParams })
   async attachItem(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,
@@ -121,6 +132,7 @@ export class LegalHoldsController {
   @Delete(":holdId/items/:itemId")
   @RequirePermission("hr:legalhold:manage")
   @HttpCode(204)
+  @Validate({ params: holdIditemIdParams })
   async detachItem(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,

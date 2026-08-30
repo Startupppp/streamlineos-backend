@@ -25,6 +25,11 @@ import {
   type CreatePageReviewInput,
   type RejectReviewInput,
 } from "./dto/kb-page-reviews.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
+const reviewIdParams = z.object({ reviewId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -50,6 +55,7 @@ export class KbPageReviewsController {
   @Post("pages/:pageId/reviews")
   @RequirePermission("kb:reviews:manage")
   @HttpCode(201)
+  @Validate({ params: pageIdParams })
   async create(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(createPageReviewSchema)) body: CreatePageReviewInput,
@@ -62,6 +68,7 @@ export class KbPageReviewsController {
   @Idempotent("kb.page-review.approve")
   @HttpCode(200)
   @RequirePermission("kb:reviews:manage")
+  @Validate({ params: reviewIdParams })
   async approve(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @Body(new ZodValidationPipe(approveReviewSchema)) body: ApproveReviewInput,
@@ -74,6 +81,7 @@ export class KbPageReviewsController {
   @Idempotent("kb.page-review.reject")
   @HttpCode(200)
   @RequirePermission("kb:reviews:manage")
+  @Validate({ params: reviewIdParams })
   async reject(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @Body(new ZodValidationPipe(rejectReviewSchema)) body: RejectReviewInput,

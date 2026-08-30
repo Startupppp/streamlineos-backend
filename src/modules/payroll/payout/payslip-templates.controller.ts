@@ -27,6 +27,10 @@ import {
   type PatchTemplateInput,
   type PreviewTemplateInput,
 } from "./dto/payout.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/payslip-templates")
@@ -61,6 +65,7 @@ export class PayslipTemplatesController {
 
   @Patch(":templateId")
   @RequirePermission("payroll:payslips:manage")
+  @Validate({ params: templateIdParams })
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(patchTemplateSchema)) body: PatchTemplateInput,
@@ -72,6 +77,7 @@ export class PayslipTemplatesController {
   @Delete(":templateId")
   @HttpCode(204)
   @RequirePermission("payroll:payslips:manage")
+  @Validate({ params: templateIdParams })
   remove(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

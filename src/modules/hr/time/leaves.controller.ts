@@ -50,6 +50,11 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CompOffGrantService } from "./comp-off-grant.service";
 import { LeaveTypesService } from "./leave-types.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const leaveTypeIdParams = z.object({ leaveTypeId: z.coerce.number().int().positive() }).strict();
+const leaveIdParams = z.object({ leaveId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/leaves")
@@ -132,6 +137,7 @@ export class LeavesController {
 
   @Patch("types/:leaveTypeId")
   @RequirePermission("hr:leaves:manage")
+  @Validate({ params: leaveTypeIdParams })
   updateLeaveType(
     @Param("leaveTypeId", ParseIntPipe) leaveTypeId: number,
     @Body(new ZodValidationPipe(updateLeaveTypeSchema)) body: UpdateLeaveTypeInput,
@@ -142,6 +148,7 @@ export class LeavesController {
 
   @Delete("types/:leaveTypeId")
   @RequirePermission("hr:leaves:manage")
+  @Validate({ params: leaveTypeIdParams })
   deleteLeaveType(
     @Param("leaveTypeId", ParseIntPipe) leaveTypeId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -171,6 +178,7 @@ export class LeavesController {
 
   @Patch(":leaveId/cancel")
   @RequirePermission("hr:leaves:create")
+  @Validate({ params: leaveIdParams })
   async cancel(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -184,6 +192,7 @@ export class LeavesController {
   @Idempotent("hr.leave.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:approve")
+  @Validate({ params: leaveIdParams })
   approve(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @Body(new ZodValidationPipe(approveLeaveSchema)) body: ApproveLeaveInput,
@@ -196,6 +205,7 @@ export class LeavesController {
   @Idempotent("hr.leave.reject")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:approve")
+  @Validate({ params: leaveIdParams })
   reject(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @Body(new ZodValidationPipe(rejectLeaveSchema)) body: RejectLeaveInput,
@@ -206,6 +216,7 @@ export class LeavesController {
 
   @Patch(":leaveId")
   @RequirePermission("hr:leaves:approve")
+  @Validate({ params: leaveIdParams })
   async update(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @Body(new ZodValidationPipe(updateLeaveSchema)) body: UpdateLeaveInput,

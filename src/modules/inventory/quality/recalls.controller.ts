@@ -10,6 +10,10 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RecallsService } from "./quality-recalls.service";
 import { listRecallsQuerySchema, createRecallSchema, updateRecallSchema } from "./dto/quality.schemas";
 import type { ListRecallsQueryInput, CreateRecallInput, UpdateRecallInput } from "./dto/quality.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const recallIdParams = z.object({ recallId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/quality/recalls")
@@ -30,6 +34,7 @@ export class RecallsController {
   @Get(":recallId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
+  @Validate({ params: recallIdParams })
   findOne(
     @Param("recallId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,
@@ -50,6 +55,7 @@ export class RecallsController {
   @Patch(":recallId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:recall")
+  @Validate({ params: recallIdParams })
   update(
     @Param("recallId", ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(updateRecallSchema)) body: UpdateRecallInput,

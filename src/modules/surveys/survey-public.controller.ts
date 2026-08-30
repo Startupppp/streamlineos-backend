@@ -19,6 +19,12 @@ import {
   type JoinLiveSessionInput,
   type SubmitLiveAnswerInput,
 } from "./dto/survey-live-session.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const collectorTokenParams = z.object({ collectorToken: z.string().min(1) }).strict();
+const collectorTokensessionIdParams = z.object({ collectorToken: z.string().min(1), sessionId: z.string().min(1) }).strict();
+const sessionCodeParams = z.object({ sessionCode: z.string().min(1) }).strict();
 
 @Controller("public/surveys")
 export class SurveyPublicController {
@@ -45,6 +51,7 @@ export class SurveyPublicController {
 
   @Public()
   @Get(":collectorToken")
+  @Validate({ params: collectorTokenParams })
   async getSurvey(
     @Param("collectorToken") collectorToken: string,
     @Request() req: { ip?: string; headers: Record<string, string> },
@@ -56,6 +63,7 @@ export class SurveyPublicController {
   @Public()
   @Post(":collectorToken/start")
   @HttpCode(201)
+  @Validate({ params: collectorTokenParams })
   async start(
     @Param("collectorToken") collectorToken: string,
     @Body(new ZodValidationPipe(startSessionSchema)) body: StartSessionInput,
@@ -67,6 +75,7 @@ export class SurveyPublicController {
 
   @Public()
   @Patch(":collectorToken/session/:sessionId")
+  @Validate({ params: collectorTokensessionIdParams })
   async saveAnswers(
     @Param("sessionId") sessionId: string,
     @Body(new ZodValidationPipe(patchSessionSchema)) body: PatchSessionInput,
@@ -78,6 +87,7 @@ export class SurveyPublicController {
 
   @Public()
   @Post(":collectorToken/session/:sessionId/submit")
+  @Validate({ params: collectorTokensessionIdParams })
   async submit(
     @Param("sessionId") sessionId: string,
     @Body(new ZodValidationPipe(submitSessionSchema)) body: SubmitSessionInput,
@@ -89,6 +99,7 @@ export class SurveyPublicController {
 
   @Public()
   @Get("live/:sessionCode")
+  @Validate({ params: sessionCodeParams })
   async getLiveSession(@Param("sessionCode") sessionCode: string) {
     return this.liveSessions.withLiveSession(sessionCode, async (session) => {
       if (session.status === "ended") throw new NotFoundException("This live session has ended");
@@ -104,6 +115,7 @@ export class SurveyPublicController {
   @Public()
   @Post("live/:sessionCode/join")
   @HttpCode(201)
+  @Validate({ params: sessionCodeParams })
   async joinLiveSession(
     @Param("sessionCode") sessionCode: string,
     @Body(new ZodValidationPipe(joinLiveSessionSchema)) body: JoinLiveSessionInput,
@@ -115,6 +127,7 @@ export class SurveyPublicController {
 
   @Public()
   @Post("live/:sessionCode/answer")
+  @Validate({ params: sessionCodeParams })
   async submitLiveAnswer(
     @Param("sessionCode") sessionCode: string,
     @Body(new ZodValidationPipe(submitLiveAnswerSchema)) body: SubmitLiveAnswerInput,

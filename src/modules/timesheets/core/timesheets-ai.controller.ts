@@ -19,6 +19,10 @@ import {
   type RejectionDraftInput,
 } from "./dto/ai.schemas";
 import { overviewQuerySchema, type OverviewQuery } from "./dto/reports.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("timesheets")
@@ -30,6 +34,7 @@ export class TimesheetsAiController {
   @HttpCode(200)
   @RequirePermission("timesheets:entries:view")
   @UseRateLimit("ai:invoke")
+  @Validate({ params: periodIdParams })
   summarize(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -41,6 +46,7 @@ export class TimesheetsAiController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @UseRateLimit("ai:invoke")
+  @Validate({ params: periodIdParams })
   draftRejectionReason(
     @Param("periodId", ParseIntPipe) periodId: number,
     @Body(new ZodValidationPipe(rejectionDraftSchema)) body: RejectionDraftInput,

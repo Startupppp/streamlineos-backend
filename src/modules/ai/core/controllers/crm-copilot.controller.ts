@@ -23,6 +23,10 @@ import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe"
 import { LlmService } from "../providers/llm.service";
 import { CrmCopilotService } from "../services/crm-copilot.service";
 import { CrmBriefService } from "../services/crm-brief.service";
+import { Validate } from "../../../../common/validation/validate.decorator";
+
+const leadIdParams = z.object({ leadId: z.coerce.number().int().positive() }).strict();
+const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
 
 const nextBestActionsSchema = z.object({
   limit: z.number().int().min(1).max(20).default(10),
@@ -85,6 +89,7 @@ export class CrmCopilotController {
   }
 
   @Post("leads/:leadId/summary")
+  @Validate({ params: leadIdParams })
   async leadSummary(
     @Param("leadId", ParseIntPipe) leadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -96,6 +101,7 @@ export class CrmCopilotController {
   }
 
   @Post("deals/:dealId/summary")
+  @Validate({ params: dealIdParams })
   async dealSummary(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -141,6 +147,7 @@ export class CrmCopilotController {
   }
 
   @Post("duplicate-suggestions/:leadId")
+  @Validate({ params: leadIdParams })
   duplicateSuggestions(
     @Param("leadId", ParseIntPipe) leadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -174,6 +181,7 @@ export class CrmCopilotController {
   }
 
   @Post("leads/:leadId/summary-with-citations")
+  @Validate({ params: leadIdParams })
   async leadSummaryWithCitations(
     @Param("leadId", ParseIntPipe) leadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -185,6 +193,7 @@ export class CrmCopilotController {
   }
 
   @Post("deals/:dealId/summary-with-citations")
+  @Validate({ params: dealIdParams })
   async dealSummaryWithCitations(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,

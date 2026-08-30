@@ -21,6 +21,11 @@ import {
   type UpdateLotStatusInput,
   type TraceabilityQueryInput,
 } from "./dto/traceability.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const lotIdParams = z.object({ lotId: z.coerce.number().int().positive() }).strict();
+const serialIdParams = z.object({ serialId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory")
@@ -44,6 +49,7 @@ export class InvTraceabilityController {
   @Get("lots/:lotId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ params: lotIdParams })
   async getLotDetail(
     @Param("lotId", ParseIntPipe) lotId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -54,6 +60,7 @@ export class InvTraceabilityController {
   @Patch("lots/:lotId/status")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
+  @Validate({ params: lotIdParams })
   async updateLotStatus(
     @Param("lotId", ParseIntPipe) lotId: number,
     @Body(new ZodValidationPipe(updateLotStatusSchema)) body: UpdateLotStatusInput,
@@ -75,6 +82,7 @@ export class InvTraceabilityController {
   @Get("serials/:serialId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ params: serialIdParams })
   async getSerialDetail(
     @Param("serialId", ParseIntPipe) serialId: number,
     @CurrentUser() u: CurrentUserContext,

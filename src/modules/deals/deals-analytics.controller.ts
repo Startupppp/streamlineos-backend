@@ -17,6 +17,11 @@ import {
   overrideForecastSnapshotSchema,
   type OverrideForecastSnapshotInput,
 } from "./dto/deals.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
+const snapshotIdParams = z.object({ snapshotId: z.string().min(1) }).strict();
 
 @RequireModule("crm")
 @Controller("deals")
@@ -78,6 +83,7 @@ export class DealsAnalyticsController {
 
   @Get(":dealId/health")
   @RequirePermission("crm:deals:read")
+  @Validate({ params: dealIdParams })
   getDealHealth(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +93,7 @@ export class DealsAnalyticsController {
 
   @Patch("forecast/:snapshotId/override")
   @RequirePermission("crm:deals:manage")
+  @Validate({ params: snapshotIdParams })
   overrideForecast(
     @Param("snapshotId") snapshotId: string,
     @Body(new ZodValidationPipe(overrideForecastSnapshotSchema)) body: OverrideForecastSnapshotInput,

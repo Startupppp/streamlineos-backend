@@ -7,6 +7,9 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PermissionGuard } from "./permission.guard";
 import { RequirePermission } from "./require-permission.decorator";
 import { EntitlementsService, ModuleStatus } from "./entitlements.service";
+import { Validate } from "../../common/validation/validate.decorator";
+
+const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
 
 const moduleKeyParamSchema = z.object({
   moduleKey: z.string().min(1).max(64).regex(/^[a-z][a-z0-9_-]*$/),
@@ -33,6 +36,7 @@ export class EntitlementsController {
   @Patch(":moduleKey")
   @RequirePermission("settings:manage")
   @HttpCode(204)
+  @Validate({ params: moduleKeyParams })
   toggleModule(
     @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
     @Body(new ZodValidationPipe(toggleModuleSchema)) body: ToggleModuleInput,

@@ -28,6 +28,11 @@ import {
   type CreatePositionTransitionInput,
   type UpdatePositionTransitionInput,
 } from "./positions-taxonomy.dto";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const statusIdParams = z.object({ statusId: z.coerce.number().int().positive() }).strict();
+const transitionIdParams = z.object({ transitionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/governance/position-taxonomy")
@@ -53,6 +58,7 @@ export class PositionsTaxonomyController {
 
   @Patch("statuses/:statusId")
   @RequirePermission("hr:positions:manage")
+  @Validate({ params: statusIdParams })
   async updateStatus(
     @CurrentUser() user: CurrentUserContext,
     @Param("statusId", ParseIntPipe) statusId: number,
@@ -65,6 +71,7 @@ export class PositionsTaxonomyController {
   @Delete("statuses/:statusId")
   @RequirePermission("hr:positions:manage")
   @HttpCode(200)
+  @Validate({ params: statusIdParams })
   async retireStatus(
     @CurrentUser() user: CurrentUserContext,
     @Param("statusId", ParseIntPipe) statusId: number,
@@ -90,6 +97,7 @@ export class PositionsTaxonomyController {
 
   @Patch("transitions/:transitionId")
   @RequirePermission("hr:positions:manage")
+  @Validate({ params: transitionIdParams })
   async updateTransition(
     @CurrentUser() user: CurrentUserContext,
     @Param("transitionId", ParseIntPipe) transitionId: number,
@@ -102,6 +110,7 @@ export class PositionsTaxonomyController {
   @Delete("transitions/:transitionId")
   @RequirePermission("hr:positions:manage")
   @HttpCode(204)
+  @Validate({ params: transitionIdParams })
   async deleteTransition(
     @CurrentUser() user: CurrentUserContext,
     @Param("transitionId", ParseIntPipe) transitionId: number,

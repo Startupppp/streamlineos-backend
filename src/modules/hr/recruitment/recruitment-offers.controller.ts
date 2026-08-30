@@ -29,6 +29,10 @@ import {
 } from "./dto/candidate-records.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const offerIdParams = z.object({ offerId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/candidates/:candidateId/offers")
@@ -56,6 +60,7 @@ export class RecruitmentOffersController {
   @Post(":offerId/submit-for-approval")
   @Idempotent("hr.offer.submit-approval")
   @RequirePermission("hr:offers:manage")
+  @Validate({ params: offerIdParams })
   submitForApproval(@Param("offerId", ParseIntPipe) offerId: number, @CurrentUser() u: CurrentUserContext) {
     return this.offers.submitForApproval(u.orgId, offerId, u.userId);
   }
@@ -63,6 +68,7 @@ export class RecruitmentOffersController {
   @Post(":offerId/approve")
   @Idempotent("hr.offer.approve")
   @RequirePermission("hr:offers:approve")
+  @Validate({ params: offerIdParams })
   approve(
     @Param("offerId", ParseIntPipe) offerId: number,
     @Body(new ZodValidationPipe(approvalRemarksSchema)) body: ApprovalRemarksInput,
@@ -73,6 +79,7 @@ export class RecruitmentOffersController {
 
   @Post(":offerId/reject-approval")
   @RequirePermission("hr:offers:approve")
+  @Validate({ params: offerIdParams })
   rejectApproval(
     @Param("offerId", ParseIntPipe) offerId: number,
     @Body(new ZodValidationPipe(approvalRemarksSchema)) body: ApprovalRemarksInput,
@@ -83,12 +90,14 @@ export class RecruitmentOffersController {
 
   @Get(":offerId/versions")
   @RequirePermission("hr:offers:view")
+  @Validate({ params: offerIdParams })
   listVersions(@Param("offerId", ParseIntPipe) offerId: number, @CurrentUser() u: CurrentUserContext) {
     return this.offers.listVersions(u.orgId, offerId);
   }
 
   @Get(":offerId/negotiations")
   @RequirePermission("hr:offers:view")
+  @Validate({ params: offerIdParams })
   listNegotiations(@Param("offerId", ParseIntPipe) offerId: number, @CurrentUser() u: CurrentUserContext) {
     return this.offers.listNegotiations(u.orgId, offerId);
   }
@@ -96,6 +105,7 @@ export class RecruitmentOffersController {
   @Post(":offerId/negotiations")
   @HttpCode(201)
   @RequirePermission("hr:offers:manage")
+  @Validate({ params: offerIdParams })
   respondToNegotiation(
     @Param("offerId", ParseIntPipe) offerId: number,
     @Body(new ZodValidationPipe(createOfferNegotiationSchema)) body: CreateOfferNegotiationInput,
@@ -106,6 +116,7 @@ export class RecruitmentOffersController {
 
   @Patch(":offerId")
   @RequirePermission("hr:offers:manage")
+  @Validate({ params: offerIdParams })
   update(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("offerId", ParseIntPipe) offerId: number,
@@ -117,6 +128,7 @@ export class RecruitmentOffersController {
 
   @Delete(":offerId")
   @RequirePermission("hr:offers:manage")
+  @Validate({ params: offerIdParams })
   remove(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("offerId", ParseIntPipe) offerId: number,

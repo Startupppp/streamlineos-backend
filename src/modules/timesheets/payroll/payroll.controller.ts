@@ -36,6 +36,10 @@ import {
   type AckExportInput,
   type UpdateSettingsInput,
 } from "./dto/payroll.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const exportIdParams = z.object({ exportId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("timesheets/payroll")
@@ -80,6 +84,7 @@ export class PayrollController {
 
   @Patch("exports/:exportId/ack")
   @RequirePermission("timesheets:payroll:export")
+  @Validate({ params: exportIdParams })
   ackExport(
     @Param("exportId", ParseIntPipe) exportId: number,
     @Body(new ZodValidationPipe(ackExportSchema)) body: AckExportInput,
@@ -90,6 +95,7 @@ export class PayrollController {
 
   @Get("exports/:exportId/rows")
   @RequirePermission("timesheets:payroll:view")
+  @Validate({ params: exportIdParams })
   getExportRows(
     @Param("exportId", ParseIntPipe) exportId: number,
     @CurrentUser() u: CurrentUserContext,

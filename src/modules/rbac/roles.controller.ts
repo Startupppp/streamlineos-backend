@@ -37,6 +37,11 @@ import {
   type SimulationCandidatesQuery,
   type UpdateRoleInput,
 } from "./dto/rbac.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const targetUserIdParams = z.object({ targetUserId: z.string().min(1) }).strict();
+const roleIdParams = z.object({ roleId: z.string().min(1) }).strict();
 
 interface SimulateAccessResponse {
   userId: string;
@@ -91,6 +96,7 @@ export class RolesController {
   @Get("simulate/:targetUserId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: targetUserIdParams })
   async simulateAccess(
     @Param("targetUserId") targetUserId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -153,6 +159,7 @@ export class RolesController {
   @Get(":roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams })
   get(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
     return this.roles.getRole(u.orgId, this.parseRoleId(roleId));
   }
@@ -160,6 +167,7 @@ export class RolesController {
   @Patch(":roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams })
   update(
     @Param("roleId") roleId: string,
     @Body(new ZodValidationPipe(updateRoleSchema)) body: UpdateRoleInput,
@@ -171,6 +179,7 @@ export class RolesController {
   @Delete(":roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams })
   remove(
     @Param("roleId") roleId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -181,6 +190,7 @@ export class RolesController {
   @Get(":roleId/permissions")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams })
   getPermissions(
     @Param("roleId") roleId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -191,6 +201,7 @@ export class RolesController {
   @Put(":roleId/permissions")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams })
   setPermissions(
     @Param("roleId") roleId: string,
     @Body(new ZodValidationPipe(setRolePermissionsSchema))
@@ -203,6 +214,7 @@ export class RolesController {
   @Get(":roleId/members")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams })
   getMembers(
     @Param("roleId") roleId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -214,6 +226,7 @@ export class RolesController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams })
   addMember(
     @Param("roleId") roleId: string,
     @Body(new ZodValidationPipe(roleMemberSchema)) body: RoleMemberInput,
@@ -225,6 +238,7 @@ export class RolesController {
   @Delete(":roleId/members")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams })
   removeMember(
     @Param("roleId") roleId: string,
     @Body(new ZodValidationPipe(roleMemberSchema)) body: RoleMemberInput,

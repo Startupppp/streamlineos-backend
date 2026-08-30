@@ -14,6 +14,10 @@ import {
   createAssetSchema, listAssetsQuerySchema, updateAssetSchema, disposeAssetSchema,
   type CreateAssetInput, type ListAssetsQuery, type UpdateAssetInput, type DisposeAssetInput,
 } from "./dto/assets.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const assetIdParams = z.object({ assetId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/assets")
@@ -45,6 +49,7 @@ export class AssetsController {
   @Get(":assetId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:read")
+  @Validate({ params: assetIdParams })
   getOne(
     @Param("assetId", ParseIntPipe) assetId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -55,6 +60,7 @@ export class AssetsController {
   @Patch(":assetId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:update")
+  @Validate({ params: assetIdParams })
   update(
     @Param("assetId", ParseIntPipe) assetId: number,
     @Body(new ZodValidationPipe(updateAssetSchema)) body: UpdateAssetInput,
@@ -67,6 +73,7 @@ export class AssetsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:update")
   @HttpCode(200)
+  @Validate({ params: assetIdParams })
   activate(
     @Param("assetId", ParseIntPipe) assetId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -78,6 +85,7 @@ export class AssetsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:manage")
   @HttpCode(200)
+  @Validate({ params: assetIdParams })
   dispose(
     @Param("assetId", ParseIntPipe) assetId: number,
     @Body(new ZodValidationPipe(disposeAssetSchema)) body: DisposeAssetInput,

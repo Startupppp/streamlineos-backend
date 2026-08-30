@@ -31,6 +31,10 @@ import { LeavesPageService } from "./leaves-page.service";
 import { LeavesService } from "./leaves.service";
 import { LeavesWriteService } from "./leaves-write.service";
 import { WfhService } from "./wfh.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const leaveIdParams = z.object({ leaveId: z.coerce.number().int().positive() }).strict();
 
 @Controller("me/time-off")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -76,6 +80,7 @@ export class EmployeeTimeOffController {
 
   @Patch(":leaveId/cancel")
   @RequirePermission("self:leaves")
+  @Validate({ params: leaveIdParams })
   async cancel(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @CurrentUser() user: CurrentUserContext,

@@ -12,6 +12,10 @@ import {
   type ListVendorsInput, type CreateVendorInput, type UpdateVendorInput,
 } from "./dto/inv-vendors.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/vendors")
@@ -32,6 +36,7 @@ export class InvVendorsController {
   @Get(":vendorId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:read")
+  @Validate({ params: vendorIdParams })
   get(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -42,6 +47,7 @@ export class InvVendorsController {
   @Get(":vendorId/performance")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:read")
+  @Validate({ params: vendorIdParams })
   getPerformance(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -62,6 +68,7 @@ export class InvVendorsController {
   @Patch(":vendorId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:manage")
+  @Validate({ params: vendorIdParams })
   update(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @Body(new ZodValidationPipe(updateVendorSchema)) body: UpdateVendorInput,

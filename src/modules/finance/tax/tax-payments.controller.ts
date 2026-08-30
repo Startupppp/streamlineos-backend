@@ -14,6 +14,10 @@ import {
   type CreateTaxPaymentInput,
   type ListTaxPaymentsQuery,
 } from "./dto/tax-payments.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const paymentIdParams = z.object({ paymentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/taxes/payments")
@@ -47,6 +51,7 @@ export class TaxPaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:pay")
   @HttpCode(200)
+  @Validate({ params: paymentIdParams })
   delete(
     @Param("paymentId", ParseIntPipe) paymentId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -29,6 +29,10 @@ import {
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const changeIdParams = z.object({ changeId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/effective-changes")
@@ -61,6 +65,7 @@ export class HrEffectiveChangesController {
   @Idempotent("hr.effective-change.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: changeIdParams })
   approve(
     @Param("changeId", ParseIntPipe) changeId: number,
     @CurrentUser() u: CurrentUserContext,

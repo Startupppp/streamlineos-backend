@@ -31,6 +31,11 @@ import {
   type UpdateHiringFlowInput,
   type UpdateRoundInput,
 } from "./dto/hr-interviews.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const flowIdParams = z.object({ flowId: z.coerce.number().int().positive() }).strict();
+const flowIdroundIdParams = z.object({ flowId: z.coerce.number().int().positive(), roundId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/hiring-flows")
@@ -59,6 +64,7 @@ export class HrHiringFlowsController {
 
   @Get(":flowId")
   @RequirePermission("hr:interviews:view")
+  @Validate({ params: flowIdParams })
   getOne(
     @Param("flowId", ParseIntPipe) flowId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -68,6 +74,7 @@ export class HrHiringFlowsController {
 
   @Patch(":flowId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: flowIdParams })
   update(
     @Param("flowId", ParseIntPipe) flowId: number,
     @Body(new ZodValidationPipe(updateHiringFlowSchema)) body: UpdateHiringFlowInput,
@@ -78,6 +85,7 @@ export class HrHiringFlowsController {
 
   @Delete(":flowId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: flowIdParams })
   remove(
     @Param("flowId", ParseIntPipe) flowId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +95,7 @@ export class HrHiringFlowsController {
 
   @Get(":flowId/rounds")
   @RequirePermission("hr:interviews:view")
+  @Validate({ params: flowIdParams })
   listRounds(
     @Param("flowId", ParseIntPipe) flowId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -97,6 +106,7 @@ export class HrHiringFlowsController {
   @Post(":flowId/rounds")
   @HttpCode(201)
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: flowIdParams })
   createRound(
     @Param("flowId", ParseIntPipe) flowId: number,
     @Body(new ZodValidationPipe(createRoundSchema)) body: CreateRoundInput,
@@ -107,6 +117,7 @@ export class HrHiringFlowsController {
 
   @Patch(":flowId/rounds/:roundId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: flowIdroundIdParams })
   updateRound(
     @Param("flowId", ParseIntPipe) flowId: number,
     @Param("roundId", ParseIntPipe) roundId: number,
@@ -118,6 +129,7 @@ export class HrHiringFlowsController {
 
   @Delete(":flowId/rounds/:roundId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: flowIdroundIdParams })
   removeRound(
     @Param("flowId", ParseIntPipe) flowId: number,
     @Param("roundId", ParseIntPipe) roundId: number,

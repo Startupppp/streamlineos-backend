@@ -30,6 +30,10 @@ import {
   listPageQuerySchema,
   type ListPageQueryInput,
 } from "./dto/payroll.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const bonusIdParams = z.object({ bonusId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("hr/bonuses")
@@ -66,6 +70,7 @@ export class BonusesController {
 
   @Patch(":bonusId")
   @RequirePermission("hr:bonuses:manage")
+  @Validate({ params: bonusIdParams })
   async update(
     @Param("bonusId", ParseIntPipe) bonusId: number,
     @Body(new ZodValidationPipe(patchBonusSchema)) body: PatchBonusInput,

@@ -53,6 +53,14 @@ import {
   type UpdateReviewCycleInput,
 } from "./dto/performance.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const goalIdParams = z.object({ goalId: z.coerce.number().int().positive() }).strict();
+const meetingIdParams = z.object({ meetingId: z.coerce.number().int().positive() }).strict();
+const pipIdParams = z.object({ pipId: z.coerce.number().int().positive() }).strict();
+const reviewIdParams = z.object({ reviewId: z.coerce.number().int().positive() }).strict();
+const cycleIdParams = z.object({ cycleId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/performance")
@@ -92,6 +100,7 @@ export class PerformanceController {
 
   @Patch("goals/:goalId")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: goalIdParams })
   async updateGoal(
     @Param("goalId", ParseIntPipe) goalId: number,
     @Body(new ZodValidationPipe(updateGoalItemSchema)) body: UpdateGoalItemInput,
@@ -103,6 +112,7 @@ export class PerformanceController {
   @Delete("goals/:goalId")
   @HttpCode(204)
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: goalIdParams })
   async deleteGoal(
     @Param("goalId", ParseIntPipe) goalId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -161,6 +171,7 @@ export class PerformanceController {
 
   @Patch("one-on-ones/:meetingId")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: meetingIdParams })
   async updateOneOnOne(
     @Param("meetingId", ParseIntPipe) meetingId: number,
     @Body(new ZodValidationPipe(updateOneOnOneSchema)) body: UpdateOneOnOneInput,
@@ -172,6 +183,7 @@ export class PerformanceController {
   @Delete("one-on-ones/:meetingId")
   @HttpCode(204)
   @RequirePermission("hr:performance:view")
+  @Validate({ params: meetingIdParams })
   async deleteOneOnOne(
     @Param("meetingId", ParseIntPipe) meetingId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -198,6 +210,7 @@ export class PerformanceController {
 
   @Patch("pip/:pipId")
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: pipIdParams })
   updatePip(
     @Param("pipId", ParseIntPipe) pipId: number,
     @Body(new ZodValidationPipe(updatePipSchema)) body: UpdatePipInput,
@@ -228,6 +241,7 @@ export class PerformanceController {
 
   @Get("reviews/:reviewId")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: reviewIdParams })
   getReview(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -238,6 +252,7 @@ export class PerformanceController {
   @Delete("reviews/:reviewId")
   @HttpCode(204)
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: reviewIdParams })
   async deleteReview(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -247,6 +262,7 @@ export class PerformanceController {
 
   @Patch("reviews/:reviewId")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: reviewIdParams })
   async updateReview(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @Body(new ZodValidationPipe(updatePerformanceReviewSchema)) body: UpdatePerformanceReviewInput,
@@ -273,6 +289,7 @@ export class PerformanceController {
 
   @Get("cycles/:cycleId")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: cycleIdParams })
   getCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -282,6 +299,7 @@ export class PerformanceController {
 
   @Patch("cycles/:cycleId")
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: cycleIdParams })
   updateCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @Body(new ZodValidationPipe(updateReviewCycleSchema)) body: UpdateReviewCycleInput,
@@ -293,6 +311,7 @@ export class PerformanceController {
   @Delete("cycles/:cycleId")
   @HttpCode(204)
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: cycleIdParams })
   async deleteCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,

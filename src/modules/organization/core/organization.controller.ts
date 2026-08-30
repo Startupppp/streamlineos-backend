@@ -70,6 +70,13 @@ import {
   type UpdateOrgSettingsInput,
   type ValidateInvitationTokenQuery,
 } from "./dto/organization.schemas";
+import { z } from "zod";
+
+const memberIdParams = z.object({ memberId: z.string().min(1) }).strict();
+const domainIdParams = z.object({ domainId: z.string().min(1) }).strict();
+const holidayIdParams = z.object({ holidayId: z.string().min(1) }).strict();
+const orgIdParams = z.object({ orgId: z.string().min(1) }).strict();
+const holdIdParams = z.object({ holdId: z.string().min(1) }).strict();
 
 @Controller("organization")
 @UseGuards(JwtAuthGuard)
@@ -167,6 +174,7 @@ export class OrganizationController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
   @Patch("members/:memberId")
+  @Validate({ params: memberIdParams })
   updateMemberRole(
     @Param("memberId") memberId: string,
     @Body(new ZodValidationPipe(updateMemberRoleSchema)) body: UpdateMemberRoleInput,
@@ -184,6 +192,7 @@ export class OrganizationController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: memberIdParams })
   async removeMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext): Promise<void> {
     if (memberId === u.userId) {
       throw new BadRequestException("You cannot remove yourself from the organization");
@@ -195,6 +204,7 @@ export class OrganizationController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: memberIdParams })
   suspendMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext) {
     if (memberId === u.userId) {
       throw new BadRequestException("You cannot suspend yourself");
@@ -206,6 +216,7 @@ export class OrganizationController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: memberIdParams })
   reactivateMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext) {
     return this.organization.reactivateMember(u.orgId, u.userId, memberId);
   }
@@ -281,6 +292,7 @@ export class OrganizationController {
   @Post("custom-domains/:domainId/verify")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
+  @Validate({ params: domainIdParams })
   verifyCustomDomain(
     @Param("domainId") domainId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -292,6 +304,7 @@ export class OrganizationController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
+  @Validate({ params: domainIdParams })
   async removeCustomDomain(
     @Param("domainId") domainId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -320,6 +333,7 @@ export class OrganizationController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
+  @Validate({ params: holidayIdParams })
   async deleteHoliday(@Param("holidayId") holidayId: string, @CurrentUser() u: CurrentUserContext): Promise<void> {
     await this.settings.deleteHoliday(u.orgId, u.userId, holidayId);
   }
@@ -367,6 +381,7 @@ export class OrganizationController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
+  @Validate({ params: orgIdParams })
   schedulePurge(
     @Param("orgId") orgId: string,
     @Body(new ZodValidationPipe(schedulePurgeSchema)) body: SchedulePurgeInput,
@@ -386,6 +401,7 @@ export class OrganizationController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
+  @Validate({ params: orgIdParams })
   cancelPurge(
     @Param("orgId") orgId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -417,6 +433,7 @@ export class OrganizationController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: holdIdParams })
   releaseLegalHold(
     @Param("holdId") holdId: string,
     @CurrentUser() u: CurrentUserContext,

@@ -15,6 +15,10 @@ import {
   createScenarioSchema, updateScenarioSchema, forecastQuerySchema, compareScenariosQuerySchema,
   type CreateScenarioInput, type UpdateScenarioInput, type ForecastQuery, type CompareScenariosQuery,
 } from "./dto/finance-planning.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const scenarioIdParams = z.object({ scenarioId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting")
@@ -43,6 +47,7 @@ export class ScenariosController {
 
   @Patch("scenarios/:scenarioId")
   @RequirePermission("accounting:forecast:manage")
+  @Validate({ params: scenarioIdParams })
   updateScenario(
     @Param("scenarioId", ParseIntPipe) scenarioId: number,
     @Body(new ZodValidationPipe(updateScenarioSchema)) body: UpdateScenarioInput,
@@ -54,6 +59,7 @@ export class ScenariosController {
   @Delete("scenarios/:scenarioId")
   @RequirePermission("accounting:forecast:manage")
   @HttpCode(204)
+  @Validate({ params: scenarioIdParams })
   deleteScenario(
     @Param("scenarioId", ParseIntPipe) scenarioId: number,
     @CurrentUser() u: CurrentUserContext,

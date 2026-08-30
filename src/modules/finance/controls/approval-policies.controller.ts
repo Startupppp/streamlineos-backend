@@ -27,6 +27,9 @@ import {
 } from "./dto/finance-controls.schemas";
 import { z } from "zod";
 import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
 const listPoliciesSchema = z.object({
   page: pageNumberField,
@@ -61,6 +64,7 @@ export class ApprovalPoliciesController {
 
   @Patch(":policyId")
   @RequirePermission("accounting:settings:manage")
+  @Validate({ params: policyIdParams })
   update(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Body(new ZodValidationPipe(updateApprovalPolicySchema)) body: UpdateApprovalPolicyInput,
@@ -71,6 +75,7 @@ export class ApprovalPoliciesController {
 
   @Delete(":policyId")
   @RequirePermission("accounting:settings:manage")
+  @Validate({ params: policyIdParams })
   remove(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,

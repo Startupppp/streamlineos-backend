@@ -25,6 +25,10 @@ import {
   type CreateRateInput,
   type UpdateRateInput,
 } from "./dto/rates.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const rateIdParams = z.object({ rateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("timesheets/rates")
@@ -50,6 +54,7 @@ export class RatesController {
 
   @Patch(":rateId")
   @RequirePermission("timesheets:rates:manage")
+  @Validate({ params: rateIdParams })
   update(
     @Param("rateId", ParseIntPipe) rateId: number,
     @Body(new ZodValidationPipe(updateRateSchema)) body: UpdateRateInput,
@@ -61,6 +66,7 @@ export class RatesController {
   @Delete(":rateId")
   @HttpCode(204)
   @RequirePermission("timesheets:rates:manage")
+  @Validate({ params: rateIdParams })
   delete(
     @Param("rateId", ParseIntPipe) rateId: number,
     @CurrentUser() u: CurrentUserContext,

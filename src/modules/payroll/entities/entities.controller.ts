@@ -18,6 +18,10 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PayrollEntitiesService } from "./entities.service";
 import { createEntitySchema, type CreateEntityInput } from "./dto/entities.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const entityIdParams = z.object({ entityId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/entities")
@@ -40,6 +44,7 @@ export class PayrollEntitiesController {
 
   @Get(":entityId/context")
   @RequirePermission("payroll:policies:view")
+  @Validate({ params: entityIdParams })
   context(
     @CurrentUser() u: CurrentUserContext,
     @Param("entityId", ParseIntPipe) entityId: number,
@@ -49,6 +54,7 @@ export class PayrollEntitiesController {
 
   @Get(":entityId")
   @RequirePermission("payroll:policies:view")
+  @Validate({ params: entityIdParams })
   get(
     @CurrentUser() u: CurrentUserContext,
     @Param("entityId", ParseIntPipe) entityId: number,

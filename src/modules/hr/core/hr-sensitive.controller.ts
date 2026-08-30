@@ -19,6 +19,10 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { HrSensitiveService } from "./hr-sensitive.service";
 import { updateSensitiveSchema, type UpdateSensitiveInput } from "./dto/hr-core.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const employeeIdParams = z.object({ employeeId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/employees")
@@ -28,6 +32,7 @@ export class HrSensitiveController {
 
   @Get(":employeeId/sensitive")
   @RequirePermission("hr:sensitive:view")
+  @Validate({ params: employeeIdParams })
   get(
     @Param("employeeId", ParseIntPipe) employeeId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -39,6 +44,7 @@ export class HrSensitiveController {
 
   @Patch(":employeeId/sensitive")
   @RequirePermission("hr:sensitive:manage")
+  @Validate({ params: employeeIdParams })
   update(
     @Param("employeeId", ParseIntPipe) employeeId: number,
     @Body(new ZodValidationPipe(updateSensitiveSchema)) body: UpdateSensitiveInput,

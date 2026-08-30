@@ -34,6 +34,10 @@ import {
 } from "./dto/timesheets.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/time-entries")
@@ -62,6 +66,7 @@ export class TimeEntriesController {
   @Patch(":entryId/approve")
   @Idempotent("build.timesheet.approve-entry")
   @RequirePermission("build:timesheets:manage")
+  @Validate({ params: entryIdParams })
   approveEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -72,6 +77,7 @@ export class TimeEntriesController {
   @Patch(":entryId/reject")
   @Idempotent("build.timesheet.reject-entry")
   @RequirePermission("build:timesheets:manage")
+  @Validate({ params: entryIdParams })
   rejectEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body(new ZodValidationPipe(rejectEntrySchema)) body: RejectEntryInput,
@@ -82,6 +88,7 @@ export class TimeEntriesController {
 
   @Patch(":entryId")
   @RequirePermission("build:timesheets:create")
+  @Validate({ params: entryIdParams })
   updateEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body(new ZodValidationPipe(updateEntrySchema)) body: UpdateEntryInput,
@@ -93,6 +100,7 @@ export class TimeEntriesController {
   @Delete(":entryId")
   @RequirePermission("build:timesheets:create")
   @HttpCode(204)
+  @Validate({ params: entryIdParams })
   deleteEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,

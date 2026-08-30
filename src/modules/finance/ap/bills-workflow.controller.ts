@@ -22,6 +22,10 @@ import {
   type BillApprovalNote,
   type BillCancel,
 } from "./dto/finance-ap.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const billIdParams = z.object({ billId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/purchase-bills")
@@ -34,6 +38,7 @@ export class BillsWorkflowController {
   @RequirePermission("accounting:payables:manage")
   @HttpCode(200)
   @Idempotent("accounting.bill.submit-approval")
+  @Validate({ params: billIdParams })
   submitForApproval(
     @Param("billId", ParseIntPipe) billId: number,
     @Body(new ZodValidationPipe(billApprovalNoteSchema)) body: BillApprovalNote,
@@ -47,6 +52,7 @@ export class BillsWorkflowController {
   @RequirePermission("accounting:payables:approve")
   @HttpCode(200)
   @Idempotent("accounting.bill.approve")
+  @Validate({ params: billIdParams })
   approveBill(
     @Param("billId", ParseIntPipe) billId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -58,6 +64,7 @@ export class BillsWorkflowController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:manage")
   @HttpCode(200)
+  @Validate({ params: billIdParams })
   cancelBill(
     @Param("billId", ParseIntPipe) billId: number,
     @Body(new ZodValidationPipe(billCancelSchema)) body: BillCancel,

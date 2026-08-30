@@ -18,6 +18,11 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CommentDraftsService } from "./comment-drafts.service";
 import { upsertCommentDraftSchema, type UpsertCommentDraftInput } from "./dto/comment-drafts.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
+const draftIdParams = z.object({ draftId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/comment-drafts")
@@ -33,6 +38,7 @@ export class CommentDraftsController {
 
   @Put("tickets/:ticketId")
   @RequirePermission("build:tickets:view")
+  @Validate({ params: ticketIdParams })
   upsert(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(upsertCommentDraftSchema)) body: UpsertCommentDraftInput,
@@ -51,6 +57,7 @@ export class CommentDraftsController {
   @Delete("tickets/:ticketId")
   @HttpCode(200)
   @RequirePermission("build:tickets:view")
+  @Validate({ params: ticketIdParams })
   deleteByTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -61,6 +68,7 @@ export class CommentDraftsController {
   @Delete(":draftId")
   @HttpCode(200)
   @RequirePermission("build:tickets:view")
+  @Validate({ params: draftIdParams })
   deleteOne(
     @Param("draftId", ParseIntPipe) draftId: number,
     @CurrentUser() u: CurrentUserContext,

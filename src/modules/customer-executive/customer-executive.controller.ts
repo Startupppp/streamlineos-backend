@@ -28,6 +28,10 @@ import {
   type UpdateSurveyInput,
 } from "./dto/customer-executive.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("customer-executive")
@@ -94,6 +98,7 @@ export class CustomerExecutiveController {
 
   @Get("nps/:surveyId")
   @RequirePermission("crm:clients:read")
+  @Validate({ params: surveyIdParams })
   async getSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -105,6 +110,7 @@ export class CustomerExecutiveController {
 
   @Patch("nps/:surveyId")
   @RequirePermission("crm:clients:manage")
+  @Validate({ params: surveyIdParams })
   async updateSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(updateSurveySchema)) body: UpdateSurveyInput,
@@ -117,6 +123,7 @@ export class CustomerExecutiveController {
 
   @Delete("nps/:surveyId")
   @RequirePermission("crm:clients:manage")
+  @Validate({ params: surveyIdParams })
   async deleteSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,

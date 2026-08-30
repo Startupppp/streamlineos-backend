@@ -29,6 +29,10 @@ import {
   type CampaignCreateInput,
   type CampaignUpdateInput,
 } from "./dto/campaigns.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const campaignIdParams = z.object({ campaignId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("crm/campaigns")
@@ -73,6 +77,7 @@ export class CrmCampaignsController {
 
   @Get(":campaignId/roi")
   @RequirePermission("crm:campaigns:view")
+  @Validate({ params: campaignIdParams })
   roi(
     @Param("campaignId", ParseIntPipe) campaignId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -82,6 +87,7 @@ export class CrmCampaignsController {
 
   @Get(":campaignId/leads")
   @RequirePermission("crm:campaigns:view")
+  @Validate({ params: campaignIdParams })
   campaignLeads(
     @Param("campaignId", ParseIntPipe) campaignId: number,
     @Query("page") page: string | undefined,
@@ -98,6 +104,7 @@ export class CrmCampaignsController {
 
   @Patch(":campaignId")
   @RequirePermission("crm:campaigns:manage")
+  @Validate({ params: campaignIdParams })
   update(
     @Param("campaignId", ParseIntPipe) campaignId: number,
     @Body(new ZodValidationPipe(campaignUpdateSchema)) body: CampaignUpdateInput,
@@ -109,6 +116,7 @@ export class CrmCampaignsController {
   @Delete(":campaignId")
   @HttpCode(204)
   @RequirePermission("crm:campaigns:manage")
+  @Validate({ params: campaignIdParams })
   async remove(
     @Param("campaignId", ParseIntPipe) campaignId: number,
     @CurrentUser() u: CurrentUserContext,

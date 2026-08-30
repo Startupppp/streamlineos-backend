@@ -43,6 +43,12 @@ import {
   type InboxSummaryInput,
   type ThreadSummaryInput,
 } from "./dto/mail-ai-schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const messageIdParams = z.object({ messageId: z.string().min(1) }).strict();
+const threadIdParams = z.object({ threadId: z.string().min(1) }).strict();
+const messageIdattachmentIdParams = z.object({ messageId: z.string().min(1), attachmentId: z.string().min(1) }).strict();
 
 @Controller("mail")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -78,6 +84,7 @@ export class MailController {
 
   @Get("messages/:messageId")
   @RequirePermission("mail:inbox:view")
+  @Validate({ params: messageIdParams })
   getMessage(
     @Param("messageId") messageId: string,
     @Query(new ZodValidationPipe(getMessageQuerySchema)) query: GetMessageQuery,
@@ -88,6 +95,7 @@ export class MailController {
 
   @Get("threads/:threadId")
   @RequirePermission("mail:inbox:view")
+  @Validate({ params: threadIdParams })
   getThread(
     @Param("threadId") threadId: string,
     @Query(new ZodValidationPipe(getThreadQuerySchema)) query: GetThreadQuery,
@@ -127,6 +135,7 @@ export class MailController {
   @Post("messages/:messageId/actions")
   @HttpCode(200)
   @RequirePermission("mail:messages:manage")
+  @Validate({ params: messageIdParams })
   performAction(
     @Param("messageId") messageId: string,
     @Body(new ZodValidationPipe(mailActionSchema)) body: MailActionInput,
@@ -137,6 +146,7 @@ export class MailController {
 
   @Get("messages/:messageId/attachments/:attachmentId")
   @RequirePermission("mail:inbox:view")
+  @Validate({ params: messageIdattachmentIdParams })
   getAttachment(
     @Param("messageId") messageId: string,
     @Param("attachmentId") attachmentId: string,

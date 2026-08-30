@@ -33,6 +33,11 @@ import {
   type SetWhiteboardSharesInput,
   type UpdateWhiteboardSharingInput,
 } from "./dto/workspace.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const targetUserIdParams = z.object({ targetUserId: z.string().min(1) }).strict();
+const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
 function clientIp(req: Request): string {
   const forwarded = req.headers["x-forwarded-for"];
@@ -82,6 +87,7 @@ export class WhiteboardSharingController {
   @Delete("shares/:targetUserId")
   @RequirePermission("build:whiteboards:manage")
   @HttpCode(204)
+  @Validate({ params: targetUserIdParams })
   removeShare(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
@@ -101,6 +107,7 @@ export class PublicWhiteboardLinksController {
   ) {}
 
   @Get(":token")
+  @Validate({ params: tokenParams })
   async getByToken(@Param("token") token: string, @Req() req: Request) {
     const rl = await this.rateLimit.check("whiteboard:public-view", clientIp(req));
     if (!rl.allowed) {
@@ -113,6 +120,7 @@ export class PublicWhiteboardLinksController {
   }
 
   @Patch(":token")
+  @Validate({ params: tokenParams })
   async updateByToken(
     @Param("token") token: string,
     @Body(new ZodValidationPipe(publicWhiteboardUpdateSchema)) body: PublicWhiteboardUpdateInput,

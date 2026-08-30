@@ -25,6 +25,10 @@ import {
   type UpdateHandbookInput,
 } from "./dto/handbook.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const handbookIdParams = z.object({ handbookId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/handbook")
@@ -50,6 +54,7 @@ export class HrHandbookController {
 
   @Patch(":handbookId")
   @RequirePermission("hr:handbook:manage")
+  @Validate({ params: handbookIdParams })
   async update(
     @Param("handbookId", ParseIntPipe) handbookId: number,
     @Body(new ZodValidationPipe(updateHandbookSchema)) body: UpdateHandbookInput,
@@ -63,6 +68,7 @@ export class HrHandbookController {
   @Delete(":handbookId")
   @HttpCode(204)
   @RequirePermission("hr:handbook:manage")
+  @Validate({ params: handbookIdParams })
   async remove(
     @Param("handbookId", ParseIntPipe) handbookId: number,
     @CurrentUser() u: CurrentUserContext,

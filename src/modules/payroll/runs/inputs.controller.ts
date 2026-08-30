@@ -29,6 +29,10 @@ import {
   type PatchInputInput,
   type InputsQuery,
 } from "./dto/runs.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const inputIdParams = z.object({ inputId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/runs/:runId/inputs")
@@ -54,6 +58,7 @@ export class InputsController {
 
   @Patch(":inputId")
   @RequirePermission("payroll:runs:update")
+  @Validate({ params: inputIdParams })
   async patchInput(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("inputId", ParseIntPipe) inputId: number,

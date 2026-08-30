@@ -13,6 +13,10 @@ import {
   type CreateDelegationDto,
   type UpdateDelegationDto,
 } from "./dto/workflow.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const delegationIdParams = z.object({ delegationId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard)
@@ -47,6 +51,7 @@ export class HrWorkflowDelegationsController {
   @Patch(":delegationId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
+  @Validate({ params: delegationIdParams })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("delegationId", ParseIntPipe) delegationId: number,
@@ -59,6 +64,7 @@ export class HrWorkflowDelegationsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @HttpCode(204)
+  @Validate({ params: delegationIdParams })
   remove(
     @CurrentUser() u: CurrentUserContext,
     @Param("delegationId", ParseIntPipe) delegationId: number,

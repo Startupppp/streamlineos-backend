@@ -27,6 +27,10 @@ import {
   type OverrideExceptionInput,
   type ExceptionFilterInput,
 } from "./dto/runs.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const exceptionIdParams = z.object({ exceptionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/runs/:runId/exceptions")
@@ -48,6 +52,7 @@ export class ExceptionsController {
 
   @Patch(":exceptionId/resolve")
   @RequirePermission("payroll:runs:update")
+  @Validate({ params: exceptionIdParams })
   async resolve(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("exceptionId", ParseIntPipe) exceptionId: number,
@@ -66,6 +71,7 @@ export class ExceptionsController {
 
   @Patch(":exceptionId/override")
   @RequirePermission("payroll:runs:manage")
+  @Validate({ params: exceptionIdParams })
   async override(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("exceptionId", ParseIntPipe) exceptionId: number,

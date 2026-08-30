@@ -41,6 +41,13 @@ import {
   type UpdatePollInput,
   type VotePollInput,
 } from "./dto/engagement-extras.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const badgeIdParams = z.object({ badgeId: z.coerce.number().int().positive() }).strict();
+const pollIdParams = z.object({ pollId: z.coerce.number().int().positive() }).strict();
+const communityIdParams = z.object({ communityId: z.coerce.number().int().positive() }).strict();
+const campaignIdParams = z.object({ campaignId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/engagement")
@@ -99,6 +106,7 @@ export class EngagementExtrasController {
   @Delete("badges/:badgeId")
   @HttpCode(204)
   @RequirePermission("hr:engagement:manage")
+  @Validate({ params: badgeIdParams })
   async deleteBadge(
     @Param("badgeId", ParseIntPipe) badgeId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -109,6 +117,7 @@ export class EngagementExtrasController {
   @Post("badges/:badgeId/award")
   @RequirePermission("hr:engagement:manage")
   @HttpCode(201)
+  @Validate({ params: badgeIdParams })
   awardBadge(
     @Param("badgeId", ParseIntPipe) badgeId: number,
     @Body(new ZodValidationPipe(awardBadgeSchema)) body: AwardBadgeInput,
@@ -157,6 +166,7 @@ export class EngagementExtrasController {
 
   @Patch("polls/:pollId")
   @RequirePermission("hr:engagement:manage")
+  @Validate({ params: pollIdParams })
   updatePoll(
     @Param("pollId", ParseIntPipe) pollId: number,
     @Body(new ZodValidationPipe(updatePollSchema)) body: UpdatePollInput,
@@ -168,6 +178,7 @@ export class EngagementExtrasController {
   @Post("polls/:pollId/vote")
   @RequirePermission("hr:engagement:view")
   @HttpCode(200)
+  @Validate({ params: pollIdParams })
   votePoll(
     @Param("pollId", ParseIntPipe) pollId: number,
     @Body(new ZodValidationPipe(votePollSchema)) body: VotePollInput,
@@ -178,6 +189,7 @@ export class EngagementExtrasController {
 
   @Get("polls/:pollId/results")
   @RequirePermission("hr:engagement:view")
+  @Validate({ params: pollIdParams })
   pollResults(
     @Param("pollId", ParseIntPipe) pollId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -207,6 +219,7 @@ export class EngagementExtrasController {
   @Post("communities/:communityId/join")
   @RequirePermission("hr:engagement:view")
   @HttpCode(200)
+  @Validate({ params: communityIdParams })
   joinCommunity(
     @Param("communityId", ParseIntPipe) communityId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -217,6 +230,7 @@ export class EngagementExtrasController {
   @Post("communities/:communityId/leave")
   @RequirePermission("hr:engagement:view")
   @HttpCode(200)
+  @Validate({ params: communityIdParams })
   leaveCommunity(
     @Param("communityId", ParseIntPipe) communityId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -226,6 +240,7 @@ export class EngagementExtrasController {
 
   @Get("communities/:communityId/members")
   @RequirePermission("hr:engagement:view")
+  @Validate({ params: communityIdParams })
   communityMembers(
     @Param("communityId", ParseIntPipe) communityId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -251,6 +266,7 @@ export class EngagementExtrasController {
 
   @Patch("campaigns/:campaignId")
   @RequirePermission("hr:engagement:manage")
+  @Validate({ params: campaignIdParams })
   updateCampaign(
     @Param("campaignId", ParseIntPipe) campaignId: number,
     @Body(new ZodValidationPipe(updateCampaignSchema)) body: UpdateCampaignInput,
@@ -262,6 +278,7 @@ export class EngagementExtrasController {
   @Delete("campaigns/:campaignId")
   @HttpCode(204)
   @RequirePermission("hr:engagement:manage")
+  @Validate({ params: campaignIdParams })
   async deleteCampaign(
     @Param("campaignId", ParseIntPipe) campaignId: number,
     @CurrentUser() u: CurrentUserContext,

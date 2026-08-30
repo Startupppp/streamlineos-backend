@@ -40,6 +40,10 @@ import {
   type VerifyEmailOtpInput,
 } from "./dto/auth.schemas";
 import { enrichUserAgent } from "../../common/http/parse-user-agent";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
 @Controller("auth")
 @UseGuards(JwtAuthGuard)
@@ -133,6 +137,7 @@ export class AuthController {
   @Public()
   @Get("session-data/:userId")
   @HttpCode(200)
+  @Validate({ params: userIdParams })
   async getSessionData(
     @Param("userId") userId: string,
     @Request() req: { headers: Record<string, string> },

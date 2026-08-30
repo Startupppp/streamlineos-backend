@@ -16,6 +16,10 @@ import {
   listGrnSchema, reverseGrnSchema,
   type ListGrnInput, type ReverseGrnInput,
 } from "./dto/inv-purchase-orders.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const grnIdParams = z.object({ grnId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/goods-receipts")
@@ -36,6 +40,7 @@ export class GrnController {
   @Get(":grnId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
+  @Validate({ params: grnIdParams })
   get(
     @Param("grnId", ParseIntPipe) grnId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -47,6 +52,7 @@ export class GrnController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: grnIdParams })
   reverse(
     @Param("grnId", ParseIntPipe) grnId: number,
     @Body(new ZodValidationPipe(reverseGrnSchema)) body: ReverseGrnInput,

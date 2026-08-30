@@ -25,6 +25,10 @@ import {
   type InterviewListInput,
   type UpsertSlaInput,
 } from "./dto/hr-interviews.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const interviewIdParams = z.object({ interviewId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/interviews")
@@ -67,6 +71,7 @@ export class HrInterviewsController {
 
   @Get(":interviewId/scorecard/summary")
   @RequirePermission("hr:interviews:view")
+  @Validate({ params: interviewIdParams })
   async scorecardSummary(@Param("interviewId", ParseIntPipe) interviewId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.interviews.scorecardSummary(u.orgId, interviewId);
     if (!result) throw new NotFoundException("Interview not found.");
@@ -75,6 +80,7 @@ export class HrInterviewsController {
 
   @Get(":interviewId/ics")
   @RequirePermission("hr:interviews:view")
+  @Validate({ params: interviewIdParams })
   async ics(
     @Param("interviewId", ParseIntPipe) interviewId: number,
     @CurrentUser() u: CurrentUserContext,

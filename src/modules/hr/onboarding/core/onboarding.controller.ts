@@ -64,6 +64,14 @@ import {
   type SessionPatchInput,
   type TourProgressInput,
 } from "../flow/dto/onboarding-flow.schemas";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
+const moduleKeyitemKeyParams = z.object({ moduleKey: z.string().min(1), itemKey: z.string().min(1) }).strict();
+const tourKeyParams = z.object({ tourKey: z.string().min(1) }).strict();
+const taskIdParams = z.object({ taskId: z.coerce.number().int().positive() }).strict();
+const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
 const HR_MODULE_KEY: ModuleKey = "hr";
 
@@ -135,6 +143,7 @@ export class OnboardingController {
   @Get("module-checklists/:moduleKey")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:view")
+  @Validate({ params: moduleKeyParams })
   async getModuleChecklist(
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -146,6 +155,7 @@ export class OnboardingController {
   @Post("module-checklists/:moduleKey/items/:itemKey/complete")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
+  @Validate({ params: moduleKeyitemKeyParams })
   async completeChecklistItem(
     @Param("moduleKey") moduleKey: string,
     @Param("itemKey") itemKey: string,
@@ -163,6 +173,7 @@ export class OnboardingController {
   @Post("module-checklists/:moduleKey/items/:itemKey/skip")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
+  @Validate({ params: moduleKeyitemKeyParams })
   async skipChecklistItem(
     @Param("moduleKey") moduleKey: string,
     @Param("itemKey") itemKey: string,
@@ -183,6 +194,7 @@ export class OnboardingController {
   @Post("module-checklists/:moduleKey/dismiss")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
+  @Validate({ params: moduleKeyParams })
   async dismissModuleChecklist(
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -198,6 +210,7 @@ export class OnboardingController {
   @Post("module-checklists/:moduleKey/restart")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
+  @Validate({ params: moduleKeyParams })
   async restartModuleChecklist(
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -243,6 +256,7 @@ export class OnboardingController {
   @Post("tours/:tourKey/progress")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
+  @Validate({ params: tourKeyParams })
   async saveTourProgress(
     @Param("tourKey") tourKey: string,
     @Body(new ZodValidationPipe(tourProgressSchema)) body: TourProgressInput,
@@ -260,6 +274,7 @@ export class OnboardingController {
   @Post("tours/:tourKey/complete")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
+  @Validate({ params: tourKeyParams })
   async completeTour(
     @Param("tourKey") tourKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -271,6 +286,7 @@ export class OnboardingController {
   @Post("tours/:tourKey/dismiss")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
+  @Validate({ params: tourKeyParams })
   async dismissTour(
     @Param("tourKey") tourKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -384,6 +400,7 @@ export class OnboardingController {
   @UseGuards(PermissionGuard)
   @RequireModule("hr")
   @RequirePermission("self:onboarding-tasks")
+  @Validate({ params: taskIdParams })
   updateTask(
     @Param("taskId", ParseIntPipe) taskId: number,
     @Body(new ZodValidationPipe(updateTaskSchema)) body: UpdateTaskInput,
@@ -432,6 +449,7 @@ export class OnboardingController {
   @Get(":userId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:tasks:view")
+  @Validate({ params: userIdParams })
   getUserTasks(
     @Param("userId") userId: string,
     @CurrentUser() u: CurrentUserContext,

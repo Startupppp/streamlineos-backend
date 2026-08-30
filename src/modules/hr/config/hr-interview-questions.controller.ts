@@ -28,6 +28,10 @@ import {
   type UpdateInterviewQuestionInput,
 } from "./dto/interview-questions.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const questionIdParams = z.object({ questionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/interview-questions")
@@ -56,6 +60,7 @@ export class HrInterviewQuestionsController {
 
   @Patch(":questionId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: questionIdParams })
   async update(
     @Param("questionId", ParseIntPipe) questionId: number,
     @Body(new ZodValidationPipe(updateInterviewQuestionSchema)) body: UpdateInterviewQuestionInput,
@@ -69,6 +74,7 @@ export class HrInterviewQuestionsController {
   @Delete(":questionId")
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: questionIdParams })
   async remove(
     @Param("questionId", ParseIntPipe) questionId: number,
     @CurrentUser() u: CurrentUserContext,

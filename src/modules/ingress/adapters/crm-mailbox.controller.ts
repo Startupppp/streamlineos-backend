@@ -10,6 +10,9 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { CrmMailboxService } from "./crm-mailbox.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const crmMailboxSyncIdParams = z.object({ crmMailboxSyncId: z.string().min(1) }).strict();
 
 const enableMailboxSchema = z
   .object({ connectionId: z.number().int().positive() })
@@ -72,6 +75,7 @@ export class CrmMailboxController {
   /** Stops the feed. Nothing already filed is removed — those are real records. */
   @Delete(":crmMailboxSyncId")
   @RequirePermission("crm:ingress:submit")
+  @Validate({ params: crmMailboxSyncIdParams })
   disable(
     @Param("crmMailboxSyncId") crmMailboxSyncId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -88,6 +92,7 @@ export class CrmMailboxController {
    */
   @Post(":crmMailboxSyncId/sync")
   @RequirePermission("crm:ingress:submit")
+  @Validate({ params: crmMailboxSyncIdParams })
   sync(
     @Param("crmMailboxSyncId") crmMailboxSyncId: string,
     @CurrentUser() u: CurrentUserContext,

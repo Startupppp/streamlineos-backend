@@ -7,6 +7,10 @@ import { type Db } from "../../db/drizzle.module";
 import { kbArticleAttachments, kbArticles } from "../../db/schema";
 import { StorageService } from "./storage.service";
 import { kbAttachmentsQuerySchema, type KbAttachmentsQueryInput } from "./dto/storage.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const slugParams = z.object({ slug: z.string().min(1) }).strict();
 
 type AttachmentResponse = Pick<
   typeof kbArticleAttachments.$inferSelect,
@@ -24,6 +28,7 @@ export class StorageKbController {
   ) {}
 
   @Get(":slug/attachments")
+  @Validate({ params: slugParams })
   async listAttachments(
     @Param("slug") slug: string,
     @Query(new ZodValidationPipe(kbAttachmentsQuerySchema)) query: KbAttachmentsQueryInput,

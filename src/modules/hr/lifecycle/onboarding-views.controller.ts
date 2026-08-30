@@ -35,6 +35,10 @@ import {
   type OnboardingDocsSummaryQueryInput,
   type ReviewOnboardingDocInput,
 } from "./dto/hr-lifecycle.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const docIdParams = z.object({ docId: z.coerce.number().int().positive() }).strict();
 
 @Controller("hr/onboarding-docs")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -84,6 +88,7 @@ export class OnboardingViewsController {
 
   @Get("me/:docId/file")
   @RequirePermission("self:onboarding-docs")
+  @Validate({ params: docIdParams })
   getMyFile(
     @Param("docId", ParseIntPipe) docId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -116,6 +121,7 @@ export class OnboardingViewsController {
 
   @Get(":docId/file")
   @RequirePermission("hr:onboarding:manage")
+  @Validate({ params: docIdParams })
   async getFile(
     @Param("docId", ParseIntPipe) docId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -127,6 +133,7 @@ export class OnboardingViewsController {
   @Patch(":docId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:manage")
+  @Validate({ params: docIdParams })
   async review(
     @Param("docId", ParseIntPipe) docId: number,
     @Body(new ZodValidationPipe(reviewOnboardingDocSchema)) body: ReviewOnboardingDocInput,

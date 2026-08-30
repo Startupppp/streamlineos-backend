@@ -19,6 +19,10 @@ import {
   submitChangeRequestSchema,
   type SubmitChangeRequestInput,
 } from "./dto/portal-client.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 
 type PortalReq = Request & { portalUser: PortalUserContext };
 
@@ -40,6 +44,7 @@ export class PortalClientController {
   }
 
   @Get("projects/:projectId/overview")
+  @Validate({ params: projectIdParams })
   getProjectOverview(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Req() req: PortalReq,
@@ -54,6 +59,7 @@ export class PortalClientController {
 
   @Post("projects/:projectId/change-requests")
   @HttpCode(201)
+  @Validate({ params: projectIdParams })
   submitChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(submitChangeRequestSchema))

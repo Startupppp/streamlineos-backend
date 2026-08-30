@@ -29,6 +29,11 @@ import {
   type ListPortfoliosQuery,
   type UpdatePortfolioInput,
 } from "./dto/portfolios.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const portfolioIdParams = z.object({ portfolioId: z.coerce.number().int().positive() }).strict();
+const portfolioIdprojectIdParams = z.object({ portfolioId: z.coerce.number().int().positive(), projectId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -47,6 +52,7 @@ export class PortfoliosController {
 
   @Get("portfolios/:portfolioId")
   @RequirePermission("build:portfolios:view")
+  @Validate({ params: portfolioIdParams })
   getPortfolio(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -66,6 +72,7 @@ export class PortfoliosController {
 
   @Patch("portfolios/:portfolioId")
   @RequirePermission("build:portfolios:manage")
+  @Validate({ params: portfolioIdParams })
   updatePortfolio(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
     @Body(new ZodValidationPipe(updatePortfolioSchema)) body: UpdatePortfolioInput,
@@ -77,6 +84,7 @@ export class PortfoliosController {
   @Delete("portfolios/:portfolioId")
   @HttpCode(204)
   @RequirePermission("build:portfolios:manage")
+  @Validate({ params: portfolioIdParams })
   deletePortfolio(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +95,7 @@ export class PortfoliosController {
   @Post("portfolios/:portfolioId/projects")
   @HttpCode(200)
   @RequirePermission("build:portfolios:manage")
+  @Validate({ params: portfolioIdParams })
   linkProject(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
     @Body(new ZodValidationPipe(linkProjectSchema)) body: LinkProjectInput,
@@ -98,6 +107,7 @@ export class PortfoliosController {
   @Delete("portfolios/:portfolioId/projects/:projectId")
   @HttpCode(204)
   @RequirePermission("build:portfolios:manage")
+  @Validate({ params: portfolioIdprojectIdParams })
   unlinkProject(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
     @Param("projectId", ParseIntPipe) projectId: number,

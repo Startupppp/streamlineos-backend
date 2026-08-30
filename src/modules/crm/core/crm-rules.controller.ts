@@ -37,6 +37,11 @@ import {
   type ScoringRuleUpdateInput,
 } from "./dto/rules.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("crm")
@@ -80,6 +85,7 @@ export class CrmRulesController {
 
   @Patch("assignment-rules/:ruleId")
   @RequirePermission("crm:assignment-rules:manage")
+  @Validate({ params: ruleIdParams })
   async updateAssignmentRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(assignmentRuleUpdateSchema)) body: AssignmentRuleUpdateInput,
@@ -93,6 +99,7 @@ export class CrmRulesController {
   @Delete("assignment-rules/:ruleId")
   @HttpCode(204)
   @RequirePermission("crm:assignment-rules:manage")
+  @Validate({ params: ruleIdParams })
   async deleteAssignmentRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -118,6 +125,7 @@ export class CrmRulesController {
 
   @Patch("scoring-rules/:ruleId")
   @RequirePermission("crm:scoring-rules:manage")
+  @Validate({ params: ruleIdParams })
   async updateScoringRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(scoringRuleUpdateSchema)) body: ScoringRuleUpdateInput,
@@ -131,6 +139,7 @@ export class CrmRulesController {
   @Delete("scoring-rules/:ruleId")
   @HttpCode(204)
   @RequirePermission("crm:scoring-rules:manage")
+  @Validate({ params: ruleIdParams })
   async deleteScoringRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -156,6 +165,7 @@ export class CrmRulesController {
 
   @Patch("email-templates/:templateId")
   @RequirePermission("crm:email-templates:manage")
+  @Validate({ params: templateIdParams })
   async updateEmailTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(emailTemplateUpdateSchema)) body: EmailTemplateUpdateInput,
@@ -169,6 +179,7 @@ export class CrmRulesController {
   @Delete("email-templates/:templateId")
   @HttpCode(204)
   @RequirePermission("crm:email-templates:manage")
+  @Validate({ params: templateIdParams })
   async deleteEmailTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

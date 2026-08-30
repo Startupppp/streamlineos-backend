@@ -22,6 +22,10 @@ import {
   type ReceiptListInput,
   type PatchReceiptInput,
 } from "./dto/finance-expenses.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const expenseIdParams = z.object({ expenseId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/expenses/receipts")
@@ -40,6 +44,7 @@ export class ReceiptsController {
 
   @Patch(":expenseId")
   @RequirePermission("accounting:reimbursements:manage")
+  @Validate({ params: expenseIdParams })
   async patchMetadata(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @Body(new ZodValidationPipe(patchReceiptSchema)) body: PatchReceiptInput,

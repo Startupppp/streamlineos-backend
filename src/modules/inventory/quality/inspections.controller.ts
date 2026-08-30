@@ -20,6 +20,10 @@ import type {
   FailInspectionInput,
   DisposeInspectionInput,
 } from "./dto/quality.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const inspectionIdParams = z.object({ inspectionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/quality/inspections")
@@ -40,6 +44,7 @@ export class InspectionsController {
   @Get(":inspectionId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
+  @Validate({ params: inspectionIdParams })
   findOne(
     @Param("inspectionId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,
@@ -60,6 +65,7 @@ export class InspectionsController {
   @Post(":inspectionId/start")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Validate({ params: inspectionIdParams })
   start(
     @Param("inspectionId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,
@@ -70,6 +76,7 @@ export class InspectionsController {
   @Post(":inspectionId/pass")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:release")
+  @Validate({ params: inspectionIdParams })
   pass(
     @Param("inspectionId", ParseIntPipe) id: number,
     @Headers("idempotency-key") idempotencyKey: string | undefined,
@@ -82,6 +89,7 @@ export class InspectionsController {
   @Post(":inspectionId/fail")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Validate({ params: inspectionIdParams })
   fail(
     @Param("inspectionId", ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(failInspectionSchema)) body: FailInspectionInput,
@@ -93,6 +101,7 @@ export class InspectionsController {
   @Post(":inspectionId/dispose")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Validate({ params: inspectionIdParams })
   dispose(
     @Param("inspectionId", ParseIntPipe) id: number,
     @Headers("idempotency-key") idempotencyKey: string | undefined,
@@ -106,6 +115,7 @@ export class InspectionsController {
   @Post(":inspectionId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Validate({ params: inspectionIdParams })
   cancel(
     @Param("inspectionId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,

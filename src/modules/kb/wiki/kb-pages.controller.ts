@@ -42,6 +42,11 @@ import {
   type SetVisibilityInput,
   type VerifyPageInput,
 } from "./dto/kb-pages.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
+const pageIdversionNumberParams = z.object({ pageId: z.coerce.number().int().positive(), versionNumber: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @RequireModule("kb")
@@ -103,6 +108,7 @@ export class KbPagesController {
 
   @Get("pages/:pageId")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   async get(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -113,6 +119,7 @@ export class KbPagesController {
 
   @Patch("pages/:pageId")
   @RequirePermission("kb:pages:update")
+  @Validate({ params: pageIdParams })
   async update(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(updatePageSchema)) body: UpdatePageInput,
@@ -125,6 +132,7 @@ export class KbPagesController {
   @Post("pages/:pageId/move")
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
+  @Validate({ params: pageIdParams })
   async move(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(movePageSchema)) body: MovePageInput,
@@ -136,6 +144,7 @@ export class KbPagesController {
   @Post("pages/:pageId/duplicate")
   @RequirePermission("kb:pages:create")
   @HttpCode(201)
+  @Validate({ params: pageIdParams })
   async duplicate(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -145,6 +154,7 @@ export class KbPagesController {
 
   @Delete("pages/:pageId")
   @RequirePermission("kb:pages:delete")
+  @Validate({ params: pageIdParams })
   async remove(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -155,6 +165,7 @@ export class KbPagesController {
   @Post("pages/:pageId/restore")
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
+  @Validate({ params: pageIdParams })
   async restore(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -172,6 +183,7 @@ export class KbPagesController {
   @Delete("pages/:pageId/permanent")
   @HttpCode(204)
   @RequirePermission("kb:pages:purge")
+  @Validate({ params: pageIdParams })
   async hardDelete(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -182,6 +194,7 @@ export class KbPagesController {
   @Post("pages/:pageId/favorite")
   @HttpCode(200)
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   async addFavorite(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -191,6 +204,7 @@ export class KbPagesController {
 
   @Delete("pages/:pageId/favorite")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   async removeFavorite(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -201,6 +215,7 @@ export class KbPagesController {
   @Post("pages/:pageId/visit")
   @HttpCode(200)
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   async recordVisit(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -210,6 +225,7 @@ export class KbPagesController {
 
   @Get("pages/:pageId/backlinks")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   async backlinks(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -219,6 +235,7 @@ export class KbPagesController {
 
   @Get("pages/:pageId/versions")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   async listVersions(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -228,6 +245,7 @@ export class KbPagesController {
 
   @Get("pages/:pageId/versions/:versionNumber")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdversionNumberParams })
   async getVersion(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Param("versionNumber", ParseIntPipe) versionNumber: number,
@@ -239,6 +257,7 @@ export class KbPagesController {
   @Post("pages/:pageId/versions/:versionNumber/restore")
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
+  @Validate({ params: pageIdversionNumberParams })
   async restoreVersion(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Param("versionNumber", ParseIntPipe) versionNumber: number,
@@ -250,6 +269,7 @@ export class KbPagesController {
 
   @Patch("pages/:pageId/lock")
   @RequirePermission("kb:pages:manage")
+  @Validate({ params: pageIdParams })
   async lock(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(lockPageSchema)) body: LockPageInput,
@@ -260,6 +280,7 @@ export class KbPagesController {
 
   @Patch("pages/:pageId/visibility")
   @RequirePermission("kb:pages:update")
+  @Validate({ params: pageIdParams })
   async setVisibility(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(setVisibilitySchema)) body: SetVisibilityInput,
@@ -273,6 +294,7 @@ export class KbPagesController {
   @Idempotent("kb.page.publish")
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
+  @Validate({ params: pageIdParams })
   async publish(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -283,6 +305,7 @@ export class KbPagesController {
   @Post("pages/:pageId/archive")
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
+  @Validate({ params: pageIdParams })
   async archive(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -293,6 +316,7 @@ export class KbPagesController {
   @Post("pages/:pageId/unarchive")
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
+  @Validate({ params: pageIdParams })
   async unarchive(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -303,6 +327,7 @@ export class KbPagesController {
   @Post("pages/:pageId/verify")
   @HttpCode(200)
   @RequirePermission("kb:pages:manage")
+  @Validate({ params: pageIdParams })
   async verify(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(verifyPageSchema)) body: VerifyPageInput,
@@ -314,6 +339,7 @@ export class KbPagesController {
   @Post("pages/:pageId/mark-stale")
   @HttpCode(200)
   @RequirePermission("kb:pages:manage")
+  @Validate({ params: pageIdParams })
   async markStale(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,

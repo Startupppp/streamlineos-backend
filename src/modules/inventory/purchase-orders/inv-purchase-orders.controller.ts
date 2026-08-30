@@ -19,6 +19,10 @@ import {
   listPoSchema, createPoSchema, updatePoSchema, createGrnSchema,
   type ListPoInput, type CreatePoInput, type UpdatePoInput, type CreateGrnInput,
 } from "./dto/inv-purchase-orders.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const poIdParams = z.object({ poId: z.coerce.number().int().positive() }).strict();
 
 function requireIdempotencyKey(key: string | undefined): string {
   if (!key) throw new BadRequestException("Idempotency-Key header is required");
@@ -49,6 +53,7 @@ export class InvPurchaseOrdersController {
   @Get(":poId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
+  @Validate({ params: poIdParams })
   get(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -70,6 +75,7 @@ export class InvPurchaseOrdersController {
   @Patch(":poId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:update")
+  @Validate({ params: poIdParams })
   update(
     @Param("poId", ParseIntPipe) poId: number,
     @Body(new ZodValidationPipe(updatePoSchema)) body: UpdatePoInput,
@@ -83,6 +89,7 @@ export class InvPurchaseOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: poIdParams })
   approve(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -95,6 +102,7 @@ export class InvPurchaseOrdersController {
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
   @Idempotent("inventory.purchase-order.send")
+  @Validate({ params: poIdParams })
   send(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -106,6 +114,7 @@ export class InvPurchaseOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: poIdParams })
   close(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -117,6 +126,7 @@ export class InvPurchaseOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: poIdParams })
   cancel(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -128,6 +138,7 @@ export class InvPurchaseOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: poIdParams })
   receiveGoods(
     @Param("poId", ParseIntPipe) poId: number,
     @Body(new ZodValidationPipe(createGrnSchema)) body: CreateGrnInput,

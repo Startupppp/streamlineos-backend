@@ -28,6 +28,9 @@ import {
   type TimelineQuery,
   type UpdateActivityInput,
 } from "./dto/activity.schemas";
+import { z } from "zod";
+
+const activityIdParams = z.object({ activityId: z.string().min(1) }).strict();
 
 /**
  * One timeline, read by whatever it is anchored to.
@@ -73,6 +76,7 @@ export class ActivitiesController {
   @Get(":activityId/participants")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:activities:view")
+  @Validate({ params: activityIdParams })
   async participants(
     @CurrentUser() user: CurrentUserContext,
     @Param("activityId") activityId: string,
@@ -84,7 +88,7 @@ export class ActivitiesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:activities:manage")
   @Idempotent("crm.activity.update")
-  @Validate({ body: updateActivitySchema })
+  @Validate({ body: updateActivitySchema, params: activityIdParams })
   update(
     @CurrentUser() user: CurrentUserContext,
     @Param("activityId") activityId: string,
@@ -102,6 +106,7 @@ export class ActivitiesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:activities:manage")
   @Idempotent("crm.activity.complete")
+  @Validate({ params: activityIdParams })
   complete(@CurrentUser() user: CurrentUserContext, @Param("activityId") activityId: string) {
     return this.activities.complete(user.orgId, activityId, {
       kind: "human",
@@ -113,6 +118,7 @@ export class ActivitiesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:activities:manage")
   @Idempotent("crm.activity.delete")
+  @Validate({ params: activityIdParams })
   async remove(@CurrentUser() user: CurrentUserContext, @Param("activityId") activityId: string) {
     await this.activities.remove(user.orgId, activityId, {
       kind: "human",

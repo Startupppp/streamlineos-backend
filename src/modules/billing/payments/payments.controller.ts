@@ -52,6 +52,13 @@ import {
   type VerifyWebhookInput,
 } from "./dto/webhook.schemas";
 import type { RequestActorContext } from "../../../common/audit/actor-context";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const providerKeyParams = z.object({ providerKey: z.string().min(1) }).strict();
+const providerKeytransactionIdParams = z.object({ providerKey: z.string().min(1), transactionId: z.coerce.number().int().positive() }).strict();
+const providerKeyeventIdParams = z.object({ providerKey: z.string().min(1), eventId: z.coerce.number().int().positive() }).strict();
+const methodIdParams = z.object({ methodId: z.coerce.number().int().positive() }).strict();
 
 @Controller("payments")
 @UseGuards(JwtAuthGuard)
@@ -109,6 +116,7 @@ export class PaymentsController {
   @Get("providers/:providerKey")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:view")
+  @Validate({ params: providerKeyParams })
   getProvider(@Param("providerKey") providerKey: string, @CurrentUser() u: CurrentUserContext) {
     return this.providers.getProvider(u.orgId, providerKey);
   }
@@ -116,6 +124,7 @@ export class PaymentsController {
   @Patch("providers/:providerKey")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:manage")
+  @Validate({ params: providerKeyParams })
   updateProvider(
     @Param("providerKey") providerKey: string,
     @Body(new ZodValidationPipe(updateProviderSchema)) body: UpdateProviderInput,
@@ -129,6 +138,7 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:manage")
+  @Validate({ params: providerKeyParams })
   disableProvider(
     @Param("providerKey") providerKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -141,6 +151,7 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:credentials:manage")
+  @Validate({ params: providerKeyParams })
   saveCredentials(
     @Param("providerKey") providerKey: string,
     @Body(new ZodValidationPipe(saveCredentialsSchema)) body: SaveCredentialsInput,
@@ -154,6 +165,7 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:credentials:manage")
+  @Validate({ params: providerKeyParams })
   rotateCredentials(
     @Param("providerKey") providerKey: string,
     @Body(new ZodValidationPipe(saveCredentialsSchema)) body: SaveCredentialsInput,
@@ -167,6 +179,7 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:credentials:manage")
+  @Validate({ params: providerKeyParams })
   disconnectCredentials(
     @Param("providerKey") providerKey: string,
     @Body(new ZodValidationPipe(disconnectCredentialsSchema)) body: DisconnectCredentialsInput,
@@ -179,6 +192,7 @@ export class PaymentsController {
   @Get("providers/:providerKey/test-transactions")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:view")
+  @Validate({ params: providerKeyParams })
   listTestTransactions(@Param("providerKey") providerKey: string, @CurrentUser() u: CurrentUserContext) {
     return this.testTransactions.listForProvider(u.orgId, providerKey);
   }
@@ -187,6 +201,7 @@ export class PaymentsController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:test:run")
+  @Validate({ params: providerKeyParams })
   createTestTransaction(
     @Param("providerKey") providerKey: string,
     @Body(new ZodValidationPipe(createTestTransactionSchema)) body: CreateTestTransactionInput,
@@ -199,6 +214,7 @@ export class PaymentsController {
   @Patch("providers/:providerKey/test-transactions/:transactionId/verify")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:test:run")
+  @Validate({ params: providerKeytransactionIdParams })
   verifyTestTransaction(
     @Param("providerKey") providerKey: string,
     @Param("transactionId", ParseIntPipe) transactionId: number,
@@ -213,6 +229,7 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:webhooks:manage")
+  @Validate({ params: providerKeyParams })
   generateWebhook(
     @Param("providerKey") providerKey: string,
     @Body(new ZodValidationPipe(generateWebhookSchema)) body: GenerateWebhookInput,
@@ -226,6 +243,7 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:webhooks:manage")
+  @Validate({ params: providerKeyParams })
   verifyWebhook(
     @Param("providerKey") providerKey: string,
     @Body(new ZodValidationPipe(verifyWebhookSchema)) body: VerifyWebhookInput,
@@ -239,6 +257,7 @@ export class PaymentsController {
   @Get("providers/:providerKey/webhooks/events")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:webhooks:view")
+  @Validate({ params: providerKeyParams })
   listWebhookEvents(@Param("providerKey") providerKey: string, @CurrentUser() u: CurrentUserContext) {
     return this.webhooks.listEvents(u.orgId, providerKey);
   }
@@ -247,6 +266,7 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:webhooks:manage")
+  @Validate({ params: providerKeyeventIdParams })
   retryWebhookEvent(
     @Param("providerKey") providerKey: string,
     @Param("eventId", ParseIntPipe) eventId: number,
@@ -259,6 +279,7 @@ export class PaymentsController {
   @Get("providers/:providerKey/readiness")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:view")
+  @Validate({ params: providerKeyParams })
   getReadiness(@Param("providerKey") providerKey: string, @CurrentUser() u: CurrentUserContext) {
     return this.readiness.getReadiness(u.orgId, providerKey);
   }
@@ -267,6 +288,7 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:live:activate")
+  @Validate({ params: providerKeyParams })
   activateLive(
     @Param("providerKey") providerKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -278,6 +300,7 @@ export class PaymentsController {
   @Get("providers/:providerKey/audit")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:audit:view")
+  @Validate({ params: providerKeyParams })
   async listProviderAudit(@Param("providerKey") providerKey: string, @CurrentUser() u: CurrentUserContext) {
     const provider = await this.providers.getProvider(u.orgId, providerKey);
     return this.audit.listForProvider(u.orgId, provider.id);
@@ -312,6 +335,7 @@ export class PaymentsController {
   @Patch("manual-methods/:methodId")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:manual-methods:manage")
+  @Validate({ params: methodIdParams })
   updateManualMethod(
     @Param("methodId", ParseIntPipe) methodId: number,
     @Body(new ZodValidationPipe(updateManualMethodSchema)) body: UpdateManualMethodInput,
@@ -325,6 +349,7 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:manual-methods:manage")
+  @Validate({ params: methodIdParams })
   disableManualMethod(
     @Param("methodId", ParseIntPipe) methodId: number,
     @CurrentUser() u: CurrentUserContext,

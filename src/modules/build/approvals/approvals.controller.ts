@@ -30,6 +30,10 @@ import {
   type ListApprovalsQuery,
   type UpdateApprovalInput,
 } from "./dto/approvals.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const approvalIdParams = z.object({ approvalId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/approvals")
@@ -62,6 +66,7 @@ export class ApprovalsController {
 
   @Get(":approvalId")
   @RequirePermission("build:approvals:view")
+  @Validate({ params: approvalIdParams })
   getApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
@@ -85,6 +90,7 @@ export class ApprovalsController {
   @Patch(":approvalId/decide")
   @RequirePermission("build:approvals:decide")
   @Idempotent("build.approval.decide")
+  @Validate({ params: approvalIdParams })
   decideApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
@@ -96,6 +102,7 @@ export class ApprovalsController {
 
   @Patch(":approvalId")
   @RequirePermission("build:approvals:manage")
+  @Validate({ params: approvalIdParams })
   updateApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
@@ -108,6 +115,7 @@ export class ApprovalsController {
   @Delete(":approvalId")
   @RequirePermission("build:approvals:manage")
   @HttpCode(204)
+  @Validate({ params: approvalIdParams })
   softDeleteApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,

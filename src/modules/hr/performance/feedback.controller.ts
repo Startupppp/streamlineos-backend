@@ -15,6 +15,12 @@ import {
   type UpdateCycleStatusInput,
   type SubmitFeedbackResponseInput,
 } from "./dto/feedback.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const cycleIdParams = z.object({ cycleId: z.coerce.number().int().positive() }).strict();
+const requestIdParams = z.object({ requestId: z.coerce.number().int().positive() }).strict();
+const subjectIdParams = z.object({ subjectId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -40,12 +46,14 @@ export class FeedbackController {
 
   @Get("cycles/:cycleId")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: cycleIdParams })
   getCycle(@CurrentUser() u: CurrentUserContext, @Param("cycleId", ParseIntPipe) cycleId: number) {
     return this.service.getCycle(u.orgId, cycleId);
   }
 
   @Patch("cycles/:cycleId")
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: cycleIdParams })
   updateCycleStatus(
     @CurrentUser() u: CurrentUserContext,
     @Param("cycleId", ParseIntPipe) cycleId: number,
@@ -63,6 +71,7 @@ export class FeedbackController {
   @Post("requests/:requestId/respond")
   @HttpCode(200)
   @RequirePermission("hr:performance:view")
+  @Validate({ params: requestIdParams })
   submitResponse(
     @CurrentUser() u: CurrentUserContext,
     @Param("requestId", ParseIntPipe) requestId: number,
@@ -73,6 +82,7 @@ export class FeedbackController {
 
   @Get("results/:subjectId")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: subjectIdParams })
   getResults(@CurrentUser() u: CurrentUserContext, @Param("subjectId") subjectId: string) {
     return this.service.getResults(u.orgId, subjectId);
   }

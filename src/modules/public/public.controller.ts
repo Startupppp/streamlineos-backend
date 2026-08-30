@@ -66,6 +66,13 @@ import {
   type RoadmapQueryInput,
   type RoadmapVoteInput,
 } from "./dto/public.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const tokenParams = z.object({ token: z.string().min(1) }).strict();
+const orgSlugjobIdParams = z.object({ orgSlug: z.string().min(1), jobId: z.coerce.number().int().positive() }).strict();
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const slugParams = z.object({ slug: z.string().min(1) }).strict();
 
 function clientIp(req: Request): string | undefined {
   const forwarded = req.headers["x-forwarded-for"];
@@ -127,6 +134,7 @@ export class PublicController {
   @Get("application-status/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:application-status")
+  @Validate({ params: tokenParams })
   applicationStatus(@Param("token") token: string) {
     return this.careers.getApplicationStatus(token);
   }
@@ -141,6 +149,7 @@ export class PublicController {
   }
 
   @Get("careers/:orgSlug/jobs/:jobId")
+  @Validate({ params: orgSlugjobIdParams })
   getOrgJob(
     @Param("orgSlug") orgSlug: string,
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -150,6 +159,7 @@ export class PublicController {
 
   @Post("careers/:orgSlug/jobs/:jobId/apply")
   @HttpCode(201)
+  @Validate({ params: orgSlugjobIdParams })
   applyToOrgJob(
     @Param("orgSlug") orgSlug: string,
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -161,6 +171,7 @@ export class PublicController {
   @Get("offer/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:offer")
+  @Validate({ params: tokenParams })
   getOffer(@Param("token") token: string) {
     return this.offers.getOffer(token);
   }
@@ -168,6 +179,7 @@ export class PublicController {
   @Patch("offer/:token/respond")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:offer-respond")
+  @Validate({ params: tokenParams })
   respondToOffer(
     @Param("token") token: string,
     @Body(new ZodValidationPipe(offerRespondSchema)) body: OfferRespondInput,
@@ -176,6 +188,7 @@ export class PublicController {
   }
 
   @Get("interview-booking/:token")
+  @Validate({ params: tokenParams })
   getBookingLink(@Param("token") token: string) {
     return this.offers.getBookingLink(token);
   }
@@ -191,6 +204,7 @@ export class PublicController {
   @Get("referrals/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:referrer-portal")
+  @Validate({ params: tokenParams })
   getExternalReferrerPortal(@Param("token") token: string) {
     return this.referrers.getExternalReferrerPortal(token);
   }
@@ -199,6 +213,7 @@ export class PublicController {
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:referral-submit")
+  @Validate({ params: tokenParams })
   submitExternalReferral(
     @Param("token") token: string,
     @Body(new ZodValidationPipe(externalReferralSubmitSchema)) body: ExternalReferralSubmitInput,
@@ -210,12 +225,14 @@ export class PublicController {
   @Get("vendor-portal/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:vendor-portal")
+  @Validate({ params: tokenParams })
   getVendorPortal(@Param("token") token: string) {
     return this.referrers.getVendorPortal(token);
   }
 
   @Post("intake/:projectId")
   @HttpCode(201)
+  @Validate({ params: projectIdParams })
   submitIntake(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(intakeSchema)) body: IntakeInput,
@@ -224,12 +241,14 @@ export class PublicController {
   }
 
   @Get("forms/:token")
+  @Validate({ params: tokenParams })
   getPublicForm(@Param("token") token: string) {
     return this.publicForms.getFormByToken(token);
   }
 
   @Post("forms/:token/submit")
   @HttpCode(201)
+  @Validate({ params: tokenParams })
   submitPublicForm(
     @Param("token") token: string,
     @Body(new ZodValidationPipe(publicFormSubmitSchema)) body: PublicFormSubmitInput,
@@ -238,12 +257,14 @@ export class PublicController {
   }
 
   @Get("lead-form/:token")
+  @Validate({ params: tokenParams })
   getLeadForm(@Param("token") token: string) {
     return this.crm.getLeadForm(token);
   }
 
   @Post("lead-form/:token")
   @HttpCode(200)
+  @Validate({ params: tokenParams })
   submitLeadForm(
     @Param("token") token: string,
     @Body(new ZodValidationPipe(leadFormBodySchema)) body: LeadFormBody,
@@ -252,12 +273,14 @@ export class PublicController {
   }
 
   @Get("nps/:token")
+  @Validate({ params: tokenParams })
   getSurvey(@Param("token") token: string) {
     return this.crm.getSurvey(token);
   }
 
   @Post("nps/:token")
   @HttpCode(200)
+  @Validate({ params: tokenParams })
   submitSurvey(
     @Param("token") token: string,
     @Body(new ZodValidationPipe(npsSubmitSchema)) body: NpsSubmitInput,
@@ -324,6 +347,7 @@ export class PublicController {
   @Get("kb/:slug")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:kb-article")
+  @Validate({ params: slugParams })
   getArticle(
     @Param("slug") slug: string,
     @Query(new ZodValidationPipe(orgQuerySchema)) query: OrgQueryInput,
@@ -335,6 +359,7 @@ export class PublicController {
 
   @Post("kb/:slug/feedback")
   @HttpCode(201)
+  @Validate({ params: slugParams })
   submitArticleFeedback(
     @Param("slug") slug: string,
     @Query(new ZodValidationPipe(orgQuerySchema)) query: OrgQueryInput,

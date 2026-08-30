@@ -31,6 +31,11 @@ import {
   type UpdateSurveyInput,
 } from "./dto/engagement.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const feedbackIdParams = z.object({ feedbackId: z.coerce.number().int().positive() }).strict();
+const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr")
@@ -65,6 +70,7 @@ export class EngagementController {
 
   @Patch("feedback/:feedbackId")
   @RequirePermission("hr:feedback:view")
+  @Validate({ params: feedbackIdParams })
   submitFeedback(
     @Param("feedbackId", ParseIntPipe) feedbackId: number,
     @Body(new ZodValidationPipe(submitFeedbackSchema)) body: SubmitFeedbackInput,
@@ -155,6 +161,7 @@ export class EngagementController {
 
   @Patch("surveys/:surveyId")
   @RequirePermission("hr:engagement:manage")
+  @Validate({ params: surveyIdParams })
   updateSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(updateSurveySchema)) body: UpdateSurveyInput,

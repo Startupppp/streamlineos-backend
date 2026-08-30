@@ -18,6 +18,10 @@ import {
   type DispatchLoadInput,
   type CloseLoadInput,
 } from "./dto/shipments.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const loadIdParams = z.object({ loadId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/loads")
@@ -38,6 +42,7 @@ export class LoadsController {
   @Get(":loadId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
+  @Validate({ params: loadIdParams })
   findOne(
     @Param("loadId", ParseIntPipe) loadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -59,6 +64,7 @@ export class LoadsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: loadIdParams })
   dispatch(
     @Param("loadId", ParseIntPipe) loadId: number,
     @Body(new ZodValidationPipe(dispatchLoadSchema)) body: DispatchLoadInput,
@@ -71,6 +77,7 @@ export class LoadsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: loadIdParams })
   close(
     @Param("loadId", ParseIntPipe) loadId: number,
     @Body(new ZodValidationPipe(closeLoadSchema)) body: CloseLoadInput,
@@ -83,6 +90,7 @@ export class LoadsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: loadIdParams })
   cancel(
     @Param("loadId", ParseIntPipe) loadId: number,
     @CurrentUser() u: CurrentUserContext,

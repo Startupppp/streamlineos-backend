@@ -36,6 +36,11 @@ import {
   type UpdateAccommodationTaskInput,
 } from "../dto/accommodations.schemas";
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const accommodationIdParams = z.object({ accommodationId: z.string().min(1) }).strict();
+const accommodationIdtaskIdParams = z.object({ accommodationId: z.string().min(1), taskId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/accommodations")
@@ -63,6 +68,7 @@ export class AccommodationsController {
 
   @Get(":accommodationId")
   @RequirePermission("hr:accommodations:view")
+  @Validate({ params: accommodationIdParams })
   async getById(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
@@ -84,6 +90,7 @@ export class AccommodationsController {
 
   @Patch(":accommodationId")
   @RequirePermission("hr:accommodations:manage")
+  @Validate({ params: accommodationIdParams })
   async update(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
@@ -96,6 +103,7 @@ export class AccommodationsController {
   @Delete(":accommodationId")
   @HttpCode(204)
   @RequirePermission("hr:accommodations:manage")
+  @Validate({ params: accommodationIdParams })
   async remove(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
@@ -107,6 +115,7 @@ export class AccommodationsController {
   @Post(":accommodationId/approve")
   @Idempotent("hr.accommodation.approve")
   @RequirePermission("hr:accommodations:manage")
+  @Validate({ params: accommodationIdParams })
   async approve(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
@@ -118,6 +127,7 @@ export class AccommodationsController {
 
   @Get(":accommodationId/tasks")
   @RequirePermission("hr:accommodations:view")
+  @Validate({ params: accommodationIdParams })
   async listTasks(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
@@ -128,6 +138,7 @@ export class AccommodationsController {
   @Post(":accommodationId/tasks")
   @HttpCode(201)
   @RequirePermission("hr:accommodations:manage")
+  @Validate({ params: accommodationIdParams })
   async createTask(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
@@ -138,6 +149,7 @@ export class AccommodationsController {
 
   @Patch(":accommodationId/tasks/:taskId")
   @RequirePermission("hr:accommodations:manage")
+  @Validate({ params: accommodationIdtaskIdParams })
   async updateTask(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
@@ -150,6 +162,7 @@ export class AccommodationsController {
   @Delete(":accommodationId/tasks/:taskId")
   @HttpCode(204)
   @RequirePermission("hr:accommodations:manage")
+  @Validate({ params: accommodationIdtaskIdParams })
   async deleteTask(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,

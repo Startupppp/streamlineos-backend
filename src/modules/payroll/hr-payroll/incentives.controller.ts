@@ -29,6 +29,10 @@ import {
   type CreateIncentiveConfigInput,
   type IncentivesQueryInput,
 } from "./dto/payroll.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const incentiveIdParams = z.object({ incentiveId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("hr/incentives")
@@ -70,6 +74,7 @@ export class IncentivesController {
   @Patch(":incentiveId/approve")
   @Idempotent("payroll.incentive.approve")
   @RequirePermission("hr:payroll:approve")
+  @Validate({ params: incentiveIdParams })
   async approve(
     @Param("incentiveId", ParseIntPipe) incentiveId: number,
     @Body(new ZodValidationPipe(approveIncentiveSchema)) body: ApproveIncentiveInput,
@@ -83,6 +88,7 @@ export class IncentivesController {
   @Patch(":incentiveId/reject")
   @Idempotent("payroll.incentive.reject")
   @RequirePermission("hr:payroll:approve")
+  @Validate({ params: incentiveIdParams })
   async reject(
     @Param("incentiveId", ParseIntPipe) incentiveId: number,
     @CurrentUser() u: CurrentUserContext,

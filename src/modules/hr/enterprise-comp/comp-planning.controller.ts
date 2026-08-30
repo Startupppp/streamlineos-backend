@@ -28,6 +28,11 @@ import {
   type CreateBudgetPoolInput,
 } from "./dto/enterprise-comp.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const cycleIdParams = z.object({ cycleId: z.coerce.number().int().positive() }).strict();
+const recIdParams = z.object({ recId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/enterprise/comp/planning")
@@ -59,6 +64,7 @@ export class CompPlanningController {
   @Get("cycles/:cycleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: cycleIdParams })
   getCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -69,6 +75,7 @@ export class CompPlanningController {
   @Patch("cycles/:cycleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: cycleIdParams })
   updateCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @Body(new ZodValidationPipe(updateCompCycleSchema)) body: UpdateCompCycleInput,
@@ -80,6 +87,7 @@ export class CompPlanningController {
   @Get("cycles/:cycleId/budget-pools")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: cycleIdParams })
   getBudgetPools(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -91,6 +99,7 @@ export class CompPlanningController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
   @HttpCode(201)
+  @Validate({ params: cycleIdParams })
   createBudgetPool(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @Body(new ZodValidationPipe(createBudgetPoolSchema)) body: CreateBudgetPoolInput,
@@ -123,6 +132,7 @@ export class CompPlanningController {
   @Patch("recommendations/:recId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: recIdParams })
   updateRecommendation(
     @Param("recId", ParseIntPipe) recId: number,
     @Body(new ZodValidationPipe(updateRecommendationSchema)) body: UpdateRecommendationInput,
@@ -135,6 +145,7 @@ export class CompPlanningController {
   @Idempotent("hr.comp-recommendation.submit")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: recIdParams })
   submitRecommendation(
     @Param("recId", ParseIntPipe) recId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -145,6 +156,7 @@ export class CompPlanningController {
   @Patch("recommendations/:recId/calibrate")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: recIdParams })
   calibrateRecommendation(
     @Param("recId", ParseIntPipe) recId: number,
     @Body(new ZodValidationPipe(calibrateRecommendationSchema)) body: CalibrateRecommendationInput,
@@ -157,6 +169,7 @@ export class CompPlanningController {
   @Idempotent("hr.comp-recommendation.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: recIdParams })
   approveRecommendation(
     @Param("recId", ParseIntPipe) recId: number,
     @Body(new ZodValidationPipe(approveRecommendationSchema)) body: ApproveRecommendationInput,

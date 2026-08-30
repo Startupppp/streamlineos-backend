@@ -27,6 +27,10 @@ import {
   type TemplatePreviewInput,
   type DuplicateTemplateInput,
 } from "./dto/setup.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/templates")
@@ -45,6 +49,7 @@ export class PayrollTemplatesController {
 
   @Get(":templateId")
   @RequirePermission("payroll:templates:view")
+  @Validate({ params: templateIdParams })
   async getById(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -55,6 +60,7 @@ export class PayrollTemplatesController {
   @Post(":templateId/duplicate")
   @HttpCode(201)
   @RequirePermission("payroll:templates:manage")
+  @Validate({ params: templateIdParams })
   async duplicate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(duplicateTemplateSchema)) body: DuplicateTemplateInput,
@@ -65,6 +71,7 @@ export class PayrollTemplatesController {
 
   @Post(":templateId/preview")
   @RequirePermission("payroll:templates:view")
+  @Validate({ params: templateIdParams })
   async preview(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(templatePreviewSchema)) body: TemplatePreviewInput,
@@ -76,6 +83,7 @@ export class PayrollTemplatesController {
   @Delete(":templateId")
   @HttpCode(204)
   @RequirePermission("payroll:templates:manage")
+  @Validate({ params: templateIdParams })
   async deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

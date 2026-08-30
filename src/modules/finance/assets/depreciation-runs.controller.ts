@@ -15,6 +15,10 @@ import {
   createRunSchema, listRunsQuerySchema,
   type CreateRunInput, type ListRunsQuery,
 } from "./dto/assets.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/assets/depreciation/runs")
@@ -49,6 +53,7 @@ export class DepreciationRunsController {
   @RequirePermission("accounting:assets:manage")
   @HttpCode(200)
   @Idempotent("accounting.depreciation-run.reverse")
+  @Validate({ params: runIdParams })
   reverse(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -40,6 +40,10 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { StorageService } from "../../storage/storage.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { resolveExitAdmin } from "./exit-scope";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const resignationIdParams = z.object({ resignationId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/exit")
@@ -84,6 +88,7 @@ export class ExitController {
 
   @Patch(":resignationId/hr-review")
   @RequirePermission("hr:exit:manage")
+  @Validate({ params: resignationIdParams })
   hrReview(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @Body(new ZodValidationPipe(resignationHrReviewSchema)) body: ResignationHrReviewInput,
@@ -94,6 +99,7 @@ export class ExitController {
 
   @Patch(":resignationId/final-review")
   @RequirePermission("hr:exit:approve")
+  @Validate({ params: resignationIdParams })
   finalReview(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @Body(new ZodValidationPipe(resignationFinalReviewSchema)) body: ResignationFinalReviewInput,
@@ -104,6 +110,7 @@ export class ExitController {
 
   @Patch(":resignationId")
   @RequirePermission("hr:exit:view")
+  @Validate({ params: resignationIdParams })
   async update(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @Body(new ZodValidationPipe(resignationUpdateSchema)) body: ResignationUpdateInput,
@@ -135,6 +142,7 @@ export class ExitController {
 
   @Get(":resignationId/letter")
   @RequirePermission("hr:exit:view")
+  @Validate({ params: resignationIdParams })
   async getLetter(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -144,6 +152,7 @@ export class ExitController {
 
   @Get(":resignationId/file")
   @RequirePermission("hr:exit:view")
+  @Validate({ params: resignationIdParams })
   async getUploadedLetter(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -173,6 +182,7 @@ export class ExitController {
 
   @Get(":resignationId/progress")
   @RequirePermission("hr:exit:view")
+  @Validate({ params: resignationIdParams })
   async getProgress(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -182,6 +192,7 @@ export class ExitController {
 
   @Patch(":resignationId/withdraw")
   @RequirePermission("hr:exit:view")
+  @Validate({ params: resignationIdParams })
   async withdraw(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -191,6 +202,7 @@ export class ExitController {
 
   @Get(":resignationId")
   @RequirePermission("hr:exit:view")
+  @Validate({ params: resignationIdParams })
   async getDetail(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() currentUser: CurrentUserContext,

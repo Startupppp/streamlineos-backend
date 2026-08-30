@@ -15,6 +15,10 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { HrFormsSubmissionsService } from "./hr-forms-submissions.service";
 import { submitHrFormSchema, type SubmitHrFormInput } from "./dto/hr-forms.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const orgIdslugParams = z.object({ orgId: z.string().min(1), slug: z.string().min(1) }).strict();
 
 @Controller("public/hr-forms")
 export class HrFormsPublicController {
@@ -39,6 +43,7 @@ export class HrFormsPublicController {
 
   @Public()
   @Get(":orgId/:slug")
+  @Validate({ params: orgIdslugParams })
   async getPublicForm(
     @Param("orgId") orgId: string,
     @Param("slug") slug: string,
@@ -60,6 +65,7 @@ export class HrFormsPublicController {
   @Public()
   @Post(":orgId/:slug/submit")
   @HttpCode(201)
+  @Validate({ params: orgIdslugParams })
   async submitPublicForm(
     @Param("orgId") orgId: string,
     @Param("slug") slug: string,

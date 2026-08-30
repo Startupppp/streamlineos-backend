@@ -36,6 +36,10 @@ import {
   type SubmitResponseInput,
 } from "./dto/csat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("support")
 @Controller("csat")
@@ -61,6 +65,7 @@ export class CsatController {
 
   @Get(":surveyId")
   @RequirePermission("support:csat:view")
+  @Validate({ params: surveyIdParams })
   async get(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -72,6 +77,7 @@ export class CsatController {
 
   @Patch(":surveyId")
   @RequirePermission("support:csat:manage")
+  @Validate({ params: surveyIdParams })
   async update(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(patchSchema)) body: PatchInput,
@@ -84,6 +90,7 @@ export class CsatController {
 
   @Delete(":surveyId")
   @RequirePermission("support:csat:manage")
+  @Validate({ params: surveyIdParams })
   async remove(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -95,6 +102,7 @@ export class CsatController {
 
   @Get(":surveyId/responses")
   @RequirePermission("support:csat:view")
+  @Validate({ params: surveyIdParams })
   async listResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Query(new ZodValidationPipe(listResponsesSchema)) query: ListResponsesInput,
@@ -108,6 +116,7 @@ export class CsatController {
   @Public()
   @Post(":surveyId/responses")
   @HttpCode(201)
+  @Validate({ params: surveyIdParams })
   async submitResponse(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(submitResponseSchema)) body: SubmitResponseInput,

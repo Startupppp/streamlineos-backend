@@ -30,6 +30,10 @@ import {
   testAutomationRuleSchema,
   type TestAutomationRuleInput,
 } from "../automation-studio/dto/automation-studio.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("crm")
@@ -55,6 +59,7 @@ export class CrmAutomationsController {
 
   @Patch("automations/:ruleId")
   @RequirePermission("crm:automations:manage")
+  @Validate({ params: ruleIdParams })
   async update(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(updateAutomationRuleSchema)) body: UpdateAutomationRuleInput,
@@ -68,6 +73,7 @@ export class CrmAutomationsController {
   @Delete("automations/:ruleId")
   @HttpCode(204)
   @RequirePermission("crm:automations:manage")
+  @Validate({ params: ruleIdParams })
   async remove(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +95,7 @@ export class CrmAutomationsController {
 
   @Patch("automations/:ruleId/enable")
   @RequirePermission("crm:automations:manage")
+  @Validate({ params: ruleIdParams })
   enable(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -98,6 +105,7 @@ export class CrmAutomationsController {
 
   @Patch("automations/:ruleId/disable")
   @RequirePermission("crm:automations:manage")
+  @Validate({ params: ruleIdParams })
   disable(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -108,6 +116,7 @@ export class CrmAutomationsController {
   @Post("automations/:ruleId/test")
   @RequirePermission("crm:automations:manage")
   @HttpCode(200)
+  @Validate({ params: ruleIdParams })
   testRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(testAutomationRuleSchema)) body: TestAutomationRuleInput,
@@ -118,6 +127,7 @@ export class CrmAutomationsController {
 
   @Get("automations/:ruleId/runs")
   @RequirePermission("crm:automations:manage")
+  @Validate({ params: ruleIdParams })
   getRuns(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Query("page") page = "1",

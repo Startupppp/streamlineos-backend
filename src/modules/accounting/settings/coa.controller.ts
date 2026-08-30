@@ -8,6 +8,9 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CoaService } from "./coa.service";
 import { z } from "zod";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const accountIdParams = z.object({ accountId: z.coerce.number().int().positive() }).strict();
 
 const applyTemplateSchema = z.object({ templateKey: z.string() });
 type ApplyTemplateInput = z.infer<typeof applyTemplateSchema>;
@@ -43,6 +46,7 @@ export class CoaController {
   @Post(":accountId/deactivate")
   @RequirePermission("accounting:accounts:manage")
   @HttpCode(200)
+  @Validate({ params: accountIdParams })
   deactivateAccount(
     @Param("accountId", ParseIntPipe) accountId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -53,6 +57,7 @@ export class CoaController {
   @Post(":accountId/activate")
   @RequirePermission("accounting:accounts:manage")
   @HttpCode(200)
+  @Validate({ params: accountIdParams })
   activateAccount(
     @Param("accountId", ParseIntPipe) accountId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -63,6 +68,7 @@ export class CoaController {
   @Delete(":accountId")
   @RequirePermission("accounting:accounts:manage")
   @HttpCode(200)
+  @Validate({ params: accountIdParams })
   deleteAccount(
     @Param("accountId", ParseIntPipe) accountId: number,
     @CurrentUser() u: CurrentUserContext,

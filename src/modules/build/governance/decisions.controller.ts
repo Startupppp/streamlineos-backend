@@ -27,6 +27,10 @@ import {
   type ListDecisionsQuery,
   type UpdateDecisionInput,
 } from "./dto/governance.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const decisionIdParams = z.object({ decisionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/decisions")
@@ -46,6 +50,7 @@ export class DecisionsController {
 
   @Get(":decisionId")
   @RequirePermission("build:decisions:view")
+  @Validate({ params: decisionIdParams })
   getDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("decisionId", ParseIntPipe) decisionId: number,
@@ -67,6 +72,7 @@ export class DecisionsController {
 
   @Patch(":decisionId")
   @RequirePermission("build:decisions:manage")
+  @Validate({ params: decisionIdParams })
   updateDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("decisionId", ParseIntPipe) decisionId: number,
@@ -79,6 +85,7 @@ export class DecisionsController {
   @Delete(":decisionId")
   @RequirePermission("build:decisions:manage")
   @HttpCode(204)
+  @Validate({ params: decisionIdParams })
   softDeleteDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("decisionId", ParseIntPipe) decisionId: number,

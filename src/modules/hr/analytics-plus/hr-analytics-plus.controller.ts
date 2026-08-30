@@ -31,6 +31,9 @@ import {
   type HeadcountPlanInput,
   type UpdateHeadcountPlanInput,
 } from "./dto/hr-analytics-plus.schemas";
+import { z } from "zod";
+
+const planIdParams = z.object({ planId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/analytics-plus")
@@ -140,7 +143,7 @@ export class HrAnalyticsPlusController {
 
   @Patch("workforce/plans/:planId")
   @RequirePermission("hr:workforce:manage")
-  @Validate({ body: updateHeadcountPlanSchema })
+  @Validate({ body: updateHeadcountPlanSchema, params: planIdParams })
   updatePlan(
     @CurrentUser() u: CurrentUserContext,
     @Param("planId", ParseIntPipe) planId: number,

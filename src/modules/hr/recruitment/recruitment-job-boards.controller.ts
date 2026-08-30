@@ -13,6 +13,10 @@ import {
   type CreateJobBoardPostingInput,
   type UpdateJobBoardPostingInput,
 } from "./dto/job-boards.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const postingIdParams = z.object({ postingId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/jobs/:jobId/board-postings")
@@ -39,6 +43,7 @@ export class RecruitmentJobBoardsController {
 
   @Patch(":postingId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: postingIdParams })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -51,6 +56,7 @@ export class RecruitmentJobBoardsController {
   @Delete(":postingId")
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: postingIdParams })
   remove(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,

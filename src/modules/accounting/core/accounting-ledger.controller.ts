@@ -34,6 +34,11 @@ import {
   type UpdateAccountInput,
 } from "./dto/accounting.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const accountIdParams = z.object({ accountId: z.coerce.number().int().positive() }).strict();
+const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting")
@@ -68,6 +73,7 @@ export class AccountingLedgerController {
   @Patch("accounts/:accountId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:update")
+  @Validate({ params: accountIdParams })
   updateAccount(
     @Param("accountId", ParseIntPipe) accountId: number,
     @Body(new ZodValidationPipe(updateAccountSchema)) body: UpdateAccountInput,
@@ -101,6 +107,7 @@ export class AccountingLedgerController {
   @Get("journal/:entryId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:read")
+  @Validate({ params: entryIdParams })
   getJournalEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -112,6 +119,7 @@ export class AccountingLedgerController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:manage")
   @HttpCode(200)
+  @Validate({ params: entryIdParams })
   postJournalEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -122,6 +130,7 @@ export class AccountingLedgerController {
   @Post("journal/:entryId/reverse")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:manage")
+  @Validate({ params: entryIdParams })
   async reverseJournalEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,

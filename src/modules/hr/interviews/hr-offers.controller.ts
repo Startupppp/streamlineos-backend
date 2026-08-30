@@ -28,6 +28,10 @@ import {
   type OfferLetterInput,
   type UpdateOfferTemplateInput,
 } from "./dto/hr-interviews.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -53,6 +57,7 @@ export class HrOffersController {
 
   @Patch("offer-templates/:templateId")
   @RequirePermission("hr:offers:manage")
+  @Validate({ params: templateIdParams })
   updateTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(updateOfferTemplateSchema)) body: UpdateOfferTemplateInput,
@@ -63,6 +68,7 @@ export class HrOffersController {
 
   @Delete("offer-templates/:templateId")
   @RequirePermission("hr:offers:manage")
+  @Validate({ params: templateIdParams })
   deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -73,6 +79,7 @@ export class HrOffersController {
   @Post("offer-templates/:templateId/generate-pdf")
   @HttpCode(200)
   @RequirePermission("hr:offers:manage")
+  @Validate({ params: templateIdParams })
   generatePdf(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(generateOfferPdfSchema)) body: GenerateOfferPdfInput,

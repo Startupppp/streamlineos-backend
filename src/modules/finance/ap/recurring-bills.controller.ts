@@ -28,6 +28,10 @@ import {
   type UpdateRecurringBillInput,
   type ListRecurringBillsQuery,
 } from "./dto/finance-ap.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/recurring-bills")
@@ -48,6 +52,7 @@ export class RecurringBillsController {
   @Get(":templateId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:read")
+  @Validate({ params: templateIdParams })
   getOne(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -69,6 +74,7 @@ export class RecurringBillsController {
   @Patch(":templateId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
+  @Validate({ params: templateIdParams })
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(updateRecurringBillSchema)) body: UpdateRecurringBillInput,
@@ -81,6 +87,7 @@ export class RecurringBillsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
   @HttpCode(200)
+  @Validate({ params: templateIdParams })
   remove(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -93,6 +100,7 @@ export class RecurringBillsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
   @HttpCode(200)
+  @Validate({ params: templateIdParams })
   runNow(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

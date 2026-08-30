@@ -19,6 +19,11 @@ import {
   type CreateSwapRequestInput,
   type UpdateSwapStatusInput,
 } from "./dto/shifts.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const shiftIdParams = z.object({ shiftId: z.coerce.number().int().positive() }).strict();
+const swapIdParams = z.object({ swapId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -44,6 +49,7 @@ export class ShiftsController {
 
   @Patch(":shiftId")
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: shiftIdParams })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("shiftId", ParseIntPipe) shiftId: number,
@@ -55,6 +61,7 @@ export class ShiftsController {
   @Delete(":shiftId")
   @HttpCode(204)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: shiftIdParams })
   remove(@CurrentUser() u: CurrentUserContext, @Param("shiftId", ParseIntPipe) shiftId: number) {
     return this.service.deleteShift(u.orgId, shiftId);
   }
@@ -93,6 +100,7 @@ export class ShiftsController {
 
   @Patch("swaps/:swapId")
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: swapIdParams })
   updateSwap(
     @CurrentUser() u: CurrentUserContext,
     @Param("swapId", ParseIntPipe) swapId: number,

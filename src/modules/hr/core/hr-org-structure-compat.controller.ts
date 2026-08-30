@@ -26,6 +26,11 @@ import {
   type UpdateOrgTeamInput,
 } from "../../organization/hierarchy/dto/org-hierarchy.schemas";
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const locationIdParams = z.object({ locationId: z.string().min(1) }).strict();
+const teamIdParams = z.object({ teamId: z.string().min(1) }).strict();
 
 @Controller("hr/org")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -51,6 +56,7 @@ export class HrOrgStructureCompatController {
 
   @Patch("locations/:locationId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: locationIdParams })
   updateLocation(
     @Param("locationId") locationId: string,
     @Body(new ZodValidationPipe(updateOrgLocationSchema))
@@ -68,6 +74,7 @@ export class HrOrgStructureCompatController {
   @Delete("locations/:locationId")
   @HttpCode(204)
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: locationIdParams })
   deleteLocation(
     @Param("locationId") locationId: string,
     @CurrentUser() user: CurrentUserContext,
@@ -93,6 +100,7 @@ export class HrOrgStructureCompatController {
 
   @Patch("teams/:teamId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: teamIdParams })
   updateTeam(
     @Param("teamId") teamId: string,
     @Body(new ZodValidationPipe(updateOrgTeamSchema)) body: UpdateOrgTeamInput,
@@ -104,6 +112,7 @@ export class HrOrgStructureCompatController {
   @Delete("teams/:teamId")
   @HttpCode(204)
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: teamIdParams })
   deleteTeam(
     @Param("teamId") teamId: string,
     @CurrentUser() user: CurrentUserContext,

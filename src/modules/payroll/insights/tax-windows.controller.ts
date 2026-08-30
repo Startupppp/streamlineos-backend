@@ -24,6 +24,10 @@ import {
   type PatchTaxWindowBody,
 } from "../hr-payroll/dto/payroll.schemas";
 import { TaxWindowsService } from "./tax-windows.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const windowIdParams = z.object({ windowId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/tax-windows")
@@ -47,6 +51,7 @@ export class TaxWindowsController {
   }
 
   @Patch(":windowId")
+  @Validate({ params: windowIdParams })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("windowId", ParseIntPipe) windowId: number,
