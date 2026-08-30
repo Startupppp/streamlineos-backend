@@ -22,8 +22,20 @@ function makeDb(adjRow?: Partial<{ id: number; status: string; referenceNumber: 
   });
   const defaultAdj = { id: 1, status: "PENDING_APPROVAL", referenceNumber: "ADJ-00001", reason: "DAMAGE", notes: null, lines: [] };
   const findFirst = jest.fn().mockResolvedValue(adjRow ? { ...defaultAdj, ...adjRow } : defaultAdj);
+  /**
+   * `createAdjustment` resolves every line's variant and location against the
+   * organisation before it writes, so a line naming something that is not there
+   * is a 404 rather than a raw foreign-key 500. These cases are about threshold
+   * routing and use ids 1 and 2, so the lookup answers with both.
+   */
+  const select = jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockResolvedValue([{ id: 1 }, { id: 2 }]),
+    }),
+  });
+
   return {
-    insert, update, transaction,
+    insert, update, transaction, select,
     query: {
       invStockAdjustments: { findFirst },
     },

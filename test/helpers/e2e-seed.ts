@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { type Db } from "src/db/drizzle.module";
 import { organizationMembers, organizations, users } from "src/db/schema";
 
@@ -20,6 +20,24 @@ import { organizationMembers, organizations, users } from "src/db/schema";
 export async function seedOrg(db: Db, id: string, slug: string): Promise<void> {
   await db.transaction(async (tx) => {
     const ownerUserId = `${id}__seed_owner`;
+
+    /**
+     * The tenant context, set before anything under a policy is written.
+     *
+     * `organization_members` carries `tenant_isolation`, so an insert with no
+     * `app.organization_id` is refused with 42501 "no tenant context". That was
+     * invisible for as long as the tests connected as an owner, which bypasses
+     * RLS — the moment `APP_DATABASE_URL` points at the non-owner role the
+     * application actually uses, every suite calling this helper fails to seed
+     * and then fails every case in the file, including its 401 ones. A broken
+     * fixture reading as a broken guard is the same failure this helper's other
+     * docblock is about.
+     *
+     * `organizations` itself carries no tenant column and therefore no policy,
+     * which is what makes seeding the row that defines the tenant possible at
+     * all. Local to the transaction, so it cannot leak into the next one.
+     */
+    await tx.execute(sql`select set_config('app.organization_id', ${id}, true)`);
 
     await tx
       .insert(users)

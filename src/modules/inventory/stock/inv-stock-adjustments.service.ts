@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import {
-  invStockAdjustments, invStockAdjustmentLines,
+  invStockAdjustments, invStockAdjustmentLines, invProductVariants, invLocations,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -92,7 +92,52 @@ export class InvStockAdjustmentsService {
     return adj;
   }
 
+  /**
+   * Every variant and location a line names, checked against this organisation.
+   *
+   * The lines used to go straight in and let the foreign keys decide. A client
+   * naming a variant that does not exist got a raw 23503 through
+   * `AllExceptionsFilter` — a 500 for what is plainly a bad request, with the
+   * failed statement in the log and nothing useful in the response.
+   *
+   * Scoped to `orgId` as well as to existence, which the foreign keys cannot do:
+   * they are on the id alone, so another tenant's variant id would have
+   * satisfied them. That is the check that has to happen here or nowhere.
+   */
+  private async assertLinesResolve(
+    orgId: string,
+    lines: CreateAdjustmentInput["lines"],
+  ): Promise<void> {
+    const variantIds = [...new Set(lines.map((line) => line.productVariantId))];
+    const locationIds = [...new Set(lines.map((line) => line.locationId))];
+
+    const [variants, locations] = await Promise.all([
+      this.db
+        .select({ id: invProductVariants.id })
+        .from(invProductVariants)
+        .where(and(eq(invProductVariants.orgId, orgId), inArray(invProductVariants.id, variantIds))),
+      this.db
+        .select({ id: invLocations.id })
+        .from(invLocations)
+        .where(and(eq(invLocations.orgId, orgId), inArray(invLocations.id, locationIds))),
+    ]);
+
+    const missingVariant = variantIds.find(
+      (id) => !variants.some((row) => row.id === id),
+    );
+    if (missingVariant !== undefined)
+      throw new NotFoundException(`No product variant ${String(missingVariant)} in this organisation`);
+
+    const missingLocation = locationIds.find(
+      (id) => !locations.some((row) => row.id === id),
+    );
+    if (missingLocation !== undefined)
+      throw new NotFoundException(`No location ${String(missingLocation)} in this organisation`);
+  }
+
   async createAdjustment(orgId: string, userId: string, data: CreateAdjustmentInput, idempotencyKey: string) {
+    await this.assertLinesResolve(orgId, data.lines);
+
     const cfg = await this.settings.get(orgId);
     const totalAbsQty = data.lines.reduce((sum, l) => sum + Math.abs(l.quantityChange), 0);
     const threshold = cfg.adjustmentApprovalThreshold !== null ? parseFloat(cfg.adjustmentApprovalThreshold) : null;
