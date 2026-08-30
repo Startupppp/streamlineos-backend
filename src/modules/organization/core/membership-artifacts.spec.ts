@@ -40,6 +40,7 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "invitations.accepted_membership_id",
   "invitations.inviter_membership_id",
   "invitations.revoked_by_membership_id",
+  "kb_article_chunks.page_created_by_membership_id",
   "kb_page_reviews.requested_by_membership_id",
   "kb_pages.created_by_membership_id",
   "kb_pages.deleted_by_membership_id",
