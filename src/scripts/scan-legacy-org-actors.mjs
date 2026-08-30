@@ -30,6 +30,83 @@ const BASELINE_PATH = join(BACKEND_ROOT, "data", "legacy-actor-baseline.json");
 
 const HRMS_PHASE1_BARREL = "hrms-phase1-sql-managed.ts";
 
+/**
+ * Two users.id FKs that are structurally global and must never be counted in
+ * the organizational ratchet:
+ *   organizations.purge_scheduled_by — platform-admin only; schedules a GDPR
+ *     erasure job; the table has no org_id so no membership lookup is possible.
+ *   subprocessors.updated_by — platform-legal record (DPA sub-processor list);
+ *     no org_id, updated by Anthropic ops staff, not by org members.
+ */
+const EXCLUDED_GLOBAL_FKS = new Set([
+  "organizations.purge_scheduled_by",
+  "subprocessors.updated_by",
+]);
+
+/**
+ * users.id FKs that exist ONLY in the live database via raw-SQL migrations and
+ * have no matching Drizzle pgTable / schema.table() declaration. The source-file
+ * scan is structurally blind to them; this list is the canonical supplement so
+ * the ratchet total matches reality without requiring a DB connection in CI.
+ *
+ * Maintain this list whenever a raw-SQL migration adds or removes a users.id FK.
+ * Validate with: node src/scripts/scan-legacy-org-actors.mjs --catalog
+ *
+ * Groups: accounting (ap/ar/bank/gl) · crm commissions · hr extras ·
+ *         payroll extras · inventory advanced tables
+ */
+const KNOWN_RAW_SQL_ACTOR_FKS = [
+  { table: "ap_allocations", column: "created_by", module: "accounting" },
+  { table: "ap_documents", column: "created_by", module: "accounting" },
+  { table: "ap_documents", column: "posted_by", module: "accounting" },
+  { table: "ap_payments", column: "created_by", module: "accounting" },
+  { table: "ar_allocations", column: "created_by", module: "accounting" },
+  { table: "ar_documents", column: "created_by", module: "accounting" },
+  { table: "ar_documents", column: "posted_by", module: "accounting" },
+  { table: "ar_receipts", column: "created_by", module: "accounting" },
+  { table: "bank_matches", column: "matched_by", module: "accounting" },
+  { table: "bank_statements", column: "imported_by", module: "accounting" },
+  { table: "bank_statements", column: "reconciled_by", module: "accounting" },
+  { table: "gl_books", column: "created_by", module: "accounting" },
+  { table: "gl_document_attachments", column: "uploaded_by", module: "accounting" },
+  { table: "gl_fx_rates", column: "created_by", module: "accounting" },
+  { table: "gl_journals", column: "posted_by_user_id", module: "accounting" },
+  { table: "gl_parties", column: "created_by", module: "accounting" },
+  { table: "gl_periods", column: "locked_by", module: "accounting" },
+  { table: "crm_commission_accrual_parts", column: "user_id", module: "crm" },
+  { table: "crm_commission_accrual_snapshots", column: "user_id", module: "crm" },
+  { table: "crm_commission_assignments", column: "user_id", module: "crm" },
+  { table: "crm_commission_earnings", column: "approved_by", module: "crm" },
+  { table: "crm_commission_earnings", column: "user_id", module: "crm" },
+  { table: "crm_commission_plan_versions", column: "created_by", module: "crm" },
+  { table: "crm_commission_plans", column: "created_by", module: "crm" },
+  { table: "employee_career_plans", column: "mentor_id", module: "hr" },
+  { table: "employee_career_plans", column: "user_id", module: "hr" },
+  { table: "learning_paths", column: "created_by", module: "hr" },
+  { table: "expense_export_jobs", column: "requested_by", module: "payroll" },
+  { table: "inv_ai_feedback", column: "user_id", module: "inventory" },
+  { table: "inv_ai_insights", column: "acknowledged_by", module: "inventory" },
+  { table: "inv_allocation_overrides", column: "actor_user_id", module: "inventory" },
+  { table: "inv_audit_export_jobs", column: "created_by", module: "inventory" },
+  { table: "inv_channel_snapshot_diffs", column: "resolved_by", module: "inventory" },
+  { table: "inv_compliance_documents", column: "created_by", module: "inventory" },
+  { table: "inv_customer_return_lines", column: "inspected_by", module: "inventory" },
+  { table: "inv_customer_shelf_life_rules", column: "created_by", module: "inventory" },
+  { table: "inv_demand_forecasts", column: "generated_by", module: "inventory" },
+  { table: "inv_grns", column: "posted_by", module: "inventory" },
+  { table: "inv_inspection_plan_versions", column: "created_by", module: "inventory" },
+  { table: "inv_inspection_plans", column: "created_by", module: "inventory" },
+  { table: "inv_landed_cost_vouchers", column: "applied_by", module: "inventory" },
+  { table: "inv_landed_cost_vouchers", column: "created_by", module: "inventory" },
+  { table: "inv_pick_list_lines", column: "exception_owner_id", module: "inventory" },
+  { table: "inv_pick_list_lines", column: "exception_reported_by", module: "inventory" },
+  { table: "inv_pick_list_lines", column: "exception_resolved_by", module: "inventory" },
+  { table: "inv_pick_lists", column: "assigned_to", module: "inventory" },
+  { table: "inv_proposal_overrides", column: "created_by", module: "inventory" },
+  { table: "inv_putaway_tasks", column: "assigned_to", module: "inventory" },
+  { table: "inv_putaway_tasks", column: "created_by", module: "inventory" },
+];
+
 const BRIDGE_TABLES = new Set([
   "organization_members",
   "hr_people",
@@ -99,7 +176,7 @@ function parseFile(filePath) {
 
   const module = moduleFromFile(filePath);
   const results = [];
-  const tableDecl = /export\s+const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*pgTable\(/g;
+  const tableDecl = /export\s+const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:pgTable|[A-Za-z_$][A-Za-z0-9_$]*\.table)\(/g;
 
   for (const tableMatch of src.matchAll(tableDecl)) {
     const open = tableMatch.index + tableMatch[0].length - 1;
@@ -128,7 +205,7 @@ function parseFile(filePath) {
           dbName = col[2];
           break;
         }
-        if (/pgTable/.test(line) || /^\s*\{/.test(line)) break;
+        if (/(?:pgTable|\w+\.table)\(/.test(line) || /^\s*\{/.test(line)) break;
       }
 
       if (!jsName || !dbName) continue;
@@ -151,6 +228,9 @@ function scan() {
   const entries = [];
   for (const filePath of walkSchemaFiles(SCHEMA_DIR)) {
     entries.push(...parseFile(filePath));
+  }
+  for (const { table, column, module } of KNOWN_RAW_SQL_ACTOR_FKS) {
+    entries.push({ table, column, jsName: column, class: "organizational", module, file: "raw-sql-migration" });
   }
   return entries;
 }
@@ -210,9 +290,19 @@ function selfTest(entries) {
   expectClass("user_sessions", "user_id", "authentication");
   expectClass("accounts", "user_id", "authentication");
 
-  if (entries.length < 50) {
+  expectClass("tickets", "assignee_id", "organizational");
+  expectClass("tickets", "reporter_id", "organizational");
+  expectClass("ticket_comment_mentions", "mentioned_user_id", "organizational");
+  expectClass("bugs", "created_by", "organizational");
+  expectClass("projects", "manager_id", "organizational");
+
+  expectClass("ap_documents", "posted_by", "organizational");
+  expectClass("crm_commission_plans", "created_by", "organizational");
+  expectClass("inv_pick_lists", "assigned_to", "organizational");
+
+  if (entries.length < 600) {
     failures.push(
-      `Suspiciously few results: ${entries.length} — scanner may be broken (expected ≥50)`,
+      `Suspiciously few results: ${entries.length} — scanner may be broken (expected ≥600; build schema tables may be missed)`,
     );
   }
 
@@ -297,17 +387,29 @@ async function reportCatalogGap(sourceEntries) {
       ORDER BY 1, 2
     `;
     const catalogKeys = new Set(rows.map((r) => `${r.tbl}.${r.col}`));
-    const sourceKeys = new Set(sourceEntries.map((e) => `${e.table}.${e.column}`));
-    const invisible = [...catalogKeys].filter((key) => !sourceKeys.has(key));
-    const sourceOnly = [...sourceKeys].filter((key) => !catalogKeys.has(key));
-    const union = new Set([...catalogKeys, ...sourceKeys]);
+    const sourceKeys = new Set(sourceEntries.filter((e) => e.file !== "raw-sql-migration").map((e) => `${e.table}.${e.column}`));
+    const staticRawKeys = new Set(KNOWN_RAW_SQL_ACTOR_FKS.map((e) => `${e.table}.${e.column}`));
+    const allKnownKeys = new Set([...sourceKeys, ...staticRawKeys, ...EXCLUDED_GLOBAL_FKS]);
 
-    console.log(`pg_catalog users.id foreign keys : ${catalogKeys.size}`);
-    console.log(`visible to the source scan       : ${sourceEntries.length}`);
-    console.log(`INVISIBLE to the ratchet         : ${invisible.length}`);
-    console.log(`source-only declarations         : ${sourceOnly.length}`);
-    console.log(`combined distinct burden         : ${union.size}`);
-    for (const key of invisible) console.log(`  ${key}`);
+    const stillInvisible = [...catalogKeys].filter((key) => !allKnownKeys.has(key));
+    const sourceOnly = [...sourceKeys].filter((key) => !catalogKeys.has(key));
+    const staticNotInCatalog = [...staticRawKeys].filter((key) => !catalogKeys.has(key));
+
+    console.log(`pg_catalog users.id foreign keys     : ${catalogKeys.size}`);
+    console.log(`visible to the Drizzle source scan   : ${sourceKeys.size}`);
+    console.log(`covered by KNOWN_RAW_SQL_ACTOR_FKS   : ${staticRawKeys.size}`);
+    console.log(`excluded as global (non-org) FKs     : ${EXCLUDED_GLOBAL_FKS.size}`);
+    console.log(`STILL INVISIBLE (needs list update)  : ${stillInvisible.length}`);
+    console.log(`source-only (Drizzle, no DB FK yet)  : ${sourceOnly.length}`);
+    console.log(`static list entries not in catalog   : ${staticNotInCatalog.length}`);
+    if (stillInvisible.length > 0) {
+      console.log("\nStill invisible — add to KNOWN_RAW_SQL_ACTOR_FKS or EXCLUDED_GLOBAL_FKS:");
+      for (const key of stillInvisible) console.log(`  ${key}`);
+    }
+    if (staticNotInCatalog.length > 0) {
+      console.log("\nIn static list but not in catalog — FK may have been contracted:");
+      for (const key of staticNotInCatalog) console.log(`  ${key}`);
+    }
   } finally {
     await sql.end();
   }
