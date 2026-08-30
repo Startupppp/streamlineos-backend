@@ -1748,747 +1748,852 @@
     {
       "idx": 249,
       "version": "7",
+      "when": 1787689953442,
+      "tag": "0234_business_parties_name_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 250,
+      "version": "7",
       "when": 1787697153441,
       "tag": "0240_party_expand_legacy_fields",
       "breakpoints": true
     },
     {
-      "idx": 250,
+      "idx": 251,
       "version": "7",
       "when": 1787700753441,
       "tag": "0241_party_legacy_backfill",
       "breakpoints": true
     },
     {
-      "idx": 251,
+      "idx": 252,
       "version": "7",
       "when": 1787704353441,
       "tag": "0244_party_mirror_divergence_permission",
       "breakpoints": true
     },
     {
-      "idx": 252,
+      "idx": 253,
       "version": "7",
       "when": 1787707953441,
       "tag": "0250_data_quality_queue",
       "breakpoints": true
     },
     {
-      "idx": 253,
+      "idx": 254,
       "version": "7",
       "when": 1787711553441,
       "tag": "0251_backfill_data_quality_permissions",
       "breakpoints": true
     },
     {
-      "idx": 254,
+      "idx": 255,
       "version": "7",
       "when": 1787715153441,
       "tag": "0290_issue_records",
       "breakpoints": true
     },
     {
-      "idx": 255,
+      "idx": 256,
       "version": "7",
       "when": 1787718753441,
       "tag": "0260_party_identifiers",
       "breakpoints": true
     },
     {
-      "idx": 256,
+      "idx": 257,
       "version": "7",
       "when": 1787722353441,
       "tag": "0280_importer_at_scale",
       "breakpoints": true
     },
     {
-      "idx": 257,
+      "idx": 258,
       "version": "7",
       "when": 1787725953441,
       "tag": "0275_party_company_search",
       "breakpoints": true
     },
     {
-      "idx": 258,
+      "idx": 259,
       "version": "7",
       "when": 1787736753441,
       "tag": "0471_platform_waitlist",
       "breakpoints": true
     },
     {
-      "idx": 259,
+      "idx": 260,
       "version": "7",
       "when": 1787740353441,
       "tag": "0252_data_quality_health_snapshots",
       "breakpoints": true
     },
     {
-      "idx": 260,
+      "idx": 261,
       "version": "7",
       "when": 1787747553441,
       "tag": "0270_activities_thread_window",
       "breakpoints": true
     },
     {
-      "idx": 261,
+      "idx": 262,
       "version": "7",
       "when": 1787758353441,
       "tag": "0261_crm_connectors",
       "breakpoints": true
     },
     {
-      "idx": 262,
+      "idx": 263,
       "version": "7",
       "when": 1787761953441,
       "tag": "0253_data_quality_health_snapshots_rls",
       "breakpoints": true
     },
     {
-      "idx": 263,
+      "idx": 264,
+      "version": "7",
+      "when": 1787761953442,
+      "tag": "0262_party_company_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 265,
+      "version": "7",
+      "when": 1787761953443,
+      "tag": "0263_crm_org_party_map",
+      "breakpoints": true
+    },
+    {
+      "idx": 266,
+      "version": "7",
+      "when": 1787761953444,
+      "tag": "0264_crm_org_party_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 267,
+      "version": "7",
+      "when": 1787761953445,
+      "tag": "0265_party_association_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 268,
+      "version": "7",
+      "when": 1787761953446,
+      "tag": "0266_party_association_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 269,
+      "version": "7",
+      "when": 1787761953447,
+      "tag": "0267_record_layout_adjustments",
+      "breakpoints": true
+    },
+    {
+      "idx": 270,
+      "version": "7",
+      "when": 1787761953448,
+      "tag": "0268_backfill_record_layouts_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 271,
+      "version": "7",
+      "when": 1787761953449,
+      "tag": "0269_mailbox_push_secret",
+      "breakpoints": true
+    },
+    {
+      "idx": 272,
+      "version": "7",
+      "when": 1787761953450,
+      "tag": "0271_crm_suppression_hashes_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 273,
+      "version": "7",
+      "when": 1787761953451,
+      "tag": "0272_quote_document_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 274,
       "version": "7",
       "when": 1787765553441,
       "tag": "0474_external_effect_ledger",
       "breakpoints": true
     },
     {
-      "idx": 264,
+      "idx": 275,
       "version": "7",
       "when": 1787769153441,
       "tag": "0473_coupon_redemption_enforcement",
       "breakpoints": true
     },
     {
-      "idx": 265,
+      "idx": 276,
       "version": "7",
       "when": 1787772753441,
       "tag": "0475_crm_search_id_probes",
       "breakpoints": true
     },
     {
-      "idx": 266,
+      "idx": 277,
       "version": "7",
       "when": 1787776353441,
       "tag": "0476_notification_read_watermark",
       "breakpoints": true
     },
     {
-      "idx": 267,
+      "idx": 278,
       "version": "7",
       "when": 1787779953441,
       "tag": "0477_invoice_items_backfill",
       "breakpoints": true
     },
     {
-      "idx": 268,
+      "idx": 279,
       "version": "7",
       "when": 1787787153441,
       "tag": "0479_audit_log_platform_events",
       "breakpoints": true
     },
     {
-      "idx": 269,
+      "idx": 280,
       "version": "7",
       "when": 1787790753441,
       "tag": "0480_candidate_resume_sidecar",
       "breakpoints": true
     },
     {
-      "idx": 270,
+      "idx": 281,
       "version": "7",
       "when": 1787794353441,
       "tag": "0481_candidate_resume_backfill",
       "breakpoints": true
     },
     {
-      "idx": 271,
+      "idx": 282,
       "version": "7",
       "when": 1787797953441,
       "tag": "0483_calendar_event_timezone",
       "breakpoints": true
     },
     {
-      "idx": 272,
+      "idx": 283,
       "version": "7",
       "when": 1787801553441,
       "tag": "0484_calendar_event_drop_recurrence",
       "breakpoints": true
     },
     {
-      "idx": 273,
+      "idx": 284,
       "version": "7",
       "when": 1787805153441,
       "tag": "0485_broadcast_read_receipts",
       "breakpoints": true
     },
     {
-      "idx": 274,
+      "idx": 285,
       "version": "7",
       "when": 1787808753441,
       "tag": "0486_hr_people_org_person_link",
       "breakpoints": true
     },
     {
-      "idx": 275,
+      "idx": 286,
       "version": "7",
       "when": 1787812353441,
       "tag": "0487_hr_people_org_person_validate",
       "breakpoints": true
     },
     {
-      "idx": 276,
+      "idx": 287,
       "version": "7",
       "when": 1787815953441,
       "tag": "0490_provider_webhook_events",
       "breakpoints": true
     },
     {
-      "idx": 277,
+      "idx": 288,
       "version": "7",
       "when": 1787819553441,
       "tag": "0491_migrate_dunning_to_table",
       "breakpoints": true
     },
     {
-      "idx": 278,
+      "idx": 289,
       "version": "7",
       "when": 1787823153441,
       "tag": "0492_invoice_immutability_trigger",
       "breakpoints": true
     },
     {
-      "idx": 279,
+      "idx": 290,
       "version": "7",
       "when": 1787826753441,
       "tag": "0497_ticket_key_lookup_index",
       "breakpoints": true
     },
     {
-      "idx": 280,
+      "idx": 291,
       "version": "7",
       "when": 1787830353441,
       "tag": "0498_kb_ingestion_hardening",
       "breakpoints": true
     },
     {
-      "idx": 281,
+      "idx": 292,
       "version": "7",
       "when": 1787830354441,
       "tag": "0499_search_lead_party_probe",
       "breakpoints": true
     },
     {
-      "idx": 282,
+      "idx": 293,
       "version": "7",
       "when": 1787830355441,
       "tag": "0500_attendees_backfill",
       "breakpoints": true
     },
     {
-      "idx": 283,
+      "idx": 294,
       "version": "7",
       "when": 1787830356441,
       "tag": "0501_calendar_overlap_index",
       "breakpoints": true
     },
     {
-      "idx": 284,
+      "idx": 295,
       "version": "7",
       "when": 1787830357441,
       "tag": "0502_platform_subscription_cursor_index",
       "breakpoints": true
     },
     {
-      "idx": 285,
+      "idx": 296,
       "version": "7",
       "when": 1787830358441,
       "tag": "0504_mail_metadata_cache",
       "breakpoints": true
     },
     {
-      "idx": 287,
+      "idx": 297,
       "version": "7",
       "when": 1787830359441,
       "tag": "0510_kb_chunk_revision_uniqueness",
       "breakpoints": true
     },
     {
-      "idx": 288,
+      "idx": 298,
       "version": "7",
       "when": 1787830360441,
       "tag": "0513_leave_accrual_sweep_indexes",
       "breakpoints": true
     },
     {
-      "idx": 289,
+      "idx": 299,
       "version": "7",
       "when": 1787830361441,
       "tag": "0507_calendar_recurrence_columns",
       "breakpoints": true
     },
     {
-      "idx": 290,
+      "idx": 300,
       "version": "7",
       "when": 1787830362441,
       "tag": "0508_calendar_event_exceptions",
       "breakpoints": true
     },
     {
-      "idx": 291,
+      "idx": 301,
       "version": "7",
       "when": 1787830363441,
       "tag": "0281_crm_import_target_entity",
       "breakpoints": true
     },
     {
-      "idx": 292,
+      "idx": 302,
       "version": "7",
       "when": 1787830364441,
       "tag": "0282_crm_import_rows_drop_party_columns",
       "breakpoints": true
     },
     {
-      "idx": 293,
+      "idx": 303,
       "version": "7",
       "when": 1787830365441,
       "tag": "0277_party_maps_own_the_identifiers",
       "breakpoints": true
     },
     {
-      "idx": 294,
+      "idx": 304,
       "version": "7",
       "when": 1787830366441,
       "tag": "0278_drop_legacy_identity_tables",
       "breakpoints": true
     },
     {
-      "idx": 295,
+      "idx": 305,
+      "version": "7",
+      "when": 1787830366442,
+      "tag": "0472_outbox_inbox_aggregate_fence",
+      "breakpoints": true
+    },
+    {
+      "idx": 306,
+      "version": "7",
+      "when": 1787830366443,
+      "tag": "0478_invoice_line_items_column_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 307,
+      "version": "7",
+      "when": 1787830366444,
+      "tag": "0482_candidate_resume_column_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 308,
       "version": "7",
       "when": 1787830367441,
       "tag": "0514_inv_webhook_event_subscriptions_rls",
       "breakpoints": true
     },
     {
-      "idx": 296,
+      "idx": 309,
       "version": "7",
       "when": 1787830368441,
       "tag": "0515_inventory_ledger_invariants",
       "breakpoints": true
     },
     {
-      "idx": 297,
+      "idx": 310,
       "version": "7",
       "when": 1787830369441,
       "tag": "0516_inventory_soft_delete",
       "breakpoints": true
     },
     {
-      "idx": 298,
+      "idx": 311,
       "version": "7",
       "when": 1787830370441,
       "tag": "0517_inventory_uom_factor_snapshot",
       "breakpoints": true
     },
     {
-      "idx": 299,
+      "idx": 312,
       "version": "7",
       "when": 1787830371441,
       "tag": "0518_inventory_variant_search",
       "breakpoints": true
     },
     {
-      "idx": 300,
+      "idx": 313,
       "version": "7",
       "when": 1787830372441,
       "tag": "0519_inventory_resumable_import",
       "breakpoints": true
     },
     {
-      "idx": 301,
+      "idx": 314,
       "version": "7",
       "when": 1787830373441,
       "tag": "0520_rbac_membership_keys",
       "breakpoints": true
     },
     {
-      "idx": 302,
+      "idx": 315,
       "version": "7",
       "when": 1787830374441,
       "tag": "0521_drop_resurrected_sku_uniques",
       "breakpoints": true
     },
     {
-      "idx": 303,
+      "idx": 316,
       "version": "7",
       "when": 1787830375441,
       "tag": "0522_grn_discrepancy",
       "breakpoints": true
     },
     {
-      "idx": 304,
+      "idx": 317,
       "version": "7",
       "when": 1787830376441,
       "tag": "0523_pick_line_exceptions",
       "breakpoints": true
     },
     {
-      "idx": 305,
+      "idx": 318,
       "version": "7",
       "when": 1787830377441,
       "tag": "0524_cartonization",
       "breakpoints": true
     },
     {
-      "idx": 306,
+      "idx": 319,
       "version": "7",
       "when": 1787830378441,
       "tag": "0525_carrier_status_events",
       "breakpoints": true
     },
     {
-      "idx": 307,
+      "idx": 320,
       "version": "7",
       "when": 1787830379441,
       "tag": "0526_return_inspection",
       "breakpoints": true
     },
     {
-      "idx": 308,
+      "idx": 321,
       "version": "7",
       "when": 1787830380441,
       "tag": "0527_po_batching_policy",
       "breakpoints": true
     },
     {
-      "idx": 309,
+      "idx": 322,
       "version": "7",
       "when": 1787830381441,
       "tag": "0528_pick_substitute_quantity",
       "breakpoints": true
     },
     {
-      "idx": 310,
+      "idx": 323,
       "version": "7",
       "when": 1787939121447,
       "tag": "0529_ledger_corrections_and_immutability",
       "breakpoints": true
     },
     {
-      "idx": 311,
+      "idx": 324,
       "version": "7",
       "when": 1787939718254,
       "tag": "0530_transit_locations",
       "breakpoints": true
     },
     {
-      "idx": 312,
+      "idx": 325,
       "version": "7",
       "when": 1787975974020,
       "tag": "0531_drop_resurrected_sku_uniques_again",
       "breakpoints": true
     },
     {
-      "idx": 313,
+      "idx": 326,
       "version": "7",
       "when": 1787976854500,
       "tag": "0532_inventory_ai_read_backfill",
       "breakpoints": true
     },
     {
-      "idx": 314,
+      "idx": 327,
       "version": "7",
       "when": 1788048000000,
       "tag": "0533_ledger_correction_objects_relocked",
       "breakpoints": true
     },
     {
-      "idx": 315,
+      "idx": 328,
       "version": "7",
       "when": 1788134400000,
       "tag": "0534_grn_receiving_lifecycle",
       "breakpoints": true
     },
     {
-      "idx": 316,
+      "idx": 329,
       "version": "7",
       "when": 1788134401000,
       "tag": "0535_pick_wave_assignment",
       "breakpoints": true
     },
     {
-      "idx": 317,
+      "idx": 330,
       "version": "7",
       "when": 1788134402000,
       "tag": "0536_putaway_tasks",
       "breakpoints": true
     },
     {
-      "idx": 318,
+      "idx": 331,
       "version": "7",
       "when": 1788134403000,
       "tag": "0537_return_approval",
       "breakpoints": true
     },
     {
-      "idx": 319,
+      "idx": 332,
       "version": "7",
       "when": 1788134404000,
       "tag": "0538_inventory_webhook_delivery_durability",
       "breakpoints": true
     },
     {
-      "idx": 320,
+      "idx": 333,
       "version": "7",
       "when": 1788134405000,
       "tag": "0539_inventory_audit_export",
       "breakpoints": true
     },
     {
-      "idx": 321,
+      "idx": 334,
       "version": "7",
       "when": 1788134406000,
       "tag": "0540_package_sales_order_link",
       "breakpoints": true
     },
     {
-      "idx": 322,
+      "idx": 335,
       "version": "7",
       "when": 1788134407000,
       "tag": "0542_genealogy_traversal_indexes",
       "breakpoints": true
     },
     {
-      "idx": 323,
+      "idx": 336,
       "version": "7",
       "when": 1788134408000,
       "tag": "0541_demand_forecast_versions",
       "breakpoints": true
     },
     {
-      "idx": 324,
+      "idx": 337,
       "version": "7",
       "when": 1788134408001,
       "tag": "0545_stock_write_off",
       "breakpoints": true
     },
     {
-      "idx": 325,
+      "idx": 338,
       "version": "7",
       "when": 1788134408002,
       "tag": "0544_inspection_plans",
       "breakpoints": true
     },
     {
-      "idx": 326,
+      "idx": 339,
       "version": "7",
       "when": 1788134409002,
       "tag": "0543_pick_exception_ownership",
       "breakpoints": true
     },
     {
-      "idx": 327,
+      "idx": 340,
       "version": "7",
       "when": 1788134409003,
       "tag": "0547_ledger_keyset_pagination",
       "breakpoints": true
     },
     {
-      "idx": 328,
+      "idx": 341,
       "version": "7",
       "when": 1788134409004,
       "tag": "0548_inventory_pending_one_permissions",
       "breakpoints": true
     },
     {
-      "idx": 329,
+      "idx": 342,
       "version": "7",
       "when": 1788134409005,
       "tag": "0553_inventory_pack_flags",
       "breakpoints": true
     },
     {
-      "idx": 330,
+      "idx": 343,
       "version": "7",
       "when": 1788134409006,
       "tag": "0550_recall_evidence",
       "breakpoints": true
     },
     {
-      "idx": 331,
+      "idx": 344,
       "version": "7",
       "when": 1788134409007,
       "tag": "0549_transit_exit_queue_index",
       "breakpoints": true
     },
     {
-      "idx": 332,
+      "idx": 345,
       "version": "7",
       "when": 1788134409008,
       "tag": "0561_inventory_hsn_tax_treatment",
       "breakpoints": true
     },
     {
-      "idx": 333,
+      "idx": 346,
       "version": "7",
       "when": 1788134409009,
       "tag": "0552_inventory_valuation_gl_recon_indexes",
       "breakpoints": true
     },
     {
-      "idx": 334,
+      "idx": 347,
       "version": "7",
       "when": 1788134409010,
       "tag": "0562_replenishment_proposal_overrides",
       "breakpoints": true
     },
     {
-      "idx": 335,
+      "idx": 348,
       "version": "7",
       "when": 1788134409011,
       "tag": "0563_near_expiry_allocation_policy",
       "breakpoints": true
     },
     {
-      "idx": 336,
+      "idx": 349,
       "version": "7",
       "when": 1788134409012,
       "tag": "0564_india_compliance_adapters",
       "breakpoints": true
     },
     {
-      "idx": 337,
+      "idx": 350,
       "version": "7",
       "when": 1788134409013,
       "tag": "0570_channel_snapshot_reconciliation",
       "breakpoints": true
     },
     {
-      "idx": 338,
+      "idx": 351,
       "version": "7",
       "when": 1788134409014,
       "tag": "0571_inventory_ai_review_and_feedback",
       "breakpoints": true
     },
     {
-      "idx": 339,
+      "idx": 352,
       "version": "7",
       "when": 1788134409015,
       "tag": "0572_inventory_landed_cost",
       "breakpoints": true
     },
     {
-      "idx": 340,
+      "idx": 353,
       "version": "7",
       "when": 1788134409016,
       "tag": "0573_shelf_life_allocation_overrides",
       "breakpoints": true
     },
     {
-      "idx": 341,
+      "idx": 354,
       "version": "7",
       "when": 1788134409017,
       "tag": "0574_inventory_pharmacy_kirana_packs",
       "breakpoints": true
     },
     {
-      "idx": 342,
+      "idx": 355,
+      "version": "7",
+      "when": 1788134409018,
+      "tag": "0574_inventory_party_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 356,
       "version": "7",
       "when": 1788134409018,
       "tag": "0575_inventory_composite_tenant_fks",
       "breakpoints": true
     },
     {
-      "idx": 343,
+      "idx": 357,
       "version": "7",
       "when": 1788134409019,
       "tag": "0576_tenant_fks_public_a",
       "breakpoints": true
     },
     {
-      "idx": 344,
+      "idx": 358,
       "version": "7",
       "when": 1788134409020,
       "tag": "0577_tenant_fks_public_b",
       "breakpoints": true
     },
     {
-      "idx": 345,
+      "idx": 359,
       "version": "7",
       "when": 1788134409021,
       "tag": "0578_tenant_fks_public_c",
       "breakpoints": true
     },
     {
-      "idx": 346,
+      "idx": 360,
       "version": "7",
       "when": 1788134409022,
       "tag": "0579_tenant_fks_build_schemas",
       "breakpoints": true
     },
     {
-      "idx": 347,
+      "idx": 361,
       "version": "7",
       "when": 1788134409023,
       "tag": "0580_inventory_channel_pools",
       "breakpoints": true
     },
     {
-      "idx": 348,
+      "idx": 362,
       "version": "7",
       "when": 1788134409024,
       "tag": "0581_inventory_quick_commerce_asn",
       "breakpoints": true
     },
     {
-      "idx": 349,
+      "idx": 363,
       "version": "7",
       "when": 1788134409025,
       "tag": "0582_inventory_handling_units",
       "breakpoints": true
     },
     {
-      "idx": 350,
+      "idx": 364,
       "version": "7",
       "when": 1788134409026,
       "tag": "0583_inventory_slotting",
       "breakpoints": true
     },
     {
-      "idx": 351,
+      "idx": 365,
       "version": "7",
       "when": 1788134409027,
       "tag": "0584_inventory_labor",
       "breakpoints": true
     },
     {
-      "idx": 352,
+      "idx": 366,
       "version": "7",
       "when": 1788134409028,
       "tag": "0585_inventory_cross_dock",
       "breakpoints": true
     },
     {
-      "idx": 353,
+      "idx": 367,
       "version": "7",
       "when": 1788134409029,
       "tag": "0586_inventory_kitting",
       "breakpoints": true
     },
     {
-      "idx": 354,
+      "idx": 368,
       "version": "7",
       "when": 1788134409030,
       "tag": "0587_inventory_catch_weight_consignment",
       "breakpoints": true
     },
     {
-      "idx": 355,
+      "idx": 369,
       "version": "7",
       "when": 1788134409031,
       "tag": "0588_inventory_dock_waveless",
       "breakpoints": true
     },
     {
-      "idx": 356,
+      "idx": 370,
       "version": "7",
       "when": 1788134409032,
       "tag": "0589_inventory_drop_reason_codes",

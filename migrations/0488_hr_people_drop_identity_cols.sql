@@ -2,6 +2,18 @@
 -- Ticket: c16-01 — one table owns a person's identity
 --
 -- NOT JOURNALLED — deliberately excluded from migrations/meta/_journal.json.
+--
+-- PEND-DB confirmed that and left it out. It was briefly added while fixing the
+-- cold build, because fifteen files were missing from the journal and most of
+-- them were missing by accident; this one is missing on purpose, and it is the
+-- only one of the fifteen that says so. Preconditions 2 and 3 below are not
+-- things a migration pass can verify — `src/db/schema/hr/` no longer declares
+-- these columns, which satisfies the letter of 2, but "confirmed working in
+-- production" is somebody's judgement and not a grep.
+--
+-- `crm-legacy-readers.spec.ts` lists this alongside 0278 as an outstanding
+-- manual step, so it stays visible rather than becoming an orphan nobody
+-- remembers.
 -- Dropping a column rewrites the table (ACCESS EXCLUSIVE lock) and cannot be
 -- undone if the copy in migration 0486 turned out to be wrong.  Apply this
 -- migration manually only after:

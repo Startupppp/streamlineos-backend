@@ -34,7 +34,11 @@ SET lock_timeout = '5s';
 DO $$ BEGIN
   IF to_regclass('public.payment_provider_accounts') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payment_provider_accounts_provider_id_org'
-                     AND conrelid = to_regclass('public.payment_provider_accounts')) THEN
+                     AND conrelid = to_regclass('public.payment_provider_accounts'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payment_provider_accounts'
+             AND column_name = ANY (ARRAY['org_id', 'provider_id'])) = 2
+    THEN
     ALTER TABLE "public"."payment_provider_accounts" ADD CONSTRAINT "fk_payment_provider_accounts_provider_id_org" FOREIGN KEY (org_id, provider_id) REFERENCES payment_providers(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -49,7 +53,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payment_provider_credentials') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payment_provider_credentials_provider_id_org'
-                     AND conrelid = to_regclass('public.payment_provider_credentials')) THEN
+                     AND conrelid = to_regclass('public.payment_provider_credentials'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payment_provider_credentials'
+             AND column_name = ANY (ARRAY['org_id', 'provider_id'])) = 2
+    THEN
     ALTER TABLE "public"."payment_provider_credentials" ADD CONSTRAINT "fk_payment_provider_credentials_provider_id_org" FOREIGN KEY (org_id, provider_id) REFERENCES payment_providers(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -64,7 +72,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payment_test_transactions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payment_test_transactions_provider_id_org'
-                     AND conrelid = to_regclass('public.payment_test_transactions')) THEN
+                     AND conrelid = to_regclass('public.payment_test_transactions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payment_test_transactions'
+             AND column_name = ANY (ARRAY['org_id', 'provider_id'])) = 2
+    THEN
     ALTER TABLE "public"."payment_test_transactions" ADD CONSTRAINT "fk_payment_test_transactions_provider_id_org" FOREIGN KEY (org_id, provider_id) REFERENCES payment_providers(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -79,7 +91,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payment_webhook_endpoints') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payment_webhook_endpoints_provider_id_org'
-                     AND conrelid = to_regclass('public.payment_webhook_endpoints')) THEN
+                     AND conrelid = to_regclass('public.payment_webhook_endpoints'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payment_webhook_endpoints'
+             AND column_name = ANY (ARRAY['org_id', 'provider_id'])) = 2
+    THEN
     ALTER TABLE "public"."payment_webhook_endpoints" ADD CONSTRAINT "fk_payment_webhook_endpoints_provider_id_org" FOREIGN KEY (org_id, provider_id) REFERENCES payment_providers(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -94,7 +110,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payment_webhook_events') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payment_webhook_events_provider_id_org'
-                     AND conrelid = to_regclass('public.payment_webhook_events')) THEN
+                     AND conrelid = to_regclass('public.payment_webhook_events'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payment_webhook_events'
+             AND column_name = ANY (ARRAY['org_id', 'provider_id'])) = 2
+    THEN
     ALTER TABLE "public"."payment_webhook_events" ADD CONSTRAINT "fk_payment_webhook_events_provider_id_org" FOREIGN KEY (org_id, provider_id) REFERENCES payment_providers(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -109,7 +129,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payments') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payments_invoice_id_org'
-                     AND conrelid = to_regclass('public.payments')) THEN
+                     AND conrelid = to_regclass('public.payments'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payments'
+             AND column_name = ANY (ARRAY['org_id', 'invoice_id'])) = 2
+    THEN
     ALTER TABLE "public"."payments" ADD CONSTRAINT "fk_payments_invoice_id_org" FOREIGN KEY (org_id, invoice_id) REFERENCES invoices(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -124,7 +148,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_approvals') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_approvals_acted_actor'
-                     AND conrelid = to_regclass('public.payroll_approvals')) THEN
+                     AND conrelid = to_regclass('public.payroll_approvals'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_approvals'
+             AND column_name = ANY (ARRAY['org_id', 'acted_by_membership_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_approvals" ADD CONSTRAINT "fk_payroll_approvals_acted_actor" FOREIGN KEY (org_id, acted_by_membership_id) REFERENCES organization_members(org_id, id) ON DELETE RESTRICT NOT VALID;
   END IF;
 END $$;
@@ -139,7 +167,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_approvals') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_approvals_run_id_org'
-                     AND conrelid = to_regclass('public.payroll_approvals')) THEN
+                     AND conrelid = to_regclass('public.payroll_approvals'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_approvals'
+             AND column_name = ANY (ARRAY['org_id', 'run_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_approvals" ADD CONSTRAINT "fk_payroll_approvals_run_id_org" FOREIGN KEY (org_id, run_id) REFERENCES payroll_runs(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -154,7 +186,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_bank_batch_items') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_bank_batch_items_batch_id_org'
-                     AND conrelid = to_regclass('public.payroll_bank_batch_items')) THEN
+                     AND conrelid = to_regclass('public.payroll_bank_batch_items'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_bank_batch_items'
+             AND column_name = ANY (ARRAY['org_id', 'batch_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_bank_batch_items" ADD CONSTRAINT "fk_payroll_bank_batch_items_batch_id_org" FOREIGN KEY (org_id, batch_id) REFERENCES payroll_bank_batches(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -169,7 +205,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_bank_batch_items') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_bank_batch_items_run_employee_id_org'
-                     AND conrelid = to_regclass('public.payroll_bank_batch_items')) THEN
+                     AND conrelid = to_regclass('public.payroll_bank_batch_items'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_bank_batch_items'
+             AND column_name = ANY (ARRAY['org_id', 'run_employee_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_bank_batch_items" ADD CONSTRAINT "fk_payroll_bank_batch_items_run_employee_id_org" FOREIGN KEY (org_id, run_employee_id) REFERENCES payroll_run_employees(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -184,7 +224,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_bank_batches') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_bank_batches_run_id_org'
-                     AND conrelid = to_regclass('public.payroll_bank_batches')) THEN
+                     AND conrelid = to_regclass('public.payroll_bank_batches'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_bank_batches'
+             AND column_name = ANY (ARRAY['org_id', 'run_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_bank_batches" ADD CONSTRAINT "fk_payroll_bank_batches_run_id_org" FOREIGN KEY (org_id, run_id) REFERENCES payroll_runs(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -199,7 +243,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_calendar_events') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_calendar_events_policy_id_org'
-                     AND conrelid = to_regclass('public.payroll_calendar_events')) THEN
+                     AND conrelid = to_regclass('public.payroll_calendar_events'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_calendar_events'
+             AND column_name = ANY (ARRAY['org_id', 'policy_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_calendar_events" ADD CONSTRAINT "fk_payroll_calendar_events_policy_id_org" FOREIGN KEY (org_id, policy_id) REFERENCES payroll_policies(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -214,7 +262,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_command_receipts') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_command_receipts_run_id_org'
-                     AND conrelid = to_regclass('public.payroll_command_receipts')) THEN
+                     AND conrelid = to_regclass('public.payroll_command_receipts'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_command_receipts'
+             AND column_name = ANY (ARRAY['org_id', 'run_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_command_receipts" ADD CONSTRAINT "fk_payroll_command_receipts_run_id_org" FOREIGN KEY (org_id, run_id) REFERENCES payroll_runs(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -229,7 +281,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_exceptions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_exceptions_run_employee_id_org'
-                     AND conrelid = to_regclass('public.payroll_exceptions')) THEN
+                     AND conrelid = to_regclass('public.payroll_exceptions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_exceptions'
+             AND column_name = ANY (ARRAY['org_id', 'run_employee_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_exceptions" ADD CONSTRAINT "fk_payroll_exceptions_run_employee_id_org" FOREIGN KEY (org_id, run_employee_id) REFERENCES payroll_run_employees(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -244,7 +300,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_exceptions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_exceptions_run_id_org'
-                     AND conrelid = to_regclass('public.payroll_exceptions')) THEN
+                     AND conrelid = to_regclass('public.payroll_exceptions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_exceptions'
+             AND column_name = ANY (ARRAY['org_id', 'run_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_exceptions" ADD CONSTRAINT "fk_payroll_exceptions_run_id_org" FOREIGN KEY (org_id, run_id) REFERENCES payroll_runs(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -259,7 +319,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_filings') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_filings_entity_id_org'
-                     AND conrelid = to_regclass('public.payroll_filings')) THEN
+                     AND conrelid = to_regclass('public.payroll_filings'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_filings'
+             AND column_name = ANY (ARRAY['org_id', 'entity_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_filings" ADD CONSTRAINT "fk_payroll_filings_entity_id_org" FOREIGN KEY (org_id, entity_id) REFERENCES payroll_entities(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -274,7 +338,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_filings') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_filings_period_id_org'
-                     AND conrelid = to_regclass('public.payroll_filings')) THEN
+                     AND conrelid = to_regclass('public.payroll_filings'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_filings'
+             AND column_name = ANY (ARRAY['org_id', 'period_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_filings" ADD CONSTRAINT "fk_payroll_filings_period_id_org" FOREIGN KEY (org_id, period_id) REFERENCES payroll_periods(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -289,7 +357,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_inputs') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_inputs_run_id_org'
-                     AND conrelid = to_regclass('public.payroll_inputs')) THEN
+                     AND conrelid = to_regclass('public.payroll_inputs'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_inputs'
+             AND column_name = ANY (ARRAY['org_id', 'run_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_inputs" ADD CONSTRAINT "fk_payroll_inputs_run_id_org" FOREIGN KEY (org_id, run_id) REFERENCES payroll_runs(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -304,7 +376,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_jobs') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_jobs_entity_id_org'
-                     AND conrelid = to_regclass('public.payroll_jobs')) THEN
+                     AND conrelid = to_regclass('public.payroll_jobs'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_jobs'
+             AND column_name = ANY (ARRAY['org_id', 'entity_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_jobs" ADD CONSTRAINT "fk_payroll_jobs_entity_id_org" FOREIGN KEY (org_id, entity_id) REFERENCES payroll_entities(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -319,7 +395,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_journal_batch_lines') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_journal_batch_lines_batch_id_org'
-                     AND conrelid = to_regclass('public.payroll_journal_batch_lines')) THEN
+                     AND conrelid = to_regclass('public.payroll_journal_batch_lines'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_journal_batch_lines'
+             AND column_name = ANY (ARRAY['org_id', 'batch_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_journal_batch_lines" ADD CONSTRAINT "fk_payroll_journal_batch_lines_batch_id_org" FOREIGN KEY (org_id, batch_id) REFERENCES payroll_journal_batches(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -334,7 +414,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_journal_batches') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_journal_batches_entity_id_org'
-                     AND conrelid = to_regclass('public.payroll_journal_batches')) THEN
+                     AND conrelid = to_regclass('public.payroll_journal_batches'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_journal_batches'
+             AND column_name = ANY (ARRAY['org_id', 'entity_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_journal_batches" ADD CONSTRAINT "fk_payroll_journal_batches_entity_id_org" FOREIGN KEY (org_id, entity_id) REFERENCES payroll_entities(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -349,7 +433,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_journal_batches') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_journal_batches_reversal_of_batch_id_org'
-                     AND conrelid = to_regclass('public.payroll_journal_batches')) THEN
+                     AND conrelid = to_regclass('public.payroll_journal_batches'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_journal_batches'
+             AND column_name = ANY (ARRAY['org_id', 'reversal_of_batch_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_journal_batches" ADD CONSTRAINT "fk_payroll_journal_batches_reversal_of_batch_id_org" FOREIGN KEY (org_id, reversal_of_batch_id) REFERENCES payroll_journal_batches(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -364,7 +452,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_journal_batches') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_journal_batches_run_id_org'
-                     AND conrelid = to_regclass('public.payroll_journal_batches')) THEN
+                     AND conrelid = to_regclass('public.payroll_journal_batches'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_journal_batches'
+             AND column_name = ANY (ARRAY['org_id', 'run_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_journal_batches" ADD CONSTRAINT "fk_payroll_journal_batches_run_id_org" FOREIGN KEY (org_id, run_id) REFERENCES payroll_runs(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -379,7 +471,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_line_items') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_line_items_run_employee_id_org'
-                     AND conrelid = to_regclass('public.payroll_line_items')) THEN
+                     AND conrelid = to_regclass('public.payroll_line_items'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_line_items'
+             AND column_name = ANY (ARRAY['org_id', 'run_employee_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_line_items" ADD CONSTRAINT "fk_payroll_line_items_run_employee_id_org" FOREIGN KEY (org_id, run_employee_id) REFERENCES payroll_run_employees(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -394,7 +490,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_line_items') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_line_items_run_id_org'
-                     AND conrelid = to_regclass('public.payroll_line_items')) THEN
+                     AND conrelid = to_regclass('public.payroll_line_items'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_line_items'
+             AND column_name = ANY (ARRAY['org_id', 'run_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_line_items" ADD CONSTRAINT "fk_payroll_line_items_run_id_org" FOREIGN KEY (org_id, run_id) REFERENCES payroll_runs(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -409,7 +509,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_loan_adjustments') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_loan_adjustments_loan_id_org'
-                     AND conrelid = to_regclass('public.payroll_loan_adjustments')) THEN
+                     AND conrelid = to_regclass('public.payroll_loan_adjustments'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_loan_adjustments'
+             AND column_name = ANY (ARRAY['org_id', 'loan_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_loan_adjustments" ADD CONSTRAINT "fk_payroll_loan_adjustments_loan_id_org" FOREIGN KEY (org_id, loan_id) REFERENCES salary_loans(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -424,7 +528,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_loan_adjustments') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_loan_adjustments_run_id_org'
-                     AND conrelid = to_regclass('public.payroll_loan_adjustments')) THEN
+                     AND conrelid = to_regclass('public.payroll_loan_adjustments'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_loan_adjustments'
+             AND column_name = ANY (ARRAY['org_id', 'run_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_loan_adjustments" ADD CONSTRAINT "fk_payroll_loan_adjustments_run_id_org" FOREIGN KEY (org_id, run_id) REFERENCES payroll_runs(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -439,7 +547,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_periods') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_periods_entity_id_org'
-                     AND conrelid = to_regclass('public.payroll_periods')) THEN
+                     AND conrelid = to_regclass('public.payroll_periods'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_periods'
+             AND column_name = ANY (ARRAY['org_id', 'entity_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_periods" ADD CONSTRAINT "fk_payroll_periods_entity_id_org" FOREIGN KEY (org_id, entity_id) REFERENCES payroll_entities(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -454,7 +566,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_policy_versions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_policy_versions_policy_id_org'
-                     AND conrelid = to_regclass('public.payroll_policy_versions')) THEN
+                     AND conrelid = to_regclass('public.payroll_policy_versions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_policy_versions'
+             AND column_name = ANY (ARRAY['org_id', 'policy_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_policy_versions" ADD CONSTRAINT "fk_payroll_policy_versions_policy_id_org" FOREIGN KEY (org_id, policy_id) REFERENCES payroll_policies(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -469,7 +585,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_run_employees') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_run_employees_run_id_org'
-                     AND conrelid = to_regclass('public.payroll_run_employees')) THEN
+                     AND conrelid = to_regclass('public.payroll_run_employees'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_run_employees'
+             AND column_name = ANY (ARRAY['org_id', 'run_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_run_employees" ADD CONSTRAINT "fk_payroll_run_employees_run_id_org" FOREIGN KEY (org_id, run_id) REFERENCES payroll_runs(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -484,7 +604,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_run_events') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_run_events_run_id_org'
-                     AND conrelid = to_regclass('public.payroll_run_events')) THEN
+                     AND conrelid = to_regclass('public.payroll_run_events'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_run_events'
+             AND column_name = ANY (ARRAY['org_id', 'run_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_run_events" ADD CONSTRAINT "fk_payroll_run_events_run_id_org" FOREIGN KEY (org_id, run_id) REFERENCES payroll_runs(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -499,7 +623,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_runs') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_runs_approved_actor'
-                     AND conrelid = to_regclass('public.payroll_runs')) THEN
+                     AND conrelid = to_regclass('public.payroll_runs'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_runs'
+             AND column_name = ANY (ARRAY['org_id', 'approved_by_membership_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_runs" ADD CONSTRAINT "fk_payroll_runs_approved_actor" FOREIGN KEY (org_id, approved_by_membership_id) REFERENCES organization_members(org_id, id) ON DELETE RESTRICT NOT VALID;
   END IF;
 END $$;
@@ -514,7 +642,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_runs') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_runs_policy_version_id_org'
-                     AND conrelid = to_regclass('public.payroll_runs')) THEN
+                     AND conrelid = to_regclass('public.payroll_runs'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_runs'
+             AND column_name = ANY (ARRAY['org_id', 'policy_version_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_runs" ADD CONSTRAINT "fk_payroll_runs_policy_version_id_org" FOREIGN KEY (org_id, policy_version_id) REFERENCES payroll_policy_versions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -529,7 +661,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payroll_template_activations') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payroll_template_activations_policy_version_id_org'
-                     AND conrelid = to_regclass('public.payroll_template_activations')) THEN
+                     AND conrelid = to_regclass('public.payroll_template_activations'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payroll_template_activations'
+             AND column_name = ANY (ARRAY['org_id', 'policy_version_id'])) = 2
+    THEN
     ALTER TABLE "public"."payroll_template_activations" ADD CONSTRAINT "fk_payroll_template_activations_policy_version_id_org" FOREIGN KEY (org_id, policy_version_id) REFERENCES payroll_policy_versions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -544,7 +680,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payslip_publications') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payslip_publications_payslip_template_id_org'
-                     AND conrelid = to_regclass('public.payslip_publications')) THEN
+                     AND conrelid = to_regclass('public.payslip_publications'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payslip_publications'
+             AND column_name = ANY (ARRAY['org_id', 'payslip_template_id'])) = 2
+    THEN
     ALTER TABLE "public"."payslip_publications" ADD CONSTRAINT "fk_payslip_publications_payslip_template_id_org" FOREIGN KEY (org_id, payslip_template_id) REFERENCES payslip_templates(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -559,7 +699,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payslip_publications') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payslip_publications_run_employee_id_org'
-                     AND conrelid = to_regclass('public.payslip_publications')) THEN
+                     AND conrelid = to_regclass('public.payslip_publications'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payslip_publications'
+             AND column_name = ANY (ARRAY['org_id', 'run_employee_id'])) = 2
+    THEN
     ALTER TABLE "public"."payslip_publications" ADD CONSTRAINT "fk_payslip_publications_run_employee_id_org" FOREIGN KEY (org_id, run_employee_id) REFERENCES payroll_run_employees(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -574,7 +718,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.payslip_publications') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payslip_publications_run_id_org'
-                     AND conrelid = to_regclass('public.payslip_publications')) THEN
+                     AND conrelid = to_regclass('public.payslip_publications'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payslip_publications'
+             AND column_name = ANY (ARRAY['org_id', 'run_id'])) = 2
+    THEN
     ALTER TABLE "public"."payslip_publications" ADD CONSTRAINT "fk_payslip_publications_run_id_org" FOREIGN KEY (org_id, run_id) REFERENCES payroll_runs(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -589,7 +737,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.performance_reviews') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_performance_reviews_cycle_id_org'
-                     AND conrelid = to_regclass('public.performance_reviews')) THEN
+                     AND conrelid = to_regclass('public.performance_reviews'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'performance_reviews'
+             AND column_name = ANY (ARRAY['org_id', 'cycle_id'])) = 2
+    THEN
     ALTER TABLE "public"."performance_reviews" ADD CONSTRAINT "fk_performance_reviews_cycle_id_org" FOREIGN KEY (org_id, cycle_id) REFERENCES review_cycles(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -604,7 +756,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.performance_reviews') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_performance_reviews_reviewer_actor'
-                     AND conrelid = to_regclass('public.performance_reviews')) THEN
+                     AND conrelid = to_regclass('public.performance_reviews'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'performance_reviews'
+             AND column_name = ANY (ARRAY['org_id', 'reviewer_membership_id'])) = 2
+    THEN
     ALTER TABLE "public"."performance_reviews" ADD CONSTRAINT "fk_performance_reviews_reviewer_actor" FOREIGN KEY (org_id, reviewer_membership_id) REFERENCES organization_members(org_id, id) ON DELETE RESTRICT NOT VALID;
   END IF;
 END $$;
@@ -619,7 +775,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.policy_acknowledgments') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_policy_acknowledgments_document_id_org'
-                     AND conrelid = to_regclass('public.policy_acknowledgments')) THEN
+                     AND conrelid = to_regclass('public.policy_acknowledgments'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'policy_acknowledgments'
+             AND column_name = ANY (ARRAY['org_id', 'document_id'])) = 2
+    THEN
     ALTER TABLE "public"."policy_acknowledgments" ADD CONSTRAINT "fk_policy_acknowledgments_document_id_org" FOREIGN KEY (org_id, document_id) REFERENCES documents(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -634,7 +794,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.principal_group_members') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'principal_group_members_org_id_organization_membership_id_fkey'
-                     AND conrelid = to_regclass('public.principal_group_members')) THEN
+                     AND conrelid = to_regclass('public.principal_group_members'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'principal_group_members'
+             AND column_name = ANY (ARRAY['org_id', 'organization_membership_id'])) = 2
+    THEN
     ALTER TABLE "public"."principal_group_members" ADD CONSTRAINT "principal_group_members_org_id_organization_membership_id_fkey" FOREIGN KEY (org_id, organization_membership_id) REFERENCES organization_members(org_id, id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
@@ -649,7 +813,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.purchase_bill_items') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_purchase_bill_items_bill_id_org'
-                     AND conrelid = to_regclass('public.purchase_bill_items')) THEN
+                     AND conrelid = to_regclass('public.purchase_bill_items'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'purchase_bill_items'
+             AND column_name = ANY (ARRAY['org_id', 'bill_id'])) = 2
+    THEN
     ALTER TABLE "public"."purchase_bill_items" ADD CONSTRAINT "fk_purchase_bill_items_bill_id_org" FOREIGN KEY (org_id, bill_id) REFERENCES purchase_bills(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -664,7 +832,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.purchase_bills') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_purchase_bills_vendor_id_org'
-                     AND conrelid = to_regclass('public.purchase_bills')) THEN
+                     AND conrelid = to_regclass('public.purchase_bills'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'purchase_bills'
+             AND column_name = ANY (ARRAY['org_id', 'vendor_id'])) = 2
+    THEN
     ALTER TABLE "public"."purchase_bills" ADD CONSTRAINT "fk_purchase_bills_vendor_id_org" FOREIGN KEY (org_id, vendor_id) REFERENCES clients(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -679,7 +851,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.purchase_bills') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_purchase_bills_vendor_party_id'
-                     AND conrelid = to_regclass('public.purchase_bills')) THEN
+                     AND conrelid = to_regclass('public.purchase_bills'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'purchase_bills'
+             AND column_name = ANY (ARRAY['org_id', 'vendor_party_id'])) = 2
+    THEN
     ALTER TABLE "public"."purchase_bills" ADD CONSTRAINT "fk_purchase_bills_vendor_party_id" FOREIGN KEY (org_id, vendor_party_id) REFERENCES business_parties(organization_id, party_id) ON DELETE SET NULL NOT VALID;
   END IF;
 END $$;
@@ -694,7 +870,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.quote_line_items') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quote_line_items_quote_id_org'
-                     AND conrelid = to_regclass('public.quote_line_items')) THEN
+                     AND conrelid = to_regclass('public.quote_line_items'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'quote_line_items'
+             AND column_name = ANY (ARRAY['org_id', 'quote_id'])) = 2
+    THEN
     ALTER TABLE "public"."quote_line_items" ADD CONSTRAINT "fk_quote_line_items_quote_id_org" FOREIGN KEY (org_id, quote_id) REFERENCES quotes(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -709,7 +889,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.quotes') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quotes_client_id_org'
-                     AND conrelid = to_regclass('public.quotes')) THEN
+                     AND conrelid = to_regclass('public.quotes'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'quotes'
+             AND column_name = ANY (ARRAY['org_id', 'client_id'])) = 2
+    THEN
     ALTER TABLE "public"."quotes" ADD CONSTRAINT "fk_quotes_client_id_org" FOREIGN KEY (org_id, client_id) REFERENCES client_accounts(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -724,7 +908,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.quotes') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quotes_converted_invoice_id_org'
-                     AND conrelid = to_regclass('public.quotes')) THEN
+                     AND conrelid = to_regclass('public.quotes'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'quotes'
+             AND column_name = ANY (ARRAY['org_id', 'converted_invoice_id'])) = 2
+    THEN
     ALTER TABLE "public"."quotes" ADD CONSTRAINT "fk_quotes_converted_invoice_id_org" FOREIGN KEY (org_id, converted_invoice_id) REFERENCES invoices(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -739,7 +927,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.quotes') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quotes_deal_id_org'
-                     AND conrelid = to_regclass('public.quotes')) THEN
+                     AND conrelid = to_regclass('public.quotes'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'quotes'
+             AND column_name = ANY (ARRAY['org_id', 'deal_id'])) = 2
+    THEN
     ALTER TABLE "public"."quotes" ADD CONSTRAINT "fk_quotes_deal_id_org" FOREIGN KEY (org_id, deal_id) REFERENCES deals(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -754,7 +946,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.recruiter_activity_log') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_recruiter_activity_log_candidate_id_org'
-                     AND conrelid = to_regclass('public.recruiter_activity_log')) THEN
+                     AND conrelid = to_regclass('public.recruiter_activity_log'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'recruiter_activity_log'
+             AND column_name = ANY (ARRAY['org_id', 'candidate_id'])) = 2
+    THEN
     ALTER TABLE "public"."recruiter_activity_log" ADD CONSTRAINT "fk_recruiter_activity_log_candidate_id_org" FOREIGN KEY (org_id, candidate_id) REFERENCES candidates(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -769,7 +965,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.recruiter_activity_log') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_recruiter_activity_log_job_posting_id_org'
-                     AND conrelid = to_regclass('public.recruiter_activity_log')) THEN
+                     AND conrelid = to_regclass('public.recruiter_activity_log'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'recruiter_activity_log'
+             AND column_name = ANY (ARRAY['org_id', 'job_posting_id'])) = 2
+    THEN
     ALTER TABLE "public"."recruiter_activity_log" ADD CONSTRAINT "fk_recruiter_activity_log_job_posting_id_org" FOREIGN KEY (org_id, job_posting_id) REFERENCES job_postings(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -784,7 +984,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.reimbursements') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_reimbursements_approved_actor'
-                     AND conrelid = to_regclass('public.reimbursements')) THEN
+                     AND conrelid = to_regclass('public.reimbursements'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'reimbursements'
+             AND column_name = ANY (ARRAY['org_id', 'approved_by_membership_id'])) = 2
+    THEN
     ALTER TABLE "public"."reimbursements" ADD CONSTRAINT "fk_reimbursements_approved_actor" FOREIGN KEY (org_id, approved_by_membership_id) REFERENCES organization_members(org_id, id) ON DELETE RESTRICT NOT VALID;
   END IF;
 END $$;
@@ -799,7 +1003,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.review_cycles') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_review_cycles_template_id_org'
-                     AND conrelid = to_regclass('public.review_cycles')) THEN
+                     AND conrelid = to_regclass('public.review_cycles'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'review_cycles'
+             AND column_name = ANY (ARRAY['org_id', 'template_id'])) = 2
+    THEN
     ALTER TABLE "public"."review_cycles" ADD CONSTRAINT "fk_review_cycles_template_id_org" FOREIGN KEY (org_id, template_id) REFERENCES hr_templates(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -814,7 +1022,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.role_assignments') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_role_assignments_assigner_membership'
-                     AND conrelid = to_regclass('public.role_assignments')) THEN
+                     AND conrelid = to_regclass('public.role_assignments'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'role_assignments'
+             AND column_name = ANY (ARRAY['org_id', 'assigned_by_membership_id'])) = 2
+    THEN
     ALTER TABLE "public"."role_assignments" ADD CONSTRAINT "fk_role_assignments_assigner_membership" FOREIGN KEY (org_id, assigned_by_membership_id) REFERENCES organization_members(org_id, id) ON DELETE SET NULL (assigned_by_membership_id) NOT VALID;
   END IF;
 END $$;
@@ -829,7 +1041,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.role_permission_grants') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_role_permission_grants_role_id_org'
-                     AND conrelid = to_regclass('public.role_permission_grants')) THEN
+                     AND conrelid = to_regclass('public.role_permission_grants'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'role_permission_grants'
+             AND column_name = ANY (ARRAY['org_id', 'role_id'])) = 2
+    THEN
     ALTER TABLE "public"."role_permission_grants" ADD CONSTRAINT "fk_role_permission_grants_role_id_org" FOREIGN KEY (org_id, role_id) REFERENCES roles(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -844,7 +1060,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.roster_entries') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_roster_entries_roster_id_org'
-                     AND conrelid = to_regclass('public.roster_entries')) THEN
+                     AND conrelid = to_regclass('public.roster_entries'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'roster_entries'
+             AND column_name = ANY (ARRAY['org_id', 'roster_id'])) = 2
+    THEN
     ALTER TABLE "public"."roster_entries" ADD CONSTRAINT "fk_roster_entries_roster_id_org" FOREIGN KEY (org_id, roster_id) REFERENCES rosters(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -859,7 +1079,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.roster_entries') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_roster_entries_shift_id_org'
-                     AND conrelid = to_regclass('public.roster_entries')) THEN
+                     AND conrelid = to_regclass('public.roster_entries'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'roster_entries'
+             AND column_name = ANY (ARRAY['org_id', 'shift_id'])) = 2
+    THEN
     ALTER TABLE "public"."roster_entries" ADD CONSTRAINT "fk_roster_entries_shift_id_org" FOREIGN KEY (org_id, shift_id) REFERENCES shift_templates(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -874,7 +1098,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_audit_events') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_audit_events_envelope_id_org'
-                     AND conrelid = to_regclass('public.sign_audit_events')) THEN
+                     AND conrelid = to_regclass('public.sign_audit_events'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_audit_events'
+             AND column_name = ANY (ARRAY['org_id', 'envelope_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_audit_events" ADD CONSTRAINT "fk_sign_audit_events_envelope_id_org" FOREIGN KEY (org_id, envelope_id) REFERENCES sign_envelopes(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -889,7 +1117,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_audit_events') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_audit_events_recipient_id_org'
-                     AND conrelid = to_regclass('public.sign_audit_events')) THEN
+                     AND conrelid = to_regclass('public.sign_audit_events'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_audit_events'
+             AND column_name = ANY (ARRAY['org_id', 'recipient_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_audit_events" ADD CONSTRAINT "fk_sign_audit_events_recipient_id_org" FOREIGN KEY (org_id, recipient_id) REFERENCES sign_recipients(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -904,7 +1136,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_bulk_send_jobs') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_bulk_send_jobs_template_id_org'
-                     AND conrelid = to_regclass('public.sign_bulk_send_jobs')) THEN
+                     AND conrelid = to_regclass('public.sign_bulk_send_jobs'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_bulk_send_jobs'
+             AND column_name = ANY (ARRAY['org_id', 'template_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_bulk_send_jobs" ADD CONSTRAINT "fk_sign_bulk_send_jobs_template_id_org" FOREIGN KEY (org_id, template_id) REFERENCES sign_templates(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -919,7 +1155,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_bulk_send_rows') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_bulk_send_rows_envelope_id_org'
-                     AND conrelid = to_regclass('public.sign_bulk_send_rows')) THEN
+                     AND conrelid = to_regclass('public.sign_bulk_send_rows'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_bulk_send_rows'
+             AND column_name = ANY (ARRAY['org_id', 'envelope_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_bulk_send_rows" ADD CONSTRAINT "fk_sign_bulk_send_rows_envelope_id_org" FOREIGN KEY (org_id, envelope_id) REFERENCES sign_envelopes(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -934,7 +1174,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_bulk_send_rows') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_bulk_send_rows_job_id_org'
-                     AND conrelid = to_regclass('public.sign_bulk_send_rows')) THEN
+                     AND conrelid = to_regclass('public.sign_bulk_send_rows'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_bulk_send_rows'
+             AND column_name = ANY (ARRAY['org_id', 'job_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_bulk_send_rows" ADD CONSTRAINT "fk_sign_bulk_send_rows_job_id_org" FOREIGN KEY (org_id, job_id) REFERENCES sign_bulk_send_jobs(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -949,7 +1193,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_certificates') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_certificates_envelope_id_org'
-                     AND conrelid = to_regclass('public.sign_certificates')) THEN
+                     AND conrelid = to_regclass('public.sign_certificates'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_certificates'
+             AND column_name = ANY (ARRAY['org_id', 'envelope_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_certificates" ADD CONSTRAINT "fk_sign_certificates_envelope_id_org" FOREIGN KEY (org_id, envelope_id) REFERENCES sign_envelopes(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -964,7 +1212,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_documents') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_documents_envelope_id_org'
-                     AND conrelid = to_regclass('public.sign_documents')) THEN
+                     AND conrelid = to_regclass('public.sign_documents'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_documents'
+             AND column_name = ANY (ARRAY['org_id', 'envelope_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_documents" ADD CONSTRAINT "fk_sign_documents_envelope_id_org" FOREIGN KEY (org_id, envelope_id) REFERENCES sign_envelopes(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -979,7 +1231,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_envelopes') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_envelopes_public_form_id_org'
-                     AND conrelid = to_regclass('public.sign_envelopes')) THEN
+                     AND conrelid = to_regclass('public.sign_envelopes'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_envelopes'
+             AND column_name = ANY (ARRAY['org_id', 'public_form_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_envelopes" ADD CONSTRAINT "fk_sign_envelopes_public_form_id_org" FOREIGN KEY (org_id, public_form_id) REFERENCES sign_public_forms(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -994,7 +1250,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_envelopes') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_envelopes_template_id_org'
-                     AND conrelid = to_regclass('public.sign_envelopes')) THEN
+                     AND conrelid = to_regclass('public.sign_envelopes'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_envelopes'
+             AND column_name = ANY (ARRAY['org_id', 'template_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_envelopes" ADD CONSTRAINT "fk_sign_envelopes_template_id_org" FOREIGN KEY (org_id, template_id) REFERENCES sign_templates(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1009,7 +1269,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_envelopes') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_envelopes_watermark_policy_id_org'
-                     AND conrelid = to_regclass('public.sign_envelopes')) THEN
+                     AND conrelid = to_regclass('public.sign_envelopes'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_envelopes'
+             AND column_name = ANY (ARRAY['org_id', 'watermark_policy_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_envelopes" ADD CONSTRAINT "fk_sign_envelopes_watermark_policy_id_org" FOREIGN KEY (org_id, watermark_policy_id) REFERENCES sign_watermark_policies(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1024,7 +1288,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_fields') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_fields_document_id_org'
-                     AND conrelid = to_regclass('public.sign_fields')) THEN
+                     AND conrelid = to_regclass('public.sign_fields'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_fields'
+             AND column_name = ANY (ARRAY['org_id', 'document_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_fields" ADD CONSTRAINT "fk_sign_fields_document_id_org" FOREIGN KEY (org_id, document_id) REFERENCES sign_documents(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1039,7 +1307,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_fields') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_fields_envelope_id_org'
-                     AND conrelid = to_regclass('public.sign_fields')) THEN
+                     AND conrelid = to_regclass('public.sign_fields'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_fields'
+             AND column_name = ANY (ARRAY['org_id', 'envelope_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_fields" ADD CONSTRAINT "fk_sign_fields_envelope_id_org" FOREIGN KEY (org_id, envelope_id) REFERENCES sign_envelopes(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1054,7 +1326,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_fields') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_fields_recipient_id_org'
-                     AND conrelid = to_regclass('public.sign_fields')) THEN
+                     AND conrelid = to_regclass('public.sign_fields'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_fields'
+             AND column_name = ANY (ARRAY['org_id', 'recipient_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_fields" ADD CONSTRAINT "fk_sign_fields_recipient_id_org" FOREIGN KEY (org_id, recipient_id) REFERENCES sign_recipients(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1069,7 +1345,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_public_forms') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_public_forms_template_id_org'
-                     AND conrelid = to_regclass('public.sign_public_forms')) THEN
+                     AND conrelid = to_regclass('public.sign_public_forms'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_public_forms'
+             AND column_name = ANY (ARRAY['org_id', 'template_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_public_forms" ADD CONSTRAINT "fk_sign_public_forms_template_id_org" FOREIGN KEY (org_id, template_id) REFERENCES sign_templates(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1084,7 +1364,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_recipients') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_recipients_envelope_id_org'
-                     AND conrelid = to_regclass('public.sign_recipients')) THEN
+                     AND conrelid = to_regclass('public.sign_recipients'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_recipients'
+             AND column_name = ANY (ARRAY['org_id', 'envelope_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_recipients" ADD CONSTRAINT "fk_sign_recipients_envelope_id_org" FOREIGN KEY (org_id, envelope_id) REFERENCES sign_envelopes(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1099,7 +1383,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_signature_assets') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_signature_assets_envelope_id_org'
-                     AND conrelid = to_regclass('public.sign_signature_assets')) THEN
+                     AND conrelid = to_regclass('public.sign_signature_assets'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_signature_assets'
+             AND column_name = ANY (ARRAY['org_id', 'envelope_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_signature_assets" ADD CONSTRAINT "fk_sign_signature_assets_envelope_id_org" FOREIGN KEY (org_id, envelope_id) REFERENCES sign_envelopes(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1114,7 +1402,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.sign_signature_assets') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_sign_signature_assets_recipient_id_org'
-                     AND conrelid = to_regclass('public.sign_signature_assets')) THEN
+                     AND conrelid = to_regclass('public.sign_signature_assets'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sign_signature_assets'
+             AND column_name = ANY (ARRAY['org_id', 'recipient_id'])) = 2
+    THEN
     ALTER TABLE "public"."sign_signature_assets" ADD CONSTRAINT "fk_sign_signature_assets_recipient_id_org" FOREIGN KEY (org_id, recipient_id) REFERENCES sign_recipients(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1129,7 +1421,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.subscription_payments') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_subscription_payments_subscription_id_org'
-                     AND conrelid = to_regclass('public.subscription_payments')) THEN
+                     AND conrelid = to_regclass('public.subscription_payments'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'subscription_payments'
+             AND column_name = ANY (ARRAY['org_id', 'subscription_id'])) = 2
+    THEN
     ALTER TABLE "public"."subscription_payments" ADD CONSTRAINT "fk_subscription_payments_subscription_id_org" FOREIGN KEY (org_id, subscription_id) REFERENCES subscriptions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1144,7 +1440,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_ai_suggestions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_ai_suggestions_ticket_id_org'
-                     AND conrelid = to_regclass('public.support_ai_suggestions')) THEN
+                     AND conrelid = to_regclass('public.support_ai_suggestions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_ai_suggestions'
+             AND column_name = ANY (ARRAY['org_id', 'ticket_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_ai_suggestions" ADD CONSTRAINT "fk_support_ai_suggestions_ticket_id_org" FOREIGN KEY (org_id, ticket_id) REFERENCES support_tickets(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1159,7 +1459,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_csat_requests') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_csat_requests_ticket_id_org'
-                     AND conrelid = to_regclass('public.support_csat_requests')) THEN
+                     AND conrelid = to_regclass('public.support_csat_requests'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_csat_requests'
+             AND column_name = ANY (ARRAY['org_id', 'ticket_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_csat_requests" ADD CONSTRAINT "fk_support_csat_requests_ticket_id_org" FOREIGN KEY (org_id, ticket_id) REFERENCES support_tickets(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1174,7 +1478,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_knowledge_gaps') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_knowledge_gaps_proposed_article_id_org'
-                     AND conrelid = to_regclass('public.support_knowledge_gaps')) THEN
+                     AND conrelid = to_regclass('public.support_knowledge_gaps'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_knowledge_gaps'
+             AND column_name = ANY (ARRAY['org_id', 'proposed_article_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_knowledge_gaps" ADD CONSTRAINT "fk_support_knowledge_gaps_proposed_article_id_org" FOREIGN KEY (org_id, proposed_article_id) REFERENCES kb_articles(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1189,7 +1497,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_message_mentions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_message_mentions_message_id_org'
-                     AND conrelid = to_regclass('public.support_message_mentions')) THEN
+                     AND conrelid = to_regclass('public.support_message_mentions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_message_mentions'
+             AND column_name = ANY (ARRAY['org_id', 'message_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_message_mentions" ADD CONSTRAINT "fk_support_message_mentions_message_id_org" FOREIGN KEY (org_id, message_id) REFERENCES support_ticket_messages(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1204,7 +1516,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_ticket_activity') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_ticket_activity_support_ticket_id_org'
-                     AND conrelid = to_regclass('public.support_ticket_activity')) THEN
+                     AND conrelid = to_regclass('public.support_ticket_activity'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_ticket_activity'
+             AND column_name = ANY (ARRAY['org_id', 'support_ticket_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_ticket_activity" ADD CONSTRAINT "fk_support_ticket_activity_support_ticket_id_org" FOREIGN KEY (org_id, support_ticket_id) REFERENCES support_tickets(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1219,7 +1535,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_ticket_drafts') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_ticket_drafts_ticket_id_org'
-                     AND conrelid = to_regclass('public.support_ticket_drafts')) THEN
+                     AND conrelid = to_regclass('public.support_ticket_drafts'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_ticket_drafts'
+             AND column_name = ANY (ARRAY['org_id', 'ticket_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_ticket_drafts" ADD CONSTRAINT "fk_support_ticket_drafts_ticket_id_org" FOREIGN KEY (org_id, ticket_id) REFERENCES support_tickets(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1234,7 +1554,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_ticket_embeddings') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_ticket_embeddings_ticket_id_org'
-                     AND conrelid = to_regclass('public.support_ticket_embeddings')) THEN
+                     AND conrelid = to_regclass('public.support_ticket_embeddings'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_ticket_embeddings'
+             AND column_name = ANY (ARRAY['org_id', 'ticket_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_ticket_embeddings" ADD CONSTRAINT "fk_support_ticket_embeddings_ticket_id_org" FOREIGN KEY (org_id, ticket_id) REFERENCES support_tickets(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1249,7 +1573,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_ticket_external_links') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_ticket_external_links_ticket_id_org'
-                     AND conrelid = to_regclass('public.support_ticket_external_links')) THEN
+                     AND conrelid = to_regclass('public.support_ticket_external_links'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_ticket_external_links'
+             AND column_name = ANY (ARRAY['org_id', 'ticket_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_ticket_external_links" ADD CONSTRAINT "fk_support_ticket_external_links_ticket_id_org" FOREIGN KEY (org_id, ticket_id) REFERENCES support_tickets(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1264,7 +1592,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_ticket_links') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_ticket_links_linked_ticket_id_org'
-                     AND conrelid = to_regclass('public.support_ticket_links')) THEN
+                     AND conrelid = to_regclass('public.support_ticket_links'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_ticket_links'
+             AND column_name = ANY (ARRAY['org_id', 'linked_ticket_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_ticket_links" ADD CONSTRAINT "fk_support_ticket_links_linked_ticket_id_org" FOREIGN KEY (org_id, linked_ticket_id) REFERENCES support_tickets(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1279,7 +1611,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_ticket_messages') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_ticket_messages_ticket_id_org'
-                     AND conrelid = to_regclass('public.support_ticket_messages')) THEN
+                     AND conrelid = to_regclass('public.support_ticket_messages'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_ticket_messages'
+             AND column_name = ANY (ARRAY['org_id', 'ticket_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_ticket_messages" ADD CONSTRAINT "fk_support_ticket_messages_ticket_id_org" FOREIGN KEY (org_id, ticket_id) REFERENCES support_tickets(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1294,7 +1630,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_ticket_tags') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_ticket_tags_tag_id_org'
-                     AND conrelid = to_regclass('public.support_ticket_tags')) THEN
+                     AND conrelid = to_regclass('public.support_ticket_tags'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_ticket_tags'
+             AND column_name = ANY (ARRAY['org_id', 'tag_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_ticket_tags" ADD CONSTRAINT "fk_support_ticket_tags_tag_id_org" FOREIGN KEY (org_id, tag_id) REFERENCES support_tags(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1309,7 +1649,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_ticket_tags') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_ticket_tags_ticket_id_org'
-                     AND conrelid = to_regclass('public.support_ticket_tags')) THEN
+                     AND conrelid = to_regclass('public.support_ticket_tags'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_ticket_tags'
+             AND column_name = ANY (ARRAY['org_id', 'ticket_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_ticket_tags" ADD CONSTRAINT "fk_support_ticket_tags_ticket_id_org" FOREIGN KEY (org_id, ticket_id) REFERENCES support_tickets(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1324,7 +1668,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_ticket_watchers') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_ticket_watchers_ticket_id_org'
-                     AND conrelid = to_regclass('public.support_ticket_watchers')) THEN
+                     AND conrelid = to_regclass('public.support_ticket_watchers'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_ticket_watchers'
+             AND column_name = ANY (ARRAY['org_id', 'ticket_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_ticket_watchers" ADD CONSTRAINT "fk_support_ticket_watchers_ticket_id_org" FOREIGN KEY (org_id, ticket_id) REFERENCES support_tickets(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1339,7 +1687,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_tickets') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_tickets_client_id_org'
-                     AND conrelid = to_regclass('public.support_tickets')) THEN
+                     AND conrelid = to_regclass('public.support_tickets'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_tickets'
+             AND column_name = ANY (ARRAY['org_id', 'client_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_tickets" ADD CONSTRAINT "fk_support_tickets_client_id_org" FOREIGN KEY (org_id, client_id) REFERENCES clients(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1354,7 +1706,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_tickets') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_tickets_client_party_id'
-                     AND conrelid = to_regclass('public.support_tickets')) THEN
+                     AND conrelid = to_regclass('public.support_tickets'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_tickets'
+             AND column_name = ANY (ARRAY['org_id', 'client_party_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_tickets" ADD CONSTRAINT "fk_support_tickets_client_party_id" FOREIGN KEY (org_id, client_party_id) REFERENCES business_parties(organization_id, party_id) ON DELETE SET NULL NOT VALID;
   END IF;
 END $$;
@@ -1369,7 +1725,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_vip_clients') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_vip_clients_client_id_org'
-                     AND conrelid = to_regclass('public.support_vip_clients')) THEN
+                     AND conrelid = to_regclass('public.support_vip_clients'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_vip_clients'
+             AND column_name = ANY (ARRAY['org_id', 'client_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_vip_clients" ADD CONSTRAINT "fk_support_vip_clients_client_id_org" FOREIGN KEY (org_id, client_id) REFERENCES clients(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1384,7 +1744,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.support_vip_clients') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_support_vip_clients_client_party_id'
-                     AND conrelid = to_regclass('public.support_vip_clients')) THEN
+                     AND conrelid = to_regclass('public.support_vip_clients'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'support_vip_clients'
+             AND column_name = ANY (ARRAY['org_id', 'client_party_id'])) = 2
+    THEN
     ALTER TABLE "public"."support_vip_clients" ADD CONSTRAINT "fk_support_vip_clients_client_party_id" FOREIGN KEY (org_id, client_party_id) REFERENCES business_parties(organization_id, party_id) ON DELETE SET NULL NOT VALID;
   END IF;
 END $$;
@@ -1399,7 +1763,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_answers') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_answers_question_id_org'
-                     AND conrelid = to_regclass('public.survey_answers')) THEN
+                     AND conrelid = to_regclass('public.survey_answers'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_answers'
+             AND column_name = ANY (ARRAY['org_id', 'question_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_answers" ADD CONSTRAINT "fk_survey_answers_question_id_org" FOREIGN KEY (org_id, question_id) REFERENCES survey_questions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1414,7 +1782,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_answers') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_answers_session_id_org'
-                     AND conrelid = to_regclass('public.survey_answers')) THEN
+                     AND conrelid = to_regclass('public.survey_answers'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_answers'
+             AND column_name = ANY (ARRAY['org_id', 'session_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_answers" ADD CONSTRAINT "fk_survey_answers_session_id_org" FOREIGN KEY (org_id, session_id) REFERENCES survey_response_sessions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1429,7 +1801,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_answers') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_answers_survey_id_org'
-                     AND conrelid = to_regclass('public.survey_answers')) THEN
+                     AND conrelid = to_regclass('public.survey_answers'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_answers'
+             AND column_name = ANY (ARRAY['org_id', 'survey_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_answers" ADD CONSTRAINT "fk_survey_answers_survey_id_org" FOREIGN KEY (org_id, survey_id) REFERENCES survey_forms(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1444,7 +1820,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_answers') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_answers_version_id_org'
-                     AND conrelid = to_regclass('public.survey_answers')) THEN
+                     AND conrelid = to_regclass('public.survey_answers'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_answers'
+             AND column_name = ANY (ARRAY['org_id', 'version_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_answers" ADD CONSTRAINT "fk_survey_answers_version_id_org" FOREIGN KEY (org_id, version_id) REFERENCES survey_versions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1459,7 +1839,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_assessment_attempts') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_assessment_attempts_participant_id_org'
-                     AND conrelid = to_regclass('public.survey_assessment_attempts')) THEN
+                     AND conrelid = to_regclass('public.survey_assessment_attempts'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_assessment_attempts'
+             AND column_name = ANY (ARRAY['org_id', 'participant_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_assessment_attempts" ADD CONSTRAINT "fk_survey_assessment_attempts_participant_id_org" FOREIGN KEY (org_id, participant_id) REFERENCES survey_participants(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1474,7 +1858,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_assessment_attempts') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_assessment_attempts_session_id_org'
-                     AND conrelid = to_regclass('public.survey_assessment_attempts')) THEN
+                     AND conrelid = to_regclass('public.survey_assessment_attempts'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_assessment_attempts'
+             AND column_name = ANY (ARRAY['org_id', 'session_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_assessment_attempts" ADD CONSTRAINT "fk_survey_assessment_attempts_session_id_org" FOREIGN KEY (org_id, session_id) REFERENCES survey_response_sessions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1489,7 +1877,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_assessment_attempts') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_assessment_attempts_survey_id_org'
-                     AND conrelid = to_regclass('public.survey_assessment_attempts')) THEN
+                     AND conrelid = to_regclass('public.survey_assessment_attempts'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_assessment_attempts'
+             AND column_name = ANY (ARRAY['org_id', 'survey_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_assessment_attempts" ADD CONSTRAINT "fk_survey_assessment_attempts_survey_id_org" FOREIGN KEY (org_id, survey_id) REFERENCES survey_forms(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1504,7 +1896,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_assessment_attempts') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_assessment_attempts_version_id_org'
-                     AND conrelid = to_regclass('public.survey_assessment_attempts')) THEN
+                     AND conrelid = to_regclass('public.survey_assessment_attempts'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_assessment_attempts'
+             AND column_name = ANY (ARRAY['org_id', 'version_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_assessment_attempts" ADD CONSTRAINT "fk_survey_assessment_attempts_version_id_org" FOREIGN KEY (org_id, version_id) REFERENCES survey_versions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1519,7 +1915,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_automation_events') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_automation_events_session_id_org'
-                     AND conrelid = to_regclass('public.survey_automation_events')) THEN
+                     AND conrelid = to_regclass('public.survey_automation_events'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_automation_events'
+             AND column_name = ANY (ARRAY['org_id', 'session_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_automation_events" ADD CONSTRAINT "fk_survey_automation_events_session_id_org" FOREIGN KEY (org_id, session_id) REFERENCES survey_response_sessions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1534,7 +1934,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_automation_events') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_automation_events_survey_id_org'
-                     AND conrelid = to_regclass('public.survey_automation_events')) THEN
+                     AND conrelid = to_regclass('public.survey_automation_events'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_automation_events'
+             AND column_name = ANY (ARRAY['org_id', 'survey_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_automation_events" ADD CONSTRAINT "fk_survey_automation_events_survey_id_org" FOREIGN KEY (org_id, survey_id) REFERENCES survey_forms(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1549,7 +1953,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_certificates') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_certificates_attempt_id_org'
-                     AND conrelid = to_regclass('public.survey_certificates')) THEN
+                     AND conrelid = to_regclass('public.survey_certificates'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_certificates'
+             AND column_name = ANY (ARRAY['org_id', 'attempt_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_certificates" ADD CONSTRAINT "fk_survey_certificates_attempt_id_org" FOREIGN KEY (org_id, attempt_id) REFERENCES survey_assessment_attempts(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1564,7 +1972,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_certificates') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_certificates_participant_id_org'
-                     AND conrelid = to_regclass('public.survey_certificates')) THEN
+                     AND conrelid = to_regclass('public.survey_certificates'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_certificates'
+             AND column_name = ANY (ARRAY['org_id', 'participant_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_certificates" ADD CONSTRAINT "fk_survey_certificates_participant_id_org" FOREIGN KEY (org_id, participant_id) REFERENCES survey_participants(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1579,7 +1991,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_certificates') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_certificates_survey_id_org'
-                     AND conrelid = to_regclass('public.survey_certificates')) THEN
+                     AND conrelid = to_regclass('public.survey_certificates'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_certificates'
+             AND column_name = ANY (ARRAY['org_id', 'survey_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_certificates" ADD CONSTRAINT "fk_survey_certificates_survey_id_org" FOREIGN KEY (org_id, survey_id) REFERENCES survey_forms(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1594,7 +2010,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_collectors') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_collectors_survey_id_org'
-                     AND conrelid = to_regclass('public.survey_collectors')) THEN
+                     AND conrelid = to_regclass('public.survey_collectors'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_collectors'
+             AND column_name = ANY (ARRAY['org_id', 'survey_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_collectors" ADD CONSTRAINT "fk_survey_collectors_survey_id_org" FOREIGN KEY (org_id, survey_id) REFERENCES survey_forms(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1609,7 +2029,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_collectors') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_collectors_version_id_org'
-                     AND conrelid = to_regclass('public.survey_collectors')) THEN
+                     AND conrelid = to_regclass('public.survey_collectors'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_collectors'
+             AND column_name = ANY (ARRAY['org_id', 'version_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_collectors" ADD CONSTRAINT "fk_survey_collectors_version_id_org" FOREIGN KEY (org_id, version_id) REFERENCES survey_versions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1624,7 +2048,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_live_sessions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_live_sessions_current_question_id_org'
-                     AND conrelid = to_regclass('public.survey_live_sessions')) THEN
+                     AND conrelid = to_regclass('public.survey_live_sessions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_live_sessions'
+             AND column_name = ANY (ARRAY['org_id', 'current_question_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_live_sessions" ADD CONSTRAINT "fk_survey_live_sessions_current_question_id_org" FOREIGN KEY (org_id, current_question_id) REFERENCES survey_questions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1639,7 +2067,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_live_sessions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_live_sessions_survey_id_org'
-                     AND conrelid = to_regclass('public.survey_live_sessions')) THEN
+                     AND conrelid = to_regclass('public.survey_live_sessions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_live_sessions'
+             AND column_name = ANY (ARRAY['org_id', 'survey_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_live_sessions" ADD CONSTRAINT "fk_survey_live_sessions_survey_id_org" FOREIGN KEY (org_id, survey_id) REFERENCES survey_forms(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1654,7 +2086,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_live_sessions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_live_sessions_version_id_org'
-                     AND conrelid = to_regclass('public.survey_live_sessions')) THEN
+                     AND conrelid = to_regclass('public.survey_live_sessions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_live_sessions'
+             AND column_name = ANY (ARRAY['org_id', 'version_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_live_sessions" ADD CONSTRAINT "fk_survey_live_sessions_version_id_org" FOREIGN KEY (org_id, version_id) REFERENCES survey_versions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1669,7 +2105,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_logic_rules') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_logic_rules_source_question_id_org'
-                     AND conrelid = to_regclass('public.survey_logic_rules')) THEN
+                     AND conrelid = to_regclass('public.survey_logic_rules'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_logic_rules'
+             AND column_name = ANY (ARRAY['org_id', 'source_question_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_logic_rules" ADD CONSTRAINT "fk_survey_logic_rules_source_question_id_org" FOREIGN KEY (org_id, source_question_id) REFERENCES survey_questions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1684,7 +2124,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_logic_rules') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_logic_rules_survey_id_org'
-                     AND conrelid = to_regclass('public.survey_logic_rules')) THEN
+                     AND conrelid = to_regclass('public.survey_logic_rules'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_logic_rules'
+             AND column_name = ANY (ARRAY['org_id', 'survey_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_logic_rules" ADD CONSTRAINT "fk_survey_logic_rules_survey_id_org" FOREIGN KEY (org_id, survey_id) REFERENCES survey_forms(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1699,7 +2143,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_logic_rules') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_logic_rules_version_id_org'
-                     AND conrelid = to_regclass('public.survey_logic_rules')) THEN
+                     AND conrelid = to_regclass('public.survey_logic_rules'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_logic_rules'
+             AND column_name = ANY (ARRAY['org_id', 'version_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_logic_rules" ADD CONSTRAINT "fk_survey_logic_rules_version_id_org" FOREIGN KEY (org_id, version_id) REFERENCES survey_versions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1714,7 +2162,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_participants') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_participants_client_id_org'
-                     AND conrelid = to_regclass('public.survey_participants')) THEN
+                     AND conrelid = to_regclass('public.survey_participants'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_participants'
+             AND column_name = ANY (ARRAY['org_id', 'client_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_participants" ADD CONSTRAINT "fk_survey_participants_client_id_org" FOREIGN KEY (org_id, client_id) REFERENCES client_accounts(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1729,7 +2181,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_participants') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_participants_collector_id_org'
-                     AND conrelid = to_regclass('public.survey_participants')) THEN
+                     AND conrelid = to_regclass('public.survey_participants'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_participants'
+             AND column_name = ANY (ARRAY['org_id', 'collector_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_participants" ADD CONSTRAINT "fk_survey_participants_collector_id_org" FOREIGN KEY (org_id, collector_id) REFERENCES survey_collectors(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1744,7 +2200,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_participants') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_participants_contact_id_org'
-                     AND conrelid = to_regclass('public.survey_participants')) THEN
+                     AND conrelid = to_regclass('public.survey_participants'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_participants'
+             AND column_name = ANY (ARRAY['org_id', 'contact_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_participants" ADD CONSTRAINT "fk_survey_participants_contact_id_org" FOREIGN KEY (org_id, contact_id) REFERENCES contacts(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1759,7 +2219,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_participants') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_participants_contact_party_id'
-                     AND conrelid = to_regclass('public.survey_participants')) THEN
+                     AND conrelid = to_regclass('public.survey_participants'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_participants'
+             AND column_name = ANY (ARRAY['org_id', 'contact_party_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_participants" ADD CONSTRAINT "fk_survey_participants_contact_party_id" FOREIGN KEY (org_id, contact_party_id) REFERENCES business_parties(organization_id, party_id) ON DELETE SET NULL NOT VALID;
   END IF;
 END $$;
@@ -1774,7 +2238,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_participants') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_participants_lead_id_org'
-                     AND conrelid = to_regclass('public.survey_participants')) THEN
+                     AND conrelid = to_regclass('public.survey_participants'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_participants'
+             AND column_name = ANY (ARRAY['org_id', 'lead_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_participants" ADD CONSTRAINT "fk_survey_participants_lead_id_org" FOREIGN KEY (org_id, lead_id) REFERENCES leads(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1789,7 +2257,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_participants') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_participants_lead_party_id'
-                     AND conrelid = to_regclass('public.survey_participants')) THEN
+                     AND conrelid = to_regclass('public.survey_participants'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_participants'
+             AND column_name = ANY (ARRAY['org_id', 'lead_party_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_participants" ADD CONSTRAINT "fk_survey_participants_lead_party_id" FOREIGN KEY (org_id, lead_party_id) REFERENCES business_parties(organization_id, party_id) ON DELETE SET NULL NOT VALID;
   END IF;
 END $$;
@@ -1804,7 +2276,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_participants') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_participants_survey_id_org'
-                     AND conrelid = to_regclass('public.survey_participants')) THEN
+                     AND conrelid = to_regclass('public.survey_participants'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_participants'
+             AND column_name = ANY (ARRAY['org_id', 'survey_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_participants" ADD CONSTRAINT "fk_survey_participants_survey_id_org" FOREIGN KEY (org_id, survey_id) REFERENCES survey_forms(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1819,7 +2295,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_question_choices') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_question_choices_question_id_org'
-                     AND conrelid = to_regclass('public.survey_question_choices')) THEN
+                     AND conrelid = to_regclass('public.survey_question_choices'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_question_choices'
+             AND column_name = ANY (ARRAY['org_id', 'question_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_question_choices" ADD CONSTRAINT "fk_survey_question_choices_question_id_org" FOREIGN KEY (org_id, question_id) REFERENCES survey_questions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1834,7 +2314,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_questions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_questions_section_id_org'
-                     AND conrelid = to_regclass('public.survey_questions')) THEN
+                     AND conrelid = to_regclass('public.survey_questions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_questions'
+             AND column_name = ANY (ARRAY['org_id', 'section_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_questions" ADD CONSTRAINT "fk_survey_questions_section_id_org" FOREIGN KEY (org_id, section_id) REFERENCES survey_sections(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1849,7 +2333,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_questions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_questions_survey_id_org'
-                     AND conrelid = to_regclass('public.survey_questions')) THEN
+                     AND conrelid = to_regclass('public.survey_questions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_questions'
+             AND column_name = ANY (ARRAY['org_id', 'survey_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_questions" ADD CONSTRAINT "fk_survey_questions_survey_id_org" FOREIGN KEY (org_id, survey_id) REFERENCES survey_forms(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1864,7 +2352,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_questions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_questions_version_id_org'
-                     AND conrelid = to_regclass('public.survey_questions')) THEN
+                     AND conrelid = to_regclass('public.survey_questions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_questions'
+             AND column_name = ANY (ARRAY['org_id', 'version_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_questions" ADD CONSTRAINT "fk_survey_questions_version_id_org" FOREIGN KEY (org_id, version_id) REFERENCES survey_versions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1879,7 +2371,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_response_sessions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_response_sessions_collector_id_org'
-                     AND conrelid = to_regclass('public.survey_response_sessions')) THEN
+                     AND conrelid = to_regclass('public.survey_response_sessions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_response_sessions'
+             AND column_name = ANY (ARRAY['org_id', 'collector_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_response_sessions" ADD CONSTRAINT "fk_survey_response_sessions_collector_id_org" FOREIGN KEY (org_id, collector_id) REFERENCES survey_collectors(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1894,7 +2390,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_response_sessions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_response_sessions_participant_id_org'
-                     AND conrelid = to_regclass('public.survey_response_sessions')) THEN
+                     AND conrelid = to_regclass('public.survey_response_sessions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_response_sessions'
+             AND column_name = ANY (ARRAY['org_id', 'participant_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_response_sessions" ADD CONSTRAINT "fk_survey_response_sessions_participant_id_org" FOREIGN KEY (org_id, participant_id) REFERENCES survey_participants(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1909,7 +2409,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_response_sessions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_response_sessions_survey_id_org'
-                     AND conrelid = to_regclass('public.survey_response_sessions')) THEN
+                     AND conrelid = to_regclass('public.survey_response_sessions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_response_sessions'
+             AND column_name = ANY (ARRAY['org_id', 'survey_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_response_sessions" ADD CONSTRAINT "fk_survey_response_sessions_survey_id_org" FOREIGN KEY (org_id, survey_id) REFERENCES survey_forms(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1924,7 +2428,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_response_sessions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_response_sessions_version_id_org'
-                     AND conrelid = to_regclass('public.survey_response_sessions')) THEN
+                     AND conrelid = to_regclass('public.survey_response_sessions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_response_sessions'
+             AND column_name = ANY (ARRAY['org_id', 'version_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_response_sessions" ADD CONSTRAINT "fk_survey_response_sessions_version_id_org" FOREIGN KEY (org_id, version_id) REFERENCES survey_versions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1939,7 +2447,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_responses') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_responses_survey_id_org'
-                     AND conrelid = to_regclass('public.survey_responses')) THEN
+                     AND conrelid = to_regclass('public.survey_responses'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_responses'
+             AND column_name = ANY (ARRAY['org_id', 'survey_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_responses" ADD CONSTRAINT "fk_survey_responses_survey_id_org" FOREIGN KEY (org_id, survey_id) REFERENCES pulse_surveys(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1954,7 +2466,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_sections') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_sections_survey_id_org'
-                     AND conrelid = to_regclass('public.survey_sections')) THEN
+                     AND conrelid = to_regclass('public.survey_sections'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_sections'
+             AND column_name = ANY (ARRAY['org_id', 'survey_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_sections" ADD CONSTRAINT "fk_survey_sections_survey_id_org" FOREIGN KEY (org_id, survey_id) REFERENCES survey_forms(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1969,7 +2485,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_sections') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_sections_version_id_org'
-                     AND conrelid = to_regclass('public.survey_sections')) THEN
+                     AND conrelid = to_regclass('public.survey_sections'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_sections'
+             AND column_name = ANY (ARRAY['org_id', 'version_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_sections" ADD CONSTRAINT "fk_survey_sections_version_id_org" FOREIGN KEY (org_id, version_id) REFERENCES survey_versions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1984,7 +2504,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.survey_versions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_survey_versions_survey_id_org'
-                     AND conrelid = to_regclass('public.survey_versions')) THEN
+                     AND conrelid = to_regclass('public.survey_versions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'survey_versions'
+             AND column_name = ANY (ARRAY['org_id', 'survey_id'])) = 2
+    THEN
     ALTER TABLE "public"."survey_versions" ADD CONSTRAINT "fk_survey_versions_survey_id_org" FOREIGN KEY (org_id, survey_id) REFERENCES survey_forms(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -1999,7 +2523,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.talent_pool_members') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_talent_pool_members_candidate_id_org'
-                     AND conrelid = to_regclass('public.talent_pool_members')) THEN
+                     AND conrelid = to_regclass('public.talent_pool_members'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'talent_pool_members'
+             AND column_name = ANY (ARRAY['org_id', 'candidate_id'])) = 2
+    THEN
     ALTER TABLE "public"."talent_pool_members" ADD CONSTRAINT "fk_talent_pool_members_candidate_id_org" FOREIGN KEY (org_id, candidate_id) REFERENCES candidates(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2014,7 +2542,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.talent_pool_members') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_talent_pool_members_pool_id_org'
-                     AND conrelid = to_regclass('public.talent_pool_members')) THEN
+                     AND conrelid = to_regclass('public.talent_pool_members'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'talent_pool_members'
+             AND column_name = ANY (ARRAY['org_id', 'pool_id'])) = 2
+    THEN
     ALTER TABLE "public"."talent_pool_members" ADD CONSTRAINT "fk_talent_pool_members_pool_id_org" FOREIGN KEY (org_id, pool_id) REFERENCES talent_pools(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2029,7 +2561,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.task_sequence_steps') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_task_sequence_steps_sequence_id_org'
-                     AND conrelid = to_regclass('public.task_sequence_steps')) THEN
+                     AND conrelid = to_regclass('public.task_sequence_steps'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'task_sequence_steps'
+             AND column_name = ANY (ARRAY['org_id', 'sequence_id'])) = 2
+    THEN
     ALTER TABLE "public"."task_sequence_steps" ADD CONSTRAINT "fk_task_sequence_steps_sequence_id_org" FOREIGN KEY (org_id, sequence_id) REFERENCES task_sequences(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2044,7 +2580,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.tasks') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tasks_parent_task_id_org'
-                     AND conrelid = to_regclass('public.tasks')) THEN
+                     AND conrelid = to_regclass('public.tasks'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'tasks'
+             AND column_name = ANY (ARRAY['org_id', 'parent_task_id'])) = 2
+    THEN
     ALTER TABLE "public"."tasks" ADD CONSTRAINT "fk_tasks_parent_task_id_org" FOREIGN KEY (org_id, parent_task_id) REFERENCES tasks(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2059,7 +2599,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.team_event_participants') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_team_event_participants_event_id_org'
-                     AND conrelid = to_regclass('public.team_event_participants')) THEN
+                     AND conrelid = to_regclass('public.team_event_participants'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'team_event_participants'
+             AND column_name = ANY (ARRAY['org_id', 'event_id'])) = 2
+    THEN
     ALTER TABLE "public"."team_event_participants" ADD CONSTRAINT "fk_team_event_participants_event_id_org" FOREIGN KEY (org_id, event_id) REFERENCES team_events(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2074,7 +2618,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.timer_sessions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_timer_sessions_project_id_org'
-                     AND conrelid = to_regclass('public.timer_sessions')) THEN
+                     AND conrelid = to_regclass('public.timer_sessions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'timer_sessions'
+             AND column_name = ANY (ARRAY['org_id', 'project_id'])) = 2
+    THEN
     ALTER TABLE "public"."timer_sessions" ADD CONSTRAINT "fk_timer_sessions_project_id_org" FOREIGN KEY (org_id, project_id) REFERENCES build.projects(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2089,7 +2637,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.timesheet_budgets') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_timesheet_budgets_project_id_org'
-                     AND conrelid = to_regclass('public.timesheet_budgets')) THEN
+                     AND conrelid = to_regclass('public.timesheet_budgets'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'timesheet_budgets'
+             AND column_name = ANY (ARRAY['org_id', 'project_id'])) = 2
+    THEN
     ALTER TABLE "public"."timesheet_budgets" ADD CONSTRAINT "fk_timesheet_budgets_project_id_org" FOREIGN KEY (org_id, project_id) REFERENCES build.projects(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2104,7 +2656,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.timesheet_periods') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_timesheet_periods_approved_actor'
-                     AND conrelid = to_regclass('public.timesheet_periods')) THEN
+                     AND conrelid = to_regclass('public.timesheet_periods'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'timesheet_periods'
+             AND column_name = ANY (ARRAY['org_id', 'approved_by_membership_id'])) = 2
+    THEN
     ALTER TABLE "public"."timesheet_periods" ADD CONSTRAINT "fk_timesheet_periods_approved_actor" FOREIGN KEY (org_id, approved_by_membership_id) REFERENCES organization_members(org_id, id) ON DELETE RESTRICT NOT VALID;
   END IF;
 END $$;
@@ -2119,7 +2675,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.timesheet_rates') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_timesheet_rates_client_party_id'
-                     AND conrelid = to_regclass('public.timesheet_rates')) THEN
+                     AND conrelid = to_regclass('public.timesheet_rates'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'timesheet_rates'
+             AND column_name = ANY (ARRAY['org_id', 'client_party_id'])) = 2
+    THEN
     ALTER TABLE "public"."timesheet_rates" ADD CONSTRAINT "fk_timesheet_rates_client_party_id" FOREIGN KEY (org_id, client_party_id) REFERENCES business_parties(organization_id, party_id) ON DELETE SET NULL NOT VALID;
   END IF;
 END $$;
@@ -2134,7 +2694,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.timesheet_rates') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_timesheet_rates_project_id_org'
-                     AND conrelid = to_regclass('public.timesheet_rates')) THEN
+                     AND conrelid = to_regclass('public.timesheet_rates'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'timesheet_rates'
+             AND column_name = ANY (ARRAY['org_id', 'project_id'])) = 2
+    THEN
     ALTER TABLE "public"."timesheet_rates" ADD CONSTRAINT "fk_timesheet_rates_project_id_org" FOREIGN KEY (org_id, project_id) REFERENCES build.projects(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2149,7 +2713,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.timesheet_rates') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_timesheet_rates_rate_card_id_org'
-                     AND conrelid = to_regclass('public.timesheet_rates')) THEN
+                     AND conrelid = to_regclass('public.timesheet_rates'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'timesheet_rates'
+             AND column_name = ANY (ARRAY['org_id', 'rate_card_id'])) = 2
+    THEN
     ALTER TABLE "public"."timesheet_rates" ADD CONSTRAINT "fk_timesheet_rates_rate_card_id_org" FOREIGN KEY (org_id, rate_card_id) REFERENCES timesheet_rate_cards(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2164,7 +2732,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.timesheets') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_timesheets_approved_actor'
-                     AND conrelid = to_regclass('public.timesheets')) THEN
+                     AND conrelid = to_regclass('public.timesheets'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'timesheets'
+             AND column_name = ANY (ARRAY['org_id', 'approved_by_membership_id'])) = 2
+    THEN
     ALTER TABLE "public"."timesheets" ADD CONSTRAINT "fk_timesheets_approved_actor" FOREIGN KEY (org_id, approved_by_membership_id) REFERENCES organization_members(org_id, id) ON DELETE RESTRICT NOT VALID;
   END IF;
 END $$;
@@ -2179,7 +2751,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.timesheets') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_timesheets_payroll_export_id_org'
-                     AND conrelid = to_regclass('public.timesheets')) THEN
+                     AND conrelid = to_regclass('public.timesheets'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'timesheets'
+             AND column_name = ANY (ARRAY['org_id', 'payroll_export_id'])) = 2
+    THEN
     ALTER TABLE "public"."timesheets" ADD CONSTRAINT "fk_timesheets_payroll_export_id_org" FOREIGN KEY (org_id, payroll_export_id) REFERENCES timesheet_exports(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2194,7 +2770,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.timesheets') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_timesheets_project_id_org'
-                     AND conrelid = to_regclass('public.timesheets')) THEN
+                     AND conrelid = to_regclass('public.timesheets'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'timesheets'
+             AND column_name = ANY (ARRAY['org_id', 'project_id'])) = 2
+    THEN
     ALTER TABLE "public"."timesheets" ADD CONSTRAINT "fk_timesheets_project_id_org" FOREIGN KEY (org_id, project_id) REFERENCES build.projects(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2209,7 +2789,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.timesheets') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_timesheets_ticket_id_org'
-                     AND conrelid = to_regclass('public.timesheets')) THEN
+                     AND conrelid = to_regclass('public.timesheets'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'timesheets'
+             AND column_name = ANY (ARRAY['org_id', 'ticket_id'])) = 2
+    THEN
     ALTER TABLE "public"."timesheets" ADD CONSTRAINT "fk_timesheets_ticket_id_org" FOREIGN KEY (org_id, ticket_id) REFERENCES build.tickets(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2224,7 +2808,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.timesheets') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_timesheets_timer_session_id_org'
-                     AND conrelid = to_regclass('public.timesheets')) THEN
+                     AND conrelid = to_regclass('public.timesheets'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'timesheets'
+             AND column_name = ANY (ARRAY['org_id', 'timer_session_id'])) = 2
+    THEN
     ALTER TABLE "public"."timesheets" ADD CONSTRAINT "fk_timesheets_timer_session_id_org" FOREIGN KEY (org_id, timer_session_id) REFERENCES timer_sessions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2239,7 +2827,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.timesheets') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_timesheets_timesheet_period_id_org'
-                     AND conrelid = to_regclass('public.timesheets')) THEN
+                     AND conrelid = to_regclass('public.timesheets'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'timesheets'
+             AND column_name = ANY (ARRAY['org_id', 'timesheet_period_id'])) = 2
+    THEN
     ALTER TABLE "public"."timesheets" ADD CONSTRAINT "fk_timesheets_timesheet_period_id_org" FOREIGN KEY (org_id, timesheet_period_id) REFERENCES timesheet_periods(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2254,7 +2846,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.user_permission_grants') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_user_permission_grants_granter_membership'
-                     AND conrelid = to_regclass('public.user_permission_grants')) THEN
+                     AND conrelid = to_regclass('public.user_permission_grants'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'user_permission_grants'
+             AND column_name = ANY (ARRAY['org_id', 'granted_by_membership_id'])) = 2
+    THEN
     ALTER TABLE "public"."user_permission_grants" ADD CONSTRAINT "fk_user_permission_grants_granter_membership" FOREIGN KEY (org_id, granted_by_membership_id) REFERENCES organization_members(org_id, id) ON DELETE SET NULL (granted_by_membership_id) NOT VALID;
   END IF;
 END $$;
@@ -2269,7 +2865,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.vault_access_logs') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_vault_access_logs_candidate_id_org'
-                     AND conrelid = to_regclass('public.vault_access_logs')) THEN
+                     AND conrelid = to_regclass('public.vault_access_logs'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'vault_access_logs'
+             AND column_name = ANY (ARRAY['org_id', 'candidate_id'])) = 2
+    THEN
     ALTER TABLE "public"."vault_access_logs" ADD CONSTRAINT "fk_vault_access_logs_candidate_id_org" FOREIGN KEY (org_id, candidate_id) REFERENCES candidates(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2284,7 +2884,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.vault_access_logs') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_vault_access_logs_vault_document_id_org'
-                     AND conrelid = to_regclass('public.vault_access_logs')) THEN
+                     AND conrelid = to_regclass('public.vault_access_logs'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'vault_access_logs'
+             AND column_name = ANY (ARRAY['org_id', 'vault_document_id'])) = 2
+    THEN
     ALTER TABLE "public"."vault_access_logs" ADD CONSTRAINT "fk_vault_access_logs_vault_document_id_org" FOREIGN KEY (org_id, vault_document_id) REFERENCES candidate_documents_vault(org_id, id) ON DELETE SET NULL (vault_document_id) NOT VALID;
   END IF;
 END $$;
@@ -2299,7 +2903,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.vendor_candidate_submissions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_vendor_candidate_submissions_candidate_id_org'
-                     AND conrelid = to_regclass('public.vendor_candidate_submissions')) THEN
+                     AND conrelid = to_regclass('public.vendor_candidate_submissions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'vendor_candidate_submissions'
+             AND column_name = ANY (ARRAY['org_id', 'candidate_id'])) = 2
+    THEN
     ALTER TABLE "public"."vendor_candidate_submissions" ADD CONSTRAINT "fk_vendor_candidate_submissions_candidate_id_org" FOREIGN KEY (org_id, candidate_id) REFERENCES candidates(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2314,7 +2922,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.vendor_candidate_submissions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_vendor_candidate_submissions_job_posting_id_org'
-                     AND conrelid = to_regclass('public.vendor_candidate_submissions')) THEN
+                     AND conrelid = to_regclass('public.vendor_candidate_submissions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'vendor_candidate_submissions'
+             AND column_name = ANY (ARRAY['org_id', 'job_posting_id'])) = 2
+    THEN
     ALTER TABLE "public"."vendor_candidate_submissions" ADD CONSTRAINT "fk_vendor_candidate_submissions_job_posting_id_org" FOREIGN KEY (org_id, job_posting_id) REFERENCES job_postings(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2329,7 +2941,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.vendor_candidate_submissions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_vendor_candidate_submissions_vendor_id_org'
-                     AND conrelid = to_regclass('public.vendor_candidate_submissions')) THEN
+                     AND conrelid = to_regclass('public.vendor_candidate_submissions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'vendor_candidate_submissions'
+             AND column_name = ANY (ARRAY['org_id', 'vendor_id'])) = 2
+    THEN
     ALTER TABLE "public"."vendor_candidate_submissions" ADD CONSTRAINT "fk_vendor_candidate_submissions_vendor_id_org" FOREIGN KEY (org_id, vendor_id) REFERENCES recruitment_vendors(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2344,7 +2960,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.vendor_credit_items') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_vendor_credit_items_vendor_credit_id_org'
-                     AND conrelid = to_regclass('public.vendor_credit_items')) THEN
+                     AND conrelid = to_regclass('public.vendor_credit_items'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'vendor_credit_items'
+             AND column_name = ANY (ARRAY['org_id', 'vendor_credit_id'])) = 2
+    THEN
     ALTER TABLE "public"."vendor_credit_items" ADD CONSTRAINT "fk_vendor_credit_items_vendor_credit_id_org" FOREIGN KEY (org_id, vendor_credit_id) REFERENCES vendor_credits(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2359,7 +2979,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.vendor_credits') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_vendor_credits_bill_id_org'
-                     AND conrelid = to_regclass('public.vendor_credits')) THEN
+                     AND conrelid = to_regclass('public.vendor_credits'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'vendor_credits'
+             AND column_name = ANY (ARRAY['org_id', 'bill_id'])) = 2
+    THEN
     ALTER TABLE "public"."vendor_credits" ADD CONSTRAINT "fk_vendor_credits_bill_id_org" FOREIGN KEY (org_id, bill_id) REFERENCES purchase_bills(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2374,7 +2998,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.vendor_credits') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_vendor_credits_vendor_id_org'
-                     AND conrelid = to_regclass('public.vendor_credits')) THEN
+                     AND conrelid = to_regclass('public.vendor_credits'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'vendor_credits'
+             AND column_name = ANY (ARRAY['org_id', 'vendor_id'])) = 2
+    THEN
     ALTER TABLE "public"."vendor_credits" ADD CONSTRAINT "fk_vendor_credits_vendor_id_org" FOREIGN KEY (org_id, vendor_id) REFERENCES clients(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2389,7 +3017,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.vendor_payments') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_vendor_payments_bill_id_org'
-                     AND conrelid = to_regclass('public.vendor_payments')) THEN
+                     AND conrelid = to_regclass('public.vendor_payments'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'vendor_payments'
+             AND column_name = ANY (ARRAY['org_id', 'bill_id'])) = 2
+    THEN
     ALTER TABLE "public"."vendor_payments" ADD CONSTRAINT "fk_vendor_payments_bill_id_org" FOREIGN KEY (org_id, bill_id) REFERENCES purchase_bills(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2404,7 +3036,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.webhook_logs') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_webhook_logs_endpoint_id_org'
-                     AND conrelid = to_regclass('public.webhook_logs')) THEN
+                     AND conrelid = to_regclass('public.webhook_logs'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'webhook_logs'
+             AND column_name = ANY (ARRAY['org_id', 'endpoint_id'])) = 2
+    THEN
     ALTER TABLE "public"."webhook_logs" ADD CONSTRAINT "fk_webhook_logs_endpoint_id_org" FOREIGN KEY (org_id, endpoint_id) REFERENCES webhook_endpoints(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2419,7 +3055,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.wfh_requests') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_wfh_requests_approver_actor'
-                     AND conrelid = to_regclass('public.wfh_requests')) THEN
+                     AND conrelid = to_regclass('public.wfh_requests'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'wfh_requests'
+             AND column_name = ANY (ARRAY['org_id', 'approver_membership_id'])) = 2
+    THEN
     ALTER TABLE "public"."wfh_requests" ADD CONSTRAINT "fk_wfh_requests_approver_actor" FOREIGN KEY (org_id, approver_membership_id) REFERENCES organization_members(org_id, id) ON DELETE RESTRICT NOT VALID;
   END IF;
 END $$;
@@ -2434,7 +3074,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.workflow_approvals') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_workflow_approvals_execution_id_org'
-                     AND conrelid = to_regclass('public.workflow_approvals')) THEN
+                     AND conrelid = to_regclass('public.workflow_approvals'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'workflow_approvals'
+             AND column_name = ANY (ARRAY['org_id', 'execution_id'])) = 2
+    THEN
     ALTER TABLE "public"."workflow_approvals" ADD CONSTRAINT "fk_workflow_approvals_execution_id_org" FOREIGN KEY (org_id, execution_id) REFERENCES workflow_executions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2449,7 +3093,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.workflow_approvals') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_workflow_approvals_step_id_org'
-                     AND conrelid = to_regclass('public.workflow_approvals')) THEN
+                     AND conrelid = to_regclass('public.workflow_approvals'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'workflow_approvals'
+             AND column_name = ANY (ARRAY['org_id', 'step_id'])) = 2
+    THEN
     ALTER TABLE "public"."workflow_approvals" ADD CONSTRAINT "fk_workflow_approvals_step_id_org" FOREIGN KEY (org_id, step_id) REFERENCES workflow_execution_steps(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2464,7 +3112,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.workflow_audit_logs') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_workflow_audit_logs_execution_id_org'
-                     AND conrelid = to_regclass('public.workflow_audit_logs')) THEN
+                     AND conrelid = to_regclass('public.workflow_audit_logs'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'workflow_audit_logs'
+             AND column_name = ANY (ARRAY['org_id', 'execution_id'])) = 2
+    THEN
     ALTER TABLE "public"."workflow_audit_logs" ADD CONSTRAINT "fk_workflow_audit_logs_execution_id_org" FOREIGN KEY (org_id, execution_id) REFERENCES workflow_executions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2479,7 +3131,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.workflow_audit_logs') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_workflow_audit_logs_workflow_id_org'
-                     AND conrelid = to_regclass('public.workflow_audit_logs')) THEN
+                     AND conrelid = to_regclass('public.workflow_audit_logs'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'workflow_audit_logs'
+             AND column_name = ANY (ARRAY['org_id', 'workflow_id'])) = 2
+    THEN
     ALTER TABLE "public"."workflow_audit_logs" ADD CONSTRAINT "fk_workflow_audit_logs_workflow_id_org" FOREIGN KEY (org_id, workflow_id) REFERENCES workflows(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2494,7 +3150,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.workflow_execution_steps') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_workflow_execution_steps_execution_id_org'
-                     AND conrelid = to_regclass('public.workflow_execution_steps')) THEN
+                     AND conrelid = to_regclass('public.workflow_execution_steps'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'workflow_execution_steps'
+             AND column_name = ANY (ARRAY['org_id', 'execution_id'])) = 2
+    THEN
     ALTER TABLE "public"."workflow_execution_steps" ADD CONSTRAINT "fk_workflow_execution_steps_execution_id_org" FOREIGN KEY (org_id, execution_id) REFERENCES workflow_executions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2509,7 +3169,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.workflow_executions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_workflow_executions_workflow_id_org'
-                     AND conrelid = to_regclass('public.workflow_executions')) THEN
+                     AND conrelid = to_regclass('public.workflow_executions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'workflow_executions'
+             AND column_name = ANY (ARRAY['org_id', 'workflow_id'])) = 2
+    THEN
     ALTER TABLE "public"."workflow_executions" ADD CONSTRAINT "fk_workflow_executions_workflow_id_org" FOREIGN KEY (org_id, workflow_id) REFERENCES workflows(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2524,7 +3188,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.workflow_executions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_workflow_executions_workflow_version_id_org'
-                     AND conrelid = to_regclass('public.workflow_executions')) THEN
+                     AND conrelid = to_regclass('public.workflow_executions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'workflow_executions'
+             AND column_name = ANY (ARRAY['org_id', 'workflow_version_id'])) = 2
+    THEN
     ALTER TABLE "public"."workflow_executions" ADD CONSTRAINT "fk_workflow_executions_workflow_version_id_org" FOREIGN KEY (org_id, workflow_version_id) REFERENCES workflow_versions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2539,7 +3207,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.workflow_schedules') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_workflow_schedules_workflow_id_org'
-                     AND conrelid = to_regclass('public.workflow_schedules')) THEN
+                     AND conrelid = to_regclass('public.workflow_schedules'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'workflow_schedules'
+             AND column_name = ANY (ARRAY['org_id', 'workflow_id'])) = 2
+    THEN
     ALTER TABLE "public"."workflow_schedules" ADD CONSTRAINT "fk_workflow_schedules_workflow_id_org" FOREIGN KEY (org_id, workflow_id) REFERENCES workflows(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2554,7 +3226,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.workflow_variables') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_workflow_variables_workflow_version_id_org'
-                     AND conrelid = to_regclass('public.workflow_variables')) THEN
+                     AND conrelid = to_regclass('public.workflow_variables'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'workflow_variables'
+             AND column_name = ANY (ARRAY['org_id', 'workflow_version_id'])) = 2
+    THEN
     ALTER TABLE "public"."workflow_variables" ADD CONSTRAINT "fk_workflow_variables_workflow_version_id_org" FOREIGN KEY (org_id, workflow_version_id) REFERENCES workflow_versions(org_id, id) NOT VALID;
   END IF;
 END $$;
@@ -2569,7 +3245,11 @@ END $$;
 DO $$ BEGIN
   IF to_regclass('public.workflow_versions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_workflow_versions_workflow_id_org'
-                     AND conrelid = to_regclass('public.workflow_versions')) THEN
+                     AND conrelid = to_regclass('public.workflow_versions'))
+     AND (SELECT count(DISTINCT column_name) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'workflow_versions'
+             AND column_name = ANY (ARRAY['org_id', 'workflow_id'])) = 2
+    THEN
     ALTER TABLE "public"."workflow_versions" ADD CONSTRAINT "fk_workflow_versions_workflow_id_org" FOREIGN KEY (org_id, workflow_id) REFERENCES workflows(org_id, id) NOT VALID;
   END IF;
 END $$;

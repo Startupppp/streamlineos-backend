@@ -25,6 +25,60 @@
 SET lock_timeout = '5s';
 
 /*
+  ===========================================================================
+  PEND-DB: this migration does not run, and the reason is the header above.
+  ===========================================================================
+
+  It says "Nothing has read them since this phase's reader migration, and as of
+  the writer contract nothing writes them either." That is true of `contacts`,
+  `leads` and `crm_organizations`, whose only remaining callers are the mirror
+  in `src/modules/party/party-legacy-*`. It is **false of `clients`**: thirteen
+  services outside the party module still query it directly —
+
+    accounting/core/accounting-payables-query.service.ts
+    accounting/core/accounting-receivables.service.ts
+    finance/ap/{recurring-bills,vendor-payments-list,bills-due-check,
+                vendor-credits,payment-runs}.service.ts
+    finance/tax/tax-reports.service.ts
+    finance/banking/matching.service.ts
+    finance/ar/{statements,ar-payments}.service.ts
+    finance/reports/{statement-reports,insights-finders}.service.ts
+
+  — so dropping it takes receivables, payables, payment runs, tax reports, bank
+  matching and statements with it. The identity cutover finished its CRM half
+  and never reached accounting.
+
+  This has been invisible because the migration could never run: `0263`, which
+  creates `crm_org_party_map`, was one of fifteen files missing from
+  `_journal.json`, so `0277` and `0278` failed on every cold build and nobody
+  read past the error. **An accident of the bookkeeping is the only thing that
+  has been standing between this file and a broken ledger.** Journaling `0263`
+  removed that accident, which is how this was found.
+
+  So the drop is now explicit rather than accidental. It skips unless somebody
+  turns it on for the session:
+
+      SET app.allow_legacy_identity_drop = 'on';
+
+  A skip, not an exception, because a cold build has to get past this file; and
+  a NOTICE loud enough to read, because a migration that silently does nothing
+  is the thing this repository keeps being burnt by. `crm-legacy-readers.spec.ts`
+  fails while any non-party module still reads these tables, so the day the last
+  one moves, somebody is told.
+
+  The two data guards below are unchanged and still fire — but only once the
+  opt-in has been given.
+*/
+DO $$
+BEGIN
+  IF coalesce(current_setting('app.allow_legacy_identity_drop', true), 'off') <> 'on' THEN
+    RAISE NOTICE
+      '0278: skipped. Dropping leads/clients/contacts/crm_organizations is the last step of an identity migration whose accounting half is unfinished — 13 finance and accounting services still read `clients`. Set app.allow_legacy_identity_drop = ''on'' to run it deliberately.';
+  END IF;
+END $$;
+--> statement-breakpoint
+
+/*
   Two guards, because this is not reversible.
 
   Neither can fire in the environment this was written against — both are for
@@ -37,6 +91,10 @@ DECLARE
   stranded bigint;
   dm_values bigint;
 BEGIN
+  IF coalesce(current_setting('app.allow_legacy_identity_drop', true), 'off') <> 'on' THEN
+    RETURN;
+  END IF;
+
   -- 1. Every legacy row must have a party. A row without one is a record whose
   --    identity was never migrated, and dropping the table destroys it outright
   --    rather than moving it.
@@ -84,6 +142,10 @@ DO $$
 DECLARE
   c record;
 BEGIN
+  IF coalesce(current_setting('app.allow_legacy_identity_drop', true), 'off') <> 'on' THEN
+    RETURN;
+  END IF;
+
   FOR c IN
     SELECT con.conname,
            con.conrelid::regclass::text AS tbl,
@@ -99,7 +161,15 @@ END $$;
 
 -- No CASCADE, deliberately. Every dependency was enumerated above; anything left
 -- is something nobody knew about, and this should fail rather than take it too.
-DROP TABLE contacts;
-DROP TABLE clients;
-DROP TABLE leads;
-DROP TABLE crm_organizations;
+DO $$
+BEGIN
+  IF coalesce(current_setting('app.allow_legacy_identity_drop', true), 'off') <> 'on' THEN
+    RETURN;
+  END IF;
+
+  DROP TABLE contacts;
+  DROP TABLE clients;
+  DROP TABLE leads;
+  DROP TABLE crm_organizations;
+  RAISE NOTICE '0278: legacy identity tables dropped.';
+END $$;

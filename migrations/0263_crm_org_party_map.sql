@@ -77,24 +77,54 @@ BEGIN
 END $$;
 
 --> statement-breakpoint
-ALTER TABLE "crm_org_party_map" ADD CONSTRAINT "fk_crm_org_party_map_org"
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_crm_org_party_map_org') THEN
+    ALTER TABLE "crm_org_party_map" ADD CONSTRAINT "fk_crm_org_party_map_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "crm_org_party_map" VALIDATE CONSTRAINT "fk_crm_org_party_map_org";
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_crm_org_party_map_org' AND NOT convalidated) THEN
+    ALTER TABLE "crm_org_party_map" VALIDATE CONSTRAINT "fk_crm_org_party_map_org";
+  END IF;
+END $$;
 
 --> statement-breakpoint
-ALTER TABLE "crm_org_party_map" ADD CONSTRAINT "fk_crm_org_party_map_crm_org"
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_crm_org_party_map_crm_org') THEN
+    ALTER TABLE "crm_org_party_map" ADD CONSTRAINT "fk_crm_org_party_map_crm_org"
   FOREIGN KEY ("organization_id", "crm_organization_id")
   REFERENCES "crm_organizations"("org_id", "id") ON DELETE CASCADE NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "crm_org_party_map" VALIDATE CONSTRAINT "fk_crm_org_party_map_crm_org";
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_crm_org_party_map_crm_org' AND NOT convalidated) THEN
+    ALTER TABLE "crm_org_party_map" VALIDATE CONSTRAINT "fk_crm_org_party_map_crm_org";
+  END IF;
+END $$;
 
 --> statement-breakpoint
-ALTER TABLE "crm_org_party_map" ADD CONSTRAINT "fk_crm_org_party_map_party"
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_crm_org_party_map_party') THEN
+    ALTER TABLE "crm_org_party_map" ADD CONSTRAINT "fk_crm_org_party_map_party"
   FOREIGN KEY ("organization_id", "party_id")
   REFERENCES "business_parties"("organization_id", "party_id") ON DELETE CASCADE NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "crm_org_party_map" VALIDATE CONSTRAINT "fk_crm_org_party_map_party";
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_crm_org_party_map_party' AND NOT convalidated) THEN
+    ALTER TABLE "crm_org_party_map" VALIDATE CONSTRAINT "fk_crm_org_party_map_party";
+  END IF;
+END $$;
 
 --> statement-breakpoint
 -- The reverse read: which company ids this party answers to. The merge needs it
