@@ -1,0 +1,58 @@
+import type { Db } from "../../db/drizzle.module";
+import { NotificationRoutingService } from "./notification-routing.service";
+
+function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
+  if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
+  if (typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  const record = value as { queryChunks?: unknown[]; value?: unknown };
+  return [
+    ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
+    ...(Object.prototype.hasOwnProperty.call(record, "value") ? sqlValues(record.value, seen) : []),
+  ];
+}
+
+describe("NotificationRoutingService — cross-tenant isolation", () => {
+  const ATTACKER_ORG = "org-attacker";
+  const OWNER_ORG = "org-owner";
+
+  function makeDb(): { db: Db; allWhereArgs: unknown[] } {
+    const allWhereArgs: unknown[] = [];
+    const where = jest.fn().mockImplementation((arg: unknown) => {
+      allWhereArgs.push(arg);
+      return Promise.resolve([]);
+    });
+    const findFirst = jest.fn().mockImplementation(({ where: w } = {}) => {
+      if (w) allWhereArgs.push(w);
+      return Promise.resolve(undefined);
+    });
+    const db = {
+      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
+      query: { notificationPolicyDefaults: { findFirst } },
+    } as unknown as Db;
+    return { db, allWhereArgs };
+  }
+
+  it("scopes availability load to the requesting org (tenant isolation)", async () => {
+    const { db, allWhereArgs } = makeDb();
+    const cache = { cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()) } as never;
+    const svc = new NotificationRoutingService(db, cache);
+
+    await svc.loadOrgAvailability(ATTACKER_ORG);
+
+    expect(allWhereArgs.length).toBeGreaterThan(0);
+    const allVals = allWhereArgs.flatMap(w => sqlValues(w));
+    expect(allVals).toContain(ATTACKER_ORG);
+  });
+
+  it("returns a Set of channels for the owning org (same-tenant control)", async () => {
+    const { db } = makeDb();
+    const cache = { cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()) } as never;
+    const svc = new NotificationRoutingService(db, cache);
+
+    const result = await svc.loadOrgAvailability(OWNER_ORG);
+
+    expect(result).toBeDefined();
+  });
+});

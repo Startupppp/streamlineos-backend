@@ -1,0 +1,52 @@
+import type { Db } from "../../../db/drizzle.module";
+import { DepreciationRunsService } from "./depreciation-runs.service";
+
+function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
+  if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
+  if (typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  const record = value as { queryChunks?: unknown[]; value?: unknown };
+  return [
+    ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
+    ...(Object.prototype.hasOwnProperty.call(record, "value") ? sqlValues(record.value, seen) : []),
+  ];
+}
+
+describe("DepreciationRunsService — cross-tenant isolation", () => {
+  const ATTACKER_ORG = "org-attacker";
+  const OWNER_ORG = "org-owner";
+
+  function makeService(rows: unknown[]): { svc: DepreciationRunsService; where: jest.Mock } {
+    const where = jest.fn().mockReturnValue({
+      orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue({ offset: jest.fn().mockResolvedValue(rows) }) }),
+    });
+    const countWhere = jest.fn().mockResolvedValue([{ c: rows.length }]);
+    let call = 0;
+    const select = jest.fn().mockImplementation(() => {
+      call++;
+      if (call % 2 === 1) return { from: jest.fn().mockReturnValue({ where }) };
+      return { from: jest.fn().mockReturnValue({ where: countWhere }) };
+    });
+    const db = { select } as unknown as Db;
+    const svc = new DepreciationRunsService(db, {} as never, {} as never, {} as never, {} as never);
+    return { svc, where };
+  }
+
+  it("scopes list to the requesting org (tenant isolation)", async () => {
+    const { svc, where } = makeService([]);
+
+    await svc.list(ATTACKER_ORG, { page: 1, pageSize: 20 });
+
+    expect(where).toHaveBeenCalledTimes(1);
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
+  });
+
+  it("returns items for the owning org (same-tenant control)", async () => {
+    const { svc } = makeService([{ id: 1, orgId: OWNER_ORG }]);
+
+    const result = await svc.list(OWNER_ORG, { page: 1, pageSize: 20 });
+
+    expect(result.items).toHaveLength(1);
+  });
+});
