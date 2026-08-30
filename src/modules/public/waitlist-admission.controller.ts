@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
+import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -28,12 +29,21 @@ import {
 export class WaitlistAdmissionController {
   constructor(private readonly admission: WaitlistAdmissionService) {}
 
+  /**
+   * Platform-operator standing, which is not a permission key.
+   *
+   * `PlatformOperatorGuard` decides these, and operator standing is not
+   * something a tenant grant can express — a `@RequirePermission` here would
+   * suggest an organisation could hand it out.
+   */
+  @AuthorizedInService("PlatformOperatorGuard")
   @Get("entries")
   @UseGuards(JwtAuthGuard, PlatformOperatorGuard)
   list(@Query("status") status?: string) {
     return this.admission.list(status);
   }
 
+  @AuthorizedInService("PlatformOperatorGuard")
   @Post("admit")
   @UseGuards(JwtAuthGuard, PlatformOperatorGuard)
   async admit(

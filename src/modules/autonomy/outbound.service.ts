@@ -1,4 +1,6 @@
 import { ConflictException, Inject, Injectable, Logger } from "@nestjs/common";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { runWithTenantContext } from "../../common/tenant/tenant-context";
 import { createHash } from "node:crypto";
 import { and, desc, eq, gte, isNull, isNotNull, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -285,137 +287,153 @@ export class OutboundService {
     model: string | null;
     reason: string;
   }): Promise<ComposeOutcome> {
-    const { organizationId, outboundClass, draft } = input;
-    const kind = decisionKindFor(outboundClass);
-    const settings = await this.scoring.settingsFor(organizationId);
-    const windowSeconds = clampHoldWindow(settings.holdWindowSeconds);
-    const holdUntil = new Date(Date.now() + windowSeconds * 1000);
+    /*
+      One tenant transaction for the whole hold.
 
-    const [decision] = await this.db
-      .insert(autonomousDecisions)
-      .values(
-        buildDecision({
+      `autonomy_holds` is under row-level security, and these writes went
+      through `(tx as unknown as Db)` with no organisation set — so the insert was refused by
+      the policy and composing a held send 500'd. The decision, the message, the
+      hold and its workflow run also belong together: a hold with no run never
+      opens, and a run with no hold has nothing to release.
+    */
+    return runInNewTenantTransaction(this.db, input.organizationId, (tx) =>
+      runWithTenantContext(
+        { orgId: input.organizationId, audience: "INTERNAL", tx },
+        async () => {
+        const { organizationId, outboundClass, draft } = input;
+        const kind = decisionKindFor(outboundClass);
+        const settings = await this.scoring.settingsFor(organizationId);
+        const windowSeconds = clampHoldWindow(settings.holdWindowSeconds);
+        const holdUntil = new Date(Date.now() + windowSeconds * 1000);
+
+        const [decision] = await (tx as unknown as Db)
+          .insert(autonomousDecisions)
+          .values(
+            buildDecision({
+              organizationId,
+              kind,
+              // Not `applied`: it has not left yet, and the feed must not say it has.
+              outcome: "held",
+              triggerType: "party",
+              triggerId: input.partyId,
+              partyId: input.partyId,
+              dealId: input.dealId,
+              model: input.model,
+              promptVersion: String(OUTBOUND_PROMPT_VERSION),
+              confidence: draft.confidence,
+              inputs: { why: input.reason, outboundClass },
+              decision: { outboundClass, holdUntil: holdUntil.toISOString() },
+              summary: draft.summary,
+            }),
+          )
+          .returning({ id: autonomousDecisions.autonomousDecisionId });
+
+        if (!decision) throw new ConflictException("Could not record the decision to send.");
+
+        const [message] = await (tx as unknown as Db)
+          .insert(crmOutboundMessages)
+          .values({
+            organizationId,
+            partyId: input.partyId,
+            contactId: input.contactId,
+            dealId: input.dealId,
+            outboundClass,
+            // Derived, never passed in. `chk_crm_outbound_messages_track` refuses a
+            // row whose track disagrees with its class, because a `cold_outreach`
+            // filed as `engaged` slips past the cold gate's own daily count.
+            track: trackFor(outboundClass),
+            subject: draft.subject,
+            body: draft.body,
+            status: "drafted",
+            autonomousDecisionId: decision.id,
+            model: input.model,
+            promptVersion: String(OUTBOUND_PROMPT_VERSION),
+          })
+          .returning({ id: crmOutboundMessages.outboundMessageId });
+
+        if (!message) throw new ConflictException("Could not record the drafted message.");
+
+        let hold;
+        try {
+          [hold] = await (tx as unknown as Db)
+            .insert(autonomyHolds)
+            .values({
+              organizationId,
+              autonomousDecisionId: decision.id,
+              /**
+               * The same value, narrowed rather than re-derived.
+               *
+               * `decisionKindFor` returns the whole `DecisionKind` union while
+               * `autonomy_holds.kind` declares only the three kinds that can wait,
+               * and TypeScript cannot see that this class can only produce two of
+               * them. Deriving the hold's kind from the track a second time would be
+               * a second mapping from class to kind, and two of those are two things
+               * that can disagree — which is the failure `outbound-classes.ts`
+               * writes `TRACK` as a total map to prevent.
+               */
+              kind: kind as "outbound.sent" | "cold_outbound.sent",
+              outboundMessageId: message.id,
+              holdUntil,
+            })
+            .returning({ id: autonomyHolds.autonomyHoldId });
+        } catch (error) {
+          // `uniq_autonomy_holds_live_outbound`. A second decision to send the same
+          // draft while one is already waiting is a duplicate, not a race to win.
+          if (isUniqueViolation(error))
+            throw new ConflictException("That message is already waiting to send.");
+          throw error;
+        }
+
+        if (!hold) throw new ConflictException("Could not place the hold.");
+
+        const runId = await startRun((tx as unknown as Db), {
           organizationId,
-          kind,
-          // Not `applied`: it has not left yet, and the feed must not say it has.
-          outcome: "held",
-          triggerType: "party",
-          triggerId: input.partyId,
-          partyId: input.partyId,
+          workflowName: OUTBOUND_WORKFLOW,
+          input: { autonomyHoldId: hold.id, outboundMessageId: message.id },
+          causationEventId: hold.id,
+          correlationId: `outbound:${message.id}`,
+        });
+
+        await (tx as unknown as Db)
+          .update(autonomyHolds)
+          .set({ workflowRunId: runId })
+          .where(
+            and(
+              eq(autonomyHolds.organizationId, organizationId),
+              eq(autonomyHolds.autonomyHoldId, hold.id),
+            ),
+          );
+
+        await (tx as unknown as Db)
+          .update(crmOutboundMessages)
+          .set({ status: "held" })
+          .where(
+            and(
+              eq(crmOutboundMessages.organizationId, organizationId),
+              eq(crmOutboundMessages.outboundMessageId, message.id),
+            ),
+          );
+
+        await this.notifyPending(organizationId, {
+          holdId: hold.id,
           dealId: input.dealId,
-          model: input.model,
-          promptVersion: String(OUTBOUND_PROMPT_VERSION),
-          confidence: draft.confidence,
-          inputs: { why: input.reason, outboundClass },
-          decision: { outboundClass, holdUntil: holdUntil.toISOString() },
-          summary: draft.summary,
-        }),
-      )
-      .returning({ id: autonomousDecisions.autonomousDecisionId });
+          subject: draft.subject,
+          outboundClass,
+          windowSeconds,
+        });
 
-    if (!decision) throw new ConflictException("Could not record the decision to send.");
-
-    const [message] = await this.db
-      .insert(crmOutboundMessages)
-      .values({
-        organizationId,
-        partyId: input.partyId,
-        contactId: input.contactId,
-        dealId: input.dealId,
-        outboundClass,
-        // Derived, never passed in. `chk_crm_outbound_messages_track` refuses a
-        // row whose track disagrees with its class, because a `cold_outreach`
-        // filed as `engaged` slips past the cold gate's own daily count.
-        track: trackFor(outboundClass),
-        subject: draft.subject,
-        body: draft.body,
-        status: "drafted",
-        autonomousDecisionId: decision.id,
-        model: input.model,
-        promptVersion: String(OUTBOUND_PROMPT_VERSION),
-      })
-      .returning({ id: crmOutboundMessages.outboundMessageId });
-
-    if (!message) throw new ConflictException("Could not record the drafted message.");
-
-    let hold;
-    try {
-      [hold] = await this.db
-        .insert(autonomyHolds)
-        .values({
-          organizationId,
-          autonomousDecisionId: decision.id,
-          /**
-           * The same value, narrowed rather than re-derived.
-           *
-           * `decisionKindFor` returns the whole `DecisionKind` union while
-           * `autonomy_holds.kind` declares only the three kinds that can wait,
-           * and TypeScript cannot see that this class can only produce two of
-           * them. Deriving the hold's kind from the track a second time would be
-           * a second mapping from class to kind, and two of those are two things
-           * that can disagree — which is the failure `outbound-classes.ts`
-           * writes `TRACK` as a total map to prevent.
-           */
-          kind: kind as "outbound.sent" | "cold_outbound.sent",
+        return {
+          held: true,
           outboundMessageId: message.id,
+          autonomyHoldId: hold.id,
+          decisionId: decision.id,
+          outboundClass,
           holdUntil,
-        })
-        .returning({ id: autonomyHolds.autonomyHoldId });
-    } catch (error) {
-      // `uniq_autonomy_holds_live_outbound`. A second decision to send the same
-      // draft while one is already waiting is a duplicate, not a race to win.
-      if (isUniqueViolation(error))
-        throw new ConflictException("That message is already waiting to send.");
-      throw error;
-    }
-
-    if (!hold) throw new ConflictException("Could not place the hold.");
-
-    const runId = await startRun(this.db, {
-      organizationId,
-      workflowName: OUTBOUND_WORKFLOW,
-      input: { autonomyHoldId: hold.id, outboundMessageId: message.id },
-      causationEventId: hold.id,
-      correlationId: `outbound:${message.id}`,
-    });
-
-    await this.db
-      .update(autonomyHolds)
-      .set({ workflowRunId: runId })
-      .where(
-        and(
-          eq(autonomyHolds.organizationId, organizationId),
-          eq(autonomyHolds.autonomyHoldId, hold.id),
-        ),
-      );
-
-    await this.db
-      .update(crmOutboundMessages)
-      .set({ status: "held" })
-      .where(
-        and(
-          eq(crmOutboundMessages.organizationId, organizationId),
-          eq(crmOutboundMessages.outboundMessageId, message.id),
-        ),
-      );
-
-    await this.notifyPending(organizationId, {
-      holdId: hold.id,
-      dealId: input.dealId,
-      subject: draft.subject,
-      outboundClass,
-      windowSeconds,
-    });
-
-    return {
-      held: true,
-      outboundMessageId: message.id,
-      autonomyHoldId: hold.id,
-      decisionId: decision.id,
-      outboundClass,
-      holdUntil,
-      windowSeconds,
-    };
+          windowSeconds,
+        };
+        },
+      ),
+    );
   }
 
   // ── Send time ─────────────────────────────────────────────────────────────

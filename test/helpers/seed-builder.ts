@@ -1,4 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { organizationPlacement } from "src/db/schema";
+import { LEGACY_CELL_ID, DEFAULT_DATABASE_SHARD, DEFAULT_SEARCH_CLUSTER } from "src/common/region/placement";
 import {
   auditLogs,
   organizationMembers,
@@ -137,6 +139,26 @@ export class SeedBuilder {
         slug: orgId,
         ownerMembershipId,
         region: DEFAULT_REGION,
+      });
+
+      /*
+        Placed, not merely created.
+
+        Reads resolve an organisation's region through its placement row now, and
+        an organisation without one raises "has no region. It must be placed
+        before its data can be reached" — which `MembershipStateService` catches
+        and reports as an inactive membership, so every seeded request 403s with
+        a message about membership rather than about placement.
+      */
+      await tx.insert(organizationPlacement).values({
+        organizationId: orgId,
+        region: DEFAULT_REGION,
+        cellId: LEGACY_CELL_ID,
+        databaseShard: DEFAULT_DATABASE_SHARD,
+        objectStorageRegion: DEFAULT_REGION,
+        searchCluster: DEFAULT_SEARCH_CLUSTER,
+        writeFenceToken: crypto.randomUUID(),
+        leaseExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       });
 
       if (ownerAliasEntry) {

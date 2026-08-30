@@ -1,4 +1,5 @@
 import { Controller, Get, UseGuards } from "@nestjs/common";
+import { Universal } from "../../common/auth/universal.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -20,6 +21,11 @@ import { ActivationService, type ActivationReport } from "./activation.service";
 export class ActivationController {
   constructor(private readonly activation: ActivationService) {}
 
+  /**
+   * Onboarding progress for the caller's own workspace: platform core, and the
+   * surface a member sees before they hold anything else.
+   */
+  @Universal()
   @Get()
   report(@CurrentUser() user: CurrentUserContext): Promise<ActivationReport> {
     return this.activation.report(user.orgId);

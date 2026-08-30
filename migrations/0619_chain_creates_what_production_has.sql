@@ -1,3 +1,15 @@
+-- `current_org_id()` appears unqualified 62 times below.
+--
+-- This file is a snapshot of a database whose search_path reaches the `app`
+-- schema; this journal only ever creates `app.current_org_id` (0374), so the
+-- bare calls resolve to nothing and the migration aborts on the first policy.
+-- Setting the path for this file resolves them to that same function, and
+-- PostgreSQL stores the resolved, schema-qualified reference in each policy —
+-- so the result is identical to having written `app.` at every call site. The
+-- bootstrapper gives each migration its own connection, so this reaches no
+-- other file.
+SET search_path = public, app;
+--> statement-breakpoint
 -- Objects the running control plane has that the committed migration chain never creates.
 --
 -- Generated from pg_catalog by src/scripts/generate-chain-repair.mjs --direction=forward.

@@ -86,7 +86,6 @@ import { AgentAccessModule } from "./modules/agent-access/agent-access.module";
 import { MailModule } from "./modules/mail/mail.module";
 import { DirectoryModule } from "./modules/directory/directory.module";
 import { PartyModule } from "./modules/party/party.module";
-import { RendererModule } from "./modules/renderer/renderer.module";
 import { ComplianceModule } from "./modules/compliance/compliance.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
 import { RelationshipsModule } from "./modules/relationships/relationships.module";
@@ -111,12 +110,14 @@ import { BuildModule } from "./modules/build/build.module";
 import { ZodValidationInterceptor } from "./common/validation/zod-validation.interceptor";
 import { DataQualityModule } from "./modules/data-quality/data-quality.module";
 import { IssuesModule } from "./modules/issues/issues.module";
+import { RecordLayoutsModule } from "./modules/record-layouts/record-layouts.module";
 import { EmploymentFactsModule } from "./modules/directory/employment-facts.module";
 
 @Module({
   imports: [
     ActivationModule,
     EmploymentFactsModule,
+    RecordLayoutsModule,
     DiscoveryModule,
     RegionModule,
     WorkflowModule,
@@ -168,7 +169,6 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     HrModule,
     DirectoryModule,
     PartyModule,
-    RendererModule,
     ComplianceModule,
     DataQualityModule,
     ActivitiesModule,

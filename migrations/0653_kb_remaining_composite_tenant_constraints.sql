@@ -1,3 +1,9 @@
+-- `projects` is named unqualified below and lives in the `build` schema, so the
+-- foreign key cannot resolve it on a default path. Setting the path for this
+-- file is enough; the constraint stores the resolved relation. Each migration
+-- gets its own connection, so this reaches no other file.
+SET search_path = public, build, app;
+--> statement-breakpoint
 SET lock_timeout = '5s';
 SET statement_timeout = '0';
 
