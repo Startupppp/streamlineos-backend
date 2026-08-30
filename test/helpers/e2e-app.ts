@@ -12,6 +12,7 @@ import { AccessService } from "src/modules/access/access.service";
 import { MfaPolicyService } from "src/modules/access/mfa-policy.service";
 import type { DataScope } from "src/modules/access/access.types";
 import { moduleAvailabilityResolver } from "src/common/rbac/module-availability";
+import { isCoreModuleKey } from "src/common/rbac/module-registry";
 import { RegionRegistry, setRegionRegistry } from "src/common/region/region-registry";
 import {
   DEFAULT_DATABASE_SHARD,
@@ -118,7 +119,7 @@ const entitlementsStub = {
   getPlanLockedModules: async (): Promise<readonly string[]> => [],
 };
 
-const accessStub = {
+export const accessStub = {
   resolveUserPermissions: async (): Promise<Map<string, DataScope>> =>
     new Map(current().permissions.map((key) => [key, "all" as DataScope])),
   isModuleEnabled: entitlementsStub.isModuleEnabled,
@@ -126,24 +127,30 @@ const accessStub = {
   // Keep the E2E fixture on AccessService's canonical resolver surface. The
   // calendar source registry and PermissionGuard both consume these methods;
   // resolving them from the token preserves the fixture's existing semantics.
-  getModuleState: async (_orgId: string, moduleKey: string): Promise<boolean | undefined> =>
-    current().enabledModules.includes(moduleKey.toLowerCase()) ? true : undefined,
+  getModuleState: async (_orgId: string, moduleKey: string): Promise<boolean | undefined> => {
+    if (isCoreModuleKey(moduleKey)) return true;
+    return current().enabledModules.includes(moduleKey.toLowerCase()) ? true : undefined;
+  },
   scopeFor: async (_user: unknown, permissionKey: string): Promise<DataScope> =>
     current().permissions.includes(permissionKey) ? "all" : "none",
   holds: async (_user: unknown, permissionKey: string): Promise<boolean> =>
     current().permissions.includes(permissionKey),
-  moduleAvailability: async (_user: unknown, moduleKey: string) =>
-    current().enabledModules.includes(moduleKey.toLowerCase())
+  moduleAvailability: async (_user: unknown, moduleKey: string) => {
+    if (isCoreModuleKey(moduleKey)) return { available: true as const };
+    return current().enabledModules.includes(moduleKey.toLowerCase())
       ? { available: true as const }
-      : { available: false as const, reason: "org-disabled" as const },
+      : { available: false as const, reason: "org-disabled" as const };
+  },
   moduleAvailabilityFor: async (
     _orgId: string,
     _userId: string,
     moduleKey: string,
-  ) =>
-    current().enabledModules.includes(moduleKey.toLowerCase())
+  ) => {
+    if (isCoreModuleKey(moduleKey)) return { available: true as const };
+    return current().enabledModules.includes(moduleKey.toLowerCase())
       ? { available: true as const }
-      : { available: false as const, reason: "org-disabled" as const },
+      : { available: false as const, reason: "org-disabled" as const };
+  },
   buildModuleAvailabilityResolver: (
     getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
   ) =>
@@ -210,6 +217,12 @@ export interface E2eAppOptions {
 export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestApplication> {
   process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
   process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
+  // Admission control leaks in-flight counters when a downstream guard rejects
+  // (the interceptor that releases never runs). After orgMaxConcurrent (50)
+  // leaked requests for the same org, AdmissionGuard starts returning 503 for
+  // every subsequent request regardless of the actual test intent. Disable it
+  // here so every e2e suite starts with a clean counter state.
+  process.env.ADMISSION_ENABLED = "false";
 
   let builder: TestingModuleBuilder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(MembershipStateService)

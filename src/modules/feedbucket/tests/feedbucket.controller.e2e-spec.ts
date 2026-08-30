@@ -1,13 +1,25 @@
-import { INestApplication } from "@nestjs/common";
+import { INestApplication, NotFoundException } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
+import { FeedbucketWidgetsService } from "../feedbucket-widgets.service";
+
+const widgetsStub = {
+  findAll: jest.fn().mockResolvedValue([]),
+  findOne: jest.fn().mockRejectedValue(new NotFoundException()),
+  create: jest.fn().mockResolvedValue({}),
+  update: jest.fn().mockResolvedValue({}),
+  softDelete: jest.fn().mockResolvedValue({}),
+  rotateKey: jest.fn().mockResolvedValue({}),
+};
 
 describe("Feedbucket auth/RBAC (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [{ provide: FeedbucketWidgetsService, useValue: widgetsStub }],
+    });
   });
 
   afterAll(async () => app.close());
@@ -89,7 +101,7 @@ describe("Feedbucket auth/RBAC (e2e)", () => {
     const tokenOrgA = await signToken({
       orgId: "org_a",
       permissions: ["feedbucket:widgets:view"],
-      enabledModules: [],
+      enabledModules: ["feedbucket"],
     });
     const res = await request(app.getHttpServer())
       .get("/feedbucket/widgets/9999")

@@ -38,7 +38,7 @@ describe("Surveys module auth/RBAC (e2e)", () => {
     ["post", `/surveys/${SURVEY_ID}/collectors`],
     ["get", `/surveys/${SURVEY_ID}/participants`],
     ["post", `/surveys/${SURVEY_ID}/participants`],
-    ["post", "/surveys/live-sessions"],
+    ["post", `/surveys/${SURVEY_ID}/live-sessions`],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -79,13 +79,13 @@ describe("Surveys module auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("403 on POST /surveys/live-sessions without surveys:live:host", async () => {
+  it("403 on POST /surveys/:surveyId/live-sessions without surveys:live:host", async () => {
     const token = await signToken({
       permissions: ["surveys:view"],
       enabledModules: ALL_MODULES,
     });
     const res = await request(app.getHttpServer())
-      .post("/surveys/live-sessions")
+      .post(`/surveys/${SURVEY_ID}/live-sessions`)
       .set("Authorization", `Bearer ${token}`)
       .send({ surveyId: SURVEY_ID });
     expect(res.status).toBe(403);

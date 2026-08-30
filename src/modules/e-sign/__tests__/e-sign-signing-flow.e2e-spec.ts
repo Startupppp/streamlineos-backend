@@ -6,6 +6,7 @@ import { AppModule } from "../../../app.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { organizations, users, signRecipients, signCertificates } from "../../../db/schema";
+import { seedOrg } from "../../../../test/helpers/e2e-seed";
 import { SignEnvelopesService } from "../sign-envelopes.service";
 import { SignDocumentsService } from "../sign-documents.service";
 import { SignRecipientsService } from "../sign-recipients.service";
@@ -62,6 +63,8 @@ describe("SignOS signing flow integration (e2e)", () => {
     await db.delete(organizations).where(eq(organizations.id, ORG_B_ID));
     await db.delete(users).where(eq(users.id, USER_ID));
     await db.delete(users).where(eq(users.id, USER_B_ID));
+    await db.delete(users).where(eq(users.id, `${ORG_ID}-seed-owner`));
+    await db.delete(users).where(eq(users.id, `${ORG_B_ID}-seed-owner`));
   }
 
   beforeAll(async () => {
@@ -84,10 +87,10 @@ describe("SignOS signing flow integration (e2e)", () => {
     watermarkSvc = app.get(SignWatermarkService);
 
     await cleanup();
-    await db.insert(organizations).values({ id: ORG_ID, name: "E2E SignOS Org", slug: `${P}slug`, ownerMembershipId: 0 });
-    await db.insert(organizations).values({ id: ORG_B_ID, name: "E2E SignOS Org B", slug: `${P}slug-b`, ownerMembershipId: 0 });
-    await db.insert(users).values({ id: USER_ID, email: `${P}sender@example.com`, name: "Sender" });
-    await db.insert(users).values({ id: USER_B_ID, email: `${P}sender-b@example.com`, name: "Sender B" });
+    await seedOrg(db, ORG_ID, `${P}slug`);
+    await seedOrg(db, ORG_B_ID, `${P}slug-b`);
+    await db.insert(users).values({ id: USER_ID, email: `${P}sender@example.com`, name: "Sender" }).onConflictDoNothing();
+    await db.insert(users).values({ id: USER_B_ID, email: `${P}sender-b@example.com`, name: "Sender B" }).onConflictDoNothing();
   }, 90_000);
 
   afterAll(async () => {

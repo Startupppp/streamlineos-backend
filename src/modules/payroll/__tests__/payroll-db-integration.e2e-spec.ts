@@ -27,11 +27,11 @@ import { sealBankDetails } from '../../../common/hr/canonical-bank-details';
 import { keyReferenceOf } from '../../../common/security/envelope-encryption';
 import { DEFAULT_PAYROLL_TOGGLES } from '../payroll.types';
 import { PayoutBatchesService } from '../payout/payout-batches.service';
+import { BatchCreatorService } from '../payout/batch-creator.service';
 import { validateEnv } from '../../../config/env.validation';
 import { ProfilesService } from '../runs/profiles.service';
 import { AuditService } from '../../../common/audit/audit.service';
 import { StorageService } from '../../storage/storage.service';
-import type { PayrollPostingService } from '../payroll-posting.service';
 import { ForbiddenException } from '@nestjs/common';
 import { EmploymentFactsService } from '../../directory/employment-facts.service';
 
@@ -336,7 +336,7 @@ describe('Scenario 1 — Idempotency replay', () => {
     it('returns the same batch on a second call with an identical idempotency key', async () => {
       const auditSvc = new AuditService(db);
       const storageSvc = new StorageService({} as unknown as MediaCompressionService, storageConfig);
-      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService, new EmploymentFactsService(db));
+      const svc = new BatchCreatorService(db, auditSvc, storageSvc, new EmploymentFactsService(db));
 
       const idemKey = `${P}idem-key-001`;
 
@@ -462,7 +462,7 @@ describe('Scenario 1 — Idempotency replay', () => {
     it('rejects fetching another org member bank details for a user outside the caller org', async () => {
       const auditSvc = new AuditService(db);
       const storageSvc = new StorageService({} as unknown as MediaCompressionService, storageConfig);
-      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService, new EmploymentFactsService(db));
+      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, new EmploymentFactsService(db));
 
       await expect(svc.getBankDetails(ORG_A, USER_B, USER_A)).rejects.toThrow(ForbiddenException);
     });
@@ -470,7 +470,7 @@ describe('Scenario 1 — Idempotency replay', () => {
     it('allows fetching bank details for a confirmed member of the caller org', async () => {
       const auditSvc = new AuditService(db);
       const storageSvc = new StorageService({} as unknown as MediaCompressionService, storageConfig);
-      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService, new EmploymentFactsService(db));
+      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, new EmploymentFactsService(db));
 
       const result = await svc.getBankDetails(ORG_A, USER_A, USER_A);
       expect(result.accountNumber).toBe('1234567890');

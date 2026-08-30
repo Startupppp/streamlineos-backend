@@ -29,16 +29,16 @@ describe("Timesheets module auth/RBAC (e2e)", () => {
   const protectedRoutes: ReadonlyArray<[Method, string, string]> = [
     ["get", "/timesheets/approvals", "timesheets:approvals:view"],
     ["get", "/timesheets/audit", "timesheets:audit:view"],
-    ["get", "/timesheets/billing", "timesheets:billing:view"],
+    ["get", "/timesheets/billing/uninvoiced", "timesheets:billing:view"],
     ["get", "/timesheets/budgets", "timesheets:budgets:view"],
     ["get", "/timesheets/entries", "timesheets:entries:view"],
     ["get", "/timesheets/exceptions", "timesheets:exceptions:view"],
     ["get", "/timesheets/periods", "timesheets:entries:view"],
     ["get", "/timesheets/rates", "timesheets:rates:view"],
-    ["get", "/timesheets/reports", "timesheets:reports:view"],
+    ["get", "/timesheets/reports/overview", "timesheets:reports:view"],
     ["get", "/timesheets/settings", "timesheets:settings:view"],
-    ["get", "/timesheets/team", "timesheets:team:view"],
-    ["get", "/timesheets/timer", "timesheets:entries:view"],
+    ["get", "/timesheets/team/week-summary", "timesheets:team:view"],
+    ["get", "/timesheets/timer/active", "timesheets:entries:view"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -53,13 +53,13 @@ describe("Timesheets module auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("403 on POST /timesheets/approvals/approve-many with only view permission", async () => {
+  it("403 on POST /timesheets/approvals/bulk-approve with only view permission", async () => {
     const token = await signToken({
       permissions: ["timesheets:approvals:view"],
       enabledModules: ALL_MODULES,
     });
     const res = await request(app.getHttpServer())
-      .post("/timesheets/approvals/approve-many")
+      .post("/timesheets/approvals/bulk-approve")
       .set("Authorization", `Bearer ${token}`)
       .send({ ids: [1, 2] });
     expect(res.status).toBe(403);

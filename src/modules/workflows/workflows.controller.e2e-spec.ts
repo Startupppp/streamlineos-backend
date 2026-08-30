@@ -3,7 +3,7 @@ import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken, ALL_MODULES } from "test/helpers/sign-token";
 
-const WORKFLOW_MODULE = "WORKFLOWS";
+const WORKFLOW_MODULE = "workflows";
 const WORKFLOW_ID = "00000000-0000-0000-0000-000000000001";
 const OTHER_ORG_ID = "other-org-id";
 

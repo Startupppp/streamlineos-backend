@@ -9,6 +9,7 @@ import { JournalService } from "./journal.service";
 import { FnfInsightsService } from "./fnf.service";
 import { TaxWindowsService } from "./tax-windows.service";
 import { EssService } from "./ess.service";
+import { EssSelfServiceService } from "./ess-self-service.service";
 import { AccountingMappingsService } from "./accounting-mappings.service";
 import { CalendarService } from "./calendar.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -97,6 +98,26 @@ const mockEssService = {
   getBankDetails: jest.fn().mockResolvedValue({ accountNumber: "***1234", ifsc: "SBIN0001" }),
   updateBankDetails: jest.fn().mockResolvedValue({ ok: true }),
   getOwnFnf: jest.fn().mockResolvedValue(null),
+  getActiveToggles: jest.fn().mockResolvedValue({
+    essAllowLoanRequests: true,
+    essAllowTaxDeclarations: true,
+    essAllowBankUpdate: true,
+    essAllowReimbursements: true,
+    essShowSalaryStructure: true,
+  }),
+  getActiveWindow: jest.fn().mockResolvedValue(null),
+};
+
+const mockEssSelfServiceService = {
+  listReimbursements: jest.fn().mockResolvedValue([]),
+  createReimbursement: jest.fn().mockResolvedValue({ id: 1 }),
+  listLoans: jest.fn().mockResolvedValue([]),
+  createLoan: jest.fn().mockResolvedValue({ id: 1 }),
+  getTaxDeclaration: jest.fn().mockResolvedValue(null),
+  submitTaxDeclaration: jest.fn().mockResolvedValue({ id: 1 }),
+  addTaxProof: jest.fn().mockResolvedValue({ id: 1 }),
+  getBankDetails: jest.fn().mockResolvedValue({ accountNumber: "***1234", ifsc: "SBIN0001" }),
+  updateBankDetails: jest.fn().mockResolvedValue({ ok: true }),
 };
 
 const mockAccountingMappingsService = {

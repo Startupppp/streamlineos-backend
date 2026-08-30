@@ -1,6 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { createE2eApp } from "test/helpers/e2e-app";
+import { createE2eApp, accessStub } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../test/helpers/sign-token";
 import { AccessService } from "../access/access.service";
 import { RolesService } from "./roles.service";
@@ -38,6 +38,8 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
         {
           provide: AccessService,
           useValue: {
+            ...accessStub,
+            getModuleState: async (): Promise<boolean | undefined> => true,
             resolveUserPermissions: async (_orgId: string, _userId: string) =>
               SIMULATE_PERMISSIONS_MAP,
             isModuleEnabled: async (_orgId: string, _moduleKey: string) => true,

@@ -156,6 +156,20 @@ export const MODULE_REGISTRY = [
     cacheNamespaces: ["support"],
   },
   {
+    id: "feedbucket",
+    displayName: "Feedbucket",
+    planGated: true,
+    administrable: true,
+    ladder: "delegable",
+    administersNamespaces: NONE,
+    route: null,
+    productKey: null,
+    moduleFolder: "feedbucket",
+    schemaFolder: null,
+    publicExposure: true,
+    cacheNamespaces: NONE,
+  },
+  {
     id: "surveys",
     displayName: "Surveys",
     planGated: true,
@@ -314,6 +328,20 @@ export const MODULE_REGISTRY = [
   },
   // Never delegated: organisation owner and admins only, on every path
   // including the owner's own. Must appear in neither derived list.
+  {
+    id: "settings",
+    displayName: "Settings",
+    planGated: false,
+    administrable: false,
+    ladder: "platform-admin",
+    administersNamespaces: NONE,
+    route: "/settings",
+    productKey: null,
+    moduleFolder: "settings",
+    schemaFolder: null,
+    publicExposure: false,
+    cacheNamespaces: NONE,
+  },
   {
     id: "billing",
     displayName: "Billing",

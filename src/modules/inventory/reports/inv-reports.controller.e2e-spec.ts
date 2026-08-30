@@ -13,6 +13,7 @@ describe("/inventory/reports (e2e)", () => {
       sub: "owner_1",
       orgId: "org_inv_01",
       isOrgOwner: true,
+      permissions: ["inventory:reports:read", "inventory:valuation:read"],
       enabledModules: ["inventory"],
     });
   });
