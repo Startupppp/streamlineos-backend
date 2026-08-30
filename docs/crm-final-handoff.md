@@ -145,13 +145,32 @@ exactly the "do not disturb other modules" line. HR is left as it was.
 ### The non-seeded e2e suite
 
 `jest-e2e.json` also runs now — it could not before, because `AppModule` did not
-boot. 2,563 pass and 336 fail across 35 suites, none of them CRM. The failures
-cluster in payroll, accounting, support, ownership and HR onboarding, and the
-dominant signatures are 402 MODULE_NOT_ENABLED and 500s from absent fixtures: a
-bare local database with no storage backend and no per-module seed data. Sampled
-one — `accounting/attachments` fails only "hands the same bytes back on download",
-13 of its 14 passing. These are newly *observable*, not newly broken, and each
-module's own fixtures are what they need.
+boot. It is green: **2,902 passing, 0 failing**, 48 skipped across 149 suites.
+
+The first time it ran end to end it reported 336 failures across 35 suites, and
+the interesting part is that **not one of them was the code under test**. They
+fell into three shapes, all of them fixtures describing themselves rather than
+the application:
+
+- The shared controller harness had drifted from the guard chain it fakes, and
+  from `AccessService` itself. Its stub was missing `getPermissionsVersion`,
+  `listModules` and `membersWithPermission`, so `/search`, `/entitlements/modules`
+  and support assignment each threw and answered 500 — under suites that only
+  assert 401 and 403, which is how they stayed green while the endpoints did not
+  work.
+- Two accounting fakes declared `uploadFile`/`getFileStream` without the leading
+  `orgId` that `StorageService` takes, so every argument arrived one place to the
+  left. An upload keyed itself off the PDF buffer, whose NUL bytes made
+  PostgreSQL reject the write, and a download looked the object up under the org
+  id.
+- Specs that build their own client demanded TLS of a database that does not
+  speak it, so they did not fail, they failed to run. `requiresTls` is now
+  exported from `pool.config` next to the rule it encodes.
+
+One caveat on timing rather than result: a suite reported 11,941 s and a hook
+timeout in the run that produced these numbers, having taken 15 s in every other
+run. The host slept mid-run, and a wall-clock jump reads to Jest as an elapsed
+hook. It passes with its neighbours.
 
 ### Pre-existing failures not touched
 
