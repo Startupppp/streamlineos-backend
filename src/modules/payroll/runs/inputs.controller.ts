@@ -32,7 +32,8 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const inputIdParams = z.object({ inputId: z.coerce.number().int().positive() }).strict();
+const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
+const runAndInputIdParams = z.object({ runId: z.coerce.number().int().positive(), inputId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/runs/:runId/inputs")
@@ -45,6 +46,7 @@ export class InputsController {
 
   @Get()
   @RequirePermission("payroll:runs:view")
+  @Validate({ params: runIdParams })
   async list(
     @Param("runId", ParseIntPipe) runId: number,
     @Query(new ZodValidationPipe(inputsQuerySchema)) query: InputsQuery,
@@ -58,7 +60,7 @@ export class InputsController {
 
   @Patch(":inputId")
   @RequirePermission("payroll:runs:update")
-  @Validate({ params: inputIdParams })
+  @Validate({ params: runAndInputIdParams })
   async patchInput(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("inputId", ParseIntPipe) inputId: number,
@@ -77,6 +79,7 @@ export class InputsController {
   @Post("reimport")
   @HttpCode(200)
   @RequirePermission("payroll:runs:update")
+  @Validate({ params: runIdParams })
   async reimport(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,

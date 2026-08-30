@@ -29,6 +29,9 @@ import { SalaryProfilesRepository } from "./salary-profiles.repository";
 import { RunDataLoaderService } from "./run-data-loader.service";
 import { RunResultPersisterService } from "./run-result-persister.service";
 import { LoanRecoveryService } from "./loan-recovery.service";
+import { PayrollExportController } from "./payroll-export.controller";
+import { PayrollRunExportService } from "./payroll-export.service";
+import { PayrollRunExportWorkerService } from "./payroll-export-worker.service";
 
 @Module({
   imports: [AccessModule, PayrollInsightsModule, PayrollEntitiesModule, DirectoryModule],
@@ -41,6 +44,7 @@ import { LoanRecoveryService } from "./loan-recovery.service";
     ExceptionsController,
     LoanAdjustmentsController,
     CommandCenterController,
+    PayrollExportController,
   ],
   providers: [
     RunsService,
@@ -61,6 +65,8 @@ import { LoanRecoveryService } from "./loan-recovery.service";
     RunDataLoaderService,
     RunResultPersisterService,
     LoanRecoveryService,
+    PayrollRunExportService,
+    PayrollRunExportWorkerService,
   ],
   exports: [GenerateService, PayrollCommandReceiptsService, PayrollRunLockService],
 })

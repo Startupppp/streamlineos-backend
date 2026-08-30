@@ -29,7 +29,8 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const approvalIdParams = z.object({ approvalId: z.coerce.number().int().positive() }).strict();
+const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
+const runAndApprovalIdParams = z.object({ runId: z.coerce.number().int().positive(), approvalId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/runs/:runId")
@@ -43,6 +44,7 @@ export class ApprovalsController {
   @Post("submit-approval")
   @HttpCode(200)
   @RequirePermission("payroll:runs:update")
+  @Validate({ params: runIdParams })
   async submitApproval(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -73,6 +75,7 @@ export class ApprovalsController {
 
   @Get("approvals")
   @RequirePermission("payroll:runs:view")
+  @Validate({ params: runIdParams })
   listApprovals(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -83,7 +86,7 @@ export class ApprovalsController {
   @Post("approvals/:approvalId/approve")
   @HttpCode(200)
   @RequirePermission("payroll:runs:approve")
-  @Validate({ params: approvalIdParams })
+  @Validate({ params: runAndApprovalIdParams })
   async approveStage(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
@@ -117,7 +120,7 @@ export class ApprovalsController {
   @Post("approvals/:approvalId/reject")
   @HttpCode(200)
   @RequirePermission("payroll:runs:approve")
-  @Validate({ params: approvalIdParams })
+  @Validate({ params: runAndApprovalIdParams })
   async rejectStage(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,

@@ -13,6 +13,8 @@ import { HrBenefitsPlansService } from "../benefits/hr-benefits-plans.service";
 import { CompPlanningService } from "../enterprise-comp/comp-planning.service";
 import { HrEffectiveChangesService } from "../core/hr-effective-changes.service";
 import { HrRecruitmentReportsService } from "../interviews/hr-recruitment-reports.service";
+import { HrSalaryStructuresService } from "../config/hr-salary-structures.service";
+import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 
 const SVC_DIR = join(__dirname, "..");
@@ -592,6 +594,69 @@ describe("sensitive-projection-exposure", () => {
         expect(Object.keys(salaryProfProj)).not.toContain("taxRegime");
         expect(Object.keys(salaryProfProj)).not.toContain("createdBy");
         expect(Object.keys(salaryProfProj)).not.toContain("deductions");
+      });
+    });
+
+    describe("HrSalaryStructuresService.list — compensation key-set", () => {
+      const SALARY_LIST_ALLOWLIST = [
+        "id",
+        "orgId",
+        "userId",
+        "annualCtc",
+        "basicSalary",
+        "hraPercentage",
+        "allowances",
+        "deductions",
+        "status",
+        "effectiveFrom",
+        "effectiveTo",
+        "currency",
+        "payFrequency",
+        "createdAt",
+        "updatedAt",
+      ].sort();
+
+      it("projects exactly the salary list allowlist — no taxRegime, createdBy, workerId, costCenter, fxSource leak", async () => {
+        let capturedColumns: Record<string, unknown> | undefined;
+
+        const mockDb = {
+          query: {
+            employeeSalaryProfiles: {
+              findMany: jest.fn().mockImplementation(
+                (opts: { columns?: Record<string, unknown> }) => {
+                  capturedColumns = opts.columns;
+                  return Promise.resolve([]);
+                },
+              ),
+            },
+          },
+        };
+
+        const auditMock = { log: jest.fn() };
+        const cacheMock = { cached: jest.fn(), del: jest.fn() };
+
+        const module = await Test.createTestingModule({
+          providers: [
+            HrSalaryStructuresService,
+            { provide: DRIZZLE, useValue: mockDb },
+            { provide: AuditService, useValue: auditMock },
+            { provide: CacheService, useValue: cacheMock },
+          ],
+        }).compile();
+
+        const service = module.get(HrSalaryStructuresService);
+        await service.list("org1", undefined, "user1", false);
+
+        assertProjection(capturedColumns);
+        expect(Object.keys(capturedColumns).sort()).toEqual(SALARY_LIST_ALLOWLIST);
+        expect(Object.keys(capturedColumns)).not.toContain("taxRegime");
+        expect(Object.keys(capturedColumns)).not.toContain("createdBy");
+        expect(Object.keys(capturedColumns)).not.toContain("workerId");
+        expect(Object.keys(capturedColumns)).not.toContain("workerType");
+        expect(Object.keys(capturedColumns)).not.toContain("costCenter");
+        expect(Object.keys(capturedColumns)).not.toContain("fxSource");
+        expect(Object.keys(capturedColumns)).not.toContain("payoutCurrency");
+        expect(Object.keys(capturedColumns)).not.toContain("policyVersionId");
       });
     });
   });

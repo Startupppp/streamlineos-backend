@@ -30,7 +30,8 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const exceptionIdParams = z.object({ exceptionId: z.coerce.number().int().positive() }).strict();
+const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
+const runAndExceptionIdParams = z.object({ runId: z.coerce.number().int().positive(), exceptionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/runs/:runId/exceptions")
@@ -40,6 +41,7 @@ export class ExceptionsController {
 
   @Get()
   @RequirePermission("payroll:runs:view")
+  @Validate({ params: runIdParams })
   async list(
     @Param("runId", ParseIntPipe) runId: number,
     @Query(new ZodValidationPipe(exceptionFilterSchema)) query: ExceptionFilterInput,
@@ -52,7 +54,7 @@ export class ExceptionsController {
 
   @Patch(":exceptionId/resolve")
   @RequirePermission("payroll:runs:update")
-  @Validate({ params: exceptionIdParams })
+  @Validate({ params: runAndExceptionIdParams })
   async resolve(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("exceptionId", ParseIntPipe) exceptionId: number,
@@ -71,7 +73,7 @@ export class ExceptionsController {
 
   @Patch(":exceptionId/override")
   @RequirePermission("payroll:runs:manage")
-  @Validate({ params: exceptionIdParams })
+  @Validate({ params: runAndExceptionIdParams })
   async override(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("exceptionId", ParseIntPipe) exceptionId: number,

@@ -16,7 +16,8 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const postingIdParams = z.object({ postingId: z.coerce.number().int().positive() }).strict();
+const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
+const jobAndPostingIdParams = z.object({ jobId: z.coerce.number().int().positive(), postingId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/jobs/:jobId/board-postings")
@@ -26,6 +27,7 @@ export class RecruitmentJobBoardsController {
 
   @Get()
   @RequirePermission("hr:employees:view")
+  @Validate({ params: jobIdParams })
   list(@CurrentUser() u: CurrentUserContext, @Param("jobId", ParseIntPipe) jobId: number) {
     return this.service.list(u.orgId, jobId);
   }
@@ -33,6 +35,7 @@ export class RecruitmentJobBoardsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: jobIdParams })
   create(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -43,7 +46,7 @@ export class RecruitmentJobBoardsController {
 
   @Patch(":postingId")
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: postingIdParams })
+  @Validate({ params: jobAndPostingIdParams })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -56,7 +59,7 @@ export class RecruitmentJobBoardsController {
   @Delete(":postingId")
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: postingIdParams })
+  @Validate({ params: jobAndPostingIdParams })
   remove(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,

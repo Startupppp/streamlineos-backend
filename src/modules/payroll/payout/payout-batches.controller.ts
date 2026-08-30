@@ -40,6 +40,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
+const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
 const batchIdParams = z.object({ batchId: z.coerce.number().int().positive() }).strict();
 const batchItemIdParams = z.object({ batchId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
 const employeeUserIdParams = z.object({ employeeUserId: z.string().min(1) }).strict();
@@ -55,6 +56,7 @@ export class PayoutRunController {
 
   @Get("validation")
   @RequirePermission("payroll:bank:manage")
+  @Validate({ params: runIdParams })
   validate(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -65,6 +67,7 @@ export class PayoutRunController {
   @Post("batches")
   @HttpCode(201)
   @RequirePermission("payroll:bank:manage")
+  @Validate({ params: runIdParams })
   createBatch(
     @Param("runId", ParseIntPipe) runId: number,
     @Body(new ZodValidationPipe(createBatchSchema)) body: CreateBatchInput,

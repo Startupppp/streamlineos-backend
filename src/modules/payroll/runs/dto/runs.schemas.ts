@@ -34,21 +34,32 @@ export const createRunSchema = z
   });
 export type CreateRunInput = z.infer<typeof createRunSchema>;
 
+const RUNS_LIST_CAP = 100;
+const EMPLOYEES_LIST_CAP = 100;
+
 export const listRunsQuerySchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(RUNS_LIST_CAP).optional().default(20),
   entityId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 export type ListRunsQuery = z.infer<typeof listRunsQuerySchema>;
 
 export const listRunEmployeesQuerySchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(EMPLOYEES_LIST_CAP).optional().default(20),
   search: z.string().optional(),
   status: z.string().optional(),
   workerType: z.string().optional(),
-});
+}).strict();
 export type ListRunEmployeesQuery = z.infer<typeof listRunEmployeesQuerySchema>;
+
+export const exportRunsQuerySchema = z.object({
+  entityId: z.coerce.number().int().positive().optional(),
+  monthFrom: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  monthTo: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  runType: z.enum(["REGULAR", "BONUS", "OFF_CYCLE", "CORRECTION", "FINAL_SETTLEMENT"]).optional(),
+}).strict();
+export type ExportRunsQuery = z.infer<typeof exportRunsQuerySchema>;
 
 export const patchInputSchema = z.object({
   scheduledDays: z.string().optional(),

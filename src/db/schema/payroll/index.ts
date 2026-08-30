@@ -14,3 +14,4 @@ export * from "./workforce";
 export * from "./input-capture";
 export * from "./claims-and-settlements";
 export * from "./expense-export-jobs";
+export * from "./payroll-export-jobs";
