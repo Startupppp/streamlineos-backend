@@ -2,6 +2,7 @@ import { Test } from "@nestjs/testing";
 import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { DirectoryIdentityService } from "./directory-identity.service";
+import { DirectoryPersonEnsureService } from "./directory-person-ensure.service";
 import { DirectoryService } from "./directory.service";
 import { WorkerEngagementsService } from "./worker-engagements.service";
 
@@ -16,9 +17,12 @@ export const mockAudit = { logCritical: jest.fn() } as unknown as AuditService;
 export const mockIdentities = {
   reconcilePersonIdentity: jest.fn(),
   resolveLinkForPersonWrite: jest.fn(),
-  ensurePersonForMember: jest.fn(),
   resolvePersonAccess: jest.fn(),
   resolvePeopleAccess: jest.fn(),
+};
+
+export const mockEnsure = {
+  ensurePersonForMember: jest.fn(),
 };
 
 export function makePerson(overrides: Record<string, unknown> = {}) {
@@ -136,6 +140,7 @@ export async function createDirectoryTestHarness(): Promise<{
       { provide: DRIZZLE, useValue: database },
       { provide: AuditService, useValue: mockAudit },
       { provide: DirectoryIdentityService, useValue: mockIdentities },
+      { provide: DirectoryPersonEnsureService, useValue: mockEnsure },
     ],
   }).compile();
 

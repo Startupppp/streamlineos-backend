@@ -45,6 +45,7 @@ import { CronHrService } from "./cron-hr.service";
 import { CronHrEnginesService } from "./cron-hr-engines.service";
 import { CronKbService } from "./cron-kb.service";
 import { CronLeaveService } from "./cron-leave.service";
+import { CronLeaveResetService } from "./cron-leave-reset.service";
 import { CronNotificationsService } from "./cron-notifications.service";
 import { CronProjectsService } from "./cron-projects.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
@@ -118,6 +119,7 @@ import { CalendarModule } from "../calendar/calendar.module";
     CronInvitationExpiryService,
     CronWorkflowService,
     CronLeaveService,
+    CronLeaveResetService,
     CronNotificationsService,
     CronHolidayService,
     CronKbService,

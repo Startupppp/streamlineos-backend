@@ -9,6 +9,7 @@ import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
 import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronLeaveService } from "./cron-leave.service";
+import { CronLeaveResetService } from "./cron-leave-reset.service";
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
 import { CronNotificationsService } from "./cron-notifications.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
@@ -16,7 +17,6 @@ import { CronOrganizationService } from "./cron-organization.service";
 import { CronProjectsService } from "./cron-projects.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
-import { EmploymentFactsService } from "../directory/employment-facts.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { EmailService } from "../email/email.service";
@@ -127,7 +127,7 @@ describe("CronLeaveService — cross-tenant isolation", () => {
       providers: [
         CronLeaveService,
         { provide: DRIZZLE, useValue: db },
-        { provide: EmploymentFactsService, useValue: { getActiveEmployments: jest.fn().mockResolvedValue([]) } },
+        { provide: CronLeaveResetService, useValue: { resolveLeaveYearStartMonth: jest.fn(), resetYearlyLeaveBalances: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronLeaveService));
 
@@ -143,7 +143,7 @@ describe("CronLeaveService — cross-tenant isolation", () => {
       providers: [
         CronLeaveService,
         { provide: DRIZZLE, useValue: db },
-        { provide: EmploymentFactsService, useValue: { getActiveEmployments: jest.fn().mockResolvedValue([]) } },
+        { provide: CronLeaveResetService, useValue: { resolveLeaveYearStartMonth: jest.fn(), resetYearlyLeaveBalances: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronLeaveService));
 

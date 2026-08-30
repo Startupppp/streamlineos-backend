@@ -3,6 +3,7 @@ import { PartyRolesService } from "./party-roles.service";
 import { PartyDivergenceService } from "./party-divergence.service";
 import { PartyMergeService } from "./party-merge.service";
 import { SubjectService } from "./subject.service";
+import { SubjectTypeService } from "./subject-type.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -103,14 +104,20 @@ describe("PartyMergeService — cross-tenant isolation", () => {
 });
 
 describe("SubjectService — cross-tenant isolation", () => {
-  function buildSvc(db: Db) {
+  function buildSubjectSvc(db: Db) {
     const audit = { log: jest.fn().mockResolvedValue(undefined) };
-    return new SubjectService(db, audit as never);
+    const types = new SubjectTypeService(db, audit as never);
+    return new SubjectService(db, audit as never, types);
+  }
+
+  function buildTypeSvc(db: Db) {
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    return new SubjectTypeService(db, audit as never);
   }
 
   it("listTypes: returns nothing for a different org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = buildSvc(db);
+    const svc = buildTypeSvc(db);
     const result = await svc.listTypes(ATTACKER);
     expect(result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -120,14 +127,14 @@ describe("SubjectService — cross-tenant isolation", () => {
   it("listTypes: returns rows for the owning org (control)", async () => {
     const row = { id: 1, orgId: OWNER, name: "Type1" };
     const { db } = makeDb([row]);
-    const svc = buildSvc(db);
+    const svc = buildTypeSvc(db);
     const result = await svc.listTypes(OWNER);
     expect(result).toHaveLength(1);
   });
 
   it("listSubjects: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = buildSvc(db);
+    const svc = buildSubjectSvc(db);
     const result = await svc.listSubjects(ATTACKER, { limit: 20 } as never);
     const r = result as Record<string, unknown>;
     const arr = (r.data ?? r.items ?? []) as unknown[];
@@ -139,7 +146,7 @@ describe("SubjectService — cross-tenant isolation", () => {
   it("listSubjects: returns rows for the owning org (control)", async () => {
     const row = { id: 1, orgId: OWNER, name: "Subject1", createdAt: new Date(), subjectId: "s1" };
     const { db, where } = makeDb([row, row]);
-    const svc = buildSvc(db);
+    const svc = buildSubjectSvc(db);
     const result = await svc.listSubjects(OWNER, { limit: 20 } as never);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);

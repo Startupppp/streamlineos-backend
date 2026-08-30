@@ -8,6 +8,7 @@ import { AutonomyReviewService } from "./autonomy-review.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
 import { AutonomyHoldWorkflow } from "./autonomy-hold.workflow";
+import { AutonomyReversalService } from "./autonomy-reversal.service";
 import { QuotesModule } from "../quotes/quotes.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { WorkflowModule } from "../../common/workflow/workflow.module";
@@ -47,6 +48,7 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
   providers: [
     AutonomyService,
     AutonomyActionsService,
+    AutonomyReversalService,
     AutonomyReviewService,
     AutonomyScoringService,
     AutonomyHoldService,

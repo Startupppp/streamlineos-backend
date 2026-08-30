@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { OwnershipTransfersService } from "../ownership-transfers.service";
+import { OwnershipTransferExpiryService } from "../ownership-transfer-expiry.service";
 import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { OrganizationSagaService } from "../../organization/core/lifecycle/organization-saga.service";
@@ -148,6 +149,7 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
 
     const moduleRef = await Test.createTestingModule({
       providers: [
+        { provide: OwnershipTransferExpiryService, useValue: { expireStaleTransfers: jest.fn() } },
         OwnershipTransfersService,
         OwnershipTransferResponseService,
         { provide: DRIZZLE, useValue: mockDb },

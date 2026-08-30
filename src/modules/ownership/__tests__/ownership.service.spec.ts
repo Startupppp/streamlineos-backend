@@ -7,6 +7,7 @@ import {
 import { Test } from "@nestjs/testing";
 import { OwnershipService } from "../ownership.service";
 import { OwnershipTransfersService } from "../ownership-transfers.service";
+import { OwnershipTransferExpiryService } from "../ownership-transfer-expiry.service";
 import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { OrganizationSagaService } from "../../organization/core/lifecycle/organization-saga.service";
@@ -126,6 +127,7 @@ describe("OwnershipService — access / business-rule logic", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OwnershipService,
+        { provide: OwnershipTransferExpiryService, useValue: { expireStaleTransfers: jest.fn() } },
         OwnershipTransfersService,
         OwnershipTransferResponseService,
         { provide: DRIZZLE, useValue: mockDb },

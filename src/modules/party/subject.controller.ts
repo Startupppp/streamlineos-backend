@@ -7,6 +7,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { SubjectService } from "./subject.service";
+import { SubjectTypeService } from "./subject-type.service";
 import {
   createSubjectSchema,
   createSubjectTypeSchema,
@@ -28,23 +29,19 @@ const subjectIdParams = z.object({ subjectId: z.string().min(1) }).strict();
 const subjectPartyLinkIdParams = z.object({ subjectPartyLinkId: z.string().min(1) }).strict();
 const partyIdParams = z.object({ partyId: z.string().min(1) }).strict();
 
-/**
- * The thing a tenant transacts.
- *
- * Declaring a type is separated from managing records of it, and carries its own
- * permission: changing a declaration reshapes every record of that type, which
- * is a different act from editing one of them.
- */
 @Controller("party")
 @UseGuards(JwtAuthGuard)
 export class SubjectController {
-  constructor(private readonly subjects: SubjectService) {}
+  constructor(
+    private readonly subjects: SubjectService,
+    private readonly subjectTypes: SubjectTypeService,
+  ) {}
 
   @Get("subject-types")
   @UseGuards(PermissionGuard)
   @RequirePermission("party:subjects:view")
   async listTypes(@CurrentUser() user: CurrentUserContext) {
-    return { data: await this.subjects.listTypes(user.orgId) };
+    return { data: await this.subjectTypes.listTypes(user.orgId) };
   }
 
   @Post("subject-types")
@@ -56,7 +53,7 @@ export class SubjectController {
     @CurrentUser() user: CurrentUserContext,
     @Body() body: CreateSubjectTypeInput,
   ) {
-    return this.subjects.createType(user.orgId, user.userId, body);
+    return this.subjectTypes.createType(user.orgId, user.userId, body);
   }
 
   @Patch("subject-types/:subjectTypeId")
@@ -69,7 +66,7 @@ export class SubjectController {
     @Param("subjectTypeId") subjectTypeId: string,
     @Body() body: UpdateSubjectTypeInput,
   ) {
-    return this.subjects.updateType(user.orgId, subjectTypeId, user.userId, body);
+    return this.subjectTypes.updateType(user.orgId, subjectTypeId, user.userId, body);
   }
 
   @Delete("subject-types/:subjectTypeId")
@@ -80,7 +77,7 @@ export class SubjectController {
     @CurrentUser() user: CurrentUserContext,
     @Param("subjectTypeId") subjectTypeId: string,
   ) {
-    await this.subjects.deleteType(user.orgId, subjectTypeId, user.userId);
+    await this.subjectTypes.deleteType(user.orgId, subjectTypeId, user.userId);
     return { deleted: true };
   }
 

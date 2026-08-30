@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { OrganizationSagaService } from "../../organization/core/lifecycle/organization-saga.service";
 import { OwnershipTransfersService } from "../ownership-transfers.service";
+import { OwnershipTransferExpiryService } from "../ownership-transfer-expiry.service";
 import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 
 const ORG = "org-a";
@@ -86,6 +87,7 @@ describe("Ownership transfer notifications", () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
+        { provide: OwnershipTransferExpiryService, useValue: { expireStaleTransfers: jest.fn() } },
         OwnershipTransfersService,
         OwnershipTransferResponseService,
         { provide: DRIZZLE, useValue: db },

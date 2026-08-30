@@ -29,6 +29,7 @@ import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
 import { SignEnvelopesController } from "./sign-envelopes.controller";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignPublicService } from "./sign-public.service";
+import { SignPublicFormService } from "./sign-public-form.service";
 import { SignPublicController } from "./sign-public.controller";
 import { SignCertificatesController } from "./sign-certificates.controller";
 import { SignTemplatesService } from "./sign-templates.service";
@@ -74,6 +75,7 @@ import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-
     SignFinalizationService,
     SignTemplatesService,
     SignPublicService,
+    SignPublicFormService,
     SignBulkSendService,
     SignWatermarkService,
     SignReportsService,

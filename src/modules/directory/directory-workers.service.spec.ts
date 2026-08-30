@@ -6,6 +6,7 @@ import {
   makeSelectChain,
   makeWorker,
   mockAudit,
+  mockEnsure,
   mockIdentities,
   ORG_ID,
   OTHER_ORG,
@@ -119,7 +120,7 @@ describe("DirectoryService worker operations", () => {
         organizationMembershipId: 42,
       });
       const worker = makeWorker();
-      mockIdentities.ensurePersonForMember.mockResolvedValue(person);
+      mockEnsure.ensurePersonForMember.mockResolvedValue(person);
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
         values: jest.fn().mockReturnValue({
           returning: jest.fn().mockReturnValue({
@@ -131,7 +132,7 @@ describe("DirectoryService worker operations", () => {
       await expect(
         svc.createWorker(ORG_ID, USER_ID, { memberUserId: USER_ID }),
       ).resolves.toMatchObject({ workerId: WORKER_ID });
-      expect(mockIdentities.ensurePersonForMember).toHaveBeenCalledWith(
+      expect(mockEnsure.ensurePersonForMember).toHaveBeenCalledWith(
         ORG_ID,
         USER_ID,
       );
