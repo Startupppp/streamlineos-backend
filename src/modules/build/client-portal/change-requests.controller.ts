@@ -30,7 +30,8 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const changeRequestIdParams = z.object({ changeRequestId: z.coerce.number().int().positive() }).strict();
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const projectAndChangeRequestIdParams = z.object({ projectId: z.coerce.number().int().positive(), changeRequestId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/change-requests")
@@ -40,6 +41,7 @@ export class ChangeRequestsController {
 
   @Get()
   @RequirePermission("build:changerequests:view")
+  @Validate({ params: projectIdParams })
   listChangeRequests(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(listCrQuerySchema)) query: ListCrQuery,
@@ -50,7 +52,7 @@ export class ChangeRequestsController {
 
   @Get(":changeRequestId")
   @RequirePermission("build:changerequests:view")
-  @Validate({ params: changeRequestIdParams })
+  @Validate({ params: projectAndChangeRequestIdParams })
   getChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("changeRequestId", ParseIntPipe) changeRequestId: number,
@@ -62,6 +64,7 @@ export class ChangeRequestsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:changerequests:create")
+  @Validate({ params: projectIdParams })
   createChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createChangeRequestSchema)) body: CreateChangeRequestInput,
@@ -72,7 +75,7 @@ export class ChangeRequestsController {
 
   @Patch(":changeRequestId")
   @RequirePermission("build:changerequests:manage")
-  @Validate({ params: changeRequestIdParams })
+  @Validate({ params: projectAndChangeRequestIdParams })
   updateChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("changeRequestId", ParseIntPipe) changeRequestId: number,
@@ -85,7 +88,7 @@ export class ChangeRequestsController {
   @Delete(":changeRequestId")
   @RequirePermission("build:changerequests:manage")
   @HttpCode(204)
-  @Validate({ params: changeRequestIdParams })
+  @Validate({ params: projectAndChangeRequestIdParams })
   deleteChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("changeRequestId", ParseIntPipe) changeRequestId: number,

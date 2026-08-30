@@ -34,6 +34,6 @@ export class CrmDashboardsController {
   @Get("customer-executive")
   @RequirePermission("dashboard:customer-executive:view")
   customerExecutive(@CurrentUser() u: CurrentUserContext) {
-    return this.supportDashboard.getCustomerExecutiveDashboard(u.orgId);
+    return this.ceDashboard.getCustomerExecutiveDashboard(u.orgId);
   }
 }

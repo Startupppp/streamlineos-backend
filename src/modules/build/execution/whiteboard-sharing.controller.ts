@@ -91,7 +91,7 @@ export class WhiteboardSharingController {
   @Delete("shares/:targetUserId")
   @RequirePermission("build:whiteboards:manage")
   @HttpCode(204)
-  @Validate({ params: targetUserIdParams })
+  @Validate({ params: projectWhiteboardAndTargetUserParams })
   removeShare(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,

@@ -19,10 +19,11 @@ import { toggleVisibilitySchema, type ToggleVisibilityInput } from "./dto/client
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
-const milestoneIdParams = z.object({ milestoneId: z.coerce.number().int().positive() }).strict();
-const commentIdParams = z.object({ commentId: z.coerce.number().int().positive() }).strict();
-const attachmentIdParams = z.object({ attachmentId: z.coerce.number().int().positive() }).strict();
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const projectAndTicketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
+const projectAndMilestoneIdParams = z.object({ projectId: z.coerce.number().int().positive(), milestoneId: z.coerce.number().int().positive() }).strict();
+const projectAndCommentIdParams = z.object({ projectId: z.coerce.number().int().positive(), commentId: z.coerce.number().int().positive() }).strict();
+const projectAndAttachmentIdParams = z.object({ projectId: z.coerce.number().int().positive(), attachmentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/client-visibility")
@@ -32,6 +33,7 @@ export class ClientVisibilityController {
 
   @Get()
   @RequirePermission("build:clientvisibility:manage")
+  @Validate({ params: projectIdParams })
   getVisibilitySummary(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -41,7 +43,7 @@ export class ClientVisibilityController {
 
   @Patch("tickets/:ticketId")
   @RequirePermission("build:clientvisibility:manage")
-  @Validate({ params: ticketIdParams })
+  @Validate({ params: projectAndTicketIdParams })
   toggleTicketVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -53,7 +55,7 @@ export class ClientVisibilityController {
 
   @Patch("milestones/:milestoneId")
   @RequirePermission("build:clientvisibility:manage")
-  @Validate({ params: milestoneIdParams })
+  @Validate({ params: projectAndMilestoneIdParams })
   toggleMilestoneVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("milestoneId", ParseIntPipe) milestoneId: number,
@@ -65,7 +67,7 @@ export class ClientVisibilityController {
 
   @Patch("comments/:commentId")
   @RequirePermission("build:clientvisibility:manage")
-  @Validate({ params: commentIdParams })
+  @Validate({ params: projectAndCommentIdParams })
   toggleCommentVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
@@ -77,7 +79,7 @@ export class ClientVisibilityController {
 
   @Patch("attachments/:attachmentId")
   @RequirePermission("build:clientvisibility:manage")
-  @Validate({ params: attachmentIdParams })
+  @Validate({ params: projectAndAttachmentIdParams })
   toggleAttachmentVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("attachmentId", ParseIntPipe) attachmentId: number,
