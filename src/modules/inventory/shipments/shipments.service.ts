@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { Injectable, Inject, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
 import { and, eq, desc, sql } from "drizzle-orm";
 import {
@@ -14,7 +13,6 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type {
   ListShipmentsQueryInput,
   CreateShipmentInput,
@@ -167,21 +165,6 @@ export class ShipmentsService {
         resourceType: "shipment",
         resourceId: String(shipmentId),
         metadata: { idempotencyKey },
-      });
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "inv_shipment",
-        aggregateId: String(shipmentId),
-        aggregateVersion: Date.now(),
-        eventType: "inventory.shipment.dispatched",
-        payload: {
-          shipmentId,
-          shipmentNumber: rows[0]?.shipmentNumber ?? shipment.shipmentNumber,
-          soId: shipment.soId,
-          actorUserId: userId,
-        },
-        occurredAt: new Date(),
       });
       return rows;
     });

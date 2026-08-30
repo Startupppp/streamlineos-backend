@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { Inject, Injectable, BadRequestException, Logger, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
@@ -15,7 +14,6 @@ import { InventorySettingsService } from "../stock-engine/inventory-settings.ser
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
 import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { SoCoreService } from "./so-core.service";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
 
@@ -419,24 +417,6 @@ export class SoFulfillmentService {
       await (tx as Db).update(invSalesOrders)
         .set({ status: newStatus, shippedAt: new Date(), updatedAt: new Date() })
         .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
-
-      await OutboxWriter.emit(tx as Db, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "inv_sales_order",
-        aggregateId: String(soId),
-        aggregateVersion: Date.now(),
-        eventType: "inventory.sales_order.fulfilled",
-        payload: {
-          soId,
-          soNumber: so.soNumber,
-          shipmentId: ship.id,
-          shipmentNumber,
-          isPartial,
-          actorUserId: userId,
-        },
-        occurredAt: new Date(),
-      });
 
       return ship;
     });

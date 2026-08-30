@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { applyScope } from "../../access/apply-scope";
@@ -14,7 +13,6 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { ListAdjustmentsInput, CreateAdjustmentInput } from "./dto/inv-stock.schemas";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -226,22 +224,6 @@ export class InvStockAdjustmentsService {
         .set({ status: "POSTED", postedBy: userId, postedAt: new Date() })
         .where(and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adj.id)));
 
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "inv_stock_adjustment",
-        aggregateId: String(adj.id),
-        aggregateVersion: Date.now(),
-        eventType: "inventory.stock.adjusted",
-        payload: {
-          adjustmentId: adj.id,
-          referenceNumber: adj.referenceNumber,
-          reason: adj.reason,
-          lineCount: adj.lines.length,
-          actorUserId: userId,
-        },
-        occurredAt: new Date(),
-      });
     });
 
     await Promise.all([
