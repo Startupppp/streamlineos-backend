@@ -1,5 +1,5 @@
 import { classifyVelocity, rankBySlot } from "../slotting-rules";
-import type { PutawaySuggestion } from "../../warehouses/putaway.service";
+import type { PutawaySuggestion } from "../../warehouses/putaway-suggestion";
 
 function bin(overrides: Partial<PutawaySuggestion> & { locationId: number }): PutawaySuggestion {
   return {

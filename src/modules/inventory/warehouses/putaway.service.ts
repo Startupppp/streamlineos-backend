@@ -7,19 +7,7 @@ import type { SuggestPutawayInput } from "./dto/inv-warehouses.schemas";
 import { cmpDec, subDec } from "../stock-engine/decimal";
 import { SlottingService } from "../slotting/slotting.service";
 import { rankBySlot, type SlottedSuggestion } from "../slotting/slotting-rules";
-
-export interface PutawaySuggestion {
-  locationId: number;
-  code: string;
-  name: string;
-  /** null when the location records no capacity, which means unlimited. */
-  capacity: string | null;
-  onHand: string;
-  remaining: string | null;
-  /** Whether this location already holds the variant being put away. */
-  holdsVariant: boolean;
-  fits: boolean;
-}
+import type { PutawaySuggestion } from "./putaway-suggestion";
 
 @Injectable()
 export class PutawayService {

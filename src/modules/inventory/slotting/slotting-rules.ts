@@ -1,4 +1,4 @@
-import type { PutawaySuggestion } from "../warehouses/putaway.service";
+import type { PutawaySuggestion } from "../warehouses/putaway-suggestion";
 import { cmpDec } from "../stock-engine/decimal";
 
 /**

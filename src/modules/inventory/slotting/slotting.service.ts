@@ -7,7 +7,7 @@ import { forEachOrg } from "../../../common/tenant";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { classifyVelocity, rankBySlot, type SlottedSuggestion } from "./slotting-rules";
-import type { PutawaySuggestion } from "../warehouses/putaway.service";
+import type { PutawaySuggestion } from "../warehouses/putaway-suggestion";
 import type {
   CreateSlottingRuleInput,
   ListRecommendationsQuery,

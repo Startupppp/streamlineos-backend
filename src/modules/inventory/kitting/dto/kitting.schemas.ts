@@ -48,7 +48,17 @@ export const assembleKitSchema = z
   })
   .strict();
 
-export const disassembleKitSchema = assembleKitSchema;
+// Spelled out rather than aliased to `assembleKitSchema`. The two bodies are
+// identical today, but they are separate payloads on separate endpoints and are
+// free to diverge — and one schema exported under two names is a duplicate
+// export, which `knip` fails the build on.
+export const disassembleKitSchema = z
+  .object({
+    kitVariantId: z.number().int().positive(),
+    locationId: z.number().int().positive(),
+    quantity: qtyString,
+  })
+  .strict();
 
 export const buildableQuerySchema = z
   .object({
