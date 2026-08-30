@@ -2020,11 +2020,19 @@ DO $$ BEGIN
 END $$;
 --> statement-breakpoint
 -- fk_kb_pages_org_created_membership is deliberately left NOT VALID: it is NOT VALID on the
--- source database too, because existing rows violate it (orphaned membership
--- references). Validating here would fail on any database carrying that data,
--- and silently succeed on an empty one -- producing two environments that
--- disagree about whether the constraint holds. Reproduce the state, don't
--- improve on it; cleaning the data is a separate decision with an owner.
+-- source database, and WHY it was left that way is not established.
+--
+-- An earlier version of this comment said existing rows violate it. That was an
+-- assumption, not a finding, and it is wrong as stated: there are zero violating
+-- rows here. But that is not evidence the constraint holds either -- chat_channels,
+-- chat_messages and kb_pages are all empty on this database, so zero violations
+-- is entirely explained by zero rows, and nothing has been learned about real data.
+--
+-- So validating it here would succeed for a reason that says nothing, while the
+-- same statement could fail on a populated database. Reproduce the source state
+-- rather than improve on it. Whether these four can be validated is a decision
+-- for the owners of chat and KB against data that exists; count the violations
+-- first, with the FK columns' NULLs excluded.
 --> statement-breakpoint
 DO $$ BEGIN
   IF to_regclass('public.kb_pages') IS NOT NULL
@@ -2035,11 +2043,19 @@ DO $$ BEGIN
 END $$;
 --> statement-breakpoint
 -- fk_kb_pages_org_owner_membership is deliberately left NOT VALID: it is NOT VALID on the
--- source database too, because existing rows violate it (orphaned membership
--- references). Validating here would fail on any database carrying that data,
--- and silently succeed on an empty one -- producing two environments that
--- disagree about whether the constraint holds. Reproduce the state, don't
--- improve on it; cleaning the data is a separate decision with an owner.
+-- source database, and WHY it was left that way is not established.
+--
+-- An earlier version of this comment said existing rows violate it. That was an
+-- assumption, not a finding, and it is wrong as stated: there are zero violating
+-- rows here. But that is not evidence the constraint holds either -- chat_channels,
+-- chat_messages and kb_pages are all empty on this database, so zero violations
+-- is entirely explained by zero rows, and nothing has been learned about real data.
+--
+-- So validating it here would succeed for a reason that says nothing, while the
+-- same statement could fail on a populated database. Reproduce the source state
+-- rather than improve on it. Whether these four can be validated is a decision
+-- for the owners of chat and KB against data that exists; count the violations
+-- first, with the FK columns' NULLs excluded.
 --> statement-breakpoint
 DO $$ BEGIN
   IF to_regclass('public.kb_pages') IS NOT NULL
