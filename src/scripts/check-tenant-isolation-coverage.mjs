@@ -48,6 +48,7 @@ const GLOBAL_SERVICE_PATTERNS = [
   /email\.service/,
   /mailer\.service/,
   /platform-admin/,
+  /platform-analytics\.service/,
   /health\./,
   /metrics\./,
   /redis\.service/,

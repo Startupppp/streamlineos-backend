@@ -46,6 +46,24 @@ export function walk(node, out) {
   return out;
 }
 
+export function extractScans(node, out = []) {
+  const t = node["Node Type"];
+  if (
+    ["Seq Scan", "Index Scan", "Index Only Scan", "Bitmap Heap Scan"].includes(t) &&
+    node["Relation Name"]
+  ) {
+    out.push({
+      relation: node["Relation Name"],
+      actualRows: node["Actual Rows"] ?? 0,
+      removedByFilter:
+        (node["Rows Removed by Filter"] ?? 0) +
+        (node["Rows Removed by Index Recheck"] ?? 0),
+    });
+  }
+  for (const child of node.Plans ?? []) extractScans(child, out);
+  return out;
+}
+
 export function checkPlanAssertions(planAssertions, nodes, budgetId) {
   const failures = [];
   for (const assertion of planAssertions ?? []) {
@@ -74,32 +92,48 @@ export function checkPlanAssertions(planAssertions, nodes, budgetId) {
   return failures;
 }
 
-async function runBudget(budget, fixtures, db, orgId) {
+async function runBudget(budget, fixtures, dbUrl, ssl, orgId) {
   const params = budget.params(fixtures);
   if (params === null)
     return { status: "skip", reason: "no fixture data for this budget" };
 
+  const db = postgres(dbUrl, { max: 1, prepare: false, ssl, onnotice: () => {} });
   try {
     return await db.begin(async (tx) => {
       await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
 
       const [{ count }] = await tx.unsafe(budget.rowCountSql, [orgId]);
-      const rowCount = Number(count);
-      if (rowCount < budget.minRows)
-        return { status: "seed-too-small", measured: rowCount, required: budget.minRows };
+      const tableRows = Number(count);
+      if (tableRows < budget.minRows)
+        return { status: "seed-too-small", measured: tableRows, required: budget.minRows };
 
-      const rows = await tx.unsafe(
-        `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${budget.sql}`,
-        params,
-      );
-      const root = rows[0]["QUERY PLAN"][0].Plan;
-      const blocks = (root["Shared Hit Blocks"] ?? 0) + (root["Shared Read Blocks"] ?? 0);
-      const nodes = walk(root, []);
+      const plan1 = await tx.unsafe(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${budget.sql}`, params);
+      const root1 = plan1[0]["QUERY PLAN"][0].Plan;
+      const hit1 = root1["Shared Hit Blocks"] ?? 0;
+      const read1 = root1["Shared Read Blocks"] ?? 0;
+
+      const plan2 = await tx.unsafe(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${budget.sql}`, params);
+      const root2 = plan2[0]["QUERY PLAN"][0].Plan;
+      const hit2 = root2["Shared Hit Blocks"] ?? 0;
+      const read2 = root2["Shared Read Blocks"] ?? 0;
+
+      const nodes = walk(root1, []);
+      const scans = extractScans(root1);
       const assertionFailures = checkPlanAssertions(budget.planAssertions, nodes, budget.id);
-      return { status: "measured", blocks, assertionFailures };
+
+      return {
+        status: "measured",
+        run1: { hitBlocks: hit1, readBlocks: read1, totalBlocks: hit1 + read1 },
+        run2: { hitBlocks: hit2, readBlocks: read2, totalBlocks: hit2 + read2 },
+        scans,
+        tableRows,
+        assertionFailures,
+      };
     });
   } catch (e) {
     return { status: "error", message: e instanceof Error ? e.message : String(e) };
+  } finally {
+    await db.end();
   }
 }
 
@@ -126,6 +160,7 @@ async function main() {
 
   const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
   const db = postgres(url, { max: 1, prepare: false, ssl, onnotice: () => {} });
+
 
   try {
     // Self-test: use a budget whose params never returns null so the harness always exercises
@@ -218,7 +253,7 @@ async function main() {
     let skipped = 0;
 
     for (const budget of budgets) {
-      const result = await runBudget(budget, fixtures, db, ORG);
+      const result = await runBudget(budget, fixtures, url, ssl, ORG);
 
       if (result.status === "skip") {
         if (!SELF_TEST)
@@ -249,20 +284,34 @@ async function main() {
         continue;
       }
 
-      const { blocks, assertionFailures } = result;
-      const overCeiling = blocks > budget.ceiling;
+      const { run1, run2, scans, tableRows, assertionFailures } = result;
+      const totalBlocks = run1.totalBlocks;
+      const overCeiling = totalBlocks > budget.ceiling;
       const ok = !overCeiling && assertionFailures.length === 0;
 
       if (!SELF_TEST) {
+        const primaryScan = scans.length > 0
+          ? scans.reduce((a, b) =>
+              a.actualRows + a.removedByFilter >= b.actualRows + b.removedByFilter ? a : b)
+          : null;
+        const scanTotal = primaryScan ? primaryScan.actualRows + primaryScan.removedByFilter : 0;
+        const sel = primaryScan && scanTotal > 0
+          ? `${((primaryScan.actualRows / scanTotal) * 100).toFixed(0)}%`
+          : "n/a";
+        const coldTag = run1.readBlocks > 0 ? "!" : " ";
         console.log(
           `${ok ? "PASS" : "FAIL"}  ${budget.id.padEnd(36)}` +
-            ` blocks=${String(blocks).padStart(7)} (ceiling ${budget.ceiling})`,
+          ` r1:h=${String(run1.hitBlocks).padStart(5)} rd=${String(run1.readBlocks).padStart(4)}${coldTag}` +
+          ` r2:h=${String(run2.hitBlocks).padStart(5)} rd=${String(run2.readBlocks).padStart(4)}` +
+          `  ceil=${budget.ceiling}  tbl=${tableRows} scan=${scanTotal} sel=${sel}`,
         );
         for (const f of assertionFailures) console.error(`        assertion: ${f}`);
       }
 
       if (overCeiling)
-        breaches.push(`${budget.id}: ${blocks} blocks > ceiling ${budget.ceiling}`);
+        breaches.push(`${budget.id}: ${totalBlocks} blocks > ceiling ${budget.ceiling}`);
+      else if (SELF_TEST && run1.totalBlocks === 0)
+        unusable.push(`${budget.id}: run1.totalBlocks=0 — budget measured nothing`);
       for (const f of assertionFailures) breaches.push(f);
     }
 
