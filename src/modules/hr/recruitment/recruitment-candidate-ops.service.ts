@@ -42,11 +42,14 @@ export class RecruitmentCandidateOpsService {
   ) {}
 
   async bulkImport(orgId: string, input: BulkImportInput) {
-    const existingCandidates = await this.db.query.candidates.findMany({
-      where: eq(candidates.orgId, orgId),
-      columns: { email: true },
-    });
-    const existingEmails = new Set(existingCandidates.map((c) => c.email.toLowerCase()));
+    const inputEmails = [...new Set(input.rows.map((r) => r.email.toLowerCase()))];
+    const existingRows = inputEmails.length > 0
+      ? await this.db
+          .select({ email: candidates.email })
+          .from(candidates)
+          .where(and(eq(candidates.orgId, orgId), inArray(candidates.email, inputEmails)))
+      : [];
+    const existingEmails = new Set(existingRows.map((c) => c.email.toLowerCase()));
 
     const results = { created: 0, skipped: 0, errors: [] as string[] };
     const toInsert: Array<typeof candidates.$inferInsert> = [];
@@ -224,6 +227,7 @@ export class RecruitmentCandidateOpsService {
     return this.db.query.candidateSlaTracking.findMany({
       where: and(eq(candidateSlaTracking.candidateId, candidateId), eq(candidateSlaTracking.orgId, orgId)),
       orderBy: (t, { asc }) => [asc(t.stage)],
+      limit: 20,
     });
   }
 

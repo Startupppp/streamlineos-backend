@@ -30,6 +30,7 @@ export class AttendanceReadService {
         eq(attendance.orgId, orgId),
       ),
       orderBy: [desc(attendance.createdAt)],
+      limit: 100,
     });
 
     let dailyWorkHours = 0;
@@ -159,6 +160,7 @@ export class AttendanceReadService {
           lte(attendance.date, formatDateOnly(endDate)),
         ),
         orderBy: [asc(attendance.date)],
+        limit: 200,
       });
     }
 
@@ -195,6 +197,7 @@ export class AttendanceReadService {
         lte(attendance.date, endDate),
       ),
       orderBy: [asc(attendance.date)],
+      limit: 35,
     });
   }
 

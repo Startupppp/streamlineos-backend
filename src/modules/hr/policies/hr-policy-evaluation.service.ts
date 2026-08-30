@@ -335,6 +335,7 @@ export class HrPolicyEvaluationService {
         or(isNull(hrPolicies.effectiveTo), gte(hrPolicies.effectiveTo, eventDate)),
       ),
       with: { scopes: true },
+      limit: 50,
     });
     return rows;
   }

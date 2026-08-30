@@ -675,20 +675,24 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         ),
       };
     };
+    const ttlFn = (result: CachedPermissions) =>
+      Math.floor((result.validUntil - this.clock.now().getTime()) / 1000);
 
-    const cached = await this.cache.cachedForOrg<CachedPermissions>(
+    const cached = await this.cache.cachedForOrgWith<CachedPermissions>(
       orgId,
       localKey,
       fill,
+      ttlFn,
       CACHE_TTL.LONG,
     );
     if (cached.validUntil > this.clock.now().getTime()) return cached;
 
     await this.cache.invalidateForOrg(orgId, localKey);
-    return this.cache.cachedForOrg<CachedPermissions>(
+    return this.cache.cachedForOrgWith<CachedPermissions>(
       orgId,
       localKey,
       fill,
+      ttlFn,
       CACHE_TTL.LONG,
     );
   }

@@ -1,5 +1,5 @@
-import { pgEnum, bigserial, text, integer, timestamp, index } from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { pgEnum, bigserial, text, integer, timestamp, index, foreignKey } from "drizzle-orm/pg-core";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { sprints } from "./core";
 import { tickets } from "./ticket-core";
 import { buildEvents } from "./namespaces";

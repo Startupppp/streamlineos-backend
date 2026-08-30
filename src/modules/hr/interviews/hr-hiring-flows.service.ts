@@ -122,6 +122,7 @@ export class HrHiringFlowsService {
     return this.db.query.hiringFlowRounds.findMany({
       where: eq(hiringFlowRounds.flowId, flowId),
       orderBy: (r, { asc }) => [asc(r.orderIndex)],
+      limit: 50,
     });
   }
 

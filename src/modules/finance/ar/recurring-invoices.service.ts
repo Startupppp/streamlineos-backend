@@ -37,7 +37,7 @@ export class RecurringInvoicesService {
 
   async list(orgId: string, query: ListRecurringTemplatesQuery) {
     const { limit, offset } = paginateOffset(query);
-    const conditions = [eq(finRecurringInvoiceTemplates.orgId, orgId)];
+    const conditions = [eq(finRecurringInvoiceTemplates.orgId, orgId), isNull(finRecurringInvoiceTemplates.archivedAt)];
     if (query.isActive !== undefined) conditions.push(eq(finRecurringInvoiceTemplates.isActive, query.isActive));
 
     const [rows, [{ count }]] = await Promise.all([
@@ -49,7 +49,7 @@ export class RecurringInvoicesService {
 
   async get(orgId: string, id: number) {
     const tpl = await this.db.query.finRecurringInvoiceTemplates.findFirst({
-      where: and(eq(finRecurringInvoiceTemplates.id, id), eq(finRecurringInvoiceTemplates.orgId, orgId)),
+      where: and(eq(finRecurringInvoiceTemplates.id, id), eq(finRecurringInvoiceTemplates.orgId, orgId), isNull(finRecurringInvoiceTemplates.archivedAt)),
     });
     if (!tpl) throw new NotFoundException("Recurring template not found");
     return tpl;
@@ -110,6 +110,7 @@ export class RecurringInvoicesService {
     const today = new Date().toISOString().slice(0, 10);
     const conditions = [
       eq(finRecurringInvoiceTemplates.isActive, true),
+      isNull(finRecurringInvoiceTemplates.archivedAt),
       or(lte(finRecurringInvoiceTemplates.nextRunDate, today), isNull(finRecurringInvoiceTemplates.nextRunDate)),
     ];
     if (orgId) conditions.push(eq(finRecurringInvoiceTemplates.orgId, orgId));

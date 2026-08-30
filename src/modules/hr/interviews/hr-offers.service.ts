@@ -26,6 +26,7 @@ export class HrOffersService {
       where: eq(offerLetterTemplates.orgId, orgId),
       with: { creator: { columns: { id: true, name: true } } },
       orderBy: [desc(offerLetterTemplates.createdAt)],
+      limit: 100,
     });
   }
 

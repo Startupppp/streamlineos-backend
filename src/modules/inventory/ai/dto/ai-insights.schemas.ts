@@ -24,6 +24,18 @@ type InsightType =
 
 type InsightSeverity = "high" | "medium" | "low";
 
+export const reorderProposalBodySchema = z.object({
+  variantId: z.number().int().positive(),
+  warehouseId: z.number().int().positive().optional(),
+});
+export type ReorderProposalBodyInput = z.infer<typeof reorderProposalBodySchema>;
+
+export const confirmProposalBodySchema = z.object({
+  proposalId: z.number().int().positive(),
+  token: z.string().min(1),
+});
+export type ConfirmProposalBodyInput = z.infer<typeof confirmProposalBodySchema>;
+
 export interface InsightCandidate {
   insightType: InsightType;
   severity: InsightSeverity;

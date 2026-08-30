@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
-import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAccessService } from "../core/kb-access.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import { kbArticles, kbPages, kbSources } from "../../../db/schema";
+import { kbArticles, kbArticleRestrictions, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { pageVisibleTo } from "./kb-page-visibility";
@@ -229,18 +229,53 @@ export class KbAskService {
     return new Set(rows.map((r) => r.id));
   }
 
+  private articleRestrictionFilter(
+    orgId: string,
+    principal: { userId: string; roleSlugs: string[] },
+  ): SQL {
+    const kar = kbArticleRestrictions;
+    return sql`(
+      NOT EXISTS (
+        SELECT 1 FROM ${kar}
+        WHERE ${kar.articleId} = ${kbArticles.id}
+          AND ${kar.orgId} = ${orgId}
+          AND ${kar.level} = 'view'
+      )
+      OR EXISTS (
+        SELECT 1 FROM ${kar}
+        WHERE ${kar.articleId} = ${kbArticles.id}
+          AND ${kar.orgId} = ${orgId}
+          AND ${kar.level} = 'view'
+          AND (${kar.userId} = ${principal.userId} OR ${
+            principal.roleSlugs.length > 0
+              ? sql`${kar.role} = ANY(${principal.roleSlugs})`
+              : sql`false`
+          })
+      )
+    )`;
+  }
+
   private async resolveVisibleArticles(user: CurrentUserContext, ids: number[]): Promise<Set<number>> {
     const spaceIds = await this.access.getAccessibleSpaceIds(user);
     if (spaceIds.length === 0) return new Set();
+
+    const isAdmin = await this.access.isAdmin(user);
+    const conditions: SQL[] = [
+      eq(kbArticles.orgId, user.orgId),
+      inArray(kbArticles.id, ids),
+      inArray(kbArticles.spaceId, spaceIds),
+      eq(kbArticles.status, "published"),
+    ];
+
+    if (!isAdmin) {
+      const principal = await this.access.getPrincipalIds(user);
+      conditions.push(this.articleRestrictionFilter(user.orgId, principal));
+    }
+
     const rows = await this.db
       .select({ id: kbArticles.id })
       .from(kbArticles)
-      .where(and(
-        eq(kbArticles.orgId, user.orgId),
-        inArray(kbArticles.id, ids),
-        inArray(kbArticles.spaceId, spaceIds),
-        eq(kbArticles.status, "published"),
-      ));
+      .where(and(...conditions));
     return new Set(rows.map((r) => r.id));
   }
 

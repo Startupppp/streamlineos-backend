@@ -158,6 +158,7 @@ export class OrgStructureService {
       this.db.query.orgUnits.findMany({
         where: and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT")),
         columns: { id: true, name: true },
+        limit: 200,
       }),
       this.employment.getFactsBatch(orgId, memberIds),
     ]);

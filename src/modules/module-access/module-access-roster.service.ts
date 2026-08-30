@@ -37,6 +37,7 @@ import type {
 } from "./dto/module-access.schemas";
 import type {
   FlatModuleMember,
+  MembersPage,
   ModuleMemberCandidate,
   Pagination,
 } from "./module-access-groups.types";
@@ -52,8 +53,8 @@ export class ModuleAccessRosterService {
   async listMembers(
     actor: CurrentUserContext,
     moduleKey: string,
-    { page, pageSize, userId }: ListMembersQuery,
-  ): Promise<{ data: FlatModuleMember[]; pagination: Pagination }> {
+    { page, pageSize, userId, cursor }: ListMembersQuery,
+  ): Promise<MembersPage> {
     assertManagedModule(moduleKey);
     await assertModuleAccessPolicy(
       moduleAccessPolicyDeps(this.db, this.access),
@@ -71,8 +72,9 @@ export class ModuleAccessRosterService {
         limit,
         version,
         userId,
+        cursor,
       ),
-      () => this.fetchMembers(actor.orgId, moduleKey, page, limit, userId),
+      () => this.fetchMembers(actor.orgId, moduleKey, page, limit, userId, cursor),
       CACHE_TTL.VERY_LONG,
     );
   }
@@ -83,8 +85,9 @@ export class ModuleAccessRosterService {
     page: number,
     limit: number,
     userId?: string,
-  ): Promise<{ data: FlatModuleMember[]; pagination: Pagination }> {
-    const offset = (page - 1) * limit;
+    cursor?: number,
+  ): Promise<MembersPage> {
+    const offset = cursor !== undefined ? 0 : (page - 1) * limit;
 
     const moduleRoleRows = await this.db
       .select({ id: roles.id })
@@ -95,6 +98,7 @@ export class ModuleAccessRosterService {
       return {
         data: [],
         pagination: { page, pageSize: limit, total: 0, totalPages: 0 },
+        nextCursor: null,
       };
     }
 
@@ -113,6 +117,7 @@ export class ModuleAccessRosterService {
         return {
           data: [],
           pagination: { page, pageSize: limit, total: 0, totalPages: 0 },
+          nextCursor: null,
         };
       }
       membershipFilter = eq(
@@ -121,57 +126,72 @@ export class ModuleAccessRosterService {
       );
     }
 
+    const cursorFilter =
+      cursor !== undefined
+        ? sql`${organizationMembers.id} > ${cursor}`
+        : undefined;
+
     const baseWhere = and(
       eq(roleAssignments.orgId, orgId),
       inArray(roleAssignments.roleId, moduleRoleIds),
       eq(organizationMembers.status, "ACTIVE"),
       membershipFilter,
+      cursorFilter,
     );
 
-    const [totalResult, memberRows] = await Promise.all([
-      this.db
-        .select({
-          total: countDistinct(roleAssignments.organizationMembershipId),
-        })
-        .from(roleAssignments)
-        .innerJoin(
-          organizationMembers,
-          and(
-            eq(organizationMembers.orgId, roleAssignments.orgId),
-            eq(
-              organizationMembers.id,
-              roleAssignments.organizationMembershipId,
-            ),
+    const memberQuery = this.db
+      .selectDistinct({
+        membershipId: roleAssignments.organizationMembershipId,
+        userId: organizationMembers.userId,
+        name: users.name,
+        email: users.email,
+        image: users.image,
+      })
+      .from(roleAssignments)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, roleAssignments.orgId),
+          eq(
+            organizationMembers.id,
+            roleAssignments.organizationMembershipId,
           ),
-        )
-        .where(baseWhere),
-      this.db
-        .selectDistinct({
-          membershipId: roleAssignments.organizationMembershipId,
-          userId: organizationMembers.userId,
-          name: users.name,
-          email: users.email,
-          image: users.image,
-        })
-        .from(roleAssignments)
-        .innerJoin(
-          organizationMembers,
-          and(
-            eq(organizationMembers.orgId, roleAssignments.orgId),
-            eq(
-              organizationMembers.id,
-              roleAssignments.organizationMembershipId,
-            ),
-          ),
-        )
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(baseWhere)
-        .orderBy(asc(users.name))
-        .limit(limit)
-        .offset(offset),
-    ]);
+        ),
+      )
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(baseWhere)
+      .limit(limit);
 
-    const total = Number(totalResult[0]?.total ?? 0);
+    let memberRows: Awaited<typeof memberQuery>;
+    let total = 0;
+
+    if (cursor !== undefined) {
+      memberRows = await memberQuery.orderBy(
+        asc(organizationMembers.id),
+      );
+    } else {
+      const [totalResult, rows] = await Promise.all([
+        this.db
+          .select({
+            total: countDistinct(roleAssignments.organizationMembershipId),
+          })
+          .from(roleAssignments)
+          .innerJoin(
+            organizationMembers,
+            and(
+              eq(organizationMembers.orgId, roleAssignments.orgId),
+              eq(
+                organizationMembers.id,
+                roleAssignments.organizationMembershipId,
+              ),
+            ),
+          )
+          .where(baseWhere),
+        memberQuery.orderBy(asc(users.name)).offset(offset),
+      ]);
+      total = Number(totalResult[0]?.total ?? 0);
+      memberRows = rows;
+    }
 
     if (memberRows.length === 0) {
       return {
@@ -182,6 +202,7 @@ export class ModuleAccessRosterService {
           total,
           totalPages: Math.ceil(total / limit),
         },
+        nextCursor: null,
       };
     }
 
@@ -225,6 +246,9 @@ export class ModuleAccessRosterService {
       groups: groupsByMembership.get(r.membershipId) ?? [],
     }));
 
+    const lastMembershipId = memberRows.at(-1)?.membershipId ?? null;
+    const nextCursor = memberRows.length === limit ? lastMembershipId : null;
+
     return {
       data,
       pagination: {
@@ -233,6 +257,7 @@ export class ModuleAccessRosterService {
         total,
         totalPages: total > 0 ? Math.ceil(total / limit) : 0,
       },
+      nextCursor,
     };
   }
 

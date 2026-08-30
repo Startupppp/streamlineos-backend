@@ -40,6 +40,7 @@ export class RecruitmentOffersService {
     return this.db.query.candidateOffers.findMany({
       where: and(eq(candidateOffers.candidateId, candidateId), eq(candidateOffers.orgId, orgId)),
       orderBy: [desc(candidateOffers.createdAt)],
+      limit: 50,
     });
   }
 
@@ -211,6 +212,7 @@ export class RecruitmentOffersService {
     return this.db.query.offerVersions.findMany({
       where: and(eq(offerVersions.offerId, offerId), eq(offerVersions.orgId, orgId)),
       orderBy: [desc(offerVersions.versionNumber)],
+      limit: 20,
     });
   }
 
@@ -219,6 +221,7 @@ export class RecruitmentOffersService {
     return this.db.query.offerNegotiations.findMany({
       where: and(eq(offerNegotiations.offerId, offerId), eq(offerNegotiations.orgId, orgId)),
       orderBy: [asc(offerNegotiations.createdAt)],
+      limit: 50,
     });
   }
 

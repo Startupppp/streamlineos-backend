@@ -21,6 +21,7 @@ export class HrHolidaysService {
     return this.db.query.holidays.findMany({
       where: and(eq(holidays.orgId, orgId), gte(holidays.date, startDate), lte(holidays.date, endDate)),
       orderBy: [asc(holidays.date)],
+      limit: 400,
     });
   }
 
@@ -33,6 +34,7 @@ export class HrHolidaysService {
     return this.db.query.holidays.findMany({
       where: and(eq(holidays.orgId, orgId), gte(holidays.date, startDate), lte(holidays.date, endDate)),
       orderBy: [asc(holidays.date)],
+      limit: 35,
     });
   }
 

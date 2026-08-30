@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { TasksController } from "./tasks.controller";
 import { TasksService } from "./tasks.service";
+import { TaskAnalyticsService } from "./task-analytics.service";
+import { TaskSequencesService } from "./task-sequences.service";
 import { TaskNotificationsService } from "./task-notifications.service";
 import { AccessModule } from "../access/access.module";
 import { CalendarModule } from "../calendar/calendar.module";
@@ -14,7 +16,13 @@ import { NotificationsModule } from "../notifications/notifications.module";
     NotificationsModule,
   ],
   controllers: [TasksController],
-  providers: [TasksService, TaskNotificationsService, TasksCalendarSource],
+  providers: [
+    TasksService,
+    TaskAnalyticsService,
+    TaskSequencesService,
+    TaskNotificationsService,
+    TasksCalendarSource,
+  ],
   exports: [TasksService],
 })
 export class TasksModule {}

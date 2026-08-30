@@ -2773,6 +2773,90 @@
       "when": 1788091265000,
       "tag": "0678_rls_fix_feedback_cycle_responses",
       "breakpoints": true
+    },
+    {
+      "idx": 395,
+      "version": "7",
+      "when": 1788091266000,
+      "tag": "0679_kb_versions_author_membership",
+      "breakpoints": true
+    },
+    {
+      "idx": 396,
+      "version": "7",
+      "when": 1788091267000,
+      "tag": "0690_build_ticket_activity_log_user_membership_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 397,
+      "version": "7",
+      "when": 1788091268000,
+      "tag": "0691_build_ticket_activity_log_user_membership_id_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 398,
+      "version": "7",
+      "when": 1788091269000,
+      "tag": "0692_build_ticket_comment_mentions_membership_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 399,
+      "version": "7",
+      "when": 1788091270000,
+      "tag": "0693_build_ticket_comment_mentions_membership_id_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 400,
+      "version": "7",
+      "when": 1788091271000,
+      "tag": "0694_build_ticket_related_links_created_by_membership_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 401,
+      "version": "7",
+      "when": 1788091272000,
+      "tag": "0695_build_ticket_related_links_created_by_membership_id_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 402,
+      "version": "7",
+      "when": 1788091273000,
+      "tag": "0696_build_sprint_scope_events_actor_membership_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 403,
+      "version": "7",
+      "when": 1788091274000,
+      "tag": "0697_build_sprint_scope_events_actor_membership_id_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 404,
+      "version": "7",
+      "when": 1788091275000,
+      "tag": "0698_build_workflow_transitions_created_by_membership_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 405,
+      "version": "7",
+      "when": 1788091276000,
+      "tag": "0699_build_workflow_transitions_created_by_membership_id_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 406,
+      "version": "7",
+      "when": 1788200000000,
+      "tag": "0689_hr_person_search_function",
+      "breakpoints": true
     }
   ]
 }

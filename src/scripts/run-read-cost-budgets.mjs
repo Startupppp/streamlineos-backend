@@ -214,29 +214,40 @@ async function main() {
     }
 
     const breaches = [];
+    const selfTestUnusable = [];
     let skipped = 0;
 
     for (const budget of budgets) {
       const result = await runBudget(budget, fixtures, db, ORG);
 
       if (result.status === "skip") {
-        if (!SELF_TEST)
+        if (SELF_TEST)
+          selfTestUnusable.push(`fixture unusable — params returned null for "${budget.id}"; self-test cannot exercise the breach path`);
+        else
           console.log(`SKIP  ${budget.id.padEnd(36)} (${result.reason})`);
         skipped++;
         continue;
       }
 
       if (result.status === "seed-too-small") {
-        const label = `FAIL  ${budget.id.padEnd(36)} seed too small (${result.measured} < ${result.required})`;
-        breaches.push(`${budget.id}: seed too small — ${result.measured} rows, need ${result.required}`);
-        if (!SELF_TEST) console.error(label);
+        const msg = `${budget.id}: seed too small — ${result.measured} rows, need ${result.required}`;
+        if (SELF_TEST)
+          selfTestUnusable.push(`fixture unusable — ${msg}; seed the org before running self-test`);
+        else {
+          breaches.push(msg);
+          console.error(`FAIL  ${budget.id.padEnd(36)} seed too small (${result.measured} < ${result.required})`);
+        }
         continue;
       }
 
       if (result.status === "error") {
-        const label = `FAIL  ${budget.id.padEnd(36)} error: ${result.message}`;
-        breaches.push(`${budget.id}: ${result.message}`);
-        if (!SELF_TEST) console.error(label);
+        const msg = `${budget.id}: ${result.message}`;
+        if (SELF_TEST)
+          selfTestUnusable.push(`fixture unusable — query error for "${budget.id}": ${result.message}`);
+        else {
+          breaches.push(msg);
+          console.error(`FAIL  ${budget.id.padEnd(36)} error: ${result.message}`);
+        }
         continue;
       }
 
@@ -258,7 +269,10 @@ async function main() {
     }
 
     if (SELF_TEST) {
-      if (breaches.length > 0) {
+      if (selfTestUnusable.length > 0) {
+        for (const u of selfTestUnusable) console.error(`SELF-TEST FAIL: ${u}`);
+        process.exitCode = 1;
+      } else if (breaches.length > 0) {
         console.log("SELF-TEST PASS: breach detected — guard can fail");
         process.exitCode = 0;
       } else {

@@ -40,6 +40,7 @@ export class RecruitmentAutomationService {
       where: eq(pipelineAutomations.orgId, orgId),
       with: { creator: { columns: { id: true, name: true } } },
       orderBy: [desc(pipelineAutomations.createdAt)],
+      limit: 100,
     });
   }
 
@@ -195,6 +196,7 @@ export class RecruitmentAutomationService {
         creator: { columns: { id: true, name: true } },
       },
       orderBy: [desc(emailSequences.createdAt)],
+      limit: 100,
     });
   }
 

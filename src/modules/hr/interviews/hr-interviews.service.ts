@@ -401,6 +401,7 @@ export class HrInterviewsService {
 
     const scorecards = await this.db.query.interviewScorecards.findMany({
       where: eq(interviewScorecards.interviewId, interviewId),
+      limit: 50,
     });
 
     const submittedScorecards = scorecards.filter((sc) => sc.submittedAt !== null);

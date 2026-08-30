@@ -33,11 +33,13 @@ export class GuidedTourService {
         or(eq(guidedTours.orgId, orgId), isNull(guidedTours.orgId)),
         eq(guidedTours.isActive, true),
       ),
+      limit: 50,
     });
     const relevant = role ? tours.filter((t) => !t.role || t.role === role) : tours;
 
     const progressRows = await this.db.query.userTourProgress.findMany({
       where: and(eq(userTourProgress.orgId, orgId), eq(userTourProgress.userId, userId)),
+      limit: 50,
     });
     const progressByKey = new Map(progressRows.map((p) => [p.tourKey, p]));
 

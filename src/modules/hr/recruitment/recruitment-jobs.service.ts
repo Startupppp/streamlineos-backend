@@ -236,6 +236,7 @@ export class RecruitmentJobsService {
 
     const sources = await this.db.query.candidateSources.findMany({
       where: eq(candidateSources.orgId, orgId),
+      limit: 50,
     });
 
     const results: Array<{ platform: string; status: PublishStatus }> = [];

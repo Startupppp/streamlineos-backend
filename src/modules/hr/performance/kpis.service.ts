@@ -80,6 +80,7 @@ export class KpisService {
     return this.db.query.competencyFrameworks.findMany({
       where: eq(competencyFrameworks.orgId, orgId),
       with: { competencies: true },
+      limit: 100,
     });
   }
 

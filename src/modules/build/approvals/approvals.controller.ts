@@ -33,7 +33,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const approvalIdParams = z.object({ approvalId: z.coerce.number().int().positive() }).strict();
+const approvalIdParams = z.object({ projectId: z.coerce.number().int().positive(), approvalId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/approvals")

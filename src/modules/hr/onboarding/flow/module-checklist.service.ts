@@ -239,6 +239,7 @@ export class ModuleChecklistService {
     const checklists = await this.db.query.moduleSetupChecklists.findMany({
       where: eq(moduleSetupChecklists.orgId, orgId),
       with: { items: true },
+      limit: 30,
     });
     const visible = checklists.filter(
       (c) => visibleModuleKeys.includes(c.moduleKey) && (c.moduleKey !== "hr" || includeHr),
@@ -288,6 +289,7 @@ export class ModuleChecklistService {
   private async recomputeProgress(checklistId: number) {
     const items = await this.db.query.moduleSetupChecklistItems.findMany({
       where: eq(moduleSetupChecklistItems.checklistId, checklistId),
+      limit: 100,
     });
     const total = items.length;
     const done = items.filter((i) => i.status === "done" || i.status === "skipped").length;

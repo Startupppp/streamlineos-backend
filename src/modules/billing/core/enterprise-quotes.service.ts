@@ -5,7 +5,7 @@ import { eq, and, desc, count } from "drizzle-orm";
 import { enterpriseQuotes } from "../../../db/schema/billing/billing";
 import { users } from "../../../db/schema/common/auth";
 import { clientAccounts } from "../../../db/schema/crm/contacts";
-import { deals } from "../../../db/schema/crm/deals";
+import { deals } from "../../../db/schema";
 import type {
   CreateEnterpriseQuoteInput,
   ApproveEnterpriseQuoteInput,

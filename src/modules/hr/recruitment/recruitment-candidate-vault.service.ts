@@ -40,6 +40,7 @@ export class RecruitmentCandidateVaultService {
         eq(candidateDocumentsVault.orgId, orgId),
       ),
       orderBy: (d, { desc: dd }) => [dd(d.createdAt)],
+      limit: 200,
     });
   }
 
@@ -191,6 +192,7 @@ export class RecruitmentCandidateVaultService {
           ),
           columns: { id: true, type: true, scheduledAt: true, result: true },
           orderBy: (t, { desc: d }) => [d(t.scheduledAt)],
+          limit: 100,
         }),
         this.db.query.candidateMessages.findMany({
           where: and(
@@ -205,6 +207,7 @@ export class RecruitmentCandidateVaultService {
             sentAt: true,
           },
           orderBy: (t, { desc: d }) => [d(t.sentAt)],
+          limit: 100,
         }),
         this.db.query.candidateDocuments.findMany({
           where: and(
@@ -219,6 +222,7 @@ export class RecruitmentCandidateVaultService {
             sentAt: true,
           },
           orderBy: (t, { desc: d }) => [d(t.createdAt)],
+          limit: 100,
         }),
       ]);
 

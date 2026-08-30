@@ -6,6 +6,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CrmSalesDashboardService } from "./crm-sales-dashboard.service";
 import { CrmSupportDashboardService } from "./crm-support-dashboard.service";
+import { CrmCeDashboardService } from "./crm-ce-dashboard.service";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 
 @RequireModule("crm")

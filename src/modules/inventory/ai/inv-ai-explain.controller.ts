@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -20,13 +19,17 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
-import { InvAiExplainService } from "./inv-ai-explain.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { InvAiExplainService } from "./inv-ai-explain.service";
+import {
+  reorderProposalBodySchema,
+  confirmProposalBodySchema,
+  type ReorderProposalBodyInput,
+  type ConfirmProposalBodyInput,
+} from "./dto/ai-insights.schemas";
 
 const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
 
-const reorderProposalBodySchema = z.object({ variantId: z.number().int().positive(), warehouseId: z.number().int().positive().optional() });
-const confirmProposalBodySchema = z.object({ proposalId: z.number().int().positive(), token: z.string().min(1) });
 const digestQuerySchema = z.object({ narrate: z.enum(["true", "false"]).optional() });
 const supplierDelayQuerySchema = z.object({ vendorId: z.coerce.number().int().positive().optional() });
 type DigestQueryInput = z.infer<typeof digestQuerySchema>;
@@ -65,26 +68,24 @@ export class InvAiExplainController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
+  @Validate({ body: reorderProposalBodySchema })
   getReorderProposal(
-    @Body() rawBody: unknown,
+    @Body() body: ReorderProposalBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsed = reorderProposalBodySchema.safeParse(rawBody);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.explainService.getReorderProposal(u.orgId, u.userId, parsed.data.variantId, parsed.data.warehouseId);
+    return this.explainService.getReorderProposal(u.orgId, u.userId, body.variantId, body.warehouseId);
   }
 
   @Post("reorder-proposal/confirm")
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
+  @Validate({ body: confirmProposalBodySchema })
   confirmReorderProposal(
-    @Body() rawBody: unknown,
+    @Body() body: ConfirmProposalBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsed = confirmProposalBodySchema.safeParse(rawBody);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.explainService.confirmReorderProposal(u.orgId, u.userId, parsed.data.proposalId, parsed.data.token);
+    return this.explainService.confirmReorderProposal(u.orgId, u.userId, body.proposalId, body.token);
   }
 
   @Get("supplier-delay")

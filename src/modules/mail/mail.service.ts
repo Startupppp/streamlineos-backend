@@ -120,7 +120,7 @@ export class MailService {
         const message = err instanceof Error ? err.message : "Failed to load messages";
         accountErrors.push({ accountId: acc.id, accountEmail: acc.accountEmail, message });
         if (err instanceof ComposioToolError && err.isAuthError) {
-          void this.accounts.markNeedsReauth(acc.id);
+          void this.accounts.markNeedsReauth(acc.id, orgId);
         }
       }
     });
@@ -227,7 +227,7 @@ export class MailService {
       if (acc.provider === "gmail") return await this.gmail.getMessage(userId, conn, messageId);
       return await this.outlook.getMessage(userId, conn, messageId);
     } catch (err) {
-      if (err instanceof ComposioToolError && err.isAuthError) void this.accounts.markNeedsReauth(acc.id);
+      if (err instanceof ComposioToolError && err.isAuthError) void this.accounts.markNeedsReauth(acc.id, orgId);
       throw err;
     }
   }
@@ -244,7 +244,7 @@ export class MailService {
       if (acc.provider === "gmail") return await this.gmail.getThread(userId, conn, threadId);
       return await this.outlook.getThread(userId, conn, threadId);
     } catch (err) {
-      if (err instanceof ComposioToolError && err.isAuthError) void this.accounts.markNeedsReauth(acc.id);
+      if (err instanceof ComposioToolError && err.isAuthError) void this.accounts.markNeedsReauth(acc.id, orgId);
       throw err;
     }
   }

@@ -27,6 +27,7 @@ export class HrSalaryStructuresService {
     return this.db.query.employeeSalaryProfiles.findMany({
       where: and(...conditions),
       orderBy: [desc(employeeSalaryProfiles.effectiveFrom)],
+      limit: 100,
     });
   }
 

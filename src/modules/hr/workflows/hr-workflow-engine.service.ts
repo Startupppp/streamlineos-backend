@@ -489,6 +489,7 @@ export class HrWorkflowEngineService {
       ),
       with: { attachments: { columns: { id: true, url: true, name: true } } },
       orderBy: [desc(hrWorkflowStepActions.actedAt)],
+      limit: 500,
     });
 
     return { instance, actions };

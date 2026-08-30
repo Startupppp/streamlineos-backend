@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, inArray, isNull, notInArray, sql, sum } from "drizzle-orm";
 import { deals, dealActivities, crmForecastSnapshots, users } from "../../db/schema";
-import type { ForecastSnapshotData } from "../../db/schema/crm/deals";
+import type { ForecastSnapshotData } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";

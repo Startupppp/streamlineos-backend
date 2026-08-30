@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gt, gte, inArray, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { livePerson, liveEmployment, livePersonOfEmployment } from "../../directory/employment-query";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -145,7 +145,7 @@ export class ProbationReviewReaderService {
     const people = await this.db
       .select({ id: hrPeople.id, userId: hrPeople.userId })
       .from(hrPeople)
-      .where(and(eq(hrPeople.orgId, orgId), inArray(hrPeople.id, [...new Set(personIds)])));
+      .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), inArray(hrPeople.id, [...new Set(personIds)])));
     return new Map(people.map((person) => [person.id, person.userId]));
   }
 

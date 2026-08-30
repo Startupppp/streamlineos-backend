@@ -89,7 +89,7 @@ export class DealsApprovalsService {
       link: `/crm/deals/${updated.dealId}`,
     });
 
-    await this.cache.invalidate(CACHE_KEYS.approvalsList(orgId));
+    await this.cache.invalidateNamespace(CACHE_KEYS.approvalsList(orgId));
     return updated;
   }
 
@@ -125,13 +125,14 @@ export class DealsApprovalsService {
       })
       .returning();
 
-    await this.cache.invalidate(CACHE_KEYS.approvalsList(orgId));
+    await this.cache.invalidateNamespace(CACHE_KEYS.approvalsList(orgId));
     return { created: true as const, body: approval };
   }
 
   listApprovals(orgId: string, query: ApprovalsListInput) {
-    return this.cache.cached(
+    return this.cache.cachedVersioned(
       CACHE_KEYS.approvalsList(orgId),
+      `${query.status ?? "all"}:${query.limit ?? 20}`,
       () => {
         const conditions = [eq(dealApprovals.orgId, orgId)];
         if (query.status) conditions.push(eq(dealApprovals.status, query.status));

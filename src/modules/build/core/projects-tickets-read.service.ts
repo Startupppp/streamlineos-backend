@@ -30,18 +30,11 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveTicketsScope } from "./tickets-scope";
 import type { TicketsListQuery } from "./dto/projects.schemas";
+import { readIdsAndTotal, resolveWorkSort, type WorkSort } from "./work-scope-union";
 
 const TRIGRAM_MIN_TERM_LENGTH = 3;
 
 const TICKET_SEARCH_ID_CAP = 1000;
-
-const TICKET_ORDERBY_COLUMNS = {
-  created: tickets.createdAt,
-  updated: tickets.updatedAt,
-  priority: tickets.priority,
-  dueDate: tickets.dueDate,
-  rank: tickets.rank,
-} as const;
 
 const USER_COLS = {
   id: true,
@@ -147,6 +140,7 @@ export class ProjectsTicketsReadService {
       .from(projectMembers)
       .where(
         and(
+          eq(projectMembers.orgId, orgId),
           eq(projectMembers.projectId, projectId),
           eq(projectMembers.userId, userId),
         ),
@@ -222,15 +216,6 @@ export class ProjectsTicketsReadService {
     if (scope === "none")
       return { data: [], total: 0, page, limit, totalPages: 0 };
 
-    const scopeClause =
-      scope !== "all"
-        ? or(
-            eq(tickets.assigneeId, u.userId),
-            eq(tickets.reporterId, u.userId),
-            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta WHERE ta.org_id = ${u.orgId} AND ta.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
-          )
-        : undefined;
-
     const filterConditions: SQL<unknown>[] = [];
 
     if (search && search.trim()) {
@@ -303,47 +288,47 @@ export class ProjectsTicketsReadService {
     if (dueDateFrom) filterConditions.push(gte(tickets.dueDate, dueDateFrom));
     if (dueDateTo) filterConditions.push(lte(tickets.dueDate, dueDateTo));
 
-    const where = and(
+    const baseWhere = and(
       eq(tickets.orgId, u.orgId),
       eq(tickets.projectId, projectId),
       isNull(tickets.deletedAt),
-      ...(scopeClause ? [scopeClause] : []),
       ...filterConditions,
     );
 
-    const col = TICKET_ORDERBY_COLUMNS[orderBy];
-    const defaultDir =
-      orderBy === "created" || orderBy === "updated" ? "desc" : "asc";
-    const dir = orderDir ?? defaultDir;
-
-    const sortExpr: SQL<unknown>[] =
-      orderBy === "rank"
-        ? [asc(tickets.rank), desc(tickets.createdAt), asc(tickets.id)]
-        : dir === "asc"
-          ? [asc(col), desc(tickets.createdAt), asc(tickets.id)]
-          : [desc(col), desc(tickets.createdAt), asc(tickets.id)];
+    const sort = resolveWorkSort(orderBy, orderDir);
 
     if (query.paging === "cursor") {
-      return this.listTicketsByCursor(where, limit, query.cursor);
+      const scopeClause =
+        scope !== "all"
+          ? or(
+              eq(tickets.assigneeId, u.userId),
+              eq(tickets.reporterId, u.userId),
+              sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta WHERE ta.org_id = ${u.orgId} AND ta.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
+            )
+          : undefined;
+      const cursorWhere = scopeClause ? and(baseWhere, scopeClause) : baseWhere;
+      return this.listTicketsByCursor(cursorWhere, limit, query.cursor);
     }
 
     if (scope !== "all") {
       const { ids, total } = await this.pageScopedTicketIds(
-        where,
-        sortExpr,
+        baseWhere,
+        sort,
         limit,
         offset,
+        u.orgId,
+        u.userId,
       );
       const data =
         ids.length > 0
-          ? await this.queryTickets(inArray(tickets.id, ids), sortExpr, limit)
+          ? await this.queryTickets(inArray(tickets.id, ids), sort.rows, limit)
           : [];
       return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
     }
 
     const [dataResult, countResult] = await Promise.all([
-      this.queryTickets(where, sortExpr, limit, offset),
-      this.db.select({ total: count() }).from(tickets).where(where),
+      this.queryTickets(baseWhere, sort.rows, limit, offset),
+      this.db.select({ total: count() }).from(tickets).where(baseWhere),
     ]);
 
     const total = Number(countResult[0]?.total ?? 0);
@@ -401,29 +386,56 @@ export class ProjectsTicketsReadService {
     };
   }
 
-  private async pageScopedTicketIds(
-    where: SQL<unknown> | undefined,
-    sortExpr: SQL<unknown>[],
+  private scopedUnion(
+    baseWhere: SQL<unknown> | undefined,
+    sort: WorkSort,
     limit: number,
     offset: number,
+    orgId: string,
+    userId: string,
+  ): SQL<unknown> {
+    const w = baseWhere ?? sql`true`;
+    return sql`
+      SELECT u.id, count(*) OVER () AS total FROM (
+        (SELECT ${tickets.id} AS id, ${sort.carry}
+         FROM ${tickets}
+         WHERE ${w} AND ${tickets.assigneeId} = ${userId})
+        UNION
+        (SELECT ${tickets.id} AS id, ${sort.carry}
+         FROM ${tickets}
+         WHERE ${w} AND ${tickets.reporterId} = ${userId})
+        UNION
+        (SELECT ${tickets.id} AS id, ${sort.carry}
+         FROM ${tickets}
+         INNER JOIN ${ticketAssignees} ta
+           ON ta.ticket_id = ${tickets.id}
+          AND ta.org_id = ${orgId}
+          AND ta.user_id = ${userId}
+         WHERE ${w})
+      ) u
+      ORDER BY ${sort.unionOrderBy}
+      LIMIT ${limit} OFFSET ${offset}`;
+  }
+
+  private async pageScopedTicketIds(
+    baseWhere: SQL<unknown> | undefined,
+    sort: WorkSort,
+    limit: number,
+    offset: number,
+    orgId: string,
+    userId: string,
   ): Promise<{ ids: number[]; total: number }> {
-    const rows = await this.db
-      .select({ id: tickets.id, total: sql<string>`count(*) OVER ()` })
-      .from(tickets)
-      .where(where)
-      .orderBy(...sortExpr)
-      .limit(limit)
-      .offset(offset);
+    const idQuery = (pageLimit: number, pageOffset: number) =>
+      this.scopedUnion(baseWhere, sort, pageLimit, pageOffset, orgId, userId);
 
-    const first = rows[0];
-    if (first) return { ids: rows.map((row) => row.id), total: Number(first.total) };
+    const result = readIdsAndTotal(
+      await this.db.execute(idQuery(limit, offset)),
+    );
 
-    if (offset === 0) return { ids: [], total: 0 };
-    const countResult = await this.db
-      .select({ total: count() })
-      .from(tickets)
-      .where(where);
-    return { ids: [], total: Number(countResult[0]?.total ?? 0) };
+    if (result.ids.length > 0 || offset === 0) return result;
+
+    const overshoot = readIdsAndTotal(await this.db.execute(idQuery(1, 0)));
+    return { ids: [], total: overshoot.total };
   }
 
 }

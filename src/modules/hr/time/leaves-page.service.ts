@@ -40,7 +40,7 @@ export class LeavesPageService {
 
     const [existingBalances, allTypes, facts] = await Promise.all([
       balanceQuery,
-      this.db.query.leaveTypes.findMany({ where: eq(leaveTypes.orgId, orgId) }),
+      this.db.query.leaveTypes.findMany({ where: eq(leaveTypes.orgId, orgId), limit: 100 }),
       this.employment.getFacts(orgId, userId),
     ]);
 

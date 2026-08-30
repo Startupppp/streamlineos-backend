@@ -27,9 +27,18 @@ function newInviteToken() {
 export class ChatInviteLinksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  private async assertAdmin(channelId: number, userId: string) {
+  private async assertAdmin(channelId: number, userId: string, orgId: string) {
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!channel) throw new NotFoundException("Channel not found");
     const member = await this.db.query.chatChannelMembers.findFirst({
-      where: and(eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, userId)),
+      where: and(
+        eq(chatChannelMembers.orgId, orgId),
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.userId, userId),
+      ),
     });
     if (!member) throw new ForbiddenException("You are not a member of this channel");
     if (member.role !== "ADMIN") throw new ForbiddenException("Only channel admins can manage the invite link");
@@ -45,8 +54,8 @@ export class ChatInviteLinksService {
     });
   }
 
-  async getOrCreateInviteLink(channelId: number, userId: string) {
-    const member = await this.assertAdmin(channelId, userId);
+  async getOrCreateInviteLink(channelId: number, userId: string, orgId: string) {
+    const member = await this.assertAdmin(channelId, userId, orgId);
 
     const existing = await this.findActiveLink(channelId);
     if (existing) {
@@ -66,8 +75,8 @@ export class ChatInviteLinksService {
     return { token: minted.token };
   }
 
-  async regenerateInviteLink(channelId: number, userId: string) {
-    const member = await this.assertAdmin(channelId, userId);
+  async regenerateInviteLink(channelId: number, userId: string, orgId: string) {
+    const member = await this.assertAdmin(channelId, userId, orgId);
 
     await this.db
       .update(chatChannelInviteLinks)

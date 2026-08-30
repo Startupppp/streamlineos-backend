@@ -15,6 +15,7 @@ import {
   type TrialBalanceQuery,
 } from "./dto/accounting.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("accounting")
 @Controller("accounting/reports")
@@ -35,8 +36,9 @@ export class AccountingStatementsController {
   @Get("profit-loss")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: profitLossQuerySchema })
   profitLoss(
-    @Query(new ZodValidationPipe(profitLossQuerySchema)) query: ProfitLossQuery,
+    @Query() query: ProfitLossQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.statements.profitLoss(u.orgId, query);
@@ -55,8 +57,9 @@ export class AccountingStatementsController {
   @Get("cash-flow")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: profitLossQuerySchema })
   cashFlow(
-    @Query(new ZodValidationPipe(profitLossQuerySchema)) query: ProfitLossQuery,
+    @Query() query: ProfitLossQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.statements.cashFlow(u.orgId, query);

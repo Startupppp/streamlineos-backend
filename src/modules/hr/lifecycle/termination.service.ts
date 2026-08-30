@@ -406,6 +406,7 @@ export class TerminationService {
 
       const found = await tx.query.assets.findMany({
         where: and(eq(assets.orgId, orgId), eq(assets.assignedTo, existing.userId), eq(assets.status, "ASSIGNED")),
+        limit: 200,
       });
 
       if (found.length > 0) {

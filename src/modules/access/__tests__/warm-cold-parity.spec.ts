@@ -61,6 +61,9 @@ function buildService(roleGrants: { permissionKey: string; scope: string }[]) {
     cachedForOrg<T>(o: string, k: string, fetcher: () => Promise<T>) {
       return this.cached(`${o}:${k}`, fetcher);
     },
+    cachedForOrgWith<T>(_o: string, _k: string, fetcher: () => Promise<T>) {
+      return fetcher();
+    },
     invalidateForOrg: jest.fn().mockResolvedValue(undefined),
     invalidateNamespace: () => Promise.resolve(),
   };

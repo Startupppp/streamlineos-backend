@@ -132,14 +132,12 @@ export class AccountingStatementsService {
   async profitLoss(orgId: string, query: ProfitLossQuery) {
     const { from, to } = query;
     if (!from || !to) throw new BadRequestException("from and to are required");
-    const fromStr = from.toISOString().slice(0, 10);
-    const toStr = to.toISOString().slice(0, 10);
-    return this.cache.cachedVersioned(ACCT_STATEMENTS_NS(orgId), `profit-loss:${fromStr}:${toStr}`, () => this.computeProfitLoss(orgId, from, to), CACHE_TTL.MEDIUM);
+    return this.cache.cachedVersioned(ACCT_STATEMENTS_NS(orgId), `profit-loss:${from}:${to}`, () => this.computeProfitLoss(orgId, from, to), CACHE_TTL.MEDIUM);
   }
 
-  private async computeProfitLoss(orgId: string, from: Date, to: Date) {
-    const fromStr = from.toISOString().slice(0, 10);
-    const toStr = to.toISOString().slice(0, 10);
+  private async computeProfitLoss(orgId: string, from: string, to: string) {
+    const fromStr = from;
+    const toStr = to;
 
     const rows = await this.db
       .select({
@@ -255,14 +253,12 @@ export class AccountingStatementsService {
   async cashFlow(orgId: string, query: ProfitLossQuery) {
     const { from, to } = query;
     if (!from || !to) throw new BadRequestException("from and to are required");
-    const fromStr = from.toISOString().slice(0, 10);
-    const toStr = to.toISOString().slice(0, 10);
-    return this.cache.cachedVersioned(ACCT_STATEMENTS_NS(orgId), `cash-flow:${fromStr}:${toStr}`, () => this.computeCashFlow(orgId, from, to), CACHE_TTL.MEDIUM);
+    return this.cache.cachedVersioned(ACCT_STATEMENTS_NS(orgId), `cash-flow:${from}:${to}`, () => this.computeCashFlow(orgId, from, to), CACHE_TTL.MEDIUM);
   }
 
-  private async computeCashFlow(orgId: string, from: Date, to: Date) {
-    const fromStr = from.toISOString().slice(0, 10);
-    const toStr = to.toISOString().slice(0, 10);
+  private async computeCashFlow(orgId: string, from: string, to: string) {
+    const fromStr = from;
+    const toStr = to;
     const openingAsOf = previousDay(fromStr);
 
     const cashAccounts = await this.db

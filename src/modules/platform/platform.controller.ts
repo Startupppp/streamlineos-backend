@@ -1,4 +1,4 @@
-﻿import {
+import {
   Body,
   Controller,
   Get,
@@ -6,7 +6,7 @@
   Post,
   Req,
   Res,
-  } from "@nestjs/common";
+} from "@nestjs/common";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import type { Request, Response } from "express";
 import { Public } from "../../common/auth/public.decorator";
@@ -17,7 +17,8 @@ import {
   visitSchema,
   contactFormSchema,
   type ContactFormInput,
-  } from "./dto/platform.schemas";
+  type VisitInput,
+} from "./dto/platform.schemas";
 
 function headerValue(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) return value[0] ?? null;
@@ -34,7 +35,7 @@ export class PlatformController {
   @Public()
   @Post("visit")
   @Validate({ body: visitSchema })
-  async visit(@Req() req: Request, @Res() res: Response) {
+  async visit(@Req() req: Request & { body: VisitInput }, @Res() res: Response) {
     const forwardedFor = headerValue(req.headers["x-forwarded-for"]);
     const ip =
       forwardedFor?.split(",")[0]?.trim() ??
@@ -47,16 +48,10 @@ export class PlatformController {
       return;
     }
 
-    const parsed = visitSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ ok: false });
-      return;
-    }
-
     const userAgent = headerValue(req.headers["user-agent"])?.slice(0, 500) ?? null;
     const country = headerValue(req.headers["x-vercel-ip-country"]);
 
-    await this.platform.recordVisit(parsed.data, { userAgent, country });
+    await this.platform.recordVisit(req.body, { userAgent, country });
     res.status(200).json({ ok: true });
   }
 

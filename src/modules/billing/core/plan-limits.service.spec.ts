@@ -421,4 +421,61 @@ describe("PlanLimitsService", () => {
       await expect(service.getEntitlements("org1")).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
   });
+
+  describe("getEntitlements — cache layer failure does not grant entitlements", () => {
+    async function buildWithThrowingCache(db: ReturnType<typeof makeDb>) {
+      const throwingCache = {
+        cached: jest.fn().mockRejectedValue(new Error("Redis ECONNREFUSED")),
+        cachedVersioned: jest.fn().mockRejectedValue(new Error("Redis ECONNREFUSED")),
+        set: jest.fn().mockRejectedValue(new Error("Redis ECONNREFUSED")),
+        invalidate: jest.fn().mockResolvedValue(undefined),
+        del: jest.fn().mockResolvedValue(undefined),
+        invalidatePattern: jest.fn().mockResolvedValue(undefined),
+        get: jest.fn().mockRejectedValue(new Error("Redis ECONNREFUSED")),
+      } as unknown as CacheService;
+      const module = await Test.createTestingModule({
+        providers: [
+          PlanLimitsService,
+          { provide: DRIZZLE, useValue: db },
+          { provide: CacheService, useValue: throwingCache },
+        ],
+      }).compile();
+      return module.get(PlanLimitsService);
+    }
+
+    it("throws rather than returning ENTERPRISE entitlements when the cache layer rejects", async () => {
+      mockDb = makeDb({
+        execute: jest.fn().mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }]),
+      });
+      service = await buildWithThrowingCache(mockDb);
+      await expect(service.getEntitlements("org1")).rejects.toThrow("Redis ECONNREFUSED");
+    });
+
+    it("does not silently coerce a cache error into a permissive entitlement result", async () => {
+      mockDb = makeDb({
+        execute: jest.fn().mockResolvedValueOnce([{ plan: "ENTERPRISE", status: "ACTIVE", trial_ends_at: null }]),
+      });
+      service = await buildWithThrowingCache(mockDb);
+
+      let caught: unknown = null;
+      try {
+        await service.getEntitlements("org1");
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).not.toBeNull();
+      expect(caught).not.toMatchObject({ tier: "ENTERPRISE" });
+    });
+
+    it("assertWithinLimit bypasses the entitlements cache — it still enforces limits when Redis is down", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([{ count: 5 }]),
+      });
+      service = await buildWithThrowingCache(mockDb);
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(PaymentRequiredException);
+    });
+  });
 });

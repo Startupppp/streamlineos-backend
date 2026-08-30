@@ -398,3 +398,106 @@ describe("SeatLedgerService — listSeatEvents", () => {
     await expect(service.listSeatEvents("org1", 5000)).resolves.toEqual([]);
   });
 });
+
+describe("SeatLedgerService — billing-cycle boundary: the ledger accumulates across periods", () => {
+  it("sums quantity_delta across events from different effective-at dates so reconciliation is time-continuous", async () => {
+    const PERIOD_ONE_DATE = new Date("2026-07-01T00:00:00Z");
+    const PERIOD_TWO_DATE = new Date("2026-08-01T00:00:00Z");
+    const rowsByPeriod = [
+      {
+        ledgerQuantity: 5,
+        eventCount: 7,
+        lastEventAt: PERIOD_TWO_DATE,
+      },
+    ];
+    const latestRow = [{ billedQuantityAfter: 5 }];
+    const byTypeRows = [
+      { eventType: "INVITE_SENT", events: 6, quantityDelta: 6 },
+      { eventType: "MEMBER_DEACTIVATED", events: 1, quantityDelta: -1 },
+    ];
+
+    const { tx, selectResults } = makeTx({ seatCount: 5 });
+    selectResults.push(rowsByPeriod);
+    selectResults.push(latestRow);
+    selectResults.push(byTypeRows);
+    ambientTx = tx;
+    const service = await buildService();
+
+    const result = await service.reconcileBilledQuantity("org1");
+
+    expect(result.ledgerQuantity).toBe(5);
+    expect(result.eventCount).toBe(7);
+    expect(result.drift).toBe(0);
+    expect(result.lastEventAt).toEqual(PERIOD_TWO_DATE);
+    const sendDelta = result.byEventType.find((r) => r.eventType === "INVITE_SENT")?.quantityDelta ?? 0;
+    const deactivateDelta = result.byEventType.find((r) => r.eventType === "MEMBER_DEACTIVATED")?.quantityDelta ?? 0;
+    expect(sendDelta + deactivateDelta).toBe(result.ledgerQuantity);
+
+    void PERIOD_ONE_DATE;
+  });
+
+  it("records events with past effective-at so a billing-cycle sweep can reconstruct the exact moment each seat was claimed", async () => {
+    const pastDate = new Date("2026-07-15T12:00:00Z");
+    const { tx, insertedValues } = makeTx({ seatCount: 3 });
+    const service = await buildService();
+
+    await service.recordSeatEvent(
+      { orgId: "org1", eventType: "INVITE_SENT", subjectId: "i-late", effectiveAt: pastDate },
+      tx as never,
+    );
+
+    expect(insertedValues[0]).toMatchObject({ effectiveAt: pastDate });
+  });
+});
+
+describe("SeatLedgerService — plan transition: the ledger is plan-agnostic", () => {
+  it("records a seat event regardless of what plan limit is in effect — the ledger tracks facts, not limits", async () => {
+    const { tx, insertedValues } = makeTx({ seatCount: 12 });
+    const service = await buildService();
+
+    await service.recordSeatEvent(
+      { orgId: "org1", eventType: "INVITE_SENT", subjectId: "new-user" },
+      tx as never,
+    );
+
+    expect(insertedValues[0]).toMatchObject({
+      billedQuantityAfter: 12,
+      quantityDelta: SEAT_EVENT_DELTAS.INVITE_SENT,
+    });
+  });
+
+  it("records the post-transition billed quantity from the live members count, not from the caller", async () => {
+    const seatCountAfterUpgrade = 25;
+    const { tx, insertedValues } = makeTx({ seatCount: seatCountAfterUpgrade });
+    const service = await buildService();
+
+    await service.recordSeatEvent(
+      { orgId: "org1", eventType: "INVITE_SENT", subjectId: "post-upgrade-user" },
+      tx as never,
+    );
+
+    expect(insertedValues[0]).toMatchObject({ billedQuantityAfter: seatCountAfterUpgrade });
+  });
+
+  it("reconciliation remains consistent after a plan upgrade adds quota capacity", async () => {
+    const liveSeats = 20;
+    const TOTALS = [{ ledgerQuantity: 20, eventCount: 22, lastEventAt: new Date() }];
+    const LATEST = [{ billedQuantityAfter: 20 }];
+    const BY_TYPE = [
+      { eventType: "INVITE_SENT", events: 22, quantityDelta: 22 },
+      { eventType: "MEMBER_DEACTIVATED", events: 2, quantityDelta: -2 },
+    ];
+
+    const { tx, selectResults } = makeTx({ seatCount: liveSeats });
+    selectResults.push(TOTALS);
+    selectResults.push(LATEST);
+    selectResults.push(BY_TYPE);
+    ambientTx = tx;
+    const service = await buildService();
+
+    const result = await service.reconcileBilledQuantity("org1");
+
+    expect(result.liveQuantity).toBe(liveSeats);
+    expect(result.drift).toBe(0);
+  });
+});

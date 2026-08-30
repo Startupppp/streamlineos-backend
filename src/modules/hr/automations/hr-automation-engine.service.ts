@@ -73,6 +73,7 @@ export class HrAutomationEngineService {
         isNull(hrAutomationRules.deletedAt),
       ),
       columns: { id: true, conditions: true, actions: true, webhookSecret: true },
+      limit: 100,
     });
 
     if (rules.length === 0) return;

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -12,6 +11,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -20,6 +20,7 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { logger } from "../../../common/logger/logger.service";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { KbAskService } from "./kb-ask.service";
 import { KbChatHistoryService } from "./kb-chat-history.service";
 import {
@@ -30,10 +31,15 @@ import {
   kbConversationRenameSchema,
   kbConversationsListQuerySchema,
 } from "./dto/kb-ai.schemas";
-import { Validate } from "../../../common/validation/validate.decorator";
-import { z } from "zod";
 
 const conversationIdParams = z.object({ conversationId: z.coerce.number().int().positive() }).strict();
+
+type AskInput = z.infer<typeof askSchema>;
+type ChatHistoryQuery = z.infer<typeof chatHistoryQuerySchema>;
+type KbConversationsListQuery = z.infer<typeof kbConversationsListQuerySchema>;
+type KbConversationCreateInput = z.infer<typeof kbConversationCreateSchema>;
+type KbConversationRenameInput = z.infer<typeof kbConversationRenameSchema>;
+type KbConversationMessagesQuery = z.infer<typeof kbConversationMessagesQuerySchema>;
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -48,23 +54,21 @@ export class KbAskController {
   @RequirePermission("kb:pages:view")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("kb:ask")
-  async askQuestion(@Body() body: unknown, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    const parsed = askSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-
-    let conversationId = parsed.data.conversationId;
+  @Validate({ body: askSchema })
+  async askQuestion(@Body() body: AskInput, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
+    let conversationId = body.conversationId;
     if (conversationId === undefined) {
       const conv = await this.history.createConversation(
         u.orgId,
         u.userId,
-        parsed.data.question.substring(0, 60).trim(),
+        body.question.substring(0, 60).trim(),
       );
       conversationId = conv.id;
     }
 
-    const result = await this.ask.ask(u, parsed.data);
+    const result = await this.ask.ask(u, body);
     try {
-      await this.history.appendToConversation(u.orgId, u.userId, conversationId, "user", parsed.data.question);
+      await this.history.appendToConversation(u.orgId, u.userId, conversationId, "user", body.question);
       await this.history.appendToConversation(
         u.orgId,
         u.userId,
@@ -81,12 +85,11 @@ export class KbAskController {
 
   @Get("ask/history")
   @RequirePermission("kb:pages:view")
-  async getHistory(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
-    const parsed = chatHistoryQuerySchema.safeParse(query);
-    if (!parsed.success) throw new BadRequestException("Invalid query parameters");
+  @Validate({ query: chatHistoryQuerySchema })
+  async getHistory(@Query() query: ChatHistoryQuery, @CurrentUser() u: CurrentUserContext) {
     return this.history.list(u.orgId, u.userId, {
-      cursor: parsed.data.cursor,
-      limit: parsed.data.limit,
+      cursor: query.cursor,
+      limit: query.limit,
     });
   }
 
@@ -99,35 +102,31 @@ export class KbAskController {
 
   @Get("ask/conversations")
   @RequirePermission("kb:pages:view")
-  async listConversations(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
-    const parsed = kbConversationsListQuerySchema.safeParse(query);
-    if (!parsed.success) throw new BadRequestException("Invalid query parameters");
+  @Validate({ query: kbConversationsListQuerySchema })
+  async listConversations(@Query() query: KbConversationsListQuery, @CurrentUser() u: CurrentUserContext) {
     return this.history.listConversations(u.orgId, u.userId, {
-      cursor: parsed.data.cursor,
-      limit: parsed.data.limit,
+      cursor: query.cursor,
+      limit: query.limit,
     });
   }
 
   @Post("ask/conversations")
   @RequirePermission("kb:pages:view")
   @HttpCode(201)
-  async createConversation(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
-    const parsed = kbConversationCreateSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.history.createConversation(u.orgId, u.userId, parsed.data.title);
+  @Validate({ body: kbConversationCreateSchema })
+  async createConversation(@Body() body: KbConversationCreateInput, @CurrentUser() u: CurrentUserContext) {
+    return this.history.createConversation(u.orgId, u.userId, body.title);
   }
 
   @Patch("ask/conversations/:conversationId")
   @RequirePermission("kb:pages:view")
-  @Validate({ params: conversationIdParams })
+  @Validate({ params: conversationIdParams, body: kbConversationRenameSchema })
   async renameConversation(
     @Param("conversationId", ParseIntPipe) conversationId: number,
-    @Body() body: unknown,
+    @Body() body: KbConversationRenameInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsed = kbConversationRenameSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.history.renameConversation(u.orgId, u.userId, conversationId, parsed.data.title);
+    return this.history.renameConversation(u.orgId, u.userId, conversationId, body.title);
   }
 
   @Delete("ask/conversations/:conversationId")
@@ -143,17 +142,15 @@ export class KbAskController {
 
   @Get("ask/conversations/:conversationId/messages")
   @RequirePermission("kb:pages:view")
-  @Validate({ params: conversationIdParams })
+  @Validate({ params: conversationIdParams, query: kbConversationMessagesQuerySchema })
   async getConversationMessages(
     @Param("conversationId", ParseIntPipe) conversationId: number,
-    @Query() query: unknown,
+    @Query() query: KbConversationMessagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsed = kbConversationMessagesQuerySchema.safeParse(query);
-    if (!parsed.success) throw new BadRequestException("Invalid query parameters");
     return this.history.listMessages(u.orgId, u.userId, conversationId, {
-      cursor: parsed.data.cursor,
-      limit: parsed.data.limit,
+      cursor: query.cursor,
+      limit: query.limit,
     });
   }
 }

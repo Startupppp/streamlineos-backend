@@ -3,7 +3,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { territories, territoryReps } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import type { TerritoryCriteria } from "../../../db/schema/crm/deals";
+import type { TerritoryCriteria } from "../../../db/schema";
 
 const TERRITORY_LIMIT = 200;
 const TERRITORY_REP_LIMIT = 2000;

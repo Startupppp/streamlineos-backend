@@ -98,6 +98,7 @@ export class RecruitmentReferralChecksService {
         eq(candidateReferenceChecks.orgId, orgId),
       ),
       orderBy: (t, { desc: d }) => [d(t.createdAt)],
+      limit: 20,
     });
   }
 

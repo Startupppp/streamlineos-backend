@@ -298,7 +298,15 @@ export const ticketRelatedLinks = build.table(
     createdBy: text("created_by").references(() => users.id, {
       onDelete: "set null",
     }),
+    createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [index("idx_ticket_related_links_ticket").on(table.ticketId)],
+  (table) => [
+    index("idx_ticket_related_links_ticket").on(table.ticketId),
+    foreignKey({
+      name: "fk_ticket_related_links_created_by_actor",
+      columns: [table.orgId, table.createdByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("restrict"),
+  ],
 );

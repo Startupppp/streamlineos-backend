@@ -25,6 +25,7 @@ export const kbArticleVersions = pgTable(
     excerpt: text("excerpt"),
     changeSummary: text("change_summary"),
     authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
+    authorMembershipId: integer("author_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

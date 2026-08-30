@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -8,11 +8,15 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { AccountingAiService } from "./accounting-ai.service";
 import {
   extractDocumentSchema,
   reconciliationExplainSchema,
   varianceExplainSchema,
+  type ExtractDocumentInput,
+  type ReconciliationExplainInput,
+  type VarianceExplainInput,
 } from "./dto/accounting-ai.dto";
 
 @RequireModule("accounting")
@@ -25,38 +29,35 @@ export class AccountingAiController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("accounting:ai:use")
   @UseRateLimit("ai:invoke")
+  @Validate({ body: varianceExplainSchema })
   explainVariance(
-    @Body() body: unknown,
+    @Body() body: VarianceExplainInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsed = varianceExplainSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.accountingAiService.explainVariance(u.orgId, u.userId, parsed.data);
+    return this.accountingAiService.explainVariance(u.orgId, u.userId, body);
   }
 
   @Post("reconciliation-explain")
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("accounting:ai:use")
   @UseRateLimit("ai:invoke")
+  @Validate({ body: reconciliationExplainSchema })
   explainReconciliation(
-    @Body() body: unknown,
+    @Body() body: ReconciliationExplainInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsed = reconciliationExplainSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.accountingAiService.explainReconciliation(u.orgId, u.userId, parsed.data);
+    return this.accountingAiService.explainReconciliation(u.orgId, u.userId, body);
   }
 
   @Post("extract-document")
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("accounting:ai:use")
   @UseRateLimit("ai:invoke")
+  @Validate({ body: extractDocumentSchema })
   extractDocument(
-    @Body() body: unknown,
+    @Body() body: ExtractDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsed = extractDocumentSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.accountingAiService.extractDocument(u.orgId, u.userId, parsed.data);
+    return this.accountingAiService.extractDocument(u.orgId, u.userId, body);
   }
 }

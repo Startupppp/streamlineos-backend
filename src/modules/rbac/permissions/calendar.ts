@@ -25,4 +25,10 @@ export const CALENDAR_PERMISSIONS: Permission[] = [
     action: "export",
     description: "Export organisation calendar events as CSV",
   },
+  {
+    name: "calendar:admin:manage",
+    resource: "calendar:admin",
+    action: "manage",
+    description: "Manage organisation-wide calendar settings and source integrations",
+  },
 ];

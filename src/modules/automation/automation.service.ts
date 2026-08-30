@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import type { AiNodeType } from "./ai-workflow-nodes/ai-node-types";
 import { createHmac } from "node:crypto";
+import { checkWebhookUrl } from "../../common/security/ssrf-guard";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
 import {
   automationRules,
@@ -127,6 +128,20 @@ export class AutomationService {
     eventName: string,
     payload: EventPayload,
   ): Promise<void> {
+    const urlCheck = await checkWebhookUrl(endpoint.url);
+    if (!urlCheck.allowed) {
+      await this.db.insert(webhookLogs).values({
+        endpointId: endpoint.id,
+        orgId,
+        event: eventName,
+        payload,
+        statusCode: null,
+        responseBody: `SSRF: ${urlCheck.reason}`,
+        success: false,
+      });
+      throw new Error(`SSRF: webhook URL blocked (${urlCheck.reason})`);
+    }
+
     const body = JSON.stringify({ event: eventName, data: payload, timestamp: new Date().toISOString() });
     const signature = createHmac("sha256", endpoint.secret).update(body).digest("hex");
 

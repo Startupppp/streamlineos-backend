@@ -25,12 +25,12 @@ export class CacheService {
     redis: Redis | null,
     key: string,
     fetcher: () => Promise<T>,
-    ttlSeconds: number,
+    ttl: number | ((result: T) => number),
   ): Promise<T> {
     const existing = this.inFlight.get(key);
     if (existing) return existing as Promise<T>;
 
-    const request = this.loadOrFetch(redis, key, fetcher, ttlSeconds);
+    const request = this.loadOrFetch(redis, key, fetcher, ttl);
     this.inFlight.set(key, request);
     try {
       return await request;
@@ -67,7 +67,7 @@ export class CacheService {
     redis: Redis | null,
     key: string,
     fetcher: () => Promise<T>,
-    ttlSeconds: number,
+    ttl: number | ((result: T) => number),
   ): Promise<T> {
     if (!redis) return fetcher();
     try {
@@ -105,8 +105,11 @@ export class CacheService {
 
     try {
       const data = await fetcher();
+      const actualTtl = typeof ttl === "function"
+        ? Math.max(1, ttl(data))
+        : Math.max(1, this.applyJitter(ttl));
       try {
-        await this.timedRedis(() => redis.set(key, data, { ex: ttlSeconds }));
+        await this.timedRedis(() => redis.set(key, data, { ex: actualTtl }));
       } catch {
         return data;
       }
@@ -219,7 +222,26 @@ export class CacheService {
   ): Promise<T> {
     const redis = await this.redisForOrg(orgId);
     const key = await this.orgScopedKey(orgId, localKey);
-    return this.cachedWithRedis(redis, key, fetcher, this.applyJitter(baseTtl));
+    return this.cachedWithRedis(redis, key, fetcher, baseTtl);
+  }
+
+  /**
+   * Like `cachedForOrg` but the Redis TTL is capped to `min(jitter(baseTtl), getTtlSeconds(result))`.
+   * Use when the fetched result carries its own expiry (e.g. a delegation `validUntil`)
+   * that is shorter than the base TTL so the entry never survives past the expiry boundary.
+   */
+  async cachedForOrgWith<T>(
+    orgId: string,
+    localKey: string,
+    fetcher: () => Promise<T>,
+    getTtlSeconds: (result: T) => number,
+    baseTtl = 300,
+  ): Promise<T> {
+    const redis = await this.redisForOrg(orgId);
+    const key = await this.orgScopedKey(orgId, localKey);
+    const jitteredBase = this.applyJitter(baseTtl);
+    const boundedTtlFn = (result: T) => Math.max(1, Math.min(jitteredBase, getTtlSeconds(result)));
+    return this.cachedWithRedis(redis, key, fetcher, boundedTtlFn);
   }
 
   async cachedVersionedForOrg<T>(
@@ -232,7 +254,7 @@ export class CacheService {
     const redis = await this.redisForOrg(orgId);
     const ns = await this.orgScopedKey(orgId, namespace);
     const version = await this.namespaceVersionWithRedis(redis, ns);
-    return this.cachedWithRedis(redis, `${ns}:v${version}:${localKey}`, fetcher, this.applyJitter(baseTtl));
+    return this.cachedWithRedis(redis, `${ns}:v${version}:${localKey}`, fetcher, baseTtl);
   }
 
   async invalidateNamespaceForOrg(orgId: string, namespace: string): Promise<void> {

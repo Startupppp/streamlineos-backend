@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -11,12 +10,14 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { toCsv } from "../../inventory/import-export/csv.util";
 import { HrImportService } from "./hr-import.service";
@@ -29,13 +30,11 @@ import {
   type ExportQueryInput,
   type ListImportJobsInput,
 } from "./dto/import-job.dto";
-import { z } from "zod";
-import { Validate } from "../../../common/validation/validate.decorator";
 
 const jobIdParams = z.object({ jobId: z.string().min(1) }).strict();
-const entityParams = z.object({ entity: z.string().min(1) }).strict();
+const entityParams = z.object({ entity: z.enum(hrImportEntityValues) }).strict();
 
-const entityParamSchema = z.enum(hrImportEntityValues);
+type HrEntityParam = z.infer<typeof entityParams>;
 
 @RequireModule("hr")
 @Controller()
@@ -102,20 +101,18 @@ export class HrImportController {
   @RequirePermission("hr:export:manage")
   @Validate({ params: entityParams })
   async exportEntity(
-    @Param("entity") entity: string,
+    @Param("entity") entity: HrEntityParam["entity"],
     @Query(new ZodValidationPipe(exportQuerySchema)) query: ExportQueryInput,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
-    const parsed = entityParamSchema.safeParse(entity);
-    if (!parsed.success) throw new BadRequestException(`Invalid entity '${entity}'`);
-    const rows = await this.importService.exportEntity(u.orgId, parsed.data, query);
+    const rows = await this.importService.exportEntity(u.orgId, entity, query);
     const headers = Object.keys(rows[0] ?? {});
     const csv = toCsv(headers, rows);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${parsed.data}-export-${new Date().toISOString().split("T")[0]}.csv"`,
+      `attachment; filename="${entity}-export-${new Date().toISOString().split("T")[0]}.csv"`,
     );
     res.send(csv);
   }

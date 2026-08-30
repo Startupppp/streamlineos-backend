@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -23,6 +23,8 @@ import {
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
+const saveAsTemplateBodySchema = z.object({ name: z.string().min(1).max(200) });
+type SaveAsTemplateBody = z.infer<typeof saveAsTemplateBodySchema>;
 
 @RequireModule("sign")
 @Controller("sign")
@@ -40,15 +42,13 @@ export class SignTemplatesController {
   @Post("envelopes/:envelopeId/save-as-template")
   @HttpCode(201)
   @RequirePermission("sign:template:manage")
-  @Validate({ params: envelopeIdParams })
+  @Validate({ params: envelopeIdParams, body: saveAsTemplateBodySchema })
   createFromEnvelope(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
-    @Body() body: unknown,
+    @Body() body: SaveAsTemplateBody,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsed = z.object({ name: z.string().min(1).max(200) }).safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request: name is required");
-    return this.templates.createFromEnvelope(u.orgId, u.userId, envelopeId, parsed.data.name);
+    return this.templates.createFromEnvelope(u.orgId, u.userId, envelopeId, body.name);
   }
 
   @Get("templates")

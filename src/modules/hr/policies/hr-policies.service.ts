@@ -234,6 +234,7 @@ export class HrPoliciesService {
             eq(hrPolicies.orgId, orgId),
             eq(hrPolicies.policyType, policy.policyType),
             eq(hrPolicies.status, "active"),
+            isNull(hrPolicies.deletedAt),
             ne(hrPolicies.id, policyId),
             sql`${hrPolicies.priority} < ${policy.priority}`,
           ),

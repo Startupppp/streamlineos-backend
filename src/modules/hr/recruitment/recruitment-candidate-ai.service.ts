@@ -153,6 +153,7 @@ Score the candidate on technicalSkills, experience, communication, cultureFit an
         scorecards: { where: (sc, { isNotNull: nn }) => nn(sc.submittedAt) },
       },
       orderBy: (t, { asc }) => [asc(t.scheduledAt)],
+      limit: 100,
     });
 
     const submitted = candidateInterviews.flatMap((iv) => iv.scorecards ?? []);

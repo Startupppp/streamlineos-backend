@@ -49,7 +49,7 @@ export class ChatActionsController {
     body: CreateTaskFromMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.members.assertChannelMembership(body.channelId, u.userId);
+    await this.members.assertChannelMembership(body.channelId, u.userId, u.orgId);
 
     const source = await this.chatMessages.readMessageContent(
       body.messageId,

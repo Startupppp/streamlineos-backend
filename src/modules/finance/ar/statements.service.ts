@@ -36,20 +36,24 @@ export class StatementsService {
     });
     if (!client) throw new NotFoundException("Client not found");
 
+    const STATEMENT_LINE_CAP = 1000;
+
     const allInvoices = await this.db
       .select({ id: invoices.id, invoiceNumber: invoices.invoiceNumber, total: invoices.total, createdAt: invoices.createdAt, dueDate: invoices.dueDate })
       .from(invoices)
-      .where(and(eq(invoices.orgId, orgId), eq(invoices.clientId, clientId)));
+      .where(and(eq(invoices.orgId, orgId), eq(invoices.clientId, clientId)))
+      .limit(STATEMENT_LINE_CAP);
 
     const invoiceIds = allInvoices.map((i) => i.id);
     const allPayments = invoiceIds.length > 0
-      ? await this.db.select({ id: payments.id, invoiceId: payments.invoiceId, amount: payments.amount, paymentDate: payments.paymentDate, referenceNumber: payments.referenceNumber }).from(payments).where(and(eq(payments.orgId, orgId), inArray(payments.invoiceId, invoiceIds)))
+      ? await this.db.select({ id: payments.id, invoiceId: payments.invoiceId, amount: payments.amount, paymentDate: payments.paymentDate, referenceNumber: payments.referenceNumber }).from(payments).where(and(eq(payments.orgId, orgId), inArray(payments.invoiceId, invoiceIds))).limit(STATEMENT_LINE_CAP)
       : [];
 
     const allCreditNotes = await this.db
       .select({ id: creditNotes.id, creditNoteNumber: creditNotes.creditNoteNumber, appliedAmount: creditNotes.appliedAmount, invoiceId: creditNotes.invoiceId, createdAt: creditNotes.createdAt })
       .from(creditNotes)
-      .where(and(eq(creditNotes.orgId, orgId), eq(creditNotes.clientId, clientId)));
+      .where(and(eq(creditNotes.orgId, orgId), eq(creditNotes.clientId, clientId)))
+      .limit(STATEMENT_LINE_CAP);
 
     const fromDate = query.from ? new Date(`${query.from}T00:00:00Z`) : null;
     const toDate = query.to ? new Date(`${query.to}T23:59:59Z`) : null;

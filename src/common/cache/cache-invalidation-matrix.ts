@@ -257,6 +257,17 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
     },
   },
   {
+    namespace: "deals:approvals:<orgId>",
+    description: "Deal approvals list (status+limit sub-keyed)",
+    invalidation: {
+      kind: "write",
+      events: [
+        "DealsApprovalsService.resolveApproval",
+        "DealsApprovalsService.requestApproval",
+      ],
+    },
+  },
+  {
     namespace: "sales:kpis:<orgId>",
     description: "Sales KPIs (from+to+repId sub-keyed)",
     invalidation: {

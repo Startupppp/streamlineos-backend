@@ -29,6 +29,7 @@ export class RecruitmentCalibrationService {
         ),
         orderBy: (t, { desc: d }) => [d(t.createdAt)],
         with: { participants: { columns: { userId: true } } },
+        limit: 50,
       })
       .then((sessions) =>
         sessions.map(({ participants, ...s }) => ({

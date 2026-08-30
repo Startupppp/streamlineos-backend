@@ -74,9 +74,10 @@ export const balanceSheetQuerySchema = z.object({ asOf: isoDate });
 
 export const profitLossQuerySchema = z
   .object({
-    from: z.coerce.date().optional(),
-    to: z.coerce.date().optional(),
+    from: isoDate.optional(),
+    to: isoDate.optional(),
   })
+  .strict()
   .refine((r) => !r.from || !r.to || r.from <= r.to, { message: "`from` must be <= `to`", path: ["from"] });
 
 export const agedReceivablesQuerySchema = z.object({ asOf: isoDate.optional() });

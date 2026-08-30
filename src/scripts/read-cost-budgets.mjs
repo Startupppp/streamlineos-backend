@@ -166,7 +166,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM chat_messages WHERE org_id = $1 AND is_deleted = false`,
     params: (f) => (f.channelId ? [f.orgId, f.channelId] : null),
     sql: `
-      SELECT id, sender_id, content, message_type, reactions, created_at, is_edited
+      SELECT id, sender_id, content, message_type, metadata, created_at, is_edited
       FROM chat_messages
       WHERE org_id = $1 AND channel_id = $2 AND is_deleted = false
       ORDER BY created_at DESC

@@ -67,6 +67,7 @@ export class HrPolicyConflictService {
         isNull(hrPolicies.deletedAt),
       ),
       with: { scopes: true },
+      limit: 200,
     });
 
     const policyScopes = policy.scopes.map((s) => ({
@@ -131,6 +132,7 @@ export class HrPolicyConflictService {
     const active = await this.db.query.hrPolicies.findMany({
       where: and(...conditions),
       with: { scopes: true },
+      limit: 200,
     });
 
     const conflicts: PolicyConflict[] = [];

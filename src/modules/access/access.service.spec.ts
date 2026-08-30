@@ -282,6 +282,9 @@ function buildService(db: unknown): AccessService {
     cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
       return this.cached(`${o}:${k}`, fn, ttl);
     },
+    cachedForOrgWith<T>(o: string, k: string, fn: () => Promise<T>) {
+      return this.cached(`${o}:${k}`, fn);
+    },
     invalidateForOrg(o: string, k: string) {
       return this.invalidate(`${o}:${k}`);
     },
@@ -564,6 +567,9 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
       cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
       return this.cached(`${o}:${k}`, fn, ttl);
     },
+      cachedForOrgWith<T>(o: string, k: string, fn: () => Promise<T>) {
+      return this.cached(`${o}:${k}`, fn);
+    },
       invalidateForOrg(o: string, k: string) {
       return this.invalidate(`${o}:${k}`);
     },
@@ -728,6 +734,9 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
       cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
       return this.cached(`${o}:${k}`, fn, ttl);
     },
+      cachedForOrgWith<T>(o: string, k: string, fn: () => Promise<T>) {
+      return this.cached(`${o}:${k}`, fn);
+    },
       invalidateForOrg(o: string, k: string) {
       return this.invalidate(`${o}:${k}`);
     },
@@ -818,6 +827,9 @@ describe("AccessService.membersWithPermission", () => {
       invalidate: jest.fn().mockResolvedValue(undefined),
       cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
       return this.cached(`${o}:${k}`, fn, ttl);
+    },
+      cachedForOrgWith<T>(o: string, k: string, fn: () => Promise<T>) {
+      return this.cached(`${o}:${k}`, fn);
     },
       invalidateForOrg(o: string, k: string) {
       return this.invalidate(`${o}:${k}`);
@@ -1018,6 +1030,9 @@ describe("AccessService.membersWithPermission — pagination", () => {
       invalidate: jest.fn().mockResolvedValue(undefined),
       cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
       return this.cached(`${o}:${k}`, fn, ttl);
+    },
+      cachedForOrgWith<T>(o: string, k: string, fn: () => Promise<T>) {
+      return this.cached(`${o}:${k}`, fn);
     },
       invalidateForOrg(o: string, k: string) {
       return this.invalidate(`${o}:${k}`);
