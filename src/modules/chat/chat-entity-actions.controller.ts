@@ -48,7 +48,7 @@ export class ChatEntityActionsController {
     body: EntityActionsAvailableInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.members.assertChannelMembership(body.channelId, u.userId);
+    await this.members.assertChannelMembership(body.channelId, u.userId, u.orgId);
 
     const actions = await this.entities.actionsFor(actorOf(u), [
       ...body.references,
@@ -70,7 +70,7 @@ export class ChatEntityActionsController {
     body: EntityActionOptionsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.members.assertChannelMembership(body.channelId, u.userId);
+    await this.members.assertChannelMembership(body.channelId, u.userId, u.orgId);
 
     return { options: await this.entities.optionsFor(actorOf(u), body.reference) };
   }
@@ -84,7 +84,7 @@ export class ChatEntityActionsController {
     body: SubmitEntityActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.members.assertChannelMembership(body.channelId, u.userId);
+    await this.members.assertChannelMembership(body.channelId, u.userId, u.orgId);
 
     const result = await this.entities.submitAction(
       actorOf(u),
