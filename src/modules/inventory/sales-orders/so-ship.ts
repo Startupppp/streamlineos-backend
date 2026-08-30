@@ -14,6 +14,7 @@ import type { StockEngineService } from "../stock-engine/stock-engine.service";
 import type { ReservationService } from "../stock-engine/reservation.service";
 import type { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import type { StockProjectionService } from "../stock-engine/stock-projection.service";
+import type { ChannelPoolService } from "../stock-engine/channel-pool.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
 import {
   INVENTORY_COMMAND_EVENTS,
@@ -45,6 +46,8 @@ export interface ShipDeps {
   readonly reservations: ReservationService;
   readonly numSeq: NumberSequenceService;
   readonly projection: StockProjectionService;
+  /** NEO-1 — draws the ordering channel's claim down as the units actually go. */
+  readonly channelPools: ChannelPoolService;
 }
 
 /**
@@ -131,7 +134,7 @@ export async function postShipment(
   const { orgId, soId, userId, idempotencyKey, data, settings, cogs } = args;
   const so = await tx.query.invSalesOrders.findFirst({
     where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
-    columns: { id: true, soNumber: true, status: true, warehouseId: true },
+    columns: { id: true, soNumber: true, status: true, warehouseId: true, channelId: true },
     with: {
       lines: {
         columns: { id: true, productVariantId: true, quantity: true, costAtTime: true },
@@ -288,6 +291,28 @@ export async function postShipment(
         consumedBy: "sales_order.ship",
       },
     });
+  }
+
+  // NEO-1. The claim existed to stop anybody else selling these units; once they
+  // have left, there is nothing left to hold. Drawn down here rather than at pick
+  // or pack because shipping is the point at which the stock is actually gone —
+  // and only for an order that names a channel, since a direct sale holds no pool.
+  if (so.channelId != null) {
+    const shippedByVariant = new Map<number, string>();
+    for (const m of movements) {
+      shippedByVariant.set(
+        m.productVariantId,
+        addDec(shippedByVariant.get(m.productVariantId) ?? "0", m.quantity),
+      );
+    }
+    for (const [productVariantId, qty] of shippedByVariant) {
+      await deps.channelPools.consumeInTx(tx, orgId, {
+        channelId: so.channelId,
+        productVariantId,
+        warehouseId: so.warehouseId,
+        qty,
+      });
+    }
   }
 
   const serialIds = movements.flatMap((m) => (m.serialId === null ? [] : [m.serialId]));

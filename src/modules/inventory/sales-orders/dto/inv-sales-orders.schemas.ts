@@ -26,6 +26,11 @@ export const createSoSchema = z.object({
   requiredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   shippingAddress: z.string().max(500).optional(),
   warehouseId: z.number().int().positive().optional(),
+  /**
+   * NEO-1 — the sales channel this order arrived on. Absent means a direct sale,
+   * which may draw on no channel's reserved pool.
+   */
+  channelId: z.number().int().positive().optional(),
   currency: z.string().length(3).default("INR"),
   notes: z.string().max(2000).optional(),
   lines: z.array(soLineSchema).min(1),
@@ -38,6 +43,7 @@ export const updateSoSchema = z.object({
   requiredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   shippingAddress: z.string().max(500).optional(),
   warehouseId: z.number().int().positive().optional(),
+  channelId: z.number().int().positive().nullable().optional(),
   currency: z.string().length(3).optional(),
   notes: z.string().max(2000).optional(),
   lines: z.array(soLineSchema).min(1).optional(),

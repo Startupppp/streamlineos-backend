@@ -54,3 +54,46 @@ export function availableQtySql(alias = "sl"): SQL {
 export function availableQtySumSql(alias = "sl"): SQL {
   return sql`COALESCE(SUM(${availableQtySql(alias)}), 0)`;
 }
+
+/**
+ * NEO-1 — the channel-pool claim on a variant, as SQL.
+ *
+ * Deliberately **not** folded into `availableQtySql`. That expression is
+ * evaluated per stock-level row and a pool is a claim on a variant, so folding
+ * it in would subtract the same six units once for every bin the SKU sits in.
+ * It is a separate aggregate, subtracted once, and the composition is
+ * `netAvailableQty` in `decimal.ts` — the same pairing as `availableQty` and
+ * `availableQtySql`, and the reason both live in the two canonical files.
+ *
+ * `warehouseId` null means "org-wide question": every pool for the variant
+ * counts. A warehouse-scoped question counts the pools pinned to that warehouse
+ * plus the unpinned ones, which over-subtracts across several warehouses and
+ * says so in `channel-pools.ts`.
+ *
+ * `excludeChannelId` is what lets a channel see its own stock: an order placed
+ * on Blinkit is checked against everyone else's claim, not against Blinkit's.
+ */
+export function channelReservedQtySql(params: {
+  orgId: string;
+  productVariantId: number;
+  warehouseId?: number | null;
+  excludeChannelId?: number | null;
+}): SQL {
+  const warehouseGate =
+    params.warehouseId == null
+      ? sql`TRUE`
+      : sql`(cp.warehouse_id IS NULL OR cp.warehouse_id = ${params.warehouseId})`;
+  const channelGate =
+    params.excludeChannelId == null
+      ? sql`TRUE`
+      : sql`cp.channel_id <> ${params.excludeChannelId}`;
+
+  return sql`(
+    SELECT COALESCE(SUM(cp.reserved_qty), 0)::numeric
+    FROM inv_channel_pools cp
+    WHERE cp.org_id = ${params.orgId}
+      AND cp.product_variant_id = ${params.productVariantId}
+      AND ${warehouseGate}
+      AND ${channelGate}
+  )`;
+}

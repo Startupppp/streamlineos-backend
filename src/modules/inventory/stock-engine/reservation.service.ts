@@ -4,6 +4,7 @@ import { invStockReservations, invStockLevels } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InventorySettingsService } from "./inventory-settings.service";
+import { ChannelPoolService } from "./channel-pool.service";
 import { availableQty, cmpDec } from "./decimal";
 import { INV_ERRORS, type ReservationInput } from "./stock-engine.types";
 import {
@@ -66,6 +67,7 @@ export class ReservationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly settingsService: InventorySettingsService,
+    private readonly channelPools: ChannelPoolService,
   ) {}
 
   async createReservation(orgId: string, userId: string, input: ReservationInput): Promise<typeof invStockReservations.$inferSelect> {
@@ -96,9 +98,10 @@ export class ReservationService {
     const [level] = await tx.execute<{
       id: number; on_hand: string; committed: string; blocked_qty: string;
       quality_hold_qty: string; outgoing_qty: string; is_sellable: boolean | null;
+      warehouse_id: number;
     }>(sql`
       SELECT sl.id, sl.on_hand, sl.committed, sl.blocked_qty,
-             sl.quality_hold_qty, sl.outgoing_qty, loc.is_sellable
+             sl.quality_hold_qty, sl.outgoing_qty, loc.is_sellable, loc.warehouse_id
       FROM inv_stock_levels sl
       JOIN inv_locations loc
         ON loc.org_id = sl.org_id AND loc.id = sl.location_id
@@ -129,6 +132,23 @@ export class ReservationService {
     if (!settings.allowBackorders && cmpDec(available, input.qty) < 0) {
       throw new BadRequestException({ code: INV_ERRORS.INSUFFICIENT_STOCK });
     }
+
+    // NEO-1. The row check above asks whether the units are physically free where
+    // they stand. This asks whether anybody else has already been promised them.
+    // It is deliberately on this path and not on the allocator that chose the
+    // location: a reservation is the moment stock is actually promised to
+    // somebody, and every promise in the product passes through here.
+    //
+    // Unlike the row check, it holds whatever `allowBackorders` says. Backorders
+    // mean "you may promise stock you have not received"; they have never meant
+    // "you may promise the same unit to two customers", and a channel pool exists
+    // precisely to stop the second.
+    await this.channelPools.assertPromisable(tx, orgId, {
+      productVariantId: input.productVariantId,
+      warehouseId: input.warehouseId ?? Number(level.warehouse_id),
+      qty: input.qty,
+      forChannelId: input.channelId ?? null,
+    });
 
     await tx.update(invStockLevels)
       .set({ committed: sql`committed + ${input.qty}::numeric` })

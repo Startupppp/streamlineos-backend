@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
+import { InvChannelPoolsModule } from "./pools/inv-channel-pools.module";
 import { ChannelsController } from "./channels.controller";
 import { TplController } from "./tpl.controller";
 import { ChannelsService } from "./channels.service";
@@ -26,7 +27,7 @@ import {
  * import the application does not boot.
  */
 @Module({
-  imports: [InvStockEngineModule],
+  imports: [InvStockEngineModule, InvChannelPoolsModule],
   controllers: [
     ChannelsController,
     TplController,

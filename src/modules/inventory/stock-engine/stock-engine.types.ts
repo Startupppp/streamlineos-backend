@@ -102,6 +102,16 @@ export interface ReservationInput {
   serialId?: number;
   qty: string;
   expiresAt?: Date;
+  /**
+   * NEO-1 — the sales channel this promise is being made for, or null/absent for
+   * a direct sale.
+   *
+   * It is what the channel-pool gate is checked against: a promise that names a
+   * channel may draw on that channel's own claim, and one that does not may draw
+   * on none of them. Absent is the safe default — a caller that forgets it gets
+   * the direct-sale answer, which refuses more, never less.
+   */
+  channelId?: number | null;
 }
 
 export interface InvSettingsRow {

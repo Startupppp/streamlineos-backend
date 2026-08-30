@@ -120,6 +120,10 @@ function makeService(settingsRow: InvSettingsRow): Harness {
     { del: jest.fn(), invalidateNamespace: jest.fn() } as never,
     { invalidateCaches: jest.fn() } as never,
     {} as never,
+    // NEO-1's channel pools. This spec drives `postShipment` through a mock, so
+    // the pool draw-down never runs here — it is asserted in the pool spec and
+    // in the seeded golden path.
+    {} as never,
     { get: jest.fn().mockResolvedValue(settingsRow) } as never,
     {} as never,
     { postJournalEntry: jest.fn() } as never,

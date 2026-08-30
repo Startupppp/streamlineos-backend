@@ -2423,6 +2423,13 @@
       "when": 1788134409022,
       "tag": "0579_tenant_fks_build_schemas",
       "breakpoints": true
+    },
+    {
+      "idx": 347,
+      "version": "7",
+      "when": 1788134409023,
+      "tag": "0580_inventory_channel_pools",
+      "breakpoints": true
     }
   ]
 }

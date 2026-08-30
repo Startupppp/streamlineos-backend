@@ -111,6 +111,26 @@ export const AVAILABLE_QTY_TERMS = [
   "outgoing_qty",
 ] as const;
 
+/**
+ * NEO-1 — availability once every *other* sales channel's claim is honoured.
+ *
+ * `availableQty` answers a question about one stock row: what is physically free
+ * where it stands. A channel pool is a claim held above that grain — on a
+ * variant, in a warehouse or across the organisation — so it cannot be a term
+ * inside the row formula without being subtracted once per row. It is composed
+ * here instead, and only here: this is the second half of "availableQty is the
+ * only ATP formula", and a caller that writes `available - reserved` itself is
+ * the same defect A1 collapsed eight copies of.
+ *
+ * Clamped at zero. A pool larger than the stock behind it is an over-promise
+ * somebody has to unwind, but it is not negative availability — nothing can be
+ * promised, and "-2 available" is a number no caller can act on.
+ */
+export function netAvailableQty(available: string, channelReserved: string | null | undefined): string {
+  const net = subDec(available, channelReserved ?? "0");
+  return cmpDec(net, "0") < 0 ? "0.0000" : net;
+}
+
 export function availableQty(level: {
   on_hand: string;
   committed: string;

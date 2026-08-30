@@ -16,10 +16,22 @@ function buildDb(tx: MockTx) {
 
 const settings = { get: jest.fn() };
 
+/**
+ * NEO-1 added the channel-pool gate to `createReservationInTx`. `expireStale`
+ * never reaches it, so a stub that would throw if it were called is the honest
+ * double: it keeps this spec about expiry and fails loudly if the gate ever
+ * migrates onto this path.
+ */
+const channelPools = {
+  assertPromisable: jest.fn(() => {
+    throw new Error("expireStale must not consult channel pools");
+  }),
+};
+
 describe("ReservationService.expireStale", () => {
   it("returns 0 and performs no writes when nothing is stale", async () => {
     const tx: MockTx = { execute: jest.fn().mockResolvedValue([]), update: jest.fn() };
-    const service = new ReservationService(buildDb(tx) as never, settings as never);
+    const service = new ReservationService(buildDb(tx) as never, settings as never, channelPools as never);
 
     const count = await service.expireStale("org1");
 
@@ -41,7 +53,7 @@ describe("ReservationService.expireStale", () => {
         return c;
       }),
     };
-    const service = new ReservationService(buildDb(tx) as never, settings as never);
+    const service = new ReservationService(buildDb(tx) as never, settings as never, channelPools as never);
 
     const count = await service.expireStale("org1");
 

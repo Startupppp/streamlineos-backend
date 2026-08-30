@@ -10,6 +10,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { ReservationService } from "../stock-engine/reservation.service";
+import { ChannelPoolService } from "../stock-engine/channel-pool.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
@@ -52,6 +53,7 @@ export class SoFulfillmentService {
     private readonly cache: CacheService,
     private readonly engine: StockEngineService,
     private readonly reservationService: ReservationService,
+    private readonly channelPools: ChannelPoolService,
     private readonly settingsService: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
     private readonly journalPosting: InventoryAccountingBridge,
@@ -114,6 +116,7 @@ export class SoFulfillmentService {
               lotId: allocation.lotId,
               serialId: allocation.serialId,
               qty: allocation.qty.toFixed(4),
+              channelId: so.channelId ?? null,
             });
           } catch (reserveErr) {
             allReserved = false;
@@ -140,6 +143,7 @@ export class SoFulfillmentService {
               locationId: available.locationId,
               lotId: available.lotId,
               qty: line.quantity,
+              channelId: so.channelId ?? null,
             });
           } catch (reserveErr) {
             allReserved = false;
@@ -458,6 +462,7 @@ export class SoFulfillmentService {
               reservations: this.reservationService,
               numSeq: this.numSeq,
               projection: this.projection,
+              channelPools: this.channelPools,
             },
             tx,
             { orgId, soId, userId, idempotencyKey, data, settings, cogs },

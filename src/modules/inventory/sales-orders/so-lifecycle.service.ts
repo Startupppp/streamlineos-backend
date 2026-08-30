@@ -81,7 +81,7 @@ export class SoLifecycleService {
 
     if (settings.autoReserveOnConfirm) {
       try {
-        await this.autoReserve(orgId, soId, userId, so.lines, so.warehouseId);
+        await this.autoReserve(orgId, soId, userId, so.lines, so.warehouseId, so.channelId);
       } catch (error) {
         this.logger.warn(
           `Auto-reserve failed for sales order ${soId} in org ${orgId}: ${error instanceof Error ? error.message : String(error)}`,
@@ -439,6 +439,11 @@ export class SoLifecycleService {
     userId: string,
     lines: Array<{ id: number; productVariantId: number; quantity: string }>,
     warehouseId: number | null | undefined,
+    /**
+     * NEO-1 — the channel this order came from, so it may draw on that channel's
+     * own pool. Null for a direct sale, which may draw on none of them.
+     */
+    channelId: number | null | undefined,
   ) {
     const settings = await this.settingsService.get(orgId);
 
@@ -490,6 +495,7 @@ export class SoLifecycleService {
           locationId: available.locationId,
           lotId: available.lotId,
           qty: line.quantity,
+          channelId: channelId ?? null,
         });
       } catch (reserveErr) {
         allReserved = false;

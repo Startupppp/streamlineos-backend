@@ -7,6 +7,7 @@ import { businessParties } from "../party/business-parties";
 import { invoices } from "../crm/invoicing";
 import { invProductVariants, invUom } from "./core";
 import { invWarehouses } from "./warehouses";
+import { invChannels } from "./channels";
 
 export const invSalesOrders = pgTable("inv_sales_orders", {
   id: serial("id").primaryKey(),
@@ -19,6 +20,15 @@ export const invSalesOrders = pgTable("inv_sales_orders", {
   requiredDate: date("required_date"),
   shippingAddress: text("shipping_address"),
   warehouseId: integer("warehouse_id").references(() => invWarehouses.id, { onDelete: "set null" }),
+  /**
+   * NEO-1 — the sales channel this order came from, or null for a direct sale.
+   *
+   * It is what lets a Blinkit order draw on the Blinkit pool while a storefront
+   * order may not: availability is computed against every *other* channel's
+   * claim, so an order that names its channel sees the units that channel is
+   * holding and an order that does not, does not.
+   */
+  channelId: integer("channel_id").references(() => invChannels.id, { onDelete: "set null" }),
   subtotal: decimal("subtotal", { precision: 18, scale: 4 }).default("0").notNull(),
   taxAmount: decimal("tax_amount", { precision: 18, scale: 4 }).default("0").notNull(),
   discount: decimal("discount", { precision: 18, scale: 4 }).default("0").notNull(),
@@ -42,6 +52,12 @@ export const invSalesOrders = pgTable("inv_sales_orders", {
   index("idx_inv_so_org_status").on(table.orgId, table.status),
   index("idx_inv_so_client").on(table.clientId),
   index("idx_inv_so_warehouse").on(table.warehouseId),
+  index("idx_inv_so_org_channel").on(table.orgId, table.channelId),
+  foreignKey({
+    columns: [table.orgId, table.channelId],
+    foreignColumns: [invChannels.orgId, invChannels.id],
+    name: "fk_inv_sales_orders_channel_id_org",
+  }).onDelete("set null"),
 ]);
 
 export const invSoLines = pgTable("inv_so_lines", {
@@ -102,6 +118,7 @@ export const invSalesOrdersRelations = relations(invSalesOrders, ({ one, many })
   organization: one(organizations, { fields: [invSalesOrders.orgId], references: [organizations.id] }),
   client: one(clients, { fields: [invSalesOrders.clientId], references: [clients.id] }),
   warehouse: one(invWarehouses, { fields: [invSalesOrders.warehouseId], references: [invWarehouses.id] }),
+  channel: one(invChannels, { fields: [invSalesOrders.channelId], references: [invChannels.id] }),
   invoice: one(invoices, { fields: [invSalesOrders.invoiceId], references: [invoices.id] }),
   creator: one(users, { fields: [invSalesOrders.createdBy], references: [users.id] }),
   lines: many(invSoLines),

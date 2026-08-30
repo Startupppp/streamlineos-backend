@@ -14,3 +14,4 @@ export * from "./shipping";
 export * from "./channels";
 export * from "./planning";
 export * from "./admin";
+export * from "./channel-pools";

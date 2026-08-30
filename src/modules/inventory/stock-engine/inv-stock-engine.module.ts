@@ -15,6 +15,7 @@ import { UomConversionService } from "./uom-conversion.service";
 import { StockProjectionService } from "./stock-projection.service";
 import { TransitLocationService } from "./transit-location.service";
 import { MovementApplyService } from "./movement-apply.service";
+import { ChannelPoolService } from "./channel-pool.service";
 
 @Module({
   imports: [AccountingGlModule, AccountingPostingModule],
@@ -32,6 +33,7 @@ import { MovementApplyService } from "./movement-apply.service";
     UomConversionService,
     TransitLocationService,
     MovementApplyService,
+    ChannelPoolService,
   ],
   exports: [StockProjectionService, 
     StockEngineService,
@@ -47,6 +49,7 @@ import { MovementApplyService } from "./movement-apply.service";
     UomConversionService,
     TransitLocationService,
     MovementApplyService,
+    ChannelPoolService,
   ],
 })
 export class InvStockEngineModule {}
