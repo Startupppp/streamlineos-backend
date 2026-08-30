@@ -132,6 +132,20 @@
       "schemaFolder": "directory"
     },
     {
+      "administersNamespaces": [],
+      "administrable": true,
+      "cacheNamespaces": [],
+      "displayName": "Feedbucket",
+      "id": "feedbucket",
+      "ladder": "delegable",
+      "moduleFolder": "feedbucket",
+      "planGated": true,
+      "productKey": null,
+      "publicExposure": true,
+      "route": null,
+      "schemaFolder": null
+    },
+    {
       "administersNamespaces": [
         "chat",
         "mail",
@@ -243,6 +257,20 @@
       "publicExposure": false,
       "route": "/payroll",
       "schemaFolder": "payroll"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": false,
+      "cacheNamespaces": [],
+      "displayName": "Settings",
+      "id": "settings",
+      "ladder": "platform-admin",
+      "moduleFolder": "settings",
+      "planGated": false,
+      "productKey": null,
+      "publicExposure": false,
+      "route": "/settings",
+      "schemaFolder": null
     },
     {
       "administersNamespaces": [],
