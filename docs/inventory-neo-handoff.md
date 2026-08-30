@@ -183,6 +183,16 @@ does not exist`, from migrations skipped on the cold build. The fifth
 grain, so it is unrelated to anything NEO changed — but it has not been chased to
 a root cause here and should not be read as understood.
 
+> **Corrected by the PEND pass.** Re-run on a database built cold by
+> `db:bootstrap` — where the party columns now exist, because
+> `0574_inventory_party_columns` creates them — the result is **46 pass, 4 fail**
+> (550 of 555 tests), with **zero** occurrences of `does not exist` anywhere in
+> the run. So the attribution above was wrong: the missing party columns
+> accounted for exactly **one** of the five, `landed-cost`, which now passes. The
+> other four had an independent cause that the column error was masking, and
+> `transit-exit` is the only one of them this document described accurately.
+> See §6.
+
 Both golden paths — the original and NEO's — pass in that run.
 
 The wider backend unit suite reports 39 failing files (access, billing, HR,
@@ -464,6 +474,43 @@ element declares a width past 375, one line shows at a time, the scan box
 precedes the confirm, and denied does not render as empty. What remains unproven
 is the thing only a person holding a device can answer — whether it is usable
 one-handed.
+
+### The seeded suite on a cold-built database, and what the last four failures are
+
+**46 of 50 suites, 550 of 555 tests**, against a database produced by `createdb`
++ extensions + `db:bootstrap` and nothing else. Zero occurrences of
+`does not exist` in the whole run — the missing-column class of failure is gone.
+
+That corrects §3, which attributed four of its five failures to the missing party
+columns. Those columns now exist and **one** of the five was fixed by them:
+`landed-cost`. The other four had an independent cause underneath.
+
+Two of them are the same defect in two modules, and it is worth naming because it
+is §1's lesson one turn further on:
+
+> **A command whose own effect invalidates its own precondition can never be
+> retried, because the idempotency guard sits behind the precondition.**
+
+* `po-batch.service.ts` runs `resolveForBatching` *before* `runIdempotent`. The
+  first call creates the draft purchase order; the service's own rule is that a
+  proposal is already batched when an unsent draft carries a line for it, so the
+  replay resolves to zero lines and throws "None of these proposals still need
+  ordering" — a `400` — without ever reaching the guard that exists to return the
+  first result.
+* `quality-recalls.service.ts` does the same with `resolveLines`: the first
+  execution moves stock, so the replay's `evidenceVersion` no longer matches and
+  it throws `RECALL_EVIDENCE_STALE` before the guard.
+
+In both, `runIdempotent` is correct and unreachable. Both also store only part of
+their response (`poId`, `poNumber`, `created`), so a replay could not reconstruct
+the body even once it reached the guard — the fix is a transaction-boundary
+change plus a wider stored response, in two services, one of which is regulated.
+**Not attempted here**: that is a considered piece of work in modules this pass
+does not own, and it has been failing since before this branch.
+
+The remaining two are not understood and should not be read as though they were:
+`proposal-override`'s refresh endpoint answers `400` to a body that satisfies its
+schema, and `transit-exit` is the transfer-line arithmetic §3 already described.
 
 ### Neon — deliberately not applied
 
