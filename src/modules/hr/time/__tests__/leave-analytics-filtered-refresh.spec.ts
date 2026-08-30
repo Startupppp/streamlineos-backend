@@ -202,9 +202,33 @@ describe("leave analytics filtered read-after-write", () => {
     expect(viewKeys.sort()).toEqual([
       `${namespace}:v0:all:2025`,
       `${namespace}:v0:all:2026`,
-      `${namespace}:v0:team:2026`,
+      `${namespace}:v0:team:hr-1:2026`,
     ]);
     expect(viewKeys.every((key) => key.includes(ORG_ID))).toBe(true);
+  });
+
+  it("two managers with scope=own within the same org get distinct cache keys and isolated results", async () => {
+    const managerA = makeUser("manager-a");
+    const managerB = makeUser("manager-b");
+
+    approvedCount = 3;
+    const readerA = buildReader("own");
+    const readerB = buildReader("own");
+
+    await readerA.analytics(managerA, 2026);
+
+    approvedCount = 7;
+    const resultB = await readerB.analytics(managerB, 2026);
+
+    const namespace = CACHE_KEYS.leaveAnalyticsNamespace(ORG_ID);
+    const keyA = `${namespace}:v0:own:manager-a:2026`;
+    const keyB = `${namespace}:v0:own:manager-b:2026`;
+
+    expect(keyA).not.toBe(keyB);
+    expect(redis.store.has(keyA)).toBe(true);
+    expect(redis.store.has(keyB)).toBe(true);
+
+    expect(resultB.byLeaveType).toEqual([{ typeName: "Annual Leave", count: 7 }]);
   });
 
   it("does not serve one tenant's cached view to another", async () => {

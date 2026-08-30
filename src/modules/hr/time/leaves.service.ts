@@ -215,7 +215,7 @@ export class LeavesService {
 
     return this.cache.cachedVersioned(
       CACHE_KEYS.leaveAnalyticsNamespace(u.orgId),
-      `${scope}:${year}`,
+      scope === "all" ? `${scope}:${year}` : `${scope}:${u.userId}:${year}`,
       () => this.queryAnalytics(u.orgId, u.userId, scope, year),
       CACHE_TTL.MEDIUM,
     );
