@@ -4,6 +4,7 @@ import { kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbIndexingService } from "./kb-indexing.service";
+import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
 import { StorageService } from "../../storage/storage.service";
 import { extractAttachmentText, isExtractableMime } from "./kb-attachment-extract.util";
 import { Readable } from "stream";
@@ -41,7 +42,7 @@ export class KbSourceAdapter implements KbContentAdapter {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly indexing: KbIndexingService,
+    private readonly attachmentIndexing: KbAttachmentIndexingService,
     private readonly storage: StorageService,
   ) {}
 
@@ -53,7 +54,7 @@ export class KbSourceAdapter implements KbContentAdapter {
     if (!source || source.status !== "ready") return;
 
     if (source.kind === "note" && source.noteText) {
-      await this.indexing.indexSource(orgId, sourceId, source.noteText);
+      await this.attachmentIndexing.indexSource(orgId, sourceId, source.noteText);
       return;
     }
 
@@ -61,7 +62,7 @@ export class KbSourceAdapter implements KbContentAdapter {
       const { body } = await this.storage.getFileStream(orgId, source.fileKey);
       const buffer = await streamToBuffer(body);
       const text = await extractAttachmentText(buffer, source.mimeType);
-      if (text.trim()) await this.indexing.indexSource(orgId, sourceId, text);
+      if (text.trim()) await this.attachmentIndexing.indexSource(orgId, sourceId, text);
     }
   }
 }
@@ -70,10 +71,10 @@ export class KbSourceAdapter implements KbContentAdapter {
 export class KbAttachmentAdapter implements KbContentAdapter {
   readonly contentType = "attachment";
 
-  constructor(private readonly indexing: KbIndexingService) {}
+  constructor(private readonly attachmentIndexing: KbAttachmentIndexingService) {}
 
   async handle(orgId: string, contentId: number): Promise<void> {
-    await this.indexing.indexAttachment(orgId, contentId);
+    await this.attachmentIndexing.indexAttachment(orgId, contentId);
   }
 }
 

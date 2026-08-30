@@ -12,7 +12,11 @@ const makeEmbeddings = (configured = true) => ({
   toVectorLiteral: jest.fn((v: number[]) => `[${v.join(",")}]`),
 });
 
-const makeStorage = () => ({});
+const makeCheckpoint = () => ({
+  loadCheckpoints: jest.fn().mockResolvedValue(new Map()),
+  saveCheckpoint: jest.fn().mockResolvedValue(undefined),
+  clearCheckpoints: jest.fn().mockResolvedValue(undefined),
+});
 
 interface MockTx {
   delete: jest.Mock;
@@ -93,7 +97,7 @@ describe("KbIndexingService — content-hash guard", () => {
         createdByMembershipId: null,
       });
       const embeddings = makeEmbeddings();
-      const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
+      const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
 
       await svc.indexPage("org-1", 99);
 
@@ -111,7 +115,7 @@ describe("KbIndexingService — content-hash guard", () => {
       createdByMembershipId: null,
     });
     const embeddings = makeEmbeddings(false);
-    const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
+    const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
 
     await svc.indexPage("org-1", 99);
 
@@ -127,7 +131,7 @@ describe("KbIndexingService — content-hash guard", () => {
     });
 
     const embeddings = makeEmbeddings();
-    const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
+    const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
     await svc.indexArticle("org-1", 1);
 
     expect(embeddings.embedQuery).not.toHaveBeenCalled();
@@ -148,7 +152,7 @@ describe("KbIndexingService — content-hash guard", () => {
     });
 
     const embeddings = makeEmbeddings();
-    const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
+    const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
     await svc.indexArticle("org-1", 1);
 
     expect(embeddings.embedQuery).toHaveBeenCalled();
@@ -168,7 +172,7 @@ describe("KbIndexingService — content-hash guard", () => {
     });
 
     const embeddings = makeEmbeddings();
-    const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
+    const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
     await svc.indexArticle("org-1", 1);
 
     expect(embeddings.embedQuery).toHaveBeenCalled();
@@ -193,7 +197,7 @@ describe("KbIndexingService — content-hash guard", () => {
     });
 
     const embeddings = makeEmbeddings();
-    const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
+    const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
     await svc.indexPage("org-1", 1);
 
     expect(embeddings.embedQuery).not.toHaveBeenCalled();
@@ -220,7 +224,7 @@ describe("KbIndexingService — content-hash guard", () => {
     });
 
     const embeddings = makeEmbeddings();
-    const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
+    const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
     await svc.indexPage("org-1", 99);
 
     expect(embeddings.embedQuery).not.toHaveBeenCalled();
@@ -251,7 +255,7 @@ describe("KbIndexingService — a chunk carries the ACL it is filtered by", () =
       createdByMembershipId: null,
     });
 
-    const svc = new KbIndexingService(db as never, makeEmbeddings() as never, makeStorage() as never);
+    const svc = new KbIndexingService(db as never, makeEmbeddings() as never, makeCheckpoint() as never);
     await svc.indexPage("org-1", 99);
     return values;
   };

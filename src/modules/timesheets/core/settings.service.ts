@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import { timesheetSettings, timesheetSettingsHistory } from "../../../db/schema";
+import { timesheetSettings, timesheetSettingsHistory, organizationMembers } from "../../../db/schema";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import type { UpdateCoreSettingsInput } from "./dto/settings.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -68,6 +68,13 @@ export class SettingsService {
     }
 
     await this.db.transaction(async (tx) => {
+      const [actorMember] = await tx
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
+        .limit(1);
+      const changedByMembershipId = actorMember?.id ?? null;
+
       await tx
         .update(timesheetSettings)
         .set(updateData)
@@ -79,8 +86,6 @@ export class SettingsService {
         .where(eq(timesheetSettings.orgId, u.orgId))
         .limit(1);
 
-      // Append-only version history: every change produces a new numbered
-      // snapshot so historical periods stay explainable after policy changes.
       const [latest] = await tx
         .select({ version: timesheetSettingsHistory.version })
         .from(timesheetSettingsHistory)
@@ -94,12 +99,14 @@ export class SettingsService {
         version: (latest?.version ?? 0) + 1,
         settings: current ?? updateData,
         changedBy: u.userId,
+        changedByMembershipId,
         changeReason: changeReason ?? null,
       });
 
       await this.audit.record(tx, {
         orgId: u.orgId,
         actorUserId: u.userId,
+        actorMembershipId: changedByMembershipId,
         entityType: "settings",
         entityId: u.orgId,
         action: "settings.updated",

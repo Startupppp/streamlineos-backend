@@ -8,6 +8,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ReportsService } from "./reports.service";
+import { TimesheetAnalyticsService } from "./timesheet-analytics.service";
 import {
   overviewQuerySchema,
   reportRangeQuerySchema,
@@ -19,7 +20,10 @@ import {
 @Controller("timesheets/reports")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class ReportsController {
-  constructor(private readonly reports: ReportsService) {}
+  constructor(
+    private readonly reports: ReportsService,
+    private readonly analytics: TimesheetAnalyticsService,
+  ) {}
 
   @Get("overview")
   @RequirePermission("timesheets:reports:view")
@@ -45,7 +49,7 @@ export class ReportsController {
     @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.getClientProfitability(u, query);
+    return this.analytics.getClientProfitability(u, query);
   }
 
   @Get("compliance")
@@ -54,7 +58,7 @@ export class ReportsController {
     @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.getCompliance(u, query);
+    return this.analytics.getCompliance(u, query);
   }
 
   @Get("approval-sla")
@@ -63,7 +67,7 @@ export class ReportsController {
     @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.getApprovalSla(u, query);
+    return this.analytics.getApprovalSla(u, query);
   }
 
   @Get("billing-leakage")
@@ -72,6 +76,6 @@ export class ReportsController {
     @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.getBillingLeakage(u, query);
+    return this.analytics.getBillingLeakage(u, query);
   }
 }

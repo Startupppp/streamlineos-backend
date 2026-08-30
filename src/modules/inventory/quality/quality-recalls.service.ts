@@ -13,7 +13,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockEngineBatchService } from "../stock-engine/stock-engine-batch.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { ListRecallsQueryInput, CreateRecallInput, UpdateRecallInput } from "./dto/quality.schemas";
@@ -23,7 +23,7 @@ export class RecallsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
-    private readonly engine: StockEngineService,
+    private readonly engine: StockEngineBatchService,
     private readonly numSeq: NumberSequenceService,
     private readonly audit: InventoryAuditService,
   ) {}

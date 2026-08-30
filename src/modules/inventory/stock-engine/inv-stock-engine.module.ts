@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AccountingGlModule } from "../../accounting/gl/accounting-gl.module";
 import { StockEngineService } from "./stock-engine.service";
+import { StockEngineBatchService } from "./stock-engine-batch.service";
 import { ReservationService } from "./reservation.service";
 import { NumberSequenceService } from "./number-sequence.service";
 import { InventorySettingsService } from "./inventory-settings.service";
@@ -14,6 +15,7 @@ import { MovementCostingService } from "./movement-costing.service";
   imports: [AccountingGlModule],
   providers: [
     StockEngineService,
+    StockEngineBatchService,
     ReservationService,
     NumberSequenceService,
     InventorySettingsService,
@@ -25,6 +27,7 @@ import { MovementCostingService } from "./movement-costing.service";
   ],
   exports: [
     StockEngineService,
+    StockEngineBatchService,
     ReservationService,
     NumberSequenceService,
     InventorySettingsService,

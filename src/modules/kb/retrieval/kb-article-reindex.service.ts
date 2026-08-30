@@ -6,6 +6,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { sql } from "drizzle-orm";
 import { KbIndexingService } from "./kb-indexing.service";
+import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
 
 const REINDEX_CONCURRENCY = 4;
 
@@ -14,6 +15,7 @@ export class KbArticleReindexService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly indexing: KbIndexingService,
+    private readonly attachmentIndexing: KbAttachmentIndexingService,
   ) {}
 
   async reindexAll(orgId: string): Promise<{
@@ -81,7 +83,7 @@ export class KbArticleReindexService {
 
     const warnings: string[] = [];
     for (const attachment of attachments) {
-      const result = await this.indexing.indexAttachment(orgId, attachment.id);
+      const result = await this.attachmentIndexing.indexAttachment(orgId, attachment.id);
       if (result.warning) warnings.push(result.warning);
     }
 

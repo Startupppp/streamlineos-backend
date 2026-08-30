@@ -15,6 +15,7 @@ import { ApprovalsController } from "./approvals.controller";
 import { BillingService } from "./billing.service";
 import { BillingController } from "./billing.controller";
 import { ReportsService } from "./reports.service";
+import { TimesheetAnalyticsService } from "./timesheet-analytics.service";
 import { ReportsController } from "./reports.controller";
 import { SettingsService } from "./settings.service";
 import { SettingsController } from "./settings.controller";
@@ -61,6 +62,7 @@ import { AiModule } from "../../ai/core/ai.module";
     ApprovalsService,
     BillingService,
     ReportsService,
+    TimesheetAnalyticsService,
     SettingsService,
     RatesService,
     BudgetsService,

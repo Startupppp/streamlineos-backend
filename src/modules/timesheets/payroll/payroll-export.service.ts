@@ -16,6 +16,7 @@ import {
   holidays,
   leaveRequests,
   users,
+  organizationMembers,
 } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -167,6 +168,12 @@ export class PayrollExportService {
       rows.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
       const totalHours = round2(rows.reduce((s, r) => s + r.totalPayableHours, 0));
 
+      const [actorMember] = await tx
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+        .limit(1);
+
       const [exportRow] = await tx
         .insert(timesheetExports)
         .values({
@@ -182,6 +189,7 @@ export class PayrollExportService {
           totalHours: totalHours.toString(),
           note: input.note ?? null,
           createdBy: userId,
+          createdByMembershipId: actorMember?.id ?? null,
         })
         .returning();
 
@@ -303,6 +311,12 @@ export class PayrollExportService {
 
     if (!existing) throw new NotFoundException("Export not found");
 
+    const [ackActorMember] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+
     const [updated] = await this.db
       .update(timesheetExports)
       .set({
@@ -310,6 +324,7 @@ export class PayrollExportService {
         ackNote: input.note ?? null,
         ackAt: new Date(),
         ackBy: userId,
+        ackByMembershipId: ackActorMember?.id ?? null,
       })
       .where(and(eq(timesheetExports.id, exportId), eq(timesheetExports.orgId, orgId)))
       .returning();
