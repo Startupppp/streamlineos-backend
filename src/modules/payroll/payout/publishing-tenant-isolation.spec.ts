@@ -34,6 +34,7 @@ describe("PublishingService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new PublishingService(db, audit, storage, access, notifications, notifDispatch, efService);
     const result = await svc.listPublications(OWNER_ORG, 1);
-    expect(result).toHaveLength(1);
+    expect(result.items).toHaveLength(1);
+    expect(result.truncated).toBe(false);
   });
 });

@@ -63,7 +63,7 @@ export class UserOpsService {
     this.reporter = new UserOperationsReporter(db, cache, employment);
   }
 
-  async exportUsers(orgId: string): Promise<string> {
+  exportUsers(orgId: string) {
     return this.reporter.exportUsers(orgId);
   }
 

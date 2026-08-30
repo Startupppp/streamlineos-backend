@@ -30,9 +30,9 @@ describe("SurveyExportService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new SurveyExportService(db);
 
-    const csv = await svc.exportResponsesCsv(ATTACKER_ORG, 1, {});
+    const result = await svc.exportResponsesCsv(ATTACKER_ORG, 1, {});
 
-    const lines = csv.split("\n").filter(Boolean);
+    const lines = result.csv.split("\n").filter(Boolean);
     expect(lines).toHaveLength(1);
     expect(sessionsFindMany).toHaveBeenCalledTimes(1);
     const args = sessionsFindMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -60,9 +60,9 @@ describe("SurveyExportService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new SurveyExportService(db);
 
-    const csv = await svc.exportResponsesCsv(OWNER_ORG, 1, {});
+    const result = await svc.exportResponsesCsv(OWNER_ORG, 1, {});
 
-    const lines = csv.split("\n").filter(Boolean);
+    const lines = result.csv.split("\n").filter(Boolean);
     expect(lines.length).toBeGreaterThan(1);
   });
 });

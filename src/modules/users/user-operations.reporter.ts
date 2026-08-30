@@ -1,4 +1,6 @@
 import { and, count, desc, eq, gt, gte, inArray, isNull, sql } from "drizzle-orm";
+
+const EXPORT_USERS_CAP = 5_000;
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { invitations, organizationMembers, users } from "../../db/schema";
@@ -12,7 +14,7 @@ export class UserOperationsReporter {
     private readonly employment: EmploymentFactsService,
   ) {}
 
-  async exportUsers(orgId: string): Promise<string> {
+  async exportUsers(orgId: string): Promise<{ csv: string; truncated: boolean; rowCount: number }> {
     const data = await this.database
       .select({
         id: users.id,
@@ -29,7 +31,9 @@ export class UserOperationsReporter {
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
       .where(eq(organizationMembers.orgId, orgId))
-      .orderBy(desc(organizationMembers.joinedAt));
+      .orderBy(desc(organizationMembers.joinedAt))
+      .limit(EXPORT_USERS_CAP);
+    const truncated = data.length === EXPORT_USERS_CAP;
 
     const factsMap = await this.employment.getFactsBatch(orgId, data.map((r) => r.id));
 
@@ -74,7 +78,7 @@ export class UserOperationsReporter {
       ].join(",");
     });
 
-    return [headers.join(","), ...rows].join("\n");
+    return { csv: [headers.join(","), ...rows].join("\n"), truncated, rowCount: data.length };
   }
 
   async getStats(orgId: string) {

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Header, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, Param, ParseIntPipe, Post, Query, Res, UseGuards } from "@nestjs/common";
+import type { Response } from "express";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -72,14 +73,18 @@ export class SurveyAnalyticsController {
 
   @Post("export")
   @RequirePermission("surveys:responses:export")
-  @Header("Content-Type", "text/csv")
-  @Header("Content-Disposition", "attachment; filename=responses.csv")
   @Validate({ params: surveyIdParams, body: exportResponsesSchema })
-  exportResponses(
+  async exportResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: ExportResponsesInput,
     @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
   ) {
-    return this.exports.exportResponsesCsv(u.orgId, surveyId, body);
+    const result = await this.exports.exportResponsesCsv(u.orgId, surveyId, body);
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=responses.csv");
+    if (result.truncated) res.setHeader("X-Export-Truncated", "true");
+    res.setHeader("X-Export-Row-Count", String(result.rowCount));
+    res.send(result.csv);
   }
 }

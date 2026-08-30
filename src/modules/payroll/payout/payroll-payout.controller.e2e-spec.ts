@@ -97,7 +97,7 @@ const mockPayslipTemplatesService = {
 
 const mockPublishingService = {
   publish: jest.fn().mockResolvedValue({ published: 0, skipped: 0 }),
-  listPublications: jest.fn().mockResolvedValue([mockPublication]),
+  listPublications: jest.fn().mockResolvedValue({ items: [mockPublication], truncated: false }),
   downloadPdf: jest.fn().mockResolvedValue({ buffer: Buffer.from(""), contentType: "application/pdf" }),
 };
 

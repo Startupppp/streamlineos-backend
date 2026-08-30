@@ -6,6 +6,8 @@ import {
   surveyQuestions,
   surveyParticipants,
 } from "../../db/schema";
+
+const SURVEY_ANALYTICS_ANSWERS_CAP = 50_000;
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 
@@ -53,6 +55,7 @@ export class SurveyAnalyticsService {
     const questionIds = questions.map((q) => q.id);
     const allAnswers = await this.db.query.surveyAnswers.findMany({
       where: and(eq(surveyAnswers.orgId, orgId), inArray(surveyAnswers.questionId, questionIds)),
+      limit: SURVEY_ANALYTICS_ANSWERS_CAP,
     });
 
     const answersByQuestion = new Map<number, typeof allAnswers>();

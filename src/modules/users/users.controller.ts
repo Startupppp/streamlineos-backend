@@ -81,10 +81,12 @@ export class UsersController {
   @RequirePermission("settings:organization:manage")
   @Get("export")
   async exportUsers(@CurrentUser() u: CurrentUserContext, @Res() res: Response) {
-    const data = await this.userOps.exportUsers(u.orgId);
+    const result = await this.userOps.exportUsers(u.orgId);
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=users.csv");
-    res.send(data);
+    if (result.truncated) res.setHeader("X-Export-Truncated", "true");
+    res.setHeader("X-Export-Row-Count", String(result.rowCount));
+    res.send(result.csv);
   }
 
   @RequirePermission("settings:organization:manage")

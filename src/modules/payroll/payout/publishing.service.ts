@@ -8,6 +8,8 @@ import {
   StreamableFile,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
+
+const PUBLICATION_LIST_CAP = 1_000;
 import { createHash } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -340,7 +342,7 @@ export class PublishingService {
     });
     if (!run) throw new NotFoundException("Payroll run not found");
 
-    return this.db.query.payslipPublications.findMany({
+    const rows = await this.db.query.payslipPublications.findMany({
       where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
       columns: {
         id: true,
@@ -356,7 +358,9 @@ export class PublishingService {
         attemptCount: true,
         lastAttemptAt: true,
       },
+      limit: PUBLICATION_LIST_CAP,
     });
+    return { items: rows, truncated: rows.length === PUBLICATION_LIST_CAP };
   }
 
   /**

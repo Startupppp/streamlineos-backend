@@ -1,5 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, gte, isNotNull, ne, sql } from "drizzle-orm";
+
+const CRM_METRICS_LOOKBACK = 36;
 import {
   crmDeals,
   crmActivities,
@@ -69,6 +71,7 @@ export class CrmSalesDashboardService {
         this.db.query.crmMonthlyMetrics.findMany({
           where: eq(crmMonthlyMetrics.orgId, orgId),
           orderBy: [desc(crmMonthlyMetrics.id)],
+          limit: CRM_METRICS_LOOKBACK,
         }),
 
         this.db
