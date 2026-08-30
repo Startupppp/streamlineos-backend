@@ -124,7 +124,17 @@ export class AccountingPayablesQueryService {
     if (!header) throw new NotFoundException("Purchase bill not found");
 
     const items = await this.db
-      .select()
+      .select({
+        id: purchaseBillItems.id,
+        billId: purchaseBillItems.billId,
+        description: purchaseBillItems.description,
+        hsnSacCode: purchaseBillItems.hsnSacCode,
+        quantity: purchaseBillItems.quantity,
+        rate: purchaseBillItems.rate,
+        gstRate: purchaseBillItems.gstRate,
+        amount: purchaseBillItems.amount,
+        lineOrder: purchaseBillItems.lineOrder,
+      })
       .from(purchaseBillItems)
       .where(eq(purchaseBillItems.billId, billId))
       .orderBy(asc(purchaseBillItems.lineOrder));
@@ -141,7 +151,18 @@ export class AccountingPayablesQueryService {
     if (!bills[0]) throw new NotFoundException("Purchase bill not found");
 
     return this.db
-      .select()
+      .select({
+        id: vendorPayments.id,
+        orgId: vendorPayments.orgId,
+        billId: vendorPayments.billId,
+        amount: vendorPayments.amount,
+        paymentDate: vendorPayments.paymentDate,
+        paymentMethod: vendorPayments.paymentMethod,
+        referenceNumber: vendorPayments.referenceNumber,
+        notes: vendorPayments.notes,
+        createdBy: vendorPayments.createdBy,
+        createdAt: vendorPayments.createdAt,
+      })
       .from(vendorPayments)
       .where(and(eq(vendorPayments.billId, billId), eq(vendorPayments.orgId, orgId)))
       .orderBy(asc(vendorPayments.paymentDate), asc(vendorPayments.id))

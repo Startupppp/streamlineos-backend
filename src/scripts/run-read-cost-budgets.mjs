@@ -134,46 +134,54 @@ async function main() {
         ? BUDGETS.filter((b) => filterIds.has(b.id))
         : BUDGETS;
 
-    const fixtures = await db.begin(async (tx) => {
-      await tx`SELECT set_config('app.organization_id', ${ORG}, true)`;
+    const tryFixture = async (query) => {
+      try {
+        return await db.begin(async (tx) => {
+          await tx`SELECT set_config('app.organization_id', ${ORG}, true)`;
+          return query(tx);
+        });
+      } catch (_) {
+        return null;
+      }
+    };
 
-      const [project] = await tx`
+    const [project] = (await tryFixture((tx) => tx`
         SELECT project_id, count(*)::int n FROM build.tickets
         WHERE org_id = ${ORG} AND deleted_at IS NULL
-        GROUP BY project_id ORDER BY n DESC LIMIT 1`;
+        GROUP BY project_id ORDER BY n DESC LIMIT 1`)) ?? [null];
 
-      const [participant] = await tx`
+    const [participant] = (await tryFixture((tx) => tx`
         SELECT user_id, count(*)::int n FROM build.ticket_assignees
-        WHERE org_id = ${ORG} GROUP BY user_id ORDER BY n DESC LIMIT 1`;
+        WHERE org_id = ${ORG} GROUP BY user_id ORDER BY n DESC LIMIT 1`)) ?? [null];
 
-      const [channel] = await tx`
+    const [channel] = (await tryFixture((tx) => tx`
         SELECT channel_id, count(*)::int n FROM chat_messages
-        WHERE org_id = ${ORG} GROUP BY channel_id ORDER BY n DESC LIMIT 1`;
+        WHERE org_id = ${ORG} GROUP BY channel_id ORDER BY n DESC LIMIT 1`)) ?? [null];
 
-      const [space] = await tx`
+    const [space] = (await tryFixture((tx) => tx`
         SELECT id AS space_id FROM kb_spaces
-        WHERE org_id = ${ORG} LIMIT 1`;
+        WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
 
-      const [payrollRun] = await tx`
+    const [payrollRun] = (await tryFixture((tx) => tx`
         SELECT id AS run_id FROM payroll_runs
-        WHERE org_id = ${ORG} ORDER BY id DESC LIMIT 1`;
+        WHERE org_id = ${ORG} ORDER BY id DESC LIMIT 1`)) ?? [null];
 
-      const now = new Date();
-      const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const now = new Date();
+    const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-      const leaveTypePolicies = await tx`
+    const leaveTypeRows = (await tryFixture((tx) => tx`
         SELECT DISTINCT leave_type_id
         FROM leave_policies
-        WHERE org_id = ${ORG} AND accrual_type = 'MONTHLY' AND is_active = true`;
-      const leaveTypeIds = leaveTypePolicies.map((r) => r.leave_type_id);
+        WHERE org_id = ${ORG} AND accrual_type = 'MONTHLY' AND is_active = true`)) ?? [];
+    const leaveTypeIds = leaveTypeRows.map((r) => r.leave_type_id);
 
-      const [kbPageProbe] = await tx`
+    const [kbPageProbe] = (await tryFixture((tx) => tx`
         SELECT 1 AS present FROM pg_proc p
         JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE n.nspname = 'app' AND p.proname = 'search_kb_page_ids'
-        LIMIT 1`;
+        LIMIT 1`)) ?? [null];
 
-      return {
+    const fixtures = {
         orgId: ORG,
         projectId: project?.project_id ?? null,
         projectTickets: project?.n ?? 0,
@@ -184,10 +192,9 @@ async function main() {
         spaceId: space?.space_id ?? null,
         payrollRunId: payrollRun?.run_id ?? null,
         leaveTypeIds,
-        hasKbPageProbe: kbPageProbe !== undefined,
+        hasKbPageProbe: kbPageProbe !== undefined && kbPageProbe !== null,
         period,
       };
-    });
 
     if (!SELF_TEST) {
       console.log(

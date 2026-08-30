@@ -1,10 +1,8 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { invoices, payments, finPaymentAllocations, organizationMembers, journalEntries } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { FinancePostingService } from "../accounting/posting/finance-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
@@ -63,21 +61,6 @@ export class InvoicesLifecycleService {
         entityId: String(invoiceId),
         data: { invoiceId, paidAt: new Date().toISOString() },
       }).catch(() => undefined);
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: invoice.orgId,
-        aggregateType: "invoice",
-        aggregateId: String(invoiceId),
-        aggregateVersion: Date.now(),
-        eventType: "accounting.invoice.paid",
-        payload: {
-          organization_id: invoice.orgId,
-          invoice_id: invoiceId,
-          total_cents: Math.round(Number(invoice.total) * 100),
-          paid_at: new Date().toISOString(),
-        },
-        occurredAt: new Date(),
-      });
     }
   }
 

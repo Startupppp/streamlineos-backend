@@ -5,6 +5,7 @@ import { pageNumberField, pageSizeField, optionalPageNumberField, optionalPageSi
 export const listCreditNotesSchema = z.object({
   status: z.enum(["DRAFT", "POSTED", "APPLIED", "VOID"]).optional(),
   clientId: z.coerce.number().int().positive().optional(),
+  invoiceId: z.coerce.number().int().positive().optional(),
   page: pageNumberField,
   pageSize: pageSizeField(50, 100),
 });

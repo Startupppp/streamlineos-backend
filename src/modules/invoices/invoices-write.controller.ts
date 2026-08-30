@@ -25,6 +25,10 @@ import {
   type UpdateInvoiceInput,
 } from "./dto/invoice-write.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { z } from "zod";
+import { Validate } from "../../common/validation/validate.decorator";
+
+const invoiceIdParams = z.object({ invoiceId: z.coerce.number().int().positive() }).strict();
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -61,6 +65,7 @@ export class InvoicesWriteController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:update")
   @Idempotent("accounting.invoice.update")
+  @Validate({ params: invoiceIdParams })
   async updateInvoice(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @Body(new ZodValidationPipe(updateInvoiceSchema)) body: UpdateInvoiceInput,
@@ -75,6 +80,7 @@ export class InvoicesWriteController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:create")
   @Idempotent("accounting.invoice.payment.record")
+  @Validate({ params: invoiceIdParams })
   recordPayment(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @Body(new ZodValidationPipe(recordPaymentSchema)) body: RecordPaymentInput,
@@ -88,6 +94,7 @@ export class InvoicesWriteController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:manage")
   @Idempotent("accounting.invoice.void")
+  @Validate({ params: invoiceIdParams })
   voidInvoice(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @CurrentUser() u: CurrentUserContext,

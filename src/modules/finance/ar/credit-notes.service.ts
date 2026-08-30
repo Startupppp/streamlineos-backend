@@ -33,6 +33,7 @@ export class CreditNotesService {
     const conditions = [eq(creditNotes.orgId, orgId)];
     if (query.status) conditions.push(eq(creditNotes.status, query.status));
     if (query.clientId) conditions.push(eq(creditNotes.clientId, query.clientId));
+    if (query.invoiceId) conditions.push(eq(creditNotes.invoiceId, query.invoiceId));
 
     const [rows, [{ count }]] = await Promise.all([
       this.db.select().from(creditNotes).where(and(...conditions)).orderBy(desc(creditNotes.createdAt)).limit(limit).offset(offset),
