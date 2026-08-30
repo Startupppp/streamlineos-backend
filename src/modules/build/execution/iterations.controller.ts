@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CyclesService, EpicsService, ModulesService, SprintsService } from "./iterations.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
@@ -69,10 +68,10 @@ export class SprintsController {
   @HttpCode(201)
   @RequirePermission("build:sprints:manage")
   @Idempotent("build.sprint.create")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createSprintSchema })
   createSprint(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createSprintSchema)) body: CreateSprintInput,
+    @Body() body: CreateSprintInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.sprints.createSprint(u.orgId, projectId, body);
@@ -90,10 +89,10 @@ export class SprintsController {
 
   @Patch(":sprintId")
   @RequirePermission("build:sprints:manage")
-  @Validate({ params: projectAndSprintIdParams })
+  @Validate({ params: projectAndSprintIdParams, body: updateSprintSchema })
   updateSprint(
     @Param("sprintId", ParseIntPipe) sprintId: number,
-    @Body(new ZodValidationPipe(updateSprintSchema)) body: UpdateSprintInput,
+    @Body() body: UpdateSprintInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.sprints.updateSprint(u.orgId, sprintId, body, u.userId);
@@ -120,10 +119,10 @@ export class CyclesController {
 
   @Get()
   @RequirePermission("build:view")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, query: cycleListQuerySchema })
   listCycles(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(cycleListQuerySchema)) query: CycleListQuery,
+    @Query() query: CycleListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.cycles.listCycles(u.orgId, projectId, query);
@@ -133,10 +132,10 @@ export class CyclesController {
   @HttpCode(201)
   @RequirePermission("build:workspace:manage")
   @Idempotent("build.cycle.create")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createCycleSchema })
   createCycle(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createCycleSchema)) body: CreateCycleInput,
+    @Body() body: CreateCycleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.cycles.createCycle(u.orgId, u.userId, projectId, body);
@@ -144,11 +143,11 @@ export class CyclesController {
 
   @Patch(":cycleId")
   @RequirePermission("build:workspace:manage")
-  @Validate({ params: projectAndCycleIdParams })
+  @Validate({ params: projectAndCycleIdParams, body: updateCycleSchema })
   updateCycle(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("cycleId", ParseIntPipe) cycleId: number,
-    @Body(new ZodValidationPipe(updateCycleSchema)) body: UpdateCycleInput,
+    @Body() body: UpdateCycleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.cycles.updateCycle(u.orgId, projectId, cycleId, body);

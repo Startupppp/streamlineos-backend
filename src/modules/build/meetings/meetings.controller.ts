@@ -46,10 +46,10 @@ export class MeetingsController {
 
   @Get()
   @RequirePermission("build:meetings:view")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, query: listMeetingsQuerySchema })
   listMeetings(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(listMeetingsQuerySchema)) query: ListMeetingsQuery,
+    @Query() query: ListMeetingsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listMeetings(u.orgId, projectId, query);
@@ -69,10 +69,10 @@ export class MeetingsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:meetings:manage")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createMeetingSchema })
   createMeeting(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createMeetingSchema)) body: CreateMeetingInput,
+    @Body() body: CreateMeetingInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createMeeting(u.orgId, u.userId, projectId, body);
@@ -80,11 +80,11 @@ export class MeetingsController {
 
   @Patch(":meetingId")
   @RequirePermission("build:meetings:manage")
-  @Validate({ params: projectAndMeetingIdParams })
+  @Validate({ params: projectAndMeetingIdParams, body: updateMeetingSchema })
   updateMeeting(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
-    @Body(new ZodValidationPipe(updateMeetingSchema)) body: UpdateMeetingInput,
+    @Body() body: UpdateMeetingInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateMeeting(u.orgId, u.userId, projectId, meetingId, body);
@@ -105,11 +105,11 @@ export class MeetingsController {
   @Post(":meetingId/attendees")
   @HttpCode(201)
   @RequirePermission("build:meetings:manage")
-  @Validate({ params: projectAndMeetingIdParams })
+  @Validate({ params: projectAndMeetingIdParams, body: addAttendeeSchema })
   addAttendee(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
-    @Body(new ZodValidationPipe(addAttendeeSchema)) body: AddAttendeeInput,
+    @Body() body: AddAttendeeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.addAttendee(u.orgId, u.userId, projectId, meetingId, body);
@@ -130,11 +130,11 @@ export class MeetingsController {
 
   @Put(":meetingId/standup")
   @RequirePermission("build:meetings:manage")
-  @Validate({ params: projectAndMeetingIdParams })
+  @Validate({ params: projectAndMeetingIdParams, body: upsertStandupSchema })
   upsertStandup(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
-    @Body(new ZodValidationPipe(upsertStandupSchema)) body: UpsertStandupInput,
+    @Body() body: UpsertStandupInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.upsertStandup(u.orgId, u.userId, projectId, meetingId, body);

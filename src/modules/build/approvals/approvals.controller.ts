@@ -80,10 +80,10 @@ export class ApprovalsController {
   @HttpCode(201)
   @RequirePermission("build:approvals:request")
   @Idempotent("build.approval.create")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createApprovalSchema })
   createApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createApprovalSchema)) body: CreateApprovalInput,
+    @Body() body: CreateApprovalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createApproval(u.orgId, u.userId, projectId, body);
@@ -92,11 +92,11 @@ export class ApprovalsController {
   @Patch(":approvalId/decide")
   @RequirePermission("build:approvals:decide")
   @Idempotent("build.approval.decide")
-  @Validate({ params: projectAndApprovalIdParams })
+  @Validate({ params: projectAndApprovalIdParams, body: decideApprovalSchema })
   decideApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
-    @Body(new ZodValidationPipe(decideApprovalSchema)) body: DecideApprovalInput,
+    @Body() body: DecideApprovalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.decideApproval(u, projectId, approvalId, body);
@@ -104,11 +104,11 @@ export class ApprovalsController {
 
   @Patch(":approvalId")
   @RequirePermission("build:approvals:manage")
-  @Validate({ params: projectAndApprovalIdParams })
+  @Validate({ params: projectAndApprovalIdParams, body: updateApprovalSchema })
   updateApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
-    @Body(new ZodValidationPipe(updateApprovalSchema)) body: UpdateApprovalInput,
+    @Body() body: UpdateApprovalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateApproval(u.orgId, u.userId, projectId, approvalId, body);

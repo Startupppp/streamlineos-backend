@@ -6,6 +6,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { PartyMergeService } from "./party-merge.service";
+import { PartyRevertService } from "./party-revert.service";
 import { PartyRolesService } from "./party-roles.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -28,6 +29,7 @@ export class PartyMergeController {
   constructor(
     private readonly roles: PartyRolesService,
     private readonly merges: PartyMergeService,
+    private readonly reverts: PartyRevertService,
   ) {}
 
   @Get("parties/:partyId/roles")
@@ -119,6 +121,6 @@ export class PartyMergeController {
     @CurrentUser() user: CurrentUserContext,
     @Param("partyMergeId") partyMergeId: string,
   ) {
-    return this.merges.revert(user.orgId, partyMergeId, user.userId);
+    return this.reverts.revert(user.orgId, partyMergeId, user.userId);
   }
 }

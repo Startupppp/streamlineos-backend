@@ -1,6 +1,5 @@
 import { Body, Controller, Get, HttpCode, HttpException, HttpStatus, NotFoundException, Param, Patch, Post, Request } from "@nestjs/common";
 import { Public } from "../../common/auth/public.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { SurveyResponseService } from "./survey-response.service";
 import { SurveyLiveSessionService } from "./survey-live-session.service";
@@ -63,10 +62,10 @@ export class SurveyPublicController {
   @Public()
   @Post(":collectorToken/start")
   @HttpCode(201)
-  @Validate({ params: collectorTokenParams })
+  @Validate({ params: collectorTokenParams, body: startSessionSchema })
   async start(
     @Param("collectorToken") collectorToken: string,
-    @Body(new ZodValidationPipe(startSessionSchema)) body: StartSessionInput,
+    @Body() body: StartSessionInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("survey:public-start", this.getIp(req));

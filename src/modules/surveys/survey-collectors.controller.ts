@@ -4,7 +4,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SurveyCollectorService } from "./survey-collector.service";
 import {
   createCollectorSchema,
@@ -33,10 +32,10 @@ export class SurveyCollectorsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("surveys:participants:manage")
-  @Validate({ params: surveyIdParams })
+  @Validate({ params: surveyIdParams, body: createCollectorSchema })
   create(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Body(new ZodValidationPipe(createCollectorSchema)) body: CreateCollectorInput,
+    @Body() body: CreateCollectorInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.collectors.create(u.orgId, surveyId, body);
@@ -44,11 +43,11 @@ export class SurveyCollectorsController {
 
   @Patch(":collectorId")
   @RequirePermission("surveys:participants:manage")
-  @Validate({ params: surveyAndCollectorIdParams })
+  @Validate({ params: surveyAndCollectorIdParams, body: patchCollectorSchema })
   patch(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("collectorId", ParseIntPipe) collectorId: number,
-    @Body(new ZodValidationPipe(patchCollectorSchema)) body: PatchCollectorInput,
+    @Body() body: PatchCollectorInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.collectors.patch(u.orgId, surveyId, collectorId, body);

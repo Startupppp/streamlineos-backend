@@ -6,7 +6,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Validate } from "../../common/validation/validate.decorator";
 import { SurveyParticipantService } from "./survey-participant.service";
 import {
@@ -29,10 +28,10 @@ export class SurveyParticipantsController {
 
   @Get()
   @RequirePermission("surveys:participants:view")
-  @Validate({ params: surveyIdParams })
+  @Validate({ params: surveyIdParams, query: listParticipantsSchema })
   list(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Query(new ZodValidationPipe(listParticipantsSchema)) query: ListParticipantsInput,
+    @Query() query: ListParticipantsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.participants.list(u.orgId, surveyId, query);
@@ -41,10 +40,10 @@ export class SurveyParticipantsController {
   @Post("import")
   @HttpCode(201)
   @RequirePermission("surveys:participants:manage")
-  @Validate({ params: surveyIdParams })
+  @Validate({ params: surveyIdParams, body: importParticipantsSchema })
   import(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Body(new ZodValidationPipe(importParticipantsSchema)) body: ImportParticipantsInput,
+    @Body() body: ImportParticipantsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.participants.import(u.orgId, surveyId, body);
@@ -54,10 +53,10 @@ export class SurveyParticipantsController {
   @Idempotent("surveys.participants.invite")
   @HttpCode(200)
   @RequirePermission("surveys:participants:manage")
-  @Validate({ params: surveyIdParams })
+  @Validate({ params: surveyIdParams, body: inviteParticipantsSchema })
   invite(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Body(new ZodValidationPipe(inviteParticipantsSchema)) body: InviteParticipantsInput,
+    @Body() body: InviteParticipantsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.participants.invite(u.orgId, surveyId, body.participantIds);
@@ -67,10 +66,10 @@ export class SurveyParticipantsController {
   @Idempotent("surveys.participants.remind")
   @HttpCode(200)
   @RequirePermission("surveys:participants:manage")
-  @Validate({ params: surveyIdParams })
+  @Validate({ params: surveyIdParams, body: remindParticipantsSchema })
   remind(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Body(new ZodValidationPipe(remindParticipantsSchema)) body: RemindParticipantsInput,
+    @Body() body: RemindParticipantsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.participants.remind(u.orgId, surveyId, body.participantIds);

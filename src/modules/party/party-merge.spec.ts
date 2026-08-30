@@ -8,6 +8,7 @@ import {
   partyMerges,
 } from "../../db/schema/party";
 import { PartyMergeService } from "./party-merge.service";
+import { PartyRevertService } from "./party-revert.service";
 
 /**
  * The two things a merge has to get right, over one database double.
@@ -208,7 +209,7 @@ describe("PartyMergeService and legacy identifiers", () => {
       recorded,
     );
 
-    await new PartyMergeService(db, audit).revert("org-1", "merge-1", "u-1");
+    await new PartyRevertService(db, audit).revert("org-1", "merge-1", "u-1");
 
     expect(updatesTo(recorded, leadPartyMap)).toEqual([
       { table: leadPartyMap, values: { partyId: "party-new" } },
@@ -241,7 +242,7 @@ describe("PartyMergeService and legacy identifiers", () => {
     );
 
     await expect(
-      new PartyMergeService(db, audit).revert("org-1", "merge-0"),
+      new PartyRevertService(db, audit).revert("org-1", "merge-0"),
     ).resolves.toMatchObject({ restoredPartyId: "party-new" });
     expect(updatesTo(recorded, leadPartyMap)).toEqual([]);
   });

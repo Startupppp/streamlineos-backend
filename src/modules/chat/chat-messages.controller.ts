@@ -19,7 +19,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ChatMessagesService } from "./chat-messages.service";
 import { ChatMessageTimelineService } from "./chat-message-timeline.service";
 import { ChatReactionsService } from "./chat-reactions.service";
@@ -63,10 +62,10 @@ export class ChatMessagesController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get()
   @RequirePermission("chat:messages:read")
-  @Validate({ params: channelIdParams })
+  @Validate({ params: channelIdParams, query: listMessagesQuerySchema })
   list(
     @Param("channelId", ParseIntPipe) channelId: number,
-    @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
+    @Query() query: ListMessagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.timeline.list(channelId, actorOf(u), query.cursor, query.limit);
@@ -78,10 +77,10 @@ export class ChatMessagesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("chat:messages:write")
-  @Validate({ params: channelIdParams })
+  @Validate({ params: channelIdParams, body: sendMessageSchema })
   async send(
     @Param("channelId", ParseIntPipe) channelId: number,
-    @Body(new ZodValidationPipe(sendMessageSchema)) body: SendMessageInput,
+    @Body() body: SendMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const rl = await this.rateLimit.check("chat:send-message", u.userId);
@@ -97,10 +96,10 @@ export class ChatMessagesController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get("poll")
   @RequirePermission("chat:messages:read")
-  @Validate({ params: channelIdParams })
+  @Validate({ params: channelIdParams, query: pollQuerySchema })
   poll(
     @Param("channelId", ParseIntPipe) channelId: number,
-    @Query(new ZodValidationPipe(pollQuerySchema)) query: PollQuery,
+    @Query() query: PollQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!query.since) throw new BadRequestException("Missing required query param: since");
@@ -113,10 +112,10 @@ export class ChatMessagesController {
   @ApiResponse({ status: 200, description: "OK" })
   @Patch(":messageId")
   @RequirePermission("chat:messages:write")
-  @Validate({ params: channelAndMessageIdParams })
+  @Validate({ params: channelAndMessageIdParams, body: editMessageSchema })
   edit(
     @Param("messageId", ParseIntPipe) messageId: number,
-    @Body(new ZodValidationPipe(editMessageSchema)) body: EditMessageInput,
+    @Body() body: EditMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.messages.edit(messageId, u.userId, u.orgId, body.content);
@@ -139,11 +138,11 @@ export class ChatMessagesController {
   @Post(":messageId/reactions")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
-  @Validate({ params: channelAndMessageIdParams })
+  @Validate({ params: channelAndMessageIdParams, body: reactionSchema })
   addReaction(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,
-    @Body(new ZodValidationPipe(reactionSchema)) body: ReactionInput,
+    @Body() body: ReactionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reactions.addReaction(channelId, messageId, u.userId, u.orgId, body.emoji);
@@ -168,10 +167,10 @@ export class ChatMessagesController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":messageId/thread")
   @RequirePermission("chat:messages:read")
-  @Validate({ params: channelAndMessageIdParams })
+  @Validate({ params: channelAndMessageIdParams, query: listMessagesQuerySchema })
   listThread(
     @Param("messageId", ParseIntPipe) messageId: number,
-    @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
+    @Query() query: ListMessagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.timeline.listThreadReplies(messageId, actorOf(u), query.cursor, query.limit);
@@ -182,11 +181,11 @@ export class ChatMessagesController {
   @Post(":messageId/thread")
   @HttpCode(201)
   @RequirePermission("chat:messages:write")
-  @Validate({ params: channelAndMessageIdParams })
+  @Validate({ params: channelAndMessageIdParams, body: sendMessageSchema })
   sendThreadReply(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,
-    @Body(new ZodValidationPipe(sendMessageSchema)) body: SendMessageInput,
+    @Body() body: SendMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.messages.sendThreadReply(channelId, messageId, u.userId, u.orgId, body);
