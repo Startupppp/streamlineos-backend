@@ -24,6 +24,7 @@ import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { OwnershipTransfersService } from "../../ownership/ownership-transfers.service";
+import { OwnershipTransferExpiryService } from "../../ownership/ownership-transfer-expiry.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -505,6 +506,10 @@ describe("OwnershipTransfersService.initiateOrgTransfer — org admin (isOwner=f
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: OwnershipTransferExpiryService,
+          useValue: { expireStaleTransfers: jest.fn().mockResolvedValue({ expired: 0 }) },
+        },
       ],
     }).compile();
 

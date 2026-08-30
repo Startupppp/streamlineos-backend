@@ -25,7 +25,7 @@ export class CacheService {
     redis: Redis | null,
     key: string,
     fetcher: () => Promise<T>,
-    ttlSeconds: number,
+    ttlSeconds: number | ((result: T) => number),
   ): Promise<T> {
     const existing = this.inFlight.get(key);
     if (existing) return existing as Promise<T>;
@@ -67,7 +67,7 @@ export class CacheService {
     redis: Redis | null,
     key: string,
     fetcher: () => Promise<T>,
-    ttlSeconds: number,
+    ttlSeconds: number | ((result: T) => number),
   ): Promise<T> {
     if (!redis) return fetcher();
     try {
@@ -105,8 +105,9 @@ export class CacheService {
 
     try {
       const data = await fetcher();
+      const ttl = typeof ttlSeconds === "function" ? ttlSeconds(data) : ttlSeconds;
       try {
-        await this.timedRedis(() => redis.set(key, data, { ex: ttlSeconds }));
+        await this.timedRedis(() => redis.set(key, data, { ex: ttl }));
       } catch {
         return data;
       }
@@ -220,6 +221,19 @@ export class CacheService {
     const redis = await this.redisForOrg(orgId);
     const key = await this.orgScopedKey(orgId, localKey);
     return this.cachedWithRedis(redis, key, fetcher, this.applyJitter(baseTtl));
+  }
+
+  async cachedForOrgWith<T>(
+    orgId: string,
+    localKey: string,
+    fetcher: () => Promise<T>,
+    ttlFn: (result: T) => number,
+    maxTtl: number,
+  ): Promise<T> {
+    const redis = await this.redisForOrg(orgId);
+    const key = await this.orgScopedKey(orgId, localKey);
+    const bounded = (result: T): number => Math.min(Math.max(ttlFn(result), 1), maxTtl);
+    return this.cachedWithRedis(redis, key, fetcher, bounded);
   }
 
   async cachedVersionedForOrg<T>(
