@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
 import { WorkflowsExecutionService } from "../workflows-execution.service";
 
@@ -49,16 +49,32 @@ describe("WorkflowsExecutionService — handleApproval ORACLE-2 existence oracle
     expect(thrownError).toBeInstanceOf(NotFoundException);
   });
 
-  it("proof — without orgId in the query, a cross-tenant row creates an oracle", async () => {
+  it("proof — neutering the orgId JOIN (mock returns cross-tenant row) exposes absence of ForbiddenException oracle", async () => {
     const crossTenantRow = { ...APPROVAL_ROW };
     const chain = buildSelectChain([crossTenantRow]);
 
-    const db = { select: chain.select } as unknown as Db;
+    const returning = jest.fn().mockResolvedValue([{ id: APPROVAL_ID, status: "approved" }]);
+    const updateWhere = jest.fn().mockReturnValue({ returning });
+    const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
+    const update = jest.fn().mockReturnValue({ set: updateSet });
+    const insertValues = jest.fn().mockResolvedValue(undefined);
+    const insert = jest.fn().mockReturnValue({ values: insertValues });
+
+    const db = {
+      select: chain.select,
+      update,
+      insert,
+    } as unknown as Db;
     const svc = new WorkflowsExecutionService(db);
 
-    await expect(
-      svc.handleApproval(ATTACKER_ORG, USER_ID, APPROVAL_ID, { action: "approve" }),
-    ).rejects.toThrow(NotFoundException);
+    let thrownError: unknown = null;
+    try {
+      await svc.handleApproval(ATTACKER_ORG, USER_ID, APPROVAL_ID, { action: "approve" });
+    } catch (err) {
+      thrownError = err;
+    }
+
+    expect(thrownError).not.toBeInstanceOf(ForbiddenException);
   });
 
   it("processes the approval for the owning org and returns the updated row", async () => {
