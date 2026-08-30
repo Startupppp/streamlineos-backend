@@ -11,15 +11,34 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
 }
 
+function makeChain(resolveWith: unknown): Record<string, jest.Mock> & { then: unknown; catch: unknown; finally: unknown } {
+  const chain: Record<string, jest.Mock> & { then: unknown; catch: unknown; finally: unknown } = {
+    then: undefined as unknown,
+    catch: undefined as unknown,
+    finally: undefined as unknown,
+  } as never;
+  for (const m of ["from", "where", "leftJoin", "innerJoin", "groupBy", "orderBy", "limit", "offset"]) {
+    chain[m] = jest.fn().mockReturnValue(chain);
+  }
+  chain.then = (fn: (v: unknown) => unknown) => Promise.resolve(resolveWith).then(fn);
+  chain.catch = (fn: (e: unknown) => unknown) => Promise.resolve(resolveWith).catch(fn);
+  chain.finally = (fn: () => void) => Promise.resolve(resolveWith).finally(fn);
+  return chain;
+}
+
 describe("RolesService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
   const ROLE_ID = 3;
 
-  function makeDb(roleRow: unknown, listRows: unknown[] = []): { db: Db; where: jest.Mock } {
-    const where = jest.fn().mockReturnValue({ leftJoin: jest.fn().mockReturnValue({ groupBy: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue({ offset: jest.fn().mockResolvedValue(listRows) }) }) }) }) });
-    const from = jest.fn().mockReturnValue({ where });
-    const select = jest.fn().mockReturnValue({ from });
+  function makeDb(roleRow: unknown, listRows: unknown[] = []): { db: Db; whereCalls: jest.Mock[] } {
+    const pageChain = makeChain(listRows);
+    const countChain = makeChain([{ value: listRows.length }]);
+    let selectCount = 0;
+    const select = jest.fn().mockImplementation(() => {
+      selectCount++;
+      return selectCount === 1 ? pageChain : countChain;
+    });
     const findFirst = jest.fn().mockResolvedValue(roleRow);
     const db = {
       select,
@@ -36,20 +55,23 @@ describe("RolesService — cross-tenant isolation", () => {
         execute: jest.fn().mockResolvedValue([]),
       })),
     } as unknown as Db;
-    return { db, where };
+    return { db, whereCalls: [pageChain.where, countChain.where] };
   }
 
   it("returns empty roles for a different org (cross-tenant isolation)", async () => {
-    const { db, where } = makeDb(null, []);
+    const { db, whereCalls } = makeDb(null, []);
     const mockAudit = { log: jest.fn() } as any;
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue({}) } as any;
     const mockRolePerm = { getRolePermissions: jest.fn().mockResolvedValue([]) } as any;
     const mockRoleMember = {} as any;
     const svc = new RolesService(db, mockAudit, mockAccess, mockRolePerm, mockRoleMember);
     const result = await svc.getRoles(ATTACKER, { page: 1, limit: 20 });
-    expect(result.roles).toHaveLength(0);
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
+    expect(result.data).toHaveLength(0);
+    const pageWhere = whereCalls[0];
+    expect(pageWhere).toHaveBeenCalled();
+    const allVals = pageWhere.mock.calls.flatMap((call: unknown[]) => sqlValues(call[0]));
+    expect(allVals).toContain(ATTACKER);
+    expect(allVals).not.toContain(OWNER);
   });
 
   it("throws NotFoundException for a role in a different org (cross-tenant isolation)", async () => {
@@ -71,6 +93,6 @@ describe("RolesService — cross-tenant isolation", () => {
     const mockRoleMember = {} as any;
     const svc = new RolesService(db, mockAudit, mockAccess, mockRolePerm, mockRoleMember);
     const result = await svc.getRoles(OWNER, { page: 1, limit: 20 });
-    expect(result.roles).toHaveLength(1);
+    expect(result.data).toHaveLength(1);
   });
 });

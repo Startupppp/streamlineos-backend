@@ -1,3 +1,8 @@
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => unknown) => fn(_db),
+  runInNewTenantTransaction: jest.fn().mockResolvedValue(undefined),
+}));
+
 import type { Db } from "../../../db/drizzle.module";
 import { AiCreditsReservationService } from "./ai-credits-reservation.service";
 
@@ -16,22 +21,23 @@ describe("AiCreditsReservationService — cross-tenant isolation", () => {
   const USER_ID = "user-abc";
 
   function makeDb(walletRow: unknown): Db {
-    const forUpdate = jest.fn().mockResolvedValue(walletRow ? [walletRow] : []);
-    const forClause = jest.fn().mockReturnValue({ then: async (fn: (v: unknown[]) => unknown) => fn(walletRow ? [walletRow] : []) });
-    const where = jest.fn().mockReturnValue({ for: () => forClause, then: async (fn: (v: unknown[]) => unknown) => fn(walletRow ? [walletRow] : []) });
+    const walletRows = walletRow ? [walletRow] : [];
+    const reservationRow = { id: 1, orgId: "org-x", credits: 100, status: "RESERVED", expiresAt: new Date() };
+    const forChain = { then: (fn: (v: unknown) => unknown) => Promise.resolve(walletRows).then(fn), catch: (fn: (e: unknown) => unknown) => Promise.resolve(walletRows).catch(fn), finally: (fn: () => void) => Promise.resolve(walletRows).finally(fn) };
+    const where = jest.fn().mockReturnValue({ for: jest.fn().mockReturnValue(forChain), then: (fn: (v: unknown) => unknown) => Promise.resolve(walletRows).then(fn), catch: (fn: (e: unknown) => unknown) => Promise.resolve(walletRows).catch(fn) });
     const from = jest.fn().mockReturnValue({ where });
     const select = jest.fn().mockReturnValue({ from });
-    const insert = jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1 }]) }) });
+    const update = jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) });
+    const insert = jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([reservationRow]) }) });
+    const innerTx = { select, insert, update, execute: jest.fn().mockResolvedValue([]) };
+    const outerTx = {
+      select, insert, update, execute: jest.fn().mockResolvedValue([]),
+      transaction: jest.fn().mockImplementation(async (fn2: (tx: unknown) => Promise<unknown>) => fn2(innerTx)),
+    };
     const db = {
-      select,
-      insert,
+      select, insert, update,
       execute: jest.fn().mockResolvedValue([]),
-      transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
-        select,
-        insert,
-        execute: jest.fn().mockResolvedValue([]),
-        transaction: jest.fn().mockImplementation(async (fn2: (tx: unknown) => Promise<unknown>) => fn2({ select, insert, execute: jest.fn().mockResolvedValue([]) })),
-      })),
+      transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(outerTx)),
     } as unknown as Db;
     return db;
   }

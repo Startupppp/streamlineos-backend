@@ -11,16 +11,17 @@ describe("UserModuleAccessService — cross-tenant isolation", () => {
     const innerJoin = jest.fn().mockReturnValue({ where });
     const from = jest.fn().mockReturnValue({ innerJoin });
     const select = jest.fn().mockReturnValue({ from });
+    const innerTx = { select, execute: jest.fn().mockResolvedValue([]) };
     return {
       select,
       execute: jest.fn().mockResolvedValue([]),
-      transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({ select })),
+      transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(innerTx)),
     } as unknown as Db;
   }
 
   it("returns empty denied modules for a different org (cross-tenant isolation)", async () => {
     const db = makeDb([]);
-    const mockEntitlements = { getEnabledModules: jest.fn().mockResolvedValue(new Set()) } as any;
+    const mockEntitlements = { getEnabledModules: jest.fn().mockResolvedValue(new Set()), isCoreModule: jest.fn().mockReturnValue(false) } as any;
     const mockCache = {} as any;
     const svc = new UserModuleAccessService(db, mockEntitlements, mockCache);
     const result = await svc.getUserDeniedModules(ATTACKER, USER_ID);
@@ -29,7 +30,7 @@ describe("UserModuleAccessService — cross-tenant isolation", () => {
 
   it("returns denied modules for the owning org (control — same-tenant)", async () => {
     const db = makeDb([{ moduleKey: "payroll" }]);
-    const mockEntitlements = { getEnabledModules: jest.fn().mockResolvedValue(new Set()) } as any;
+    const mockEntitlements = { getEnabledModules: jest.fn().mockResolvedValue(new Set()), isCoreModule: jest.fn().mockReturnValue(false) } as any;
     const mockCache = {} as any;
     const svc = new UserModuleAccessService(db, mockEntitlements, mockCache);
     const result = await svc.getUserDeniedModules(OWNER, USER_ID);

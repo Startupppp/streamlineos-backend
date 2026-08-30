@@ -95,11 +95,12 @@ describe("ExitWriteService — cross-tenant isolation", () => {
   });
 
   it("scopes resignation creation check to org (cross-tenant isolation — existing check uses orgId)", async () => {
-    const { db, findFirst, where } = makeDb([]);
+    const fakeRow = { id: 1, orgId: ATTACKER, userId: "actor-1", status: "PENDING_HR", rowVersion: 1, lastWorkingDate: null, noticePeriodDays: 30, createdAt: new Date() };
+    const { db, findFirst, where } = makeDb([fakeRow]);
     const { mockDispatch, mockAutomation, mockHrAutomation, mockResignationJobs, mockExitChecklist, mockPolicyEval, mockCompletionGuard, mockAccess } = makeDeps();
     const svc = new ExitWriteService(db, mockDispatch as never, mockAutomation as never, mockHrAutomation as never, mockResignationJobs as never, mockExitChecklist as never, mockPolicyEval as never, mockCompletionGuard as never, mockAccess as never);
     const input = { reason: "personal", lastWorkingDate: new Date(Date.now() + 86400_000 * 30).toISOString().slice(0, 10) };
-    await svc.create(ATTACKER, "actor-1", input as never);
+    await expect(svc.create(ATTACKER, "actor-1", input as never)).rejects.toThrow();
     expect(allQueryArgs(findFirst, where)).toContain(ATTACKER);
   });
 });

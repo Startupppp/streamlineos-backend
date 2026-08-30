@@ -17,6 +17,7 @@ describe("CrmService — cross-tenant isolation", () => {
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
         select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
         insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }),
+        execute: jest.fn().mockResolvedValue([]),
       })),
     } as unknown as Db;
   }

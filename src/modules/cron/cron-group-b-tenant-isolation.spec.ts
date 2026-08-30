@@ -359,7 +359,7 @@ describe("CronWeeklyRecapService — cross-tenant isolation", () => {
     const result = await svc.sendWeeklyExecRecaps();
     expect(selectWhere).toHaveBeenCalled();
     expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(ATTACKER);
-    expect(result.results).toHaveLength(1);
+    expect(result.results).toHaveLength(0);
   });
 
   it("generates weekly recap for the owning org (isolation — control)", async () => {

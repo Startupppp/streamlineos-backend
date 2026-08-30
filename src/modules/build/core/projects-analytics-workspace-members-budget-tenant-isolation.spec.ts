@@ -28,46 +28,40 @@ function makeCtx(orgId: string): CurrentUserContext {
   return { userId: "u1", orgId, isOrgOwner: false, sessionId: "s1" } as CurrentUserContext;
 }
 
+function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[] } {
+  const capturedWheres: unknown[] = [];
+  const chain: Record<string, unknown> = {};
+  const resolved = Promise.resolve([]);
+  const chainMethods = ["from", "where", "leftJoin", "innerJoin", "groupBy", "orderBy", "limit", "offset", "having"];
+  for (const m of chainMethods) {
+    chain[m] = jest.fn().mockImplementation((arg: unknown) => {
+      if (m === "where") capturedWheres.push(arg);
+      return chain;
+    });
+  }
+  chain.then = (fn: (v: unknown[]) => unknown) => resolved.then(fn);
+  chain.catch = (fn: (e: unknown) => unknown) => resolved.catch(fn);
+  chain.finally = (fn: () => void) => resolved.finally(fn);
+  const db = { select: jest.fn().mockReturnValue(chain) } as unknown as Db;
+  return { db, capturedWheres };
+}
+
 describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
   it("getProjectAnalytics scopes queries to requesting org (cross-tenant isolation)", async () => {
-    const selectWhere = jest.fn().mockReturnValue({
-      groupBy: jest.fn().mockResolvedValue([]),
-      leftJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ groupBy: jest.fn().mockResolvedValue([]) }) }),
-      orderBy: jest.fn().mockResolvedValue([]),
-    });
-    const db = {
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: selectWhere,
-          leftJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ groupBy: jest.fn().mockResolvedValue([]) }) }),
-        }),
-      }),
-    } as unknown as Db;
+    const { db, capturedWheres } = makeAnalyticsDb();
     const cache = { cached: jest.fn().mockImplementation((_k: string, fn: () => unknown) => fn()) } as unknown as CacheService;
     const svc = new ProjectsAnalyticsService(db, cache);
 
     await svc.getProjectAnalytics(ATTACKER_ORG, 1);
 
-    const wasCalled = (db.select as jest.Mock).mock.calls.length > 0;
-    expect(wasCalled).toBe(true);
-    const allCallArgs = selectWhere.mock.calls.flatMap((c) => sqlValues(c[0]));
+    expect((db.select as jest.Mock).mock.calls.length).toBeGreaterThan(0);
+    const allCallArgs = capturedWheres.flatMap((w) => sqlValues(w));
     expect(allCallArgs).toContain(ATTACKER_ORG);
     expect(allCallArgs).not.toContain(OWNER_ORG);
   });
 
   it("getProjectAnalytics works for the owning org (control — same-tenant access works)", async () => {
-    const db = {
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            groupBy: jest.fn().mockResolvedValue([]),
-            leftJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ groupBy: jest.fn().mockResolvedValue([]) }) }),
-            orderBy: jest.fn().mockResolvedValue([]),
-          }),
-          leftJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ groupBy: jest.fn().mockResolvedValue([]) }) }),
-        }),
-      }),
-    } as unknown as Db;
+    const { db } = makeAnalyticsDb();
     const cache = { cached: jest.fn().mockImplementation((_k: string, fn: () => unknown) => fn()) } as unknown as CacheService;
     const svc = new ProjectsAnalyticsService(db, cache);
 
@@ -143,7 +137,10 @@ describe("ProjectsBudgetService — cross-tenant isolation", () => {
   it("getBudget returns budget data for the owning org (control — same-tenant access works)", async () => {
     const fakeProject = { id: 1, orgId: OWNER_ORG, budgetMinor: 50000, budgetCurrency: "INR", managerId: "u1" };
     const db = {
-      query: { projects: { findFirst: jest.fn().mockResolvedValue(fakeProject) } },
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue(fakeProject) },
+        projectMembers: { findMany: jest.fn().mockResolvedValue([]) },
+      },
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockResolvedValue([]),

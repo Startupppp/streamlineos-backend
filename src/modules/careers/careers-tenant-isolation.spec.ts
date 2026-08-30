@@ -27,8 +27,23 @@ describe("CareersService — cross-tenant isolation", () => {
     expect(result).toHaveLength(0);
   });
 
-  it("CareersService.apply: derives org from job posting (isolation enforced by job-scoped orgId lookup)", () => {
-    expect(CareersService).toBeDefined();
-    expect(CareersService.name).toBe("CareersService");
+  it("CareersService.apply: returns job_not_found when posting does not exist — no org can be forged (isolation)", async () => {
+    const { db } = makeDb();
+    const cache = {
+      cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
+      invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+    };
+    const svc = new CareersService(db, cache as never);
+    const result = await svc.apply({
+      jobPostingId: 9999,
+      name: "Attacker",
+      email: "attacker@evil.com",
+      phone: null,
+      linkedinUrl: null,
+      coverLetter: null,
+      resumeUrl: null,
+      answers: {},
+    });
+    expect(result).toEqual({ error: "job_not_found" });
   });
 });

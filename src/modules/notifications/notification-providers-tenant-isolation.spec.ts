@@ -16,8 +16,12 @@ describe("NotificationProvidersService — cross-tenant isolation", () => {
 
   function makeDb(rows: unknown[]): { db: Db; wheres: unknown[] } {
     const wheres: unknown[] = [];
-    const where = jest.fn().mockImplementation((a: unknown) => { wheres.push(a); return Promise.resolve(rows); });
-    const db = { select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }) } as unknown as Db;
+    const findMany = jest.fn().mockImplementation(({ where: w }: { where?: unknown }) => { if (w) wheres.push(w); return Promise.resolve(rows); });
+    const db = {
+      query: {
+        notificationProviderAccounts: { findMany, findFirst: jest.fn().mockResolvedValue(null) },
+      },
+    } as unknown as Db;
     return { db, wheres };
   }
 

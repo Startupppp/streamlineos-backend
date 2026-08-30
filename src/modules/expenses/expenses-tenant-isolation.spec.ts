@@ -103,18 +103,17 @@ describe("ExpenseLifecycleService — cross-tenant isolation", () => {
   it("checkDuplicate: WHERE contains attacker orgId (deny — different org isolation)", async () => {
     const { db, where } = makeDb([]);
     const svc = new ExpenseLifecycleService(db, mockCache as never, mockAudit as never, mockPosting as never);
-    await svc.checkDuplicate(ATTACKER_ORG, 1000, "2025-01-01", "Merchant");
+    await svc.checkDuplicate(ATTACKER_ORG, "receipt-hash-abc");
     expect(where).toHaveBeenCalled();
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
     expect(allVals).toContain(ATTACKER_ORG);
   });
 
-  it("checkDuplicate: returns false for own org with no duplicate (control — same-tenant)", async () => {
+  it("checkDuplicate: returns null for own org with no duplicate (control — same-tenant)", async () => {
     const { db } = makeDb([]);
     const svc = new ExpenseLifecycleService(db, mockCache as never, mockAudit as never, mockPosting as never);
-    const result = await svc.checkDuplicate(OWNER_ORG, 1000, "2025-01-01", "Merchant");
-    expect(typeof result).toBe("boolean");
-    expect(result).toBe(false);
+    const result = await svc.checkDuplicate(OWNER_ORG, "receipt-hash-abc");
+    expect(result).toBeNull();
   });
 });
 

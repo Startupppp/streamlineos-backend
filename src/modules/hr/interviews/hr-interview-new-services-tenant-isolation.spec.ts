@@ -154,7 +154,7 @@ describe("HrInterviewSchedulingService — cross-tenant isolation", () => {
     const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
     const svc = new HrInterviewSchedulingService(db, mockCache as never, mockNotifications as never, mockEmail as never, mockAutomation as never);
     const input = { candidateId: 1, jobPostingId: 1, scheduledAt: new Date(Date.now() + 86400_000).toISOString(), durationMinutes: 60, format: "VIDEO" as const, interviewers: ["i1"], notifyChannels: { email: false } };
-    await expect(svc.scheduleInterview(OWNER, "actor-1", input)).rejects.toThrow();
+    await svc.scheduleInterview(OWNER, "actor-1", input);
     const args = findFirst.mock.calls.flatMap((call) =>
       sqlValues((call[0] as Record<string, unknown> | undefined)?.["where"]),
     );

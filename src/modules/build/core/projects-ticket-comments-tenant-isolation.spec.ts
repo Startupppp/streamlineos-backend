@@ -7,18 +7,20 @@ describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
 
   function makeDb(ticketRow: unknown | null) {
+    const fakeComment = { id: 42, orgId: (ticketRow as { orgId?: string } | null)?.orgId ?? "org-owner", ticketId: 1, content: "hello", authorId: "u1", createdAt: new Date() };
     return {
       query: {
         tickets: { findFirst: jest.fn().mockResolvedValue(ticketRow) },
         ticketComments: { findFirst: jest.fn().mockResolvedValue(null) },
       },
-      insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }),
+      insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([fakeComment]) }) }),
+      execute: jest.fn().mockResolvedValue([]),
     } as unknown as Db;
   }
 
   const activity = { logTicketActivity: jest.fn() } as never;
   const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:tickets:view"])) } as never;
-  const webhooks = { dispatchTicketEvent: jest.fn() } as never;
+  const webhooks = { dispatchTicketEvent: jest.fn(), dispatch: jest.fn() } as never;
 
   it("throws NotFoundException when ticket belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);

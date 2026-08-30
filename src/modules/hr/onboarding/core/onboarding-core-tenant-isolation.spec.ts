@@ -1,6 +1,6 @@
 jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: (_db: unknown, fn: (tx: unknown, ctx: unknown) => unknown, opts: unknown) => fn(_db, opts),
-  runInNewTenantTransaction: jest.fn(),
+  runInNewTenantTransaction: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("../../../../common/tenant/tenant-context", () => ({
   registerAfterCommit: jest.fn().mockReturnValue(false),

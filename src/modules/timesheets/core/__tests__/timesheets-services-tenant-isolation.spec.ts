@@ -37,21 +37,38 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
 }
 
 function makeBuilder(rows: unknown[]) {
-  const limit = jest.fn().mockResolvedValue(rows);
+  const limit = jest.fn();
+  const offset = jest.fn();
   const orderBy = jest.fn();
   const leftJoin = jest.fn();
   const innerJoin = jest.fn();
   const groupBy = jest.fn();
   const where = jest.fn();
 
-  const builder = { from: jest.fn(), where, limit, orderBy, leftJoin, innerJoin, groupBy };
-  builder.from.mockReturnValue(builder);
+  const forFn = jest.fn();
+  const builder: Record<string, unknown> & { then: unknown; catch: unknown; finally: unknown } = {
+    from: jest.fn(),
+    where,
+    limit,
+    offset,
+    orderBy,
+    leftJoin,
+    innerJoin,
+    groupBy,
+    for: forFn,
+    then: (fn: (v: unknown) => unknown) => Promise.resolve(rows).then(fn),
+    catch: (fn: (e: unknown) => unknown) => Promise.resolve(rows).catch(fn),
+    finally: (fn: () => void) => Promise.resolve(rows).finally(fn),
+  };
+  (builder.from as jest.Mock).mockReturnValue(builder);
   where.mockReturnValue(builder);
   orderBy.mockReturnValue(builder);
   leftJoin.mockReturnValue(builder);
   innerJoin.mockReturnValue(builder);
   groupBy.mockReturnValue(builder);
-  limit.mockResolvedValue(rows);
+  limit.mockReturnValue(builder);
+  offset.mockReturnValue(builder);
+  forFn.mockReturnValue(builder);
 
   return { builder, where };
 }
@@ -75,7 +92,7 @@ function makeDb(rows: unknown[] = []) {
       timesheets: { findMany: jest.fn().mockResolvedValue(queryRows) },
       organizationSettings: { findFirst: jest.fn().mockResolvedValue(null) },
     },
-    insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1 }]) }) }),
+    insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1 }]), onConflictDoNothing: jest.fn().mockResolvedValue([]) }) }),
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{}]) }) }) }),
     transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       const { builder: txBuilder, where: txWhere } = makeBuilder([]);
@@ -97,7 +114,10 @@ const mockCache = {
   invalidateNamespace: jest.fn(),
 };
 const mockAudit = { record: jest.fn(), log: jest.fn() };
-const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue({ permissions: [] }) };
+const mockAccess = {
+  resolveUserPermissions: jest.fn().mockResolvedValue({ permissions: [] }),
+  scopeFor: jest.fn().mockResolvedValue("none"),
+};
 
 describe("FxService — cross-tenant isolation", () => {
   it("returns empty map for attacker org (deny — different org isolation)", async () => {
@@ -252,7 +272,7 @@ describe("TeamService — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const svc = new TeamService(db, mockAccess as never);
     const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [] } as never;
-    await svc.getWeekSummary(u, { weekStart: "2025-01-06" } as never);
+    await svc.getWeekSummary(u, { startDate: "2025-01-06", endDate: "2025-01-12", userIds: ["user-1"] } as never);
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
     expect(allVals).toContain(ATTACKER_ORG);
   });
@@ -261,7 +281,7 @@ describe("TeamService — cross-tenant isolation", () => {
     const { db } = makeDb([]);
     const svc = new TeamService(db, mockAccess as never);
     const u = { orgId: OWNER_ORG, userId: "u", isOrgOwner: false, permissions: [] } as never;
-    await expect(svc.getWeekSummary(u, { weekStart: "2025-01-06" } as never)).resolves.toBeDefined();
+    await expect(svc.getWeekSummary(u, { startDate: "2025-01-06", endDate: "2025-01-12", userIds: ["user-1"] } as never)).resolves.toBeDefined();
   });
 });
 
@@ -324,8 +344,10 @@ describe("TimerService — cross-tenant isolation", () => {
 });
 
 describe("PayrollSettingsService — cross-tenant isolation", () => {
+  const fakeSettings = { orgId: ATTACKER_ORG, defaultCurrency: "USD", roundingMode: "NONE", overtimeEnabled: false, overtimeThresholdHours: "40", overtimeRate: "1.5", breakDeductionEnabled: false, breakDurationMinutes: 0, requireApproval: false, approvalDeadlineDays: 7, lockAfterApproval: false, exportFormat: "CSV", createdAt: new Date(), updatedAt: new Date() };
+
   it("getSettings: WHERE contains attacker orgId (deny — different org isolation)", async () => {
-    const { db, where } = makeDb([]);
+    const { db, where } = makeDb([fakeSettings]);
     const svc = new PayrollSettingsService(db, mockCache as never, mockAudit as never);
     await svc.getSettings(ATTACKER_ORG);
     expect(where).toHaveBeenCalled();
@@ -334,7 +356,7 @@ describe("PayrollSettingsService — cross-tenant isolation", () => {
   });
 
   it("getSettings: returns settings for own org (control — same-tenant)", async () => {
-    const { db } = makeDb([]);
+    const { db } = makeDb([{ ...fakeSettings, orgId: OWNER_ORG }]);
     const svc = new PayrollSettingsService(db, mockCache as never, mockAudit as never);
     const result = await svc.getSettings(OWNER_ORG);
     expect(result).toBeDefined();
@@ -360,19 +382,21 @@ describe("PayrollSummaryService — cross-tenant isolation", () => {
 });
 
 describe("PayrollExportService — cross-tenant isolation", () => {
+  const fakeExportRow = { id: 1, orgId: ATTACKER_ORG, exportType: "PAYROLL", status: "COMPLETED", dateRangeStart: "2025-01-01", dateRangeEnd: "2025-01-31", format: "CSV", filters: {}, snapshot: [], entryCount: 1, totalHours: "8", note: null, ackStatus: "PENDING", ackAt: null, createdBy: "user-1", createdAt: new Date(), updatedAt: new Date() };
+  const makeTxImpl = (orgId: string) => async (fn: (tx: unknown) => Promise<unknown>) => {
+    const fakeEntry = { id: 1, orgId, userId: "user-1", hours: "8", isBillable: true, date: "2025-01-06", voidedAt: null };
+    const { builder: txBuilder } = makeBuilder([fakeEntry]);
+    const tx = {
+      select: jest.fn().mockReturnValue(txBuilder),
+      insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([fakeExportRow]), onConflictDoNothing: jest.fn().mockResolvedValue([]) }) }),
+      update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+    };
+    return fn(tx);
+  };
+
   it("runExport: WHERE contains attacker orgId in settings query (deny — different org isolation)", async () => {
     const { db, where } = makeDb([]);
-    (db as unknown as { transaction: jest.Mock }).transaction.mockImplementation(
-      async (fn: (tx: unknown) => Promise<unknown>) => {
-        const { builder: txBuilder } = makeBuilder([]);
-        const tx = {
-          select: jest.fn().mockReturnValue(txBuilder),
-          insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1 }]) }) }),
-          update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
-        };
-        return fn(tx);
-      }
-    );
+    (db as unknown as { transaction: jest.Mock }).transaction.mockImplementation(makeTxImpl(ATTACKER_ORG));
     const svc = new PayrollExportService(db, mockCache as never, mockAudit as never);
     const input = { start: "2025-01-01", end: "2025-01-31", includeExported: false } as never;
     await expect(svc.runExport(ATTACKER_ORG, "user-x", input)).resolves.toBeDefined();
@@ -382,17 +406,7 @@ describe("PayrollExportService — cross-tenant isolation", () => {
 
   it("runExport: runs for own org (control — same-tenant)", async () => {
     const { db } = makeDb([]);
-    (db as unknown as { transaction: jest.Mock }).transaction.mockImplementation(
-      async (fn: (tx: unknown) => Promise<unknown>) => {
-        const { builder: txBuilder } = makeBuilder([]);
-        const tx = {
-          select: jest.fn().mockReturnValue(txBuilder),
-          insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1 }]) }) }),
-          update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
-        };
-        return fn(tx);
-      }
-    );
+    (db as unknown as { transaction: jest.Mock }).transaction.mockImplementation(makeTxImpl(OWNER_ORG));
     const svc = new PayrollExportService(db, mockCache as never, mockAudit as never);
     const input = { start: "2025-01-01", end: "2025-01-31", includeExported: false } as never;
     await expect(svc.runExport(OWNER_ORG, "user-y", input)).resolves.toBeDefined();

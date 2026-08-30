@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { HrCustomFieldsService } from "./hr-custom-fields.service";
 import { HrEffectiveChangeApplierService } from "./hr-effective-change-applier.service";
@@ -190,29 +191,19 @@ describe("HrTimelineService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
 
-  it("scopes timeline query to attacker org (cross-tenant isolation)", async () => {
-    const { db, where, findMany } = makeDb([]);
+  it("scopes employment visibility query to attacker org (cross-tenant isolation)", async () => {
+    const { db, where } = makeDb([]);
     const svc = new HrTimelineService(db);
-    try {
-      await svc.list(ATTACKER, "actor-1", 1, "all", { limit: 10 });
-    } catch {
-    }
-    const called = where.mock.calls.length > 0 || findMany.mock.calls.length > 0;
-    if (called) {
-      expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
-    } else {
-      expect(ATTACKER).toBeDefined();
-    }
+    await expect(svc.getTimeline(ATTACKER, "actor-1", 1, "all", { limit: 10 })).rejects.toThrow(NotFoundException);
+    expect(where).toHaveBeenCalled();
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
 
-  it("timeline list uses owning org in query (control)", async () => {
-    const { db } = makeDb([]);
+  it("employment visibility query uses owning org (control)", async () => {
+    const { db, where } = makeDb([]);
     const svc = new HrTimelineService(db);
-    try {
-      await svc.list(OWNER, "actor-1", 1, "all", { limit: 10 });
-    } catch {
-    }
-    expect(db).toBeDefined();
+    await expect(svc.getTimeline(OWNER, "actor-1", 1, "all", { limit: 10 })).rejects.toThrow(NotFoundException);
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });
 });
 
@@ -220,30 +211,22 @@ describe("PersonEmploymentSyncService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
 
-  it("scopes backfill scan to attacker org (cross-tenant isolation)", async () => {
-    const { db, where, findMany } = makeDb([]);
+  it("scopes membership watermark query to attacker org (cross-tenant isolation)", async () => {
+    const { db, where } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new PersonEmploymentSyncService(db, mockAudit as never);
-    try {
-      await svc.backfillOrgPeople(ATTACKER, 10);
-    } catch {
-    }
-    const queried = where.mock.calls.length > 0 || findMany.mock.calls.length > 0;
-    if (queried) {
-      const arg = isolationArg(where, findMany);
-      expect(sqlValues(arg).includes(ATTACKER) || true).toBe(true);
-    }
-    expect(ATTACKER).toBeDefined();
+    await svc.backfillOrg(ATTACKER, null);
+    const allVals = where.mock.calls.flatMap((call: unknown[]) => sqlValues(call[0]));
+    expect(allVals).toContain(ATTACKER);
+    expect(allVals).not.toContain(OWNER);
   });
 
-  it("backfill for owning org (control)", async () => {
-    const { db } = makeDb([]);
+  it("membership watermark query uses owning org (control)", async () => {
+    const { db, where } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new PersonEmploymentSyncService(db, mockAudit as never);
-    try {
-      await svc.backfillOrgPeople(OWNER, 10);
-    } catch {
-    }
-    expect(db).toBeDefined();
+    await svc.backfillOrg(OWNER, null);
+    const allVals = where.mock.calls.flatMap((call: unknown[]) => sqlValues(call[0]));
+    expect(allVals).toContain(OWNER);
   });
 });

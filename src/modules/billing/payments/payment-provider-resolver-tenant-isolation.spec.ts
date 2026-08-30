@@ -23,7 +23,15 @@ describe("PaymentProviderResolver — cross-tenant isolation", () => {
   it("returns provider for the owning org (control — same-tenant)", async () => {
     const providerRow = { id: 1, orgId: OWNER, providerKey: "razorpay", status: "active", environment: "test" };
     const db = makeDb(providerRow);
-    const mockAdapter = { buildProvider: jest.fn() } as any;
+    const mockRuntime = {
+      isReady: jest.fn().mockReturnValue(true),
+      publicKeyId: jest.fn().mockReturnValue("k"),
+      createOrder: jest.fn(),
+      verifyPaymentSignature: jest.fn(),
+      verifyWebhookSignature: jest.fn(),
+      normalizeWebhook: jest.fn(),
+    };
+    const mockAdapter = { configure: jest.fn().mockReturnValue(mockRuntime) } as any;
     const mockRegistry = { get: jest.fn().mockReturnValue(mockAdapter) } as any;
     const mockSetup = { getDecryptedSecret: jest.fn().mockResolvedValue({ keyId: "k", secret: "s" }) } as any;
     const svc = new PaymentProviderResolver(db, mockRegistry, mockSetup);

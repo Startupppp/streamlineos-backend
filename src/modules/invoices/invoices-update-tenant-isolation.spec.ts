@@ -10,13 +10,19 @@ describe("InvoicesUpdateService — cross-tenant isolation", () => {
 
   function makeDb(invoiceRow: unknown): Db {
     const findFirst = jest.fn().mockResolvedValue(invoiceRow);
+    const updateChain = { set: jest.fn() };
+    updateChain.set.mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
+    const update = jest.fn().mockReturnValue(updateChain);
     return {
       query: { invoices: { findFirst }, accountingSettings: { findFirst: jest.fn().mockResolvedValue(null) } },
+      update,
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
-        update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+        update,
         select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+        execute: jest.fn().mockResolvedValue([]),
       })),
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+      execute: jest.fn().mockResolvedValue([]),
     } as unknown as Db;
   }
 

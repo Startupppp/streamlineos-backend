@@ -38,7 +38,7 @@ function makeDb(rows: unknown[]) {
     query: queryProxy,
     insert: jest.fn().mockReturnValue({
       values: jest.fn().mockReturnValue({
-        returning: jest.fn().mockResolvedValue(rows),
+        returning: jest.fn().mockResolvedValue(rows.length > 0 ? rows : [{ id: 1 }]),
         onConflictDoNothing: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
       }),
     }),
