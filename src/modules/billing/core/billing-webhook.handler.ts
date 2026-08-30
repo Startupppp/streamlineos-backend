@@ -10,7 +10,7 @@ import { PlanLimitsService } from "./plan-limits.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { type RevenueEventInput } from "./revenue-events";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
-import { PaymentWebhookHealthService } from "../payments/payment-webhook-health.service";
+import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { normalizedPaymentWebhookEventSchema, type PaymentWebhookPayment, type NormalizedPaymentWebhookEvent } from "../payments/dto/webhook.schemas";
 import { ProviderEventLedger, type ProviderEventKey } from "./provider-event-ledger";
@@ -28,7 +28,7 @@ export interface BillingWebhookDeps {
   revenueAnalytics: RevenueAnalyticsService;
   providers: PaymentProviderResolver;
   externalEffectLedger: ExternalEffectLedger;
-  paymentWebhooks: PaymentWebhookHealthService;
+  paymentWebhooks: PaymentWebhookReceiverService;
   paymentNotices: PaymentAnalyticsService;
 }
 

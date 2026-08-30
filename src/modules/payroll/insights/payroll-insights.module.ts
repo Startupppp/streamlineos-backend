@@ -25,6 +25,7 @@ import { FnfController } from "./fnf.controller";
 import { FnfInsightsService } from "./fnf.service";
 import { EssController } from "./ess.controller";
 import { EssService } from "./ess.service";
+import { EssSelfServiceService } from "./ess-self-service.service";
 import { PayrollNotificationsService } from "./payroll-notifications.service";
 import { PayrollAiExplainController } from "./payroll-ai-explain.controller";
 import { PayrollAiExplainService } from "./payroll-ai-explain.service";
@@ -59,6 +60,7 @@ import { EmploymentFactsModule } from "../../directory/employment-facts.module";
     TaxAdminService,
     FnfInsightsService,
     EssService,
+    EssSelfServiceService,
     PayrollNotificationsService,
     PayrollAiExplainService,
   ],

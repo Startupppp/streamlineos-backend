@@ -256,18 +256,6 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
           statusLabel: row?.statusLabel ?? "Export prepared — external filing required",
         };
       }
-      case "PREVIEW":
-      case "EXPORT":
-        throw new Error(
-          `${jobType} jobs are not yet implemented — no handler is wired for this job type. ` +
-          `Job marked FAILED to prevent silent no-ops. Deploy a real handler before re-enqueueing.`,
-        );
-      case "RECONCILE":
-        throw new Error(
-          "RECONCILE jobs are not yet implemented — bank-return matching requires a dedicated " +
-          "reconciliation engine (parser + persistence). A RECONCILE that returns success without " +
-          "reconciling is worse than failing loudly. Job marked FAILED. Deploy a real engine first.",
-        );
       default:
         throw new Error(`Unknown job type: ${jobType}`);
     }

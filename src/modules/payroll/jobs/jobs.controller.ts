@@ -31,12 +31,9 @@ const listQuerySchema = z.object({
 
 const enqueueSchema = z.object({
   jobType: z.enum([
-    "PREVIEW",
     "GENERATE",
     "RECALCULATE",
     "PDF_PUBLISH",
-    "EXPORT",
-    "RECONCILE",
     "FILING_EXPORT",
   ]),
   runId: z.number().int().positive().optional(),

@@ -18,7 +18,10 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { DashboardHrService } from "./dashboard-hr.service";
+import { DashboardStatsService } from "./dashboard-stats.service";
+import { DashboardAvailabilityService } from "./dashboard-availability.service";
+import { DashboardBirthdaysService } from "./dashboard-birthdays.service";
+import { DashboardPersonalService } from "./dashboard-personal.service";
 import { DashboardLeaveService } from "./dashboard-leave.service";
 import { DashboardAnnouncementsService } from "./dashboard-announcements.service";
 import { DashboardCrmService } from "./dashboard-crm.service";
@@ -35,7 +38,10 @@ import {
 @UseGuards(JwtAuthGuard)
 export class DashboardController {
   constructor(
-    private readonly hr: DashboardHrService,
+    private readonly stats: DashboardStatsService,
+    private readonly availability: DashboardAvailabilityService,
+    private readonly birthdays: DashboardBirthdaysService,
+    private readonly personal: DashboardPersonalService,
     private readonly leave: DashboardLeaveService,
     private readonly announcements: DashboardAnnouncementsService,
     private readonly crm: DashboardCrmService,
@@ -101,7 +107,7 @@ export class DashboardController {
   @UseGuards(ModuleGuard)
   @RequireModule("hr")
   birthdays(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getBirthdays(u.orgId);
+    return this.birthdays.getBirthdays(u.orgId);
   }
 
   @Get("executive")
@@ -148,7 +154,7 @@ export class DashboardController {
   @Get("personal")
   @Universal()
   personal(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getPersonalDashboard(u);
+    return this.personal.getPersonalDashboard(u);
   }
 
   @Get("recent-activity")
@@ -170,7 +176,7 @@ export class DashboardController {
   @Get("stats")
   @Universal()
   stats(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getDashboardStats(u.orgId, u);
+    return this.stats.getDashboardStats(u.orgId, u);
   }
 
   @Get("team-attendance")
@@ -178,7 +184,7 @@ export class DashboardController {
   @RequireModule("hr")
   @RequirePermission("hr:attendance:view")
   teamAttendance(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getTeamAttendance(u);
+    return this.availability.getTeamAttendance(u);
   }
 
   @Get("team-availability")
@@ -186,7 +192,7 @@ export class DashboardController {
   @RequireModule("hr")
   @RequirePermission("hr:attendance:view")
   teamAvailability(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getTeamAvailability(u);
+    return this.availability.getTeamAvailability(u);
   }
 
   @Get("today-activities")

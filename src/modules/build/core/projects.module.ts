@@ -32,6 +32,7 @@ import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service"
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
@@ -90,6 +91,7 @@ import { BuildReleasePublishedConsumerService } from "./build-release-published-
     ProjectsTicketsQueryService,
     ProjectsWorkQueryService,
     ProjectsTicketsReadService,
+    ProjectsTicketsDetailService,
     ProjectsTicketsTransferService,
     ProjectsTicketSubresourcesService,
     ProjectsTicketCommentsService,

@@ -1,6 +1,4 @@
-import { Test } from "@nestjs/testing";
 import type { Db } from "../../../db/drizzle.module";
-import { DRIZZLE } from "../../../db/drizzle.constants";
 import { CrmBlueprintsService } from "./crm-blueprints.service";
 import { CrmDataQualityService } from "./crm-data-quality.service";
 import { CrmValidationService } from "./crm-validation.service";
@@ -36,6 +34,14 @@ function makeDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   return { db, where };
 }
 
+function makeCache() {
+  return {
+    cachedVersioned: jest.fn().mockImplementation((_k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
+    cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
+    invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
 const ATTACKER = "org-attacker";
 const OWNER = "org-owner";
 
@@ -62,8 +68,7 @@ describe("CrmDataQualityService — cross-tenant isolation", () => {
   it("getReport: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
     const svc = new CrmDataQualityService(db);
-    const result = await svc.getReport(ATTACKER);
-    expect(result).toBeDefined();
+    await svc.getReport(ATTACKER);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
@@ -97,20 +102,14 @@ describe("CrmValidationService — cross-tenant isolation", () => {
 });
 
 describe("CrmValidationRulesService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        CrmValidationRulesService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "CrmValidationService", useValue: { evaluate: jest.fn().mockResolvedValue({}) } },
-      ],
-    }).compile();
-    return mod.get(CrmValidationRulesService);
+  function buildSvc(db: Db) {
+    const validator = { evaluate: jest.fn().mockResolvedValue({}) };
+    return new CrmValidationRulesService(db, validator as never);
   }
 
   it("list: returns nothing for a different org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.list(ATTACKER);
     expect(result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -120,34 +119,21 @@ describe("CrmValidationRulesService — cross-tenant isolation", () => {
   it("list: returns rows for the owning org (control)", async () => {
     const row = { id: 1, orgId: OWNER, name: "Rule1" };
     const { db } = makeDb([row]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.list(OWNER);
     expect(result).toHaveLength(1);
   });
 });
 
 describe("CrmMetadataService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        CrmMetadataService,
-        { provide: DRIZZLE, useValue: db },
-        {
-          provide: "CacheService",
-          useValue: {
-            cachedVersioned: jest.fn().mockImplementation((_k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
-            cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
-          },
-        },
-        { provide: "AuditService", useValue: { log: jest.fn().mockResolvedValue(undefined) } },
-      ],
-    }).compile();
-    return mod.get(CrmMetadataService);
+  function buildSvc(db: Db) {
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    return new CrmMetadataService(db, makeCache() as never, audit as never);
   }
 
   it("listPipelines: returns nothing for a different org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.listPipelines(ATTACKER);
     expect(result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -157,7 +143,7 @@ describe("CrmMetadataService — cross-tenant isolation", () => {
   it("listPipelines: returns rows for the owning org (control)", async () => {
     const row = { id: 1, orgId: OWNER, name: "P1", stages: [] };
     const { db } = makeDb([row]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.listPipelines(OWNER);
     expect(result).toHaveLength(1);
   });

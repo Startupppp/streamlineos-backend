@@ -18,6 +18,8 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ReconciliationService } from "./reconciliation.service";
+import { ReconciliationWorkspaceService } from "./reconciliation-workspace.service";
+import { ReconciliationRulesService } from "./reconciliation-rules.service";
 import {
   confirmMatchSchema,
   unmatchSchema,
@@ -40,7 +42,11 @@ const rulesQuerySchema = z.object({
 @Controller("finance/reconciliation/:bankAccountId")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ReconciliationController {
-  constructor(private readonly service: ReconciliationService) {}
+  constructor(
+    private readonly service: ReconciliationService,
+    private readonly workspace: ReconciliationWorkspaceService,
+    private readonly rules: ReconciliationRulesService,
+  ) {}
 
   @Get()
   @RequirePermission("accounting:banking:reconcile")
@@ -48,7 +54,7 @@ export class ReconciliationController {
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.getWorkspace(u, bankAccountId);
+    return this.workspace.getWorkspace(u, bankAccountId);
   }
 
   @Post("match")
@@ -91,7 +97,7 @@ export class ReconciliationController {
     @Query(new ZodValidationPipe(rulesQuerySchema)) query: { page: number; pageSize: number },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.listRules(u, { ...query, bankAccountId });
+    return this.rules.listRules(u, { ...query, bankAccountId });
   }
 
   @Post("rules")
@@ -102,7 +108,7 @@ export class ReconciliationController {
     @Body(new ZodValidationPipe(createReconciliationRuleSchema)) body: CreateReconciliationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.createRule(u, bankAccountId, body);
+    return this.rules.createRule(u, bankAccountId, body);
   }
 
   @Delete("rules/:ruleId")
@@ -112,6 +118,6 @@ export class ReconciliationController {
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.deleteRule(u, bankAccountId, ruleId);
+    return this.rules.deleteRule(u, bankAccountId, ruleId);
   }
 }

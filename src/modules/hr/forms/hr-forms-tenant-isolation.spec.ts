@@ -70,7 +70,7 @@ describe("HrFormsService — cross-tenant isolation", () => {
 describe("HrFormsSubmissionsService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
-  const ROW = { id: 1, orgId: OWNER };
+  const ROW = { id: 1, orgId: OWNER, formSchemaSnapshot: [], data: {} };
 
   it("hides form submissions from different org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
@@ -88,7 +88,7 @@ describe("HrFormsSubmissionsService — cross-tenant isolation", () => {
     const mockAudit = { log: jest.fn() };
     const mockWorkflow = { startInstance: jest.fn() };
     const svc = new HrFormsSubmissionsService(db, mockForms as never, mockAudit as never, mockWorkflow as never);
-    await svc.listSubmissions(OWNER, 1, { page: 1, limit: 10 });
+    await svc.listSubmissions(OWNER, 1, { page: 1, limit: 10 }, false);
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });

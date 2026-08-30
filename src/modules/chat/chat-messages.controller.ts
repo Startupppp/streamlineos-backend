@@ -21,6 +21,8 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ChatMessagesService } from "./chat-messages.service";
+import { ChatMessageTimelineService } from "./chat-message-timeline.service";
+import { ChatReactionsService } from "./chat-reactions.service";
 import {
   editMessageSchema,
   listMessagesQuerySchema,
@@ -46,6 +48,8 @@ import { actorOf } from "../entity-reference/entity-actor";
 export class ChatMessagesController {
   constructor(
     private readonly messages: ChatMessagesService,
+    private readonly timeline: ChatMessageTimelineService,
+    private readonly reactions: ChatReactionsService,
     private readonly rateLimit: RateLimitService,
   ) {}
 
@@ -58,7 +62,7 @@ export class ChatMessagesController {
     @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.list(channelId, actorOf(u), query.cursor, query.limit);
+    return this.timeline.list(channelId, actorOf(u), query.cursor, query.limit);
   }
 
   @ApiOperation({ summary: "Send a message to a channel" })
@@ -73,7 +77,11 @@ export class ChatMessagesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const rl = await this.rateLimit.check("chat:send-message", u.userId);
-    if (!rl.allowed) throw new HttpException(`Rate limited. Retry after ${rl.retryAfterSecs}s`, HttpStatus.TOO_MANY_REQUESTS);
+    if (!rl.allowed)
+      throw new HttpException(
+        `Rate limited. Retry after ${rl.retryAfterSecs}s`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     return this.messages.send(channelId, u.userId, u.orgId, body);
   }
 
@@ -89,7 +97,7 @@ export class ChatMessagesController {
     if (!query.since) throw new BadRequestException("Missing required query param: since");
     const since = new Date(query.since);
     if (Number.isNaN(since.getTime())) throw new BadRequestException("Invalid 'since' timestamp");
-    return this.messages.poll(channelId, actorOf(u), since);
+    return this.timeline.poll(channelId, actorOf(u), since);
   }
 
   @ApiOperation({ summary: "Edit message content" })
@@ -115,18 +123,32 @@ export class ChatMessagesController {
     return this.messages.remove(messageId, u.userId, u.isOrgOwner, u.orgId);
   }
 
-  @ApiOperation({ summary: "Toggle an emoji reaction on a message" })
+  @ApiOperation({ summary: "Add an emoji reaction to a message (idempotent)" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":messageId/reactions")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
-  react(
+  addReaction(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,
     @Body(new ZodValidationPipe(reactionSchema)) body: ReactionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.react(channelId, messageId, u.userId, u.orgId, body.emoji);
+    return this.reactions.addReaction(channelId, messageId, u.userId, u.orgId, body.emoji);
+  }
+
+  @ApiOperation({ summary: "Remove an emoji reaction from a message (idempotent)" })
+  @ApiResponse({ status: 200, description: "OK" })
+  @Delete(":messageId/reactions/:emoji")
+  @HttpCode(200)
+  @RequirePermission("chat:messages:write")
+  removeReaction(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @Param("messageId", ParseIntPipe) messageId: number,
+    @Param("emoji") emoji: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reactions.removeReaction(channelId, messageId, u.userId, u.orgId, emoji);
   }
 
   @ApiOperation({ summary: "List thread replies for a message" })
@@ -138,7 +160,7 @@ export class ChatMessagesController {
     @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.listThreadReplies(messageId, actorOf(u), query.cursor, query.limit);
+    return this.timeline.listThreadReplies(messageId, actorOf(u), query.cursor, query.limit);
   }
 
   @ApiOperation({ summary: "Send a reply in a message thread" })

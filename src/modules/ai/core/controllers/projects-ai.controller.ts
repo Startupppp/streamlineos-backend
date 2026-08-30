@@ -18,7 +18,9 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { LlmService } from "../providers/llm.service";
 import { ProjectsAiService } from "../services/projects-ai.service";
-import { TicketAiService } from "../services/ticket-ai.service";
+import { TicketInsightsAiService } from "../services/ticket-insights-ai.service";
+import { TicketTriageAiService } from "../services/ticket-triage-ai.service";
+import { MeetingActionAiService } from "../services/meeting-action-ai.service";
 import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
 import {
   planBodySchema,
@@ -56,7 +58,9 @@ export class ProjectsAiController {
   constructor(
     private readonly llm: LlmService,
     private readonly projectsAi: ProjectsAiService,
-    private readonly ticketAi: TicketAiService,
+    private readonly ticketInsights: TicketInsightsAiService,
+    private readonly ticketTriage: TicketTriageAiService,
+    private readonly meetingAction: MeetingActionAiService,
     private readonly planLimits: PlanLimitsService,
   ) {}
 
@@ -126,7 +130,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.suggestTitleFromDraft(
+    return this.ticketTriage.suggestTitleFromDraft(
       u.orgId,
       u.userId,
       parsePositiveInt(rawPid, "projectId"),
@@ -142,7 +146,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.improveDescriptionDraft(
+    return this.ticketTriage.improveDescriptionDraft(
       u.orgId,
       u.userId,
       parsePositiveInt(rawPid, "projectId"),
@@ -158,7 +162,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.suggestFieldsFromDraft(
+    return this.ticketTriage.suggestFieldsFromDraft(
       u.orgId,
       u.userId,
       parsePositiveInt(rawPid, "projectId"),
@@ -174,7 +178,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.summarizeTicket(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
+    return this.ticketInsights.summarizeTicket(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
   }
 
   @Post("tickets/:projectId/:ticketId/summarize-comments")
@@ -185,7 +189,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.summarizeComments(
+    return this.ticketInsights.summarizeComments(
       u.orgId,
       u.userId,
       parsePositiveInt(rawPid, "projectId"),
@@ -202,7 +206,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.improveDescription(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"), body.draft);
+    return this.ticketInsights.improveDescription(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"), body.draft);
   }
 
   @Post("tickets/:projectId/:ticketId/suggest-subtasks")
@@ -213,7 +217,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.suggestSubtasks(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
+    return this.ticketTriage.suggestSubtasks(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
   }
 
   @Post("tickets/:projectId/:ticketId/generate-checklist")
@@ -224,7 +228,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.generateChecklist(
+    return this.ticketTriage.generateChecklist(
       u.orgId,
       u.userId,
       parsePositiveInt(rawPid, "projectId"),
@@ -251,7 +255,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
     this.ensureLlm();
-    return this.ticketAi.extractMeetingActions(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawMid, "meetingId"));
+    return this.meetingAction.extractMeetingActions(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawMid, "meetingId"));
   }
 
   @Post("projects/:projectId/change-impact")
@@ -272,6 +276,6 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.handoffSummary(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
+    return this.ticketInsights.handoffSummary(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
   }
 }

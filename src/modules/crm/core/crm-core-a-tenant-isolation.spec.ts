@@ -175,22 +175,29 @@ describe("SlaResolverService — cross-tenant isolation", () => {
 
 describe("TerritoryMatchService — cross-tenant isolation", () => {
   it("match: queries scoped to attacker yield no territory (deny)", async () => {
-    const findMany = jest.fn().mockResolvedValue([]);
-    const db = { query: { territories: { findMany } } } as unknown as Db;
+    const { db, where } = makeDb([]);
     const svc = new TerritoryMatchService(db);
     const result = await svc.match(ATTACKER, { country: "US" });
     expect(result).toBeNull();
-    expect(findMany).toHaveBeenCalled();
-    expect(sqlValues(findMany.mock.calls[0]?.[0]?.where)).toContain(ATTACKER);
+    expect(where).toHaveBeenCalled();
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
 
   it("match: returns territory for the owning org (control)", async () => {
-    const row = { id: 1, orgId: OWNER, name: "West", isActive: true, rules: [], reps: [] };
-    const findMany = jest.fn().mockResolvedValue([row]);
-    const db = { query: { territories: { findMany } } } as unknown as Db;
+    const territory = { id: 1, name: "West", priority: 1, criteria: {} };
+    const where2 = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) });
+    const chain2: Record<string, unknown> = {
+      then: (fn: (v: unknown) => unknown) => Promise.resolve([territory]).then(fn),
+      where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([territory]) }) }),
+      orderBy: jest.fn(),
+      limit: jest.fn(),
+    };
+    ((chain2["orderBy"] as jest.Mock)).mockReturnValue({ limit: jest.fn().mockResolvedValue([territory]) });
+    const from2 = jest.fn().mockReturnValueOnce(chain2).mockReturnValue({ where: where2 });
+    const db = { select: jest.fn().mockReturnValue({ from: from2 }) } as unknown as Db;
     const svc = new TerritoryMatchService(db);
-    const result = await svc.match(OWNER, { country: "US" });
-    expect(result).toBeDefined();
+    const result = await svc.match(OWNER, {});
+    expect(result?.territory).toBeDefined();
   });
 });
 

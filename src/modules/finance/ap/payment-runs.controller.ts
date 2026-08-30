@@ -19,6 +19,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PaymentRunsService } from "./payment-runs.service";
+import { PaymentRunExecutorService } from "./payment-run-executor.service";
 import {
   createPaymentRunSchema,
   updatePaymentRunItemSchema,
@@ -32,7 +33,10 @@ import {
 @Controller("accounting/payment-runs")
 @UseGuards(JwtAuthGuard)
 export class PaymentRunsController {
-  constructor(private readonly service: PaymentRunsService) {}
+  constructor(
+    private readonly service: PaymentRunsService,
+    private readonly executor: PaymentRunExecutorService,
+  ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
@@ -87,7 +91,7 @@ export class PaymentRunsController {
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.executeRun(u, runId);
+    return this.executor.executeRun(u, runId);
   }
 
   @Post(":runId/cancel")

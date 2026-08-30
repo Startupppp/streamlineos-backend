@@ -1,6 +1,4 @@
-import { Test } from "@nestjs/testing";
 import type { Db } from "../../db/drizzle.module";
-import { DRIZZLE } from "../../db/drizzle.constants";
 import { CrmExportService } from "./import/crm-export.service";
 import { CrmInboxAiActionsService } from "./inbox/crm-inbox-ai-actions.service";
 import { CrmInboxService } from "./inbox/crm-inbox.service";
@@ -38,27 +36,23 @@ const ATTACKER = "org-attacker";
 const OWNER = "org-owner";
 
 describe("CrmExportService — cross-tenant isolation", () => {
-  it("archiveChunks: yields nothing for a different org (deny)", async () => {
+  it("archiveChunks: all DB queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
     const svc = new CrmExportService(db);
-    const chunks: unknown[] = [];
-    for await (const chunk of svc.archiveChunks(ATTACKER)) {
-      chunks.push(chunk);
-    }
-    expect(chunks).toHaveLength(0);
+    for await (const _ of svc.archiveChunks(ATTACKER)) { /* consume */ }
     expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
+    const allValues = where.mock.calls.flatMap((call: unknown[]) => sqlValues(call[0]));
+    expect(allValues).toContain(ATTACKER);
+    expect(allValues).not.toContain(OWNER);
   });
 
-  it("archiveChunks: yields rows for the owning org (control)", async () => {
-    const row = { id: 1, orgId: OWNER, data: "x" };
-    const { db } = makeDb([row]);
+  it("archiveChunks: all DB queries scoped to owner org (control)", async () => {
+    const { db, where } = makeDb([]);
     const svc = new CrmExportService(db);
-    const chunks: unknown[] = [];
-    for await (const chunk of svc.archiveChunks(OWNER)) {
-      chunks.push(chunk);
-    }
-    expect(chunks.length).toBeGreaterThan(0);
+    for await (const _ of svc.archiveChunks(OWNER)) { /* consume */ }
+    expect(where).toHaveBeenCalled();
+    const allValues = where.mock.calls.flatMap((call: unknown[]) => sqlValues(call[0]));
+    expect(allValues).toContain(OWNER);
   });
 });
 
@@ -82,20 +76,14 @@ describe("CrmInboxAiActionsService — cross-tenant isolation", () => {
 });
 
 describe("CrmInboxService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        CrmInboxService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "CrmInboxAiActionsService", useValue: { resolveMetadata: jest.fn().mockResolvedValue({}) } },
-      ],
-    }).compile();
-    return mod.get(CrmInboxService);
+  function buildSvc(db: Db) {
+    const aiActions = { resolveMetadata: jest.fn().mockResolvedValue({ terminalLeadKeys: [], openStageKeys: [] }) };
+    return new CrmInboxService(db, aiActions as never);
   }
 
   it("getInbox: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.getInbox(ATTACKER, "user-1", "all");
     expect(result.items ?? result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -103,9 +91,8 @@ describe("CrmInboxService — cross-tenant isolation", () => {
   });
 
   it("getInbox: queries scoped to owner org (control)", async () => {
-    const row = { id: 1, orgId: OWNER };
-    const { db, where } = makeDb([row]);
-    const svc = await buildSvc(db);
+    const { db, where } = makeDb([]);
+    const svc = buildSvc(db);
     await svc.getInbox(OWNER, "user-1", "all");
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);

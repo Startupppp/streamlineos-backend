@@ -360,7 +360,16 @@ export class AccountingLedgerService {
     await this.finPosting.assertPeriodOpen(orgId, today);
 
     const headerRows = await this.db
-      .select()
+      .select({
+        id: journalEntries.id,
+        orgId: journalEntries.orgId,
+        entryNumber: journalEntries.entryNumber,
+        entryDate: journalEntries.entryDate,
+        sourceType: journalEntries.sourceType,
+        sourceId: journalEntries.sourceId,
+        sourceEvent: journalEntries.sourceEvent,
+        status: journalEntries.status,
+      })
       .from(journalEntries)
       .where(and(eq(journalEntries.id, entryId), eq(journalEntries.orgId, orgId)))
       .limit(1);

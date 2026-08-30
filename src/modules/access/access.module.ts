@@ -5,6 +5,7 @@ import { MfaPolicyService } from "./mfa-policy.service";
 import { EntitlementsController } from "./entitlements.controller";
 import { PermissionGuard } from "./permission.guard";
 import { UserModuleAccessController } from "./user-module-access.controller";
+import { UserModuleAccessService } from "./user-module-access.service";
 import { BillingModule } from "../billing/core/billing.module";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 
@@ -18,6 +19,7 @@ import { ModuleGuard } from "../../common/rbac/module.guard";
     MfaPolicyService,
     PermissionGuard,
     ModuleGuard,
+    UserModuleAccessService,
   ],
   exports: [
     AccessService,
@@ -25,6 +27,7 @@ import { ModuleGuard } from "../../common/rbac/module.guard";
     MfaPolicyService,
     PermissionGuard,
     ModuleGuard,
+    UserModuleAccessService,
   ],
 })
 export class AccessModule {}

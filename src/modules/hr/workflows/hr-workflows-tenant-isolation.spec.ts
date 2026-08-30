@@ -19,26 +19,41 @@ function makeDb(rows: unknown[]) {
   const where = jest.fn();
   const findMany = jest.fn().mockResolvedValue(rows);
   const findFirst = jest.fn().mockResolvedValue(rows[0] ?? null);
-  const builder = {
+  const countRow = [{ total: rows.length }];
+  const dataBuilder = {
     from: jest.fn(), where, orderBy: jest.fn(), limit: jest.fn(), offset: jest.fn(),
     leftJoin: jest.fn(), innerJoin: jest.fn(), groupBy: jest.fn(),
     then: (resolve: (v: unknown) => unknown) => Promise.resolve(rows).then(resolve),
   };
-  builder.from.mockReturnValue(builder);
-  builder.where.mockReturnValue(builder);
-  builder.orderBy.mockReturnValue(builder);
-  builder.limit.mockReturnValue(builder);
-  builder.offset.mockReturnValue(builder);
-  builder.leftJoin.mockReturnValue(builder);
-  builder.innerJoin.mockReturnValue(builder);
-  builder.groupBy.mockReturnValue(builder);
+  dataBuilder.from.mockReturnValue(dataBuilder);
+  dataBuilder.where.mockReturnValue(dataBuilder);
+  dataBuilder.orderBy.mockReturnValue(dataBuilder);
+  dataBuilder.limit.mockReturnValue(dataBuilder);
+  dataBuilder.offset.mockReturnValue(dataBuilder);
+  dataBuilder.leftJoin.mockReturnValue(dataBuilder);
+  dataBuilder.innerJoin.mockReturnValue(dataBuilder);
+  dataBuilder.groupBy.mockReturnValue(dataBuilder);
+  const countBuilder = {
+    from: jest.fn(), where: jest.fn(), orderBy: jest.fn(), limit: jest.fn(), offset: jest.fn(),
+    leftJoin: jest.fn(), innerJoin: jest.fn(), groupBy: jest.fn(),
+    then: (resolve: (v: unknown) => unknown) => Promise.resolve(countRow).then(resolve),
+  };
+  countBuilder.from.mockReturnValue(countBuilder);
+  countBuilder.where.mockReturnValue(countBuilder);
+  countBuilder.orderBy.mockReturnValue(countBuilder);
+  countBuilder.limit.mockReturnValue(countBuilder);
+  countBuilder.offset.mockReturnValue(countBuilder);
+  countBuilder.leftJoin.mockReturnValue(countBuilder);
+  countBuilder.innerJoin.mockReturnValue(countBuilder);
+  countBuilder.groupBy.mockReturnValue(countBuilder);
   const queryProxy = new Proxy({} as Record<string, unknown>, { get: () => ({ findMany, findFirst }) });
+  const select = jest.fn().mockReturnValueOnce(dataBuilder).mockReturnValue(countBuilder);
   const db = {
-    select: jest.fn().mockReturnValue(builder),
+    select,
     query: queryProxy,
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) }),
     execute: jest.fn().mockResolvedValue(rows),
-    transaction: jest.fn().mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn({ select: jest.fn().mockReturnValue(builder), query: queryProxy } as unknown as Db)),
+    transaction: jest.fn().mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn({ select: jest.fn().mockReturnValue(dataBuilder), query: queryProxy } as unknown as Db)),
   } as unknown as Db;
   return { db, where, findMany };
 }

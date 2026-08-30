@@ -13,13 +13,18 @@ import { CrmBriefService } from "./services/crm-brief.service";
 import { CrmTasksService } from "./services/crm-tasks.service";
 import { CrmCopilotService } from "./services/crm-copilot.service";
 import { CrmPipelineService } from "./services/crm-pipeline.service";
-import { HrAiService } from "./services/hr-ai.service";
+import { HrPerformanceAiService } from "./services/hr-performance-ai.service";
+import { HrRecruitmentAiService } from "./services/hr-recruitment-ai.service";
+import { HrPolicyAiService } from "./services/hr-policy-ai.service";
+import { HrHelpdeskAiService } from "./services/hr-helpdesk-ai.service";
 import { KbRagService } from "./services/kb-rag.service";
 import { ChatAssistantService } from "./services/chat-assistant.service";
 import { ChatHistoryService } from "./services/chat-history.service";
 import { OrgFeaturesService } from "./services/org-features.service";
 import { ProjectsAiService } from "./services/projects-ai.service";
-import { TicketAiService } from "./services/ticket-ai.service";
+import { TicketInsightsAiService } from "./services/ticket-insights-ai.service";
+import { TicketTriageAiService } from "./services/ticket-triage-ai.service";
+import { MeetingActionAiService } from "./services/meeting-action-ai.service";
 import { HrCopilotTools } from "./hr-copilot-tools";
 import { WorkspaceCopilotTools } from "./workspace-copilot-tools";
 import { OpsCopilotTools } from "./ops-copilot-tools";
@@ -58,13 +63,18 @@ import { SurveyAiService } from "./services/survey-ai.service";
     CrmTasksService,
     CrmCopilotService,
     CrmPipelineService,
-    HrAiService,
+    HrPerformanceAiService,
+    HrRecruitmentAiService,
+    HrPolicyAiService,
+    HrHelpdeskAiService,
     KbRagService,
     ChatAssistantService,
     ChatHistoryService,
     OrgFeaturesService,
     ProjectsAiService,
-    TicketAiService,
+    TicketInsightsAiService,
+    TicketTriageAiService,
+    MeetingActionAiService,
     HrCopilotTools,
     WorkspaceCopilotTools,
     OpsCopilotTools,

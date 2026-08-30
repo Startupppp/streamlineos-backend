@@ -38,11 +38,12 @@ function makeDb(rows: unknown[]) {
     execute: jest.fn().mockResolvedValue(rows),
     transaction: jest.fn().mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn({ select: jest.fn().mockReturnValue(builder), query: queryProxy } as unknown as Db)),
   } as unknown as Db;
-  return { db, where, findMany };
+  return { db, where, findMany, findFirst };
 }
 
-function isolationArg(where: jest.Mock, findMany: jest.Mock): unknown {
+function isolationArg(where: jest.Mock, findMany: jest.Mock, findFirst?: jest.Mock): unknown {
   if (where.mock.calls.length > 0) return where.mock.calls[0]?.[0];
+  if (findFirst && findFirst.mock.calls.length > 0) return (findFirst.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"];
   return (findMany.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"];
 }
 
@@ -50,25 +51,21 @@ describe("HrSettingsHubService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
 
-  it("scopes policy version lineage to attacker org (cross-tenant isolation)", async () => {
-    const { db, where, findMany } = makeDb([]);
-    const mockPolicies = { getById: jest.fn().mockRejectedValue(new Error("not found")) };
-    const mockTemplates = { getById: jest.fn().mockRejectedValue(new Error("not found")) };
-    const mockWorkflows = { get: jest.fn().mockRejectedValue(new Error("not found")) };
-    const svc = new HrSettingsHubService(db, mockPolicies as never, mockTemplates as never, mockWorkflows as never);
+  it("throws NotFoundException for cross-tenant policy version access (cross-tenant isolation)", async () => {
+    const { db, where, findMany, findFirst } = makeDb([]);
+    const mockEvaluation = { evaluatePolicy: jest.fn() };
+    const svc = new HrSettingsHubService(db, mockEvaluation as never);
     await expect(svc.getVersions(ATTACKER, "policy", "99")).rejects.toThrow();
-    expect(mockPolicies.getById).toHaveBeenCalledWith(ATTACKER, 99);
+    expect(sqlValues(isolationArg(where, findMany, findFirst))).toContain(ATTACKER);
   });
 
   it("returns policy version lineage for owning org (control — same-tenant access works)", async () => {
-    const policyRow = { id: 1, orgId: OWNER, replacedById: null };
-    const { db } = makeDb([policyRow]);
-    const mockPolicies = { getById: jest.fn().mockResolvedValue(policyRow) };
-    const mockTemplates = { getById: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER, replacedById: null }) };
-    const mockWorkflows = { get: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER, replacedById: null }) };
-    const svc = new HrSettingsHubService(db, mockPolicies as never, mockTemplates as never, mockWorkflows as never);
+    const ROOT = { id: 1, orgId: OWNER, name: "Leave Policy", policyType: "leave", replacedById: null, deletedAt: null };
+    const { db, where, findMany, findFirst } = makeDb([ROOT]);
+    const mockEvaluation = { evaluatePolicy: jest.fn() };
+    const svc = new HrSettingsHubService(db, mockEvaluation as never);
     const result = await svc.getVersions(OWNER, "policy", "1");
-    expect(mockPolicies.getById).toHaveBeenCalledWith(OWNER, 1);
-    expect(Array.isArray(result)).toBe(true);
+    expect(sqlValues(isolationArg(where, findMany, findFirst))).toContain(OWNER);
+    expect(result).toBeTruthy();
   });
 });

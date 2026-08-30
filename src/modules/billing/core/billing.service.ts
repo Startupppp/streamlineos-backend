@@ -13,7 +13,7 @@ import { ProrationLedgerService } from "./proration-ledger.service";
 import { VersionedCatalogService } from "./versioned-catalog.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
-import { PaymentWebhookHealthService } from "../payments/payment-webhook-health.service";
+import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import {
   BillingWebhookHandler,
@@ -47,7 +47,7 @@ export class BillingService {
     private readonly revenueAnalytics: RevenueAnalyticsService,
     private readonly providers: PaymentProviderResolver,
     private readonly externalEffectLedger: ExternalEffectLedger,
-    private readonly paymentWebhooks: PaymentWebhookHealthService,
+    private readonly paymentWebhooks: PaymentWebhookReceiverService,
     private readonly paymentNotices: PaymentAnalyticsService,
     private readonly billingProfile: BillingProfileService,
   ) {

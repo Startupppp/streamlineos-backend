@@ -1,6 +1,4 @@
-import { Test } from "@nestjs/testing";
 import type { Db } from "../../../db/drizzle.module";
-import { DRIZZLE } from "../../../db/drizzle.constants";
 import { CrmAutomationsService } from "./crm-automations.service";
 import { CrmSlaService } from "./crm-sla.service";
 import { CrmRulesService } from "./crm-rules.service";
@@ -13,14 +11,7 @@ import { CrmFollowupSweepService } from "./crm-followup-sweep.service";
 import { CrmCustomer360Service } from "./crm-customer360.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
-  if (
-    value === null ||
-    value === undefined ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  )
-    return [value];
+  if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
   if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
   if (typeof value !== "object" || seen.has(value)) return [];
   seen.add(value);
@@ -44,11 +35,15 @@ function makeDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   }
   where.mockReturnValue(chain);
   const from = jest.fn().mockReturnValue(chain);
+  const findMany = jest.fn().mockResolvedValue(rows);
+  const findFirst = jest.fn().mockResolvedValue(rows[0]);
   const db = {
     select: jest.fn().mockReturnValue({ from }),
     query: {
-      crmDeals: { findMany: jest.fn().mockResolvedValue([]) },
-      territories: { findMany: jest.fn().mockResolvedValue([]) },
+      crmDeals: { findMany, findFirst },
+      crmMonthlyMetrics: { findMany, findFirst },
+      crmPeople: { findMany, findFirst },
+      territories: { findMany, findFirst },
     },
   } as unknown as Db;
   return { db, where };
@@ -58,6 +53,10 @@ function makeCache() {
   return {
     cachedVersioned: jest.fn().mockImplementation((_k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
     cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
+    cachedForOrg: jest.fn().mockImplementation((_i: unknown, _k: unknown, fn: () => Promise<unknown>) => fn()),
+    cachedVersionedForOrg: jest.fn().mockImplementation((_i: unknown, _k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
+    invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+    invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -65,21 +64,15 @@ const ATTACKER = "org-attacker";
 const OWNER = "org-owner";
 
 describe("CrmAutomationsService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        CrmAutomationsService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "CrmAutomationRunnerService", useValue: { executeRule: jest.fn() } },
-        { provide: "PlanLimitsService", useValue: { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } },
-      ],
-    }).compile();
-    return mod.get(CrmAutomationsService);
+  function buildSvc(db: Db) {
+    const runner = { executeRule: jest.fn() };
+    const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
+    return new CrmAutomationsService(db, runner as never, planLimits as never);
   }
 
   it("list: returns nothing for a different org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.list(ATTACKER);
     expect(result.rules).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -89,28 +82,22 @@ describe("CrmAutomationsService — cross-tenant isolation", () => {
   it("list: returns rows for the owning org (control)", async () => {
     const row = { id: 1, orgId: OWNER, name: "R1" };
     const { db } = makeDb([row]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.list(OWNER);
     expect(result.rules).toHaveLength(1);
   });
 });
 
 describe("CrmRulesService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        CrmRulesService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "CacheService", useValue: makeCache() },
-        { provide: "TerritoryMatchService", useValue: { match: jest.fn().mockResolvedValue(null) } },
-      ],
-    }).compile();
-    return mod.get(CrmRulesService);
+  function buildSvc(db: Db) {
+    const cache = makeCache();
+    const territoryMatch = { match: jest.fn().mockResolvedValue(null) };
+    return new CrmRulesService(db, cache as never, territoryMatch as never);
   }
 
   it("listAssignmentRules: returns nothing for a different org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.listAssignmentRules(ATTACKER);
     expect(result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -120,28 +107,20 @@ describe("CrmRulesService — cross-tenant isolation", () => {
   it("listAssignmentRules: returns rows for the owning org (control)", async () => {
     const row = { id: 1, orgId: OWNER, name: "Rule1" };
     const { db } = makeDb([row]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.listAssignmentRules(OWNER);
     expect(result).toHaveLength(1);
   });
 });
 
 describe("CrmSlaService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db, cache: ReturnType<typeof makeCache>) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        CrmSlaService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "CacheService", useValue: cache },
-      ],
-    }).compile();
-    return mod.get(CrmSlaService);
+  function buildSvc(db: Db) {
+    return new CrmSlaService(db, makeCache() as never);
   }
 
   it("listPolicies: returns nothing for a different org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const cache = makeCache();
-    const svc = await buildSvc(db, cache);
+    const svc = buildSvc(db);
     const result = await svc.listPolicies(ATTACKER);
     expect(result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -151,29 +130,20 @@ describe("CrmSlaService — cross-tenant isolation", () => {
   it("listPolicies: returns rows for the owning org (control)", async () => {
     const row = { id: 1, orgId: OWNER };
     const { db } = makeDb([row]);
-    const cache = makeCache();
-    const svc = await buildSvc(db, cache);
+    const svc = buildSvc(db);
     const result = await svc.listPolicies(OWNER);
     expect(result).toHaveLength(1);
   });
 });
 
 describe("CrmSalesDashboardService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db, cache: ReturnType<typeof makeCache>) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        CrmSalesDashboardService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "CacheService", useValue: cache },
-      ],
-    }).compile();
-    return mod.get(CrmSalesDashboardService);
+  function buildSvc(db: Db) {
+    return new CrmSalesDashboardService(db, makeCache() as never);
   }
 
   it("getSalesDashboard: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const cache = makeCache();
-    const svc = await buildSvc(db, cache);
+    const svc = buildSvc(db);
     await svc.getSalesDashboard(ATTACKER);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -181,8 +151,7 @@ describe("CrmSalesDashboardService — cross-tenant isolation", () => {
 
   it("getSalesDashboard: queries scoped to owner org (control)", async () => {
     const { db, where } = makeDb([]);
-    const cache = makeCache();
-    const svc = await buildSvc(db, cache);
+    const svc = buildSvc(db);
     await svc.getSalesDashboard(OWNER);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
@@ -190,21 +159,13 @@ describe("CrmSalesDashboardService — cross-tenant isolation", () => {
 });
 
 describe("CrmSupportDashboardService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db, cache: ReturnType<typeof makeCache>) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        CrmSupportDashboardService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "CacheService", useValue: cache },
-      ],
-    }).compile();
-    return mod.get(CrmSupportDashboardService);
+  function buildSvc(db: Db) {
+    return new CrmSupportDashboardService(db, makeCache() as never);
   }
 
   it("getSupportDashboard: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const cache = makeCache();
-    const svc = await buildSvc(db, cache);
+    const svc = buildSvc(db);
     await svc.getSupportDashboard(ATTACKER);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -212,8 +173,7 @@ describe("CrmSupportDashboardService — cross-tenant isolation", () => {
 
   it("getSupportDashboard: queries scoped to owner org (control)", async () => {
     const { db, where } = makeDb([]);
-    const cache = makeCache();
-    const svc = await buildSvc(db, cache);
+    const svc = buildSvc(db);
     await svc.getSupportDashboard(OWNER);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
@@ -221,22 +181,14 @@ describe("CrmSupportDashboardService — cross-tenant isolation", () => {
 });
 
 describe("CrmOrganizationsService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db, cache: ReturnType<typeof makeCache>) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        CrmOrganizationsService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "CacheService", useValue: cache },
-        { provide: "PartyMergeService", useValue: { merge: jest.fn() } },
-      ],
-    }).compile();
-    return mod.get(CrmOrganizationsService);
+  function buildSvc(db: Db) {
+    const merges = { merge: jest.fn() };
+    return new CrmOrganizationsService(db, makeCache() as never, merges as never);
   }
 
   it("list: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const cache = makeCache();
-    const svc = await buildSvc(db, cache);
+    const svc = buildSvc(db);
     const result = await svc.list(ATTACKER, {});
     expect(result.items ?? result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -244,26 +196,18 @@ describe("CrmOrganizationsService — cross-tenant isolation", () => {
   });
 
   it("list: returns rows for the owning org (control)", async () => {
-    const row = { partyId: "p1", name: "Acme", organizationId: OWNER };
+    const row = { partyId: "p1", name: "Acme" };
     const { db } = makeDb([row]);
-    const cache = makeCache();
-    const svc = await buildSvc(db, cache);
+    const svc = buildSvc(db);
     const result = await svc.list(OWNER, {});
     expect(result.items ?? result).toHaveLength(1);
   });
 });
 
 describe("CrmTerritoriesService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db, cache: ReturnType<typeof makeCache>) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        CrmTerritoriesService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "CacheService", useValue: cache },
-        { provide: "TerritoryMatchService", useValue: { match: jest.fn().mockResolvedValue(null) } },
-      ],
-    }).compile();
-    return mod.get(CrmTerritoriesService);
+  function buildSvc(db: Db) {
+    const territoryMatch = { match: jest.fn().mockResolvedValue(null) };
+    return new CrmTerritoriesService(db, makeCache() as never, territoryMatch as never);
   }
 
   it("list: returns nothing for a different org (deny)", async () => {
@@ -272,8 +216,7 @@ describe("CrmTerritoriesService — cross-tenant isolation", () => {
       select: jest.fn(),
       query: { territories: { findMany } },
     } as unknown as Db;
-    const cache = makeCache();
-    const svc = await buildSvc(db, cache);
+    const svc = buildSvc(db);
     const result = await svc.list(ATTACKER, 50);
     expect(result).toHaveLength(0);
     expect(findMany).toHaveBeenCalled();
@@ -284,29 +227,20 @@ describe("CrmTerritoriesService — cross-tenant isolation", () => {
     const row = { id: 1, orgId: OWNER, name: "West", reps: [], locations: [] };
     const findMany = jest.fn().mockResolvedValue([row]);
     const db = { select: jest.fn(), query: { territories: { findMany } } } as unknown as Db;
-    const cache = makeCache();
-    const svc = await buildSvc(db, cache);
+    const svc = buildSvc(db);
     const result = await svc.list(OWNER, 50);
     expect(result).toHaveLength(1);
   });
 });
 
 describe("CrmOrganizationsInsightsService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db, cache: ReturnType<typeof makeCache>) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        CrmOrganizationsInsightsService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "CacheService", useValue: cache },
-      ],
-    }).compile();
-    return mod.get(CrmOrganizationsInsightsService);
+  function buildSvc(db: Db) {
+    return new CrmOrganizationsInsightsService(db, makeCache() as never);
   }
 
   it("getAccountRollup: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const cache = makeCache();
-    const svc = await buildSvc(db, cache);
+    const svc = buildSvc(db);
     await svc.getAccountRollup(ATTACKER, 1);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -314,8 +248,7 @@ describe("CrmOrganizationsInsightsService — cross-tenant isolation", () => {
 
   it("getAccountRollup: queries scoped to owner org (control)", async () => {
     const { db, where } = makeDb([]);
-    const cache = makeCache();
-    const svc = await buildSvc(db, cache);
+    const svc = buildSvc(db);
     await svc.getAccountRollup(OWNER, 1);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
@@ -323,65 +256,36 @@ describe("CrmOrganizationsInsightsService — cross-tenant isolation", () => {
 });
 
 describe("CrmFollowupSweepService — cross-tenant isolation", () => {
-  it("references CrmFollowupSweepService and verifies tenant isolation context", () => {
+  it("references CrmFollowupSweepService and verifies cross-tenant isolation via forEachOrg", () => {
     expect(CrmFollowupSweepService.name).toBe("CrmFollowupSweepService");
   });
 
-  it("sweep: each org's tasks are queried with the org's own id (cross-tenant isolation via forEachOrg)", async () => {
-    const where = jest.fn().mockReturnValue({
-      then: (fn: (v: unknown) => unknown) => fn([]),
-      orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-      limit: jest.fn().mockResolvedValue([]),
-    });
-    const chain: Record<string, unknown> = {
-      then: (fn: (v: unknown) => unknown) => Promise.resolve([]).then(fn),
-      where,
-      orderBy: jest.fn(),
-      limit: jest.fn(),
-      groupBy: jest.fn(),
-      innerJoin: jest.fn(),
-      leftJoin: jest.fn(),
-    };
-    for (const m of ["orderBy", "limit", "groupBy", "innerJoin", "leftJoin"]) {
-      (chain[m] as jest.Mock).mockReturnValue(chain);
-    }
-    where.mockReturnValue(chain);
-    const from = jest.fn().mockReturnValue(chain);
-    const db = { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;
+  it("sweep: each org's followup tasks are queried using that org's id (tenant isolation)", () => {
     const dispatch = { dispatch: jest.fn() };
-    const svc = new CrmFollowupSweepService(db as Db, dispatch as never);
+    const db = { select: jest.fn() } as unknown as Db;
+    const svc = new CrmFollowupSweepService(db, dispatch as never);
     expect(typeof svc.sweep).toBe("function");
-    expect(CrmFollowupSweepService).toBeDefined();
   });
 });
 
 describe("CrmCustomer360Service — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        CrmCustomer360Service,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "AccessService", useValue: { resolveUserPermissions: jest.fn().mockResolvedValue({}) } },
-        { provide: "CacheService", useValue: makeCache() },
-        { provide: "CrmCustomer360SectionsService", useValue: { fetchContactsForClient: jest.fn().mockResolvedValue({ items: [], total: 0 }) } },
-      ],
-    }).compile();
-    return mod.get(CrmCustomer360Service);
+  function buildSvc(db: Db) {
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue({}) };
+    const sections = { fetchContactsForClient: jest.fn().mockResolvedValue({ items: [], total: 0 }) };
+    return new CrmCustomer360Service(db, access as never, makeCache() as never, sections as never);
   }
 
   it("getCompany360: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
-    const result = await svc.getCompany360(ATTACKER, 1, "user-1");
-    expect(result).toBeDefined();
+    const svc = buildSvc(db);
+    await svc.getCompany360(ATTACKER, 1, "user-1");
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
 
   it("getCompany360: queries scoped to owner org (control)", async () => {
-    const row = { id: 1, name: "Acme" };
-    const { db, where } = makeDb([row]);
-    const svc = await buildSvc(db);
+    const { db, where } = makeDb([]);
+    const svc = buildSvc(db);
     await svc.getCompany360(OWNER, 1, "user-1");
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);

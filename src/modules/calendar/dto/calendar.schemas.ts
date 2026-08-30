@@ -63,6 +63,8 @@ export const listEventsSchema = z
     },
   );
 
+export const eventVisibilitySchema = z.enum(["org", "private"]);
+
 export const createEventSchema = z
   .object({
     title: titleSchema,
@@ -74,6 +76,7 @@ export const createEventSchema = z
     allDay: z.boolean().optional(),
     color: z.string().optional(),
     category: z.string().default("general"),
+    visibility: eventVisibilitySchema.optional(),
     entityType: z.string().optional(),
     entityId: z.string().optional(),
     attendeeIds: z.array(z.string()).optional(),
@@ -108,6 +111,7 @@ export const updateEventSchema = z.object({
   allDay: z.boolean().optional(),
   color: z.string().nullable().optional(),
   category: z.string().optional(),
+  visibility: eventVisibilitySchema.optional(),
   entityType: z.string().nullable().optional(),
   entityId: z.string().nullable().optional(),
   attendeeIds: z.array(z.string()).optional(),

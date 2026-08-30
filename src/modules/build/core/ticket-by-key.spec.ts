@@ -1,4 +1,4 @@
-import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -73,7 +73,7 @@ describe("getTicketByKey — ticket beyond the first hundred opens", () => {
     const audit = { log: jest.fn() } as unknown as AuditService;
 
     return {
-      svc: new ProjectsTicketsReadService(db, access, audit),
+      svc: new ProjectsTicketsDetailService(db, access, audit),
       findManyMock,
       findFirstMock,
     };
@@ -120,7 +120,7 @@ describe("getTicketByKey — ticket beyond the first hundred opens", () => {
     } as unknown as AccessService;
 
     const audit = { log: jest.fn() } as unknown as AuditService;
-    const svc = new ProjectsTicketsReadService(db, access, audit);
+    const svc = new ProjectsTicketsDetailService(db, access, audit);
 
     await expect(svc.getTicketByKey(makeUser(), PROJECT_ID, 999)).rejects.toThrow();
   });

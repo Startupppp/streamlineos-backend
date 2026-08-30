@@ -7,6 +7,7 @@ import { RunsController } from "./runs.controller";
 import { RunsService } from "./runs.service";
 import { GenerateService } from "./generate.service";
 import { GeneratePipelineService } from "./generate-pipeline.service";
+import { RunBatchLoaderService } from "./run-batch-loader.service";
 import { ProfilesController } from "./profiles.controller";
 import { WorkerProfilesController } from "./worker-profiles.controller";
 import { ProfilesService } from "./profiles.service";
@@ -42,6 +43,7 @@ import { SalaryProfilesRepository } from "./salary-profiles.repository";
     RunsService,
     GenerateService,
     GeneratePipelineService,
+    RunBatchLoaderService,
     ProfilesService,
     PayeeEligibilityService,
     InputsService,

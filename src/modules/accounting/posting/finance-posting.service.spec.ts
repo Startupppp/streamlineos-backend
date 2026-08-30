@@ -1,6 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { FinancePostingService } from "./finance-posting.service";
+import { FinancePostingAccountsService } from "./finance-posting-accounts.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -55,6 +56,7 @@ function makeBalancedInput(overrides: Partial<PostJournalInput> = {}): PostJourn
 
 describe("FinancePostingService", () => {
   let service: FinancePostingService;
+  let accountsService: FinancePostingAccountsService;
   let mockDb: {
     select: jest.Mock;
     insert: jest.Mock;
@@ -94,6 +96,7 @@ describe("FinancePostingService", () => {
     const module = await Test.createTestingModule({
       providers: [
         FinancePostingService,
+        FinancePostingAccountsService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
         { provide: NotificationDispatchService, useValue: mockDispatch },
@@ -102,6 +105,7 @@ describe("FinancePostingService", () => {
     }).compile();
 
     service = module.get(FinancePostingService);
+    accountsService = module.get(FinancePostingAccountsService);
   });
 
   describe("postJournal — balance check", () => {
@@ -452,7 +456,7 @@ describe("FinancePostingService", () => {
     });
   });
 
-  describe("resolveSystemAccount — self-heal", () => {
+  describe("FinancePostingAccountsService.resolveSystemAccount — self-heal", () => {
     it("returns existing mapped account id without insert", async () => {
       mockDb.select.mockImplementation(() => ({
         from: jest.fn().mockReturnThis(),
@@ -460,7 +464,7 @@ describe("FinancePostingService", () => {
         limit: jest.fn().mockResolvedValue([{ accountId: 55 }]),
       }));
 
-      const id = await service.resolveSystemAccount("org1", "AR");
+      const id = await accountsService.resolveSystemAccount("org1", "AR");
       expect(id).toBe(55);
       expect(mockDb.insert).not.toHaveBeenCalled();
     });
@@ -483,7 +487,7 @@ describe("FinancePostingService", () => {
       };
       mockDb.insert.mockReturnValue(insertReturn);
 
-      const id = await service.resolveSystemAccount("org1", "AR");
+      const id = await accountsService.resolveSystemAccount("org1", "AR");
       expect(id).toBe(77);
       expect(mockDb.insert).toHaveBeenCalledTimes(1);
     });
@@ -495,7 +499,7 @@ describe("FinancePostingService", () => {
         limit: jest.fn().mockResolvedValue([]),
       }));
 
-      await expect(service.resolveSystemAccount("org1", "AR")).rejects.toThrow(BadRequestException);
+      await expect(accountsService.resolveSystemAccount("org1", "AR")).rejects.toThrow(BadRequestException);
     });
   });
 });

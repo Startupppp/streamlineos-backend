@@ -1,6 +1,9 @@
 import { Module } from "@nestjs/common";
 import { DashboardController } from "./dashboard.controller";
-import { DashboardHrService } from "./dashboard-hr.service";
+import { DashboardStatsService } from "./dashboard-stats.service";
+import { DashboardAvailabilityService } from "./dashboard-availability.service";
+import { DashboardBirthdaysService } from "./dashboard-birthdays.service";
+import { DashboardPersonalService } from "./dashboard-personal.service";
 import { DashboardLeaveService } from "./dashboard-leave.service";
 import { DashboardAnnouncementsService } from "./dashboard-announcements.service";
 import { DashboardCrmService } from "./dashboard-crm.service";
@@ -9,7 +12,10 @@ import { DashboardProjectService } from "./dashboard-project.service";
 @Module({
   controllers: [DashboardController],
   providers: [
-    DashboardHrService,
+    DashboardStatsService,
+    DashboardAvailabilityService,
+    DashboardBirthdaysService,
+    DashboardPersonalService,
     DashboardLeaveService,
     DashboardAnnouncementsService,
     DashboardCrmService,

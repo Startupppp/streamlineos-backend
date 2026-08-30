@@ -1,4 +1,4 @@
-import { resolveProviderEventId, validateNormalizedPaymentWebhook } from "./payment-webhook-health.service";
+import { resolveProviderEventId, validateNormalizedPaymentWebhook } from "./payment-webhook-receiver.service";
 
 describe("provider-neutral webhook ingress contract", () => {
   it("rejects a malformed payment entity before it can be recorded as processed", () => {

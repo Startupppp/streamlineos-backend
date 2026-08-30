@@ -74,22 +74,34 @@ describe("HrImportService — cross-tenant isolation", () => {
 describe("HrExportJobsService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
-  const ROW = { id: "job-1", orgId: OWNER, requesterUserId: "user-1", status: "COMPLETE" };
+  const ROW = { id: "job-1", orgId: OWNER, status: "pending", attempt: 0 };
 
-  it("throws when requester org does not own export job (cross-tenant isolation)", async () => {
-    const { db } = makeDb([]);
+  it("returns null for different org export claim (cross-tenant isolation)", async () => {
+    const { db, where, findMany } = makeDb([]);
     const mockStorage = { getFileStream: jest.fn(), storeFile: jest.fn() };
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
     const svc = new HrExportJobsService(db, mockStorage as never, mockAccess as never);
-    await expect(svc.getForRequester(ATTACKER, "user-1", "job-1")).rejects.toThrow();
+    const result = await svc.claimForOrg(ATTACKER);
+    expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
+    expect(result).toBeNull();
   });
 
-  it("returns export job for owning org requester (control)", async () => {
-    const { db, where, findMany } = makeDb([ROW]);
+  it("returns export job for owning org (control — same-tenant access works)", async () => {
+    const update = jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([ROW]) }) }) });
+    const where = jest.fn();
+    const builder = {
+      from: jest.fn(), where, orderBy: jest.fn(), limit: jest.fn(),
+      then: (resolve: (v: unknown) => unknown) => Promise.resolve([ROW]).then(resolve),
+    };
+    builder.from.mockReturnValue(builder);
+    builder.where.mockReturnValue(builder);
+    builder.orderBy.mockReturnValue(builder);
+    builder.limit.mockReturnValue(builder);
+    const db = { select: jest.fn().mockReturnValue(builder), update, query: new Proxy({} as Record<string, unknown>, { get: () => ({ findMany: jest.fn().mockResolvedValue([]) }) }) } as unknown as Db;
     const mockStorage = { getFileStream: jest.fn(), storeFile: jest.fn() };
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
     const svc = new HrExportJobsService(db, mockStorage as never, mockAccess as never);
-    await svc.getForRequester(OWNER, "user-1", "job-1");
-    expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
+    await svc.claimForOrg(OWNER);
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });
 });

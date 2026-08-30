@@ -25,7 +25,7 @@ function makeDb(opts: { findFirst?: unknown; onInsert: () => Promise<unknown> })
 
 const baseParams = {
   orgId: ORG,
-  jobType: "PREVIEW" as const,
+  jobType: "GENERATE" as const,
   actorId: "actor-1",
 };
 

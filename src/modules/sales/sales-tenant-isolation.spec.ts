@@ -1,6 +1,4 @@
-import { Test } from "@nestjs/testing";
 import type { Db } from "../../db/drizzle.module";
-import { DRIZZLE } from "../../db/drizzle.constants";
 import { SalesService } from "./sales.service";
 import { SalesAnalyticsService } from "./sales-analytics.service";
 import { SalesDashboardService } from "./sales-dashboard.service";
@@ -38,7 +36,9 @@ function makeCache() {
   return {
     cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
     cachedVersioned: jest.fn().mockImplementation((_k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
+    cachedVersionedForOrg: jest.fn().mockImplementation((_i: unknown, _k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
     invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+    invalidate: jest.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -46,21 +46,14 @@ const ATTACKER = "org-attacker";
 const OWNER = "org-owner";
 
 describe("SalesService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        SalesService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "CacheService", useValue: makeCache() },
-        { provide: "AccessService", useValue: { resolveUserPermissions: jest.fn().mockResolvedValue({}) } },
-      ],
-    }).compile();
-    return mod.get(SalesService);
+  function buildSvc(db: Db) {
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue({}) };
+    return new SalesService(db, makeCache() as never, access as never);
   }
 
   it("listCommissionRules: returns nothing for a different org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.listCommissionRules(ATTACKER);
     expect(result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -70,27 +63,20 @@ describe("SalesService — cross-tenant isolation", () => {
   it("listCommissionRules: returns rows for the owning org (control)", async () => {
     const row = { id: 1, orgId: OWNER, name: "Rule1", rate: 10 };
     const { db } = makeDb([row]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.listCommissionRules(OWNER);
     expect(result).toHaveLength(1);
   });
 });
 
 describe("SalesAnalyticsService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        SalesAnalyticsService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "CacheService", useValue: makeCache() },
-      ],
-    }).compile();
-    return mod.get(SalesAnalyticsService);
+  function buildSvc(db: Db) {
+    return new SalesAnalyticsService(db, makeCache() as never);
   }
 
   it("getCohort: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     await svc.getCohort(ATTACKER, 6);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -98,7 +84,7 @@ describe("SalesAnalyticsService — cross-tenant isolation", () => {
 
   it("getCohort: queries scoped to owner org (control)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     await svc.getCohort(OWNER, 6);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
@@ -106,29 +92,22 @@ describe("SalesAnalyticsService — cross-tenant isolation", () => {
 });
 
 describe("SalesDashboardService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        SalesDashboardService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "CacheService", useValue: makeCache() },
-      ],
-    }).compile();
-    return mod.get(SalesDashboardService);
+  function buildSvc(db: Db) {
+    return new SalesDashboardService(db, makeCache() as never);
   }
 
   it("getKpis: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
-    await svc.getKpis(ATTACKER, {});
+    const svc = buildSvc(db);
+    await svc.getKpis(ATTACKER);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
 
   it("getKpis: queries scoped to owner org (control)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
-    await svc.getKpis(OWNER, {});
+    const svc = buildSvc(db);
+    await svc.getKpis(OWNER);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });

@@ -1,5 +1,6 @@
 import { Test } from "@nestjs/testing";
 import { FinancePostingService } from "./finance-posting.service";
+import { FinancePostingAccountsService } from "./finance-posting-accounts.service";
 import { AccountingStatementsService } from "../core/accounting-statements.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -198,6 +199,7 @@ async function buildHarness(
   const module = await Test.createTestingModule({
     providers: [
       FinancePostingService,
+      FinancePostingAccountsService,
       { provide: DRIZZLE, useValue: makePostingDb(ledger, options) },
       { provide: AuditService, useValue: { log: jest.fn() } },
       { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },

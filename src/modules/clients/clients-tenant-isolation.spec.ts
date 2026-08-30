@@ -1,6 +1,4 @@
-import { Test } from "@nestjs/testing";
 import type { Db } from "../../db/drizzle.module";
-import { DRIZZLE } from "../../db/drizzle.constants";
 import { ClientsService } from "./clients.service";
 import { ClientOnboardingService } from "./client-onboarding.service";
 import { ClientOpportunitiesService } from "./client-opportunities.service";
@@ -77,73 +75,56 @@ describe("ClientOpportunitiesService — cross-tenant isolation", () => {
 });
 
 describe("ClientsService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        ClientsService,
-        { provide: DRIZZLE, useValue: db },
-        {
-          provide: "CacheService",
-          useValue: {
-            cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
-            cachedVersioned: jest.fn().mockImplementation((_k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
-            invalidateNamespace: jest.fn().mockResolvedValue(undefined),
-          },
-        },
-        { provide: "PlanLimitsService", useValue: { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } },
-      ],
-    }).compile();
-    return mod.get(ClientsService);
+  function buildSvc(db: Db) {
+    const cache = {
+      cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
+      cachedVersioned: jest.fn().mockImplementation((_k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
+      invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+    };
+    return new ClientsService(db, cache as never);
   }
 
   it("listClients: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.listClients(ATTACKER, "user-1", "all");
-    expect(result.items ?? result).toHaveLength(0);
+    expect(result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
 
-  it("listClients: queries scoped to owner org (control)", async () => {
+  it("listClients: returns rows for the owning org (control)", async () => {
     const row = { id: 1, orgId: OWNER, name: "Acme" };
-    const { db, where } = makeDb([row]);
-    const svc = await buildSvc(db);
-    await svc.listClients(OWNER, "user-1", "all");
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
+    const { db } = makeDb([row]);
+    const svc = buildSvc(db);
+    const result = await svc.listClients(OWNER, "user-1", "all");
+    expect(result).toHaveLength(1);
   });
 });
 
 describe("ClientAccountsService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        ClientAccountsService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "REDIS", useValue: { get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue("OK") } },
-        { provide: "AuditService", useValue: { log: jest.fn().mockResolvedValue(undefined) } },
-        { provide: "ClientsEmailService", useValue: { send: jest.fn().mockResolvedValue(undefined) } },
-        { provide: "AccessService", useValue: { resolveUserPermissions: jest.fn().mockResolvedValue({}) } },
-      ],
-    }).compile();
-    return mod.get(ClientAccountsService);
+  function buildSvc(db: Db) {
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const clientsEmail = { send: jest.fn().mockResolvedValue(undefined) };
+    const access = { membersWithPermission: jest.fn().mockResolvedValue([]) };
+    const redis = { get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue("OK") };
+    return new ClientAccountsService(db, redis as never, audit as never, clientsEmail as never, access as never);
   }
 
-  it("list: queries scoped to attacker org (cross-tenant isolation deny)", async () => {
+  it("getClientAccounts: queries scoped to attacker org (cross-tenant isolation deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
-    const result = await svc.list(ATTACKER);
+    const svc = buildSvc(db);
+    const result = await svc.getClientAccounts(ATTACKER, "all", "user-1", {});
     expect(result.items ?? result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
 
-  it("list: queries scoped to owner org (control)", async () => {
-    const row = { id: 1, orgId: OWNER, name: "Acme Portal" };
+  it("getClientAccounts: queries scoped to owner org (control)", async () => {
+    const row = { id: 1, orgId: OWNER, clientName: "Acme" };
     const { db, where } = makeDb([row]);
-    const svc = await buildSvc(db);
-    await svc.list(OWNER);
+    const svc = buildSvc(db);
+    await svc.getClientAccounts(OWNER, "all", "user-1", {});
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });

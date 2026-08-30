@@ -24,6 +24,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
@@ -45,6 +46,7 @@ export class ProjectsTicketsService {
     private readonly query: ProjectsTicketsQueryService,
     private readonly workQuery: ProjectsWorkQueryService,
     private readonly read: ProjectsTicketsReadService,
+    private readonly detail: ProjectsTicketsDetailService,
     private readonly transfer: ProjectsTicketsTransferService,
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
     private readonly cache: CacheService,
@@ -78,11 +80,11 @@ export class ProjectsTicketsService {
   }
 
   async getTicketByKey(u: CurrentUserContext, projectId: number, ticketNumber: number) {
-    return this.read.getTicketByKey(u, projectId, ticketNumber);
+    return this.detail.getTicketByKey(u, projectId, ticketNumber);
   }
 
   async getTicket(u: CurrentUserContext, ticketId: number) {
-    return this.read.getTicket(u, ticketId);
+    return this.detail.getTicket(u, ticketId);
   }
 
   async updateTicket(

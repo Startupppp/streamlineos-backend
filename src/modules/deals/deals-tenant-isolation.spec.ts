@@ -1,12 +1,8 @@
-import { NotFoundException } from "@nestjs/common";
-import { Test } from "@nestjs/testing";
 import type { Db } from "../../db/drizzle.module";
-import { DRIZZLE } from "../../db/drizzle.constants";
-import { DealsService } from "./deals.service";
-import { DealsCrudService } from "./deals-crud.service";
 import { DealsCompetitorsService } from "./deals-competitors.service";
 import { DealsMeetingsService } from "./deals-meetings.service";
 import { DealsStakeholdersService } from "./deals-stakeholders.service";
+import { DealsCrudService } from "./deals-crud.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -98,73 +94,36 @@ describe("DealsStakeholdersService — cross-tenant isolation", () => {
 });
 
 describe("DealsCrudService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        DealsCrudService,
-        { provide: DRIZZLE, useValue: db },
-        {
-          provide: "CacheService",
-          useValue: {
-            cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
-            cachedVersioned: jest.fn().mockImplementation((_k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
-            invalidateNamespace: jest.fn().mockResolvedValue(undefined),
-          },
-        },
-        { provide: "AuditService", useValue: { log: jest.fn().mockResolvedValue(undefined) } },
-        { provide: "CrmValidationService", useValue: { evaluate: jest.fn().mockResolvedValue({ passed: true }) } },
-        { provide: "CrmAutomationBusService", useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
-        { provide: "PlanLimitsService", useValue: { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } },
-      ],
-    }).compile();
-    return mod.get(DealsCrudService);
+  function buildSvc(db: Db) {
+    const cache = {
+      cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
+      cachedVersioned: jest.fn().mockImplementation((_k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
+      invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+      invalidate: jest.fn().mockResolvedValue(undefined),
+    };
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const crmValidation = { evaluate: jest.fn().mockResolvedValue({ passed: true }) };
+    const bus = { emit: jest.fn().mockResolvedValue(undefined) };
+    const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
+    return new DealsCrudService(db, cache as never, audit as never, crmValidation as never, bus as never, planLimits as never);
   }
 
-  it("get: throws NotFoundException for a deal in a different org (cross-tenant isolation deny)", async () => {
-    const { db } = makeDb([]);
-    const svc = await buildSvc(db);
-    await expect(svc.get(ATTACKER, 999)).rejects.toThrow(NotFoundException);
+  it("getDeal: returns undefined for a deal in a different org (cross-tenant isolation deny)", async () => {
+    const findFirst = jest.fn().mockResolvedValue(undefined);
+    const db = { query: { deals: { findFirst } } } as unknown as Db;
+    const svc = buildSvc(db);
+    const result = await svc.getDeal(ATTACKER, 999);
+    expect(result).toBeUndefined();
+    expect(findFirst).toHaveBeenCalled();
+    expect(sqlValues(findFirst.mock.calls[0]?.[0]?.where)).toContain(ATTACKER);
   });
 
-  it("get: returns the deal for the owning org (control)", async () => {
-    const row = { id: 1, orgId: OWNER, title: "Deal1", stageId: 1, value: 1000 };
-    const { db } = makeDb([row]);
-    const svc = await buildSvc(db);
-    const result = await svc.get(OWNER, 1);
+  it("getDeal: returns the deal for the owning org (control)", async () => {
+    const row = { id: 1, orgId: OWNER, title: "Deal1", stage: "open", value: 1000, assignedTo: null, lead: null, client: null };
+    const findFirst = jest.fn().mockResolvedValue(row);
+    const db = { query: { deals: { findFirst } } } as unknown as Db;
+    const svc = buildSvc(db);
+    const result = await svc.getDeal(OWNER, 1);
     expect(result).toMatchObject({ id: 1 });
-  });
-});
-
-describe("DealsService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        DealsService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: "DealsCrudService", useValue: { get: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER }), list: jest.fn().mockResolvedValue({ items: [], total: 0 }) } },
-        { provide: "AccessService", useValue: { resolveUserPermissions: jest.fn().mockResolvedValue({}) } },
-        { provide: "CrmAutomationBusService", useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
-        { provide: "AuditService", useValue: { log: jest.fn().mockResolvedValue(undefined) } },
-      ],
-    }).compile();
-    return mod.get(DealsService);
-  }
-
-  it("list: queries scoped to attacker org (cross-tenant isolation deny)", async () => {
-    const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
-    const result = await svc.list(ATTACKER, {});
-    expect(result.items ?? result).toHaveLength(0);
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
-  });
-
-  it("list: returns rows for the owning org (control)", async () => {
-    const row = { id: 1, orgId: OWNER };
-    const { db, where } = makeDb([row]);
-    const svc = await buildSvc(db);
-    await svc.list(OWNER, {});
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });
 });

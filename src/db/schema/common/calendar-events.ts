@@ -15,6 +15,7 @@ export const calendarEvents = pgTable("calendar_events", {
   allDay: boolean("all_day").default(false).notNull(),
   color: text("color"),
   category: text("category").notNull(),
+  visibility: text("visibility").notNull().default("org"),
   entityType: text("entity_type"),
   entityId: text("entity_id"),
   createdBy: text("created_by").references(() => users.id).notNull(),

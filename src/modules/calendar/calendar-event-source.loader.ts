@@ -1,11 +1,9 @@
-import { and, eq, gt, inArray, lt } from "drizzle-orm";
+import { aliasedTable, and, asc, eq, gt, inArray, isNotNull, lt, or } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
-import { calendarEvents, eventAttendees, organizationMembers, projects, tickets } from "../../db/schema";
+import { calendarEvents, eventAttendees, organizationMembers, projects, tickets, users } from "../../db/schema";
 import type { LinkedTicket } from "./calendar.types";
 
-// tickets and projects are imported solely for linked-ticket enrichment:
-// a native calendar event may carry entityType="ticket" pointing at a Build
-// ticket; the response populates linkedTicket with its title and status.
+const callerAtt = aliasedTable(eventAttendees, "cal_src_caller_att");
 
 export class CalendarEventSourceLoader {
   constructor(private readonly database: Db) {}
@@ -16,17 +14,22 @@ export class CalendarEventSourceLoader {
     start: Date,
     end: Date,
   ): Promise<{
-    eventsData: Awaited<ReturnType<CalendarEventSourceLoader["queryEvents"]>>;
-    rsvpMap: Map<number, string>;
+    eventsData: Awaited<ReturnType<CalendarEventSourceLoader["queryVisibleEvents"]>>;
     linkedTicketMap: Map<number, LinkedTicket>;
   }> {
-    const eventsData = await this.queryEvents(orgId, start, end);
     const membership = await this.database.query.organizationMembers.findFirst({
       columns: { id: true },
-      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")),
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
     });
 
-    const eventIds = eventsData.map((e) => e.id);
+    const callerMembershipId = membership?.id ?? 0;
+
+    const eventsData = await this.queryVisibleEvents(orgId, userId, callerMembershipId, start, end);
+
     const ticketEntityIds: number[] = [];
     for (const e of eventsData) {
       if (e.entityType === "ticket" && e.entityId != null) {
@@ -35,63 +38,82 @@ export class CalendarEventSourceLoader {
       }
     }
 
-    const rsvpMap = new Map<number, string>();
     const linkedTicketMap = new Map<number, LinkedTicket>();
+    if (ticketEntityIds.length > 0) {
+      const rows = await this.database
+        .select({
+          id: tickets.id,
+          ticketNumber: tickets.ticketNumber,
+          title: tickets.title,
+          projectId: projects.id,
+          status: tickets.status,
+          projectKey: projects.key,
+        })
+        .from(tickets)
+        .innerJoin(projects, eq(tickets.projectId, projects.id))
+        .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ticketEntityIds)));
+      for (const row of rows)
+        linkedTicketMap.set(row.id, {
+          id: row.id,
+          key: `${row.projectKey}-${row.ticketNumber}`,
+          title: row.title,
+          projectId: row.projectId,
+          status: row.status,
+        });
+    }
 
-    await Promise.all([
-      (async () => {
-        if (eventIds.length === 0) return;
-        if (!membership) return;
-        const rows = await this.database
-          .select({ eventId: eventAttendees.eventId, status: eventAttendees.status })
-          .from(eventAttendees)
-          .where(
-            and(
-              eq(eventAttendees.orgId, orgId),
-              eq(eventAttendees.membershipId, membership.id),
-              inArray(eventAttendees.eventId, eventIds),
-            ),
-          );
-        for (const row of rows) rsvpMap.set(row.eventId, row.status ?? "pending");
-      })(),
-      (async () => {
-        if (ticketEntityIds.length === 0) return;
-        const rows = await this.database
-          .select({
-            id: tickets.id,
-            ticketNumber: tickets.ticketNumber,
-            title: tickets.title,
-            projectId: projects.id,
-            status: tickets.status,
-            projectKey: projects.key,
-          })
-          .from(tickets)
-          .innerJoin(projects, eq(tickets.projectId, projects.id))
-          .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ticketEntityIds)));
-        for (const row of rows)
-          linkedTicketMap.set(row.id, {
-            id: row.id,
-            key: `${row.projectKey}-${row.ticketNumber}`,
-            title: row.title,
-            projectId: row.projectId,
-            status: row.status,
-          });
-      })(),
-    ]);
-
-    return { eventsData, rsvpMap, linkedTicketMap };
+    return { eventsData, linkedTicketMap };
   }
 
-  private queryEvents(orgId: string, start: Date, end: Date) {
-    return this.database.query.calendarEvents.findMany({
-      where: and(
-        eq(calendarEvents.orgId, orgId),
-        lt(calendarEvents.startDate, end),
-        gt(calendarEvents.endDate, start),
-      ),
-      with: { creator: { columns: { name: true } } },
-      orderBy: (t, { asc }) => [asc(t.startDate)],
-      limit: 2000,
-    });
+  private queryVisibleEvents(
+    orgId: string,
+    userId: string,
+    callerMembershipId: number,
+    start: Date,
+    end: Date,
+  ) {
+    return this.database
+      .select({
+        id: calendarEvents.id,
+        title: calendarEvents.title,
+        description: calendarEvents.description,
+        location: calendarEvents.location,
+        meetingUrl: calendarEvents.meetingUrl,
+        startDate: calendarEvents.startDate,
+        endDate: calendarEvents.endDate,
+        allDay: calendarEvents.allDay,
+        color: calendarEvents.color,
+        category: calendarEvents.category,
+        entityType: calendarEvents.entityType,
+        entityId: calendarEvents.entityId,
+        visibility: calendarEvents.visibility,
+        createdBy: calendarEvents.createdBy,
+        creatorName: users.name,
+        rsvpStatus: callerAtt.status,
+      })
+      .from(calendarEvents)
+      .innerJoin(users, eq(users.id, calendarEvents.createdBy))
+      .leftJoin(
+        callerAtt,
+        and(
+          eq(callerAtt.orgId, calendarEvents.orgId),
+          eq(callerAtt.eventId, calendarEvents.id),
+          eq(callerAtt.membershipId, callerMembershipId),
+        ),
+      )
+      .where(
+        and(
+          eq(calendarEvents.orgId, orgId),
+          lt(calendarEvents.startDate, end),
+          gt(calendarEvents.endDate, start),
+          or(
+            eq(calendarEvents.visibility, "org"),
+            eq(calendarEvents.createdBy, userId),
+            isNotNull(callerAtt.id),
+          ),
+        ),
+      )
+      .orderBy(asc(calendarEvents.startDate))
+      .limit(2000);
   }
 }

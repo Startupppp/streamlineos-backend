@@ -9,7 +9,7 @@ import {
   type OrganizationPaymentProvider,
 } from "../payments/payment-provider-resolver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
-import { PaymentWebhookHealthService } from "../payments/payment-webhook-health.service";
+import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import {
   FakeProviderAdapter,
   FAKE_VALID_PAYMENT_SIG,
@@ -157,7 +157,7 @@ async function buildService(options: {
           }),
         },
       },
-      { provide: PaymentWebhookHealthService, useValue: { recordSignatureFailure: jest.fn() } },
+      { provide: PaymentWebhookReceiverService, useValue: { recordSignatureFailure: jest.fn() } },
       { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
       { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
     ],

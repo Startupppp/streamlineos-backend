@@ -4,14 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
   finBankAccounts,
   finBankTransactions,
   finReconciliationMatches,
-  finReconciliationRules,
   journalEntries,
   journalLines,
 } from "../../../db/schema";
@@ -24,26 +23,15 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
-import {
-  paginateOffset,
-  buildListResponse,
-} from "../../../common/pagination/pagination";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
   ConfirmMatchInput,
   UnmatchInput,
   IgnoreTransactionInput,
-  CreateReconciliationRuleInput,
 } from "./dto/reconciliation.schemas";
 
 const CACHE_RECON = (orgId: string, bankAccountId: number) =>
   `fin:banking:recon:${orgId}:${bankAccountId}`;
-
-interface RulesQuery {
-  page: number;
-  pageSize: number;
-  bankAccountId?: number;
-}
 
 @Injectable()
 export class ReconciliationService {
@@ -54,81 +42,6 @@ export class ReconciliationService {
     private readonly dispatch: NotificationDispatchService,
     private readonly audit: AuditService,
   ) {}
-
-  async getWorkspace(u: CurrentUserContext, bankAccountId: number) {
-    const { orgId } = u;
-
-    const account = await this.db.query.finBankAccounts.findFirst({
-      where: and(
-        eq(finBankAccounts.id, bankAccountId),
-        eq(finBankAccounts.orgId, orgId),
-      ),
-    });
-    if (!account) throw new NotFoundException("Bank account not found");
-
-    const [unmatched, suggested, reconciledCount] = await Promise.all([
-      this.db
-        .select()
-        .from(finBankTransactions)
-        .where(
-          and(
-            eq(finBankTransactions.orgId, orgId),
-            eq(finBankTransactions.bankAccountId, bankAccountId),
-            eq(finBankTransactions.status, "UNMATCHED"),
-          ),
-        )
-        .orderBy(desc(finBankTransactions.txnDate)),
-      this.db
-        .select()
-        .from(finBankTransactions)
-        .where(
-          and(
-            eq(finBankTransactions.orgId, orgId),
-            eq(finBankTransactions.bankAccountId, bankAccountId),
-            eq(finBankTransactions.status, "SUGGESTED"),
-          ),
-        )
-        .orderBy(desc(finBankTransactions.txnDate)),
-      this.db
-        .select({ total: count() })
-        .from(finBankTransactions)
-        .where(
-          and(
-            eq(finBankTransactions.orgId, orgId),
-            eq(finBankTransactions.bankAccountId, bankAccountId),
-            eq(finBankTransactions.status, "RECONCILED"),
-          ),
-        ),
-    ]);
-
-    const suggestedWithMatches = await Promise.all(
-      suggested.map(async (txn) => {
-        const matches = await this.db
-          .select()
-          .from(finReconciliationMatches)
-          .where(
-            and(
-              eq(finReconciliationMatches.orgId, orgId),
-              eq(finReconciliationMatches.bankTransactionId, txn.id),
-            ),
-          );
-        return { ...txn, suggestedMatches: matches };
-      }),
-    );
-
-    const ledgerBalance = await this.computeLedgerBalance(
-      orgId,
-      account.ledgerAccountId,
-    );
-
-    return {
-      unmatched,
-      suggested: suggestedWithMatches,
-      reconciledCount: reconciledCount[0]?.total ?? 0,
-      ledgerBalance,
-      bankBalance: account.currentBalance,
-    };
-  }
 
   async confirmMatch(
     u: CurrentUserContext,
@@ -146,12 +59,10 @@ export class ReconciliationService {
     });
     if (!txn) throw new NotFoundException("Bank transaction not found");
 
-    if (txn.status === "RECONCILED") {
+    if (txn.status === "RECONCILED")
       throw new BadRequestException("Transaction is already reconciled");
-    }
-    if (txn.status === "IGNORED") {
+    if (txn.status === "IGNORED")
       throw new BadRequestException("Transaction is ignored — unmatch first");
-    }
 
     if (
       input.matchType === "BANK_FEE" ||
@@ -203,15 +114,13 @@ export class ReconciliationService {
           ),
           columns: { ledgerAccountId: true, name: true },
         });
-        if (!account?.ledgerAccountId) {
+        if (!account?.ledgerAccountId)
           throw new BadRequestException(
             "Bank account has no linked ledger account",
           );
-        }
 
-        const today = txn.txnDate;
         const postResult = await this.posting.postJournal(u, {
-          entryDate: today,
+          entryDate: txn.txnDate,
           description:
             input.memo ?? `Bank fee: ${txn.description ?? txn.reference ?? ""}`,
           sourceType: "BANK_TXN",
@@ -243,7 +152,6 @@ export class ReconciliationService {
           throw new BadRequestException(
             "Bank account has no linked ledger account",
           );
-
         if (!input.counterAccountId)
           throw new BadRequestException(
             "counterAccountId is required for MANUAL_JOURNAL match",
@@ -261,28 +169,12 @@ export class ReconciliationService {
           sourceEvent: "manual_journal",
           lines: isDebit
             ? [
-                {
-                  accountId: account.ledgerAccountId,
-                  debit: amount,
-                  credit: "0",
-                },
-                {
-                  accountId: input.counterAccountId,
-                  debit: "0",
-                  credit: amount,
-                },
+                { accountId: account.ledgerAccountId, debit: amount, credit: "0" },
+                { accountId: input.counterAccountId, debit: "0", credit: amount },
               ]
             : [
-                {
-                  accountId: input.counterAccountId,
-                  debit: amount,
-                  credit: "0",
-                },
-                {
-                  accountId: account.ledgerAccountId,
-                  debit: "0",
-                  credit: amount,
-                },
+                { accountId: input.counterAccountId, debit: amount, credit: "0" },
+                { accountId: account.ledgerAccountId, debit: "0", credit: amount },
               ],
         });
         journalEntryId = postResult.entryId;
@@ -376,10 +268,7 @@ export class ReconciliationService {
       orgId,
       resourceType: "bank_transaction",
       resourceId: String(input.transactionId),
-      metadata: {
-        matchType: input.matchType,
-        matchedRecordId: input.matchedRecordId,
-      },
+      metadata: { matchType: input.matchType, matchedRecordId: input.matchedRecordId },
       result: "SUCCESS",
     });
 
@@ -478,9 +367,8 @@ export class ReconciliationService {
     });
     if (!txn) throw new NotFoundException("Bank transaction not found");
 
-    if (txn.status === "RECONCILED") {
+    if (txn.status === "RECONCILED")
       throw new BadRequestException("Cannot ignore a reconciled transaction");
-    }
 
     await this.db
       .update(finBankTransactions)
@@ -498,102 +386,6 @@ export class ReconciliationService {
       orgId,
       resourceType: "bank_transaction",
       resourceId: String(input.transactionId),
-      result: "SUCCESS",
-    });
-
-    return { success: true };
-  }
-
-  async listRules(u: CurrentUserContext, query: RulesQuery) {
-    const { orgId } = u;
-    const { limit, offset } = paginateOffset(query);
-
-    const where = eq(finReconciliationRules.orgId, orgId);
-    const [rows, [totals]] = await Promise.all([
-      this.db
-        .select()
-        .from(finReconciliationRules)
-        .where(where)
-        .orderBy(sql`${finReconciliationRules.priority} DESC`)
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(finReconciliationRules)
-        .where(where),
-    ]);
-
-    return buildListResponse(rows, totals?.total ?? 0, query);
-  }
-
-  async createRule(
-    u: CurrentUserContext,
-    bankAccountId: number,
-    input: CreateReconciliationRuleInput,
-  ) {
-    const { orgId, userId } = u;
-
-    await this.assertAccountOwned(orgId, bankAccountId);
-
-    const [rule] = await this.db
-      .insert(finReconciliationRules)
-      .values({
-        orgId,
-        name: input.name,
-        priority: input.priority,
-        conditions: input.conditions,
-        action: input.action,
-        isActive: input.isActive,
-      })
-      .returning();
-
-    if (!rule) throw new Error("Failed to create reconciliation rule");
-
-    this.audit.log({
-      action: "banking.rule.create",
-      userId,
-      orgId,
-      resourceType: "reconciliation_rule",
-      resourceId: String(rule.id),
-      result: "SUCCESS",
-    });
-
-    return rule;
-  }
-
-  async deleteRule(
-    u: CurrentUserContext,
-    bankAccountId: number,
-    ruleId: number,
-  ) {
-    const { orgId, userId } = u;
-
-    await this.assertAccountOwned(orgId, bankAccountId);
-
-    const existing = await this.db.query.finReconciliationRules.findFirst({
-      where: and(
-        eq(finReconciliationRules.id, ruleId),
-        eq(finReconciliationRules.orgId, orgId),
-      ),
-      columns: { id: true },
-    });
-    if (!existing) throw new NotFoundException("Reconciliation rule not found");
-
-    await this.db
-      .delete(finReconciliationRules)
-      .where(
-        and(
-          eq(finReconciliationRules.id, ruleId),
-          eq(finReconciliationRules.orgId, orgId),
-        ),
-      );
-
-    this.audit.log({
-      action: "banking.rule.delete",
-      userId,
-      orgId,
-      resourceType: "reconciliation_rule",
-      resourceId: String(ruleId),
       result: "SUCCESS",
     });
 
@@ -628,17 +420,4 @@ export class ReconciliationService {
     return result?.balance ?? "0";
   }
 
-  private async assertAccountOwned(
-    orgId: string,
-    bankAccountId: number,
-  ): Promise<void> {
-    const account = await this.db.query.finBankAccounts.findFirst({
-      where: and(
-        eq(finBankAccounts.id, bankAccountId),
-        eq(finBankAccounts.orgId, orgId),
-      ),
-      columns: { id: true },
-    });
-    if (!account) throw new NotFoundException("Bank account not found");
-  }
 }

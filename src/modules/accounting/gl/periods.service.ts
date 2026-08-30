@@ -5,7 +5,6 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, count, eq, gte, lte, or } from "drizzle-orm";
 import {
   accountingPeriods,
@@ -17,7 +16,6 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -191,32 +189,11 @@ export class PeriodsService {
       throw new BadRequestException(`Cannot close a period in status ${period[0].status}`);
     }
 
-    const [updated] = await this.db.transaction(async (tx) => {
-      const rows = await tx
-        .update(accountingPeriods)
-        .set({ status: "CLOSED", closedBy: userId, closedAt: new Date() })
-        .where(and(eq(accountingPeriods.id, periodId), eq(accountingPeriods.orgId, orgId)))
-        .returning();
-      const row = rows[0];
-      if (row) {
-        await OutboxWriter.emit(tx, {
-          eventId: randomUUID(),
-          organizationId: orgId,
-          aggregateType: "accounting_period",
-          aggregateId: String(periodId),
-          aggregateVersion: Date.now(),
-          eventType: "accounting.period.closed",
-          payload: {
-            organization_id: orgId,
-            period_id: periodId,
-            period_name: row.name,
-            actor_user_id: userId,
-          },
-          occurredAt: new Date(),
-        });
-      }
-      return rows;
-    });
+    const [updated] = await this.db
+      .update(accountingPeriods)
+      .set({ status: "CLOSED", closedBy: userId, closedAt: new Date() })
+      .where(and(eq(accountingPeriods.id, periodId), eq(accountingPeriods.orgId, orgId)))
+      .returning();
 
     await this.cache.invalidate(periodsKey(orgId));
     this.audit.log({ action: "accounting.period.closed", userId, orgId, resourceType: "accounting_period", resourceId: String(periodId) });

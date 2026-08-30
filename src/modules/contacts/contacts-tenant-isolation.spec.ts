@@ -1,6 +1,4 @@
-import { Test } from "@nestjs/testing";
 import type { Db } from "../../db/drizzle.module";
-import { DRIZZLE } from "../../db/drizzle.constants";
 import { ContactsService } from "./contacts.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -36,28 +34,19 @@ const ATTACKER = "org-attacker";
 const OWNER = "org-owner";
 
 describe("ContactsService — cross-tenant isolation", () => {
-  async function buildSvc(db: Db) {
-    const mod = await Test.createTestingModule({
-      providers: [
-        ContactsService,
-        { provide: DRIZZLE, useValue: db },
-        {
-          provide: "CacheService",
-          useValue: {
-            cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
-            cachedVersioned: jest.fn().mockImplementation((_k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
-            invalidateNamespace: jest.fn().mockResolvedValue(undefined),
-          },
-        },
-        { provide: "PlanLimitsService", useValue: { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } },
-      ],
-    }).compile();
-    return mod.get(ContactsService);
+  function buildSvc(db: Db) {
+    const cache = {
+      cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
+      cachedVersioned: jest.fn().mockImplementation((_k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
+      invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+    };
+    const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
+    return new ContactsService(db, cache as never, planLimits as never);
   }
 
   it("search: returns nothing for a different org (cross-tenant isolation deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.search(ATTACKER, "Alice");
     expect(result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -67,7 +56,7 @@ describe("ContactsService — cross-tenant isolation", () => {
   it("search: returns rows for the owning org (control)", async () => {
     const row = { id: 1, orgId: OWNER, name: "Alice", email: "alice@owner.com" };
     const { db } = makeDb([row]);
-    const svc = await buildSvc(db);
+    const svc = buildSvc(db);
     const result = await svc.search(OWNER, "Alice");
     expect(result).toHaveLength(1);
   });

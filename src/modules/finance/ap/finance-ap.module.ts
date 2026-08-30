@@ -4,6 +4,7 @@ import { NotificationsModule } from "../../notifications/notifications.module";
 import { FinanceControlsModule } from "../controls/finance-controls.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { AccountingBillApprovedConsumerService } from "./accounting-bill-approved-consumer.service";
+import { AccountingBillPaidConsumerService } from "./accounting-bill-paid-consumer.service";
 import { BillsWorkflowController } from "./bills-workflow.controller";
 import { VendorCreditsController } from "./vendor-credits.controller";
 import { RecurringBillsController } from "./recurring-bills.controller";
@@ -14,6 +15,7 @@ import { BillsWorkflowService } from "./bills-workflow.service";
 import { VendorCreditsService } from "./vendor-credits.service";
 import { RecurringBillsService } from "./recurring-bills.service";
 import { PaymentRunsService } from "./payment-runs.service";
+import { PaymentRunExecutorService } from "./payment-run-executor.service";
 import { VendorPaymentsAllocationsService } from "./vendor-payments-allocations.service";
 import { VendorPaymentsListService } from "./vendor-payments-list.service";
 import { BillsDueCheckService } from "./bills-due-check.service";
@@ -30,10 +32,12 @@ import { BillsDueCheckService } from "./bills-due-check.service";
   ],
   providers: [
     AccountingBillApprovedConsumerService,
+    AccountingBillPaidConsumerService,
     BillsWorkflowService,
     VendorCreditsService,
     RecurringBillsService,
     PaymentRunsService,
+    PaymentRunExecutorService,
     VendorPaymentsAllocationsService,
     VendorPaymentsListService,
     BillsDueCheckService,

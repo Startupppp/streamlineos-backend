@@ -81,6 +81,10 @@ export const CONTEXT_EXIT_ALLOWLIST = new Map([
     "src/modules/organization/core/org-membership.service.ts",
     "exits the ambient admin transaction before opening a user-identity-scoped one so app.user_id cannot widen later RLS reads in the enclosing request",
   ],
+  [
+    "src/modules/organization/core/org-membership-access-revocation.ts",
+    "exits the tenant context to count remaining active memberships across other organizations after revocation; a tenant-scoped GUC would restrict visibility to only the current org and produce an incorrect zero count",
+  ],
 ]);
 
 export const WITH_IDENTITY_ALLOWLIST = new Map([
@@ -95,6 +99,10 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
   [
     "src/modules/auth/auth-tokens.service.ts",
     "pre-tenant token refresh and session resumption; the org context is being derived from the token, not yet known",
+  ],
+  [
+    "src/modules/auth/auth.service.ts",
+    "register() writes and resolvePreferredOrg() reads the cross-org accountOrganizationIndex under user identity; the table is a global identity projection that cannot be read or written under a single org's tenant context",
   ],
   [
     "src/modules/organization/core/account-organization-index.service.ts",
@@ -115,6 +123,14 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
   [
     "src/modules/organization/core/org-profile.service.ts",
     "lists all orgs a user belongs to, which is a cross-org identity read that cannot run under a single org's tenant context",
+  ],
+  [
+    "src/modules/organization/core/invitation-acceptance.service.ts",
+    "updates the cross-org accountOrganizationIndex under user identity after invitation acceptance; the table is a global identity projection and must not be written under a single org's tenant context",
+  ],
+  [
+    "src/modules/organization/core/org-membership-access-revocation.ts",
+    "reads organizationMembers cross-org under user identity to determine whether the removed member has other active organizations; must run outside any single org's tenant context",
   ],
 ]);
 

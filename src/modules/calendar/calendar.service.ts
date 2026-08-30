@@ -109,6 +109,7 @@ export class CalendarService {
             allDay: input.allDay ?? false,
             color: input.color ?? "blue",
             category: input.category,
+            visibility: input.visibility ?? "org",
             entityType: input.entityType ?? null,
             entityId: input.entityId ?? null,
             agenda: input.agenda ?? null,
@@ -214,6 +215,7 @@ export class CalendarService {
     if (input.rrule !== undefined) updateData.rrule = input.rrule ?? null;
     if (input.recurrenceEnd !== undefined)
       updateData.recurrenceEnd = input.recurrenceEnd ? new Date(input.recurrenceEnd) : null;
+    if (input.visibility !== undefined) updateData.visibility = input.visibility;
 
     const [event] = await this.db
       .update(calendarEvents)

@@ -22,6 +22,7 @@ import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
 import { GeneratePipelineService, type ProfileData } from "./generate-pipeline.service";
+import { RunBatchLoaderService } from "./run-batch-loader.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { PayrollRunLockService } from "../run-lock.service";
 import { payrollSubjectKey } from "../lib/payroll-subject";
@@ -43,6 +44,7 @@ export class GenerateService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly pipeline: GeneratePipelineService,
+    private readonly batchLoader: RunBatchLoaderService,
     private readonly notifications: PayrollNotificationsService,
     private readonly runLocks: PayrollRunLockService,
     private readonly efService: EmploymentFactsService,
@@ -122,7 +124,7 @@ export class GenerateService {
     }
 
     const [batch, prevSnapshotByUser] = await Promise.all([
-      this.pipeline.loadRunBatchData(orgId, runId, run.month, toggles, profiles, lockedPeriodId),
+      this.batchLoader.loadRunBatchData(orgId, runId, run.month, toggles, profiles, lockedPeriodId),
       this.loadPreviousSnapshots(orgId, eligibleUserIds, run.month),
     ]);
 

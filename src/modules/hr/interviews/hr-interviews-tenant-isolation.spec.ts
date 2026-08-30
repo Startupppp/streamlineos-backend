@@ -20,6 +20,7 @@ function makeDb(rows: unknown[]) {
   const where = jest.fn();
   const findMany = jest.fn().mockResolvedValue(rows);
   const findFirst = jest.fn().mockResolvedValue(rows[0] ?? null);
+  const findFirstRef = findFirst;
   const builder = {
     from: jest.fn(), where, orderBy: jest.fn(), limit: jest.fn(), offset: jest.fn(),
     leftJoin: jest.fn(), innerJoin: jest.fn(), groupBy: jest.fn(),
@@ -41,11 +42,12 @@ function makeDb(rows: unknown[]) {
     execute: jest.fn().mockResolvedValue(rows),
     transaction: jest.fn().mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn({ select: jest.fn().mockReturnValue(builder), query: queryProxy } as unknown as Db)),
   } as unknown as Db;
-  return { db, where, findMany };
+  return { db, where, findMany, findFirst: findFirstRef };
 }
 
-function isolationArg(where: jest.Mock, findMany: jest.Mock): unknown {
+function isolationArg(where: jest.Mock, findMany: jest.Mock, findFirst?: jest.Mock): unknown {
   if (where.mock.calls.length > 0) return where.mock.calls[0]?.[0];
+  if (findFirst && findFirst.mock.calls.length > 0) return (findFirst.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"];
   return (findMany.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"];
 }
 
@@ -54,7 +56,7 @@ const mockConfig = { app: { url: "https://app.test" } };
 describe("HrInterviewsService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
-  const ROW = { id: 1, orgId: OWNER };
+  const ROW = { id: 1, orgId: OWNER, panelMembers: [] };
 
   it("scopes interview list to attacker org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
@@ -74,23 +76,22 @@ describe("HrInterviewsService — cross-tenant isolation", () => {
 describe("HrHiringFlowsService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
-  const ROW = { id: 1, orgId: OWNER };
+  const ROW = { id: 1, orgId: OWNER, rounds: [] };
 
   it("throws NotFoundException for cross-tenant hiring flow access (cross-tenant isolation)", async () => {
-    const { db } = makeDb([]);
-    const mockAudit = { log: jest.fn() };
-    const mockPositions = { list: jest.fn().mockResolvedValue([]) };
-    const svc = new HrHiringFlowsService(db, mockAudit as never, mockPositions as never);
+    const { db, where, findMany, findFirst } = makeDb([]);
+    const mockCache = { cachedVersioned: jest.fn().mockImplementation((_ns: string, _key: string, fn: () => unknown) => fn()), invalidateNamespace: jest.fn() };
+    const svc = new HrHiringFlowsService(db, mockCache as never);
     await expect(svc.getFlow(ATTACKER, 999)).rejects.toThrow();
+    expect(sqlValues(isolationArg(where, findMany, findFirst))).toContain(ATTACKER);
   });
 
   it("returns hiring flow for owning org (control)", async () => {
-    const { db, where, findMany } = makeDb([ROW]);
-    const mockAudit = { log: jest.fn() };
-    const mockPositions = { list: jest.fn().mockResolvedValue([]) };
-    const svc = new HrHiringFlowsService(db, mockAudit as never, mockPositions as never);
+    const { db, where, findMany, findFirst } = makeDb([ROW]);
+    const mockCache = { cachedVersioned: jest.fn().mockImplementation((_ns: string, _key: string, fn: () => unknown) => fn()), invalidateNamespace: jest.fn() };
+    const svc = new HrHiringFlowsService(db, mockCache as never);
     await svc.getFlow(OWNER, 1);
-    expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
+    expect(sqlValues(isolationArg(where, findMany, findFirst))).toContain(OWNER);
   });
 });
 

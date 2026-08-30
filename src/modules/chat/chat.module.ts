@@ -18,6 +18,8 @@ import { ChatRealtimeController } from "./chat-realtime.controller";
 import { ChatChannelsService } from "./chat-channels.service";
 import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatMessagesService } from "./chat-messages.service";
+import { ChatMessageTimelineService } from "./chat-message-timeline.service";
+import { ChatReactionsService } from "./chat-reactions.service";
 import { ChatMessageFanoutService } from "./chat-message-fanout.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatTypingService } from "./chat-typing.service";
@@ -63,6 +65,8 @@ import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanou
     ChatChannelsService,
     ChatChannelMembersService,
     ChatMessagesService,
+    ChatMessageTimelineService,
+    ChatReactionsService,
     ChatPresenceService,
     ChatTypingService,
     ChatPinsService,

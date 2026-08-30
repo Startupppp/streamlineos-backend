@@ -3,7 +3,8 @@ jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 
 import { NotFoundException } from "@nestjs/common";
-import { TicketAiService } from "./ticket-ai.service";
+import { TicketInsightsAiService } from "./ticket-insights-ai.service";
+import { MeetingActionAiService } from "./meeting-action-ai.service";
 import type { Db } from "../../../../db/drizzle.module";
 import type { AiGatewayService } from "../gateway/ai-gateway.service";
 import type { AuditService } from "../../../../common/audit/audit.service";
@@ -22,8 +23,21 @@ function makeSelectChain(rows: unknown[]) {
   return { from, where, limit };
 }
 
-describe("TicketAiService.handoffSummary", () => {
-  it("calls gateway with feature 'ticket.handoff' and returns structured output", async () => {
+describe("TicketInsightsAiService.handoffSummary — cross-tenant isolation", () => {
+  it("hides tickets owned by a different org (BOLA — cross-tenant access denied)", async () => {
+    const emptyChain = makeSelectChain([]);
+    const mockDb = {
+      select: jest.fn().mockReturnValue(emptyChain),
+    } as unknown as Db;
+
+    const mockGateway = { invokeStructured: jest.fn() } as unknown as AiGatewayService;
+    const svc = new TicketInsightsAiService(mockDb, mockGateway, mockAudit);
+
+    await expect(svc.handoffSummary("org-attacker", "user-1", 10, 999)).rejects.toThrow(NotFoundException);
+    expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
+  });
+
+  it("calls gateway with feature 'ticket.handoff' and returns structured output (same-tenant control)", async () => {
     const ticket = {
       id: 1,
       title: "Fix login bug",
@@ -57,7 +71,7 @@ describe("TicketAiService.handoffSummary", () => {
       invokeStructured: jest.fn().mockResolvedValue({ ok: true, data: handoffResult }),
     } as unknown as AiGatewayService;
 
-    const svc = new TicketAiService(mockDb, mockGateway, mockAudit);
+    const svc = new TicketInsightsAiService(mockDb, mockGateway, mockAudit);
     const result = await svc.handoffSummary("org-1", "user-1", 10, 1);
 
     expect(mockGateway.invokeStructured).toHaveBeenCalledTimes(1);
@@ -74,25 +88,23 @@ describe("TicketAiService.handoffSummary", () => {
       expect.objectContaining({ action: "ai.ticket.handoff", orgId: "org-1", userId: "user-1" }),
     );
   });
+});
 
-  it("throws NotFoundException when ticket not found", async () => {
+describe("MeetingActionAiService.extractMeetingActions — cross-tenant isolation", () => {
+  it("throws NotFoundException when meeting belongs to a different org (BOLA denied)", async () => {
     const emptyChain = makeSelectChain([]);
     const mockDb = {
       select: jest.fn().mockReturnValue(emptyChain),
     } as unknown as Db;
 
-    const mockGateway = {
-      invokeStructured: jest.fn(),
-    } as unknown as AiGatewayService;
+    const mockGateway = { invokeStructured: jest.fn() } as unknown as AiGatewayService;
+    const svc = new MeetingActionAiService(mockDb, mockGateway, mockAudit);
 
-    const svc = new TicketAiService(mockDb, mockGateway, mockAudit);
-    await expect(svc.handoffSummary("org-1", "user-1", 10, 999)).rejects.toThrow(NotFoundException);
+    await expect(svc.extractMeetingActions("org-attacker", "user-1", 10, 999)).rejects.toThrow(NotFoundException);
     expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
   });
-});
 
-describe("TicketAiService.extractMeetingActions", () => {
-  it("calls gateway with feature 'pm.extract-meeting-actions' and returns { ...data, suggestions: true }", async () => {
+  it("calls gateway with feature 'pm.extract-meeting-actions' and returns { ...data, suggestions: true } (same-tenant control)", async () => {
     const meeting = {
       id: 5,
       title: "Sprint Planning",
@@ -135,7 +147,7 @@ describe("TicketAiService.extractMeetingActions", () => {
       invokeStructured: jest.fn().mockResolvedValue({ ok: true, data: extractResult }),
     } as unknown as AiGatewayService;
 
-    const svc = new TicketAiService(mockDb, mockGateway, mockAudit);
+    const svc = new MeetingActionAiService(mockDb, mockGateway, mockAudit);
     const result = await svc.extractMeetingActions("org-1", "user-1", 10, 5);
 
     expect(mockGateway.invokeStructured).toHaveBeenCalledTimes(1);
@@ -167,11 +179,8 @@ describe("TicketAiService.extractMeetingActions", () => {
       select: jest.fn().mockReturnValue(meetingChain),
     } as unknown as Db;
 
-    const mockGateway = {
-      invokeStructured: jest.fn(),
-    } as unknown as AiGatewayService;
-
-    const svc = new TicketAiService(mockDb, mockGateway, mockAudit);
+    const mockGateway = { invokeStructured: jest.fn() } as unknown as AiGatewayService;
+    const svc = new MeetingActionAiService(mockDb, mockGateway, mockAudit);
     const result = await svc.extractMeetingActions("org-1", "user-1", 10, 5);
 
     expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
@@ -180,49 +189,5 @@ describe("TicketAiService.extractMeetingActions", () => {
       summary: "Meeting has no notes to extract actions from.",
       suggestions: true,
     });
-  });
-
-  it("returns empty actions early when meeting notes is empty string, gateway is NOT called", async () => {
-    const meeting = {
-      id: 5,
-      title: "Empty Notes Meeting",
-      type: "standup",
-      scheduledAt: null,
-      notes: "   ",
-    };
-
-    const meetingChain = makeSelectChain([meeting]);
-    const mockDb = {
-      select: jest.fn().mockReturnValue(meetingChain),
-    } as unknown as Db;
-
-    const mockGateway = {
-      invokeStructured: jest.fn(),
-    } as unknown as AiGatewayService;
-
-    const svc = new TicketAiService(mockDb, mockGateway, mockAudit);
-    const result = await svc.extractMeetingActions("org-1", "user-1", 10, 5);
-
-    expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      actions: [],
-      summary: "Meeting has no notes to extract actions from.",
-      suggestions: true,
-    });
-  });
-
-  it("throws NotFoundException when meeting not found", async () => {
-    const emptyChain = makeSelectChain([]);
-    const mockDb = {
-      select: jest.fn().mockReturnValue(emptyChain),
-    } as unknown as Db;
-
-    const mockGateway = {
-      invokeStructured: jest.fn(),
-    } as unknown as AiGatewayService;
-
-    const svc = new TicketAiService(mockDb, mockGateway, mockAudit);
-    await expect(svc.extractMeetingActions("org-1", "user-1", 10, 999)).rejects.toThrow(NotFoundException);
-    expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
   });
 });

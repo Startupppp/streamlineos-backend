@@ -6,6 +6,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { EssService } from "./ess.service";
+import { EssSelfServiceService } from "./ess-self-service.service";
 import {
   essBankSchema,
   essCreateReimbursementSchema,
@@ -22,7 +23,10 @@ import {
 @Controller("payroll/me")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class EssController {
-  constructor(private readonly essService: EssService) {}
+  constructor(
+    private readonly essService: EssService,
+    private readonly essSelfService: EssSelfServiceService,
+  ) {}
 
   @Get("overview")
   @RequirePermission("self:payroll")
@@ -45,7 +49,7 @@ export class EssController {
   @Get("reimbursements")
   @RequirePermission("self:payroll")
   listReimbursements(@CurrentUser() u: CurrentUserContext) {
-    return this.essService.listReimbursements(u.orgId, u.userId);
+    return this.essSelfService.listReimbursements(u.orgId, u.userId);
   }
 
   @Post("reimbursements")
@@ -55,13 +59,13 @@ export class EssController {
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(essCreateReimbursementSchema)) body: EssCreateReimbursement,
   ) {
-    return this.essService.createReimbursement(u.orgId, u.userId, body);
+    return this.essSelfService.createReimbursement(u.orgId, u.userId, body);
   }
 
   @Get("loans")
   @RequirePermission("self:payroll")
   listLoans(@CurrentUser() u: CurrentUserContext) {
-    return this.essService.listLoans(u.orgId, u.userId);
+    return this.essSelfService.listLoans(u.orgId, u.userId);
   }
 
   @Post("loans")
@@ -71,13 +75,13 @@ export class EssController {
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(essCreateLoanSchema)) body: EssCreateLoan,
   ) {
-    return this.essService.createLoan(u.orgId, u.userId, body);
+    return this.essSelfService.createLoan(u.orgId, u.userId, body);
   }
 
   @Get("tax-declaration")
   @RequirePermission("self:payroll")
   getTaxDeclaration(@CurrentUser() u: CurrentUserContext) {
-    return this.essService.getTaxDeclaration(u.orgId, u.userId);
+    return this.essSelfService.getTaxDeclaration(u.orgId, u.userId);
   }
 
   @Post("tax-declaration")
@@ -87,7 +91,7 @@ export class EssController {
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(essSubmitTaxDeclarationSchema)) body: EssSubmitTaxDeclaration,
   ) {
-    return this.essService.submitTaxDeclaration(u.orgId, u.userId, body);
+    return this.essSelfService.submitTaxDeclaration(u.orgId, u.userId, body);
   }
 
   @Post("tax-declaration/proofs")
@@ -97,13 +101,13 @@ export class EssController {
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(essAddTaxProofSchema)) body: EssAddTaxProof,
   ) {
-    return this.essService.addTaxProof(u.orgId, u.userId, body);
+    return this.essSelfService.addTaxProof(u.orgId, u.userId, body);
   }
 
   @Get("bank")
   @RequirePermission("self:payroll")
   getBankDetails(@CurrentUser() u: CurrentUserContext) {
-    return this.essService.getBankDetails(u.orgId, u.userId);
+    return this.essSelfService.getBankDetails(u.orgId, u.userId);
   }
 
   @Patch("bank")
@@ -112,7 +116,7 @@ export class EssController {
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(essBankSchema)) body: EssBank,
   ) {
-    return this.essService.updateBankDetails(u.orgId, u.userId, body);
+    return this.essSelfService.updateBankDetails(u.orgId, u.userId, body);
   }
 
   @Get("fnf")

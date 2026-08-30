@@ -8,6 +8,7 @@ import { PaymentProviderAdapterRegistry } from "./payment-provider-adapter.inter
 import { RazorpayAdapter } from "./adapters/razorpay.adapter";
 import { PaymentTestTransactionService } from "./payment-test-transaction.service";
 import { PaymentWebhookHealthService } from "./payment-webhook-health.service";
+import { PaymentWebhookReceiverService } from "./payment-webhook-receiver.service";
 import { PaymentReadinessService } from "./payment-readiness.service";
 import { PaymentManualMethodsService } from "./payment-manual-methods.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
@@ -26,6 +27,7 @@ import { FinanceControlsModule } from "../../finance/controls/finance-controls.m
     RazorpayAdapter,
     PaymentTestTransactionService,
     PaymentWebhookHealthService,
+    PaymentWebhookReceiverService,
     PaymentReadinessService,
     PaymentManualMethodsService,
     PaymentAnalyticsService,
@@ -36,6 +38,7 @@ import { FinanceControlsModule } from "../../finance/controls/finance-controls.m
     PaymentAuditService,
     PaymentProviderAdapterRegistry,
     PaymentWebhookHealthService,
+    PaymentWebhookReceiverService,
     PaymentAnalyticsService,
   ],
 })

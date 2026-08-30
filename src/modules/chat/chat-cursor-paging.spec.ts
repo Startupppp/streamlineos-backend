@@ -1,14 +1,9 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { ChatMessagesService } from "./chat-messages.service";
 import type { Db } from "../../db/drizzle.module";
-import type { CacheService } from "../../common/cache/cache.service";
-import type { AblyService } from "../realtime/ably.service";
-import type { ChatReplyRemindersService } from "./chat-reply-reminders.service";
-import type { ChatOrgSettingsService } from "./chat-org-settings.service";
 import type { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
-import type { MessageFanoutProvider } from "./message-fanout.interface";
+import { ChatMessageTimelineService } from "./chat-message-timeline.service";
 
 /**
  * The property a scrolled list must hold: page through it and every row that
@@ -93,7 +88,7 @@ function cursorFromPredicate(where: SQL): number | undefined {
 }
 
 interface Harness {
-  readonly service: ChatMessagesService;
+  readonly service: ChatMessageTimelineService;
   readonly store: MessageStore;
   readonly onRead: (fn: () => void) => void;
 }
@@ -118,15 +113,7 @@ function buildHarness(store: MessageStore): Harness {
     withResolvedReferences: jest.fn().mockImplementation(<T>(_actor: EntityActor, rows: T[]) => Promise.resolve(rows)),
   } as unknown as EntityReferenceService;
 
-  const service = new ChatMessagesService(
-    db,
-    {} as unknown as CacheService,
-    {} as unknown as AblyService,
-    {} as unknown as ChatReplyRemindersService,
-    {} as unknown as ChatOrgSettingsService,
-    entities,
-    {} as unknown as MessageFanoutProvider,
-  );
+  const service = new ChatMessageTimelineService(db, entities);
 
   return {
     service,

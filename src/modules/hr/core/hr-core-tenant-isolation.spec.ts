@@ -27,6 +27,7 @@ function makeDb(rows: unknown[]) {
   const builder = {
     from: jest.fn(), where, orderBy: jest.fn(), limit: jest.fn(), offset: jest.fn(),
     leftJoin: jest.fn(), innerJoin: jest.fn(), groupBy: jest.fn(),
+    for: jest.fn(),
     then: (resolve: (v: unknown) => unknown) => Promise.resolve(rows).then(resolve),
   };
   builder.from.mockReturnValue(builder);
@@ -37,6 +38,7 @@ function makeDb(rows: unknown[]) {
   builder.leftJoin.mockReturnValue(builder);
   builder.innerJoin.mockReturnValue(builder);
   builder.groupBy.mockReturnValue(builder);
+  builder.for.mockReturnValue(builder);
   const queryProxy = new Proxy({} as Record<string, unknown>, { get: () => ({ findMany, findFirst }) });
   const update = jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) }) });
   const db = {
@@ -45,7 +47,7 @@ function makeDb(rows: unknown[]) {
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) }),
     update,
     execute: jest.fn().mockResolvedValue(rows),
-    transaction: jest.fn().mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn({ select: jest.fn().mockReturnValue(builder), query: queryProxy, insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) }), update, execute: jest.fn().mockResolvedValue(rows) } as unknown as Db)),
+    transaction: jest.fn().mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn({ select: jest.fn().mockReturnValue(builder), query: queryProxy, insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) }), update, execute: jest.fn().mockResolvedValue(rows), transaction: jest.fn().mockImplementation((f: (tx2: Db) => Promise<unknown>) => f({ select: jest.fn().mockReturnValue(builder), query: queryProxy } as unknown as Db)) } as unknown as Db)),
   } as unknown as Db;
   return { db, where, findMany, findFirst };
 }

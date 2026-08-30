@@ -8,12 +8,9 @@ import { getPostgresErrorCode } from "../../../common/db/postgres-error";
 import { logger } from "../../../common/logger/logger.service";
 
 export type PayrollJobType =
-  | "PREVIEW"
   | "GENERATE"
   | "RECALCULATE"
   | "PDF_PUBLISH"
-  | "EXPORT"
-  | "RECONCILE"
   | "FILING_EXPORT";
 
 @Injectable()

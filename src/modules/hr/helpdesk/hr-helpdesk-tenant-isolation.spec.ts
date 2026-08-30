@@ -67,22 +67,22 @@ describe("HrCalendarService — cross-tenant isolation", () => {
 
   it("scopes calendar events to attacker org context (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
-    const mockCelebrations = { getUpcoming: jest.fn().mockResolvedValue([]) };
-    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
+    const mockCelebrations = { getUpcoming: jest.fn().mockResolvedValue([]), getAnniversaryFeed: jest.fn().mockResolvedValue([]) };
+    const mockAccess = { holds: jest.fn().mockResolvedValue(false) };
     const svc = new HrCalendarService(db, mockCelebrations as never, mockAccess as never);
     const userCtx = { orgId: ATTACKER, userId: "user-1", email: "a@b.com", roles: [] };
-    await svc.getEvents(userCtx as never, { startDate: "2024-01-01", endDate: "2024-01-31" });
+    await svc.getEvents(userCtx as never, { from: "2024-01-01", to: "2024-01-31" });
     const arg = isolationArg(where, findMany);
     expect(sqlValues(arg).includes(ATTACKER) || (db.select as jest.Mock).mock.calls.length === 0).toBe(true);
   });
 
   it("returns calendar events for owning org (control)", async () => {
     const { db } = makeDb([]);
-    const mockCelebrations = { getUpcoming: jest.fn().mockResolvedValue([]) };
-    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
+    const mockCelebrations = { getUpcoming: jest.fn().mockResolvedValue([]), getAnniversaryFeed: jest.fn().mockResolvedValue([]) };
+    const mockAccess = { holds: jest.fn().mockResolvedValue(false) };
     const svc = new HrCalendarService(db, mockCelebrations as never, mockAccess as never);
     const userCtx = { orgId: OWNER, userId: "user-2", email: "b@c.com", roles: [] };
-    const result = await svc.getEvents(userCtx as never, { startDate: "2024-01-01", endDate: "2024-01-31" });
+    const result = await svc.getEvents(userCtx as never, { from: "2024-01-01", to: "2024-01-31" });
     expect(Array.isArray(result)).toBe(true);
   });
 });

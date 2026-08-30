@@ -5,7 +5,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequirePermission } from "./require-permission.decorator";
 import { PermissionGuard } from "./permission.guard";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { AccessService } from "./access.service";
+import { UserModuleAccessService } from "./user-module-access.service";
 import {
   setUserModuleAccessSchema,
   userModuleAccessParamsSchema,
@@ -16,7 +16,7 @@ import {
 @Controller("access/user-module-access")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class UserModuleAccessController {
-  constructor(private readonly access: AccessService) {}
+  constructor(private readonly userModuleAccess: UserModuleAccessService) {}
 
   @Get(":userId")
   @RequirePermission("settings:view")
@@ -25,7 +25,7 @@ export class UserModuleAccessController {
     params: UserModuleAccessParams,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.access.getUserModuleAccess(u.orgId, params.userId);
+    return this.userModuleAccess.getUserModuleAccess(u.orgId, params.userId);
   }
 
   @Patch(":userId")
@@ -37,7 +37,7 @@ export class UserModuleAccessController {
     body: SetUserModuleAccessInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.access.setUserModuleAccess(
+    return this.userModuleAccess.setUserModuleAccess(
       u.orgId,
       params.userId,
       body.moduleKey,
