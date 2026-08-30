@@ -27,7 +27,7 @@ describe("InvoicesService — cross-tenant isolation", () => {
     const mockCache = { cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()) } as any;
     const svc = new InvoicesService(db, mockCache);
     const result = await svc.list(ATTACKER, { page: 1, limit: 20 });
-    expect(result.invoices).toHaveLength(0);
+    expect(result.items).toHaveLength(0);
     const call = findMany.mock.calls[0]?.[0];
     expect(sqlValues(call?.where)).toContain(ATTACKER);
   });
@@ -44,6 +44,6 @@ describe("InvoicesService — cross-tenant isolation", () => {
     const mockCache = { cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()) } as any;
     const svc = new InvoicesService(db, mockCache);
     const result = await svc.list(OWNER, { page: 1, limit: 20 });
-    expect(result.invoices).toHaveLength(1);
+    expect(result.items).toHaveLength(1);
   });
 });

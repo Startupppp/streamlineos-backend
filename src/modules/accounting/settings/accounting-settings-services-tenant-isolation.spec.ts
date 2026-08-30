@@ -28,19 +28,9 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-type ChainBuilder = {
-  from: jest.Mock;
-  leftJoin: jest.Mock;
-  innerJoin: jest.Mock;
-  where: jest.Mock;
-  orderBy: jest.Mock;
-  groupBy: jest.Mock;
-  limit: jest.Mock;
-};
-
 function makeSelectDb(rows: unknown[]): { db: Db; where: jest.Mock } {
-  const where = jest.fn().mockResolvedValue(rows);
-  const builder: ChainBuilder = {
+  const where = jest.fn();
+  const builder: Record<string, unknown> & { then: (r: (v: unknown) => void) => void } = {
     from: jest.fn(),
     leftJoin: jest.fn(),
     innerJoin: jest.fn(),
@@ -48,13 +38,26 @@ function makeSelectDb(rows: unknown[]): { db: Db; where: jest.Mock } {
     orderBy: jest.fn(),
     groupBy: jest.fn(),
     limit: jest.fn().mockResolvedValue(rows),
+    offset: jest.fn(),
+    then: (resolve: (v: unknown) => void) => resolve(rows),
   };
-  builder.from.mockReturnValue(builder);
-  builder.leftJoin.mockReturnValue(builder);
-  builder.innerJoin.mockReturnValue(builder);
-  builder.orderBy.mockReturnValue(builder);
-  builder.groupBy.mockReturnValue(builder);
-  const db = { select: jest.fn().mockReturnValue(builder) } as unknown as Db;
+  (builder.from as jest.Mock).mockReturnValue(builder);
+  (builder.leftJoin as jest.Mock).mockReturnValue(builder);
+  (builder.innerJoin as jest.Mock).mockReturnValue(builder);
+  (builder.where as jest.Mock).mockReturnValue(builder);
+  (builder.orderBy as jest.Mock).mockReturnValue(builder);
+  (builder.groupBy as jest.Mock).mockReturnValue(builder);
+  (builder.offset as jest.Mock).mockReturnValue(builder);
+  const insertChain = {
+    values: jest.fn().mockReturnThis(),
+    onConflictDoUpdate: jest.fn().mockReturnThis(),
+    returning: jest.fn().mockResolvedValue([]),
+  };
+  const db = {
+    select: jest.fn().mockReturnValue(builder),
+    insert: jest.fn().mockReturnValue(insertChain),
+    execute: jest.fn().mockResolvedValue([]),
+  } as unknown as Db;
   return { db, where };
 }
 
@@ -111,7 +114,8 @@ describe("accounting settings services — cross-tenant isolation", () => {
 
       const result = await svc.getOpeningBalance("org-attacker");
 
-      expect(result).toBeNull();
+      expect(result.posted).toBe(false);
+      expect(result.entry).toBeNull();
       expect(where).toHaveBeenCalled();
       expect(sqlValues(where.mock.calls[0]?.[0])).toContain("org-attacker");
     });

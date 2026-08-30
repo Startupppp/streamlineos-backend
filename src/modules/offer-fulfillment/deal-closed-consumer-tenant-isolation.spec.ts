@@ -11,8 +11,20 @@ describe("DealClosedConsumerService — cross-tenant isolation", () => {
         where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(mappings) }),
       }),
     });
+    const insertChain = {
+      values: jest.fn().mockReturnThis(),
+      onConflictDoNothing: jest.fn().mockReturnThis(),
+      onConflictDoUpdate: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockResolvedValue([{ id: 1 }]),
+    };
+    const updateChain = {
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue([]),
+    };
     const db = {
       select: chain,
+      insert: jest.fn().mockReturnValue(insertChain),
+      update: jest.fn().mockReturnValue(updateChain),
       transaction: jest.fn(),
     } as unknown as Db;
     const inbox = { claim: jest.fn(), markProcessed: jest.fn() };
@@ -31,7 +43,7 @@ describe("DealClosedConsumerService — cross-tenant isolation", () => {
       aggregateId: "deal-1",
       aggregateVersion: 1,
       eventType: "deal.closed",
-      payload: { dealId: "deal-1", dealName: "Test Deal", actorUserId: "user-1" },
+      payload: { dealId: 1, orgId: ATTACKER, dealName: "Test Deal", dealValue: "1000", closedAt: "2024-01-15", actorUserId: "user-1" },
     };
     await svc.handle(event as any);
     expect(db.transaction).not.toHaveBeenCalled();
@@ -49,7 +61,7 @@ describe("DealClosedConsumerService — cross-tenant isolation", () => {
       aggregateId: "deal-2",
       aggregateVersion: 1,
       eventType: "deal.closed",
-      payload: { dealId: "deal-2", dealName: "Owner Deal", actorUserId: "user-2" },
+      payload: { dealId: 2, orgId: OWNER, dealName: "Owner Deal", dealValue: "5000", closedAt: "2024-01-15", actorUserId: "user-2" },
     };
     await svc.handle(event as any);
     const firstSelectCall = (db.select as jest.Mock).mock.calls[0];

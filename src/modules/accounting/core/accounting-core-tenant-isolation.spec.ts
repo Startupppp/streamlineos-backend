@@ -28,19 +28,9 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-type ChainBuilder = {
-  from: jest.Mock;
-  leftJoin: jest.Mock;
-  innerJoin: jest.Mock;
-  where: jest.Mock;
-  groupBy: jest.Mock;
-  orderBy: jest.Mock;
-  limit: jest.Mock;
-};
-
 function makeSelectDb(rows: unknown[]): { db: Db; where: jest.Mock } {
-  const where = jest.fn().mockResolvedValue(rows);
-  const builder: ChainBuilder = {
+  const where = jest.fn();
+  const builder: Record<string, unknown> & { then: (r: (v: unknown) => void) => void } = {
     from: jest.fn(),
     leftJoin: jest.fn(),
     innerJoin: jest.fn(),
@@ -48,18 +38,26 @@ function makeSelectDb(rows: unknown[]): { db: Db; where: jest.Mock } {
     groupBy: jest.fn(),
     orderBy: jest.fn(),
     limit: jest.fn().mockResolvedValue(rows),
+    offset: jest.fn(),
+    then: (resolve: (v: unknown) => void) => resolve(rows),
   };
-  builder.from.mockReturnValue(builder);
-  builder.leftJoin.mockReturnValue(builder);
-  builder.innerJoin.mockReturnValue(builder);
-  builder.groupBy.mockReturnValue(builder);
-  builder.orderBy.mockReturnValue(builder);
-  const db = { select: jest.fn().mockReturnValue(builder) } as unknown as Db;
+  (builder.from as jest.Mock).mockReturnValue(builder);
+  (builder.leftJoin as jest.Mock).mockReturnValue(builder);
+  (builder.innerJoin as jest.Mock).mockReturnValue(builder);
+  (builder.where as jest.Mock).mockReturnValue(builder);
+  (builder.groupBy as jest.Mock).mockReturnValue(builder);
+  (builder.orderBy as jest.Mock).mockReturnValue(builder);
+  (builder.offset as jest.Mock).mockReturnValue(builder);
+  const db = {
+    select: jest.fn().mockReturnValue(builder),
+    execute: jest.fn().mockResolvedValue([]),
+  } as unknown as Db;
   return { db, where };
 }
 
 const cache = {
   cached: jest.fn().mockImplementation((_k: string, fn: () => Promise<unknown>) => fn()),
+  cachedVersioned: jest.fn().mockImplementation((_ns: string, _k: string, fn: () => Promise<unknown>) => fn()),
   invalidate: jest.fn(),
   invalidateNamespace: jest.fn(),
 } as unknown as CacheService;
@@ -75,7 +73,7 @@ describe("accounting core services — cross-tenant isolation", () => {
 
       const result = await svc.gstr1("org-attacker", { from: "2024-01-01", to: "2024-01-31" });
 
-      expect(result.rows).toEqual([]);
+      expect(result.grandTotal.invoices).toBe(0);
       expect(where).toHaveBeenCalled();
       expect(sqlValues(where.mock.calls[0]?.[0])).toContain("org-attacker");
     });
