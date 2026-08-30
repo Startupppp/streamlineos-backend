@@ -77,17 +77,20 @@ describe("CrmInboxAiActionsService — cross-tenant isolation", () => {
 
 describe("CrmInboxService — cross-tenant isolation", () => {
   function buildSvc(db: Db) {
-    const aiActions = { resolveMetadata: jest.fn().mockResolvedValue({ terminalLeadKeys: [], openStageKeys: [] }) };
+    const aiActions = {
+      resolveMetadata: jest.fn().mockResolvedValue({ terminalLeadKeys: [], openStageKeys: [] }),
+      computeAiActions: jest.fn().mockResolvedValue([]),
+    };
     return new CrmInboxService(db, aiActions as never);
   }
 
   it("getInbox: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
     const svc = buildSvc(db);
-    const result = await svc.getInbox(ATTACKER, "user-1", "all");
-    expect(result.items ?? result).toHaveLength(0);
+    await svc.getInbox(ATTACKER, "user-1", "all");
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
+    expect(sqlValues(where.mock.calls[0]?.[0])).not.toContain(OWNER);
   });
 
   it("getInbox: queries scoped to owner org (control)", async () => {

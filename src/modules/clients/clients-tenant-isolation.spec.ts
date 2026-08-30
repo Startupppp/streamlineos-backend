@@ -103,6 +103,28 @@ describe("ClientsService — cross-tenant isolation", () => {
 });
 
 describe("ClientAccountsService — cross-tenant isolation", () => {
+  function makeQueryDb(rows: unknown[]): { db: Db; findMany: jest.Mock; selectWhere: jest.Mock } {
+    const findMany = jest.fn().mockResolvedValue(rows);
+    const findFirst = jest.fn().mockResolvedValue(rows[0]);
+    const selectWhere = jest.fn().mockResolvedValue([{ count: rows.length }]);
+    const chainCount = {
+      then: (fn: (v: unknown) => unknown) => Promise.resolve([{ count: rows.length }]).then(fn),
+      catch: (fn: (e: unknown) => unknown) => Promise.resolve([]).catch(fn),
+      finally: (fn: () => void) => Promise.resolve([]).finally(fn),
+      where: selectWhere,
+    };
+    selectWhere.mockReturnValue(chainCount);
+    const fromCount = jest.fn().mockReturnValue(chainCount);
+    const db = {
+      select: jest.fn().mockReturnValue({ from: fromCount }),
+      query: {
+        clientAccounts: { findMany, findFirst },
+        clientAccountActivities: { findMany, findFirst },
+      },
+    } as unknown as Db;
+    return { db, findMany, selectWhere };
+  }
+
   function buildSvc(db: Db) {
     const audit = { log: jest.fn().mockResolvedValue(undefined) };
     const clientsEmail = { send: jest.fn().mockResolvedValue(undefined) };
@@ -112,20 +134,22 @@ describe("ClientAccountsService — cross-tenant isolation", () => {
   }
 
   it("getClientAccounts: queries scoped to attacker org (cross-tenant isolation deny)", async () => {
-    const { db, where } = makeDb([]);
+    const { db, findMany } = makeQueryDb([]);
     const svc = buildSvc(db);
     const result = await svc.getClientAccounts(ATTACKER, "all", "user-1", {});
-    expect(result.items ?? result).toHaveLength(0);
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
+    const r = result as Record<string, unknown>;
+    const arr = (r.accounts ?? r.items ?? []) as unknown[];
+    expect(arr).toHaveLength(0);
+    expect(findMany).toHaveBeenCalled();
+    expect(sqlValues(findMany.mock.calls[0]?.[0]?.where)).toContain(ATTACKER);
   });
 
   it("getClientAccounts: queries scoped to owner org (control)", async () => {
-    const row = { id: 1, orgId: OWNER, clientName: "Acme" };
-    const { db, where } = makeDb([row]);
+    const row = { id: 1, orgId: OWNER, clientName: "Acme", salesRep: null, assignedCrm: null };
+    const { db, findMany } = makeQueryDb([row]);
     const svc = buildSvc(db);
     await svc.getClientAccounts(OWNER, "all", "user-1", {});
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
+    expect(findMany).toHaveBeenCalled();
+    expect(sqlValues(findMany.mock.calls[0]?.[0]?.where)).toContain(OWNER);
   });
 });

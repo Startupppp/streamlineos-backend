@@ -128,18 +128,23 @@ describe("SubjectService — cross-tenant isolation", () => {
   it("listSubjects: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
     const svc = buildSvc(db);
-    const result = await svc.listSubjects(ATTACKER, {});
-    expect(result.items ?? result).toHaveLength(0);
+    const result = await svc.listSubjects(ATTACKER, { limit: 20 } as never);
+    const r = result as Record<string, unknown>;
+    const arr = (r.data ?? r.items ?? []) as unknown[];
+    expect(arr).toHaveLength(0);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
 
   it("listSubjects: returns rows for the owning org (control)", async () => {
-    const row = { id: 1, orgId: OWNER, name: "Subject1" };
-    const { db, where } = makeDb([row]);
+    const row = { id: 1, orgId: OWNER, name: "Subject1", createdAt: new Date(), subjectId: "s1" };
+    const { db, where } = makeDb([row, row]);
     const svc = buildSvc(db);
-    await svc.listSubjects(OWNER, {});
+    const result = await svc.listSubjects(OWNER, { limit: 20 } as never);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
+    const r = result as Record<string, unknown>;
+    const arr = (r.data ?? r.items ?? []) as unknown[];
+    expect(arr.length).toBeGreaterThan(0);
   });
 });

@@ -30,7 +30,11 @@ function makeDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   }
   where.mockReturnValue(chain);
   const from = jest.fn().mockReturnValue(chain);
-  const db = { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;
+  const db = {
+    select: jest.fn().mockReturnValue({ from }),
+    selectDistinct: jest.fn().mockReturnValue({ from }),
+    execute: jest.fn().mockResolvedValue([]),
+  } as unknown as Db;
   return { db, where };
 }
 

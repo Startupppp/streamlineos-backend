@@ -41,7 +41,8 @@ describe("CrmSequencesService — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const svc = new CrmSequencesService(db);
     const result = await svc.list(ATTACKER);
-    expect(result).toHaveLength(0);
+    const arr = (result as Record<string, unknown>).sequences ?? result;
+    expect(arr).toHaveLength(0);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
@@ -51,7 +52,8 @@ describe("CrmSequencesService — cross-tenant isolation", () => {
     const { db } = makeDb([row]);
     const svc = new CrmSequencesService(db);
     const result = await svc.list(OWNER);
-    expect(result).toHaveLength(1);
+    const arr = (result as Record<string, unknown>).sequences ?? result;
+    expect(arr).toHaveLength(1);
   });
 });
 
@@ -84,14 +86,28 @@ describe("CrmAutomationRunnerService — cross-tenant isolation", () => {
   });
 
   it("executeRule: run record is tagged with orgId (org isolation via run metadata)", async () => {
-    const insert = jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: "run-1" }]) }) });
-    const db = { select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }), insert } as unknown as Db;
+    const returning = jest.fn().mockResolvedValue([{ id: "run-1" }]);
+    const updateSet = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
+    const insert = jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning }) });
+    const update = jest.fn().mockReturnValue({ set: updateSet });
+    const chain = {
+      then: (fn: (v: unknown) => unknown) => Promise.resolve([]).then(fn),
+      catch: (fn: (e: unknown) => unknown) => Promise.resolve([]).catch(fn),
+      finally: (fn: () => void) => Promise.resolve([]).finally(fn),
+      where: jest.fn(),
+    };
+    (chain.where as jest.Mock).mockReturnValue(chain);
+    const from = jest.fn().mockReturnValue(chain);
+    const db = { select: jest.fn().mockReturnValue({ from }), insert, update } as unknown as Db;
     const notifications = { dispatch: jest.fn() };
     const email = { send: jest.fn() };
     const svc = new CrmAutomationRunnerService(db, notifications as never, email as never);
     const rule = { id: 1, orgId: OWNER, conditions: [], actions: [], graph: [] };
     await svc.executeRule(OWNER, rule as never, "lead.created", { entityType: "lead", entityId: "1" } as never);
     expect(insert).toHaveBeenCalled();
+    const insertArgs = (returning as jest.Mock).mock.calls;
+    const updateArgs = update.mock.calls;
+    expect(insertArgs.length + updateArgs.length).toBeGreaterThan(0);
   });
 });
 

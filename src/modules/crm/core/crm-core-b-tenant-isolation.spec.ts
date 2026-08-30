@@ -33,6 +33,9 @@ function makeDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   for (const m of ["orderBy", "limit", "offset", "groupBy", "having", "leftJoin", "innerJoin", "rightJoin"]) {
     chain[m] = jest.fn().mockReturnValue(chain);
   }
+  chain.as = jest.fn().mockReturnValue(
+    new Proxy(chain, { get: (t, p) => (p in t ? t[p as string] : { queryChunks: [], value: String(p) }) }),
+  );
   where.mockReturnValue(chain);
   const from = jest.fn().mockReturnValue(chain);
   const findMany = jest.fn().mockResolvedValue(rows);
@@ -43,6 +46,7 @@ function makeDb(rows: unknown[]): { db: Db; where: jest.Mock } {
       crmDeals: { findMany, findFirst },
       crmMonthlyMetrics: { findMany, findFirst },
       crmPeople: { findMany, findFirst },
+      crmActivities: { findMany, findFirst },
       territories: { findMany, findFirst },
     },
   } as unknown as Db;
@@ -189,8 +193,9 @@ describe("CrmOrganizationsService — cross-tenant isolation", () => {
   it("list: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
     const svc = buildSvc(db);
-    const result = await svc.list(ATTACKER, {});
-    expect(result.items ?? result).toHaveLength(0);
+    const result = await svc.list(ATTACKER, { page: 1, pageSize: 10 } as never);
+    const arr = (result as Record<string, unknown>).organizations ?? result;
+    expect(arr).toHaveLength(0);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
@@ -199,8 +204,9 @@ describe("CrmOrganizationsService — cross-tenant isolation", () => {
     const row = { partyId: "p1", name: "Acme" };
     const { db } = makeDb([row]);
     const svc = buildSvc(db);
-    const result = await svc.list(OWNER, {});
-    expect(result.items ?? result).toHaveLength(1);
+    const result = await svc.list(OWNER, { page: 1, pageSize: 10 } as never);
+    const arr = (result as Record<string, unknown>).organizations ?? result;
+    expect(arr).toHaveLength(1);
   });
 });
 

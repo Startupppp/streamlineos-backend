@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
 import { DealsCompetitorsService } from "./deals-competitors.service";
 import { DealsMeetingsService } from "./deals-meetings.service";
@@ -16,7 +17,7 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-function makeDb(rows: unknown[]): { db: Db; where: jest.Mock } {
+function makeChainDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   const where = jest.fn();
   const chain: Record<string, unknown> = {
     then: (fn: (v: unknown) => unknown) => Promise.resolve(rows).then(fn),
@@ -37,18 +38,17 @@ const ATTACKER = "org-attacker";
 const OWNER = "org-owner";
 
 describe("DealsCompetitorsService — cross-tenant isolation", () => {
-  it("list: returns nothing for a different org (deny)", async () => {
-    const { db, where } = makeDb([]);
+  it("list: throws NotFoundException for a deal in a different org (cross-tenant isolation deny)", async () => {
+    const { db, where } = makeChainDb([]);
     const svc = new DealsCompetitorsService(db);
-    const result = await svc.list(ATTACKER, 1);
-    expect(result).toHaveLength(0);
+    await expect(svc.list(ATTACKER, 999)).rejects.toThrow(NotFoundException);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
 
   it("list: returns rows for the owning org (control)", async () => {
     const row = { id: 1, orgId: OWNER, dealId: 1, name: "Competitor" };
-    const { db } = makeDb([row]);
+    const { db } = makeChainDb([row]);
     const svc = new DealsCompetitorsService(db);
     const result = await svc.list(OWNER, 1);
     expect(result).toHaveLength(1);
@@ -56,40 +56,85 @@ describe("DealsCompetitorsService — cross-tenant isolation", () => {
 });
 
 describe("DealsMeetingsService — cross-tenant isolation", () => {
-  it("listMeetings: returns nothing for a different org (deny)", async () => {
-    const { db, where } = makeDb([]);
+  it("listMeetings: throws NotFoundException for a deal in a different org (deny)", async () => {
+    const dealsNotFound = jest.fn().mockResolvedValue(undefined);
+    const db = {
+      select: jest.fn(),
+      query: {
+        deals: { findFirst: dealsNotFound },
+        dealMeetings: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+    } as unknown as Db;
     const svc = new DealsMeetingsService(db);
-    const result = await svc.listMeetings(ATTACKER, 1);
-    expect(result).toHaveLength(0);
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
+    await expect(svc.listMeetings(ATTACKER, 999)).rejects.toThrow(NotFoundException);
+    expect(dealsNotFound).toHaveBeenCalled();
+    expect(sqlValues(dealsNotFound.mock.calls[0]?.[0]?.where)).toContain(ATTACKER);
   });
 
   it("listMeetings: returns rows for the owning org (control)", async () => {
-    const row = { id: 1, orgId: OWNER, dealId: 1, title: "Q1 Review" };
-    const { db } = makeDb([row]);
+    const dealRow = { id: 1 };
+    const meetingRow = { id: 10, dealId: 1, orgId: OWNER, scheduledAt: new Date(), creator: { id: "u1", name: "User" } };
+    const dealsFound = jest.fn().mockResolvedValue(dealRow);
+    const meetingsFound = jest.fn().mockResolvedValue([meetingRow]);
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            then: (fn: (v: unknown) => unknown) => Promise.resolve([{ meetingId: 10, attendeeId: "u1" }]).then(fn),
+            catch: (fn: (e: unknown) => unknown) => Promise.resolve([]).catch(fn),
+            finally: (fn: () => void) => Promise.resolve([]).finally(fn),
+            inArray: jest.fn(),
+          }),
+          inArray: jest.fn().mockResolvedValue([]),
+        }),
+      }),
+      query: {
+        deals: { findFirst: dealsFound },
+        dealMeetings: { findMany: meetingsFound },
+      },
+    } as unknown as Db;
     const svc = new DealsMeetingsService(db);
     const result = await svc.listMeetings(OWNER, 1);
     expect(result).toHaveLength(1);
+    expect(dealsFound).toHaveBeenCalled();
+    expect(sqlValues(dealsFound.mock.calls[0]?.[0]?.where)).toContain(OWNER);
   });
 });
 
 describe("DealsStakeholdersService — cross-tenant isolation", () => {
-  it("listStakeholders: returns nothing for a different org (deny)", async () => {
-    const { db, where } = makeDb([]);
+  it("listStakeholders: throws NotFoundException for a deal in a different org (deny)", async () => {
+    const dealsNotFound = jest.fn().mockResolvedValue(undefined);
+    const db = {
+      select: jest.fn(),
+      query: { deals: { findFirst: dealsNotFound } },
+    } as unknown as Db;
     const svc = new DealsStakeholdersService(db);
-    const result = await svc.listStakeholders(ATTACKER, 1);
-    expect(result).toHaveLength(0);
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
+    await expect(svc.listStakeholders(ATTACKER, 999)).rejects.toThrow(NotFoundException);
+    expect(dealsNotFound).toHaveBeenCalled();
+    expect(sqlValues(dealsNotFound.mock.calls[0]?.[0]?.where)).toContain(ATTACKER);
   });
 
   it("listStakeholders: returns rows for the owning org (control)", async () => {
-    const row = { id: 1, orgId: OWNER, dealId: 1, role: "decision_maker" };
-    const { db } = makeDb([row]);
+    const dealRow = { id: 1 };
+    const stakeRow = { id: 5, dealId: 1 };
+    const dealsFound = jest.fn().mockResolvedValue(dealRow);
+    const chain: Record<string, unknown> = {
+      then: (fn: (v: unknown) => unknown) => Promise.resolve([stakeRow]).then(fn),
+      catch: (fn: (e: unknown) => unknown) => Promise.resolve([stakeRow]).catch(fn),
+      finally: (fn: () => void) => Promise.resolve([stakeRow]).finally(fn),
+    };
+    for (const m of ["where", "orderBy", "limit", "leftJoin", "innerJoin"]) {
+      chain[m] = jest.fn().mockReturnValue(chain);
+    }
+    const db = {
+      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue(chain) }),
+      query: { deals: { findFirst: dealsFound } },
+    } as unknown as Db;
     const svc = new DealsStakeholdersService(db);
     const result = await svc.listStakeholders(OWNER, 1);
     expect(result).toHaveLength(1);
+    expect(dealsFound).toHaveBeenCalled();
+    expect(sqlValues(dealsFound.mock.calls[0]?.[0]?.where)).toContain(OWNER);
   });
 });
 
