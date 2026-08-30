@@ -12,9 +12,11 @@ describe("lead schemas", () => {
   it("createSchema accepts empty-string email", () => {
     expect(createSchema.parse({ name: "A", email: "" }).email).toBe("");
   });
-  it("ingestSchema allows all-optional but is validated by route for name|email|phone", () => {
-    expect(ingestSchema.parse({})).toEqual({});
+  it("ingestSchema requires at least one of name, email, or phone", () => {
+    expect(() => ingestSchema.parse({})).toThrow("At least one of name, email, or phone is required");
     expect(ingestSchema.parse({ email: "x@y.com" }).email).toBe("x@y.com");
+    expect(ingestSchema.parse({ name: "Acme" }).name).toBe("Acme");
+    expect(ingestSchema.parse({ phone: "555" }).phone).toBe("555");
   });
   it("updateSchema is all-optional", () => {
     expect(updateSchema.parse({})).toEqual({});

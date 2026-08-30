@@ -30,7 +30,6 @@ const NON_MODULE_NAMESPACES = [
   "audit-log",
   "branch",
   "dashboard",
-  "feedbucket",
   "integrations",
   "onboarding",
   "ownership",
@@ -41,7 +40,6 @@ const NON_MODULE_NAMESPACES = [
   "reports",
   "sales",
   "self",
-  "settings",
   "tasks",
 ];
 

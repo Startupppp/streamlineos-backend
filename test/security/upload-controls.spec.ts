@@ -16,8 +16,7 @@
  *        upload path (an unlisted type is rejected before validateMagicBytes is
  *        called).  The gap would become a real bypass if ALLOWED_UPLOAD_TYPES were
  *        widened without adding the mime type to FILE_SIGNATURES.
- *   F3 — No quarantine or malware scan step.  Files are stored immediately after
- *        magic-byte and type checks.
+ *   F3 — RESOLVED: Malware scan step added via AvScanner before storage upload.
  *
  * Suite: run with  node ./node_modules/jest/bin/jest.js test/security/upload-controls.spec.ts
  *   Requires WIRING: "roots" in jest config must include "<rootDir>/test".
@@ -133,7 +132,11 @@ describe("sensitive download controls", () => {
     expect(controllerSrc).toMatch(/Access denied/);
   });
 
-  it("F3 FINDING — no quarantine or malware scan step exists", () => {
-    expect(controllerSrc).not.toMatch(/quarantine|malware|virus|scan/i);
+  it("F3 RESOLVED — malware scan step exists before storage upload", () => {
+    const scanIdx = controllerSrc.indexOf("avScanner.scan(");
+    const uploadIdx = controllerSrc.indexOf("uploadCompressed");
+    expect(scanIdx).toBeGreaterThan(-1);
+    expect(uploadIdx).toBeGreaterThan(-1);
+    expect(scanIdx).toBeLessThan(uploadIdx);
   });
 });

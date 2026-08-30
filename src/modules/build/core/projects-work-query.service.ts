@@ -93,12 +93,12 @@ function buildCursorPredicate(
   if (sortKey === "created" || sortKey === "updated") {
     const d = new Date(position.sortValue);
     return dir === "asc"
-      ? sql`(${col}, ${tickets.id}) > (${d}, ${id})`
-      : sql`(${col}, ${tickets.id}) < (${d}, ${id})`;
+      ? sql`(${col}, ${tickets.id}) > (${sql.param(d, col)}, ${sql.param(id, tickets.id)})`
+      : sql`(${col}, ${tickets.id}) < (${sql.param(d, col)}, ${sql.param(id, tickets.id)})`;
   }
   return dir === "asc"
-    ? sql`(${col}, ${tickets.id}) > (${position.sortValue}, ${id})`
-    : sql`(${col}, ${tickets.id}) < (${position.sortValue}, ${id})`;
+    ? sql`(${col}, ${tickets.id}) > (${sql.param(position.sortValue, col)}, ${sql.param(id, tickets.id)})`
+    : sql`(${col}, ${tickets.id}) < (${sql.param(position.sortValue, col)}, ${sql.param(id, tickets.id)})`;
 }
 
 function buildMineCursorPredicate(
@@ -110,12 +110,12 @@ function buildMineCursorPredicate(
   if (sortKey === "created" || sortKey === "updated") {
     const d = new Date(position.sortValue);
     return dir === "asc"
-      ? sql`(u.sort_col, u.id) > (${d}, ${id})`
-      : sql`(u.sort_col, u.id) < (${d}, ${id})`;
+      ? sql`(u.sort_col, u.id) > (${sql.param(d.toISOString())}, ${sql.param(id)})`
+      : sql`(u.sort_col, u.id) < (${sql.param(d.toISOString())}, ${sql.param(id)})`;
   }
   return dir === "asc"
-    ? sql`(u.sort_col, u.id) > (${position.sortValue}, ${id})`
-    : sql`(u.sort_col, u.id) < (${position.sortValue}, ${id})`;
+    ? sql`(u.sort_col, u.id) > (${sql.param(String(position.sortValue))}, ${sql.param(id)})`
+    : sql`(u.sort_col, u.id) < (${sql.param(String(position.sortValue))}, ${sql.param(id)})`;
 }
 
 @Injectable()

@@ -6,6 +6,7 @@ import type { MailMetadataService } from "./mail-metadata.service";
 import type { GmailMailProvider } from "./providers/gmail-mail.provider";
 import type { OutlookMailProvider } from "./providers/outlook-mail.provider";
 import type { CacheService } from "../../common/cache/cache.service";
+import type { MailSyncCheckpointService } from "./mail-sync-checkpoint.service";
 import type { MailFolder, MailMessageSummary } from "./dto/mail-schemas";
 
 /**
@@ -134,8 +135,12 @@ function buildHarness(
     cachedVersioned: <T>(_ns: string, _key: string, fetcher: () => Promise<T>) => fetcher(),
   } as unknown as CacheService;
 
+  const checkpoints = {
+    savePosition: jest.fn().mockResolvedValue(undefined),
+  } as unknown as MailSyncCheckpointService;
+
   return {
-    service: new MailService(accounts, gmail, outlook, cache, metadata),
+    service: new MailService(accounts, gmail, outlook, cache, metadata, checkpoints),
     gmailPageSizes,
   };
 }

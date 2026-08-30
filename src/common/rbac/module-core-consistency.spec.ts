@@ -36,7 +36,7 @@ describe("what makes a module always available", () => {
     const notPlanGatedButNotAlwaysOn = notPlanGated.filter((id) => !alwaysOn.includes(id));
 
     expect(alwaysOnButPlanGated).toEqual([]);
-    expect(notPlanGatedButNotAlwaysOn.sort()).toEqual(["billing"]);
+    expect(notPlanGatedButNotAlwaysOn.sort()).toEqual(["billing", "settings"]);
   });
 
   it("keeps billing out of the always-on set", () => {
