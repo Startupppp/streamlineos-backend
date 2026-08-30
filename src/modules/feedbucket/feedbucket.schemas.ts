@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../common/pagination/list-query.schema";
 
 const feedbucketMetadataSchema = z
   .object({
@@ -55,8 +56,8 @@ export const updateWidgetSchema = createWidgetSchema.partial().extend({
 });
 
 export const listSubmissionsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   widgetId: z.coerce.number().int().positive().optional(),
   type: z.enum(["bug", "idea", "feature", "question", "praise", "other"]).optional(),
   status: z.enum(["open", "in_progress", "resolved", "archived"]).optional(),

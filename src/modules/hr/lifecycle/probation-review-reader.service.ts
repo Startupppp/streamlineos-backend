@@ -1,14 +1,22 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gt, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, lte, or, sql, type SQL } from "drizzle-orm";
+import { livePerson, liveEmployment, livePersonOfEmployment } from "../../directory/employment-query";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
+import { organizationPeople } from "../../../db/schema/directory/organization-people";
 import { hrProbationReviews } from "../../../db/schema/hr/probation";
+import type { ProbationCoverage } from "./probation-coverage";
 import type { ListProbationReviewsInput } from "./dto/probation.schemas";
 import {
   decodeProbationListCursor,
   encodeProbationListCursor,
 } from "./probation-list-cursor";
+
+/** Probation ending exactly on `onDate` still covers it — the boundary day is inside probation. */
+export function probationCoveringPredicate(onDate: string): SQL {
+  return sql`${hrProbationReviews.status} IN ('in_probation', 'review_due', 'extended') AND coalesce(${hrProbationReviews.extendedUntil}, ${hrProbationReviews.probationEndDate}) >= ${onDate}`;
+}
 
 @Injectable()
 export class ProbationReviewReaderService {
@@ -42,23 +50,23 @@ export class ProbationReviewReaderService {
         extendedUntil: hrProbationReviews.extendedUntil,
         confirmedAt: hrProbationReviews.confirmedAt,
         createdAt: hrProbationReviews.createdAt,
-        firstName: hrPeople.firstName,
-        lastName: hrPeople.lastName,
-        workEmail: hrPeople.workEmail,
+        firstName: organizationPeople.firstName,
+        lastName: organizationPeople.lastName,
+        workEmail: organizationPeople.workEmail,
         effectiveEndDate,
       })
       .from(hrProbationReviews)
+      .innerJoin(hrPeople, and(livePerson(orgId), eq(hrPeople.id, hrProbationReviews.personId)))
       .innerJoin(
-        hrPeople,
+        organizationPeople,
         and(
-          eq(hrPeople.orgId, hrProbationReviews.orgId),
-          eq(hrPeople.id, hrProbationReviews.personId),
+          eq(organizationPeople.organizationId, hrPeople.orgId),
+          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
         ),
       )
       .where(
         and(
           eq(hrProbationReviews.orgId, orgId),
-          isNull(hrPeople.deletedAt),
           or(
             eq(hrProbationReviews.status, "review_due"),
             and(
@@ -141,38 +149,24 @@ export class ProbationReviewReaderService {
     return new Map(people.map((person) => [person.id, person.userId]));
   }
 
-  async isOnProbationDuring(orgId: string, userId: string, leaveStartDate: string): Promise<boolean> {
+  async probationCoverageOn(
+    orgId: string,
+    userId: string,
+    onDate: string,
+  ): Promise<ProbationCoverage> {
     const [row] = await this.db
-      .select({ id: hrProbationReviews.id })
+      .select({
+        reviewCount: sql<number>`count(*)`.mapWith(Number),
+        coveringCount: sql<number>`count(*) FILTER (WHERE ${probationCoveringPredicate(onDate)})`.mapWith(
+          Number,
+        ),
+      })
       .from(hrProbationReviews)
-      .innerJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.id, hrProbationReviews.employmentId),
-          eq(hrEmployments.orgId, hrProbationReviews.orgId),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
-      .innerJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.id, hrEmployments.personId),
-          eq(hrPeople.orgId, hrProbationReviews.orgId),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
-      .where(
-        and(
-          eq(hrProbationReviews.orgId, orgId),
-          eq(hrPeople.userId, userId),
-          inArray(hrProbationReviews.status, ["in_probation", "review_due", "extended"]),
-          gte(
-            sql<string>`coalesce(${hrProbationReviews.extendedUntil}, ${hrProbationReviews.probationEndDate})`,
-            leaveStartDate,
-          ),
-        ),
-      )
-      .limit(1);
-    return row !== undefined;
+      .innerJoin(hrEmployments, and(liveEmployment(orgId), eq(hrEmployments.id, hrProbationReviews.employmentId)))
+      .innerJoin(hrPeople, livePersonOfEmployment(orgId))
+      .where(and(eq(hrProbationReviews.orgId, orgId), eq(hrPeople.userId, userId)));
+
+    if (!row || row.reviewCount === 0) return "no-record";
+    return row.coveringCount > 0 ? "on-probation" : "past-probation";
   }
 }

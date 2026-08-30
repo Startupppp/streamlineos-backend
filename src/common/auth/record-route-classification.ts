@@ -1,0 +1,117 @@
+import { PATH_METADATA } from "@nestjs/common/constants";
+import { DiscoveryService, MetadataScanner } from "@nestjs/core";
+import type { INestApplication } from "@nestjs/common";
+import { AUTHORIZED_IN_SERVICE } from "./authorized-in-service.decorator";
+import { IS_PUBLIC } from "./public.decorator";
+import { IS_UNIVERSAL } from "./universal.decorator";
+import { REQUIRE_PERMISSION } from "../../modules/access/require-permission.decorator";
+
+export type RouteExposure =
+  | { mode: "public" }
+  | { mode: "universal" }
+  | { mode: "permissioned"; permission: string }
+  | { mode: "in-service"; by: string }
+  | { mode: "undeclared" };
+
+// Extensions are `unknown` in Nest's own types, so a mutable view is the honest shape.
+interface StampableOperation {
+  operationId?: string;
+  description?: string;
+  [key: string]: unknown;
+}
+
+function stampable(value: unknown): value is StampableOperation {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof Reflect.get(value, "operationId") === "string"
+  );
+}
+
+function read(key: string, handler: object, classRef: object): unknown {
+  const own: unknown = Reflect.getMetadata(key, handler);
+  return own === undefined ? Reflect.getMetadata(key, classRef) : own;
+}
+
+function readString(key: string, handler: object, classRef: object): string | undefined {
+  const value = read(key, handler, classRef);
+  return typeof value === "string" ? value : undefined;
+}
+
+export function classifyHandler(handler: object, classRef: object): RouteExposure {
+  if (read(IS_PUBLIC, handler, classRef) === true) return { mode: "public" };
+  if (read(IS_UNIVERSAL, handler, classRef) === true) return { mode: "universal" };
+  const by = readString(AUTHORIZED_IN_SERVICE, handler, classRef);
+  if (by !== undefined && by !== "") return { mode: "in-service", by };
+  const permission = readString(REQUIRE_PERMISSION, handler, classRef);
+  if (permission !== undefined) return { mode: "permissioned", permission };
+  return { mode: "undeclared" };
+}
+
+export function describeExposure(exposure: RouteExposure): string {
+  switch (exposure.mode) {
+    case "public":
+      return "public — unauthenticated";
+    case "universal":
+      return "universal — any authenticated member, subject from the token";
+    case "permissioned":
+      return `permission — ${exposure.permission}`;
+    case "in-service":
+      return `authorized in service — ${exposure.by}`;
+    case "undeclared":
+      return "UNDECLARED — no exposure declaration";
+  }
+}
+
+// Read from the same four metadata keys the guard reads, so the document cannot drift.
+export function recordRouteClassification(
+  app: INestApplication,
+  document: { paths?: unknown },
+): { stamped: number; undeclared: number } {
+  const discovery = app.get(DiscoveryService);
+  const scanner = app.get(MetadataScanner);
+
+  const byOperationId = new Map<string, RouteExposure>();
+  for (const wrapper of discovery.getControllers()) {
+    const { instance } = wrapper;
+    if (!instance || typeof instance !== "object") continue;
+    const proto: object = Object.getPrototypeOf(instance);
+    const classRef = proto.constructor;
+
+    for (const methodName of scanner.getAllMethodNames(proto)) {
+      const handler: unknown = Reflect.get(proto, methodName);
+      if (typeof handler !== "function") continue;
+      if (Reflect.getMetadata(PATH_METADATA, handler) === undefined) continue;
+      byOperationId.set(
+        `${classRef.name}_${methodName}`,
+        classifyHandler(handler, classRef),
+      );
+    }
+  }
+
+  let stamped = 0;
+  let undeclared = 0;
+  const paths: unknown = document.paths;
+  if (typeof paths !== "object" || paths === null) return { stamped, undeclared };
+
+  for (const pathItem of Object.values(paths)) {
+    if (typeof pathItem !== "object" || pathItem === null) continue;
+    for (const operation of Object.values(pathItem)) {
+      if (!stampable(operation)) continue;
+      const exposure = byOperationId.get(String(operation.operationId));
+      if (!exposure) continue;
+
+      const summary = describeExposure(exposure);
+      operation["x-exposure"] = exposure.mode;
+      if (exposure.mode === "permissioned") operation["x-permission"] = exposure.permission;
+      if (exposure.mode === "in-service") operation["x-authorized-in-service"] = exposure.by;
+      operation.description = operation.description
+        ? `${operation.description}\n\nExposure: ${summary}`
+        : `Exposure: ${summary}`;
+      stamped++;
+      if (exposure.mode === "undeclared") undeclared++;
+    }
+  }
+
+  return { stamped, undeclared };
+}

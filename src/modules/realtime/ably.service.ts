@@ -4,6 +4,8 @@ import { logger } from "../../common/logger/logger.service";
 import type { ChatMessagePayload } from "./dto/realtime.schemas";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
+import { LEGACY_CELL_ID } from "../../common/region/placement";
+import { cellPrefixed } from "../../common/cell-transport/cell-channel-namespace";
 
 const CHAT_TOKEN_TTL_MS = 3_600 * 1_000;
 const MAX_CAPABILITY_CHANNELS = 500;
@@ -12,10 +14,15 @@ const MAX_CAPABILITY_CHANNELS = 500;
 export class AblyService {
   private readonly logger = new Logger(AblyService.name);
   private readonly apiKey: string | undefined;
+  private readonly cellId: string;
   private restClient: Ably.Rest | null = null;
 
-  constructor(@Inject(APP_CONFIG) private readonly config: Pick<AppConfig, "ABLY_API_KEY">) {
+  constructor(
+    @Inject(APP_CONFIG)
+    private readonly config: Pick<AppConfig, "ABLY_API_KEY" | "CELL_ID">,
+  ) {
     this.apiKey = this.config.ABLY_API_KEY?.trim();
+    this.cellId = this.config.CELL_ID?.trim() ?? LEGACY_CELL_ID;
   }
 
   get configured(): boolean {
@@ -23,7 +30,7 @@ export class AblyService {
   }
 
   channelName(orgId: string, channelId: number): string {
-    return `chat:${orgId}:${channelId}`;
+    return cellPrefixed(this.cellId, `chat:${orgId}:${channelId}`);
   }
 
   createChatTokenRequest(
@@ -40,16 +47,23 @@ export class AblyService {
       });
     }
     const capability: Record<string, capabilityOp[]> = {
-      [`notifications:${orgId}:${clientId}`]: ["subscribe"],
-      [`huddle-signal:${orgId}:*:${clientId}`]: ["subscribe"],
+      [cellPrefixed(this.cellId, `notifications:${orgId}:${clientId}`)]: [
+        "subscribe",
+      ],
+      [cellPrefixed(this.cellId, `huddle-signal:${orgId}:*:${clientId}`)]: [
+        "subscribe",
+      ],
     };
     for (const channelId of channelIds.slice(0, MAX_CAPABILITY_CHANNELS)) {
-      capability[`chat:${orgId}:${channelId}`] = [
+      capability[cellPrefixed(this.cellId, `chat:${orgId}:${channelId}`)] = [
         "subscribe",
         "publish",
         "history",
       ];
-      capability[`huddle:${orgId}:${channelId}`] = ["subscribe", "publish"];
+      capability[cellPrefixed(this.cellId, `huddle:${orgId}:${channelId}`)] = [
+        "subscribe",
+        "publish",
+      ];
     }
     return this.rest().auth.createTokenRequest({
       clientId,
@@ -89,7 +103,10 @@ export class AblyService {
           channelId,
           event,
           error: error instanceof Error ? error.message : String(error),
-          cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+          cause:
+            error instanceof Error && error.cause instanceof Error
+              ? error.cause.message
+              : undefined,
         });
       });
   }
@@ -102,7 +119,7 @@ export class AblyService {
   ): Promise<void> {
     if (!this.apiKey) return;
     await this.rest()
-      .channels.get(`huddle:${orgId}:${channelId}`)
+      .channels.get(cellPrefixed(this.cellId, `huddle:${orgId}:${channelId}`))
       .publish(event, data)
       .catch((error: unknown) => {
         this.logger.error("ably: publishHuddleEvent failed", {
@@ -110,7 +127,10 @@ export class AblyService {
           channelId,
           event,
           error: error instanceof Error ? error.message : String(error),
-          cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+          cause:
+            error instanceof Error && error.cause instanceof Error
+              ? error.cause.message
+              : undefined,
         });
       });
   }
@@ -123,7 +143,12 @@ export class AblyService {
   ): Promise<void> {
     if (!this.apiKey) return;
     await this.rest()
-      .channels.get(`huddle-signal:${orgId}:${channelId}:${targetUserId}`)
+      .channels.get(
+        cellPrefixed(
+          this.cellId,
+          `huddle-signal:${orgId}:${channelId}:${targetUserId}`,
+        ),
+      )
       .publish("signal", data)
       .catch((error: unknown) => {
         this.logger.error("ably: publishHuddleSignal failed", {
@@ -131,7 +156,10 @@ export class AblyService {
           channelId,
           targetUserId,
           error: error instanceof Error ? error.message : String(error),
-          cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+          cause:
+            error instanceof Error && error.cause instanceof Error
+              ? error.cause.message
+              : undefined,
         });
       });
   }
@@ -148,12 +176,14 @@ export class AblyService {
       return;
     }
     await this.rest()
-      .channels.get(`notifications:${orgId}:${userId}`)
+      .channels.get(
+        cellPrefixed(this.cellId, `notifications:${orgId}:${userId}`),
+      )
       .publish(event, data);
   }
 
   supportChannelName(orgId: string, ticketId: number): string {
-    return `support:${orgId}:${ticketId}`;
+    return cellPrefixed(this.cellId, `support:${orgId}:${ticketId}`);
   }
 
   createSupportTokenRequest(
@@ -162,10 +192,15 @@ export class AblyService {
     grant: { wildcard: true } | { wildcard: false; ticketIds: number[] },
   ): Promise<Ably.TokenRequest> {
     const capability: Ably.TokenParams["capability"] = grant.wildcard
-      ? { [`support:${orgId}:*`]: ["subscribe", "presence"] }
+      ? {
+          [cellPrefixed(this.cellId, `support:${orgId}:*`)]: [
+            "subscribe",
+            "presence",
+          ],
+        }
       : Object.fromEntries(
           grant.ticketIds.map((id) => [
-            `support:${orgId}:${id}`,
+            cellPrefixed(this.cellId, `support:${orgId}:${id}`),
             ["subscribe", "presence"],
           ]),
         );
@@ -189,7 +224,9 @@ export class AblyService {
   async revokeUserTokens(userId: string): Promise<void> {
     if (!this.configured) return;
     try {
-      await this.rest().auth.revokeTokens([{ type: "clientId", value: userId }]);
+      await this.rest().auth.revokeTokens([
+        { type: "clientId", value: userId },
+      ]);
     } catch (error: unknown) {
       this.logger.error(
         `Failed to revoke Ably tokens for ${userId}: ${error instanceof Error ? error.message : String(error)}`,
@@ -213,7 +250,10 @@ export class AblyService {
           ticketId,
           event,
           error: error instanceof Error ? error.message : String(error),
-          cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+          cause:
+            error instanceof Error && error.cause instanceof Error
+              ? error.cause.message
+              : undefined,
         });
       });
   }

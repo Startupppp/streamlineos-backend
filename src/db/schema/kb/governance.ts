@@ -7,6 +7,7 @@ import {
   timestamp,
   index,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
@@ -42,6 +43,7 @@ export const kbPageReviews = pgTable(
     index("idx_kb_page_reviews_org_status_due").on(table.orgId, table.status, table.dueAt),
     index("idx_kb_page_reviews_org_page").on(table.orgId, table.pageId),
     unique("uniq_kb_page_reviews_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_reviews_org_page" }),
   ],
 );
 
@@ -103,6 +105,7 @@ export const kbExportJobs = pgTable(
   (table) => [
     index("idx_kb_export_jobs_org_created").on(table.orgId, table.createdAt),
     unique("uniq_kb_export_jobs_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.scopeId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_export_jobs_org_page" }).onDelete("cascade"),
   ],
 );
 

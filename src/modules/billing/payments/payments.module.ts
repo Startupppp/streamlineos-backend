@@ -30,6 +30,13 @@ import { AccountingAdaptersModule } from "../../accounting/adapters/accounting-a
     PaymentManualMethodsService,
     PaymentAnalyticsService,
   ],
-  exports: [PaymentProviderSetupService, PaymentProviderResolver, PaymentAuditService, PaymentProviderAdapterRegistry],
+  exports: [
+    PaymentProviderSetupService,
+    PaymentProviderResolver,
+    PaymentAuditService,
+    PaymentProviderAdapterRegistry,
+    PaymentWebhookHealthService,
+    PaymentAnalyticsService,
+  ],
 })
 export class PaymentsModule {}

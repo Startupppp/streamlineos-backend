@@ -21,6 +21,8 @@ import {
 import {
   auditLogs,
   groupRoleAssignments,
+  hrEmployments,
+  hrPeople,
   organizationMembers,
   principalGroups,
   roleAssignments,
@@ -46,6 +48,10 @@ import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin"
 import { resolveActorRankContext } from "../../common/rbac/resolve-actor-rank";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { seedSystemRolesForOrg } from "./seed-system-roles";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../directory/employment-query";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { ROLE_TEMPLATES, type RoleTemplate } from "./role-templates.constants";
@@ -144,10 +150,12 @@ export class RolesService {
           name: users.name,
           email: users.email,
           image: users.image,
-          designation: users.designation,
+          designation: hrEmployments.designation,
         })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(where)
         .orderBy(asc(users.name), asc(users.email))
         .limit(input.limit)

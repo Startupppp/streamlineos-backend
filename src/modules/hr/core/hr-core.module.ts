@@ -21,9 +21,10 @@ import { HrAuditService } from "./hr-audit.service";
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
 import { HrCustomFieldsService } from "./hr-custom-fields.service";
 import { PersonEmploymentSyncService } from "./person-employment-sync.service";
+import { EmploymentFactsModule } from "../../directory/employment-facts.module";
 
 @Module({
-  imports: [HrWorkflowsModule, OrgHierarchyModule],
+  imports: [HrWorkflowsModule, OrgHierarchyModule, EmploymentFactsModule],
   controllers: [
     HrPeopleController,
     HrEmploymentsController,
@@ -55,6 +56,7 @@ import { PersonEmploymentSyncService } from "./person-employment-sync.service";
     HrEmploymentsService,
     HrSensitiveService,
     PersonEmploymentSyncService,
+    EmploymentFactsModule,
   ],
 })
 export class HrCoreModule {}

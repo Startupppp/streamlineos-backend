@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const listPeopleQuerySchema = z.object({
   cursor: z.string().uuid().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: pageSizeField(20, 100),
   search: z.string().optional(),
 }).strict();
 
@@ -56,7 +57,7 @@ const workerTypeValues = [
 
 export const listWorkersQuerySchema = z.object({
   cursor: z.string().uuid().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: pageSizeField(20, 100),
   status: z.enum(workerStatusValues).optional(),
   search: z.string().optional(),
   organizationPersonId: z.string().uuid().optional(),

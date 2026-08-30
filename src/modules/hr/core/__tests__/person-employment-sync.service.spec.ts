@@ -19,6 +19,15 @@ describe("PersonEmploymentSyncService", () => {
     });
 
     const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          innerJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      }),
       query: {
         hrPeople: {
           findFirst: jest
@@ -69,6 +78,15 @@ describe("PersonEmploymentSyncService", () => {
 
   it("reuses existing primary employment without querying canonical person", async () => {
     const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          innerJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      }),
       query: {
         hrPeople: {
           findFirst: jest.fn().mockResolvedValue({ id: 3, userId: "user-1" }),

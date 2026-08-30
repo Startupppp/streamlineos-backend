@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { RolePermissionService } from "../role-permission.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
@@ -17,6 +18,7 @@ const ownerActor: CurrentUserContext = {
   isOrgOwner: true,
   sessionId: "s1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, true),
 };
 
 const baseRole = {

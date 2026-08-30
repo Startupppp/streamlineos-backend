@@ -12,11 +12,13 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { assertOwnerOnly } from "../../common/rbac/owner-only-operations";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
@@ -71,13 +73,12 @@ export class OwnershipController {
     @Body(new ZodValidationPipe(setModuleOwnerSchema)) body: SetModuleOwnerInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) {
-      throw new ForbiddenException("Only the org owner may force-set a module owner");
-    }
+    assertOwnerOnly(u, "organization.ownership.force-set-module-owner");
     return this.ownership.forceSetModuleOwner(u.orgId, u.userId, moduleKey, body);
   }
 
   @Post("org/transfer")
+  @Idempotent("ownership.org-transfer.initiate")
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:org:transfer")
@@ -86,13 +87,12 @@ export class OwnershipController {
     @Body(new ZodValidationPipe(initiateOrgTransferSchema)) body: InitiateOrgTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) {
-      throw new ForbiddenException("Only the org owner may initiate an org ownership transfer");
-    }
+    assertOwnerOnly(u, "organization.ownership.transfer");
     return this.transfers.initiateOrgTransfer(u.orgId, u.userId, body);
   }
 
   @Post("modules/:moduleKey/transfer")
+  @Idempotent("ownership.module-transfer.initiate")
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
@@ -107,7 +107,7 @@ export class OwnershipController {
       u.userId,
       moduleKey,
       body,
-      u.isOrgOwner,
+      u,
     );
   }
 
@@ -129,6 +129,7 @@ export class OwnershipController {
   }
 
   @Post("transfers/:transferId/accept")
+  @Idempotent("ownership.transfer.accept")
   @HttpCode(HttpStatus.OK)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:transfer:respond")
@@ -141,6 +142,7 @@ export class OwnershipController {
   }
 
   @Post("transfers/:transferId/decline")
+  @Idempotent("ownership.transfer.decline")
   @HttpCode(HttpStatus.OK)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:transfer:respond")
@@ -154,6 +156,7 @@ export class OwnershipController {
   }
 
   @Delete("transfers/:transferId")
+  @Idempotent("ownership.transfer.cancel")
   @HttpCode(HttpStatus.OK)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
@@ -166,7 +169,7 @@ export class OwnershipController {
       u.orgId,
       u.userId,
       transferId,
-      u.isOrgOwner,
+      u,
     );
   }
 }

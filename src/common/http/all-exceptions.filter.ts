@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { ZodError } from "zod";
 import { logger } from "../logger/logger.service";
 import { reportError } from "../observability/error-reporter";
+import { sqlstateOf } from "../observability/error-classification";
 import { isTransientDbError } from "../db/transient-error";
 
 type ApiErrorEnvelope = {
@@ -106,9 +107,15 @@ function describeUnhandled(exception: unknown): Record<string, unknown> {
     ...(typeof query === "string" ? { query } : {}),
   };
 
+  // The SQLSTATE is on `code`, usually one or two `cause` links down under
+  // Drizzle's wrapper, and never in the message — so without lifting it here a
+  // missing tenant GUC (42501) is indistinguishable from any other 500.
+  const sqlstate = sqlstateOf(exception);
+
   return {
     message: exception.message,
     stack: exception.stack,
+    ...(sqlstate !== undefined ? { sqlstate } : {}),
     ...(typeof column === "string" ? { column } : {}),
     ...(typeof table === "string" ? { table } : {}),
     ...(Object.keys(driverDetail).length > 0 ? { driverDetail } : {}),

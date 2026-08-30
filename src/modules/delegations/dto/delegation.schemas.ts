@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const createDelegationSchema = z
   .object({
@@ -18,14 +19,8 @@ export const createDelegationSchema = z
 
 export const listDelegationsQuerySchema = z
   .object({
-    page: z.coerce.number().int().positive().default(1),
-    limit: z.coerce
-      .number()
-      .int()
-      .refine((value) => [10, 20, 50].includes(value), {
-        message: "Limit must be 10, 20, or 50",
-      })
-      .default(20),
+    page: pageNumberField,
+    limit: pageSizeField(20),
     search: z.string().trim().max(100).optional(),
   })
   .strict();

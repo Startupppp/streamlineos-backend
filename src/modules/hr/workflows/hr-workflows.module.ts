@@ -7,8 +7,10 @@ import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
 import { HrWorkflowDelegationsService } from "./hr-workflow-delegations.service";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 import { HrWorkflowStarterAdapter } from "./hr-workflow-starter.adapter";
+import { DirectoryModule } from "../../directory/directory.module";
 
 @Module({
+  imports: [DirectoryModule],
   controllers: [
     HrWorkflowDefinitionsController,
     HrWorkflowInstancesController,

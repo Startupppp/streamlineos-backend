@@ -1,6 +1,7 @@
 import { buildResearchBriefGraph, runResearchBrief } from "./kb-research-brief.graph";
 import type { RetrievedSource } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const makeTextOk = (text: string) => ({
   ok: true as const,
@@ -61,6 +62,7 @@ const userCtx: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 const actor = { orgId: "org1", userId: "user1" };

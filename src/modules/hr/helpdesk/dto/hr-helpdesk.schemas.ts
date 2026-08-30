@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const HELPDESK_CATEGORIES = [
   "policy_question",
@@ -20,8 +21,9 @@ export const listSchema = z.object({
   status: ticketStatusSchema.optional(),
   category: categorySchema.optional(),
   assigneeId: z.string().min(1).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  q: z.string().min(1).max(200).optional(),
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
 });
 
 export const createSchema = z.object({

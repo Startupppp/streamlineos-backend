@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { wfhRequestStatusEnum, ticketPriorityEnum, ticketStatusEnum, deviceStatusEnum } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizationMembers, organizations, users } from "../common/auth";
 import { workers } from "../directory/workers";
 import { workerEngagements } from "../directory/worker-engagements";
 import type { AttendanceRecordStatus } from "./attendance-status";
@@ -76,6 +76,7 @@ export const wfhRequests = pgTable("wfh_requests", {
   reason: text("reason"),
   status: wfhRequestStatusEnum("status").default("PENDING").notNull(),
   approverId: text("approver_id").references(() => users.id),
+  approverMembershipId: integer("approver_membership_id"),
   rejectionReason: text("rejection_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -84,6 +85,12 @@ export const wfhRequests = pgTable("wfh_requests", {
   uniqueIndex("uniq_wfh_requests_org_user_date").on(table.orgId, table.userId, table.date),
   index("idx_wfh_requests_org_status").on(table.orgId, table.status),
   index("idx_wfh_requests_org_user_status").on(table.orgId, table.userId, table.status),
+  index("idx_wfh_requests_org_approver_membership").on(table.orgId, table.approverMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.approverMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_wfh_requests_approver_actor",
+  }).onDelete("restrict"),
 ]);
 
 export const helpdeskTickets = pgTable("helpdesk_tickets", {
@@ -96,6 +103,7 @@ export const helpdeskTickets = pgTable("helpdesk_tickets", {
   priority: ticketPriorityEnum("priority").default("MEDIUM").notNull(),
   status: ticketStatusEnum("status").default("TODO").notNull(),
   assigneeId: text("assignee_id").references(() => users.id),
+  assigneeMembershipId: integer("assignee_membership_id"),
   isConfidential: boolean("is_confidential").default(false).notNull(),
   slaDueAt: timestamp("sla_due_at"),
   resolvedAt: timestamp("resolved_at"),
@@ -104,9 +112,16 @@ export const helpdeskTickets = pgTable("helpdesk_tickets", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_helpdesk_tickets_org_id").on(table.orgId, table.id),
-  index("idx_helpdesk_tickets_org_status").on(table.orgId, table.status),
-  index("idx_helpdesk_tickets_org_user").on(table.orgId, table.userId),
-  index("idx_helpdesk_tickets_org_assignee").on(table.orgId, table.assigneeId),
+  index("idx_helpdesk_tickets_org_created").on(table.orgId, table.createdAt.desc(), table.id.desc()),
+  index("idx_helpdesk_tickets_org_status_created").on(table.orgId, table.status, table.createdAt.desc(), table.id.desc()),
+  index("idx_helpdesk_tickets_org_user_created").on(table.orgId, table.userId, table.createdAt.desc(), table.id.desc()),
+  index("idx_helpdesk_tickets_org_assignee_created").on(table.orgId, table.assigneeId, table.createdAt.desc(), table.id.desc()),
+  index("idx_helpdesk_tickets_org_assignee_membership").on(table.orgId, table.assigneeMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.assigneeMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_helpdesk_tickets_assignee_actor",
+  }).onDelete("restrict"),
 ]);
 
 export const hrHelpdeskRouting = pgTable("hr_helpdesk_routing", {

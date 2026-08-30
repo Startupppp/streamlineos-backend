@@ -3,6 +3,7 @@ import {
   ASSETS_PERMISSION,
 } from "./assets-scope";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
 import * as permissionsConstants from "../../rbac/permissions";
 
@@ -22,6 +23,7 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     isOrgOwner: false,
     sessionId: "session-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }

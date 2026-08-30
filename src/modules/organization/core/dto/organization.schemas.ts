@@ -1,5 +1,6 @@
 import { ORG_MEMBER_ROLE_VALUES } from "../../../../common/rbac/org-roles";
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createOrganizationSchema = z.object({
   name: z.string().min(1).max(100),
@@ -18,8 +19,8 @@ export const createOrganizationSchema = z.object({
 });
 
 export const listMembersSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   search: z.string().trim().optional(),
   userIds: z
     .string()
@@ -133,6 +134,10 @@ export const schedulePurgeSchema = z.object({
   reason: z.string().min(1).max(500),
 });
 
+export const placeLegalHoldSchema = z.object({
+  reason: z.string().min(1).max(500),
+});
+
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 export type ListMembersInput = z.infer<typeof listMembersSchema>;
 export type UpdateOrgSettingsInput = z.infer<typeof updateOrgSettingsSchema>;
@@ -146,3 +151,4 @@ export type DeleteOrgInput = z.infer<typeof deleteOrgSchema>;
 export type AddCustomDomainInput = z.infer<typeof addCustomDomainSchema>;
 export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;
 export type SchedulePurgeInput = z.infer<typeof schedulePurgeSchema>;
+export type PlaceLegalHoldInput = z.infer<typeof placeLegalHoldSchema>;

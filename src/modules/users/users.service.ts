@@ -34,8 +34,25 @@ import { bustMembershipStatusCache } from "../../common/auth/membership-state.se
 import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { syncCanonicalEmploymentFields } from "../../common/hr/sync-canonical-employment-fields";
+import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { SeatLedgerService } from "../billing/core/seat-ledger.service";
 import { OrganizationUsersReader } from "./organization-users.reader";
+import { EmploymentFactsService } from "../directory/employment-facts.service";
+
+type GlobalUserPatch = Pick<
+  typeof users.$inferInsert,
+  | "firstName"
+  | "lastName"
+  | "name"
+  | "phone"
+  | "bio"
+  | "linkedinUrl"
+  | "twitterUrl"
+  | "githubUrl"
+  | "websiteUrl"
+  | "emergencyContact"
+>;
 
 @Injectable()
 export class UsersService {
@@ -47,10 +64,12 @@ export class UsersService {
     private readonly cache: CacheService,
     private readonly access: AccessService,
     private readonly planLimits: PlanLimitsService,
+    private readonly seatLedger: SeatLedgerService,
     private readonly invitationsSvc: InvitationsService,
     private readonly orgMembership: OrgMembershipService,
+    private readonly employment: EmploymentFactsService,
   ) {
-    this.reader = new OrganizationUsersReader(db);
+    this.reader = new OrganizationUsersReader(db, employment);
   }
 
   private async invalidateMembershipCaches(orgId: string): Promise<void> {
@@ -122,6 +141,18 @@ export class UsersService {
             DEPARTMENT: departmentId ?? null,
             BRANCH: branchId ?? null,
           });
+
+          await this.seatLedger.recordSeatEvent(
+            {
+              orgId,
+              eventType: "INVITE_ACCEPTED",
+              subjectId: existing.id,
+              actorId: actorUserId,
+              reason: "existing user added to organisation",
+              idempotencyKey: `member-added:${orgId}:${existing.id}`,
+            },
+            tx,
+          );
         },
         { orgId },
       );
@@ -152,10 +183,7 @@ export class UsersService {
           firstName: trimmedFirst,
           lastName: trimmedLast,
           emailVerified: new Date(),
-          designation: designation ?? null,
           phone: phone ?? null,
-          orgDepartmentId: departmentId ?? null,
-          branchId: branchId ?? null,
           userStatus: "active",
           activatedAt: new Date(),
           isActive: true,
@@ -173,6 +201,18 @@ export class UsersService {
           DEPARTMENT: departmentId ?? null,
           BRANCH: branchId ?? null,
         });
+
+        await this.seatLedger.recordSeatEvent(
+          {
+            orgId,
+            eventType: "INVITE_ACCEPTED",
+            subjectId: userId,
+            actorId: actorUserId,
+            reason: "user created directly",
+            idempotencyKey: `member-added:${orgId}:${userId}`,
+          },
+          tx,
+        );
       },
       { orgId },
     );
@@ -237,7 +277,7 @@ export class UsersService {
         );
     }
 
-    const updateData: Record<string, unknown> = {};
+    const updateData: Partial<GlobalUserPatch> = {};
     if (data.firstName !== undefined) updateData.firstName = data.firstName;
     if (data.lastName !== undefined) updateData.lastName = data.lastName;
     if (data.firstName !== undefined || data.lastName !== undefined) {
@@ -249,11 +289,7 @@ export class UsersService {
       const last = data.lastName ?? user?.lastName ?? "";
       updateData.name = `${first} ${last}`.trim();
     }
-    if (data.designation !== undefined)
-      updateData.designation = data.designation;
     if (data.phone !== undefined) updateData.phone = data.phone;
-    if (data.departmentId !== undefined)
-      updateData.orgDepartmentId = data.departmentId;
     if (data.bio !== undefined) updateData.bio = data.bio;
     if (data.linkedinUrl !== undefined)
       updateData.linkedinUrl = data.linkedinUrl || null;
@@ -263,17 +299,16 @@ export class UsersService {
       updateData.githubUrl = data.githubUrl || null;
     if (data.websiteUrl !== undefined)
       updateData.websiteUrl = data.websiteUrl || null;
-    if (data.reportingTo !== undefined)
-      updateData.reportingTo = data.reportingTo;
     if (data.emergencyContact !== undefined)
       updateData.emergencyContact = data.emergencyContact;
 
     const hasUserUpdates = Object.keys(updateData).length > 0;
     const hasPlacementUpdates =
       data.departmentId !== undefined || data.teamId !== undefined;
+    const hasReportingUpdate = data.reportingTo !== undefined;
 
     let canonicalEmploymentSynced: boolean | null = null;
-    if (hasUserUpdates || hasPlacementUpdates) {
+    if (hasUserUpdates || hasPlacementUpdates || hasReportingUpdate) {
       await runInTenantTransaction(
         this.db,
         async (tx) => {
@@ -297,6 +332,10 @@ export class UsersService {
                 departmentId: data.departmentId,
               },
             );
+          }
+          if (hasReportingUpdate) {
+            const today = new Date().toISOString().slice(0, 10);
+            await syncCanonicalReportingLine(tx, orgId, userId, data.reportingTo ?? null, today, actorUserId);
           }
         },
         { orgId },

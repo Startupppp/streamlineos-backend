@@ -6,9 +6,9 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AutomationService } from "../automation/automation.service";
 import { HrAutomationEngineService } from "../hr/automations/hr-automation-engine.service";
-import { EmailService } from "../email/email.service";
 import { getDocumentExpiryReminderEmailTemplate } from "../email/templates/hr";
 import { appUrl } from "../email/app-url";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { logger } from "../../common/logger/logger.service";
 import { forEachOrg } from "../../common/tenant";
 
@@ -20,7 +20,7 @@ export class CronHrService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly automation: AutomationService,
     private readonly hrAutomation: HrAutomationEngineService,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async processCertificationExpiry(): Promise<{ fired: number }> {
@@ -185,7 +185,7 @@ export class CronHrService {
         .limit(500);
 
       for (const doc of expiring) {
-        if (!doc.userEmail || !doc.expiryDate) continue;
+        if (!doc.userEmail || !doc.userId || !doc.expiryDate) continue;
 
         const daysRemaining = Math.ceil(
           (new Date(doc.expiryDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
@@ -217,10 +217,16 @@ export class CronHrService {
         );
 
         try {
-          await this.email.sendEmail({
-            to: doc.userEmail,
-            subject: `Action needed: ${doc.name} expires soon`,
-            html,
+          await this.dispatch.emit({
+            eventKey: "hr.document.expiring",
+            orgId,
+            targetUserIds: [doc.userId],
+            entityType: "document",
+            entityId: String(doc.id),
+            title: `Action needed: ${doc.name} expires soon`,
+            message: `${doc.name} expires in ${daysRemaining} day${daysRemaining === 1 ? "" : "s"}.`,
+            link: `${appUrl()}/hr/documents`,
+            emailHtml: html,
           });
           await tx
             .update(documents)

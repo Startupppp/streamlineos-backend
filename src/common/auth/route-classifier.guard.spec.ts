@@ -4,6 +4,7 @@ import { Reflector } from "@nestjs/core";
 import { RouteClassifierGuard } from "./route-classifier.guard";
 import { Public } from "./public.decorator";
 import { Universal } from "./universal.decorator";
+import { AuthorizedInService } from "./authorized-in-service.decorator";
 import { RequirePermission } from "../../modules/access/require-permission.decorator";
 
 class UnclassifiedController {
@@ -28,6 +29,23 @@ class PermissionedController {
   route(): void {}
 }
 Reflect.defineMetadata(PATH_METADATA, "permissioned", PermissionedController.prototype.route);
+
+@AuthorizedInService("assertModuleAccessPolicy")
+class InServiceController {
+  route(): void {}
+}
+Reflect.defineMetadata(PATH_METADATA, "in-service", InServiceController.prototype.route);
+
+/** An empty name is not a declaration — the point of the decorator is the name. */
+@AuthorizedInService("")
+class UnnamedInServiceController {
+  route(): void {}
+}
+Reflect.defineMetadata(
+  PATH_METADATA,
+  "unnamed-in-service",
+  UnnamedInServiceController.prototype.route,
+);
 
 function makeGuard(instances: object[]): RouteClassifierGuard {
   const reflector = new Reflector();
@@ -68,6 +86,33 @@ afterEach(() => {
   else process.env["REQUIRE_ROUTE_CLASSIFICATION"] = originalEnv;
 });
 
+describe("RouteClassifierGuard enforcement default", () => {
+  it("denies an undeclared route when the variable is unset", () => {
+    delete process.env["REQUIRE_ROUTE_CLASSIFICATION"];
+    expect(() =>
+      makeGuard([]).canActivate(
+        executionContext(UnclassifiedController, UnclassifiedController.prototype.route),
+      ),
+    ).toThrow(ForbiddenException);
+  });
+
+  it("refuses to boot with an undeclared route when the variable is unset", () => {
+    delete process.env["REQUIRE_ROUTE_CLASSIFICATION"];
+    expect(() => makeGuard([new UnclassifiedController()]).onApplicationBootstrap()).toThrow(
+      /UnclassifiedController#route/,
+    );
+  });
+
+  it("only a literal \"false\" disables it, so a typo still enforces", () => {
+    process.env["REQUIRE_ROUTE_CLASSIFICATION"] = "no";
+    expect(() =>
+      makeGuard([]).canActivate(
+        executionContext(UnclassifiedController, UnclassifiedController.prototype.route),
+      ),
+    ).toThrow(ForbiddenException);
+  });
+});
+
 describe("RouteClassifierGuard.onApplicationBootstrap", () => {
   it("throws when enforcement is on and an undeclared route is present", () => {
     process.env["REQUIRE_ROUTE_CLASSIFICATION"] = "true";
@@ -77,8 +122,8 @@ describe("RouteClassifierGuard.onApplicationBootstrap", () => {
     );
   });
 
-  it("does not throw when enforcement is off, even with undeclared routes", () => {
-    delete process.env["REQUIRE_ROUTE_CLASSIFICATION"];
+  it("does not throw when enforcement is explicitly disabled", () => {
+    process.env["REQUIRE_ROUTE_CLASSIFICATION"] = "false";
     const guard = makeGuard([new UnclassifiedController()]);
     expect(() => guard.onApplicationBootstrap()).not.toThrow();
   });
@@ -94,7 +139,7 @@ describe("RouteClassifierGuard.onApplicationBootstrap", () => {
   });
 
   it("populates the undeclared set with the controller#method label", () => {
-    delete process.env["REQUIRE_ROUTE_CLASSIFICATION"];
+    process.env["REQUIRE_ROUTE_CLASSIFICATION"] = "false";
     const guard = makeGuard([new UnclassifiedController()]);
     guard.onApplicationBootstrap();
     const undeclared = (guard as unknown as { undeclared: Set<string> }).undeclared;
@@ -130,6 +175,28 @@ describe("RouteClassifierGuard.canActivate", () => {
     expect(result).toBe(true);
   });
 
+  it("allows an @AuthorizedInService route regardless of enforcement", () => {
+    process.env["REQUIRE_ROUTE_CLASSIFICATION"] = "true";
+    const guard = makeGuard([]);
+    const result = guard.canActivate(
+      executionContext(InServiceController, InServiceController.prototype.route),
+    );
+    expect(result).toBe(true);
+  });
+
+  it("denies @AuthorizedInService with an empty name — naming the check is the point", () => {
+    process.env["REQUIRE_ROUTE_CLASSIFICATION"] = "true";
+    const guard = makeGuard([]);
+    expect(() =>
+      guard.canActivate(
+        executionContext(
+          UnnamedInServiceController,
+          UnnamedInServiceController.prototype.route,
+        ),
+      ),
+    ).toThrow(ForbiddenException);
+  });
+
   it("denies an undeclared route with ForbiddenException when enforcement is on", () => {
     process.env["REQUIRE_ROUTE_CLASSIFICATION"] = "true";
     const guard = makeGuard([]);
@@ -140,8 +207,8 @@ describe("RouteClassifierGuard.canActivate", () => {
     ).toThrow(ForbiddenException);
   });
 
-  it("allows an undeclared route when enforcement is off", () => {
-    delete process.env["REQUIRE_ROUTE_CLASSIFICATION"];
+  it("allows an undeclared route only when enforcement is explicitly disabled", () => {
+    process.env["REQUIRE_ROUTE_CLASSIFICATION"] = "false";
     const guard = makeGuard([]);
     const result = guard.canActivate(
       executionContext(UnclassifiedController, UnclassifiedController.prototype.route),

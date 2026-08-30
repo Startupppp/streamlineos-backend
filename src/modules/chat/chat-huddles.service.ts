@@ -6,6 +6,8 @@ import {
   chatChannels,
   chatHuddleParticipants,
   chatHuddles,
+  eventAttendees,
+  organizationMembers,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -126,9 +128,13 @@ export class ChatHuddlesService {
     });
 
     const channelMembers = await this.db
-      .select({ userId: chatChannelMembers.userId })
+      .select({ userId: chatChannelMembers.userId, membershipId: organizationMembers.id })
       .from(chatChannelMembers)
-      .where(eq(chatChannelMembers.channelId, channelId));
+      .innerJoin(organizationMembers, and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, chatChannelMembers.userId),
+      ))
+      .where(and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)));
 
     const now = new Date();
     const estimatedEnd = new Date(now.getTime() + 2 * 60 * 60 * 1000);
@@ -145,10 +151,17 @@ export class ChatHuddlesService {
           startDate: now,
           endDate: estimatedEnd,
           allDay: false,
-          attendeeIds: channelMembers.map((m) => m.userId),
           createdBy: userId,
         })
         .returning({ id: calendarEvents.id });
+      if (calEvent && channelMembers.length > 0) {
+        await tx.insert(eventAttendees).values(channelMembers.map((member) => ({
+          orgId,
+          eventId: calEvent.id,
+          membershipId: member.membershipId,
+          userId: member.userId,
+        })));
+      }
 
       const [created] = await tx
         .insert(chatHuddles)

@@ -14,6 +14,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { and, eq } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Universal } from "../../common/auth/universal.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -39,6 +40,7 @@ export class OnboardingDocumentsController {
   ) {}
 
   @Post("documents")
+  @Universal()
   @HttpCode(201)
   @UseInterceptors(
     FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }),

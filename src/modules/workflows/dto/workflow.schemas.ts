@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const CreateWorkflowSchema = z.object({
   name: z.string().min(1).max(255),
@@ -16,14 +17,14 @@ export const PublishWorkflowSchema = z.object({
 });
 
 export const WorkflowExecutionQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   status: z.enum(["pending", "running", "waiting", "completed", "failed", "cancelled", "timed_out"]).optional(),
 });
 
 export const WorkflowListQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   status: z.enum(["draft", "published", "disabled", "archived"]).optional(),
   search: z.string().optional(),
 });

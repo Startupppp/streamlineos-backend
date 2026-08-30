@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ACCOUNT_ONLY_PRINCIPAL } from "../../common/auth/principal";
 import type { ActivityActorKind } from "../../db/schema/crm/activities";
 import type { Db } from "../../db/drizzle.types";
 import { activities } from "../../db/schema";
@@ -40,6 +41,7 @@ const manager: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,
+  principal: ACCOUNT_ONLY_PRINCIPAL,
 };
 
 interface AnalysisRow {

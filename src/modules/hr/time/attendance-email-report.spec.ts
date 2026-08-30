@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, PayloadTooLargeException } fro
 import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { RATE_LIMIT_TIER } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { REQUIRE_PERMISSION } from "../../access/require-permission.decorator";
@@ -22,6 +23,7 @@ const USER: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 function orgSelect(row: unknown) {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalPageNumberField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const hrFormFieldSchema = z.object({
   key: z
@@ -81,8 +82,8 @@ export const updateHrFormSchema = z.object({
 export const listHrFormsQuerySchema = z.object({
   status: z.enum(["draft", "active", "archived"]).optional(),
   audience: z.enum(["internal", "public"]).optional(),
-  page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
+  page: optionalPageNumberField(),
+  limit: optionalPageSizeField(),
 });
 
 export const submitHrFormSchema = z.object({
@@ -96,8 +97,8 @@ export const updateSubmissionStatusSchema = z.object({
 });
 
 export const listSubmissionsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
+  page: optionalPageNumberField(),
+  limit: optionalPageSizeField(),
   status: z.enum(["submitted", "in_review", "approved", "rejected"]).optional(),
 });
 

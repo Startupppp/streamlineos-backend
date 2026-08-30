@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ACCOUNT_ONLY_PRINCIPAL } from "../../common/auth/principal";
 import type { Db } from "../../db/drizzle.types";
 import { activities } from "../../db/schema";
 import { callAnalysisReleases } from "../../db/schema/crm/call-analysis";
@@ -34,6 +35,7 @@ const user = (userId: string, orgId = ORG): CurrentUserContext => ({
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,
+  principal: ACCOUNT_ONLY_PRINCIPAL,
 });
 
 interface ActivityRow {

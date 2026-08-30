@@ -56,23 +56,15 @@ const mockEntities = {
   actionsFor: jest.fn().mockResolvedValue([]),
   submitAction: jest.fn(),
   isKnownType: jest.fn().mockReturnValue(true),
-  withResolvedReferences: jest
-    .fn()
-    .mockImplementation(async (_actor: unknown, messages: unknown[]) => messages),
-};
-
-/*
-  send() attaches a .catch to the dispatch, so these have to hand back a real
-  promise — a bare jest.fn() returns undefined and the failure lands in the
-  post-commit hook rather than at the call.
-*/
-const mockFanout = {
-  dispatchRealtime: jest.fn().mockResolvedValue(undefined),
-  dispatchDeferred: jest.fn().mockResolvedValue(undefined),
 };
 
 const mockOrgSettings = {
   getSettings: jest.fn().mockResolvedValue({ maxAttachmentSizeMb: 25 }),
+};
+
+const mockFanout = {
+  dispatchRealtime: jest.fn().mockResolvedValue(undefined),
+  dispatchDeferred: jest.fn().mockResolvedValue(undefined),
 };
 
 describe("ChatMessagesService", () => {

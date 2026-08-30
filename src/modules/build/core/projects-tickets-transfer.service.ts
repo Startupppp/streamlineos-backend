@@ -13,7 +13,6 @@ import { logger } from "../../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ImportTicketsInput, UpdateTicketInput } from "./dto/projects.schemas";
@@ -27,7 +26,6 @@ export class ProjectsTicketsTransferService {
     private readonly read: ProjectsTicketsReadService,
     private readonly notifications: NotificationsService,
     private readonly dispatch: NotificationDispatchService,
-    private readonly projectsEmail: ProjectsEmailService,
   ) {}
 
   async exportTickets(u: CurrentUserContext, projectId: number) {
@@ -229,8 +227,5 @@ export class ProjectsTicketsTransferService {
         logger.error("Failed to dispatch ticket assignment notification", { error }),
       );
 
-    void this.projectsEmail
-      .notifyTicketAssignees(actingUserId, ticketId, Array.from(notifyIds))
-      .catch(logSideEffectFailure("ticket assignee email", { ticketId }));
   }
 }

@@ -258,3 +258,46 @@ describe("moduleAvailability — unknown module key never throws or leaks org in
     });
   });
 });
+
+describe("moduleAvailability — canonicalizes resolver facts", () => {
+  it("treats legacy uppercase and padded org rows as the same module", async () => {
+    const resolver = makeResolver({
+      coreModules: [],
+      denied: new Set(),
+      map: { " HR ": true },
+      locked: [],
+    });
+
+    await expect(moduleAvailability(resolver, "org", "user", "hr")).resolves.toEqual({
+      available: true,
+    });
+  });
+
+  it("treats legacy uppercase and padded denies as user-denied", async () => {
+    const resolver = makeResolver({
+      coreModules: [],
+      denied: new Set([" HR "]),
+      map: { hr: true },
+      locked: [],
+    });
+
+    await expect(moduleAvailability(resolver, "org", "user", "hr")).resolves.toEqual({
+      available: false,
+      reason: "user-denied",
+    });
+  });
+
+  it("treats legacy uppercase and padded plan locks as not-in-plan", async () => {
+    const resolver = makeResolver({
+      coreModules: [],
+      denied: new Set(),
+      map: {},
+      locked: [" HR "],
+    });
+
+    await expect(moduleAvailability(resolver, "org", "user", "hr")).resolves.toEqual({
+      available: false,
+      reason: "not-in-plan",
+    });
+  });
+});

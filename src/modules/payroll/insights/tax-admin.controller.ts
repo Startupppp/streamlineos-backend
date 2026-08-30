@@ -18,6 +18,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { TaxAdminService } from "./tax-admin.service";
 import {
   rejectDeclarationSchema,
@@ -42,6 +43,7 @@ export class TaxAdminController {
   }
 
   @Patch("declarations/:declarationId/approve")
+  @Idempotent("payroll.tax-declaration.approve")
   @RequirePermission("payroll:tax:manage")
   approve(
     @CurrentUser() u: CurrentUserContext,
@@ -51,6 +53,7 @@ export class TaxAdminController {
   }
 
   @Patch("declarations/:declarationId/reject")
+  @Idempotent("payroll.tax-declaration.reject")
   @RequirePermission("payroll:tax:manage")
   reject(
     @CurrentUser() u: CurrentUserContext,

@@ -95,7 +95,17 @@ export class HrRecruitmentReportsService {
       const conditions = [eq(candidateOffers.orgId, orgId)];
       if (filters.dateFrom) conditions.push(gte(candidateOffers.createdAt, new Date(filters.dateFrom)));
       if (filters.dateTo) conditions.push(lte(candidateOffers.createdAt, new Date(filters.dateTo)));
-      const result = await this.db.select().from(candidateOffers).where(and(...conditions)).limit(1000);
+      const result = await this.db.select({
+        id: candidateOffers.id,
+        offerStatus: candidateOffers.offerStatus,
+        offeredSalary: candidateOffers.offeredSalary,
+        offeredDesignation: candidateOffers.offeredDesignation,
+        joiningDate: candidateOffers.joiningDate,
+        validUntil: candidateOffers.validUntil,
+        sentAt: candidateOffers.sentAt,
+        respondedAt: candidateOffers.respondedAt,
+        createdAt: candidateOffers.createdAt,
+      }).from(candidateOffers).where(and(...conditions)).limit(1000);
       rows = result.map((r) => pickFields(r, validFields.length ? validFields : [...OFFER_FIELDS]));
     }
 

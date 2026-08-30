@@ -10,6 +10,7 @@ import {
   hrEmergencyEvents,
   hrEmployments,
   hrHeadcountPlans,
+  hrPeople,
   hrPositions,
   hrTimeDevices,
   incentiveConfig,
@@ -153,8 +154,8 @@ export class OrgHierarchyDependenciesService {
           strict
             ? "Organization member profile history"
             : "Current organization member profiles",
-          sql`${users} INNER JOIN ${organizationMembers} ON ${organizationMembers.userId} = ${users.id} AND ${organizationMembers.orgId} = ${orgId}`,
-          sql`${users.branchId} = ${unitId} ${memberStatus}`,
+          sql`${users} INNER JOIN ${organizationMembers} ON ${organizationMembers.userId} = ${users.id} AND ${organizationMembers.orgId} = ${orgId} LEFT JOIN ${hrPeople} ON ${hrPeople.orgId} = ${orgId} AND ${hrPeople.userId} = ${users.id} AND ${hrPeople.deletedAt} IS NULL LEFT JOIN ${hrEmployments} ON ${hrEmployments.orgId} = ${orgId} AND ${hrEmployments.personId} = ${hrPeople.id} AND ${hrEmployments.isPrimary} = true AND ${hrEmployments.deletedAt} IS NULL`,
+          sql`${hrEmployments.locationId} = ${unitId} ${memberStatus}`,
         ),
         countQuery(
           "client_accounts",
@@ -206,8 +207,8 @@ export class OrgHierarchyDependenciesService {
           strict
             ? "Organization member profile history"
             : "Current organization member profiles",
-          sql`${users} INNER JOIN ${organizationMembers} ON ${organizationMembers.userId} = ${users.id} AND ${organizationMembers.orgId} = ${orgId}`,
-          sql`${users.orgDepartmentId} = ${unitId} ${memberStatus}`,
+          sql`${users} INNER JOIN ${organizationMembers} ON ${organizationMembers.userId} = ${users.id} AND ${organizationMembers.orgId} = ${orgId} LEFT JOIN ${hrPeople} ON ${hrPeople.orgId} = ${orgId} AND ${hrPeople.userId} = ${users.id} AND ${hrPeople.deletedAt} IS NULL LEFT JOIN ${hrEmployments} ON ${hrEmployments.orgId} = ${orgId} AND ${hrEmployments.personId} = ${hrPeople.id} AND ${hrEmployments.isPrimary} = true AND ${hrEmployments.deletedAt} IS NULL`,
+          sql`${hrEmployments.departmentId} = ${unitId} ${memberStatus}`,
         ),
         countQuery(
           "employee_assignments",

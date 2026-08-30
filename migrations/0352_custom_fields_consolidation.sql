@@ -44,6 +44,13 @@ DROP TABLE IF EXISTS "project_custom_fields";
 DROP TABLE IF EXISTS "support_custom_fields";
 --> statement-breakpoint
 
+-- The regenerated 0000 baseline snapshots a pre-consolidation
+-- custom_field_definitions (no project_id, no key), so a cold replay reaches
+-- Step 3 with the old shape already present. Dropping it here is the same
+-- consolidation this migration already performs on its five siblings.
+DROP TABLE IF EXISTS "custom_field_definitions" CASCADE;
+--> statement-breakpoint
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Step 2b: the fourth duplicate, which this migration originally missed
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -94,8 +101,8 @@ CREATE TABLE "custom_field_definitions" (
   "category"      TEXT,
   "is_active"     BOOLEAN NOT NULL DEFAULT TRUE,
   "display_order" INTEGER NOT NULL DEFAULT 0,
-  "created_at"    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  "updated_at"    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  "created_at"    TIMESTAMP   NOT NULL DEFAULT NOW(),
+  "updated_at"    TIMESTAMP   NOT NULL DEFAULT NOW()
 );
 --> statement-breakpoint
 

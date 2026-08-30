@@ -1,5 +1,16 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { Universal } from "../../../common/auth/universal.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -19,6 +30,7 @@ export class AnnouncementsController {
   constructor(private readonly service: AnnouncementsService) {}
 
   @Get()
+  @Universal()
   list(@CurrentUser() u: CurrentUserContext) {
     return this.service.list(u.orgId);
   }
@@ -35,7 +47,8 @@ export class AnnouncementsController {
   @RequirePermission("hr:announcements:manage")
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createHrAnnouncementSchema)) body: CreateHrAnnouncementInput,
+    @Body(new ZodValidationPipe(createHrAnnouncementSchema))
+    body: CreateHrAnnouncementInput,
   ) {
     const { targetIds = [], publishAt, expiresAt, ...rest } = body;
     return this.service.create(u.orgId, u.userId, targetIds, {
@@ -51,7 +64,8 @@ export class AnnouncementsController {
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("announcementId", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(updateHrAnnouncementSchema)) body: UpdateHrAnnouncementInput,
+    @Body(new ZodValidationPipe(updateHrAnnouncementSchema))
+    body: UpdateHrAnnouncementInput,
   ) {
     const { targetIds, publishAt, expiresAt, ...rest } = body;
     return this.service.update(u.orgId, id, targetIds, {
@@ -68,12 +82,19 @@ export class AnnouncementsController {
   @Delete(":announcementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:announcements:manage")
-  remove(@CurrentUser() u: CurrentUserContext, @Param("announcementId", ParseIntPipe) id: number) {
+  remove(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("announcementId", ParseIntPipe) id: number,
+  ) {
     return this.service.remove(u.orgId, id);
   }
 
   @Post(":announcementId/read")
-  markRead(@CurrentUser() u: CurrentUserContext, @Param("announcementId", ParseIntPipe) id: number) {
+  @Universal()
+  markRead(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("announcementId", ParseIntPipe) id: number,
+  ) {
     return this.service.markRead(id, u.userId);
   }
 }

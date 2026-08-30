@@ -1,7 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { CrmSequencesRunnerService } from "../crm-sequences-runner.service";
-import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { CrmOutboundEmailService } from "../../consent/crm-outbound-email.service";
+import { DRIZZLE } from "../../../../db/drizzle.constants";
 
 type StepRow = { id: number; sequenceId: number; stepType: string; sortOrder: number; config: Record<string, unknown>; waitHours: number };
 type EnrollmentUpdateCall = { id: string; status: string; currentStep?: number };

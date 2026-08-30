@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AccessModule } from "../../access/access.module";
 import { PayrollInsightsModule } from "../insights/payroll-insights.module";
 import { PayrollEntitiesModule } from "../entities/payroll-entities.module";
+import { DirectoryModule } from "../../directory/directory.module";
 import { RunsController } from "./runs.controller";
 import { RunsService } from "./runs.service";
 import { GenerateService } from "./generate.service";
@@ -23,7 +24,7 @@ import { PayrollCommandReceiptsService } from "../command-receipts.service";
 import { PayrollRunLockService } from "../run-lock.service";
 
 @Module({
-  imports: [AccessModule, PayrollInsightsModule, PayrollEntitiesModule],
+  imports: [AccessModule, PayrollInsightsModule, PayrollEntitiesModule, DirectoryModule],
   controllers: [
     RunsController,
     ProfilesController,

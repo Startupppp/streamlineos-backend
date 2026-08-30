@@ -15,8 +15,9 @@ import {
   accessVersions,
 } from "../db/schema/common/access";
 import { orgUnits } from "../db/schema/common/organization";
-import { subscriptions } from "../db/schema/common/shared";
+import { subscriptions } from "../db/schema/common/subscriptions";
 import { hrPeople, hrEmployments, hrReportingLines } from "../db/schema/hr/core-people";
+import { organizationPeople } from "../db/schema/directory/organization-people";
 import { leaveTypes, leaveRequests } from "../db/schema/hr/leaves";
 import { leavePolicies } from "../db/schema/hr/leave-policies";
 import { attendance, holidays, helpdeskTickets } from "../db/schema/hr/attendance";
@@ -226,12 +227,38 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
   const employmentIds = new Map<string, number>();
 
   for (const p of PEOPLE) {
+    const [directoryPerson] = await db
+      .insert(organizationPeople)
+      .values({
+        organizationId: ORG_ID,
+        userId: p.id,
+        firstName: p.first,
+        lastName: p.last,
+        workEmail: p.email,
+      })
+      .onConflictDoNothing()
+      .returning({ organizationPersonId: organizationPeople.organizationPersonId });
+
+    let organizationPersonId = directoryPerson?.organizationPersonId;
+    if (!organizationPersonId) {
+      const existingDirectory = await db
+        .select({ organizationPersonId: organizationPeople.organizationPersonId })
+        .from(organizationPeople)
+        .where(
+          and(
+            eq(organizationPeople.organizationId, ORG_ID),
+            eq(organizationPeople.workEmail, p.email),
+          ),
+        )
+        .limit(1);
+      organizationPersonId = existingDirectory[0]?.organizationPersonId;
+    }
+    if (!organizationPersonId) continue;
+
     const [person] = await db.insert(hrPeople).values({
       orgId: ORG_ID,
       userId: p.id,
-      firstName: p.first,
-      lastName: p.last,
-      workEmail: p.email,
+      organizationPersonId,
     }).onConflictDoNothing().returning({ id: hrPeople.id });
 
     let personId = person?.id;
@@ -239,7 +266,12 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
       const existing = await db
         .select({ id: hrPeople.id })
         .from(hrPeople)
-        .where(eq(hrPeople.workEmail, p.email))
+        .where(
+          and(
+            eq(hrPeople.orgId, ORG_ID),
+            eq(hrPeople.organizationPersonId, organizationPersonId),
+          ),
+        )
         .limit(1);
       personId = existing[0]?.id;
     }

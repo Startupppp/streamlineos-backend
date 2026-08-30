@@ -189,6 +189,15 @@ export const BUDGETS = [
     ],
   },
   {
+    id: "kb-page-id-probe-sdf",
+    ceiling: 3_000,
+    minRows: 30,
+    rowCountSql: `SELECT count(*)::int FROM kb_pages WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.hasKbPageProbe ? ["policy", 51] : null),
+    sql: `SELECT * FROM app.search_kb_page_ids($1, $2)`,
+    planAssertions: [],
+  },
+  {
     id: "kb-space-pages",
     ceiling: 8_000,
     minRows: 30,
@@ -227,7 +236,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM kb_spaces WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, name, slug, icon, cover_image, audience, created_at
+      SELECT id, name, slug, icon, color, audience, created_at
       FROM kb_spaces
       WHERE org_id = $1
       ORDER BY name ASC
@@ -288,6 +297,57 @@ export const BUDGETS = [
     ],
   },
   {
+    id: "employee-record-list-canonical",
+    ceiling: 8_000,
+    minRows: 5_000,
+    rowCountSql: `SELECT count(*)::int FROM hr_employments WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT u.id, e.employee_number, e.designation, e.joining_date,
+             e.department_id, e.location_id, mp.user_id AS manager_user_id
+      FROM users u
+      LEFT JOIN hr_people p
+        ON p.org_id = $1 AND p.user_id = u.id AND p.deleted_at IS NULL
+      LEFT JOIN hr_employments e
+        ON e.org_id = $1 AND e.person_id = p.id AND e.is_primary = true AND e.deleted_at IS NULL
+      LEFT JOIN hr_reporting_lines rl
+        ON rl.org_id = $1 AND rl.line_type = 'primary'
+       AND rl.effective_from <= CURRENT_DATE AND rl.effective_to >= CURRENT_DATE
+       AND rl.employment_id = e.id
+      LEFT JOIN hr_employments me
+        ON me.org_id = $1 AND me.id = rl.manager_employment_id AND me.deleted_at IS NULL
+      LEFT JOIN hr_people mp
+        ON mp.org_id = $1 AND mp.id = me.person_id AND mp.deleted_at IS NULL
+      WHERE u.id IN (
+        SELECT m.user_id FROM organization_members m
+        WHERE m.org_id = $1 AND m.status = 'ACTIVE'
+        ORDER BY m.joined_at DESC LIMIT 100)
+      ORDER BY e.id`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "hr_employments" },
+      { kind: "forbid-seq-scan", relation: "hr_people" },
+    ],
+  },
+  {
+    id: "employee-reporting-line-lookup",
+    ceiling: 5_000,
+    minRows: 1_000,
+    rowCountSql: `SELECT count(*)::int FROM hr_reporting_lines WHERE org_id = $1`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT rl.employment_id, rl.manager_employment_id, rl.effective_from
+      FROM hr_reporting_lines rl
+      WHERE rl.org_id = $1
+        AND rl.line_type = 'primary'
+        AND rl.effective_from <= CURRENT_DATE
+        AND rl.effective_to >= CURRENT_DATE
+      ORDER BY rl.employment_id ASC
+      LIMIT 100`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "hr_reporting_lines" },
+    ],
+  },
+  {
     id: "leave-requests-pending-org",
     ceiling: 8_000,
     minRows: 20,
@@ -342,7 +402,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM hr_leave_ledger WHERE org_id = $1`,
     params: (f) => [f.orgId, f.userId],
     sql: `
-      SELECT id, leave_type_id, entry_type, days, effective_date
+      SELECT id, leave_type_id, txn_type, days, effective_date
       FROM hr_leave_ledger
       WHERE org_id = $1 AND user_id = $2
       ORDER BY effective_date DESC
@@ -407,7 +467,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM deals WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, title, stage, value, expected_close_date, assigned_to_id
+      SELECT id, name, stage, value, expected_close_date, assigned_to_id
       FROM deals
       WHERE org_id = $1 AND deleted_at IS NULL
       ORDER BY expected_close_date ASC NULLS LAST, id DESC
@@ -503,7 +563,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM payroll_runs WHERE org_id = $1`,
     params: (f) => (f.payrollRunId ? [f.orgId, f.payrollRunId] : null),
     sql: `
-      SELECT id, user_id, worker_id, status, gross_pay, net_pay
+      SELECT id, user_id, worker_id, status, gross, net
       FROM payroll_run_employees
       WHERE org_id = $1 AND run_id = $2
       ORDER BY id ASC
@@ -519,7 +579,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM payroll_runs WHERE org_id = $1`,
     params: (f) => (f.payrollRunId ? [f.orgId, f.payrollRunId] : null),
     sql: `
-      SELECT id, run_employee_id, component_code, amount, quantity
+      SELECT id, run_employee_id, code, amount, sort_order
       FROM payroll_line_items
       WHERE org_id = $1 AND run_id = $2
       ORDER BY id ASC
@@ -537,7 +597,7 @@ export const BUDGETS = [
     sql: `
       SELECT id, name, sku, status, category_id
       FROM inv_products
-      WHERE org_id = $1 AND status <> 'ARCHIVED'
+      WHERE org_id = $1 AND status <> 'DISCONTINUED'
       ORDER BY id DESC
       LIMIT 50`,
     planAssertions: [
@@ -551,7 +611,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM inv_stock_levels WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, product_variant_id, location_id, quantity_available, quantity_reserved
+      SELECT id, product_variant_id, location_id, on_hand, committed
       FROM inv_stock_levels
       WHERE org_id = $1
       ORDER BY product_variant_id ASC
@@ -567,7 +627,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM inv_stock_transactions WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, product_variant_id, transaction_type, quantity, posting_date, created_at
+      SELECT id, product_variant_id, transaction_type, quantity_change, posting_date, created_at
       FROM inv_stock_transactions
       WHERE org_id = $1
       ORDER BY created_at DESC
@@ -720,6 +780,36 @@ export const BUDGETS = [
       LIMIT 50`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "chat_saved_messages" },
+    ],
+  },
+  {
+    id: "accounting-receivables-list",
+    // PROVISIONAL — ceiling not yet measured; run as streamline_app with tenant GUC on a seeded branch and record actual blocks.
+    ceiling: 50_000,
+    minRows: 10,
+    rowCountSql: `SELECT count(*)::int FROM clients WHERE org_id = $1`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT c.id, c.name, c.state, c.gstin,
+             count(DISTINCT i.id) AS invoice_count,
+             (COALESCE(SUM(i.total), 0) - COALESCE((
+               SELECT SUM(p.amount)
+               FROM payments p
+               WHERE p.org_id = $1
+                 AND p.invoice_id IN (
+                   SELECT i2.id FROM invoices i2
+                   WHERE i2.org_id = $1 AND i2.client_id = c.id
+                 )
+             ), 0)) AS outstanding,
+             count(*) OVER () AS total
+      FROM clients c
+      LEFT JOIN invoices i ON i.client_id = c.id AND i.org_id = $1
+      WHERE c.org_id = $1
+      GROUP BY c.id, c.name, c.state, c.gstin
+      ORDER BY outstanding DESC, c.name ASC
+      LIMIT 50 OFFSET 0`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "clients" },
     ],
   },
 ];

@@ -1,0 +1,89 @@
+name: Cell cold bootstrap
+
+# Drops and rebuilds cell2 from the migration chain nightly.
+#
+# Two results flow out of this job:
+#   1. `.chain-gaps` — count of statements that referenced an object the chain
+#      never creates; written by apply-chain-cold.mjs and saved to the Actions
+#      cache. The `checks` job in ci.yml restores the latest snapshot so that
+#      criterion (e) of verify-migration-chain.mjs can gate PR builds.
+#   2. The compare-schema step (inside bootstrap-cell.mjs) verifies that a cold
+#      build and the running production database reach the same declared schema.
+#
+# Credentials required (repository secrets):
+#   CI_DATABASE_URL         — neondb owner URL (control plane; pooled is fine for
+#                             queries; the script uses DIRECT for drop/create)
+#   CI_DIRECT_DATABASE_URL  — neondb owner URL (direct, non-pooled)
+#   CI_APP_DATABASE_URL     — neondb app-role URL (non-BYPASSRLS; required by
+#                             parseCellArgs in cell-topology.mjs)
+#
+# When any of these is absent the job emits a workflow warning and exits 0 so
+# that a credential outage does not block unrelated PR checks.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  cold-bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check credentials
+        id: check-creds
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$DIRECT_DATABASE_URL" ] || [ -z "$APP_DATABASE_URL" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Bootstrap Skipped::One or more of CI_DATABASE_URL / CI_DIRECT_DATABASE_URL / CI_APP_DATABASE_URL is not set. Set all three in repository secrets to enable nightly cold bootstrap."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
+          APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
+
+      - uses: pnpm/action-setup@v4
+        if: steps.check-creds.outputs.configured == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.check-creds.outputs.configured == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+        if: steps.check-creds.outputs.configured == 'true'
+
+      # Drop and rebuild cell2 from scratch.  bootstrap-cell.mjs:
+      #   1. Drops the cell2 database (--drop --i-mean-it)
+      #   2. Re-creates it
+      #   3. Runs apply-chain-cold.mjs (writes .chain-gaps to cwd)
+      #   4. Installs the app role and RLS policies
+      #   5. Runs compare-cell-schema.mjs (differences must be 0)
+      - name: Cold bootstrap cell2
+        if: steps.check-creds.outputs.configured == 'true'
+        run: pnpm cell:bootstrap --drop --i-mean-it
+        timeout-minutes: 50
+        env:
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
+          APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
+
+      # Save .chain-gaps so the `checks` job can restore it on the next PR build.
+      # Key includes the run-id so every nightly run overwrites the previous entry
+      # via the `chain-gaps-` restore-key prefix in the consumer.
+      - name: Save chain-gaps marker
+        if: steps.check-creds.outputs.configured == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .chain-gaps
+          key: chain-gaps-${{ github.run_id }}

@@ -129,6 +129,7 @@ export class QuotesController {
   }
 
   @Post(":quoteId/approve")
+  @Idempotent("quotes.quote.approve")
   @RequirePermission("crm:quotes:approve")
   async approve(
     @Param("quoteId", ParseIntPipe) quoteId: number,
@@ -138,6 +139,7 @@ export class QuotesController {
   }
 
   @Post(":quoteId/reject")
+  @Idempotent("quotes.quote.reject")
   @RequirePermission("crm:quotes:approve")
   async reject(
     @Param("quoteId", ParseIntPipe) quoteId: number,

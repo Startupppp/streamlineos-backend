@@ -226,6 +226,7 @@ export class OrgHierarchyDepartmentsService {
         eq(orgUnits.id, departmentId),
         eq(orgUnits.orgId, orgId),
         eq(orgUnits.kind, "DEPARTMENT"),
+        isNull(orgUnits.deletedAt),
       ),
     });
     if (!dept) throw new NotFoundException("Department not found");

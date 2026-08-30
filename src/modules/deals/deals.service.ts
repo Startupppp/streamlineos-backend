@@ -1,15 +1,15 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, isNull } from "drizzle-orm";
-import { deals, dealActivities, dealApprovals, dealStageTransitions, chatChannels, chatChannelMembers, users } from "../../db/schema";
+import { and, eq, isNull } from "drizzle-orm";
+import { deals, dealActivities, dealApprovals, dealStageTransitions, chatChannels, chatChannelMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { EmailService } from "../email/email.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { CrmBlueprintsService } from "../crm/metadata/crm-blueprints.service";
@@ -51,7 +51,7 @@ export class DealsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly automation: AutomationService,
     private readonly webhooksDispatch: WebhooksDispatchService,
     private readonly blueprints: CrmBlueprintsService,
@@ -184,26 +184,18 @@ export class DealsService {
     newStage: string,
   ): Promise<void> {
     if (!deal.assignedToId) return;
-    const ids = Array.from(new Set([deal.assignedToId, actorId]));
-    const people = await this.db
-      .select({ id: users.id, email: users.email, name: users.name })
-      .from(users)
-      .where(inArray(users.id, ids));
-
-    const assignee = people.find((p) => p.id === deal.assignedToId);
-    if (!assignee?.email) return;
-
-    const actor = people.find((p) => p.id === actorId);
-    await this.email.sendDealStageChangeEmail(
-      assignee.email,
-      assignee.name ?? "Team Member",
-      deal.name,
-      previousStage,
-      newStage,
-      deal.value,
-      actor?.name ?? "Team Member",
-      deal.id,
-    );
+    await this.dispatch.emit({
+      eventKey: "crm.deal.stage_changed",
+      orgId: deal.orgId,
+      actorUserId: actorId,
+      notifySelf: true,
+      targetUserIds: [deal.assignedToId],
+      entityType: "deal",
+      entityId: String(deal.id),
+      title: `Deal stage changed: ${deal.name}`,
+      message: `${deal.name} moved from ${previousStage} to ${newStage}.`,
+      variables: { dealName: deal.name, previousStage, newStage, value: deal.value, actorUserId: actorId },
+    });
   }
 
   /**

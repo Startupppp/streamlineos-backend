@@ -1,11 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { primaryEmploymentOfPerson, livePersonOfEmployment } from "../../directory/employment-query";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
   hrPayrollInputSnapshots,
   hrPayrollInputPeriods,
-} from "../../../db/schema/hr/payroll-inputs";
+} from "../../../db/schema/payroll/input-capture";
 import {
   reimbursements,
   salaryLoans,
@@ -15,7 +16,7 @@ import {
   hrPeople,
 } from "../../../db/schema/hr/core-people";
 
-import { employeeSalaryProfiles } from "../../../db/schema/hr/payroll-workforce";
+import { employeeSalaryProfiles } from "../../../db/schema/payroll/workforce";
 import { overtimeRequests } from "../../../db/schema/hr/overtime";
 import { organizationMembers, users } from "../../../db/schema/common/auth";
 import { AttendanceSummaryService } from "../time/attendance-summary.service";
@@ -81,7 +82,13 @@ export class PayrollInputsBuildService {
       }),
       this.leaveLedger.buildLeaveSummary(orgId, start, end),
       this.db
-        .select()
+        .select({
+          id: overtimeRequests.id,
+          userId: overtimeRequests.userId,
+          date: overtimeRequests.date,
+          hours: overtimeRequests.hours,
+          convertToCompOff: overtimeRequests.convertToCompOff,
+        })
         .from(overtimeRequests)
         .where(
           and(
@@ -93,7 +100,15 @@ export class PayrollInputsBuildService {
           ),
         ),
       this.db
-        .select()
+        .select({
+          id: reimbursements.id,
+          userId: reimbursements.userId,
+          category: reimbursements.category,
+          amount: reimbursements.amount,
+          description: reimbursements.description,
+          payrollMonth: reimbursements.payrollMonth,
+          approvedAt: reimbursements.approvedAt,
+        })
         .from(reimbursements)
         .where(
           and(
@@ -105,7 +120,15 @@ export class PayrollInputsBuildService {
           ),
         ),
       this.db
-        .select()
+        .select({
+          id: salaryLoans.id,
+          userId: salaryLoans.userId,
+          amount: salaryLoans.amount,
+          emiAmount: salaryLoans.emiAmount,
+          totalEmis: salaryLoans.totalEmis,
+          paidEmis: salaryLoans.paidEmis,
+          reason: salaryLoans.reason,
+        })
         .from(salaryLoans)
         .where(
           and(
@@ -115,7 +138,16 @@ export class PayrollInputsBuildService {
           ),
         ),
       this.db
-        .select()
+        .select({
+          id: employeeSalaryProfiles.id,
+          userId: employeeSalaryProfiles.userId,
+          annualCtc: employeeSalaryProfiles.annualCtc,
+          currency: employeeSalaryProfiles.currency,
+          payFrequency: employeeSalaryProfiles.payFrequency,
+          effectiveFrom: employeeSalaryProfiles.effectiveFrom,
+          basicSalary: employeeSalaryProfiles.basicSalary,
+          allowances: employeeSalaryProfiles.allowances,
+        })
         .from(employeeSalaryProfiles)
         .where(
           and(
@@ -139,14 +171,13 @@ export class PayrollInputsBuildService {
           confirmationDate: hrEmployments.confirmationDate,
           lastWorkingDay: hrEmployments.lastWorkingDay,
           exitDate: hrEmployments.exitDate,
-          isPrimary: hrEmployments.isPrimary,
           resolvedUserId: hrPeople.userId,
         })
         .from(hrEmployments)
-        .innerJoin(hrPeople, eq(hrPeople.id, hrEmployments.personId))
+        .innerJoin(hrPeople, livePersonOfEmployment(orgId))
         .where(
           and(
-            eq(hrEmployments.orgId, orgId),
+            primaryEmploymentOfPerson(orgId),
             inArray(hrPeople.userId, userIds),
           ),
         )
@@ -158,21 +189,21 @@ export class PayrollInputsBuildService {
     const attendanceByUser = new Map(attendanceResult.data.map((r) => [r.userId, r]));
     const leaveByUser = new Map(leaveResult.map((r) => [r.userId, r]));
 
-    const overtimeByUser = new Map<string, (typeof overtimeRequests.$inferSelect)[]>();
+    const overtimeByUser = new Map<string, (typeof overtimeRows)[number][]>();
     for (const row of overtimeRows) {
       const existing = overtimeByUser.get(row.userId) ?? [];
       existing.push(row);
       overtimeByUser.set(row.userId, existing);
     }
 
-    const reimbByUser = new Map<string, (typeof reimbursements.$inferSelect)[]>();
+    const reimbByUser = new Map<string, (typeof reimbursementRows)[number][]>();
     for (const row of reimbursementRows) {
       const existing = reimbByUser.get(row.userId) ?? [];
       existing.push(row);
       reimbByUser.set(row.userId, existing);
     }
 
-    const loansByUser = new Map<string, (typeof salaryLoans.$inferSelect)[]>();
+    const loansByUser = new Map<string, (typeof loanRows)[number][]>();
     for (const row of loanRows) {
       const existing = loansByUser.get(row.userId) ?? [];
       existing.push(row);
@@ -197,7 +228,7 @@ export class PayrollInputsBuildService {
       loanRepaymentsByUser.set(userId, existing);
     }
 
-    const salaryProfileByUser = new Map<string, typeof employeeSalaryProfiles.$inferSelect>();
+    const salaryProfileByUser = new Map<string, (typeof salaryProfileRows)[number]>();
     for (const row of salaryProfileRows) {
       if (!row.userId) continue;
       const existing = salaryProfileByUser.get(row.userId);
@@ -211,9 +242,7 @@ export class PayrollInputsBuildService {
     const employmentByUser = new Map<string, EmploymentRow>();
     for (const row of employmentRows) {
       if (!row.resolvedUserId) continue;
-      if (!employmentByUser.has(row.resolvedUserId) || row.isPrimary) {
-        employmentByUser.set(row.resolvedUserId, row);
-      }
+      employmentByUser.set(row.resolvedUserId, row);
     }
 
     const snapshotValues: (typeof hrPayrollInputSnapshots.$inferInsert)[] = [];

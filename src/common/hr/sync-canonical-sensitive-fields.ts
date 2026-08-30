@@ -2,7 +2,9 @@ import { BadRequestException } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { hrEmployeeSensitiveFields, hrEmployments, hrPeople } from "../../db/schema";
 import type { DbOrTx } from "../rbac/access-invalidate";
-import { encrypt } from "../../modules/hr/onboarding/core/crypto.helpers";
+import { sealSensitive } from "../security/sensitive-field";
+import { sealBankDetails, type BankDetails } from "./canonical-bank-details";
+import { keyReferenceOf } from "../security/envelope-encryption";
 
 export function monthlyAmountToCents(amount: number): number {
   const rawCents = amount * 100;
@@ -13,16 +15,28 @@ export function monthlyAmountToCents(amount: number): number {
   return cents;
 }
 
+export interface CanonicalSensitivePatch {
+  monthlySalary?: number;
+  taxId?: string;
+  bankDetails?: BankDetails | null;
+}
+
 export async function syncCanonicalSensitiveFields(
   db: DbOrTx,
   orgId: string,
   userId: string,
-  patch: { monthlySalary?: number; taxId?: string },
+  patch: CanonicalSensitivePatch,
 ): Promise<boolean> {
   const updates: Partial<typeof hrEmployeeSensitiveFields.$inferInsert> = {};
   if (patch.monthlySalary !== undefined) updates.salaryAmountCents = monthlyAmountToCents(patch.monthlySalary);
-  if (patch.taxId !== undefined) updates.taxId = patch.taxId ? encrypt(patch.taxId) : "";
+  if (patch.taxId !== undefined) updates.taxId = patch.taxId ? sealSensitive(patch.taxId) : "";
+  if (patch.bankDetails !== undefined)
+    updates.bankDetails = patch.bankDetails ? sealBankDetails(patch.bankDetails) : null;
   if (Object.keys(updates).length === 0) return true;
+
+  const sealed = updates.bankDetails ?? updates.taxId;
+  if (typeof sealed === "string" && sealed !== "")
+    updates.encryptionKeyRef = keyReferenceOf(sealed);
 
   const employmentIds = db
     .select({ id: hrEmployments.id })

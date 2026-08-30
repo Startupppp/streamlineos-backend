@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
 import type { AccessService } from "../../access/access.service";
 import type { HrAnalyticsPlusService } from "../analytics-plus/hr-analytics-plus.service";
@@ -24,6 +25,7 @@ const USER: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 function methodMock() {

@@ -23,7 +23,6 @@ import { ProjectsService } from "./projects.service";
 import { ProjectsQueryService } from "./projects-query.service";
 import { ProjectsWriteService } from "./projects-write.service";
 import { ProjectsProvisionService } from "./projects-provision.service";
-import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import { BuildDueSweepService } from "./build-due-sweep.service";
 import { BuildNotificationVisibility } from "./build-notification-visibility";
@@ -84,7 +83,6 @@ import { BuildReleasePublishedConsumerService } from "./build-release-published-
     ProjectsQueryService,
     ProjectsWriteService,
     ProjectsProvisionService,
-    ProjectsEmailService,
     ProjectsMembersService,
     ProjectsTicketsService,
     ProjectsTicketsCreateService,

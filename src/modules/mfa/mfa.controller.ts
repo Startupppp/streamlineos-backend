@@ -1,5 +1,13 @@
-import { Body, Controller, Get, HttpCode, Post, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -23,12 +31,14 @@ export class MfaController {
   constructor(private readonly mfa: MfaService) {}
 
   @Post("setup")
+  @Universal()
   @HttpCode(200)
   setup(@CurrentUser() u: CurrentUserContext) {
     return this.mfa.setup(u.userId);
   }
 
   @Post("verify")
+  @Universal()
   @HttpCode(200)
   verify(
     @Body(new ZodValidationPipe(verifyMfaSchema)) body: VerifyMfaInput,
@@ -38,6 +48,7 @@ export class MfaController {
   }
 
   @Post("disable")
+  @Universal()
   @HttpCode(200)
   disable(
     @Body(new ZodValidationPipe(disableMfaSchema)) body: DisableMfaInput,
@@ -47,6 +58,7 @@ export class MfaController {
   }
 
   @Get("status")
+  @Universal()
   status(@CurrentUser() u: CurrentUserContext) {
     return this.mfa.status(u.userId);
   }
@@ -55,9 +67,7 @@ export class MfaController {
   @HttpCode(200)
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermission("settings:mfa")
-  reset(
-    @Body(new ZodValidationPipe(resetMfaSchema)) body: ResetMfaInput,
-  ) {
+  reset(@Body(new ZodValidationPipe(resetMfaSchema)) body: ResetMfaInput) {
     return this.mfa.reset(body.userId);
   }
 }

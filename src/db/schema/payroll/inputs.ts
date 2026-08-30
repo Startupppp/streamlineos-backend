@@ -4,7 +4,7 @@ import {
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { payrollInputSourceEnum } from "./enums";
-import { payrollRuns } from "../hr/payroll-runs";
+import { payrollRuns } from "./runs";
 
 export const payrollInputs = pgTable("payroll_inputs", {
   id: serial("id").primaryKey(),

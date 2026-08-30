@@ -41,21 +41,21 @@ describe("RazorpayAdapter", () => {
 
     it("accepts a correctly signed payment", () => {
       const signature = sign(orderId, paymentId, keySecret);
-      expect(adapter.verifyPaymentSignature({ orderId, paymentId, signature, keySecret })).toBe(true);
+      expect(adapter.configure({ secret: keySecret }).verifyPaymentSignature({ orderId, paymentId, signature })).toBe(true);
     });
 
     it("rejects a signature signed with the wrong secret", () => {
       const signature = sign(orderId, paymentId, "wrong_secret");
-      expect(adapter.verifyPaymentSignature({ orderId, paymentId, signature, keySecret })).toBe(false);
+      expect(adapter.configure({ secret: keySecret }).verifyPaymentSignature({ orderId, paymentId, signature })).toBe(false);
     });
 
     it("rejects a signature for a different order/payment pair", () => {
       const signature = sign(orderId, "different_payment", keySecret);
-      expect(adapter.verifyPaymentSignature({ orderId, paymentId, signature, keySecret })).toBe(false);
+      expect(adapter.configure({ secret: keySecret }).verifyPaymentSignature({ orderId, paymentId, signature })).toBe(false);
     });
 
     it("rejects garbage input without throwing", () => {
-      expect(adapter.verifyPaymentSignature({ orderId, paymentId, signature: "not-hex-at-all", keySecret })).toBe(false);
+      expect(adapter.configure({ secret: keySecret }).verifyPaymentSignature({ orderId, paymentId, signature: "not-hex-at-all" })).toBe(false);
     });
   });
 
@@ -69,28 +69,69 @@ describe("RazorpayAdapter", () => {
 
     it("accepts a correctly signed webhook body", () => {
       const signature = sign(rawBody, webhookSecret);
-      expect(adapter.verifyWebhookSignature({ rawBody, signature, webhookSecret })).toBe(true);
+      expect(adapter.configure({ webhookSecret }).verifyWebhookSignature({ rawBody, signature })).toBe(true);
     });
 
     it("rejects a tampered body", () => {
       const signature = sign(rawBody, webhookSecret);
       const tamperedBody = JSON.stringify({ event: "payment.captured", payload: { tampered: true } });
-      expect(adapter.verifyWebhookSignature({ rawBody: tamperedBody, signature, webhookSecret })).toBe(false);
+      expect(adapter.configure({ webhookSecret }).verifyWebhookSignature({ rawBody: tamperedBody, signature })).toBe(false);
     });
 
     it("rejects a signature signed with the wrong webhook secret", () => {
       const signature = sign(rawBody, "wrong_webhook_secret");
-      expect(adapter.verifyWebhookSignature({ rawBody, signature, webhookSecret })).toBe(false);
+      expect(adapter.configure({ webhookSecret }).verifyWebhookSignature({ rawBody, signature })).toBe(false);
     });
 
     it("returns false instead of throwing on malformed signature input", () => {
-      expect(adapter.verifyWebhookSignature({ rawBody, signature: "", webhookSecret })).toBe(false);
+      expect(adapter.configure({ webhookSecret }).verifyWebhookSignature({ rawBody, signature: "" })).toBe(false);
     });
   });
 
   describe("normalizeWebhook", () => {
+    it("maps provider field names to the neutral billing payment contract", () => {
+      const result = adapter.configure({}).normalizeWebhook(JSON.stringify({
+        id: "evt_456",
+        event: "payment.captured",
+        payload: {
+          payment: {
+            entity: {
+              id: "pay_456",
+              order_id: "order_456",
+              amount: 2500,
+              fee: 50,
+              currency: "INR",
+              status: "captured",
+              invoice_id: "inv_456",
+              created_at: 1_700_000_000,
+            },
+          },
+        },
+      }));
+
+      expect(result).toEqual({
+        ok: true,
+        eventType: "payment.captured",
+        providerEventId: "evt_456",
+        payload: {
+          payment: {
+            entity: {
+              id: "pay_456",
+              orderId: "order_456",
+              amount: 2500,
+              fee: 50,
+              currency: "INR",
+              status: "captured",
+              invoiceId: "inv_456",
+              createdAt: 1_700_000_000,
+            },
+          },
+        },
+      });
+    });
+
     it("returns a provider-neutral event without exposing credential fields", () => {
-      const result = adapter.normalizeWebhook(JSON.stringify({
+      const result = adapter.configure({}).normalizeWebhook(JSON.stringify({
         id: "evt_123",
         event: "payment.captured",
         payload: { payment: { entity: { id: "pay_123", amount: 100 } } },
@@ -106,8 +147,8 @@ describe("RazorpayAdapter", () => {
     });
 
     it("distinguishes malformed JSON from an invalid provider envelope", () => {
-      expect(adapter.normalizeWebhook("not-json")).toEqual({ ok: false, error: "invalid_json" });
-      expect(adapter.normalizeWebhook(JSON.stringify({ payload: {} }))).toEqual({
+      expect(adapter.configure({}).normalizeWebhook("not-json")).toEqual({ ok: false, error: "invalid_json" });
+      expect(adapter.configure({}).normalizeWebhook(JSON.stringify({ payload: {} }))).toEqual({
         ok: false,
         error: "invalid_payload",
       });

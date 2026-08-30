@@ -11,7 +11,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { logger } from "../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
-import { EmailService } from "../email/email.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
@@ -55,7 +55,7 @@ export class LeadsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly automation: AutomationService,
     private readonly webhooksDispatch: WebhooksDispatchService,
     private readonly crmValidation: CrmValidationService,
@@ -67,27 +67,21 @@ export class LeadsService {
   ) {}
 
   private async sendLeadAssignedNotification(
+    orgId: string,
     actorId: string,
     lead: { assignedToId: string; name: string; source: string; priority: string },
   ): Promise<void> {
-    const ids = Array.from(new Set([lead.assignedToId, actorId]));
-    const people = await this.db
-      .select({ id: users.id, email: users.email, name: users.name })
-      .from(users)
-      .where(inArray(users.id, ids));
-
-    const rep = people.find((p) => p.id === lead.assignedToId);
-    if (!rep?.email) return;
-
-    const actor = people.find((p) => p.id === actorId);
-    await this.email.sendLeadAssignedEmail(
-      rep.email,
-      rep.name ?? "Team Member",
-      lead.name,
-      lead.source,
-      lead.priority,
-      actor?.name ?? "Manager",
-    );
+    await this.dispatch.emit({
+      eventKey: "crm.lead.assigned",
+      orgId,
+      actorUserId: actorId,
+      targetUserIds: [lead.assignedToId],
+      entityType: "lead",
+      title: "Lead assigned to you",
+      message: `You have been assigned lead: ${lead.name}`,
+      link: "/crm/leads",
+      variables: { leadName: lead.name, source: lead.source, priority: lead.priority },
+    });
   }
 
   async listLeads(orgId: string, filters?: ListFilters) {
@@ -215,7 +209,7 @@ export class LeadsService {
     }).catch(logSideEffectFailure("lead attribution first-touch", { orgId, leadId: newLead.id }));
 
     if (newLead.assignedToId) {
-      void this.sendLeadAssignedNotification(userId, {
+      void this.sendLeadAssignedNotification(orgId, userId, {
         assignedToId: newLead.assignedToId,
         name: newLead.name,
         source: newLead.source,
@@ -328,7 +322,7 @@ export class LeadsService {
 
       void this.bus.emit(orgId, "lead.assigned", { entityType: "lead", entityId: String(updated.id), data: { assignedToId: updated.assignedToId }, actorId: userId }).catch(logSideEffectFailure("lead.assigned bus emit", { orgId, leadId: updated.id }));
 
-      void this.sendLeadAssignedNotification(userId, {
+      void this.sendLeadAssignedNotification(orgId, userId, {
         assignedToId: updated.assignedToId,
         name: updated.name,
         source: updated.source,

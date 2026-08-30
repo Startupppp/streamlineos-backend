@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Put, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -24,11 +25,13 @@ export class NotificationPreferencesController {
   ) {}
 
   @Get()
+  @Universal()
   get(@CurrentUser() u: CurrentUserContext) {
     return this.preferences.getEffective(u.orgId, u.userId);
   }
 
   @Patch()
+  @Universal()
   update(
     @Body(new ZodValidationPipe(updatePreferenceSchema)) body: UpdatePreferenceInput,
     @CurrentUser() u: CurrentUserContext,
@@ -38,11 +41,13 @@ export class NotificationPreferencesController {
 
   /** SCH-003. The normalised rules behind the preference centre. */
   @Get("rules")
+  @Universal()
   listRules(@CurrentUser() u: CurrentUserContext) {
     return this.rules.list(u.orgId, u.userId);
   }
 
   @Put("rules")
+  @Universal()
   @HttpCode(200)
   setRule(
     @Body(new ZodValidationPipe(preferenceRuleSchema)) body: PreferenceRuleBody,
@@ -52,11 +57,13 @@ export class NotificationPreferencesController {
   }
 
   @Get("events")
+  @Universal()
   eventCatalog(@CurrentUser() u: CurrentUserContext) {
     return this.preferences.getEventCatalog(u.orgId, u.userId);
   }
 
   @Patch("events/:eventKey")
+  @Universal()
   updateEvent(
     @Param("eventKey") eventKey: string,
     @Body(new ZodValidationPipe(eventPreferenceSchema)) body: EventPreferenceInput,
@@ -66,17 +73,20 @@ export class NotificationPreferencesController {
   }
 
   @Post("reset")
+  @Universal()
   @HttpCode(200)
   reset(@CurrentUser() u: CurrentUserContext) {
     return this.preferences.reset(u.orgId, u.userId);
   }
 
   @Get("suppressions")
+  @Universal()
   listSuppressions(@CurrentUser() u: CurrentUserContext) {
     return this.preferences.listSuppressions(u.orgId, u.userId);
   }
 
   @Post("suppressions")
+  @Universal()
   createSuppression(
     @Body(new ZodValidationPipe(createSuppressionSchema)) body: CreateSuppressionInput,
     @CurrentUser() u: CurrentUserContext,
@@ -85,6 +95,7 @@ export class NotificationPreferencesController {
   }
 
   @Delete("suppressions/:suppressionId")
+  @Universal()
   removeSuppression(@Param("suppressionId", ParseIntPipe) suppressionId: number, @CurrentUser() u: CurrentUserContext) {
     return this.preferences.removeSuppression(u.orgId, u.userId, suppressionId);
   }

@@ -1,6 +1,6 @@
 import { Inject, Injectable, BadRequestException } from "@nestjs/common";
 import { randomUUID } from "crypto";
-import { inArray, eq, and } from "drizzle-orm";
+import { inArray, eq, and, sql } from "drizzle-orm";
 import { notifications, notificationDeliveries, notificationQueue, notificationOutbox, notificationPreferences, notificationTemplates, userPreferences, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -118,7 +118,11 @@ export class NotificationDispatchService {
         message: input.message ?? null,
         link: input.link ?? null,
         variables: (input.variables ?? {}) as Record<string, unknown>,
-        metadata: input.metadata ?? null,
+        metadata: {
+          ...(input.metadata ?? {}),
+          ...(input.emailHtml ? { emailHtml: input.emailHtml } : {}),
+          ...(input.attachments ? { attachments: input.attachments } : {}),
+        },
       })
       // A replayed intent carrying an explicit dedupe key is a no-op, not a second
       // notification. Without one the key is unique, so this never fires.
@@ -212,7 +216,7 @@ export class NotificationDispatchService {
       );
     }
 
-    const routingResults = await this.routing.routeMany(input.orgId, targets, definition, priority);
+    const routingResults = await this.routing.routeMany(input.orgId, targets, definition, priority, input.channels);
     const announcements: Array<{ input: AnnounceInput; pushToDevices: boolean }> = [];
 
     // PIPE-006: this used to be a strictly sequential loop, one transaction per
@@ -381,6 +385,7 @@ export class NotificationDispatchService {
       }
 
       let notificationId: number | null = null;
+      let notificationCreatedAt: Date | null = null;
       if (createInApp) {
         const [notification] = await tx
           .insert(notifications)
@@ -402,10 +407,19 @@ export class NotificationDispatchService {
             channel: "IN_APP",
             metadata: input.metadata,
           })
-          .returning({ id: notifications.id });
+          .returning({ id: notifications.id, createdAt: notifications.createdAt });
         notificationId = notification?.id ?? null;
+        notificationCreatedAt = notification?.createdAt ?? null;
         if (notificationId) {
-          await tx.update(notificationDeliveries).set({ notificationId }).where(eq(notificationDeliveries.id, inAppDelivery.id));
+          await tx
+            .update(notificationDeliveries)
+            .set({
+              notificationId,
+              notificationCreatedAt: sql`(
+                select created_at from notifications where id = ${notificationId}
+              )`,
+            })
+            .where(eq(notificationDeliveries.id, inAppDelivery.id));
         }
       }
 
@@ -423,6 +437,9 @@ export class NotificationDispatchService {
           .insert(notificationDeliveries)
           .values({
             notificationId,
+            notificationCreatedAt: notificationId
+              ? sql`(select created_at from notifications where id = ${notificationId})`
+              : null,
             orgId: input.orgId,
             userId,
             eventKey: input.eventKey,
@@ -434,7 +451,14 @@ export class NotificationDispatchService {
             suppressionReason: isSend ? null : decision.reason ?? null,
             nextAttemptAt: isSend ? (routingResult.deferredUntil ?? now) : null,
             idempotencyKey: key,
-            metadata: { title: deliveryTitle, message: deliveryMessage, link: input.link ?? null },
+            metadata: {
+              ...(input.metadata ?? {}),
+              ...(input.emailHtml ? { emailHtml: input.emailHtml } : {}),
+              ...(input.attachments ? { attachments: input.attachments } : {}),
+              title: deliveryTitle,
+              message: deliveryMessage,
+              link: input.link ?? null,
+            },
             // REG-008: the snapshot of what was actually sent. metadata above is the
             // display payload; these two are the audit record, and survive a later
             // edit to the template they came from.

@@ -126,6 +126,16 @@ export const upsertCustomFieldValuesSchema = z.object({
   });
 });
 
+export const filterByCustomFieldQuerySchema = z.object({
+  fieldKey: z
+    .string()
+    .min(1, "fieldKey is required")
+    .max(64, "fieldKey must be at most 64 characters")
+    .regex(/^[a-z][a-z0-9_]*$/, "fieldKey must be a valid field key"),
+  value: z.string().optional(),
+});
+
 export type CreateCustomFieldInput = z.infer<typeof createCustomFieldSchema>;
 export type UpdateCustomFieldInput = z.infer<typeof updateCustomFieldSchema>;
 export type UpsertCustomFieldValuesInput = z.infer<typeof upsertCustomFieldValuesSchema>;
+export type FilterByCustomFieldQuery = z.infer<typeof filterByCustomFieldQuerySchema>;

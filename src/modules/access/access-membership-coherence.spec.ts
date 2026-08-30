@@ -51,21 +51,14 @@ function makeInstance(
     cached: jest
       .fn()
       .mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
-    cachedForOrg: jest
-      .fn()
-      .mockImplementation(
-        async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn(),
-      ),
     invalidate: jest.fn().mockImplementation((key: string) => {
       shared.delete(key);
       return Promise.resolve();
     }),
-    // Composes the tenant prefix the way the real service does, so an org-scoped
-    // eviction hits the same entry a flat `invalidate` would have.
-    invalidateForOrg: jest.fn().mockImplementation((orgId: string, key: string) => {
-      shared.delete(`${orgId}:${key}`);
-      return Promise.resolve();
-    }),
+    cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+    invalidateForOrg: jest.fn().mockResolvedValue(undefined),
     get: jest
       .fn()
       .mockImplementation((key: string) => Promise.resolve(shared.get(key) ?? null)),

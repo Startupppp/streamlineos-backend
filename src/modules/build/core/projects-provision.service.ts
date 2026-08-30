@@ -9,7 +9,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
-import { ProjectsEmailService } from "./projects-email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CreateProjectInput, FromDealInput } from "./dto/projects.schemas";
 import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
@@ -32,7 +32,7 @@ export class ProjectsProvisionService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly planLimits: PlanLimitsService,
-    private readonly projectsEmail: ProjectsEmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
 
@@ -117,9 +117,18 @@ export class ProjectsProvisionService {
 
     const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
     if (additionalMembers.length > 0) {
-      void this.projectsEmail
-        .notifyProjectMembers(creatorUserId, additionalMembers, input.name, projectKey, project.id)
-        .catch(logSideEffectFailure("project member notification email", { orgId }));
+      void this.dispatch.emit({
+        eventKey: "build.project.member_added",
+        orgId,
+        actorUserId: creatorUserId,
+        targetUserIds: additionalMembers,
+        entityType: "project",
+        entityId: String(project.id),
+        title: "You were added to a project",
+        message: `You were added to project "${input.name}" (${projectKey}).`,
+        link: `/projects/${project.id}`,
+        variables: { projectName: input.name, projectKey, projectId: project.id },
+      }).catch(logSideEffectFailure("project member notification", { orgId }));
     }
 
     this.audit.log({

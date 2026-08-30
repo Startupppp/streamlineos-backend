@@ -2,18 +2,20 @@ import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
+  accountOrganizationIndex,
   users,
   subscriptions,
   organizations,
   magicLinkTokens,
   organizationMembers,
 } from "../../../db/schema";
+import { LEGACY_CELL_ID } from "../../../common/region/placement";
 import { addDays, addMinutes } from "date-fns";
 import { type Db } from "../../../db/drizzle.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type SetupInput } from "./dto/org.schemas";
 import { OnboardingSessionService } from "../../hr/onboarding/flow/onboarding-session.service";
-import { EmailService } from "../../email/email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { logger } from "../../../common/logger/logger.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -23,7 +25,7 @@ import { randomUUID, randomBytes, createHash } from "node:crypto";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
 import {
-  runInNewOrgTransaction,
+  runInNewTenantTransaction,
   runInTenantTransaction,
 } from "../../../common/tenant/run-in-tenant-transaction";
 import type { TenantTx } from "../../../common/tenant/with-tenant";
@@ -40,7 +42,8 @@ import {
   getTrialDays,
   TRIAL_PLAN,
 } from "../../billing/core/plan-entitlements.constants";
-import { regionForNewOrg } from "../../../common/region/region-registry";
+import { placeOrganization } from "../../../common/region/placement-lookup";
+import { chooseRegionForNewOrg } from "../../../common/region/cell-admission";
 
 export { DEFAULT_SKIP_MODULES, provisionOrgModules };
 
@@ -68,24 +71,29 @@ export class OrgSetupService {
     private readonly cache: CacheService,
     private readonly sessions: OnboardingSessionService,
     private readonly checklists: ModuleChecklistService,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
-  private async sendWelcome(userId: string): Promise<void> {
+  private async sendWelcome(orgId: string, userId: string): Promise<void> {
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, userId),
       columns: { email: true, name: true, firstName: true },
     });
     if (!user?.email) return;
     const name = user.name?.trim() || user.firstName?.trim() || user.email;
-    const base = (process.env.EMAIL_APP_URL ?? process.env.APP_URL ?? "")
-      .trim()
-      .replace(/\/$/, "");
-    void this.email
-      .sendWelcomeEmail(user.email, name, `${base}/dashboard`)
-      .catch((error: unknown) => {
-        logger.error("Welcome email send failed", { userId, error });
-      });
+    await this.dispatch.emit({
+      eventKey: "organization.setup.completed",
+      orgId,
+      actorUserId: userId,
+      notifySelf: true,
+      targetUserIds: [userId],
+      entityType: "organization",
+      entityId: orgId,
+      title: "Organization setup complete",
+      message: `Welcome to ${name}. Your organization is ready.`,
+      link: "/dashboard",
+      variables: { userName: name, email: user.email },
+    });
   }
 
   private schedulePostSetupWork(input: {
@@ -159,7 +167,7 @@ export class OrgSetupService {
       roleWork,
       checklistWork,
       sessionWork,
-      ...(input.sendWelcome ? [this.sendWelcome(input.userId)] : []),
+      ...(input.sendWelcome ? [this.sendWelcome(input.orgId, input.userId)] : []),
     ]);
 
     for (const result of work) {
@@ -333,21 +341,10 @@ export class OrgSetupService {
 
     const orgId = randomUUID();
     const orgName = input.companyName?.trim() || "My Organization";
+    const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
+    await placeOrganization(this.db, { orgId, region });
 
-    /**
-     * Placement declared, not looked up — see `runInNewOrgTransaction`. This is
-     * the transaction that writes the organisation's row, so it is the one
-     * transaction in the platform whose region cannot be resolved by reading
-     * that row.
-     *
-     * No country here on purpose: onboarding collects it a step later, in
-     * `completeSetup`, and by then the organisation is placed. Reading it back
-     * to re-place a live tenant would be a region *move*, which is a data
-     * migration rather than a column update.
-     */
-    const region = regionForNewOrg();
-
-    await runInNewOrgTransaction(this.db, { orgId, region }, async (tx) => {
+    await runInNewTenantTransaction(this.db, orgId, async (tx) => {
       const seqRows = await tx.execute(
         sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
       );
@@ -450,6 +447,23 @@ export class OrgSetupService {
     );
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
+    void withIdentity(this.db, u.userId, (tx) =>
+      tx
+        .update(accountOrganizationIndex)
+        .set({ lastActivatedAt: new Date() })
+        .where(
+          and(
+            eq(accountOrganizationIndex.userId, u.userId),
+            eq(accountOrganizationIndex.orgId, orgId),
+          ),
+        ),
+    ).catch((error: unknown) => {
+      logger.error('[account-org-index] last-activated write failed', {
+        userId: u.userId,
+        orgId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
     this.schedulePostSetupWork({
       orgId,
       userId: u.userId,
@@ -556,6 +570,23 @@ export class OrgSetupService {
     );
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
+    void withIdentity(this.db, u.userId, (tx) =>
+      tx
+        .update(accountOrganizationIndex)
+        .set({ lastActivatedAt: new Date() })
+        .where(
+          and(
+            eq(accountOrganizationIndex.userId, u.userId),
+            eq(accountOrganizationIndex.orgId, orgId),
+          ),
+        ),
+    ).catch((error: unknown) => {
+      logger.error('[account-org-index] last-activated write failed', {
+        userId: u.userId,
+        orgId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
     this.schedulePostSetupWork({
       orgId,
       userId: u.userId,

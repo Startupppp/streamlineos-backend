@@ -2,8 +2,9 @@ import { Test } from "@nestjs/testing";
 import { OrgSetupService } from "../org-setup.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { OnboardingSessionService } from "../../../hr/onboarding/flow/onboarding-session.service";
-import { EmailService } from "../../../email/email.service";
+import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { ModuleChecklistService } from "../../../hr/onboarding/flow/module-checklist.service";
@@ -26,6 +27,7 @@ function ownerActor(orgId = "org-1"): CurrentUserContext {
     isOrgOwner: true,
     sessionId: "s1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, true),
   };
 }
 
@@ -34,6 +36,7 @@ function noOrgActor(): CurrentUserContext {
     ...ownerActor(""),
     role: "",
     isOrgOwner: false,
+    principal: humanSessionPrincipal(1, false),
   };
 }
 
@@ -128,7 +131,7 @@ async function buildService(db: unknown) {
         },
       },
       { provide: ModuleChecklistService, useValue: { ensureChecklistsForModules: jest.fn().mockResolvedValue(undefined) } },
-      { provide: EmailService, useValue: { sendWelcomeEmail: jest.fn().mockResolvedValue(undefined) } },
+      { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
     ],
   }).compile();
   return moduleRef.get(OrgSetupService);

@@ -52,6 +52,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("hr")
 @Controller("hr")
@@ -226,6 +227,7 @@ export class DocumentsController {
   }
 
   @Patch("rich-documents/:documentId/publish")
+  @Idempotent("hr.performance-document.publish")
   @RequirePermission("hr:documents:manage")
   publishRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,

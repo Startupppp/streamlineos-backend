@@ -11,6 +11,8 @@ import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
 import {
   attendance,
+  hrEmployments,
+  hrPeople,
   organizationMembers,
   organizations,
   orgHolidays,
@@ -37,6 +39,7 @@ import { attendanceMemberScope, resolveAttendanceScope } from "./attendance-scop
 import { randomUUID } from "node:crypto";
 import { AttendanceClockService } from "./attendance-clock.service";
 import { AttendanceReadService } from "./attendance-read.service";
+import { livePersonOfUser, orgUnitInOrg, primaryEmploymentOfPerson } from "../../directory/employment-query";
 
 type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
 const ATTENDANCE_REPORT_ROW_LIMIT = 100;
@@ -137,7 +140,7 @@ export class AttendanceService {
       eq(users.isActive, true),
     ];
     if (query.departmentId !== undefined) {
-      baseConditions.push(eq(users.orgDepartmentId, query.departmentId));
+      baseConditions.push(eq(hrEmployments.departmentId, query.departmentId));
     }
     if (query.search) {
       const term = `%${query.search}%`;
@@ -168,11 +171,13 @@ export class AttendanceService {
         })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .leftJoin(hrPeople, livePersonOfUser(u.orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(u.orgId))
         .leftJoin(todayStatus, eq(todayStatus.userId, organizationMembers.userId))
         .leftJoin(
           orgUnits,
           and(
-            eq(orgUnits.id, users.orgDepartmentId),
+            orgUnitInOrg(u.orgId, hrEmployments.departmentId),
             eq(orgUnits.kind, "DEPARTMENT"),
           ),
         )
@@ -187,6 +192,8 @@ export class AttendanceService {
         .select({ status: statusExpr, count: sql<number>`count(*)::int` })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .leftJoin(hrPeople, livePersonOfUser(u.orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(u.orgId))
         .leftJoin(todayStatus, eq(todayStatus.userId, organizationMembers.userId))
         .where(and(...baseConditions))
         .groupBy(statusExpr),

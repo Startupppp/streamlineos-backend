@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AutomationModule } from "../../automation/automation.module";
 import { HrAutomationsModule } from "../automations/hr-automations.module";
+import { NotificationsModule } from "../../notifications/notifications.module";
 import { PerformanceController } from "./performance.controller";
 import { EngagementController } from "./engagement.controller";
 import { EngagementExtrasController } from "./engagement-extras.controller";
@@ -29,7 +30,7 @@ import { CalibrationService } from "./calibration.service";
 import { SuccessionService } from "./succession.service";
 
 @Module({
-  imports: [AutomationModule, HrAutomationsModule],
+  imports: [AutomationModule, HrAutomationsModule, NotificationsModule],
   controllers: [
     PerformanceController,
     EngagementController,

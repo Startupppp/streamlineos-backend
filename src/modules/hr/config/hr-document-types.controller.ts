@@ -14,6 +14,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { AuthorizedInService } from "../../../common/auth/authorized-in-service.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
@@ -39,6 +40,7 @@ export class HrDocumentTypesController {
   ) {}
 
   @Get()
+  @AuthorizedInService("a three-key check in the handler: hr:documents:manage, hr:documents:view or self:onboarding-docs")
   async list(
     @Query(new ZodValidationPipe(listDocumentTypesSchema)) query: ListDocumentTypesInput,
     @CurrentUser() u: CurrentUserContext,
@@ -63,6 +65,7 @@ export class HrDocumentTypesController {
   }
 
   @Get(":documentTypeId")
+  @AuthorizedInService("a three-key check in the handler: hr:documents:manage, hr:documents:view or self:onboarding-docs")
   async getOne(
     @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
     @CurrentUser() u: CurrentUserContext,

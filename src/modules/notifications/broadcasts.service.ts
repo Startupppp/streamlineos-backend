@@ -3,18 +3,25 @@ import { eq, and, desc, lt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   broadcastAudienceTargets,
   broadcasts,
+  hrEmployments,
+  hrPeople,
   organizationMembers,
   roleAssignments,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
 import { broadcastReadReceipts } from "../../db/schema";
 import type { CreateBroadcastInput, UpdateBroadcastInput, ListBroadcastsInput } from "./dto/broadcast.schemas";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../directory/employment-query";
 
 @Injectable()
 export class BroadcastsService {
@@ -64,15 +71,11 @@ export class BroadcastsService {
           filters.cursor ? lt(broadcasts.id, filters.cursor) : undefined,
         ),
       )
-      .orderBy(desc(broadcasts.createdAt))
+      .orderBy(desc(broadcasts.id))
       .limit(limit + 1);
 
-    const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, limit) : rows;
-    return {
-      items,
-      nextCursor: hasMore ? items[items.length - 1]?.id : undefined,
-    };
+    const page = buildIdCursorPage(rows, limit, (row) => row.id);
+    return { items: page.data, nextCursor: page.nextCursor };
   }
 
   async findOne(orgId: string, id: number) {
@@ -248,8 +251,10 @@ export class BroadcastsService {
 
     const [userRow, roleRows] = await Promise.all([
       this.db
-        .select({ deptId: users.orgDepartmentId })
+        .select({ deptId: hrEmployments.departmentId })
         .from(users)
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(eq(users.id, userId))
         .then((rows) => rows[0]),
       this.db
@@ -452,11 +457,29 @@ export class BroadcastsService {
     if (audienceType === "departments") {
       const deptIds = await targetIds("DEPARTMENT");
       if (deptIds.length === 0) return [];
+      const deptSql = sql.join(deptIds.map((id) => sql`${id}`), sql`, `);
       const rows = await this.db
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
-        .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .where(and(eq(organizationMembers.orgId, orgId), inArray(users.orgDepartmentId, deptIds)));
+        .innerJoin(
+          users,
+          and(
+            eq(users.id, organizationMembers.userId),
+            sql`EXISTS (
+              SELECT 1
+              FROM ${hrPeople} hp
+              INNER JOIN ${hrEmployments} he ON he.person_id = hp.id
+                AND he.org_id = ${orgId}
+                AND he.is_primary = true
+                AND he.deleted_at IS NULL
+                AND he.department_id IN (${deptSql})
+              WHERE hp.user_id = ${users.id}
+                AND hp.org_id = ${orgId}
+                AND hp.deleted_at IS NULL
+            )`,
+          ),
+        )
+        .where(eq(organizationMembers.orgId, orgId));
       return dedupe(rows.map((r) => r.userId));
     }
 

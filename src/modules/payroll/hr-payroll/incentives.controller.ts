@@ -20,6 +20,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { AccessService } from "../../access/access.service";
 import { IncentivesService } from "./incentives.service";
 import {
@@ -81,6 +82,7 @@ export class IncentivesController {
   }
 
   @Patch(":incentiveId/approve")
+  @Idempotent("payroll.incentive.approve")
   @RequirePermission("hr:payroll:view")
   async approve(
     @Param("incentiveId", ParseIntPipe) incentiveId: number,
@@ -96,6 +98,7 @@ export class IncentivesController {
   }
 
   @Patch(":incentiveId/reject")
+  @Idempotent("payroll.incentive.reject")
   @RequirePermission("hr:payroll:view")
   async reject(
     @Param("incentiveId", ParseIntPipe) incentiveId: number,

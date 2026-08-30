@@ -1,5 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, Post, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
+import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -34,7 +44,8 @@ export class RbacController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   assignRolePermission(
-    @Body(new ZodValidationPipe(assignRolePermissionSchema)) body: AssignRolePermissionInput,
+    @Body(new ZodValidationPipe(assignRolePermissionSchema))
+    body: AssignRolePermissionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rbac.assignRolePermission(u, body);
@@ -45,23 +56,31 @@ export class RbacController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   revokeRolePermission(
-    @Body(new ZodValidationPipe(revokeRolePermissionSchema)) body: RevokeRolePermissionInput,
+    @Body(new ZodValidationPipe(revokeRolePermissionSchema))
+    body: RevokeRolePermissionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rbac.revokeRolePermission(u, body);
   }
 
   @Get("access-snapshot")
+  @Universal()
   getAccessSnapshot(@CurrentUser() u: CurrentUserContext) {
     return this.access.getAccessSnapshot(u.orgId, u.userId, u);
   }
 
   @Get("discovery/permissions")
+  @AuthorizedInService(
+    "RbacService.getDiscoveryPermissions narrows the catalog to the caller's allowedModules",
+  )
   getDiscoveryPermissions(@CurrentUser() u: CurrentUserContext) {
     return this.rbac.getDiscoveryPermissions(u);
   }
 
   @Get("discovery/grantable")
+  @AuthorizedInService(
+    "RbacService.getDiscoveryGrantable narrows to what the caller themselves may delegate",
+  )
   getDiscoveryGrantable(@CurrentUser() u: CurrentUserContext) {
     return this.rbac.getDiscoveryGrantable(u);
   }

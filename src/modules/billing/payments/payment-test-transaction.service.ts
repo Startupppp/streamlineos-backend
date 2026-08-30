@@ -8,6 +8,7 @@ import { PaymentAuditService } from "./payment-audit.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
 import type { CreateTestTransactionInput, VerifyTestTransactionInput } from "./dto/test-transaction.schemas";
 import type { RequestActorContext } from "../../../common/audit/actor-context";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 
 @Injectable()
 export class PaymentTestTransactionService {
@@ -29,6 +30,7 @@ export class PaymentTestTransactionService {
   // Test payments always run against TEST credentials — never live, regardless of the
   // provider's current environment — per "test mode is a first-class state" (11_...md).
   async createTestTransaction(orgId: string, providerKey: string, input: CreateTestTransactionInput, actor: RequestActorContext) {
+    await assertOrganizationActor(this.db, orgId, { kind: "user", userId: actor.userId });
     const provider = await this.findProvider(orgId, providerKey);
     const providerFacade = await this.providers.resolve(orgId, providerKey, "test");
     if (!providerFacade?.isReady()) {
@@ -85,6 +87,7 @@ export class PaymentTestTransactionService {
   }
 
   async verifyTestTransaction(orgId: string, providerKey: string, id: number, input: VerifyTestTransactionInput, actor: RequestActorContext) {
+    await assertOrganizationActor(this.db, orgId, { kind: "user", userId: actor.userId });
     const provider = await this.findProvider(orgId, providerKey);
     const transaction = await this.db.query.paymentTestTransactions.findFirst({
       where: and(eq(paymentTestTransactions.id, id), eq(paymentTestTransactions.orgId, orgId)),

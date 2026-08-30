@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Patch, Query } from "@nestjs/common";
 import { CurrentUser } from "../common/auth/current-user.decorator";
+import { Universal } from "../common/auth/universal.decorator";
 import { AllowWithoutMfa } from "../common/auth/allow-without-mfa.decorator";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
 import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
@@ -17,12 +18,14 @@ export class MeController {
   ) {}
 
   @Get()
+  @Universal()
   @AllowWithoutMfa()
   me(@CurrentUser() user: CurrentUserContext): CurrentUserContext {
     return user;
   }
 
   @Get("access")
+  @Universal()
   @AllowWithoutMfa()
   getAccess(@CurrentUser() u: CurrentUserContext): Promise<AccessSnapshot> {
     return this.access.getAccessSnapshot(u.orgId, u.userId, u);
@@ -33,25 +36,29 @@ export class MeController {
    * renders in is not something a permission should withhold. See org-display.ts.
    */
   @Get("org-display")
+  @Universal()
   @AllowWithoutMfa()
   getOrgDisplay(@CurrentUser() user: CurrentUserContext): Promise<OrgDisplay> {
     return this.meService.getOrgDisplay(user.orgId);
   }
 
   @Get("profile")
+  @Universal()
   getProfile(@CurrentUser() user: CurrentUserContext): ReturnType<MeService["getProfile"]> {
-    return this.meService.getProfile(user.userId);
+    return this.meService.getProfile(user.userId, user.orgId ?? null);
   }
 
   @Patch("profile")
+  @Universal()
   updateProfile(
     @Body(new ZodValidationPipe(updateProfileSchema)) body: UpdateProfileInput,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<{ success: true }> {
-    return this.meService.updateProfile(user.userId, body);
+    return this.meService.updateProfile(user.userId, user.orgId ?? null, body);
   }
 
   @Get("login-history")
+  @Universal()
   getLoginHistory(
     @Query("page") page = 1,
     @Query("limit") limit = 20,
@@ -64,6 +71,7 @@ export class MeController {
   }
 
   @Get("auth-analytics")
+  @Universal()
   getAuthAnalytics(@CurrentUser() u: CurrentUserContext): ReturnType<MeService["getAuthAnalytics"]> {
     return this.meService.getAuthAnalytics(u.userId);
   }

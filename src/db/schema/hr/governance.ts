@@ -201,7 +201,7 @@ export const hrPositions = pgTable(
     title: text("title").notNull(),
     departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
     jobLevelId: integer("job_level_id").references(() => hrJobLevels.id, { onDelete: "set null" }),
-    status: hrPositionStatusEnum("status").notNull().default("open"),
+    status: text("status").notNull().default("open"),
     budgetedCostCents: integer("budgeted_cost_cents"),
     effectiveFrom: timestamp("effective_from").notNull(),
     incumbentUserId: text("incumbent_user_id").references(() => users.id, { onDelete: "set null" }),

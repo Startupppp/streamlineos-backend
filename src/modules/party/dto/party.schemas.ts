@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 const partyTypeValues = ["CUSTOMER", "VENDOR", "PARTNER", "BOTH"] as const;
 
@@ -10,8 +11,8 @@ const partyTypeValues = ["CUSTOMER", "VENDOR", "PARTNER", "BOTH"] as const;
 const partyKindValues = ["PERSON", "ORGANISATION"] as const;
 
 export const listPartiesQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   cursor: z.string().optional(),
   role: z.string().trim().min(1).optional(),
   partyType: z.enum(partyTypeValues).optional(),
@@ -69,8 +70,27 @@ export const updateContactSchema = z.object({
   isPrimary: z.boolean().optional(),
 });
 
+/**
+ * The mirror check's scan window.
+ *
+ * `after` resumes a truncated scan of one kind, so it only means anything
+ * alongside `kind` -- without one it would silently skip the low ids of all
+ * three tables and report a clean mirror it never looked at.
+ */
+export const mirrorDivergenceQuerySchema = z
+  .object({
+    kind: z.enum(["LEAD", "CLIENT", "CONTACT", "ORGANISATION"]).optional(),
+    limit: pageSizeField(200),
+    after: z.coerce.number().int().min(0).default(0),
+  })
+  .refine((query) => query.after === 0 || query.kind !== undefined, {
+    message: "after resumes a single kind's scan and requires kind",
+    path: ["after"],
+  });
+
 export type ListPartiesQuery = z.infer<typeof listPartiesQuerySchema>;
 export type CreatePartyInput = z.infer<typeof createPartySchema>;
 export type UpdatePartyInput = z.infer<typeof updatePartySchema>;
 export type CreateContactInput = z.infer<typeof createContactSchema>;
 export type UpdateContactInput = z.infer<typeof updateContactSchema>;
+export type MirrorDivergenceQuery = z.infer<typeof mirrorDivergenceQuerySchema>;

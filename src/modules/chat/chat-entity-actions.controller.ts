@@ -1,9 +1,11 @@
 import { Body, Controller, Logger, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import {
   entityActionOptionsSchema,
   entityActionsAvailableSchema,
@@ -46,6 +48,7 @@ export class ChatEntityActionsController {
   ) {}
 
   @Post("available")
+  @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   async availableActions(
     @Body(new ZodValidationPipe(entityActionsAvailableSchema))
     body: EntityActionsAvailableInput,
@@ -66,6 +69,7 @@ export class ChatEntityActionsController {
   }
 
   @Post("options")
+  @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   async actionOptions(
     @Body(new ZodValidationPipe(entityActionOptionsSchema))
     body: EntityActionOptionsInput,
@@ -77,6 +81,8 @@ export class ChatEntityActionsController {
   }
 
   @Post("submit")
+  @Idempotent("chat.action.submit")
+  @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   async submitAction(
     @Body(new ZodValidationPipe(submitEntityActionSchema))
     body: SubmitEntityActionInput,

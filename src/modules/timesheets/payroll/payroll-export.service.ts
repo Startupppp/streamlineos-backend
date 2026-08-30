@@ -19,7 +19,7 @@ import {
 } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import {
   computeLeaveDays,
   computeOvertime,
@@ -213,8 +213,8 @@ export class PayrollExportService {
     });
 
     await Promise.all([
-      this.cache.invalidateNamespaceForOrg(orgId, "timesheets:payroll:summary"),
-      this.cache.invalidateNamespaceForOrg(orgId, "timesheets:payroll:exports"),
+      this.cache.invalidateNamespace(CACHE_KEYS.payrollSummaryNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.payrollExportsNamespace(orgId)),
     ]);
 
     return {
@@ -224,9 +224,8 @@ export class PayrollExportService {
   }
 
   async listExports(orgId: string, query: ExportsListQuery) {
-    return this.cache.cachedVersionedForOrg(
-      orgId,
-      "timesheets:payroll:exports",
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.payrollExportsNamespace(orgId),
       `${query.page}:${query.pageSize}`,
       async () => {
         const offset = (query.page - 1) * query.pageSize;
@@ -330,7 +329,7 @@ export class PayrollExportService {
       },
     });
 
-    await this.cache.invalidateNamespaceForOrg(orgId, "timesheets:payroll:exports");
+    await this.cache.invalidateNamespace(CACHE_KEYS.payrollExportsNamespace(orgId));
 
     return { export: toExportDto(updated, existing.creatorName ?? null) };
   }

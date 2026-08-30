@@ -15,7 +15,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
-import { payrollRuns } from "../hr/payroll-runs";
+import { payrollRuns } from "./runs";
 import { payrollEntities } from "./entities-periods";
 
 export const payrollJournalBatchStatusEnum = pgEnum("payroll_journal_batch_status", [

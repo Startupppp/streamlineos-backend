@@ -1,5 +1,6 @@
 import { Body, Controller, Logger, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -42,6 +43,7 @@ export class ChatActionsController {
   ) {}
 
   @Post("create-task-from-message")
+  @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   async createTaskFromMessage(
     @Body(new ZodValidationPipe(createTaskFromMessageSchema))
     body: CreateTaskFromMessageInput,

@@ -3,7 +3,6 @@
 exports[`RazorpayService import boundary documents every current importer so regressions are visible 1`] = `
 [
   "src/modules/billing/core/platform-payment-provider.spec.ts",
-  "src/modules/billing/core/platform-provider-reachability.spec.ts",
   "src/modules/billing/core/stripe-webhook.service.spec.ts",
 ]
 `;

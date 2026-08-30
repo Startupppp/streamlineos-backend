@@ -18,7 +18,6 @@ import {
   salaryComponents,
   salaryLoans,
   taxDeclarations,
-  users,
   leaveBalances,
   leaveTypes,
 } from "../../../db/schema";
@@ -27,7 +26,9 @@ import { hrEquityGrants } from "../../../db/schema/hr/enterprise-comp";
 import { LoansService } from "../hr-payroll/loans.service";
 import { ReimbursementsService } from "../hr-payroll/reimbursements.service";
 import { TaxService } from "../hr-payroll/tax.service";
-import { type BankDetails, decryptBankDetails, encryptBankDetails } from "../../hr/onboarding/core/crypto.helpers";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { type BankDetails } from "../../hr/onboarding/core/crypto.helpers";
+import { syncCanonicalSensitiveFields } from "../../../common/hr/sync-canonical-sensitive-fields";
 import { detectScheme, validateSchemeCode } from "../../payroll/payout/lib/bank-validation";
 import type { EssBank } from "./dto/insights.schemas";
 import { DEFAULT_PAYROLL_TOGGLES, PayrollToggles } from "../payroll.types";
@@ -40,6 +41,7 @@ export class EssService {
     private readonly loansService: LoansService,
     private readonly reimbursementsService: ReimbursementsService,
     private readonly taxService: TaxService,
+    private readonly employmentFacts: EmploymentFactsService,
   ) {}
 
   async getActiveToggles(orgId: string): Promise<PayrollToggles> {
@@ -406,9 +408,8 @@ export class EssService {
   async getBankDetails(orgId: string, userId: string) {
     const toggles = await this.getActiveToggles(orgId);
     if (!toggles.essAllowBankUpdate) throw new ForbiddenException("Bank details access is disabled");
-    const user = await this.db.query.users.findFirst({ where: eq(users.id, userId) });
-    if (!user) throw new NotFoundException("User not found");
-    const details = decryptBankDetails(user.bankDetails);
+    const sensitive = await this.employmentFacts.getSensitiveFacts(orgId, userId);
+    const details = sensitive.bankDetails;
     if (!details) return { hasBank: false, masked: null };
     return {
       hasBank: true,
@@ -459,8 +460,7 @@ export class EssService {
       bankCountry: body.bankCountry,
     };
 
-    const encrypted = encryptBankDetails(stored);
-    await this.db.update(users).set({ bankDetails: encrypted }).where(eq(users.id, userId));
+    await syncCanonicalSensitiveFields(this.db, orgId, userId, { bankDetails: stored });
     await this.db.insert(auditLogs).values({
       action: "bank_details.updated",
       userId,
@@ -474,7 +474,23 @@ export class EssService {
 
   async getOwnFnf(orgId: string, userId: string) {
     const [settlement] = await this.db
-      .select()
+      .select({
+        id: fnfSettlements.id,
+        basicDues: fnfSettlements.basicDues,
+        leaveEncashment: fnfSettlements.leaveEncashment,
+        bonusDue: fnfSettlements.bonusDue,
+        deductions: fnfSettlements.deductions,
+        loanRecovery: fnfSettlements.loanRecovery,
+        netPayable: fnfSettlements.netPayable,
+        status: fnfSettlements.status,
+        notes: fnfSettlements.notes,
+        reimbursementsDue: fnfSettlements.reimbursementsDue,
+        assetRecovery: fnfSettlements.assetRecovery,
+        noticeRecovery: fnfSettlements.noticeRecovery,
+        otherDeductions: fnfSettlements.otherDeductions,
+        statementPublishedAt: fnfSettlements.statementPublishedAt,
+        createdAt: fnfSettlements.createdAt,
+      })
       .from(fnfSettlements)
       .where(
         and(

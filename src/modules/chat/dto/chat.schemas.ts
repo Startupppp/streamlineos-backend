@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+import { idCursorSchema } from "../../../common/pagination/cursor.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
+
 const channelBaseSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -95,8 +98,8 @@ export const statusSchema = z.object({
 });
 
 export const listMessagesQuerySchema = z.object({
-  cursor: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
+  cursor: idCursorSchema,
+  limit: pageSizeField(50),
 });
 
 export const pollQuerySchema = z.object({
@@ -106,7 +109,7 @@ export const pollQuerySchema = z.object({
 export const searchQuerySchema = z.object({
   query: z.string().default(""),
   channelId: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
+  limit: pageSizeField(20),
 });
 
 export const pinMessageSchema = z.object({

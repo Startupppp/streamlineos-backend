@@ -31,9 +31,12 @@ import { ResignationJobsService } from "./resignation-jobs.service";
 import { ProbationService } from "./probation.service";
 import { ProbationReviewReaderService } from "./probation-review-reader.service";
 import { ExitChecklistService } from "./exit-checklist.service";
+import { EmploymentFactsModule } from "../../directory/employment-facts.module";
 
 @Module({
-  imports: [AutomationModule, NotificationsModule, HrAutomationsModule, HrTemplatesModule, HrPoliciesModule, HrWorkflowsModule, HrCoreModule, HrDirectoryModule, HrEnterpriseOpsModule, OrganizationModule],
+  imports: [
+    EmploymentFactsModule,
+    AutomationModule, NotificationsModule, HrAutomationsModule, HrTemplatesModule, HrPoliciesModule, HrWorkflowsModule, HrCoreModule, HrDirectoryModule, HrEnterpriseOpsModule, OrganizationModule],
   controllers: [
     ExitController,
     TerminationController,

@@ -30,6 +30,28 @@ export interface CrossRegionOperation {
 
 export const CROSS_REGION_OPERATIONS: readonly CrossRegionOperation[] = [
   {
+    file: "src/common/region/cell-admission.ts",
+    why:
+      "Decides which cell may accept a tenant, which means reading every " +
+      "cell's declared tenant classes and compliance zones. Admission is the " +
+      "one question that cannot be answered from inside a single region, " +
+      "because the answer is which region.",
+  },
+  {
+    file: "src/common/tenant/for-each-org.ts",
+    why:
+      "Walks every organisation in the deployment, which is every region by " +
+      "definition. Cron ticks and backfills use it, and the alternative — one " +
+      "pass per region at each call site — is how a region gets forgotten.",
+  },
+  {
+    file: "src/scripts/verify-cell-degraded-control-plane.ts",
+    why:
+      "An operator script that proves a cell still serves reads when the " +
+      "control plane is unreachable, so it has to bind the cell's own " +
+      "connection rather than resolve one through the plane it is testing.",
+  },
+  {
     file: "src/common/region/region-registry.ts",
     why: "Defines the primitives. It is what everything else is measured against.",
   },
@@ -50,19 +72,8 @@ export const CROSS_REGION_OPERATIONS: readonly CrossRegionOperation[] = [
     why: "Barrel. Re-exports the primitive; performs no operation itself.",
   },
   {
-    file: "src/modules/auth/auth.service.ts",
-    why:
-      "Creates an organisation at signup. The region is not unknown here — " +
-      "`regionForNewOrg` decides it from the billing country a line earlier — " +
-      "and this is how that decision is stated rather than looked up.",
-  },
-  {
     file: "src/modules/organization/core/org-profile.service.ts",
     why: "The second organisation-creation path. Same argument as signup.",
-  },
-  {
-    file: "src/modules/organization/setup/org-setup.service.ts",
-    why: "The third organisation-creation path. Same argument as signup.",
   },
   {
     file: "src/common/region/region.module.ts",

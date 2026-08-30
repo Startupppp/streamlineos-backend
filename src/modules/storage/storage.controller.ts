@@ -20,6 +20,7 @@ import type { Response } from "express";
 import { eq, ilike } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -104,6 +105,7 @@ export class StorageController {
   ) {}
 
   @Post("upload")
+  @AuthorizedInService("assertUploadAllowed")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 50 * 1024 * 1024 } }))
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
@@ -151,6 +153,7 @@ export class StorageController {
   }
 
   @Get("download")
+  @AuthorizedInService("resolveFileOwner")
   async download(
     @Query("url") urlParam: string | undefined,
     @Query("key") keyParam: string | undefined,
@@ -207,6 +210,7 @@ export class StorageController {
   }
 
   @Get("image")
+  @AuthorizedInService("resolveFileOwner")
   async image(
     @Query("key") keyParam: string | undefined,
     @CurrentUser() u: CurrentUserContext,

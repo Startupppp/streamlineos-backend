@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode } from "@nestjs/common";
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -9,10 +10,11 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { OvertimeService } from "./overtime.service";
 import { createOvertimeSchema, type CreateOvertimeInput } from "./dto/overtime.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const listQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20, 100),
 });
 
 @RequireModule("hr")
@@ -41,6 +43,7 @@ export class OvertimeController {
   }
 
   @Patch(":overtimeRequestId/approve")
+  @Idempotent("hr.overtime.approve")
   @RequirePermission("hr:attendance:manage")
   approve(
     @CurrentUser() u: CurrentUserContext,
@@ -50,6 +53,7 @@ export class OvertimeController {
   }
 
   @Patch(":overtimeRequestId/reject")
+  @Idempotent("hr.overtime.reject")
   @RequirePermission("hr:attendance:manage")
   reject(
     @CurrentUser() u: CurrentUserContext,

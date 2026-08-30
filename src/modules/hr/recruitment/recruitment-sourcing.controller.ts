@@ -48,6 +48,7 @@ import {
   type UpdateVendorInput,
 } from "./dto/sourcing.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -67,6 +68,7 @@ export class RecruitmentSourcingController {
   }
 
   @Post("referrals")
+  @Idempotent("hr.sourcing.referral-create")
   @HttpCode(201)
   @RequirePermission("hr:employees:view")
   createReferral(
@@ -185,12 +187,14 @@ export class RecruitmentSourcingController {
   }
 
   @Post("headcount/:requestId/approve")
+  @Idempotent("hr.headcount.approve")
   @RequirePermission("hr:employees:manage")
   approveHeadcount(@Param("requestId", ParseIntPipe) requestId: number, @CurrentUser() u: CurrentUserContext) {
     return this.sourcing.approveHeadcount(u.orgId, u.userId, requestId);
   }
 
   @Post("headcount/:requestId/reject")
+  @Idempotent("hr.headcount.reject")
   @RequirePermission("hr:employees:manage")
   rejectHeadcount(
     @Param("requestId", ParseIntPipe) requestId: number,

@@ -6,9 +6,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import {
   moduleOwnerships,
+  organizationLegalHolds,
   organizationMembers,
   organizations,
   ownershipTransfers,
@@ -21,6 +22,10 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { logger } from "../../common/logger/logger.service";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import {
+  assertTransitionAllowed,
+} from "../organization/core/lifecycle/organization-lifecycle-transitions";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -34,6 +39,10 @@ import {
 } from "./ownership-members.helper";
 import type { DeclineTransferInput } from "./dto/ownership.schemas";
 import type { NotificationEventKey } from "../notifications/notification-events.catalog";
+import { OrganizationSagaService } from "../organization/core/lifecycle/organization-saga.service";
+import { canTransferModuleOwnership } from "../module-access/module-standing";
+import { principalIsOrgOwner } from "../../common/auth/principal";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 @Injectable()
 export class OwnershipTransferResponseService {
@@ -42,6 +51,7 @@ export class OwnershipTransferResponseService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly saga: OrganizationSagaService,
   ) {}
 
   private async invalidateUserAccess(
@@ -73,6 +83,7 @@ export class OwnershipTransferResponseService {
         scope: ownershipTransfers.scope,
         moduleKey: ownershipTransfers.moduleKey,
         fromMembershipId: ownershipTransfers.fromMembershipId,
+        initiatedByMembershipId: ownershipTransfers.initiatedByMembershipId,
         toMembershipId: ownershipTransfers.toMembershipId,
         status: ownershipTransfers.status,
         expiresAt: ownershipTransfers.expiresAt,
@@ -118,27 +129,139 @@ export class OwnershipTransferResponseService {
       );
     }
 
-    const fromUserId =
-      transfer.scope === "ORGANIZATION"
-        ? await this.applyOrgTransfer(
-            orgId,
-            transferId,
-            transfer.fromMembershipId,
-            transfer.toMembershipId,
-          )
-        : await this.applyModuleTransfer(
-            orgId,
-            transferId,
-            transfer.moduleKey,
-            transfer.fromMembershipId,
-            transfer.toMembershipId,
+    if (transfer.scope === "ORGANIZATION") {
+      const preflight = await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const [org] = await tx
+            .select({ statusV2: organizations.statusV2 })
+            .from(organizations)
+            .where(eq(organizations.id, orgId))
+            .limit(1);
+          const [hold] = await tx
+            .select({ holdId: organizationLegalHolds.holdId })
+            .from(organizationLegalHolds)
+            .where(
+              and(
+                eq(organizationLegalHolds.orgId, orgId),
+                isNull(organizationLegalHolds.releasedAt),
+              ),
+            )
+            .limit(1);
+          return {
+            statusV2: org?.statusV2 ?? null,
+            hasActiveLegalHold: hold !== undefined,
+          };
+        },
+        { orgId },
+      );
+      const transition = assertTransitionAllowed(
+        "OWNERSHIP_TRANSFER",
+        preflight.statusV2 ?? "ACTIVE",
+        { hasActiveLegalHold: preflight.hasActiveLegalHold },
+      );
+      if (!transition.allowed) throw new BadRequestException(transition.reason);
+
+      const sagaCtx = await this.saga.begin(
+        "OWNERSHIP_TRANSFER",
+        orgId,
+        `ownership-transfer:${orgId}:${transferId}`,
+        actorUserId,
+        preflight.statusV2 ?? "ACTIVE",
+      );
+      const done = new Set(
+        sagaCtx.steps.filter((s) => s.state === "DONE").map((s) => s.stepName),
+      );
+
+      let fromUserId: string | undefined;
+      try {
+        if (!done.has("validate-new-owner"))
+          await this.saga.runStep(
+            sagaCtx.saga.sagaId,
+            "validate-new-owner",
+            () => Promise.resolve(),
           );
+
+        if (!done.has("transfer-ownership"))
+          fromUserId = await this.saga.runStep(
+            sagaCtx.saga.sagaId,
+            "transfer-ownership",
+            () =>
+              this.applyOrgTransfer(
+                orgId,
+                transferId,
+                transfer.fromMembershipId,
+                transfer.toMembershipId,
+              ),
+          );
+
+        await this.saga.complete(sagaCtx.saga.sagaId);
+      } catch (err) {
+        await this.saga.compensate(sagaCtx.saga.sagaId, {});
+        throw err;
+      }
+
+      if (fromUserId !== undefined) {
+        await this.invalidateUserAccess(orgId, actorUserId);
+        await this.invalidateUserAccess(orgId, fromUserId);
+
+        await Promise.all([
+          this.cache.invalidateForOrg(orgId, "ownership:modules"),
+          this.invalidateTransferCaches(orgId, null),
+        ]);
+
+        this.audit.log({
+          action: "ownership.transfer_accepted",
+          userId: actorUserId,
+          orgId,
+          targetId: transferId,
+          targetType: "ownership_transfer",
+          metadata: {
+            transferId,
+            scope: transfer.scope,
+            moduleKey: transfer.moduleKey ?? undefined,
+            initiatedByMembershipId: transfer.initiatedByMembershipId,
+            fromMembershipId: transfer.fromMembershipId,
+            toMembershipId: transfer.toMembershipId,
+          },
+        });
+
+        void this.dispatch
+          .emit({
+            eventKey: "ownership.transfer.accepted",
+            orgId,
+            actorUserId,
+            targetUserIds: [fromUserId],
+            entityType: "ownership_transfer",
+            entityId: transferId,
+            title: "Ownership transfer accepted",
+            message:
+              "Your ownership of the organization has been transferred and is now held by the person you nominated. Your own permissions have changed.",
+            link: "/settings/organization",
+          })
+          .catch((error: unknown) => {
+            logger.error("ownership transfer accepted notification failed", {
+              error,
+              transferId,
+            });
+          });
+      }
+
+      return { success: true as const };
+    }
+
+    const fromUserId = await this.applyModuleTransfer(
+      orgId,
+      transferId,
+      transfer.moduleKey,
+      transfer.fromMembershipId,
+      transfer.toMembershipId,
+    );
 
     await this.invalidateUserAccess(orgId, actorUserId);
     await this.invalidateUserAccess(orgId, fromUserId);
 
-    const moduleKeyForAccept =
-      transfer.scope === "MODULE" ? transfer.moduleKey : null;
+    const moduleKeyForAccept = transfer.moduleKey;
     await Promise.all([
       ...(moduleKeyForAccept
         ? [
@@ -159,15 +282,12 @@ export class OwnershipTransferResponseService {
         transferId,
         scope: transfer.scope,
         moduleKey: transfer.moduleKey ?? undefined,
+        initiatedByMembershipId: transfer.initiatedByMembershipId,
         fromMembershipId: transfer.fromMembershipId,
         toMembershipId: transfer.toMembershipId,
       },
     });
 
-    const subject =
-      transfer.scope === "ORGANIZATION"
-        ? "the organization"
-        : `the ${transfer.moduleKey} module`;
     void this.dispatch
       .emit({
         eventKey: "ownership.transfer.accepted",
@@ -177,7 +297,7 @@ export class OwnershipTransferResponseService {
         entityType: "ownership_transfer",
         entityId: transferId,
         title: "Ownership transfer accepted",
-        message: `Your ownership of ${subject} has been transferred and is now held by the person you nominated. Your own permissions have changed.`,
+        message: `Your ownership of the ${transfer.moduleKey} module has been transferred and is now held by the person you nominated. Your own permissions have changed.`,
         link: "/settings/organization",
       })
       .catch((error: unknown) => {
@@ -234,7 +354,7 @@ export class OwnershipTransferResponseService {
           org.ownerMembershipId === fromMember.id);
       if (!isCurrentOwner) {
         throw new BadRequestException(
-          "Initiator is no longer the organization owner; transfer is invalid",
+          "Organization ownership changed since this transfer was initiated; it can no longer be accepted",
         );
       }
       if (!toMember || toMember.status !== "ACTIVE") {
@@ -305,6 +425,12 @@ export class OwnershipTransferResponseService {
         )
         .for("update");
 
+      if (!currentOwnership || currentOwnership.ownerMembershipId !== fromMembershipId) {
+        throw new BadRequestException(
+          "Module ownership changed since this transfer was initiated; it can no longer be accepted",
+        );
+      }
+
       const memberships = await tx
         .select({
           id: organizationMembers.id,
@@ -327,15 +453,7 @@ export class OwnershipTransferResponseService {
       const toMember = memberships.find((m) => m.id === toMembershipId);
 
       if (!fromMember)
-        throw new BadRequestException("Initiating member no longer exists");
-      if (
-        currentOwnership &&
-        currentOwnership.ownerMembershipId !== fromMember.id
-      ) {
-        throw new BadRequestException(
-          "Initiator is no longer the module owner; transfer is invalid",
-        );
-      }
+        throw new BadRequestException("Expected current owner's membership no longer exists");
       if (!toMember || toMember.status !== "ACTIVE") {
         throw new BadRequestException(
           "Recipient membership is no longer active",
@@ -492,12 +610,13 @@ export class OwnershipTransferResponseService {
     orgId: string,
     actorUserId: string,
     transferId: string,
-    isOrgOwner: boolean,
+    actor: CurrentUserContext,
   ) {
     const [transfer] = await this.db
       .select({
         id: ownershipTransfers.id,
         fromMembershipId: ownershipTransfers.fromMembershipId,
+        initiatedByMembershipId: ownershipTransfers.initiatedByMembershipId,
         status: ownershipTransfers.status,
         scope: ownershipTransfers.scope,
         moduleKey: ownershipTransfers.moduleKey,
@@ -527,9 +646,20 @@ export class OwnershipTransferResponseService {
     if (!actorMembership)
       throw new ForbiddenException("Not a member of this organization");
 
-    if (!isOrgOwner && actorMembership.id !== transfer.fromMembershipId) {
+    const initiatorId = transfer.initiatedByMembershipId;
+    let canCancel = actorMembership.id === initiatorId;
+
+    if (!canCancel) {
+      if (transfer.scope === "MODULE" && transfer.moduleKey !== null) {
+        canCancel = await canTransferModuleOwnership(this.db, actor, transfer.moduleKey);
+      } else {
+        canCancel = principalIsOrgOwner(actor.principal);
+      }
+    }
+
+    if (!canCancel) {
       throw new ForbiddenException(
-        "Only the initiator or an org owner may cancel this transfer",
+        "Only the initiator, the module owner, an org admin, or the org owner may cancel this transfer",
       );
     }
 

@@ -1,4 +1,5 @@
 import { BadRequestException, Controller, Get, Headers, Param, ParseIntPipe, Post, Body, Query, UseGuards } from "@nestjs/common";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -58,6 +59,7 @@ export class InvStockAdjustmentsController {
   }
 
   @Post(":adjustmentId/approve")
+  @Idempotent("inventory.stock-adjustment.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:adjustments:approve")
   approveAdjustment(

@@ -45,13 +45,28 @@ function buildService(input: {
   };
   const audit = { log: jest.fn() };
   const cache = { invalidate: jest.fn().mockResolvedValue(undefined) };
+  const indexService = {
+    listForUser: jest.fn().mockResolvedValue([]),
+    refreshForUser: jest.fn().mockResolvedValue(undefined),
+    rebuild: jest.fn(),
+  };
+  const saga = {
+    begin: jest.fn(),
+    runStep: jest.fn(),
+    complete: jest.fn(),
+    compensate: jest.fn(),
+    reserve: jest.fn(),
+    release: jest.fn(),
+  };
   const service = new OrgProfileService(
     db as never,
     audit as never,
     cache as never,
+    indexService as never,
+    saga as never,
   );
 
-  return { service, db, tx, audit, cache, updateSet };
+  return { service, db, tx, audit, cache, updateSet, indexService, saga };
 }
 
 describe("OrgProfileService identity-scoped organization recovery", () => {

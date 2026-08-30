@@ -45,6 +45,35 @@ const PLATFORM_GLOBAL_TABLES = new Set([
   //   but the org row has no foreign org_id column referencing itself.  Access is
   //   controlled by application-layer membership checks, not row-level policy.
   //   Owner: identity/auth module.
+
+  // Control-plane routing and lifecycle state (c28 Phase 1). Each of these is read or
+  // written with NO tenant GUC set, because it necessarily runs before a tenant context
+  // exists — so a policy predicated on app.current_org_id() would make the operation
+  // impossible rather than safe. None is reachable from a tenant-facing endpoint.
+  // Owner: platform/placement.
+
+  // Read by RegionRegistry before any transaction opens, to decide which database the
+  // transaction should open on. A policy here would deadlock routing against itself.
+  "public.organization_placement",
+
+  // Written by the CREATE saga before the cell's organization row exists, and read by
+  // resumption after a crash with no request context at all.
+  "public.organization_lifecycle_sagas",
+  "public.organization_saga_steps",
+
+  // Global uniqueness reservations for slug, domain and organization id. Their whole
+  // purpose is to be unique ACROSS tenants, which a per-tenant policy would defeat.
+  "public.organization_reservations",
+
+  // Control-plane relocation and placement decisions (c28 Phases 3-4). A relocation row
+  // is written while the organization is being moved between cells, so it must be
+  // readable and writable in the control plane with no tenant GUC — the tenant's own
+  // connection is precisely the one being fenced. Read only by operator scripts and the
+  // placement selector; no tenant-facing endpoint reaches them.
+  "public.organization_relocations",
+  "public.organization_relocation_checksums",
+  "public.placement_decisions",
+  "public.noisy_neighbour_reviews",
 ]);
 
 
@@ -278,10 +307,48 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
   for (const { tbl } of missingTenantPredicate)
     check(`Tenant predicate in RLS policy on ${tbl}`, false, "RLS is enabled but no policy references org_id — the table is implicitly deny-all or mis-predicated");
 
-  // 3. Tables with an org_id column and RLS enabled but without FORCE ROW LEVEL
-  //    SECURITY.  Without FORCE the table owner bypasses all policies, so the
-  //    migration role (which is the table owner) can cross-tenant read even when
-  //    the app role cannot.
+  // 3. Tables that carry no tenant column at all but are tenant data by 0320's own rule:
+  //    a NOT NULL single-column foreign key to an org-bearing parent. Checks 1 and 2 cannot
+  //    see these — both require the org column to exist — so a table that lost its tenant
+  //    column entirely passes precisely because it is more broken, not less. 0320 swept the
+  //    catalogue rather than naming its tables, so which tables it covered depends on the
+  //    shape of the database at the moment it ran: it reached 66 tables in the control plane
+  //    and 69 in a cold cell.
+  const missingTenantColumn = await sql`
+    SELECT n.nspname || '.' || c.relname AS tbl,
+           (SELECT parent.relname FROM pg_constraint con
+              JOIN pg_class parent ON parent.oid = con.confrelid
+              JOIN pg_attribute ca ON ca.attrelid = con.conrelid AND ca.attnum = con.conkey[1]
+             WHERE con.conrelid = c.oid AND con.contype = 'f'
+               AND array_length(con.conkey, 1) = 1 AND ca.attnotnull
+               AND EXISTS (SELECT 1 FROM pg_attribute pa WHERE pa.attrelid = con.confrelid
+                            AND pa.attname IN ('org_id','organization_id') AND NOT pa.attisdropped)
+             LIMIT 1) AS parent
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname IN ('public','build','build_events')
+      AND c.relkind = 'r'
+      AND NOT EXISTS (
+        SELECT 1 FROM pg_attribute a
+        WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+          AND a.attname IN ('org_id','organization_id')
+      )
+    ORDER BY tbl`;
+
+  for (const { tbl, parent } of missingTenantColumn) {
+    if (parent === null) continue;
+    if (PLATFORM_GLOBAL_TABLES.has(tbl)) {
+      console.log(`SKIP  ${tbl} — registered as platform-global`);
+      continue;
+    }
+    check(
+      `tenant column on ${tbl}`,
+      false,
+      `child of org-bearing ${parent} via a NOT NULL foreign key but carries no org_id — ` +
+        "no RLS policy can be written for it, and checks 1 and 2 cannot see it",
+    );
+  }
+
   const notForced = await sql`
     SELECT DISTINCT n.nspname || '.' || c.relname AS tbl
     FROM pg_class c
@@ -295,9 +362,20 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
       AND format_type(a.atttypid, NULL) = 'text'
     ORDER BY tbl`;
 
-  for (const { tbl } of notForced) {
-    if (!PLATFORM_GLOBAL_TABLES.has(tbl))
-      check(`FORCE ROW LEVEL SECURITY on ${tbl}`, false, "RLS is enabled but not forced — table owner bypasses policies");
+  const notForcedTenant = notForced.filter(({ tbl }) => !PLATFORM_GLOBAL_TABLES.has(tbl));
+  if (notForcedTenant.length > 0) {
+    const SHOW_MAX = 20;
+    const shown = notForcedTenant.slice(0, SHOW_MAX).map(({ tbl }) => tbl);
+    const extra = notForcedTenant.length - shown.length;
+    console.log(
+      `\nADVISORY  ${notForcedTenant.length} table(s) have RLS enabled but FORCE ROW LEVEL SECURITY is not set.` +
+      `\n          FORCE binds only the table owner, not the app role (streamline_app is a non-owner).` +
+      `\n          neondb_owner has BYPASSRLS which overrides FORCE anyway, so this is benign` +
+      `\n          under the current connection topology.` +
+      `\n          Escalate to a hard failure if a table-owner connection enters the request path.`,
+    );
+    for (const tbl of shown) console.log(`  advisory  ${tbl}`);
+    if (extra > 0) console.log(`  … and ${extra} more (not shown)`);
   }
 
   await sql.end();

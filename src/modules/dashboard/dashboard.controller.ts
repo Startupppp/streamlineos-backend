@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -46,6 +47,7 @@ export class DashboardController {
   }
 
   @Get("active-sprint")
+  @Universal()
   @UseGuards(ModuleGuard)
   @RequireModule("build")
   activeSprint(@CurrentUser() u: CurrentUserContext) {
@@ -53,6 +55,7 @@ export class DashboardController {
   }
 
   @Get("announcements")
+  @Universal()
   announcementsList(@CurrentUser() u: CurrentUserContext) {
     return this.announcements.getActiveAnnouncements(u.orgId);
   }
@@ -62,7 +65,8 @@ export class DashboardController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   async createAnnouncement(
-    @Body(new ZodValidationPipe(createAnnouncementSchema)) body: CreateAnnouncementInput,
+    @Body(new ZodValidationPipe(createAnnouncementSchema))
+    body: CreateAnnouncementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.announcements.createAnnouncement(
@@ -79,15 +83,21 @@ export class DashboardController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   async deleteAnnouncement(
-    @Query(new ZodValidationPipe(deleteAnnouncementSchema)) query: DeleteAnnouncementInput,
+    @Query(new ZodValidationPipe(deleteAnnouncementSchema))
+    query: DeleteAnnouncementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.announcements.deleteAnnouncement(u.orgId, this.toActor(u), query.id);
+    const result = await this.announcements.deleteAnnouncement(
+      u.orgId,
+      this.toActor(u),
+      query.id,
+    );
     if (isForbidden(result)) throw new ForbiddenException(result.message);
     return result;
   }
 
   @Get("birthdays")
+  @Universal()
   @UseGuards(ModuleGuard)
   @RequireModule("hr")
   birthdays(@CurrentUser() u: CurrentUserContext) {
@@ -106,10 +116,11 @@ export class DashboardController {
   @RequireModule("hr")
   @RequirePermission("hr:leaves:view")
   leavesToday(@CurrentUser() u: CurrentUserContext) {
-    return this.leave.getLeavesToday(u.orgId);
+    return this.leave.getLeavesToday(u);
   }
 
   @Get("my-issues")
+  @Universal()
   @UseGuards(ModuleGuard)
   @RequireModule("build")
   myIssues(@CurrentUser() u: CurrentUserContext) {
@@ -117,6 +128,7 @@ export class DashboardController {
   }
 
   @Get("my-leave-balance")
+  @Universal()
   @UseGuards(ModuleGuard)
   @RequireModule("hr")
   myLeaveBalance(@CurrentUser() u: CurrentUserContext) {
@@ -134,6 +146,7 @@ export class DashboardController {
   }
 
   @Get("personal")
+  @Universal()
   personal(@CurrentUser() u: CurrentUserContext) {
     return this.hr.getPersonalDashboard(u);
   }
@@ -155,6 +168,7 @@ export class DashboardController {
   }
 
   @Get("stats")
+  @Universal()
   stats(@CurrentUser() u: CurrentUserContext) {
     return this.hr.getDashboardStats(u.orgId, u);
   }
@@ -164,7 +178,7 @@ export class DashboardController {
   @RequireModule("hr")
   @RequirePermission("hr:attendance:view")
   teamAttendance(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getTeamAttendance(u.orgId);
+    return this.hr.getTeamAttendance(u);
   }
 
   @Get("team-availability")
@@ -172,7 +186,7 @@ export class DashboardController {
   @RequireModule("hr")
   @RequirePermission("hr:attendance:view")
   teamAvailability(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getTeamAvailability(u.orgId);
+    return this.hr.getTeamAvailability(u);
   }
 
   @Get("today-activities")
@@ -184,6 +198,7 @@ export class DashboardController {
   }
 
   @Get("upcoming-holidays")
+  @Universal()
   @UseGuards(ModuleGuard)
   @RequireModule("hr")
   upcomingHolidays(@CurrentUser() u: CurrentUserContext) {

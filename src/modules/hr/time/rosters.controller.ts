@@ -8,6 +8,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RostersService } from "./rosters.service";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const createRosterSchema = z.object({
   name: z.string().min(1).max(100),
@@ -70,6 +71,7 @@ export class RostersController {
   }
 
   @Patch(":rosterId/publish")
+  @Idempotent("hr.roster.publish")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   publish(@CurrentUser() u: CurrentUserContext, @Param("rosterId", ParseIntPipe) rosterId: number) {

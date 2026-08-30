@@ -7,6 +7,12 @@ import { AutomationService } from "../../automation/automation.service";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import type { CreateReimbursementInput, PatchReimbursementInput } from "./dto/payroll.schemas";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 
 export type UpdateReimbursementResult =
   | { ok: false; reason: "not_found" | "own_request" }
@@ -64,11 +70,16 @@ export class ReimbursementsService {
     if (!existing) return { ok: false, reason: "not_found" };
     if (existing.userId === userId) return { ok: false, reason: "own_request" };
 
+    const reimburserActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     await this.db
       .update(reimbursements)
       .set({
         status: body.status,
-        ...(body.status === "APPROVED" && { approvedBy: userId, approvedAt: new Date() }),
+        ...(body.status === "APPROVED" && { approvedBy: userId, approvedByMembershipId: reimburserActor.membershipId, approvedAt: new Date() }),
         ...(body.status === "PAID" && { paidAt: new Date() }),
         ...(body.rejectionReason && { rejectionReason: body.rejectionReason }),
         updatedAt: new Date(),
@@ -76,7 +87,10 @@ export class ReimbursementsService {
       .where(and(eq(reimbursements.id, reimbursementId), eq(reimbursements.orgId, orgId)));
 
     if (body.status === "APPROVED" || body.status === "REJECTED") {
-      void this.dispatchAutomation(orgId, reimbursementId, existing.userId, existing.amount, body.status);
+      const status = body.status;
+      const dispatch = () =>
+        this.dispatchAutomation(orgId, reimbursementId, existing.userId, existing.amount, status);
+      if (!registerAfterCommit(dispatch)) await dispatch();
     }
 
     return { ok: true };

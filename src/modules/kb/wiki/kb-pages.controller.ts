@@ -11,6 +11,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -269,6 +270,7 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/publish")
+  @Idempotent("kb.page.publish")
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
   async publish(

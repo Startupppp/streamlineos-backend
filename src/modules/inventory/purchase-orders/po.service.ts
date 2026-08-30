@@ -65,7 +65,7 @@ export class PoService {
     const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
     const hash = `${status ?? ""}:${vendorId ?? ""}:${limit}:${offset}${scopeSuffix}`;
 
-    return this.cache.cachedVersionedForOrg(orgId, "inv:po:list", hash, async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invPoNamespace(orgId), hash, async () => {
       const conditions = [eq(invPurchaseOrders.orgId, orgId)];
       if (status) conditions.push(eq(invPurchaseOrders.status, status));
       if (vendorId) conditions.push(eq(invPurchaseOrders.vendorId, vendorId));
@@ -155,7 +155,7 @@ export class PoService {
       }))
     );
 
-    await this.cache.invalidateNamespaceForOrg(orgId, "inv:po:list");
+    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
     return po;
   }
 
@@ -201,7 +201,7 @@ export class PoService {
     }
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
-    await this.cache.invalidateNamespaceForOrg(orgId, "inv:po:list");
+    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
     return this.getPo(orgId, poId);
   }
 
@@ -231,7 +231,7 @@ export class PoService {
       .returning();
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
-    await this.cache.invalidateNamespaceForOrg(orgId, "inv:po:list");
+    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
     return updated;
   }
 
@@ -253,7 +253,7 @@ export class PoService {
       .returning();
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
-    await this.cache.invalidateNamespaceForOrg(orgId, "inv:po:list");
+    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
     return sent;
   }
 
@@ -272,7 +272,7 @@ export class PoService {
       .returning();
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
-    await this.cache.invalidateNamespaceForOrg(orgId, "inv:po:list");
+    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
     return closed;
   }
 
@@ -299,7 +299,7 @@ export class PoService {
       .returning();
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
-    await this.cache.invalidateNamespaceForOrg(orgId, "inv:po:list");
+    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
     return cancelled;
   }
 }

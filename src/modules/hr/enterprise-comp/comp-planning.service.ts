@@ -100,7 +100,19 @@ export class CompPlanningService {
     const where = and(...conditions);
 
     const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrCompRecommendations).where(where).orderBy(desc(hrCompRecommendations.createdAt)).limit(limit).offset(offset),
+      this.db.select({
+        id: hrCompRecommendations.id,
+        cycleId: hrCompRecommendations.cycleId,
+        userId: hrCompRecommendations.userId,
+        currentSalaryCents: hrCompRecommendations.currentSalaryCents,
+        recommendedIncreaseCents: hrCompRecommendations.recommendedIncreaseCents,
+        recommendedPct: hrCompRecommendations.recommendedPct,
+        rating: hrCompRecommendations.rating,
+        managerNote: hrCompRecommendations.managerNote,
+        hrCalibratedCents: hrCompRecommendations.hrCalibratedCents,
+        status: hrCompRecommendations.status,
+        createdAt: hrCompRecommendations.createdAt,
+      }).from(hrCompRecommendations).where(where).orderBy(desc(hrCompRecommendations.createdAt)).limit(limit).offset(offset),
       this.db.select({ total: count() }).from(hrCompRecommendations).where(where),
     ]);
     const total = totalResult[0]?.total ?? 0;
@@ -146,7 +158,13 @@ export class CompPlanningService {
   }
 
   async approveRecommendation(orgId: string, recId: number, actorId: string, input: ApproveRecommendationInput) {
-    const [existing] = await this.db.select().from(hrCompRecommendations).where(and(eq(hrCompRecommendations.id, recId), eq(hrCompRecommendations.orgId, orgId))).limit(1);
+    const [existing] = await this.db.select({
+      id: hrCompRecommendations.id,
+      cycleId: hrCompRecommendations.cycleId,
+      currentSalaryCents: hrCompRecommendations.currentSalaryCents,
+      recommendedIncreaseCents: hrCompRecommendations.recommendedIncreaseCents,
+      hrCalibratedCents: hrCompRecommendations.hrCalibratedCents,
+    }).from(hrCompRecommendations).where(and(eq(hrCompRecommendations.id, recId), eq(hrCompRecommendations.orgId, orgId))).limit(1);
     if (!existing) throw new NotFoundException("Recommendation not found");
 
     const finalCents = existing.hrCalibratedCents ?? existing.recommendedIncreaseCents;

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import {
   DATA_QUALITY_PRODUCERS,
   FINDING_SEVERITIES,
@@ -56,12 +57,7 @@ export type FindingSelection = z.infer<typeof findingSelectionSchema>;
 
 export const listFindingsQuerySchema = z
   .object({
-    /**
-     * Capped at the bulk limit rather than the usual hundred, so the page a
-     * person is looking at and the selection they can act on are the same set.
-     * A queue that shows more than it lets you resolve invites the wrong answer.
-     */
-    limit: z.coerce.number().int().min(1).max(MAX_BULK).default(50),
+    limit: pageSizeField(50),
     cursor: z.string().min(1).max(512).optional(),
 
     status: z.enum(FINDING_STATUSES).default("open"),
@@ -89,7 +85,7 @@ export const listGroupsQuerySchema = z
   .object({
     producer: z.enum(DATA_QUALITY_PRODUCERS).optional(),
     /** Groups, not findings — a tenant has few shapes of problem, many instances. */
-    limit: z.coerce.number().int().min(1).max(200).default(50),
+    limit: pageSizeField(50),
   })
   .strict();
 
@@ -103,7 +99,7 @@ export type HealthQuery = z.infer<typeof healthQuerySchema>;
 
 export const listResolutionsQuerySchema = z
   .object({
-    limit: z.coerce.number().int().min(1).max(100).default(25),
+    limit: pageSizeField(25),
     cursor: z.string().min(1).max(512).optional(),
   })
   .strict();

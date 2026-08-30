@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const WEBHOOK_EVENTS = [
   "inventory.product.created",
@@ -29,7 +30,7 @@ export type UpdateWebhookInput = z.infer<typeof updateWebhookSchema>;
 
 export const listEventsQuerySchema = z.object({
   status: z.enum(["PENDING", "DELIVERED", "FAILED"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 export type ListEventsQueryInput = z.infer<typeof listEventsQuerySchema>;

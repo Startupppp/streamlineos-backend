@@ -69,9 +69,8 @@ export class SoCoreService {
     const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
     const hash = `${status ?? ""}:${clientId ?? ""}:${limit}:${offset}${scopeSuffix}`;
 
-    return this.cache.cachedVersionedForOrg(
-      orgId,
-      "inv:so:list",
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.invSoNamespace(orgId),
       hash,
       async () => {
         const conditions = [eq(invSalesOrders.orgId, orgId)];
@@ -212,7 +211,7 @@ export class SoCoreService {
       return header;
     });
 
-    await this.cache.invalidateNamespaceForOrg(orgId, "inv:so:list");
+    await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
     return so;
   }
 
@@ -278,7 +277,7 @@ export class SoCoreService {
     });
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
-    await this.cache.invalidateNamespaceForOrg(orgId, "inv:so:list");
+    await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
     return this.getSo(orgId, soId);
   }
 

@@ -23,7 +23,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { decryptBankDetails } from "../hr-payroll/lib/encryption";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { PayoutBatchFormat } from "./dto/payout.schemas";
 import { PayrollPostingService } from "../payroll-posting.service";
 import { assertPayrollPayeeEligible } from "../lib/payroll-payee-eligibility";
@@ -50,6 +50,7 @@ export class PayoutBatchesService {
     private readonly audit: AuditService,
     private readonly storage: StorageService,
     private readonly payrollPosting: PayrollPostingService,
+    private readonly efService: EmploymentFactsService,
     @Optional() private readonly journalOutbox?: JournalOutboxService,
   ) {}
 
@@ -96,7 +97,7 @@ export class PayoutBatchesService {
       .from(payrollRunEmployees)
       .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
 
-    const payees = await loadRunEmployeePayees(this.db, orgId, runId);
+    const payees = await loadRunEmployeePayees(this.db, orgId, runId, this.efService);
     const payeeByRunEmployee = new Map(payees.map((payee) => [payee.runEmployeeId, payee]));
 
     const alreadyPaidRows = await this.db
@@ -710,13 +711,16 @@ export class PayoutBatchesService {
   async getBankDetails(orgId: string, employeeUserId: string, actorId: string) {
     await assertPayrollPayeeEligible(this.db, orgId, employeeUserId);
 
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, employeeUserId),
-      columns: { id: true, bankDetails: true, name: true, email: true },
-    });
+    const [user, sensitive] = await Promise.all([
+      this.db.query.users.findFirst({
+        where: eq(users.id, employeeUserId),
+        columns: { id: true, name: true, email: true },
+      }),
+      this.efService.getSensitiveFacts(orgId, employeeUserId),
+    ]);
     if (!user) throw new NotFoundException("Employee not found");
 
-    const bank = decryptBankDetails(user.bankDetails ?? null);
+    const bank = sensitive.bankDetails;
 
     this.audit.log({
       action: "payroll.bank_details_viewed",

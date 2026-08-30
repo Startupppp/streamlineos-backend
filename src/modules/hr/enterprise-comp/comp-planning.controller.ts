@@ -27,6 +27,7 @@ import {
   type ApproveRecommendationInput,
   type CreateBudgetPoolInput,
 } from "./dto/enterprise-comp.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("hr")
 @Controller("hr/enterprise/comp/planning")
@@ -131,6 +132,7 @@ export class CompPlanningController {
   }
 
   @Patch("recommendations/:recId/submit")
+  @Idempotent("hr.comp-recommendation.submit")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
   submitRecommendation(
@@ -152,6 +154,7 @@ export class CompPlanningController {
   }
 
   @Patch("recommendations/:recId/approve")
+  @Idempotent("hr.comp-recommendation.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
   approveRecommendation(

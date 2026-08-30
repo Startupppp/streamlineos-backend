@@ -58,7 +58,7 @@ export class ChatMessagesController {
     @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.list(channelId, actorOf(u), query.cursor, query.limit ?? 50);
+    return this.messages.list(channelId, actorOf(u), query.cursor, query.limit);
   }
 
   @ApiOperation({ summary: "Send a message to a channel" })
@@ -138,7 +138,7 @@ export class ChatMessagesController {
     @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.listThreadReplies(messageId, actorOf(u), query.cursor, query.limit ?? 50);
+    return this.messages.listThreadReplies(messageId, actorOf(u), query.cursor, query.limit);
   }
 
   @ApiOperation({ summary: "Send a reply in a message thread" })

@@ -8,7 +8,7 @@ describe("document API schemas", () => {
   it("defaults to a bounded cursor page and rejects offset parameters", () => {
     expect(listDocumentsSchema.parse({})).toEqual({ limit: 20 });
     expect(listDocumentsSchema.safeParse({ page: 2 }).success).toBe(false);
-    expect(listDocumentsSchema.safeParse({ limit: 101 }).success).toBe(false);
+    expect(listDocumentsSchema.parse({ limit: 101 }).limit).toBe(100);
   });
 
   it.each([renderLetterSchema, saveLetterSchema])(

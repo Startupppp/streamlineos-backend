@@ -6,6 +6,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { decodeOrgChartCursor } from "./org-chart-cursor";
 import { OrgStructureService } from "./org-structure.service";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 function selectPage(rows: unknown[]) {
   const chain = {
@@ -33,6 +34,13 @@ describe("OrgStructureService organization chart", () => {
         OrgStructureService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: {} },
+        {
+          provide: EmploymentFactsService,
+          useValue: {
+            getFactsBatch: jest.fn().mockResolvedValue(new Map()),
+            getDirectReportUserIds: jest.fn().mockResolvedValue([]),
+          },
+        },
       ],
     }).compile();
     return module.get(OrgStructureService);

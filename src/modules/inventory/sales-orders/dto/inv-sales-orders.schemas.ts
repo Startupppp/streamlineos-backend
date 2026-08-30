@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listSoSchema = z.object({
   status: z.enum([
@@ -6,8 +7,8 @@ export const listSoSchema = z.object({
     "PICKED", "PACKED", "SHIPPED", "PARTIALLY_SHIPPED", "INVOICED", "CANCELLED", "CLOSED",
   ]).optional(),
   clientId: z.coerce.number().int().positive().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ListSoInput = z.infer<typeof listSoSchema>;
 

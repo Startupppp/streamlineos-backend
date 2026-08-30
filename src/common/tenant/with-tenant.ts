@@ -1,9 +1,16 @@
+import { HttpException, HttpStatus } from "@nestjs/common";
 import { sql, type SQL } from "drizzle-orm";
+import { recordTargetRequest } from "../relocation/relocation-traffic";
+import {
+  isRelocationTarget,
+  refreshRelocationTargets,
+} from "../relocation/relocation-traffic-tracker";
 import type { Db, TenantTx } from "../../db/drizzle.types";
 import { withPoolBorrow } from "../../db/pool-telemetry";
 import { resolveTransactionGuards } from "../../db/pool.config";
 import type { TenantAudience } from "./tenant-context";
 import { getRegionRegistry, hasRegionRegistry } from "../region/region-registry";
+import type { OrganizationPlacement, PlacementIntent } from "../region/placement";
 
 export type { TenantTx };
 
@@ -25,66 +32,66 @@ function buildGuardSettings(): SQL[] {
 
 const GUARD_SETTINGS = buildGuardSettings();
 
+const FENCE_HELD_COLUMN = "placement_fence_held";
+const FENCE_RETRY_AFTER_MS = 5_000;
+
+export class WriteFenceLostError extends HttpException {
+  constructor(orgId: string, placement: OrganizationPlacement) {
+    super(
+      {
+        code: "PLACEMENT_FENCE_LOST",
+        message:
+          `This cell no longer holds the write fence for organisation ${orgId} at placement ` +
+          `version ${placement.placementVersion}. Re-resolve placement and retry.`,
+        details: {
+          retryable: true,
+          retryAfterMs: FENCE_RETRY_AFTER_MS,
+          cellId: placement.cellId,
+          placementVersion: placement.placementVersion,
+        },
+      },
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+    this.name = "WriteFenceLostError";
+  }
+}
 
 /**
  * Picks the connection for the organisation's region.
  *
- * This lives inside `withTenant` rather than at its callers because there are
- * only three of them today — the request interceptor, the background-job
- * helpers, and the cron sweep — and a fourth added later would otherwise reach
- * the wrong database with nothing to catch it. Resolution here is a property of
- * opening a tenant transaction, not something a caller can forget.
+ * This lives inside `withTenant` rather than at its callers because a caller
+ * added later would otherwise reach the wrong database with nothing to catch
+ * it. Resolution here is a property of opening a tenant transaction, not
+ * something a caller can forget — which is the same reason the write fence is
+ * checked here and not at the call sites.
  *
  * Falls back to the given connection only when no registry is configured, which
  * is the unit-test path: `RegionModule` is global and eager, so a booted
  * application always has one, and `RegionModule.onApplicationBootstrap` refuses
  * to serve traffic otherwise.
  */
-async function resolveRegionalDb(db: Db, orgId: string): Promise<Db> {
-  if (!hasRegionRegistry()) return db;
-  return getRegionRegistry().dbForOrg(orgId);
+async function resolvePlacement(
+  orgId: string,
+  intent: PlacementIntent,
+): Promise<OrganizationPlacement | null> {
+  if (!hasRegionRegistry()) return null;
+  return getRegionRegistry().admittedPlacementForOrg(orgId, intent);
 }
 
-/**
- * The one case where the region is *known* rather than looked up.
- *
- * Creating an organisation is a chicken-and-egg the seam did not answer.
- * `withTenant` resolves the region by reading the organisation's row -- correct
- * for every tenant transaction except the one that **writes that row**, where
- * there is nothing to read and `regionForOrg` raises "has no region". Every
- * organisation-creation path in the platform therefore fails once a region
- * registry is active, and none of them noticed: `auth/register` is unreachable
- * from a UI that has no signup page, and the other two are exercised by tests
- * that run without a registry.
- *
- * The information was never missing -- `regionForNewOrg()` decides the placement
- * locally, in the same breath. What was missing was a way to *say* it. That is
- * this: placement passed in, rather than discovered.
- *
- * It cannot be split into "insert the organisation, then open a tenant
- * transaction", which is the obvious fix: `organizations.owner_membership_id` is
- * NOT NULL and carries a DEFERRABLE circular foreign key back to
- * `organization_members`, so the organisation and its first member must commit
- * together or neither is valid.
- *
- * Deliberately narrow. It takes a region rather than accepting an unplaced
- * organisation, so it cannot become a way to reach a tenant's data without
- * knowing where that data lives -- which is the property the whole seam exists
- * to hold.
- */
-export async function withNewOrgInRegion<T>(
-  db: Db,
-  context: { orgId: string; region: string; audience: TenantAudience },
-  fn: (tx: TenantTx) => Promise<T>,
-): Promise<T> {
-  if (!context.orgId) throw new Error("withNewOrgInRegion: orgId must be a non-empty string");
-  if (!context.region) throw new Error("withNewOrgInRegion: region must be a non-empty string");
+function fenceProbe(orgId: string, placement: OrganizationPlacement): SQL {
+  return sql`(SELECT count(*) FROM organization_placement
+    WHERE organization_id = ${orgId}
+      AND placement_version = ${placement.placementVersion}
+      AND write_fence_token = ${placement.writeFenceToken}
+      AND status = 'ACTIVE'
+      AND lease_expires_at > now()) AS ${sql.raw(FENCE_HELD_COLUMN)}`;
+}
 
-  const regional = hasRegionRegistry()
-    ? getRegionRegistry().bindingFor(context.region).db
-    : db;
-
-  return withTenantOn(regional, { orgId: context.orgId, audience: context.audience }, fn);
+function fenceIsHeld(rows: unknown): boolean {
+  if (!Array.isArray(rows)) return false;
+  const row: unknown = rows[0];
+  if (typeof row !== "object" || row === null) return false;
+  return Number(Reflect.get(row, FENCE_HELD_COLUMN)) === 1;
 }
 
 /**
@@ -96,42 +103,95 @@ export async function withNewOrgInRegion<T>(
  */
 export async function withTenant<T>(
   db: Db,
-  context: { orgId: string; audience: TenantAudience },
+  context: {
+    orgId: string;
+    audience: TenantAudience;
+    intent?: PlacementIntent;
+  },
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
   if (!context.orgId)
     throw new Error("withTenant: orgId must be a non-empty string");
 
-  const regional = await resolveRegionalDb(db, context.orgId);
+  const intent = context.intent ?? "write";
+  const placement = await resolvePlacement(context.orgId, intent);
+  const regional = placement
+    ? getRegionRegistry().bindingFor(placement.region).db
+    : db;
 
-  return withTenantOn(regional, context, fn);
+  return withTenantOn(regional, db, context, placement, intent, fn);
 }
 
 /**
- * `withTenant`'s body, against a connection the caller has already chosen.
+ * Create an organisation in a region it declares rather than one it is placed in.
  *
- * Split out so that placement-by-lookup and placement-by-declaration share one
- * implementation of the GUCs, the pool borrow and the guard settings -- two
- * copies of that is how one of them quietly stops setting `app.audience`.
+ * `withTenant` resolves placement by lookup, and an organisation being created
+ * has no placement row yet — so the lookup fails closed and the org can never be
+ * written in the first place. This is the seam for that one case: the caller
+ * states the region, and everything else about the transaction is identical.
+ */
+export async function withNewOrgInRegion<T>(
+  db: Db,
+  context: { orgId: string; region: string; audience: TenantAudience },
+  fn: (tx: TenantTx) => Promise<T>,
+): Promise<T> {
+  if (!context.orgId)
+    throw new Error("withNewOrgInRegion: orgId must be a non-empty string");
+  if (!context.region)
+    throw new Error("withNewOrgInRegion: region must be a non-empty string");
+
+  const regional = hasRegionRegistry()
+    ? getRegionRegistry().bindingFor(context.region).db
+    : db;
+
+  return withTenantOn(regional, db, context, null, "write", fn);
+}
+
+/**
+ * The body both entry points share, against a connection already chosen.
+ *
+ * Split out so that placement-by-lookup and placement-by-declaration cannot
+ * drift apart on the GUCs, the pool borrow or the guard settings — two copies of
+ * that is how one of them quietly stops setting `app.audience`.
  */
 async function withTenantOn<T>(
   regional: Db,
+  db: Db,
   context: { orgId: string; audience: TenantAudience },
+  placement: OrganizationPlacement | null,
+  intent: PlacementIntent,
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
+  const fenced =
+    intent === "write" && placement !== null && placement.writeFenceToken !== null;
+
   const settings = sql.join(
     [
       sql`set_config('app.organization_id', ${context.orgId}, true)`,
       sql`set_config('app.audience', ${context.audience}, true)`,
+      ...(placement
+        ? [
+            sql`set_config('app.placement_version', ${String(placement.placementVersion)}, true)`,
+            sql`set_config('app.cell_id', ${placement.cellId}, true)`,
+          ]
+        : []),
       ...GUARD_SETTINGS,
+      ...(fenced && placement ? [fenceProbe(context.orgId, placement)] : []),
     ],
     sql`, `,
   );
 
+  const cellId = placement === null ? null : placement.cellId;
+  void refreshRelocationTargets(db, Date.now());
+
   return withPoolBorrow((borrow) =>
     regional.transaction(async (tx) => {
       borrow.acquired();
-      await tx.execute(sql`SELECT ${settings}`);
+      const rows = await tx.execute(sql`SELECT ${settings}`);
+      if (fenced && placement && !fenceIsHeld(rows))
+        throw new WriteFenceLostError(context.orgId, placement);
+      if (isRelocationTarget(context.orgId, cellId))
+        await recordTargetRequest(tx, context.orgId, String(cellId));
       return fn(tx);
     }),
   );

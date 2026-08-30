@@ -2,7 +2,7 @@ import { boolean, date, decimal, index, integer, pgEnum, pgTable, serial, text, 
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { glAccounts, glJournals } from "./gl-kernel";
-import { expenseCategories } from "../hr/payroll";
+import { expenseCategories } from "../payroll/claims-and-settlements";
 
 /**
  * Employee reimbursement batches and expense policies.

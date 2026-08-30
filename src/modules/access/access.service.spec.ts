@@ -1,3 +1,8 @@
+jest.mock("../../common/relocation/relocation-traffic-tracker", () => ({
+  refreshRelocationTargets: jest.fn().mockResolvedValue(undefined),
+  isRelocationTarget: jest.fn().mockReturnValue(false),
+}));
+
 import {
   AccessService,
   broadest,
@@ -273,11 +278,13 @@ function withTenantTxMock<T extends object>(db: T): T {
 function buildService(db: unknown): AccessService {
   const cache = {
     cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
-    cachedForOrg: jest.fn().mockImplementation(
-      async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn(),
-    ),
     invalidate: jest.fn().mockResolvedValue(undefined),
-    invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+    cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+    invalidateForOrg(o: string, k: string) {
+      return this.invalidate(`${o}:${k}`);
+    },
   };
   const entitlements = {
     isModuleEnabled: jest.fn().mockResolvedValue(true),
@@ -553,11 +560,13 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
 
     const cache = {
       cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
-      cachedForOrg: jest.fn().mockImplementation(
-        async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn(),
-      ),
       invalidate: jest.fn().mockResolvedValue(undefined),
-      invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+      cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+      invalidateForOrg(o: string, k: string) {
+      return this.invalidate(`${o}:${k}`);
+    },
       invalidatePattern: jest.fn().mockResolvedValue(undefined),
     };
     const entitlements = {
@@ -587,14 +596,9 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
 
     expect(svc["membershipAccessCache"].has("org-bump:user-bump")).toBe(false);
     expect(cache.invalidatePattern).not.toHaveBeenCalled();
-    /*
-      Both evictions go through the org-scoped form now, which takes the tenant
-      as a separate leading argument instead of baking it into the key string.
-    */
-    expect(cache.invalidateForOrg).toHaveBeenCalledWith("org-bump", "rbac:members");
-    expect(cache.invalidateForOrg).toHaveBeenCalledWith(
-      "org-bump",
-      "module-access:candidates",
+    expect(cache.invalidate).toHaveBeenCalledWith("org-bump:rbac:members");
+    expect(cache.invalidate).toHaveBeenCalledWith(
+      "org-bump:module-access:candidates",
     );
     await svc.resolveUserPermissions("org-bump", "user-bump");
     expect(db.query.accessVersions.findFirst).toHaveBeenCalledTimes(2);
@@ -602,7 +606,6 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
     svc["versionCache"].delete("org-bump");
     cache.invalidatePattern.mockClear();
     cache.invalidate.mockClear();
-    cache.invalidateForOrg.mockClear();
     currentVersion = 3;
     await bumpPermissionsVersion(db as unknown as DbOrTx, "org-bump");
     expect(cache.invalidatePattern).not.toHaveBeenCalled();
@@ -682,7 +685,15 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
-        .mockReturnValueOnce(makeSelectChain([{ permissionKey: STALE_KEY }]))
+        .mockReturnValueOnce(
+          makeSelectChain([
+            {
+              permissionKey: STALE_KEY,
+              startsAt: new Date(Date.now() - 60_000),
+              endsAt: new Date(Date.now() + 60_000),
+            },
+          ]),
+        )
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -713,11 +724,13 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
 
     const cache = {
       cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
-      cachedForOrg: jest.fn().mockImplementation(
-        async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn(),
-      ),
       invalidate: jest.fn().mockResolvedValue(undefined),
-      invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+      cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+      invalidateForOrg(o: string, k: string) {
+      return this.invalidate(`${o}:${k}`);
+    },
     };
     const entitlements = {
       isModuleEnabled: jest.fn().mockResolvedValue(true),
@@ -802,11 +815,13 @@ describe("AccessService.membersWithPermission", () => {
 
     const cache = {
       cached: jest.fn().mockImplementation(async (_k: string, fn: () => Promise<unknown>) => fn()),
-      cachedForOrg: jest.fn().mockImplementation(
-        async (_orgId: string, _k: string, fn: () => Promise<unknown>) => fn(),
-      ),
       invalidate: jest.fn().mockResolvedValue(undefined),
-      invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+      cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+      invalidateForOrg(o: string, k: string) {
+      return this.invalidate(`${o}:${k}`);
+    },
     };
 
     const entitlements = {
@@ -1000,11 +1015,13 @@ describe("AccessService.membersWithPermission — pagination", () => {
 
     const cache = {
       cached: cachedMock,
-      // Same spy behind the org-scoped form, so the call-count and page-key
-      // assertions below keep seeing every page fetch through one mock.
-      cachedForOrg: cachedMock,
       invalidate: jest.fn().mockResolvedValue(undefined),
-      invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+      cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+      invalidateForOrg(o: string, k: string) {
+      return this.invalidate(`${o}:${k}`);
+    },
     };
 
     const entitlements = {
@@ -1045,9 +1062,8 @@ describe("AccessService.membersWithPermission — pagination", () => {
 
     expect(result).toHaveLength(101);
     expect(cachedMock).toHaveBeenCalledTimes(2);
-    // Key is argument 1 under the org-scoped form -- argument 0 is the orgId.
-    expect(String(cachedMock.mock.calls[0]?.[1])).toContain(":a0:l100");
-    expect(String(cachedMock.mock.calls[1]?.[1])).toContain(":a100:l100");
+    expect(String(cachedMock.mock.calls[0]?.[0])).toContain(":a0:l100");
+    expect(String(cachedMock.mock.calls[1]?.[0])).toContain(":a100:l100");
   });
 
   it("stops at an explicit caller limit without a silent default cap", async () => {

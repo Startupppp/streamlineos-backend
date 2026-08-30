@@ -56,10 +56,7 @@ type PrefetchedActiveMember = {
   lastName: string | null;
   name: string | null;
   email: string;
-  employeeId: string | null;
-  designation: string | null;
   phone: string | null;
-  joiningDate: string | null;
 };
 
 type BackfillResult = {
@@ -79,8 +76,7 @@ function toEnsureInput(
     user.lastName?.trim() ||
     user.name?.split(" ").slice(1).join(" ") ||
     "User";
-  const employeeNumber =
-    user.employeeId?.trim() || `EMP-${user.userId.slice(0, 8).toUpperCase()}`;
+  const employeeNumber = `EMP-${user.userId.slice(0, 8).toUpperCase()}`;
 
   return {
     userId: user.userId,
@@ -88,8 +84,8 @@ function toEnsureInput(
     lastName,
     workEmail: user.email,
     employeeNumber,
-    joiningDate: user.joiningDate ?? null,
-    designation: user.designation ?? null,
+    joiningDate: null,
+    designation: null,
     phone: user.phone ?? null,
     lifecycleStatus,
   };
@@ -140,7 +136,7 @@ export class PersonEmploymentSyncService {
 
   async ensureFromUser(
     orgId: string,
-    actorId: string,
+    actorId: string | null,
     input: EnsurePersonEmploymentInput,
     tx?: Db,
   ): Promise<EnsurePersonEmploymentResult> {
@@ -202,9 +198,6 @@ export class PersonEmploymentSyncService {
             orgId,
             userId: input.userId,
             organizationPersonId,
-            firstName: input.firstName,
-            lastName: input.lastName,
-            workEmail: email,
           })
           .returning({ id: hrPeople.id });
         if (!created) throw new Error("Failed to create person record");
@@ -331,7 +324,7 @@ export class PersonEmploymentSyncService {
 
   async ensureFromUserId(
     orgId: string,
-    actorId: string,
+    actorId: string | null,
     userId: string,
     tx?: Db,
     lifecycleStatus: EnsurePersonEmploymentInput["lifecycleStatus"] = "ACTIVE",
@@ -355,10 +348,7 @@ export class PersonEmploymentSyncService {
         lastName: true,
         name: true,
         email: true,
-        employeeId: true,
-        designation: true,
         phone: true,
-        joiningDate: true,
       },
     });
     if (!user?.email) return null;
@@ -373,10 +363,7 @@ export class PersonEmploymentSyncService {
           lastName: user.lastName,
           name: user.name,
           email: user.email,
-          employeeId: user.employeeId,
-          designation: user.designation,
           phone: user.phone,
-          joiningDate: user.joiningDate,
         },
         lifecycleStatus,
       ),
@@ -386,7 +373,7 @@ export class PersonEmploymentSyncService {
 
   async backfillOrg(
     orgId: string,
-    actorId: string,
+    actorId: string | null,
   ): Promise<BackfillResult> {
     const result: BackfillResult = {
       scanned: 0,
@@ -468,10 +455,7 @@ export class PersonEmploymentSyncService {
           lastName: users.lastName,
           name: users.name,
           email: users.email,
-          employeeId: users.employeeId,
-          designation: users.designation,
           phone: users.phone,
-          joiningDate: users.joiningDate,
         })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
@@ -490,7 +474,7 @@ export class PersonEmploymentSyncService {
 
   private async processMemberBatch(
     orgId: string,
-    actorId: string,
+    actorId: string | null,
     members: PrefetchedActiveMember[],
     result: BackfillResult,
   ): Promise<void> {

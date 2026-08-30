@@ -5,9 +5,10 @@ import { AgentTokensService } from "./agent-tokens.service";
 import { AgentAccessService } from "./agent-access.service";
 import { AgentTokenGuard } from "./agent-token.guard";
 import { ProjectsModule } from "../build/core/projects.module";
+import { AccessModule } from "../access/access.module";
 
 @Module({
-  imports: [ProjectsModule],
+  imports: [ProjectsModule, AccessModule],
   controllers: [AgentTokensController, AgentController],
   providers: [AgentTokensService, AgentAccessService, AgentTokenGuard],
 })

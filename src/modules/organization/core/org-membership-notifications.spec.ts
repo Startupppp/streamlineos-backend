@@ -51,7 +51,7 @@ describe("OrgMembershipService access notifications", () => {
       from: jest.fn().mockReturnValue(joinChain),
     }),
     update: jest.fn().mockReturnValue({
-      set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+      set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue(Object.assign(Promise.resolve([]), { returning: jest.fn().mockResolvedValue([]) })) }),
     }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
     insert: jest.fn().mockReturnValue({
@@ -91,22 +91,16 @@ describe("OrgMembershipService access notifications", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
-        { provide: AblyService, useValue: { revokeUserTokens: jest.fn() } },
+        { provide: AblyService, useValue: { revokeUserTokens: jest.fn().mockResolvedValue(undefined) } },
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
           provide: CacheService,
           useValue: {
-            cachedForOrg: jest.fn().mockImplementation(
-              async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn(),
-            ),
-            cachedVersionedForOrg: jest.fn().mockImplementation(
-              async (_orgId: string, _ns: string, _key: string, fn: () => Promise<unknown>) => fn(),
-            ),
-            invalidateForOrg: jest.fn().mockResolvedValue(undefined),
-            invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
             invalidate: jest.fn().mockResolvedValue(undefined),
             invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+            invalidateForOrg: jest.fn().mockResolvedValue(undefined),
           },
         },
         { provide: SessionsService, useValue: { revokeAllForUser: jest.fn() } },

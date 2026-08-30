@@ -94,7 +94,19 @@ class FakeRecordDb {
 }
 
 function definition(key: string): RegionDefinition {
-  return { key, databaseUrl: `postgres://${key}/unused`, storage: { region: key } };
+  return {
+    key,
+    databaseUrl: `postgres://${key}/unused`,
+    storage: { region: key },
+    cell: {
+      cellId: `${key}-1`,
+      databaseShard: "primary",
+      searchCluster: "primary",
+      acceptedTenantClasses: ["SHARED"],
+      complianceZones: [],
+      cache: { keyPrefix: `${key}-1` },
+    },
+  };
 }
 
 function registryOver(dbs: Record<string, FakeRegionDb>): RegionRegistry {

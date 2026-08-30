@@ -13,23 +13,25 @@ import {
 } from "../../common/org/provision-org-modules";
 import { EntitlementsService } from "../access/entitlements.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
+  accountOrganizationIndex,
   organizationMembers,
   organizations,
-  roles,
   subscriptions,
   users,
+  roles,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { runWithTenantContext, withNewOrgInRegion } from "../../common/tenant";
-import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { runWithTenantContext, withTenant } from "../../common/tenant";
+import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { seedDemoDataset } from "../onboarding-activation/seed-demo-dataset";
 import { SessionsService } from "../sessions/sessions.service";
 import { AuthTokensService } from "./auth-tokens.service";
 import { addDays } from "date-fns";
@@ -38,8 +40,9 @@ import {
   getTrialDays,
   TRIAL_PLAN,
 } from "../billing/core/plan-entitlements.constants";
-import { regionForNewOrg } from "../../common/region/region-registry";
-import { seedDemoDataset } from "../onboarding-activation/seed-demo-dataset";
+import { placeOrganization } from "../../common/region/placement-lookup";
+import { LEGACY_CELL_ID } from "../../common/region/placement";
+import { chooseRegionForNewOrg } from "../../common/region/cell-admission";
 
 function slugify(name: string): string {
   return (
@@ -81,22 +84,10 @@ export class AuthService {
     const userId = randomUUID();
     const orgId = randomUUID();
 
-    /**
-     * Placement declared, not looked up.
-     *
-     * `withTenant` resolves an organisation's region by reading its row -- which
-     * is right for every tenant transaction except the one that *writes* that
-     * row. There is nothing to read yet, so `regionForOrg` raises "has no
-     * region" and registration has been broken since Phase 1's seam landed.
-     * Nothing noticed: the frontend has no signup page, so this route exists and
-     * nothing calls it.
-     *
-     * The region was never unknown -- `regionForNewOrg` decides it here, from
-     * the country. `withNewOrgInRegion` is the way to say so.
-     */
-    const region = regionForNewOrg(input.country);
+    const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
+    await placeOrganization(this.db, { orgId, region });
 
-    await withNewOrgInRegion(this.db, { orgId, region, audience: "INTERNAL" }, async (tx) => {
+    await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
       const seqRows = await tx.execute(
         sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
       );
@@ -108,8 +99,6 @@ export class AuthService {
 
       await tx.insert(organizations).values({
         id: orgId,
-        // Ticket 09's placement, finally given something to place by. Absent a
-        // country this is `regionForNewOrg()` exactly as before.
         region,
         ownerMembershipId,
         name: input.companyName,
@@ -119,13 +108,12 @@ export class AuthService {
       await tx.insert(users).values({
         id: userId,
         /*
-         * Closed until the workspace is furnished. `isActive` is what every
-         * sign-in path checks -- magic link, email OTP and Google all refuse an
-         * inactive user -- so between here and the end of provisioning there is
-         * no door into a workspace that has no roles in it yet. If provisioning
-         * throws, the door simply never opens, which is a state somebody can
-         * retry out of rather than a workspace that renders nothing.
-         */
+          Closed until provisioning finishes, then opened at the end of
+          `register`. There is otherwise a window where the row exists and the
+          workspace has no roles in it, and a sign-in landing in that window
+          reaches a workspace that renders nothing. If provisioning throws the
+          door simply never opens, which is a state somebody can retry out of.
+        */
         isActive: false,
         email: normalizedEmail,
         lastActiveOrgId: orgId,
@@ -158,6 +146,31 @@ export class AuthService {
 
     await this.provisionWorkspace(orgId, userId);
 
+    await withIdentity(this.db, userId, (tx) =>
+      tx
+        .insert(accountOrganizationIndex)
+        .values({
+          userId,
+          orgId,
+          cellId: LEGACY_CELL_ID,
+          region,
+          organizationName: input.companyName,
+          organizationSlug: slugify(input.companyName),
+          membershipRole: ORG_MEMBER_ROLES.OWNER,
+          membershipStatus: "ACTIVE",
+          organizationStatus: "ACTIVE",
+          joinedAt: new Date(),
+          lastActivatedAt: new Date(),
+          projectedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [accountOrganizationIndex.userId, accountOrganizationIndex.orgId],
+          set: { lastActivatedAt: new Date() },
+        }),
+    );
+
+    await this.openAccount(userId);
+
     this.audit.log({
       action: "user.registered",
       userId,
@@ -169,50 +182,42 @@ export class AuthService {
   }
 
   /**
-   * Everything a workspace needs before somebody can work in it, and the moment
-   * the door opens.
+   * Everything a new workspace needs before anybody can look at it.
    *
-   * One tenant transaction for the roles, the module set and the demo dataset,
-   * then -- and only then -- the owner is activated. The ordering is the whole
-   * design: activation is the last write, so there is no interval in which a
-   * person can sign in and find a workspace with no permissions to render.
-   *
-   * This deliberately stays inside the request rather than being handed to a
-   * background worker. The claim is supposed to return when the tenant is
-   * usable, and a job queue would mean either returning before that is true or
-   * polling until it is. What made this slow was never the work -- it was
-   * `seedSystemRolesForOrg` spending one transaction per role, forty-one round
-   * trips to Neon where one would do. Batched, the whole of provisioning is a
-   * handful of statements and fits comfortably inside a request.
+   * Roles and modules make it usable; the demo dataset is what its first screen
+   * shows, and all three go in one tenant transaction so a signup gets the whole
+   * of provisioning or none of it.
    */
   private async provisionWorkspace(orgId: string, userId: string): Promise<void> {
-    await runInNewTenantTransaction(this.db, orgId, async (tx) =>
+    await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) =>
       runWithTenantContext({ orgId, audience: "INTERNAL", tx }, async () => {
         await seedSystemRolesForOrg(this.db, orgId);
         await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
         await seedDemoDataset(tx, orgId, userId);
       }),
     );
+  }
 
+  /**
+   * The last step, deliberately: the account is created closed and opens only
+   * once provisioning has finished, so no sign-in can land in a workspace that
+   * has no roles in it yet.
+   */
+  private async openAccount(userId: string): Promise<void> {
     await this.db.update(users).set({ isActive: true }).where(eq(users.id, userId));
     await this.cache.del(CACHE_KEYS.userSession(userId));
   }
 
   /**
-   * Finish a registration that did not finish, without ever starting a second
-   * one.
+   * Finish a registration that did not finish, without starting a second one.
    *
-   * `register` used to return success for an existing email and stop, which is
-   * right for somebody who already has a workspace and wrong for somebody whose
-   * provisioning died halfway: they were left with an organisation, an account
-   * that cannot sign in, and no way forward but a database edit. Retrying is
-   * what a claim link does naturally, so retrying is what has to work.
-   *
-   * The guard is narrow on purpose. Inactive alone would mean an administrator's
-   * deliberate deactivation could be undone by anyone who knew the address and
-   * posted it at the public register route. An organisation with no system roles
-   * has never been provisioned, so pairing the two conditions makes this reach
-   * exactly the case it is for.
+   * Returning success for an existing email is right for somebody who already
+   * has a workspace and wrong for somebody whose provisioning threw halfway:
+   * they hold a closed account, an organisation with no roles in it, and no way
+   * to reach either. Retrying the signup is the obvious thing to do, and it did
+   * nothing. The system-role ladder is the marker for "provisioning finished",
+   * so its absence is what makes this resume rather than a flag somebody has to
+   * remember to clear.
    */
   private async resumeProvisioning(existing: {
     id: string;
@@ -233,6 +238,7 @@ export class AuthService {
     if (ladder) return;
 
     await this.provisionWorkspace(orgId, existing.id);
+    await this.openAccount(existing.id);
   }
 
   async logout(sessionId: string, userId: string): Promise<void> {
@@ -247,6 +253,28 @@ export class AuthService {
     this.audit.log({ action: "auth.logout_all", userId });
   }
 
+  private async resolvePreferredOrg(
+    userId: string,
+  ): Promise<{ orgId: string; cellId: string } | null> {
+    const rows = await withIdentity(this.db, userId, (tx) =>
+      tx
+        .select({
+          orgId: accountOrganizationIndex.orgId,
+          cellId: accountOrganizationIndex.cellId,
+        })
+        .from(accountOrganizationIndex)
+        .where(eq(accountOrganizationIndex.userId, userId))
+        .orderBy(
+          sql`${accountOrganizationIndex.lastActivatedAt} DESC NULLS LAST`,
+          desc(accountOrganizationIndex.joinedAt),
+        )
+        .limit(1),
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return { orgId: row.orgId, cellId: row.cellId };
+  }
+
   async getSessionData(userId: string): Promise<{
     userId: string;
     email: string;
@@ -256,8 +284,8 @@ export class AuthService {
     image: string | null;
     role: string | null;
     isActive: boolean;
-    branchId: string | null;
     orgId: string | null;
+    cellId: string | null;
     isOrgOwner: boolean;
     enabledModules: string[];
     orgOnboardingCompletedAt: string | null;
@@ -269,41 +297,45 @@ export class AuthService {
     return this.cache.cached(
       CACHE_KEYS.userSession(userId),
       async () => {
-        const user = await this.db.query.users
-          .findFirst({
-            where: eq(users.id, userId),
-            columns: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-              name: true,
-              image: true,
-              isActive: true,
-              branchId: true,
-              onboardingCompletedAt: true,
-              lastActiveOrgId: true,
-            },
-          })
-          .catch(() => {
-            throw new HttpException(
-              "Service temporarily unavailable",
-              HttpStatus.SERVICE_UNAVAILABLE,
-            );
-          });
+        const [user, preferred] = await Promise.all([
+          this.db.query.users
+            .findFirst({
+              where: eq(users.id, userId),
+              columns: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                name: true,
+                image: true,
+                isActive: true,
+                onboardingCompletedAt: true,
+                lastActiveOrgId: true,
+              },
+            })
+            .catch(() => {
+              throw new HttpException(
+                "Service temporarily unavailable",
+                HttpStatus.SERVICE_UNAVAILABLE,
+              );
+            }),
+          this.resolvePreferredOrg(userId).catch(() => null),
+        ]);
 
         if (!user) throw new NotFoundException("User not found");
 
+        const preferredOrgId = preferred?.orgId ?? user.lastActiveOrgId ?? null;
+
         const membership = await this.authTokens.resolveActiveMembership(
           userId,
-          user.lastActiveOrgId ?? null,
+          preferredOrgId,
           { honorSuspendedPreference: true },
         );
         const suspendedMembership = membership
           ? null
           : await this.authTokens.resolveSuspendedMembership(
               userId,
-              user.lastActiveOrgId ?? null,
+              preferredOrgId,
             );
 
         let enabledModules: string[] = [];
@@ -351,8 +383,8 @@ export class AuthService {
           image: user.image ?? null,
           role: membership?.role ?? null,
           isActive: user.isActive,
-          branchId: user.branchId ?? null,
           orgId: resolvedOrgId,
+          cellId: resolvedOrgId ? (preferred?.cellId ?? null) : null,
           isOrgOwner,
           enabledModules,
           orgOnboardingCompletedAt,

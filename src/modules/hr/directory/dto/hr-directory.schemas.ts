@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listEmployeesSchema = z.object({
   cursor: z.string().min(1).max(2048).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: pageSizeField(20, 100),
   search: z.string().optional(),
   q: z.string().optional(),
   departmentId: z.string().min(1).optional(),
@@ -20,13 +21,13 @@ export const findExpertSchema = z.object({
   skill: z.string().min(1),
   department: z.string().optional(),
   role: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
+  limit: pageSizeField(20, 50),
 });
 
 export const skillsMatrixQuerySchema = z
   .object({
     cursor: z.string().min(1).max(2048).optional(),
-    limit: z.coerce.number().int().min(1).max(50).default(20),
+    limit: pageSizeField(20, 50),
   })
   .strict();
 
@@ -39,7 +40,7 @@ export const orgChartQuerySchema = z
     parentId: z.string().min(1).max(128).optional(),
     search: z.string().trim().min(2).max(100).optional(),
     cursor: z.string().min(1).max(2048).optional(),
-    limit: z.coerce.number().int().min(1).max(50).default(20),
+    limit: pageSizeField(20, 50),
   })
   .strict()
   .superRefine((query, ctx) => {
@@ -116,8 +117,8 @@ export const patchDeviceSchema = z.object({
 });
 
 export const listAssetsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   status: z.enum(["AVAILABLE", "ASSIGNED", "MAINTENANCE", "RETIRED"]).optional(),
 });
 

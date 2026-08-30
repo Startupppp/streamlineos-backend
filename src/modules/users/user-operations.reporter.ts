@@ -3,11 +3,13 @@ import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { invitations, organizationMembers, users } from "../../db/schema";
 import { membershipStatusToUserStatus } from "../organization/core/org-membership.service";
+import { EmploymentFactsService } from "../directory/employment-facts.service";
 
 export class UserOperationsReporter {
   constructor(
     private readonly database: Db,
     private readonly cache: CacheService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   async exportUsers(orgId: string): Promise<string> {
@@ -20,8 +22,6 @@ export class UserOperationsReporter {
         role: organizationMembers.role,
         membershipStatus: organizationMembers.status,
         emailVerified: users.emailVerified,
-        departmentId: users.orgDepartmentId,
-        designation: users.designation,
         phone: users.phone,
         joinedAt: organizationMembers.joinedAt,
         createdAt: users.createdAt,
@@ -30,6 +30,8 @@ export class UserOperationsReporter {
       .innerJoin(users, eq(organizationMembers.userId, users.id))
       .where(eq(organizationMembers.orgId, orgId))
       .orderBy(desc(organizationMembers.joinedAt));
+
+    const factsMap = await this.employment.getFactsBatch(orgId, data.map((r) => r.id));
 
     const headers = [
       "id",
@@ -54,8 +56,9 @@ export class UserOperationsReporter {
       return String(val).replace(/,/g, ";");
     };
 
-    const rows = data.map((userRecord) =>
-      [
+    const rows = data.map((userRecord) => {
+      const facts = factsMap.get(userRecord.id);
+      return [
         csvCell(userRecord.id),
         csvCell(userRecord.email),
         csvCell(userRecord.firstName),
@@ -63,13 +66,13 @@ export class UserOperationsReporter {
         csvCell(userRecord.role),
         csvCell(membershipStatusToUserStatus(userRecord.membershipStatus)),
         csvCell(userRecord.emailVerified),
-        csvCell(userRecord.departmentId),
-        csvCell(userRecord.designation),
+        csvCell(facts?.departmentId ?? null),
+        csvCell(facts?.designation ?? null),
         csvCell(userRecord.phone),
         csvCell(userRecord.joinedAt),
         csvCell(userRecord.createdAt),
-      ].join(","),
-    );
+      ].join(",");
+    });
 
     return [headers.join(","), ...rows].join("\n");
   }

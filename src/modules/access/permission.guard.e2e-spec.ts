@@ -9,10 +9,9 @@ import { Test } from "@nestjs/testing";
 import type { NextFunction, Request, Response } from "express";
 import request from "supertest";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import { Public } from "../../common/auth/public.decorator";
 import { AccessService } from "./access.service";
-import type { DataScope } from "./access.types";
-import { moduleAvailabilityResolver } from "../../common/rbac/module-availability";
 import { PermissionGuard } from "./permission.guard";
 import { RequirePermission } from "./require-permission.decorator";
 
@@ -51,6 +50,7 @@ const user: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 function attachUser(req: Request, _res: Response, next: NextFunction): void {
@@ -70,33 +70,21 @@ describe("PermissionGuard routes (e2e)", () => {
         Reflector,
         {
           provide: AccessService,
-          /**
-           * `resolveUserPermissions` is still the single fake these cases drive;
-           * the rest is what `authorize` reaches for on the way to it.
-           *
-           * The guard used to read the permission map directly. It now resolves
-           * module availability first and then asks `scopeFor` for one key — so
-           * a mock carrying only the old two names left `authorize` calling
-           * `getModuleState` on an object without one, and every case here
-           * answered 403 whatever the map said. Derived rather than given its
-           * own fake, so a test that sets the map still decides the outcome.
-           */
           useValue: {
             resolveUserPermissions,
             isModuleEnabled: jest.fn().mockResolvedValue(true),
-            getModuleState: async (): Promise<boolean> => true,
-            getUserDeniedModules: async (): Promise<ReadonlySet<string>> => new Set<string>(),
-            buildModuleAvailabilityResolver: (
-              getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
-            ) =>
-              moduleAvailabilityResolver(
-                { isCoreModule: () => false, getModuleMap, getPlanLockedModules: async () => [] },
-                { getUserDeniedModules: async () => new Set<string>() },
-              ),
-            scopeFor: async (ctx: unknown, permissionKey: string): Promise<DataScope> =>
-              ((await resolveUserPermissions(ctx)) as Map<string, DataScope> | undefined)?.get(
-                permissionKey,
-              ) ?? "none",
+            getModuleState: jest.fn().mockResolvedValue(true),
+            scopeFor: jest.fn(async (user: CurrentUserContext, key: string) => {
+              if (user.isOrgOwner) return "all";
+              const resolved = await resolveUserPermissions(user.orgId, user.userId);
+              return resolved.get(key) ?? "none";
+            }),
+            buildModuleAvailabilityResolver: () => ({
+              isCoreModule: () => true,
+              getModuleMap: async () => ({}),
+              getUserDeniedModules: async () => new Set<string>(),
+              getPlanLockedModules: async () => [],
+            }),
           },
         },
       ],

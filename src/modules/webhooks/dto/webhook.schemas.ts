@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 import { assertSafeWebhookUrl } from "../../../common/security/ssrf-guard";
 
 export const WEBHOOK_RESPONSE_BODY_LIMIT = 2000;
@@ -22,15 +23,15 @@ const webhookUrl = z
 
 export const listSchema = z
   .object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    page: pageNumberField,
+    limit: pageSizeField(20),
   })
   .strict();
 
 export const logsSchema = z
   .object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    page: pageNumberField,
+    limit: pageSizeField(20),
   })
   .strict();
 

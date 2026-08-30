@@ -7,6 +7,8 @@ import {
 } from "@nestjs/common";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { withIdentity } from "../../../common/tenant/with-identity";
+import { LEGACY_CELL_ID } from "../../../common/region/placement";
 import { addMinutes } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
@@ -19,12 +21,15 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import {
+  accountOrganizationIndex,
   invitationEvents,
   invitations,
   magicLinkTokens,
   organizationMembers,
+  organizations,
   users,
 } from "../../../db/schema";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
@@ -40,8 +45,55 @@ export class InvitationAcceptanceService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly planLimits: PlanLimitsService,
+    private readonly seatLedger: SeatLedgerService,
     private readonly dispatch: NotificationDispatchService,
   ) {}
+
+  private async touchIndexLastActivated(orgId: string, userId: string): Promise<void> {
+    const [org, membership] = await Promise.all([
+      this.db.query.organizations.findFirst({
+        where: eq(organizations.id, orgId),
+        columns: { name: true, slug: true, region: true, status: true },
+      }),
+      this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.orgId, orgId),
+        ),
+        columns: { role: true, status: true, joinedAt: true },
+      }),
+    ]);
+    if (!org || !membership) return;
+    await withIdentity(this.db, userId, (tx) =>
+      tx
+        .insert(accountOrganizationIndex)
+        .values({
+          userId,
+          orgId,
+          cellId: LEGACY_CELL_ID,
+          region: org.region ?? "primary",
+          organizationName: org.name,
+          organizationSlug: org.slug,
+          membershipRole: membership.role,
+          membershipStatus: membership.status,
+          organizationStatus: org.status,
+          joinedAt: membership.joinedAt,
+          lastActivatedAt: new Date(),
+          projectedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [accountOrganizationIndex.userId, accountOrganizationIndex.orgId],
+          set: {
+            membershipRole: sql`excluded.membership_role`,
+            membershipStatus: sql`excluded.membership_status`,
+            organizationStatus: sql`excluded.organization_status`,
+            joinedAt: sql`excluded.joined_at`,
+            lastActivatedAt: sql`excluded.last_activated_at`,
+            projectedAt: sql`excluded.projected_at`,
+          },
+        }),
+    );
+  }
 
   private async assertSeatAvailable(tx: DbOrTx, orgId: string): Promise<void> {
     await tx.execute(
@@ -88,6 +140,16 @@ export class InvitationAcceptanceService {
       event: "ACCEPTED",
       actorMembershipId: membershipId,
     });
+    await this.seatLedger.recordSeatEvent(
+      {
+        orgId,
+        eventType: "INVITE_ACCEPTED",
+        subjectId: invitationId,
+        reason: "invitation accepted",
+        idempotencyKey: `invite-accepted:${invitationId}`,
+      },
+      tx,
+    );
   }
 
   private issueMagicLink(
@@ -193,6 +255,8 @@ export class InvitationAcceptanceService {
         );
 
     await this.invalidateJoinCaches(invitedOrgId, joinedUserId);
+
+    void this.touchIndexLastActivated(invitedOrgId, joinedUserId).catch(() => undefined);
 
     await this.notifyAccepted(
       invitedOrgId,

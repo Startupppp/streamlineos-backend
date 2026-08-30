@@ -7,6 +7,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
+import {
   and,
   desc,
   sql,
@@ -20,7 +25,9 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { logger } from "../../../common/logger/logger.service";
 import { type Db } from "../../../db/drizzle.module";
+import { alias } from "drizzle-orm/pg-core";
 import {
+  organizationMembers,
   timesheetPeriods,
   timesheets,
   timesheetSettings,
@@ -74,14 +81,30 @@ export class ApprovalsService {
     approverId: string,
     actorUserId: string,
   ): Promise<boolean> {
+    const delegatorMember = alias(organizationMembers, "delegation_delegator");
+    const delegateeMember = alias(organizationMembers, "delegation_delegatee");
     const [row] = await this.db
       .select({ id: userDelegations.id })
       .from(userDelegations)
+      .innerJoin(
+        delegatorMember,
+        and(
+          eq(delegatorMember.orgId, userDelegations.orgId),
+          eq(delegatorMember.id, userDelegations.delegatorMembershipId),
+        ),
+      )
+      .innerJoin(
+        delegateeMember,
+        and(
+          eq(delegateeMember.orgId, userDelegations.orgId),
+          eq(delegateeMember.id, userDelegations.delegateeMembershipId),
+        ),
+      )
       .where(
         and(
           eq(userDelegations.orgId, orgId),
-          eq(userDelegations.delegatorId, approverId),
-          eq(userDelegations.delegateeId, actorUserId),
+          eq(delegatorMember.userId, approverId),
+          eq(delegateeMember.userId, actorUserId),
           eq(userDelegations.status, "ACTIVE"),
           lte(userDelegations.startsAt, new Date()),
           gt(userDelegations.endsAt, new Date()),
@@ -226,6 +249,11 @@ export class ApprovalsService {
     }
     await this.assertCanActOnPeriod(u, period);
 
+    const approverActor = await assertOrganizationActor(this.db, u.orgId, { kind: "user", userId: u.userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     const settings = await this.getSettings(u.orgId);
     const lockAfterApproval = settings?.lockAfterApproval ?? true;
     const now = new Date();
@@ -237,6 +265,7 @@ export class ApprovalsService {
           status: "APPROVED",
           approvedAt: now,
           approvedBy: u.userId,
+          approvedByMembershipId: approverActor.membershipId,
           lockedAt: lockAfterApproval ? now : null,
           updatedAt: now,
         })
@@ -252,6 +281,7 @@ export class ApprovalsService {
         .set({
           status: "APPROVED",
           approvedBy: u.userId,
+          approvedByMembershipId: approverActor.membershipId,
           approvedAt: now,
           lockedAt: lockAfterApproval ? now : null,
           lockedBy: lockAfterApproval ? u.userId : null,

@@ -15,6 +15,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { HrSensitiveService } from "./hr-sensitive.service";
 import { updateSensitiveSchema, type UpdateSensitiveInput } from "./dto/hr-core.schemas";
@@ -33,7 +34,7 @@ export class HrSensitiveController {
     @Req() req: Request,
   ) {
     const ip = req.ip ?? req.socket?.remoteAddress;
-    return this.sensitive.get(u.orgId, employeeId, u.userId, ip);
+    return this.sensitive.get(u.orgId, employeeId, u.userId, actingMembershipId(u.principal), ip);
   }
 
   @Patch(":employeeId/sensitive")
@@ -45,6 +46,6 @@ export class HrSensitiveController {
     @Req() req: Request,
   ) {
     const ip = req.ip ?? req.socket?.remoteAddress;
-    return this.sensitive.update(u.orgId, employeeId, u.userId, body, ip);
+    return this.sensitive.update(u.orgId, employeeId, u.userId, actingMembershipId(u.principal), body, ip);
   }
 }

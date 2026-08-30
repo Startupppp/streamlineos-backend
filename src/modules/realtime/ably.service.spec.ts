@@ -29,7 +29,7 @@ describe("AblyService capabilities", () => {
   let service: AblyService;
 
   beforeEach(() => {
-    service = new AblyService({ ABLY_API_KEY: undefined });
+    service = new AblyService({ ABLY_API_KEY: undefined, CELL_ID: undefined });
     Reflect.set(service, "apiKey", "app.key:secret");
   });
 
@@ -38,10 +38,10 @@ describe("AblyService capabilities", () => {
       service.createChatTokenRequest("user-1", "org-1", [7, 9]),
     );
 
-    expect(capability["chat:org-1:7"]).toEqual(["subscribe", "publish", "history"]);
-    expect(capability["chat:org-1:9"]).toEqual(["subscribe", "publish", "history"]);
-    expect(capability["huddle:org-1:7"]).toEqual(["subscribe", "publish"]);
-    expect(capability["chat:org-1:8"]).toBeUndefined();
+    expect(capability["cell:legacy-1:chat:org-1:7"]).toEqual(["subscribe", "publish", "history"]);
+    expect(capability["cell:legacy-1:chat:org-1:9"]).toEqual(["subscribe", "publish", "history"]);
+    expect(capability["cell:legacy-1:huddle:org-1:7"]).toEqual(["subscribe", "publish"]);
+    expect(capability["cell:legacy-1:chat:org-1:8"]).toBeUndefined();
   });
 
   it("never grants a wildcard chat or huddle capability", () => {
@@ -50,7 +50,7 @@ describe("AblyService capabilities", () => {
     );
 
     for (const resource of Object.keys(capability)) {
-      const isOwnSignalChannel = resource === "huddle-signal:org-1:*:user-1";
+      const isOwnSignalChannel = resource === "cell:legacy-1:huddle-signal:org-1:*:user-1";
       if (isOwnSignalChannel) continue;
       expect(resource).not.toContain("*");
     }
@@ -61,8 +61,8 @@ describe("AblyService capabilities", () => {
       service.createChatTokenRequest("user-1", "org-1", [7]),
     );
 
-    expect(capability["huddle-signal:org-1:*:user-1"]).toEqual(["subscribe"]);
-    expect(capability["huddle-signal:org-1:*"]).toBeUndefined();
+    expect(capability["cell:legacy-1:huddle-signal:org-1:*:user-1"]).toEqual(["subscribe"]);
+    expect(capability["cell:legacy-1:huddle-signal:org-1:*"]).toBeUndefined();
   });
 
   it("grants notifications only on the caller's own channel", () => {
@@ -70,8 +70,8 @@ describe("AblyService capabilities", () => {
       service.createChatTokenRequest("user-1", "org-1", []),
     );
 
-    expect(capability["notifications:org-1:user-1"]).toEqual(["subscribe"]);
-    expect(capability["notifications:org-1:user-2"]).toBeUndefined();
+    expect(capability["cell:legacy-1:notifications:org-1:user-1"]).toEqual(["subscribe"]);
+    expect(capability["cell:legacy-1:notifications:org-1:user-2"]).toBeUndefined();
   });
 
   it("issues no channel capability when the user belongs to nothing", () => {
@@ -79,7 +79,9 @@ describe("AblyService capabilities", () => {
       service.createChatTokenRequest("user-1", "org-1", []),
     );
 
-    expect(Object.keys(capability).filter((r) => r.startsWith("chat:"))).toEqual([]);
+    expect(
+      Object.keys(capability).filter((r) => r.includes(":chat:")),
+    ).toEqual([]);
   });
 
   it("does not let a support client publish", () => {
@@ -87,18 +89,15 @@ describe("AblyService capabilities", () => {
       service.createSupportTokenRequest("user-1", "org-1", { wildcard: true }),
     );
 
-    expect(capability["support:org-1:*"]).not.toContain("publish");
+    expect(capability["cell:legacy-1:support:org-1:*"]).not.toContain("publish");
   });
 
-  // RT-005. The wildcard used to be issued to anyone holding support:tickets:view,
-  // so a member who could see only their own tickets through the REST API could
-  // still subscribe to every ticket channel in the org.
   it("grants the support wildcard only when the caller's scope is all", () => {
     const { capability } = capabilityFor(service, () =>
       service.createSupportTokenRequest("user-1", "org-1", { wildcard: true }),
     );
 
-    expect(Object.keys(capability)).toEqual(["support:org-1:*"]);
+    expect(Object.keys(capability)).toEqual(["cell:legacy-1:support:org-1:*"]);
   });
 
   it("grants one channel per visible ticket when the caller is scoped", () => {
@@ -106,8 +105,11 @@ describe("AblyService capabilities", () => {
       service.createSupportTokenRequest("user-1", "org-1", { wildcard: false, ticketIds: [7, 9] }),
     );
 
-    expect(Object.keys(capability).sort()).toEqual(["support:org-1:7", "support:org-1:9"]);
-    expect(capability["support:org-1:*"]).toBeUndefined();
+    expect(Object.keys(capability).sort()).toEqual([
+      "cell:legacy-1:support:org-1:7",
+      "cell:legacy-1:support:org-1:9",
+    ]);
+    expect(capability["cell:legacy-1:support:org-1:*"]).toBeUndefined();
   });
 
   it("grants nothing when the caller has no support scope", () => {
@@ -121,14 +123,14 @@ describe("AblyService capabilities", () => {
 
 describe("AblyService durable publish contract", () => {
   it("rejects a durable publish when Ably is not configured", async () => {
-    const service = new AblyService({ ABLY_API_KEY: undefined });
+    const service = new AblyService({ ABLY_API_KEY: undefined, CELL_ID: undefined });
     await expect(service.publishChatMessage("org-1", 1, {} as never, {
       requireConfigured: true,
     })).rejects.toThrow("Ably is not configured");
   });
 
   it("propagates provider rejection so the outbox can retry", async () => {
-    const service = new AblyService({ ABLY_API_KEY: "app.key:secret" });
+    const service = new AblyService({ ABLY_API_KEY: "app.key:secret", CELL_ID: undefined });
     Reflect.set(service, "restClient", {
       channels: {
         get: () => ({ publish: jest.fn().mockRejectedValue(new Error("ably unavailable")) }),

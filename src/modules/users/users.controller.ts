@@ -1,7 +1,10 @@
 import {
-  Controller, Get, HttpCode, Patch, Delete, Post, Param, Query, Body, UseGuards, Res
+  Controller, Get, HttpCode, Patch, Delete, Post, Param, Query, Body, UseGuards, Res, Version
 } from "@nestjs/common";
+import { API_VERSION_NEXT } from "../../common/http/api-version";
+import { toUserIdentity, toUserIdentityPage } from "./user-identity.view";
 import type { Response } from "express";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -49,6 +52,16 @@ export class UsersController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.users.listUsers(u.orgId, query);
+  }
+
+  @RequirePermission("settings:view")
+  @Version(API_VERSION_NEXT)
+  @Get()
+  async listUsersV2(
+    @Query(new ZodValidationPipe(listUsersSchema)) query: ListUsersInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return toUserIdentityPage(await this.users.listUsers(u.orgId, query));
   }
 
   @RequirePermission("settings:view")
@@ -103,6 +116,7 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Post("invite")
+  @Idempotent("users.invitation.create")
   inviteUser(
     @Body(new ZodValidationPipe(inviteUserSchema)) body: InviteUserInput,
     @CurrentUser() u: CurrentUserContext,
@@ -117,6 +131,7 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Post("bulk-invite")
+  @Idempotent("users.invitation.bulk-create")
   bulkInvite(
     @Body(new ZodValidationPipe(bulkInviteSchema)) body: BulkInviteInput,
     @CurrentUser() u: CurrentUserContext,
@@ -178,6 +193,7 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Post("invitations/:invitationId/resend")
+  @Idempotent("users.invitation.resend")
   @HttpCode(200)
   resendInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
     return this.invitations.resend(u.orgId, invitationId, {
@@ -212,6 +228,16 @@ export class UsersController {
   }
 
   // ── Parameterized :userId routes (must come after all static routes) ──
+
+  @RequirePermission("settings:view")
+  @Version(API_VERSION_NEXT)
+  @Get(":userId")
+  async getUserV2(
+    @Param("userId") userId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return toUserIdentity(await this.users.getUser(u.orgId, userId));
+  }
 
   @RequirePermission("settings:view")
   @Get(":userId")
@@ -323,6 +349,7 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Post(":userId/send-signin-link")
+  @Idempotent("users.signin-link.send")
   @HttpCode(200)
   sendSigninLink(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userOps.sendSigninLink(u.orgId, userId, u.userId);

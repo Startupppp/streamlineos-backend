@@ -1,5 +1,6 @@
 import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { ROLE_RANK } from "../../common/rbac/grantability";
@@ -61,6 +62,7 @@ describe("assertMayAssignRole — MODULE_OWNER rank is blocked on the generic pa
             isOrgOwner,
             tokenScopes: null,
             sessionId: "sess-1",
+            principal: humanSessionPrincipal(1, isOrgOwner),
           },
           42,
           { principalType: "user", principalId: "other-member" },
@@ -102,6 +104,7 @@ describe("assertMayAssignRole — MODULE_OWNER rank is blocked on the generic pa
           isOrgOwner: true,
           tokenScopes: null,
           sessionId: "sess-1",
+          principal: humanSessionPrincipal(1, true),
         },
         42,
         { principalType: "user", principalId: "other-member" },

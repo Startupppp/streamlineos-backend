@@ -11,6 +11,8 @@ import { HrAuditService } from "./hr-audit.service";
 import { encrypt, decrypt } from "../onboarding/core/crypto.helpers";
 import { resolveCompatibleList } from "../../../common/db/expand-contract-compat";
 import { loadSensitiveRecordCollections } from "./hr-sensitive-record-compat";
+import { sealSensitiveJson } from "../../../common/security/sensitive-field";
+import { readBankDetails, type BankDetails } from "../../../common/hr/canonical-bank-details";
 
 type SensitiveRow = typeof hrEmployeeSensitiveFields.$inferSelect;
 
@@ -28,15 +30,44 @@ function encryptField(value: string | null | undefined): string | null | undefin
   return encrypt(value);
 }
 
-function decryptRow(row: SensitiveRow): SensitiveRow {
-  const out = { ...row };
+const SENSITIVE_COLUMNS = {
+  id: hrEmployeeSensitiveFields.id,
+  orgId: hrEmployeeSensitiveFields.orgId,
+  employmentId: hrEmployeeSensitiveFields.employmentId,
+  salaryAmountCents: hrEmployeeSensitiveFields.salaryAmountCents,
+  salaryCurrency: hrEmployeeSensitiveFields.salaryCurrency,
+  salaryFrequency: hrEmployeeSensitiveFields.salaryFrequency,
+  bankDetails: hrEmployeeSensitiveFields.bankDetails,
+  taxId: hrEmployeeSensitiveFields.taxId,
+  panNumber: hrEmployeeSensitiveFields.panNumber,
+  nationalId: hrEmployeeSensitiveFields.nationalId,
+  passportNumber: hrEmployeeSensitiveFields.passportNumber,
+  passportExpiry: hrEmployeeSensitiveFields.passportExpiry,
+  visaType: hrEmployeeSensitiveFields.visaType,
+  visaExpiry: hrEmployeeSensitiveFields.visaExpiry,
+  medicalNotes: hrEmployeeSensitiveFields.medicalNotes,
+  bloodGroup: hrEmployeeSensitiveFields.bloodGroup,
+  disciplinaryRecords: hrEmployeeSensitiveFields.disciplinaryRecords,
+  grievanceRecords: hrEmployeeSensitiveFields.grievanceRecords,
+  bgvStatus: hrEmployeeSensitiveFields.bgvStatus,
+  bgvCompletedAt: hrEmployeeSensitiveFields.bgvCompletedAt,
+  createdAt: hrEmployeeSensitiveFields.createdAt,
+  updatedAt: hrEmployeeSensitiveFields.updatedAt,
+};
+
+type SensitiveProjection = {
+  [K in keyof typeof SENSITIVE_COLUMNS]: SensitiveRow[K];
+};
+
+type EncryptedField = (typeof ENCRYPTED_FIELDS)[number];
+
+function decryptRow<T extends { [K in EncryptedField]: string | null }>(row: T): T {
+  const decrypted: { [K in EncryptedField]?: string } = {};
   for (const field of ENCRYPTED_FIELDS) {
-    const value = out[field];
-    if (typeof value === "string" && value !== "") {
-      out[field] = decrypt(value);
-    }
+    const value = row[field];
+    if (typeof value === "string" && value !== "") decrypted[field] = decrypt(value);
   }
-  return out;
+  return { ...row, ...decrypted };
 }
 
 @Injectable()
@@ -46,7 +77,7 @@ export class HrSensitiveService {
     private readonly audit: HrAuditService,
   ) {}
 
-  async get(orgId: string, employmentId: number, actorId: string, ipAddress?: string) {
+  async get(orgId: string, employmentId: number, actorId: string, actorMembershipId?: number | null, ipAddress?: string) {
     const [emp] = await this.db
       .select({ id: hrEmployments.id })
       .from(hrEmployments)
@@ -62,7 +93,7 @@ export class HrSensitiveService {
     if (!emp) throw new NotFoundException("Employment not found");
 
     const [row] = await this.db
-      .select()
+      .select(SENSITIVE_COLUMNS)
       .from(hrEmployeeSensitiveFields)
       .where(
         and(
@@ -75,6 +106,7 @@ export class HrSensitiveService {
     await this.audit.log({
       orgId,
       actorId,
+      actorMembershipId,
       entityType: "hr_employee_sensitive_fields",
       entityId: String(employmentId),
       action: "sensitive.viewed",
@@ -88,6 +120,7 @@ export class HrSensitiveService {
     orgId: string,
     employmentId: number,
     actorId: string,
+    actorMembershipId: number | null | undefined,
     input: UpdateSensitiveInput,
     ipAddress?: string,
   ) {
@@ -117,7 +150,7 @@ export class HrSensitiveService {
 
     const existing = rows[0].sensitive;
 
-    let updated: typeof hrEmployeeSensitiveFields.$inferSelect;
+    let updated: SensitiveProjection;
 
     if (!existing) {
       const [inserted] = await this.db
@@ -128,7 +161,7 @@ export class HrSensitiveService {
           salaryAmountCents: input.salaryAmountCents ?? null,
           salaryCurrency: input.salaryCurrency ?? null,
           salaryFrequency: input.salaryFrequency ?? null,
-          bankDetails: input.bankDetails ?? null,
+          bankDetails: input.bankDetails !== undefined ? sealSensitiveJson(input.bankDetails) : null,
           taxId: encryptField(input.taxId) ?? null,
           panNumber: encryptField(input.panNumber) ?? null,
           nationalId: encryptField(input.nationalId) ?? null,
@@ -140,7 +173,7 @@ export class HrSensitiveService {
           bloodGroup: input.bloodGroup ?? null,
           bgvStatus: input.bgvStatus ?? null,
         })
-        .returning();
+        .returning(SENSITIVE_COLUMNS);
       if (!inserted) throw new Error("Failed to create sensitive record");
       updated = inserted;
     } else {
@@ -150,7 +183,7 @@ export class HrSensitiveService {
           ...(input.salaryAmountCents !== undefined && { salaryAmountCents: input.salaryAmountCents }),
           ...(input.salaryCurrency !== undefined && { salaryCurrency: input.salaryCurrency }),
           ...(input.salaryFrequency !== undefined && { salaryFrequency: input.salaryFrequency }),
-          ...(input.bankDetails !== undefined && { bankDetails: input.bankDetails }),
+          ...(input.bankDetails !== undefined && { bankDetails: sealSensitiveJson(input.bankDetails) }),
           ...(input.taxId !== undefined && { taxId: encryptField(input.taxId) }),
           ...(input.panNumber !== undefined && { panNumber: encryptField(input.panNumber) }),
           ...(input.nationalId !== undefined && { nationalId: encryptField(input.nationalId) }),
@@ -170,7 +203,7 @@ export class HrSensitiveService {
             eq(hrEmployeeSensitiveFields.orgId, orgId),
           ),
         )
-        .returning();
+        .returning(SENSITIVE_COLUMNS);
       if (!patched) throw new NotFoundException("Sensitive record not found");
       updated = patched;
     }
@@ -186,6 +219,7 @@ export class HrSensitiveService {
     await this.audit.log({
       orgId,
       actorId,
+      actorMembershipId,
       entityType: "hr_employee_sensitive_fields",
       entityId: String(employmentId),
       action: "sensitive.updated",
@@ -201,10 +235,12 @@ export class HrSensitiveService {
     return this.resolveSensitiveRecordCollections(orgId, decryptRow(updated));
   }
 
-  private async resolveSensitiveRecordCollections(
+  private async resolveSensitiveRecordCollections<
+    T extends Pick<SensitiveRow, "id" | "bankDetails" | "disciplinaryRecords" | "grievanceRecords">,
+  >(
     organizationId: string,
-    sensitiveRow: SensitiveRow,
-  ): Promise<SensitiveRow> {
+    sensitiveRow: T,
+  ): Promise<Omit<T, "bankDetails"> & { bankDetails: BankDetails | null }> {
     const normalizedCollections = await loadSensitiveRecordCollections(
       this.db,
       organizationId,
@@ -216,6 +252,7 @@ export class HrSensitiveService {
     ): boolean => JSON.stringify(legacyRecord) === JSON.stringify(normalizedRecord);
     return {
       ...sensitiveRow,
+      bankDetails: sensitiveRow.bankDetails ? readBankDetails(sensitiveRow.bankDetails) : null,
       disciplinaryRecords:
         sensitiveRow.disciplinaryRecords === null
           ? null

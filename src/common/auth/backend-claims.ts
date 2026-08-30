@@ -1,3 +1,5 @@
+import type { Principal } from "./principal";
+
 export const INTERNAL_TOKEN_AUDIENCE = "streamlineos-api" as const;
 export const INTERNAL_TOKEN_ISSUER = "streamlineos-web" as const;
 
@@ -14,4 +16,5 @@ export interface CurrentUserContext {
   isOrgOwner: boolean;
   sessionId: string;
   tokenScopes: string[] | null;
+  principal: Principal;
 }

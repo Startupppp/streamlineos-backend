@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalPageNumberField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const NAME_REGEX = /[a-zA-Z]/;
 const PHONE_REGEX = /^\+?[1-9]\d{7,14}$/;
@@ -21,10 +22,10 @@ export const candidateListSchema = z
     source: z.string().optional(),
     jobId: z.coerce.number().int().positive().optional(),
     search: z.string().trim().max(100).optional(),
-    page: z.coerce.number().int().min(1).optional(),
-    pageSize: z.coerce.number().int().min(1).max(100).optional(),
+    page: optionalPageNumberField(),
+    pageSize: optionalPageSizeField(),
     /** @deprecated prefer page/pageSize */
-    limit: z.coerce.number().int().min(1).max(100).optional(),
+    limit: optionalPageSizeField(),
     /** @deprecated prefer page/pageSize */
     offset: z.coerce.number().int().min(0).optional(),
   })

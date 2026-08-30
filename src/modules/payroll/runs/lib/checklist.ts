@@ -11,7 +11,7 @@ import {
   bonuses,
   salaryLoans,
 } from "../../../../db/schema";
-import { hrPayrollInputPeriods } from "../../../../db/schema/hr/payroll-inputs";
+import { hrPayrollInputPeriods } from "../../../../db/schema/payroll/input-capture";
 import type { PayrollChecklistItem, PayrollToggles } from "../../payroll.types";
 import { requirePayrollUserIds } from "../../lib/payroll-user-id";
 import type { payrollRuns } from "../../../../db/schema";

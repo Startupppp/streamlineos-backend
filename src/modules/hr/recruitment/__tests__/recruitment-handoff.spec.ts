@@ -9,9 +9,9 @@ describe("RecruitmentHandoffService", () => {
         from: jest.fn().mockReturnValue({
           innerJoin: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({
-              limit: jest.fn().mockReturnValue({
-                then: jest.fn().mockResolvedValue(null),
-              }),
+              limit: jest
+                .fn()
+                .mockResolvedValue([{ id: 7, userId: null, organizationPersonId: null }]),
             }),
           }),
         }),

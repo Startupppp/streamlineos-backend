@@ -110,10 +110,10 @@ function buildService(
     cached: jest.fn().mockImplementation(
       async (_key: string, fn: () => Promise<unknown>) => fn(),
     ),
-    cachedForOrg: jest.fn().mockImplementation(
-      async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn(),
-    ),
     invalidate: jest.fn().mockResolvedValue(undefined),
+    cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
     invalidateForOrg: jest.fn().mockResolvedValue(undefined),
   };
 
@@ -142,18 +142,10 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
           return fn();
         },
       ),
-      /*
-        The org-scoped form keeps the tenant in its own leading argument, so the
-        double rejoins it to the local key the way the real CacheService does.
-        Capturing only argument 1 would drop the orgId this test exists to prove.
-      */
-      cachedForOrg: jest.fn().mockImplementation(
-        async (orgId: string, key: string, fn: () => Promise<unknown>) => {
-          capturedKeys.push(`${orgId}:${key}`);
-          return fn();
-        },
-      ),
       invalidate: jest.fn().mockResolvedValue(undefined),
+      cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
       invalidateForOrg: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -220,15 +212,10 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
           return fn();
         },
       ),
-      // Rejoined as the real CacheService does, so the two orgs still yield two
-      // distinct keys -- that separation is the whole point of this test.
-      cachedForOrg: jest.fn().mockImplementation(
-        async (orgId: string, key: string, fn: () => Promise<unknown>) => {
-          capturedKeys.push(`${orgId}:${key}`);
-          return fn();
-        },
-      ),
       invalidate: jest.fn().mockResolvedValue(undefined),
+      cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
       invalidateForOrg: jest.fn().mockResolvedValue(undefined),
     };
 

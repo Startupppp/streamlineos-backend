@@ -4,6 +4,7 @@ import type { EntitlementsService } from "../entitlements.service";
 import { isCoreModuleKey } from "../entitlements.service";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { CATALOG_MODULES } from "../access-policy";
 import { moduleAvailabilityResolver } from "../../../common/rbac/module-availability";
 
@@ -17,6 +18,7 @@ const NON_OWNER_CTX: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "sess",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 const OWNER_CTX: CurrentUserContext = {
@@ -26,6 +28,7 @@ const OWNER_CTX: CurrentUserContext = {
   isOrgOwner: true,
   sessionId: "sess",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, true),
 };
 
 function makeResolver(

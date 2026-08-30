@@ -5,6 +5,8 @@ import { open, stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  hrEmployments,
+  hrPeople,
   organizationMembers,
   orgUnits,
   users,
@@ -21,6 +23,7 @@ import {
   serializeEmployeeExportRow,
   type EmployeeExportCsvRow,
 } from "./hr-export-csv";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 
 interface EmployeeExportCursor {
   name: string;
@@ -133,7 +136,7 @@ export class HrExportFileService {
         if (input.filters.isActive === "true") conditions.push(eq(users.isActive, true));
         if (input.filters.isActive === "false") conditions.push(eq(users.isActive, false));
         if (input.filters.departmentId) {
-          conditions.push(eq(users.orgDepartmentId, input.filters.departmentId));
+          conditions.push(eq(hrEmployments.departmentId, input.filters.departmentId));
         }
         if (input.filters.role) conditions.push(eq(organizationMembers.role, input.filters.role));
         if (input.filters.search) {
@@ -142,8 +145,8 @@ export class HrExportFileService {
             or(
               ilike(users.name, term),
               ilike(users.email, term),
-              ilike(users.employeeId, term),
-              ilike(users.designation, term),
+              ilike(hrEmployments.employeeNumber, term),
+              ilike(hrEmployments.designation, term),
               ilike(users.firstName, term),
               ilike(users.lastName, term),
             )!,
@@ -169,18 +172,20 @@ export class HrExportFileService {
             firstName: users.firstName,
             lastName: users.lastName,
             email: users.email,
-            employeeId: users.employeeId,
-            designation: users.designation,
+            employeeId: hrEmployments.employeeNumber,
+            designation: hrEmployments.designation,
             role: organizationMembers.role,
             department: orgUnits.name,
             isActive: users.isActive,
           })
           .from(organizationMembers)
           .innerJoin(users, eq(organizationMembers.userId, users.id))
+          .leftJoin(hrPeople, livePersonOfUser(input.orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(input.orgId, hrPeople, hrEmployments))
           .leftJoin(
             orgUnits,
             and(
-              eq(orgUnits.id, users.orgDepartmentId),
+              eq(orgUnits.id, hrEmployments.departmentId),
               eq(orgUnits.orgId, input.orgId),
               eq(orgUnits.kind, "DEPARTMENT"),
             ),

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { Universal } from "../../../common/auth/universal.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
@@ -33,17 +34,22 @@ export class OrgController {
     const parsedLimit = limit ? Number.parseInt(limit, 10) : undefined;
     return this.members.listMembers(u.orgId, {
       search: typeof search === "string" ? search : undefined,
-      limit: parsedLimit !== undefined && Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+      limit:
+        parsedLimit !== undefined && Number.isFinite(parsedLimit)
+          ? parsedLimit
+          : undefined,
     });
   }
 
   @Get("setup/session")
+  @Universal()
   @AllowNoOrg()
   getSetupSession(@CurrentUser() u: CurrentUserContext) {
     return this.setup.getSetupSession(u);
   }
 
   @Post("setup/complete")
+  @Universal()
   @AllowNoOrg()
   complete(
     @Body(new ZodValidationPipe(setupSchema)) body: SetupInput,
@@ -53,6 +59,7 @@ export class OrgController {
   }
 
   @Post("setup/skip")
+  @Universal()
   @AllowNoOrg()
   skip(
     @Body(new ZodValidationPipe(orgSetupSkipSchema)) body: OrgSetupSkipInput,

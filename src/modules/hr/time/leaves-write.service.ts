@@ -19,7 +19,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AuditService } from "../../../common/audit/audit.service";
-import { EmailService } from "../../email/email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { AutomationService } from "../../automation/automation.service";
 import { formatDateOnly } from "../../../common/date";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
@@ -28,9 +28,16 @@ import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { CreateLeaveInput } from "./dto/leaves.schemas";
 import { LeaveApproverService } from "./leave-approver.service";
+import { decideProbationLeave } from "./probation-leave-restriction";
 import { ProbationService } from "../lifecycle/probation.service";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
 
 interface LeaveRow {
   userId: string;
@@ -44,13 +51,14 @@ export class LeavesWriteService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly automation: AutomationService,
     private readonly workflowEngine: HrWorkflowEngineService,
     private readonly cache: CacheService,
     private readonly access: AccessService,
     private readonly approvers: LeaveApproverService,
     private readonly probation: ProbationService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   private async invalidateLeaveAnalytics(orgId: string): Promise<void> {
@@ -63,6 +71,18 @@ export class LeavesWriteService {
       throw new ConflictException(
         "No authorized leave approver is configured. Ask an organization administrator to assign one.",
       );
+    }
+
+    let approverMembershipId: number;
+    try {
+      const approverActor = await assertOrganizationActor(this.db, currentUser.orgId, {
+        kind: "user",
+        userId: approver.id,
+      });
+      approverMembershipId = approverActor.membershipId;
+    } catch (e) {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
     }
 
     const requestedDays = body.isHalfDay
@@ -90,16 +110,13 @@ export class LeavesWriteService {
       .limit(1);
 
     if (activePolicy?.probationRestricted) {
-      const onProbation = await this.probation.isOnProbationDuring(
+      const coverage = await this.probation.probationCoverageOn(
         currentUser.orgId,
         currentUser.userId,
         startStr,
       );
-      if (onProbation) {
-        throw new BadRequestException(
-          "This leave type is not available during your probation period. Contact HR if you have questions.",
-        );
-      }
+      const decision = decideProbationLeave({ probationRestricted: true, coverage });
+      if (!decision.allowed) throw new BadRequestException(decision.reason);
     }
 
     const { leaveRequest, leaveTypeName } = await this.db.transaction(async (tx) => {
@@ -190,6 +207,7 @@ export class LeavesWriteService {
           reason: body.reason,
           priority: body.priority,
           approverId: approver.id,
+          approverMembershipId,
           attachmentUrl: body.attachmentUrl ?? null,
           isHalfDay: body.isHalfDay,
           halfDayPeriod: body.halfDayPeriod ?? null,
@@ -295,7 +313,7 @@ export class LeavesWriteService {
 
     if (!existing) return { ok: false as const, reason: "not_found" as const };
 
-    const dispatch = () => this.dispatchLeaveCancellation(currentUser, existing);
+    const dispatch = () => this.dispatchLeaveCancellation(currentUser, leaveId, existing);
     if (!registerAfterCommit(dispatch)) void dispatch();
 
     await this.invalidateLeaveAnalytics(currentUser.orgId);
@@ -309,21 +327,13 @@ export class LeavesWriteService {
     startDate: string,
     endDate: string,
   ): Promise<string[]> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: { reportingTo: true },
-    });
+    const facts = await this.employment.getFacts(orgId, userId);
 
-    const sameMgrUsers = user?.reportingTo
-      ? await this.db.query.users.findMany({
-          where: eq(users.reportingTo, user.reportingTo),
-          columns: { id: true },
-        })
+    const peerIds = facts.managerUserId
+      ? (await this.employment.getDirectReportUserIds(orgId, facts.managerUserId)).filter(
+          (id) => id !== userId,
+        )
       : [];
-
-    const peerIds = sameMgrUsers
-      .map((peerUser) => peerUser.id)
-      .filter((peerUserId) => peerUserId !== userId);
     if (peerIds.length === 0) return [];
 
     const conflicts = await this.db.query.leaveRequests.findMany({
@@ -386,26 +396,23 @@ export class LeavesWriteService {
         priority: body.priority,
       });
 
-      const recipients = await this.hrRecipients(currentUser.orgId);
-      await Promise.all(
-        recipients.map((hr) =>
-          this.email.sendLeaveRequestEmail(
-            hr.email,
-            hr.name ?? "HR",
-            actorName ?? "Employee",
-            leaveTypeName,
-            formatDateOnly(new Date(body.startDate)),
-            formatDateOnly(new Date(body.endDate)),
-            body.reason ?? "No reason provided",
-          ),
-        ),
-      );
+      const recipients = await this.hrRecipientIds(currentUser.orgId);
+      await this.dispatch.emit({
+        eventKey: "hr.leave.requested",
+        orgId: currentUser.orgId,
+        actorUserId: currentUser.userId,
+        targetUserIds: recipients,
+        entityType: "leave_request",
+        entityId: String(leaveRequestId),
+        message: `${actorName ?? "Employee"} submitted a ${leaveTypeName} leave request.`,
+        variables: { employeeName: actorName ?? "Employee", leaveType: leaveTypeName, startDate: formatDateOnly(new Date(body.startDate)), endDate: formatDateOnly(new Date(body.endDate)), reason: body.reason ?? "No reason provided" },
+      });
     } catch {
       return;
     }
   }
 
-  private async dispatchLeaveCancellation(currentUser: CurrentUserContext, existing: LeaveRow): Promise<void> {
+  private async dispatchLeaveCancellation(currentUser: CurrentUserContext, leaveId: number, existing: LeaveRow): Promise<void> {
     try {
       const [leaveTypeRow, actor] = await Promise.all([
         existing.leaveTypeId
@@ -423,33 +430,26 @@ export class LeavesWriteService {
       const leaveTypeName = leaveTypeRow?.name ?? "Leave";
       const employeeName = actor?.name ?? "Employee";
 
-      const recipients = await this.hrRecipients(currentUser.orgId);
-      await Promise.all(
-        recipients.map((hr) =>
-          this.email.sendLeaveCancellationEmail(
-            hr.email,
-            hr.name ?? "HR",
-            employeeName,
-            leaveTypeName,
-            existing.startDate,
-            existing.endDate,
-          ),
-        ),
-      );
+      const recipients = await this.hrRecipientIds(currentUser.orgId);
+      await this.dispatch.emit({
+        eventKey: "hr.leave.cancelled",
+        orgId: currentUser.orgId,
+        actorUserId: currentUser.userId,
+        targetUserIds: recipients,
+        entityType: "leave_request",
+        entityId: String(leaveId),
+        message: `${employeeName} cancelled a ${leaveTypeName} leave request.`,
+        variables: { employeeName, leaveType: leaveTypeName, startDate: existing.startDate, endDate: existing.endDate },
+      });
     } catch {
       return;
     }
   }
 
-  private async hrRecipients(orgId: string): Promise<{ email: string; name: string | null }[]> {
+  private async hrRecipientIds(orgId: string): Promise<string[]> {
     const approvers = await this.access.membersWithPermission(orgId, "hr:leaves:approve");
     if (approvers.length === 0) return [];
 
-    const hrUsers = await this.db
-      .select({ email: users.email, name: users.name })
-      .from(users)
-      .where(inArray(users.id, approvers.map((m) => m.userId)));
-
-    return hrUsers.filter((hr) => hr.email);
+    return approvers.map((m) => m.userId);
   }
 }

@@ -28,6 +28,7 @@ import {
   type UpdateOfferInput,
 } from "./dto/candidate-records.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("hr")
 @Controller("hr/recruitment/candidates/:candidateId/offers")
@@ -53,12 +54,14 @@ export class RecruitmentOffersController {
   }
 
   @Post(":offerId/submit-for-approval")
+  @Idempotent("hr.offer.submit-approval")
   @RequirePermission("hr:offers:manage")
   submitForApproval(@Param("offerId", ParseIntPipe) offerId: number, @CurrentUser() u: CurrentUserContext) {
     return this.offers.submitForApproval(u.orgId, offerId, u.userId);
   }
 
   @Post(":offerId/approve")
+  @Idempotent("hr.offer.approve")
   @RequirePermission("hr:offers:approve")
   approve(
     @Param("offerId", ParseIntPipe) offerId: number,

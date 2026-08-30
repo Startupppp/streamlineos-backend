@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listCountsSchema = z.object({
   status: z.enum(["PLANNED", "COUNTING", "REVIEW", "POSTED", "CANCELLED"]).optional(),
   warehouseId: z.coerce.number().int().positive().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ListCountsInput = z.infer<typeof listCountsSchema>;
 

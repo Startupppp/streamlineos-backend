@@ -39,8 +39,16 @@ const DELIBERATE_MOVE_PATHS: ReadonlySet<string> = new Set<string>();
  */
 const UPDATES_REGION = /\.set\(\s*\{[^}]*\bregion\s*[:,}]/s;
 
-/** The three creation paths, which set it once and are not updates. */
-const SETS_AT_CREATION = /regionForNewOrg\(\)/;
+/**
+ * The creation paths, which set a region once and are not updates.
+ *
+ * `chooseRegionForNewOrg` is the rule now: placement is decided against the
+ * cell registry and written as a placement row. `regionForNewOrg` is still the
+ * signup-time answer where no placement exists yet, so both count — what this
+ * is guarding is that a region arrives through *a* shared rule rather than a
+ * literal somebody typed.
+ */
+const SETS_AT_CREATION = /chooseRegionForNewOrg\(|regionForNewOrg\(\)/;
 
 function walk(dir: string, found: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

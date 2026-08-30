@@ -1,16 +1,9 @@
-import { Injectable, BadGatewayException, OnModuleInit, Optional, Inject } from "@nestjs/common";
+import { Injectable, BadGatewayException, OnModuleInit } from "@nestjs/common";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { outboundRequest } from "../../../../common/http/outbound-request";
 import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter, type PaymentProviderRuntime, type PaymentWebhookNormalization } from "../payment-provider-adapter.interface";
 import { webhookEnvelopeSchema } from "../dto/webhook.schemas";
-import { APP_CONFIG } from "../../../../config/config.module";
-
-interface RazorpayCredentials {
-  readonly RAZORPAY_KEY_ID?: string;
-  readonly RAZORPAY_KEY_SECRET?: string;
-}
-
 interface TenantRazorpayCredentials {
   readonly keyId: string | null;
   readonly secret: string | null;
@@ -44,36 +37,10 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
 
   constructor(
     private readonly registry: PaymentProviderAdapterRegistry,
-    @Optional() @Inject(APP_CONFIG) private readonly platformCredentials?: RazorpayCredentials,
   ) {}
 
   onModuleInit(): void {
     this.registry.register(this);
-  }
-
-  // Concrete-adapter compatibility helpers; the provider-neutral interface exposes only configure().
-  isReady(): boolean {
-    return this.configure({ keyId: this.platformCredentials?.RAZORPAY_KEY_ID ?? null, secret: this.platformCredentials?.RAZORPAY_KEY_SECRET ?? null, webhookSecret: null }).isReady();
-  }
-
-  publicKeyId(): string | null {
-    return this.configure({ keyId: this.platformCredentials?.RAZORPAY_KEY_ID ?? null, secret: null, webhookSecret: null }).publicKeyId();
-  }
-
-  createOrder(params: { keyId: string; keySecret: string; amount: string; currency: string; receipt: string; notes?: Record<string, string> }) {
-    return this.configure({ keyId: params.keyId, secret: params.keySecret, webhookSecret: null }).createOrder({ amount: params.amount, currency: params.currency, receipt: params.receipt, notes: params.notes });
-  }
-
-  verifyPaymentSignature(params: { orderId: string; paymentId: string; signature: string; keySecret: string }): boolean {
-    return this.configure({ keyId: null, secret: params.keySecret, webhookSecret: null }).verifyPaymentSignature({ orderId: params.orderId, paymentId: params.paymentId, signature: params.signature });
-  }
-
-  verifyWebhookSignature(params: { rawBody: string; signature: string; webhookSecret: string }): boolean {
-    return this.configure({ keyId: null, secret: null, webhookSecret: params.webhookSecret }).verifyWebhookSignature({ rawBody: params.rawBody, signature: params.signature });
-  }
-
-  normalizeWebhook(rawBody: string): PaymentWebhookNormalization {
-    return this.configure(null).normalizeWebhook(rawBody);
   }
 
   validateCredentialFormat(environment: "test" | "live", keyId: string): PaymentCredentialWarning | null {
@@ -177,10 +144,34 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
 
     const providerEventId =
       typeof (raw as { id?: unknown }).id === "string" ? (raw as { id: string }).id : undefined;
+    const providerPayload = parsed.data.payload;
+    const payment = providerPayload.payment;
+    const entity = payment && typeof payment === "object" && "entity" in payment ? payment.entity : undefined;
+    const normalizedEntity = entity && typeof entity === "object"
+      ? Object.fromEntries(
+          Object.entries({
+            id: (entity as Record<string, unknown>).id,
+            orderId: (entity as Record<string, unknown>).order_id,
+            amount: (entity as Record<string, unknown>).amount,
+            fee: (entity as Record<string, unknown>).fee,
+            currency: (entity as Record<string, unknown>).currency,
+            status: (entity as Record<string, unknown>).status,
+            method: (entity as Record<string, unknown>).method,
+            email: (entity as Record<string, unknown>).email,
+            description: (entity as Record<string, unknown>).description,
+            notes: (entity as Record<string, unknown>).notes,
+            invoiceId: (entity as Record<string, unknown>).invoice_id,
+            createdAt: (entity as Record<string, unknown>).created_at,
+          }).filter(([, value]) => value !== undefined),
+        )
+      : undefined;
+    const normalizedPayload = normalizedEntity
+      ? { ...providerPayload, payment: { entity: normalizedEntity } }
+      : providerPayload;
     return {
       ok: true,
       eventType: parsed.data.event,
-      payload: parsed.data.payload,
+      payload: normalizedPayload,
       ...(providerEventId ? { providerEventId } : {}),
     };
       },

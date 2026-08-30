@@ -1,4 +1,5 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -11,6 +12,7 @@ export class NotificationsDispatchController {
   constructor(private readonly routes: EmailRoutesService) {}
 
   @Post("dispatch")
+  @Idempotent("notifications.dispatch")
   @HttpCode(200)
   @RequirePermission("notifications:events:manage")
   dispatch(@Body() raw: unknown) {

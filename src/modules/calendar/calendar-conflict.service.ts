@@ -110,6 +110,7 @@ export class CalendarConflictService {
       .from(eventAttendees)
       .where(
         and(
+          eq(eventAttendees.orgId, orgId),
           eq(eventAttendees.userId, userId),
           inArray(eventAttendees.eventId, eventIds),
         ),

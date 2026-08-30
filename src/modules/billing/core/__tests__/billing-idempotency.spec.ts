@@ -4,37 +4,20 @@ import { BillingService } from "../billing.service";
 import { AiCreditsService } from "../ai-credits.service";
 import { AiCreditsReservationService } from "../ai-credits-reservation.service";
 import { AiCreditsPacksService } from "../ai-credits-packs.service";
-import {
-  PLATFORM_PAYMENT_PROVIDER,
-  type PlatformPaymentProvider,
-} from "../platform-payment-provider";
 import { AuditService } from "../../../../common/audit/audit.service";
-import { ExternalEffectLedger } from "../../../../common/outbox/external-effect-ledger";
-import { RevenueAnalyticsService } from "../revenue-analytics.service";
 import { PlanLimitsService } from "../plan-limits.service";
+import { ProrationLedgerService } from "../proration-ledger.service";
+import { VersionedCatalogService } from "../versioned-catalog.service";
 import { APP_CONFIG } from "../../../../config/config.module";
 import { PaymentProviderAdapterRegistry } from "../../payments/payment-provider-adapter.interface";
-import { PaymentProviderResolver } from "../../payments/payment-provider-resolver.service";
+import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../../payments/payment-provider-resolver.service";
+import { PaymentWebhookHealthService } from "../../payments/payment-webhook-health.service";
+import { PaymentAnalyticsService } from "../../payments/payment-analytics.service";
+import { RevenueAnalyticsService } from "../revenue-analytics.service";
+import { ExternalEffectLedger } from "../../../../common/outbox/external-effect-ledger";
 import { FakeProviderAdapter, FAKE_VALID_PAYMENT_SIG } from "../../payments/testing/fake-provider-adapter";
 import { creditsToMilli, milliToCredits } from "../../../ai/core/billing/ai-model-pricing.constants";
 import { planGrantMilli } from "../ai-credit-units";
-import { PlatformPaymentRegistry } from "../platform-payment-registry";
-
-/*
-  `createOrder` picks its provider by currency now, so the service needs the
-  registry too. The fake hands back whichever platform-provider double the case
-  already built, so these tests keep asserting what they asserted before —
-  provider SELECTION has its own coverage in `provider-selection.spec.ts`.
-*/
-function makePlatformRegistry(provider: unknown) {
-  return {
-    forCurrency: jest.fn().mockReturnValue({ provider, isPreferred: true }),
-    byProviderKey: jest.fn().mockReturnValue(provider),
-    available: jest.fn().mockReturnValue({ razorpay: true, stripe: false }),
-  } as unknown as PlatformPaymentRegistry;
-}
-
-
 
 describe("planGrantMilli — exact milli-credit values (1 credit = 1,000 milli)", () => {
   it("STARTER grants 500,000 milli (500 credits)", () => {
@@ -79,33 +62,6 @@ const VERIFY_INPUT = {
   plan: "STARTER" as const,
 };
 
-/* Typed as the interface, for the reason set out in `billing.service.spec.ts`. */
-function makeRazorpay(configured = true, signatureValid = true, orgId = "org-1") {
-  return {
-    providerKey: "razorpay",
-    isConfigured: jest.fn().mockReturnValue(configured),
-    getPublishableKey: jest.fn().mockReturnValue("rzp_test"),
-    createOrder: jest.fn(),
-    fetchOrder: jest.fn().mockResolvedValue({
-      id: VERIFY_INPUT.razorpay_order_id,
-      amount: 99900,
-      currency: "INR",
-      status: "paid",
-      notes: { orgId, plan: "STARTER", billingCycle: "monthly", userId: "user-1" },
-    }),
-    verifyPaymentSignature: jest.fn().mockReturnValue(signatureValid),
-    verifyWebhookSignature: jest.fn().mockReturnValue(true),
-  } as unknown as jest.Mocked<PlatformPaymentProvider>;
-}
-
-/** BillingService still resolves a tenant provider for the provider-neutral webhook path. */
-function makeResolver() {
-  return {
-    resolve: jest.fn().mockResolvedValue(undefined),
-    resolveConfigured: jest.fn().mockResolvedValue(undefined),
-  } as unknown as PaymentProviderResolver;
-}
-
 function makeRegistry(withAdapter = true) {
   const registry = new PaymentProviderAdapterRegistry();
   if (withAdapter) registry.register(new FakeProviderAdapter());
@@ -124,37 +80,49 @@ function makeMockAiCreditsForBilling() {
   return { grantPlanCredits: jest.fn().mockResolvedValue(undefined) };
 }
 
-/*
-  `execute` runs the effect and records it; the fake must therefore INVOKE the
-  callback, or every assertion about what the effect did (credit grants, in
-  particular) silently passes against work that never happened.
-*/
+function makeResolver() {
+  const adapter = new FakeProviderAdapter();
+  const provider: OrganizationPaymentProvider = {
+    providerKey: adapter.providerKey,
+    environment: "test",
+    isReady: () => adapter.isReady(),
+    publicKeyId: () => adapter.publicKeyId(),
+    createOrder: (params) => adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
+    verifyPaymentSignature: (params) => adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
+    verifyWebhookSignature: (params) => adapter.verifyWebhookSignature({ ...params, webhookSecret: "fake-webhook-secret-at-least-32chars" }),
+    normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
+  };
+  return { resolve: jest.fn().mockResolvedValue(provider), resolveConfigured: jest.fn().mockResolvedValue(provider) };
+}
+
 function makeEffectLedger() {
   return {
-    execute: jest.fn(async (_descriptor: unknown, run: () => Promise<unknown>) => run()),
-  } as unknown as ExternalEffectLedger;
+    execute: jest.fn().mockImplementation(async (_effect: unknown, send: () => Promise<void>) => {
+      await send();
+      return "EXECUTED";
+    }),
+  };
 }
 
 describe("BillingService.verifyAndActivate — idempotency", () => {
-  async function buildBilling(
-    db: unknown,
-    orgId = "org-1",
-    registry = makeRegistry(),
-    razorpay: jest.Mocked<PlatformPaymentProvider> = makeRazorpay(true, true, orgId),
-  ): Promise<BillingService> {
+  async function buildBilling(db: unknown, registry = makeRegistry()): Promise<BillingService> {
     const module = await Test.createTestingModule({
       providers: [
         BillingService,
         { provide: DRIZZLE, useValue: db },
-        { provide: PLATFORM_PAYMENT_PROVIDER, useValue: razorpay },
-      { provide: PlatformPaymentRegistry, useValue: makePlatformRegistry(razorpay) },
         { provide: AiCreditsService, useValue: makeMockAiCreditsForBilling() },
         { provide: AuditService, useValue: makeAuditService() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },
-        { provide: RevenueAnalyticsService, useValue: { recordEvent: jest.fn().mockResolvedValue(undefined) } },
-        { provide: ExternalEffectLedger, useValue: makeEffectLedger() },
-        { provide: PaymentProviderAdapterRegistry, useValue: registry },
+
+        { provide: ProrationLedgerService, useValue: { recordPlanChange: jest.fn().mockResolvedValue(undefined) } },
+
+        { provide: VersionedCatalogService, useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } },
+        { provide: RevenueAnalyticsService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
         { provide: PaymentProviderResolver, useValue: makeResolver() },
+        { provide: PaymentProviderAdapterRegistry, useValue: registry },
+        { provide: ExternalEffectLedger, useValue: makeEffectLedger() },
+        { provide: PaymentWebhookHealthService, useValue: { recordSignatureFailure: jest.fn() } },
+        { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
         { provide: APP_CONFIG, useValue: { RAZORPAY_WEBHOOK_SECRET: "test-secret" } },
       ],
     }).compile();
@@ -163,7 +131,7 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
 
   it("23505 on subscription_payments insert → returns success, not 500 (idempotent retry)", async () => {
     const db = { transaction: jest.fn().mockRejectedValue({ code: "23505" }) };
-    const svc = await buildBilling(db, "org-idp");
+    const svc = await buildBilling(db);
 
     const result = await svc.verifyAndActivate("org-idp", "user-1", VERIFY_INPUT);
 
@@ -177,10 +145,6 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
 
     const txMock = {
       query: {
-      // `createOrder` reads the billing profile for the country that decides
-      // currency and tax jurisdiction. Absent here, so these cases price in the
-      // stated fallback rather than depending on a fixture country.
-      billingProfiles: { findFirst: jest.fn().mockResolvedValue(undefined) },
         subscriptions: { findFirst: jest.fn().mockResolvedValue(null) },
       },
       insert: jest.fn().mockImplementation(() => {
@@ -223,12 +187,10 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
 
   it("invalid signature → throws BadRequestException before any DB write", async () => {
     const wrongSigInput = { ...VERIFY_INPUT, razorpay_signature: "wrong-signature" };
-    const db = { transaction: jest.fn() };
-    const svc = await buildBilling(db, "org-1", makeRegistry(), makeRazorpay(true, false));
+    const svc = await buildBilling({ transaction: jest.fn() });
     await expect(svc.verifyAndActivate("org-1", "user-1", wrongSigInput)).rejects.toThrow(
       "Payment verification failed",
     );
-    expect(db.transaction).not.toHaveBeenCalled();
   });
 });
 

@@ -27,6 +27,7 @@ export class HrAuditService {
   async log(params: {
     orgId: string;
     actorId: string | null;
+    actorMembershipId?: number | null;
     entityType: string;
     entityId: string;
     action: string;
@@ -39,6 +40,7 @@ export class HrAuditService {
     await db.insert(hrAuditLogs).values({
       orgId: params.orgId,
       actorId: params.actorId ?? null,
+      actorMembershipId: params.actorMembershipId ?? null,
       entityType: params.entityType,
       entityId: params.entityId,
       action: params.action,

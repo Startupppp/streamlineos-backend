@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { getTodayString } from "../../../../common/date/date.utils";
 
 export const checkInSchema = z.object({
@@ -37,8 +38,8 @@ export const selfAttendanceLogsQuerySchema = attendanceLogsQuerySchema.omit({
 });
 
 export const selfAttendanceHistoryQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(10).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 
 export const REGULARIZATION_WINDOW_DAYS = 30;
@@ -123,8 +124,8 @@ export const createAttendanceRegularizationSchema = z
   );
 
 export const teamStatusQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
   search: z.string().trim().min(1).max(200).optional(),
   status: z.enum(["PRESENT", "ON_BREAK", "CHECKED_OUT", "OFFLINE"]).optional(),
   departmentId: z.string().min(1).optional(),

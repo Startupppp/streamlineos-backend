@@ -12,9 +12,13 @@ import { isTransientDbError } from "../../common/db/transient-error";
 import { forEachOrg, withTenant, runWithTenantContext } from "../../common/tenant";
 import { filterOrgMemberIds } from "../../common/tenant/org-membership";
 import { NotificationCircuitBreaker } from "./notification-circuit-breaker";
+import {
+  DeliveryClass,
+  backoffMinutesForAttempt,
+  resolveDeliveryClassForEvent,
+} from "./notification-delivery-class";
 
 const BATCH_SIZE = 50;
-const BACKOFF_MINUTES = [1, 5, 15, 60, 360];
 
 /**
  * PIPE-010. Backoff was exact, so every delivery that failed against the same
@@ -158,7 +162,9 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
               .update(notificationQueue)
               .set({
                 status: "PENDING",
-                runAt: new Date(Date.now() + backoffMsWithJitter(BACKOFF_MINUTES[0] ?? 1)),
+                runAt: new Date(
+                  Date.now() + backoffMsWithJitter(backoffMinutesForAttempt(DeliveryClass.PRODUCT_EVENT, 1)),
+                ),
                 lastError: "worker exception",
               })
               .where(eq(notificationQueue.id, job.id)),
@@ -264,7 +270,13 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
 
     const { delivery, sandbox, attempt, provider } = preflight;
 
-    const meta = (delivery.metadata as { title?: string; message?: string; link?: string | null } | null) ?? {};
+    const meta = (delivery.metadata as {
+      title?: string;
+      message?: string;
+      link?: string | null;
+      emailHtml?: string;
+      attachments?: Array<{ filename: string; contentBase64: string; type: string }>;
+    } | null) ?? {};
     // COMP-002: resolved from the catalog rather than stored on the delivery row, so
     // it always reflects the event's current mandatory flag. An unknown key is treated
     // as mandatory — the conservative direction, since the cost of wrongly omitting an
@@ -304,6 +316,7 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
       link: meta.link ?? null,
       priority: delivery.priority,
       sandbox,
+      metadata: delivery.metadata ?? undefined,
     });
 
     if (sendResult.status === "SENT") this.breaker.recordSuccess(delivery.orgId, delivery.channel);
@@ -340,7 +353,10 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
 
       const retryable = sendResult.retryable ?? false;
       if (retryable && attempt < delivery.maxAttempts) {
-        const backoff = BACKOFF_MINUTES[Math.min(attempt - 1, BACKOFF_MINUTES.length - 1)] ?? 60;
+        const backoff = backoffMinutesForAttempt(
+          resolveDeliveryClassForEvent(delivery.eventKey ?? undefined),
+          attempt,
+        );
         const nextAttemptAt = new Date(now.getTime() + backoffMsWithJitter(backoff));
         await this.db
           .update(notificationDeliveries)

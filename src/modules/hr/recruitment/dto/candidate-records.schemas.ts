@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createCalibrationSchema = z.object({
   jobPostingId: z.number().int().positive().optional(),
@@ -99,8 +100,8 @@ const OFFER_STATUSES = [
 
 export const offerListSchema = z.object({
   status: z.enum(OFFER_STATUSES).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20, 100),
 });
 export type OfferListInput = z.infer<typeof offerListSchema>;
 

@@ -8,18 +8,20 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AttendanceRegularizationService } from "./attendance-regularization.service";
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 import {
   createAttendanceRegularizationSchema,
   type CreateAttendanceRegularizationInput,
 } from "./dto/attendance.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const listRegularizationsSchema = z.object({
   userId: z.string().optional(),
   status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 
 const rejectRegularizationSchema = z.object({
@@ -66,6 +68,7 @@ export class AttendanceRegularizationController {
   }
 
   @Post(":regularizationId/reject")
+  @Idempotent("hr.attendance-regularization.reject")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")

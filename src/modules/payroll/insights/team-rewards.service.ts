@@ -6,6 +6,7 @@ import { employeeSalaryProfiles, users } from "../../../db/schema";
 import { hrBenefitEnrollments, hrBenefitPlans } from "../../../db/schema/hr/benefits";
 import { hrEquityGrants } from "../../../db/schema/hr/enterprise-comp";
 import { EssService } from "./ess.service";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { analyzePayCompression } from "./lib/pay-compression";
 import { estimateEmployerMonthlyBenefit } from "./lib/total-rewards";
 
@@ -35,10 +36,11 @@ export class TeamRewardsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ess: EssService,
+    private readonly employmentFacts: EmploymentFactsService,
   ) {}
 
   async getTeamRewards(orgId: string, managerUserId: string): Promise<TeamRewardsResult> {
-    const reports = await this.loadDirectReports(managerUserId);
+    const reports = await this.loadDirectReports(orgId, managerUserId);
     const honestyNote =
       "Team total rewards is an illustrative cash + benefits estimate + equity units view of your direct reports. Equity is not mark-to-market. Pay compression uses CTC only with no protected attributes.";
 
@@ -153,7 +155,7 @@ export class TeamRewardsService {
    * Full total-rewards statement for one direct report (manager view).
    */
   async getReportTotalRewards(orgId: string, managerUserId: string, reportUserId: string) {
-    await this.assertDirectReport(managerUserId, reportUserId);
+    await this.assertDirectReport(orgId, managerUserId, reportUserId);
     return this.ess.getTotalRewards(orgId, reportUserId);
   }
 
@@ -192,19 +194,22 @@ export class TeamRewardsService {
     };
   }
 
-  private async loadDirectReports(managerUserId: string) {
+  private async loadDirectReports(orgId: string, managerUserId: string) {
+    const reportIds = await this.employmentFacts.getDirectReportUserIds(orgId, managerUserId);
+    if (reportIds.length === 0) return [];
     return this.db
       .select({ id: users.id, name: users.name, email: users.email })
       .from(users)
-      .where(eq(users.reportingTo, managerUserId));
+      .where(inArray(users.id, reportIds));
   }
 
-  private async assertDirectReport(managerUserId: string, subjectUserId: string) {
-    const subject = await this.db.query.users.findFirst({
-      where: eq(users.id, subjectUserId),
-      columns: { reportingTo: true },
-    });
-    if (!subject || subject.reportingTo !== managerUserId) {
+  private async assertDirectReport(
+    orgId: string,
+    managerUserId: string,
+    subjectUserId: string,
+  ) {
+    const subject = await this.employmentFacts.getFacts(orgId, subjectUserId);
+    if (subject.managerUserId !== managerUserId) {
       throw new ForbiddenException("You can only view total rewards for your direct reports");
     }
   }

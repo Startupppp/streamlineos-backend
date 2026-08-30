@@ -80,6 +80,10 @@ export const kbPages = pgTable(
     uniqueIndex("uniq_kb_pages_org_source_article").on(table.orgId, table.sourceArticleId).where(sql`${table.sourceArticleId} IS NOT NULL`),
     index("idx_kb_pages_fts").using("gin", table.fts),
     unique("uniq_kb_pages_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.spaceId], foreignColumns: [kbSpaces.orgId, kbSpaces.id], name: "fk_kb_pages_org_space" }),
+    foreignKey({ columns: [table.orgId, table.parentPageId], foreignColumns: [table.orgId, table.id], name: "fk_kb_pages_org_parent" }),
+    foreignKey({ columns: [table.orgId, table.sourceArticleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_pages_org_source_article" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_kb_pages_org_project" }).onDelete("set null"),
   ],
 );
 
@@ -97,6 +101,7 @@ export const kbPageFavorites = pgTable(
     uniqueIndex("uniq_kb_page_favorites_page_user").on(table.pageId, table.userId),
     index("idx_kb_page_favorites_org_user").on(table.orgId, table.userId),
     unique("uniq_kb_page_favorites_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_favorites_org_page" }),
   ],
 );
 
@@ -113,6 +118,7 @@ export const kbPageVisits = pgTable(
     uniqueIndex("uniq_kb_page_visits_page_user").on(table.pageId, table.userId),
     index("idx_kb_page_visits_org_user_visited").on(table.orgId, table.userId, table.visitedAt),
     unique("uniq_kb_page_visits_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_visits_org_page" }),
   ],
 );
 
@@ -132,6 +138,8 @@ export const kbPageLinks = pgTable(
     uniqueIndex("uniq_kb_page_links_source_target").on(table.sourcePageId, table.targetPageId),
     index("idx_kb_page_links_org_target").on(table.orgId, table.targetPageId),
     unique("uniq_kb_page_links_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.sourcePageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_links_org_source" }),
+    foreignKey({ columns: [table.orgId, table.targetPageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_links_org_target" }),
   ],
 );
 

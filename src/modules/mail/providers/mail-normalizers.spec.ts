@@ -221,22 +221,52 @@ describe("normalizeOutlookMessage", () => {
 });
 
 describe("cursor encode/decode roundtrip", () => {
+  const READER = "user-1";
+  const OTHER_READER = "user-2";
+
+  beforeAll(() => {
+    process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "k".repeat(64);
+  });
+
   it("encodes and decodes a cursor map", () => {
     const cursor = { 1: "pageTokenABC", 2: 25 };
-    const encoded = encodeCursor(cursor);
+    const encoded = encodeCursor(cursor, READER);
     expect(typeof encoded).toBe("string");
-    const decoded = decodeCursor(encoded);
+    const decoded = decodeCursor(encoded, READER);
     expect(decoded[1]).toBe("pageTokenABC");
     expect(decoded[2]).toBe(25);
   });
 
   it("returns empty object for invalid cursor", () => {
-    expect(decodeCursor("not-valid-base64url!!")).toEqual({});
+    expect(decodeCursor("not-valid-base64url!!", READER)).toEqual({});
   });
 
   it("returns empty object for non-object JSON", () => {
     const encoded = Buffer.from(JSON.stringify([1, 2, 3]), "utf-8").toString("base64url");
-    expect(decodeCursor(encoded)).toEqual({});
+    expect(decodeCursor(encoded, READER)).toEqual({});
+  });
+
+  it("refuses an unsigned cursor, so the old wire format cannot be replayed", () => {
+    const legacy = Buffer.from(JSON.stringify({ 1: "pageTokenABC" }), "utf-8").toString("base64url");
+    expect(decodeCursor(legacy, READER)).toEqual({});
+  });
+
+  it("refuses a cursor whose account map was edited", () => {
+    const encoded = encodeCursor({ 1: "mine", 2: 10 }, READER);
+    const [version, body, signature] = encoded.split(".");
+    const tampered = JSON.parse(Buffer.from(body ?? "", "base64url").toString("utf-8")) as {
+      u: string;
+      c: Record<string, unknown>;
+    };
+    tampered.c["1"] = "someone-elses-page-token";
+    const forgedBody = Buffer.from(JSON.stringify(tampered), "utf-8").toString("base64url");
+
+    expect(decodeCursor(`${version}.${forgedBody}.${signature}`, READER)).toEqual({});
+  });
+
+  it("refuses another reader's cursor", () => {
+    const encoded = encodeCursor({ 1: "pageTokenABC" }, READER);
+    expect(decodeCursor(encoded, OTHER_READER)).toEqual({});
   });
 });
 

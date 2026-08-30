@@ -7,6 +7,7 @@ import { InvitationsService } from "./invitations.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { EmailService } from "../../email/email.service";
@@ -123,8 +124,10 @@ describe("InvitationsService.invite — plan limit enforcement", () => {
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
         { provide: DRIZZLE, useValue: mockDb },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
+
+        { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn().mockResolvedValue(undefined) } },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { cachedForOrg: jest.fn().mockImplementation(async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn()), cachedVersionedForOrg: jest.fn().mockImplementation(async (_orgId: string, _ns: string, _key: string, fn: () => Promise<unknown>) => fn()), invalidateForOrg: jest.fn().mockResolvedValue(undefined), invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined), invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
+        { provide: CacheService, useValue: { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), invalidateForOrg: jest.fn().mockResolvedValue(undefined), invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined) } },
         { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: AccessService,
@@ -202,7 +205,9 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
         InvitationAcceptanceService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
-        { provide: CacheService, useValue: { cachedForOrg: jest.fn().mockImplementation(async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn()), cachedVersionedForOrg: jest.fn().mockImplementation(async (_orgId: string, _ns: string, _key: string, fn: () => Promise<unknown>) => fn()), invalidateForOrg: jest.fn().mockResolvedValue(undefined), invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined), invalidate: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
+
+        { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn().mockResolvedValue(undefined) } },
+        { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined), invalidateForOrg: jest.fn().mockResolvedValue(undefined), invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined) } },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();

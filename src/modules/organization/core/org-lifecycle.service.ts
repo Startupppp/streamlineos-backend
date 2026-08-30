@@ -7,16 +7,21 @@ import {
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, ne } from "drizzle-orm";
 import {
+  accountOrganizationIndex,
   auditLogs,
   candidateOffers,
   leaveBlackoutDates,
   onboardingTasks,
   organizationMembers,
+  organizationLegalHolds,
   organizations,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import {
+  assertTransitionAllowed,
+} from "./lifecycle/organization-lifecycle-transitions";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
@@ -26,6 +31,12 @@ import { InvitationsService } from "./invitations.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
+import { unplaceOrganization } from "../../../common/region/placement-lookup";
+import {
+  getRegionRegistry,
+  hasRegionRegistry,
+} from "../../../common/region/region-registry";
+import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
 
 @Injectable()
 export class OrgLifecycleService {
@@ -35,7 +46,25 @@ export class OrgLifecycleService {
     private readonly cache: CacheService,
     private readonly orgMembership: OrgMembershipService,
     private readonly invitations: InvitationsService,
+    private readonly saga: OrganizationSagaService,
   ) {}
+
+  private async hasActiveLegalHold(
+    orgId: string,
+    db: DbOrTx = this.db,
+  ): Promise<boolean> {
+    const [hold] = await db
+      .select({ holdId: organizationLegalHolds.holdId })
+      .from(organizationLegalHolds)
+      .where(
+        and(
+          eq(organizationLegalHolds.orgId, orgId),
+          isNull(organizationLegalHolds.releasedAt),
+        ),
+      )
+      .limit(1);
+    return hold !== undefined;
+  }
 
   private async listMemberUserIds(db: DbOrTx, orgId: string): Promise<string[]> {
     const members = await db
@@ -58,7 +87,7 @@ export class OrgLifecycleService {
 
   private async revokeMembersAccess(orgId: string, memberUserIds: string[]): Promise<void> {
     for (const memberUserId of memberUserIds) {
-      await this.orgMembership.revokeOrgScopedAccess(orgId, memberUserId);
+      await this.orgMembership.revokeOrgScopedAccess(orgId, memberUserId, "removed");
     }
   }
 
@@ -114,6 +143,15 @@ export class OrgLifecycleService {
             eq(users.lastActiveOrgId, orgId),
           ),
         );
+      await db
+        .update(accountOrganizationIndex)
+        .set({ organizationStatus: "ARCHIVED" })
+        .where(
+          and(
+            eq(accountOrganizationIndex.userId, memberUserId),
+            eq(accountOrganizationIndex.orgId, orgId),
+          ),
+        );
     }
   }
 
@@ -146,35 +184,85 @@ export class OrgLifecycleService {
   }
 
   async archiveOrg(orgId: string, userId: string) {
-    const memberUserIds = await runInTenantTransaction(
-      this.db,
-      (tx) => this.listMemberUserIds(tx, orgId),
-      { orgId },
-    );
-    const replacements = await this.resolveReplacementOrgIds(
-      orgId,
-      memberUserIds,
-    );
-    await runInTenantTransaction(
+    const preflight = await runInTenantTransaction(
       this.db,
       async (tx) => {
-        await this.repairLastActiveOrgIds(
-          tx,
-          orgId,
-          replacements,
-        );
-        await tx
-          .update(organizations)
-          .set({ status: "ARCHIVED", deletedAt: new Date() })
-          .where(eq(organizations.id, orgId));
-        await this.invitations.revokeAllPending(orgId, tx);
+        const [row] = await tx
+          .select({ statusV2: organizations.statusV2 })
+          .from(organizations)
+          .where(eq(organizations.id, orgId))
+          .limit(1);
+        if (!row) return null;
+
+        return {
+          statusV2: row.statusV2,
+          hasActiveLegalHold: await this.hasActiveLegalHold(orgId, tx),
+          memberUserIds: await this.listMemberUserIds(tx, orgId),
+        };
       },
       { orgId },
     );
-    const nextOrgId = replacements.get(userId) ?? null;
+    if (!preflight) throw new NotFoundException("Organization not found");
 
-    await this.revokeMembersAccess(orgId, memberUserIds);
-    await this.bustMembersMembership(orgId, memberUserIds);
+    const transition = assertTransitionAllowed(
+      "ARCHIVE",
+      preflight.statusV2 ?? "ACTIVE",
+      { hasActiveLegalHold: preflight.hasActiveLegalHold },
+    );
+    if (!transition.allowed) throw new BadRequestException(transition.reason);
+
+    const memberUserIds = preflight.memberUserIds;
+    const replacements = await this.resolveReplacementOrgIds(orgId, memberUserIds);
+
+    const sagaCtx = await this.saga.begin(
+      "ARCHIVE",
+      orgId,
+      `archive:${orgId}:${userId}`,
+      userId,
+      preflight.statusV2 ?? "ACTIVE",
+    );
+    const done = new Set(
+      sagaCtx.steps.filter((s) => s.state === "DONE").map((s) => s.stepName),
+    );
+
+    try {
+      if (!done.has("revoke-invitations"))
+        await this.saga.runStep(sagaCtx.saga.sagaId, "revoke-invitations", () =>
+          runInTenantTransaction(
+            this.db,
+            (tx) => this.invitations.revokeAllPending(orgId, tx),
+            { orgId },
+          ),
+        );
+
+      if (!done.has("set-status-archived"))
+        await this.saga.runStep(sagaCtx.saga.sagaId, "set-status-archived", () =>
+          runInTenantTransaction(
+            this.db,
+            async (tx) => {
+              await this.repairLastActiveOrgIds(tx, orgId, replacements);
+              await tx
+                .update(organizations)
+                .set({ status: "ARCHIVED", deletedAt: new Date() })
+                .where(eq(organizations.id, orgId));
+            },
+            { orgId },
+          ),
+        );
+
+      if (!done.has("revoke-member-access"))
+        await this.saga.runStep(sagaCtx.saga.sagaId, "revoke-member-access", async () => {
+          await this.revokeMembersAccess(orgId, memberUserIds);
+          await this.bustMembersMembership(orgId, memberUserIds);
+        });
+
+      await this.saga.complete(sagaCtx.saga.sagaId);
+    } catch (err) {
+      await this.saga.compensate(sagaCtx.saga.sagaId, {});
+      throw err;
+    }
+
+    const nextOrgId = replacements.get(userId) ?? null;
 
     this.audit.log({
       action: "org.archived",
@@ -191,6 +279,7 @@ export class OrgLifecycleService {
       tx
         .select({
           orgStatus: organizations.status,
+          statusV2: organizations.statusV2,
           isOwner: organizationMembers.isOwner,
           memberStatus: organizationMembers.status,
         })
@@ -211,25 +300,70 @@ export class OrgLifecycleService {
     if (row.orgStatus !== "ARCHIVED") {
       throw new BadRequestException("Organization is not archived");
     }
+    const activeLegalHoldForRestore = await this.hasActiveLegalHold(orgId);
+    const transition = assertTransitionAllowed(
+      "RESTORE",
+      row.statusV2 ?? "ARCHIVED",
+      { hasActiveLegalHold: activeLegalHoldForRestore },
+    );
+    if (!transition.allowed) throw new BadRequestException(transition.reason);
 
-    const memberUserIds = await runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const ids = await this.listMemberUserIds(tx, orgId);
-        await tx
-          .update(organizations)
-          .set({ status: "ACTIVE", deletedAt: null })
-          .where(eq(organizations.id, orgId));
-        await tx
-          .update(users)
-          .set({ lastActiveOrgId: orgId })
-          .where(eq(users.id, userId));
-        return ids;
-      },
-      { orgId },
+    const sagaCtx = await this.saga.begin(
+      "RESTORE",
+      orgId,
+      `restore:${orgId}:${userId}`,
+      userId,
+      row.statusV2 ?? "ARCHIVED",
+    );
+    const done = new Set(
+      sagaCtx.steps.filter((s) => s.state === "DONE").map((s) => s.stepName),
     );
 
-    await this.bustMembersMembership(orgId, memberUserIds);
+    let memberUserIds: string[] = [];
+    try {
+      if (!done.has("set-status-active"))
+        memberUserIds = await this.saga.runStep(
+          sagaCtx.saga.sagaId,
+          "set-status-active",
+          () =>
+            runInTenantTransaction(
+              this.db,
+              async (tx) => {
+                const ids = await this.listMemberUserIds(tx, orgId);
+                await tx
+                  .update(organizations)
+                  .set({ status: "ACTIVE", deletedAt: null })
+                  .where(eq(organizations.id, orgId));
+                await tx
+                  .update(users)
+                  .set({ lastActiveOrgId: orgId })
+                  .where(eq(users.id, userId));
+                return ids;
+              },
+              { orgId },
+            ),
+        );
+
+      await this.saga.complete(sagaCtx.saga.sagaId);
+    } catch (err) {
+      await this.saga.compensate(sagaCtx.saga.sagaId, {});
+      throw err;
+    }
+
+    await Promise.all([
+      this.bustMembersMembership(orgId, memberUserIds),
+      withIdentity(this.db, userId, (tx) =>
+        tx
+          .update(accountOrganizationIndex)
+          .set({ organizationStatus: "ACTIVE", lastActivatedAt: new Date() })
+          .where(
+            and(
+              eq(accountOrganizationIndex.userId, userId),
+              eq(accountOrganizationIndex.orgId, orgId),
+            ),
+          ),
+      ),
+    ]);
 
     this.audit.log({
       action: "org.restored",
@@ -250,6 +384,7 @@ export class OrgLifecycleService {
             id: organizations.id,
             name: organizations.name,
             slug: organizations.slug,
+            statusV2: organizations.statusV2,
           })
           .from(organizations)
           .where(eq(organizations.id, orgId))
@@ -257,6 +392,14 @@ export class OrgLifecycleService {
       { orgId },
     );
     if (!org) throw new NotFoundException("Organization not found");
+
+    const activeLegalHold = await this.hasActiveLegalHold(orgId);
+    const transition = assertTransitionAllowed(
+      "TERMINAL_DELETE",
+      org.statusV2 ?? "ACTIVE",
+      { hasActiveLegalHold: activeLegalHold },
+    );
+    if (!transition.allowed) throw new BadRequestException(transition.reason);
 
     const provided = confirmation.trim().toLowerCase();
     const matches =
@@ -268,36 +411,79 @@ export class OrgLifecycleService {
       );
     }
 
-    const memberUserIds = await runInTenantTransaction(
-      this.db,
-      (tx) => this.listMemberUserIds(tx, orgId),
-      { orgId },
-    );
-    const replacements = await this.resolveReplacementOrgIds(
+    const sagaCtx = await this.saga.begin(
+      "TERMINAL_DELETE",
       orgId,
-      memberUserIds,
+      `terminal-delete:${orgId}:${userId}`,
+      userId,
+      org.statusV2 ?? "ACTIVE",
     );
-    const nextOrgId = replacements.get(userId) ?? null;
-    await runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        await this.repairLastActiveOrgIds(tx, orgId, replacements);
-        await tx.delete(candidateOffers).where(eq(candidateOffers.orgId, orgId));
-        await tx
-          .delete(leaveBlackoutDates)
-          .where(eq(leaveBlackoutDates.orgId, orgId));
-        await tx.delete(onboardingTasks).where(eq(onboardingTasks.orgId, orgId));
-        await tx
-          .update(auditLogs)
-          .set({ orgId: null })
-          .where(eq(auditLogs.orgId, orgId));
-        await tx.delete(organizations).where(eq(organizations.id, orgId));
-      },
-      { orgId },
+    const done = new Set(
+      sagaCtx.steps.filter((s) => s.state === "DONE").map((s) => s.stepName),
     );
 
-    await this.revokeMembersAccess(orgId, memberUserIds);
-    await this.bustMembersMembership(orgId, memberUserIds);
+    let nextOrgId: string | null = null;
+    try {
+      if (!done.has("validate-confirmation"))
+        await this.saga.runStep(
+          sagaCtx.saga.sagaId,
+          "validate-confirmation",
+          () => Promise.resolve(),
+        );
+
+      if (!done.has("validate-no-legal-hold"))
+        await this.saga.runStep(
+          sagaCtx.saga.sagaId,
+          "validate-no-legal-hold",
+          () => Promise.resolve(),
+        );
+
+      if (!done.has("delete-org-data"))
+        nextOrgId = await this.saga.runStep(
+          sagaCtx.saga.sagaId,
+          "delete-org-data",
+          async () => {
+            const memberUserIds = await runInTenantTransaction(
+              this.db,
+              (tx) => this.listMemberUserIds(tx, orgId),
+              { orgId },
+            );
+            const replacements = await this.resolveReplacementOrgIds(orgId, memberUserIds);
+            const next = replacements.get(userId) ?? null;
+            await runInTenantTransaction(
+              this.db,
+              async (tx) => {
+                await this.repairLastActiveOrgIds(tx, orgId, replacements);
+                await tx.delete(candidateOffers).where(eq(candidateOffers.orgId, orgId));
+                await tx
+                  .delete(leaveBlackoutDates)
+                  .where(eq(leaveBlackoutDates.orgId, orgId));
+                await tx.delete(onboardingTasks).where(eq(onboardingTasks.orgId, orgId));
+                await tx
+                  .update(auditLogs)
+                  .set({ orgId: null })
+                  .where(eq(auditLogs.orgId, orgId));
+                await tx.delete(organizations).where(eq(organizations.id, orgId));
+              },
+              { orgId },
+            );
+            await this.revokeMembersAccess(orgId, memberUserIds);
+            await this.bustMembersMembership(orgId, memberUserIds);
+            return next;
+          },
+        );
+
+      if (!done.has("remove-placement"))
+        await this.saga.runStep(sagaCtx.saga.sagaId, "remove-placement", async () => {
+          await unplaceOrganization(this.db, orgId);
+          if (hasRegionRegistry()) getRegionRegistry().forget(orgId);
+        });
+
+      await this.saga.complete(sagaCtx.saga.sagaId);
+    } catch (err) {
+      await this.saga.compensate(sagaCtx.saga.sagaId, {});
+      throw err;
+    }
 
     this.audit.log({
       action: "org.deleted",
@@ -326,24 +512,63 @@ export class OrgLifecycleService {
       throw new BadRequestException("Organization is already purged");
     }
 
+    const activeLegalHoldForPurge = await this.hasActiveLegalHold(orgId);
+    const purgeTransition = assertTransitionAllowed(
+      "PURGE_SCHEDULE",
+      org.statusV2 ?? "ACTIVE",
+      { hasActiveLegalHold: activeLegalHoldForPurge },
+    );
+    if (!purgeTransition.allowed) throw new BadRequestException(purgeTransition.reason);
+
     const purgeJobId = randomUUID();
     const purgeScheduledAt = new Date(Date.now() + scheduledForDays * 24 * 60 * 60 * 1000);
 
-    await runInTenantTransaction(
-      this.db,
-      (tx) =>
-        tx
-          .update(organizations)
-          .set({
-            statusV2: "PURGE_SCHEDULED",
-            purgeScheduledAt,
-            purgeScheduledBy: actorUserId,
-            purgeReason: reason,
-            purgeJobId,
-          })
-          .where(eq(organizations.id, orgId)),
-      { orgId },
+    const sagaCtx = await this.saga.begin(
+      "PURGE_SCHEDULE",
+      orgId,
+      `purge-schedule:${orgId}:${actorUserId}`,
+      actorUserId,
+      org.statusV2 ?? "ACTIVE",
     );
+    const done = new Set(
+      sagaCtx.steps.filter((s) => s.state === "DONE").map((s) => s.stepName),
+    );
+
+    try {
+      if (!done.has("validate-no-legal-hold"))
+        await this.saga.runStep(
+          sagaCtx.saga.sagaId,
+          "validate-no-legal-hold",
+          () => Promise.resolve(),
+        );
+
+      if (!done.has("set-status-purge-scheduled"))
+        await this.saga.runStep(
+          sagaCtx.saga.sagaId,
+          "set-status-purge-scheduled",
+          () =>
+            runInTenantTransaction(
+              this.db,
+              (tx) =>
+                tx
+                  .update(organizations)
+                  .set({
+                    statusV2: "PURGE_SCHEDULED",
+                    purgeScheduledAt,
+                    purgeScheduledBy: actorUserId,
+                    purgeReason: reason,
+                    purgeJobId,
+                  })
+                  .where(eq(organizations.id, orgId)),
+              { orgId },
+            ),
+        );
+
+      await this.saga.complete(sagaCtx.saga.sagaId);
+    } catch (err) {
+      await this.saga.compensate(sagaCtx.saga.sagaId, {});
+      throw err;
+    }
 
     this.audit.log({
       action: "org.purge_scheduled",
@@ -368,21 +593,52 @@ export class OrgLifecycleService {
       throw new BadRequestException("No purge is scheduled for this organization");
     }
 
-    await runInTenantTransaction(
-      this.db,
-      (tx) =>
-        tx
-          .update(organizations)
-          .set({
-            statusV2: "ACTIVE",
-            purgeScheduledAt: null,
-            purgeScheduledBy: null,
-            purgeReason: null,
-            purgeJobId: null,
-          })
-          .where(eq(organizations.id, orgId)),
-      { orgId },
+    const cancelTransition = assertTransitionAllowed(
+      "PURGE_CANCEL",
+      org.statusV2 ?? "PURGE_SCHEDULED",
+      { hasActiveLegalHold: false },
     );
+    if (!cancelTransition.allowed) throw new BadRequestException(cancelTransition.reason);
+
+    const sagaCtx = await this.saga.begin(
+      "PURGE_CANCEL",
+      orgId,
+      `purge-cancel:${orgId}:${actorUserId}`,
+      actorUserId,
+      org.statusV2,
+    );
+    const done = new Set(
+      sagaCtx.steps.filter((s) => s.state === "DONE").map((s) => s.stepName),
+    );
+
+    try {
+      if (!done.has("set-status-active"))
+        await this.saga.runStep(
+          sagaCtx.saga.sagaId,
+          "set-status-active",
+          () =>
+            runInTenantTransaction(
+              this.db,
+              (tx) =>
+                tx
+                  .update(organizations)
+                  .set({
+                    statusV2: "ACTIVE",
+                    purgeScheduledAt: null,
+                    purgeScheduledBy: null,
+                    purgeReason: null,
+                    purgeJobId: null,
+                  })
+                  .where(eq(organizations.id, orgId)),
+              { orgId },
+            ),
+        );
+
+      await this.saga.complete(sagaCtx.saga.sagaId);
+    } catch (err) {
+      await this.saga.compensate(sagaCtx.saga.sagaId, {});
+      throw err;
+    }
 
     this.audit.log({
       action: "org.purge_cancelled",

@@ -138,7 +138,7 @@ export class KbSearchService {
     const hasSpaces = ids.length > 0;
 
     let vectorLiteral: string | null = null;
-    if (this.embeddings.isConfigured()) {
+    if (this.embeddings.isConfigured() && (await this.hasEmbeddedChunks(user.orgId))) {
       try {
         vectorLiteral = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(q));
       } catch (err: unknown) {
@@ -264,6 +264,15 @@ export class KbSearchService {
       .orderBy(desc(this.keywordRank(tsquery)), desc(kbArticles.updatedAt))
       .limit(pool);
     return rows.map((row) => row.id);
+  }
+
+  private async hasEmbeddedChunks(orgId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: kbArticleChunks.id })
+      .from(kbArticleChunks)
+      .where(and(eq(kbArticleChunks.orgId, orgId), isNotNull(kbArticleChunks.embedding)))
+      .limit(1);
+    return row !== undefined;
   }
 
   private async articleVectorCandidates(
@@ -495,6 +504,7 @@ export class KbSearchService {
     limit: number,
   ): Promise<Array<{ sourceId: number; title: string; spaceId: number | null; snippet: string; updatedAt: Date }>> {
     if (!this.embeddings.isConfigured() || !query.trim()) return [];
+    if (!(await this.hasEmbeddedChunks(user.orgId))) return [];
     try {
       const accessibleSpaceIds = await this.access.getAccessibleSpaceIds(user);
       const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));

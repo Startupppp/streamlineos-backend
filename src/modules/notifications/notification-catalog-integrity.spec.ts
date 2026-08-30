@@ -12,7 +12,23 @@ import { IMPLEMENTED_VISIBILITY_RESOURCE_KINDS } from "./notification-visibility
  * a compile error. These assertions cover what the type system still cannot:
  * values that only Postgres validates, and cross-field agreement.
  */
+/**
+ * Events whose in-app surface is served by a dedicated endpoint rather than by
+ * per-user notification rows. IN_APP is deliberately absent from allowedChannels
+ * so the dispatch pipeline never fans out one row per recipient — for a
+ * 50,000-member organisation that fan-out is the cost c21-02 removed. The event
+ * is still reachable in-app: GET /broadcasts/inbox serves it from the broadcast
+ * row via the absence-of-receipt pattern. Adding one here needs that endpoint.
+ */
+const FAN_OUT_ON_READ_EVENTS = new Set<string>(["notification.broadcast.published"]);
+
 describe("notification event catalog integrity", () => {
+  it("declares events used by migrated cron and payroll callers", () => {
+    expect(NOTIFICATION_EVENT_MAP.has("billing.trial.expiring")).toBe(true);
+    expect(NOTIFICATION_EVENT_MAP.has("system.weekly_recap")).toBe(true);
+    expect(NOTIFICATION_EVENT_MAP.has("payroll.payslip.ready")).toBe(true);
+  });
+
   it("declares every category as a member of the notification_category pgEnum", () => {
     const valid = new Set<string>(notificationCategoryEnum.enumValues);
     const offenders = NOTIFICATION_EVENT_CATALOG.filter((d) => !valid.has(d.category)).map(
@@ -69,8 +85,16 @@ describe("notification event catalog integrity", () => {
 
   it("always includes IN_APP in allowedChannels so a notification is never unreachable", () => {
     const offenders = NOTIFICATION_EVENT_CATALOG.filter(
-      (d) => !d.allowedChannels.includes("IN_APP"),
+      (d) => !d.allowedChannels.includes("IN_APP") && !FAN_OUT_ON_READ_EVENTS.has(d.eventKey),
     ).map((d) => d.eventKey);
     expect(offenders).toEqual([]);
+  });
+
+  it("serves every fan-out-on-read event through a dedicated in-app surface", () => {
+    for (const eventKey of FAN_OUT_ON_READ_EVENTS) {
+      const declaration = NOTIFICATION_EVENT_CATALOG.find((d) => d.eventKey === eventKey);
+      expect(declaration).toBeDefined();
+      expect(declaration?.allowedChannels).not.toContain("IN_APP");
+    }
   });
 });

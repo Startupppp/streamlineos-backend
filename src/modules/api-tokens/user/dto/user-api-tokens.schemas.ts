@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { ALL_PERMISSION_NAMES } from "../../../rbac/permissions";
 
 const PERMISSION_KEYS: ReadonlySet<string> = new Set(ALL_PERMISSION_NAMES);
@@ -34,8 +35,8 @@ export type CreateUserApiTokenInput = z.infer<typeof createUserApiTokenSchema>;
 
 export const listUserApiTokensSchema = z
   .object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    page: pageNumberField,
+    limit: pageSizeField(20),
   })
   .strict();
 

@@ -16,6 +16,22 @@ export interface ModuleAvailabilityResolver {
   getPlanLockedModules(orgId: string): Promise<readonly string[]>;
 }
 
+function normalizeModuleKey(rawModuleKey: string): string {
+  return rawModuleKey.trim().toLowerCase();
+}
+
+function normalizedModuleSet(keys: Iterable<string>): Set<string> {
+  return new Set([...keys].map(normalizeModuleKey));
+}
+
+function normalizedModuleMap(map: Record<string, boolean>): Record<string, boolean> {
+  const normalized: Record<string, boolean> = {};
+  for (const [key, enabled] of Object.entries(map)) {
+    normalized[normalizeModuleKey(key)] = enabled;
+  }
+  return normalized;
+}
+
 /**
  * Single answer to "is this module available to this user in this org".
  *
@@ -31,23 +47,30 @@ export async function moduleAvailability(
   resolver: ModuleAvailabilityResolver,
   orgId: string,
   userId: string,
-  moduleKey: string,
+  rawModuleKey: string,
 ): Promise<ModuleAvailabilityResult> {
+  // Entitlement rows are normalized at the persistence seam. Normalize here
+  // as well so guards, snapshots, and authorization share one key space even
+  // when a caller supplies a stored-style key such as `HR`.
+  const moduleKey = normalizeModuleKey(rawModuleKey);
   if (resolver.isCoreModule(moduleKey)) return { available: true };
 
-  const [denied, map] = await Promise.all([
+  const [rawDenied, rawMap] = await Promise.all([
     resolver.getUserDeniedModules(orgId, userId),
     resolver.getModuleMap(orgId),
   ]);
+  const denied = normalizedModuleSet(rawDenied);
+  const map = normalizedModuleMap(rawMap);
 
-  if (denied.has(moduleKey)) return { available: false, reason: "user-denied" };
+  if (denied.has(moduleKey))
+    return { available: false, reason: "user-denied" };
 
   const orgEnabled = map[moduleKey];
   if (orgEnabled === true) return { available: true };
   if (orgEnabled === false) return { available: false, reason: "org-disabled" };
 
-  const locked = await resolver.getPlanLockedModules(orgId);
-  if (locked.includes(moduleKey)) return { available: false, reason: "not-in-plan" };
+  const locked = normalizedModuleSet(await resolver.getPlanLockedModules(orgId));
+  if (locked.has(moduleKey)) return { available: false, reason: "not-in-plan" };
   return { available: false, reason: "org-disabled" };
 }
 

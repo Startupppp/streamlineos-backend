@@ -12,11 +12,13 @@ import { assertCronSecret } from "./cron-secret";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
+import { NotificationRetentionService } from "../notifications/notification-retention.service";
 import { NotificationOutboxRelayService } from "../notifications/notification-outbox-relay.service";
 import { NotificationDigestService } from "../notifications/notification-digest.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { OwnershipTransfersService } from "../ownership/ownership-transfers.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
+import { AccountOrganizationIndexService } from "../organization/core/account-organization-index.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronWorkflowService } from "./cron-workflow.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
@@ -40,11 +42,13 @@ export class CronPlatformController {
     private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
     private readonly idempotency: CronIdempotencyService,
     private readonly notificationRetention: CronNotificationRetentionService,
+    private readonly partitionRetention: NotificationRetentionService,
     private readonly outboxRelay: NotificationOutboxRelayService,
     private readonly digest: NotificationDigestService,
     private readonly buildDueSweep: BuildDueSweepService,
     private readonly crmFollowupSweep: CrmFollowupSweepService,
     private readonly timeSweeps: NotificationTimeSweepsService,
+    private readonly accountOrgIndex: AccountOrganizationIndexService,
     private readonly cronLease: CronLeaseService,
   ) {}
 
@@ -114,6 +118,17 @@ export class CronPlatformController {
     return this.runNotificationsRetentionSweep(authorization);
   }
 
+  @Get("notifications-retention-detach")
+  getNotificationsRetentionDetach(@Headers("authorization") authorization?: string) {
+    return this.runNotificationsRetentionDetach(authorization);
+  }
+
+  @Post("notifications-retention-detach")
+  @HttpCode(200)
+  postNotificationsRetentionDetach(@Headers("authorization") authorization?: string) {
+    return this.runNotificationsRetentionDetach(authorization);
+  }
+
   @Get("chat-reply-reminders")
   getChatReplyReminders(@Headers("authorization") authorization?: string) {
     return this.runChatReplyReminders(authorization);
@@ -171,6 +186,17 @@ export class CronPlatformController {
   @HttpCode(200)
   postOwnershipTransferExpiry(@Headers("authorization") authorization?: string) {
     return this.runOwnershipTransferExpiry(authorization);
+  }
+
+  @Get("account-org-index-rebuild")
+  getAccountOrgIndexRebuild(@Headers("authorization") authorization?: string) {
+    return this.runAccountOrgIndexRebuild(authorization);
+  }
+
+  @Post("account-org-index-rebuild")
+  @HttpCode(200)
+  postAccountOrgIndexRebuild(@Headers("authorization") authorization?: string) {
+    return this.runAccountOrgIndexRebuild(authorization);
   }
 
   @Get("org-purge-worker")
@@ -333,6 +359,24 @@ export class CronPlatformController {
     }
   }
 
+  private async runNotificationsRetentionDetach(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.partitionRetention.sweep();
+      if (result === null) {
+        return { success: true, skipped: true, message: "notification-retention-detach already running" };
+      }
+      return {
+        success: true,
+        message: `Detached ${result.partitionsDetached} partitions and dropped ${result.partitionsDropped}`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Notification retention detach cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
   private async runChatReplyReminders(authorization?: string) {
     assertCronSecret(authorization);
     try {
@@ -424,6 +468,32 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Ownership transfer expiry cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runAccountOrgIndexRebuild(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease(
+        "account-org-index-rebuild",
+        600,
+        () => this.accountOrgIndex.rebuild(),
+      );
+      if (!outcome.ran)
+        return {
+          success: true,
+          skipped: true,
+          message: "account-org-index-rebuild already running",
+        };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Account-org index rebuilt: ${result.organizations} orgs, ${result.succeeded} succeeded, ${result.failed} failed`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Account-org index rebuild cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

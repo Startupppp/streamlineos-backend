@@ -38,6 +38,7 @@ import {
   type VerifyInput,
 } from "./dto/lead-mutations.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 
 function resolveLimit(raw: string | undefined, fallback: number): number {
   if (raw === undefined) return fallback;
@@ -140,6 +141,7 @@ export class LeadsDetailController {
   }
 
   @Patch(":leadId/reject")
+  @Idempotent("leads.lead.reject")
   @RequirePermission("crm:leads:update")
   async reject(
     @Param("leadId", ParseIntPipe) leadId: number,

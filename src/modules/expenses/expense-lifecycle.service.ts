@@ -273,7 +273,17 @@ export class ExpenseLifecycleService {
       // No approver column survives on the policy, so the claim goes to whoever
       // actually holds the approval permission — the same set the submitted
       // e-mail already targets.
-      void this.notifyApprovers(u, expenseId, expense.amount, expense.category);
+      // Not awaited — a mail outage must not fail a claim submission — but not
+      // unobserved either: the rejection is logged rather than dropped, so a
+      // silently unnotified approver leaves a trace somebody can find.
+      this.notifyApprovers(u, expenseId, expense.amount, expense.category).catch(
+        (error: unknown) =>
+          this.logger.warn(
+            `Approver notification failed for expense ${expenseId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          ),
+      );
     }
 
     await this.cache.invalidateNamespaceForOrg(u.orgId, "hr:expenses");

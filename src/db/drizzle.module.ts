@@ -12,6 +12,7 @@ import postgres from "postgres";
 import { createTenantAwareDb, type DbWithClient } from "../common/tenant/tenant-db";
 import { DB_POOL_CONFIG, DRIZZLE } from "./drizzle.constants";
 import { poolTelemetry } from "./pool-telemetry";
+import { instrumentPostgresClient } from "./query-telemetry";
 import { resolvePoolConfig, type ResolvedPoolConfig } from "./pool.config";
 import * as schema from "./schema";
 
@@ -29,7 +30,7 @@ export type { Db } from "./drizzle.types";
       inject: [DB_POOL_CONFIG],
       useFactory: (config: ResolvedPoolConfig): DbWithClient => {
         poolTelemetry.configure({ max: config.max, slowAcquireMs: config.slowAcquireMs });
-        const client = postgres(config.connectionString, config.options);
+        const client = instrumentPostgresClient(postgres(config.connectionString, config.options));
         return createTenantAwareDb(Object.assign(drizzle(client, { schema }), { __client: client }));
       },
     },

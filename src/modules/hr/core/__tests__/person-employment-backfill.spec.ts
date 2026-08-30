@@ -18,10 +18,7 @@ type MemberRow = {
   lastName: string | null;
   name: string | null;
   email: string;
-  employeeId: string | null;
-  designation: string | null;
   phone: string | null;
-  joiningDate: string | null;
 };
 
 function memberRow(membershipId: number): MemberRow {
@@ -32,10 +29,7 @@ function memberRow(membershipId: number): MemberRow {
     lastName: `Last${membershipId}`,
     name: null,
     email: `member${membershipId}@example.com`,
-    employeeId: `EMP-${membershipId}`,
-    designation: "Engineer",
     phone: null,
-    joiningDate: "2026-01-01",
   };
 }
 

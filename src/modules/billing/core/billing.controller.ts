@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { Universal } from "../../../common/auth/universal.decorator";
 import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -76,16 +77,19 @@ export class BillingController {
 
   @AllowNoOrg()
   @Get("plans")
+  @Universal()
   getPlans() {
     return this.billing.getPlans();
   }
 
   @Get("marketplace")
+  @Universal()
   getMarketplace() {
     return this.billing.getMarketplace();
   }
 
   @Post("checkout")
+  @Idempotent("billing.checkout")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
@@ -97,6 +101,7 @@ export class BillingController {
   }
 
   @Post("addons/purchase")
+  @Idempotent("billing.addon.purchase")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
@@ -115,8 +120,17 @@ export class BillingController {
   }
 
   @Get("entitlements")
+  @Universal()
   getEntitlements(@CurrentUser() u: CurrentUserContext) {
     return this.planLimits.getEntitlements(u.orgId);
+  }
+
+  // Stuck provisioning is subscription state, so it reuses that key rather than adding an ungranted one.
+  @UseGuards(PermissionGuard)
+  @RequirePermission("billing:subscription:view")
+  @Get("provisioning-failures")
+  listProvisioningFailures(@CurrentUser() u: CurrentUserContext) {
+    return this.billing.listProvisioningFailures(u.orgId);
   }
 
   @UseGuards(PermissionGuard)
@@ -142,6 +156,7 @@ export class BillingController {
   }
 
   @Post("razorpay")
+  @Idempotent("billing.order.create")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
@@ -171,6 +186,7 @@ export class BillingController {
   }
 
   @Post("marketplace/:appId/install")
+  @Idempotent("billing.marketplace.install")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
   installApp(
@@ -191,6 +207,7 @@ export class BillingController {
   }
 
   @Post("marketplace/:appId/trial")
+  @Idempotent("billing.marketplace.trial")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
   startTrial(
@@ -296,6 +313,7 @@ export class BillingController {
   }
 
   @Post("affiliate/register")
+  @Idempotent("billing.affiliate.register")
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
@@ -311,6 +329,7 @@ export class BillingController {
   }
 
   @Post("affiliate/payout-request")
+  @Idempotent("billing.affiliate.payout-request")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
@@ -319,6 +338,7 @@ export class BillingController {
   }
 
   @Post("referrals")
+  @Idempotent("billing.referral.create")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:referrals:manage")
   async createReferral(
@@ -379,6 +399,7 @@ export class BillingController {
   }
 
   @Post("enterprise-quotes/:quoteId/submit")
+  @Idempotent("billing.enterprise-quote.submit")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:create")
@@ -390,6 +411,7 @@ export class BillingController {
   }
 
   @Post("enterprise-quotes/:quoteId/approve")
+  @Idempotent("billing.enterprise-quote.approve")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
@@ -402,6 +424,7 @@ export class BillingController {
   }
 
   @Post("enterprise-quotes/:quoteId/reject")
+  @Idempotent("billing.enterprise-quote.reject")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
@@ -414,6 +437,7 @@ export class BillingController {
   }
 
   @Post("enterprise-quotes/:quoteId/send")
+  @Idempotent("billing.enterprise-quote.send")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
@@ -425,6 +449,7 @@ export class BillingController {
   }
 
   @Post("enterprise-quotes/:quoteId/accept")
+  @Idempotent("billing.enterprise-quote.accept")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:view")

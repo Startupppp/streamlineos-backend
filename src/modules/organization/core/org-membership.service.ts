@@ -20,17 +20,26 @@ import {
   inArray,
   isNull,
   lte,
+  ne,
   or,
 } from "drizzle-orm";
 import {
+  accountOrganizationIndex,
   agentTokens,
+  invitationEvents,
+  invitations,
+  kbSpaceGrants,
   moduleOwnerships,
-  roleAssignments,
-  roles,
-  orgUnitMembers,
   organizationMembers,
   organizations,
+  orgUnitMembers,
+  ownershipTransfers,
+  resourceGrants,
+  roleAssignments,
+  roles,
   userApiTokens,
+  userDelegations,
+  userIntegrationConnections,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -58,10 +67,13 @@ import { getOrgAdminUserIds } from "../../../common/tenant/org-admin-recipients"
 import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { AblyService } from "../../realtime/ably.service";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { randomUUID } from "node:crypto";
 
 const PG_FK_VIOLATION = "23503";
 
 export type MemberLifecycleStatus = "active" | "suspended" | "archived";
+export type MembershipRevocationCause = "removed" | "suspended" | "archived" | "left";
 
 export function membershipStatusToUserStatus(
   status: "INVITED" | "ACTIVE" | "SUSPENDED" | "LEFT",
@@ -139,31 +151,228 @@ export class OrgMembershipService {
   async revokeOrgScopedAccess(
     orgId: string,
     memberUserId: string,
+    cause: MembershipRevocationCause,
   ): Promise<void> {
     await this.invalidateMemberSessionCaches(orgId, memberUserId);
+
     const now = new Date();
+    const isGrantCleanupCause = cause === "removed" || cause === "left";
+
+    let userEmail: string | null = null;
+    if (isGrantCleanupCause) {
+      const user = await this.db.query.users.findFirst({
+        where: eq(users.id, memberUserId),
+        columns: { email: true },
+      });
+      userEmail = user?.email ?? null;
+    }
+
     await runInTenantTransaction(
       this.db,
-      (tx) =>
-        tx
-          .update(agentTokens)
-          .set({ revokedAt: now })
+      async (tx) => {
+        const [membership] = await tx
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
           .where(
             and(
-              eq(agentTokens.userId, memberUserId),
-              eq(agentTokens.orgId, orgId),
-              isNull(agentTokens.revokedAt),
+              eq(organizationMembers.userId, memberUserId),
+              eq(organizationMembers.orgId, orgId),
             ),
-          ),
+          )
+          .limit(1);
+
+        const membershipId = membership?.id;
+
+        if (membershipId !== undefined) {
+          await tx
+            .update(agentTokens)
+            .set({ revokedAt: now })
+            .where(
+              and(
+                eq(agentTokens.orgId, orgId),
+                eq(agentTokens.issuerMembershipId, membershipId),
+                isNull(agentTokens.revokedAt),
+              ),
+            );
+
+          await tx
+            .update(userDelegations)
+            .set({ status: "REVOKED", revokedAt: now })
+            .where(
+              and(
+                eq(userDelegations.orgId, orgId),
+                eq(userDelegations.status, "ACTIVE"),
+                or(
+                  eq(userDelegations.delegatorMembershipId, membershipId),
+                  eq(userDelegations.delegateeMembershipId, membershipId),
+                ),
+              ),
+            );
+
+          await tx
+            .update(ownershipTransfers)
+            .set({ status: "CANCELLED" })
+            .where(
+              and(
+                eq(ownershipTransfers.orgId, orgId),
+                eq(ownershipTransfers.status, "PENDING"),
+                or(
+                  eq(ownershipTransfers.fromMembershipId, membershipId),
+                  eq(ownershipTransfers.toMembershipId, membershipId),
+                  eq(ownershipTransfers.initiatedByMembershipId, membershipId),
+                ),
+              ),
+            );
+        }
+
+        if (isGrantCleanupCause) {
+          const membershipPrincipalFilter =
+            membershipId !== undefined
+              ? and(
+                  eq(resourceGrants.principalType, "org_membership"),
+                  eq(resourceGrants.principalId, String(membershipId)),
+                )
+              : undefined;
+
+          await tx.delete(resourceGrants).where(
+            and(
+              eq(resourceGrants.orgId, orgId),
+              or(
+                and(
+                  eq(resourceGrants.principalType, "user"),
+                  eq(resourceGrants.principalId, memberUserId),
+                ),
+                membershipPrincipalFilter,
+              ),
+            ),
+          );
+
+          const kbMembershipPrincipalFilter =
+            membershipId !== undefined
+              ? and(
+                  eq(kbSpaceGrants.principalType, "org_membership"),
+                  eq(kbSpaceGrants.principalId, String(membershipId)),
+                )
+              : undefined;
+
+          await tx.delete(kbSpaceGrants).where(
+            and(
+              eq(kbSpaceGrants.orgId, orgId),
+              or(
+                and(
+                  eq(kbSpaceGrants.principalType, "user"),
+                  eq(kbSpaceGrants.principalId, memberUserId),
+                ),
+                kbMembershipPrincipalFilter,
+              ),
+            ),
+          );
+
+          if (userEmail) {
+            const revokedInvites = await tx
+              .update(invitations)
+              .set({ status: "REVOKED", revokedAt: now })
+              .where(
+                and(
+                  eq(invitations.orgId, orgId),
+                  eq(invitations.email, userEmail),
+                  eq(invitations.status, "PENDING"),
+                  isNull(invitations.acceptedAt),
+                ),
+              )
+              .returning({ id: invitations.id });
+
+            if (revokedInvites.length > 0) {
+              await tx.insert(invitationEvents).values(
+                revokedInvites.map((r) => ({
+                  orgId,
+                  invitationId: r.id,
+                  event: "REVOKED" as const,
+                  actorMembershipId: null,
+                })),
+              );
+            }
+          }
+        }
+
+        const updatedConns = await tx
+          .update(userIntegrationConnections)
+          .set({ status: "disabled" })
+          .where(
+            and(
+              eq(userIntegrationConnections.orgId, orgId),
+              eq(userIntegrationConnections.userId, memberUserId),
+              ne(userIntegrationConnections.status, "disabled"),
+            ),
+          )
+          .returning({
+            id: userIntegrationConnections.id,
+            composioConnectedAccountId:
+              userIntegrationConnections.composioConnectedAccountId,
+          });
+
+        for (const conn of updatedConns) {
+          await OutboxWriter.emit(tx, {
+            eventId: randomUUID(),
+            organizationId: orgId,
+            aggregateType: "user_integration_connection",
+            aggregateId: String(conn.id),
+            aggregateVersion: 1,
+            eventType: "integration.connection.disconnected",
+            payload: {
+              connectionId: conn.id,
+              composioConnectedAccountId: conn.composioConnectedAccountId,
+              userId: memberUserId,
+              orgId,
+              cause,
+            },
+            occurredAt: now,
+          });
+        }
+      },
       { orgId },
     );
+
+    const withdrawRealtime = (): Promise<unknown> =>
+      this.ably.revokeUserTokens(memberUserId).catch((err: unknown) => {
+        this.logger.warn(
+          `Realtime token revocation failed for user ${memberUserId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    if (!registerAfterCommit(withdrawRealtime)) void withdrawRealtime();
+
+    const hasOtherActiveMemberships = await runOutsideTenantContext(() =>
+      withIdentity(this.db, memberUserId, async (tx) => {
+        const [result] = await tx
+          .select({ n: count() })
+          .from(organizationMembers)
+          .innerJoin(
+            organizations,
+            eq(organizations.id, organizationMembers.orgId),
+          )
+          .where(
+            and(
+              eq(organizationMembers.userId, memberUserId),
+              eq(organizationMembers.status, "ACTIVE"),
+              eq(organizations.status, "ACTIVE"),
+              isNull(organizations.deletedAt),
+              ne(organizationMembers.orgId, orgId),
+            ),
+          );
+        return (result?.n ?? 0) > 0;
+      }),
+    );
+
+    if (!hasOtherActiveMemberships) {
+      await this.sessions.revokeAllForUser(memberUserId);
+    }
   }
 
   async revokeAccountAccess(
     orgId: string,
     memberUserId: string,
   ): Promise<void> {
-    await this.revokeOrgScopedAccess(orgId, memberUserId);
+    await this.revokeOrgScopedAccess(orgId, memberUserId, "removed");
     await this.sessions.revokeAllForUser(memberUserId);
     const now = new Date();
     await this.db
@@ -475,6 +684,35 @@ export class OrgMembershipService {
             );
           }
 
+          const removalNow = new Date();
+
+          await tx
+            .delete(ownershipTransfers)
+            .where(
+              and(
+                eq(ownershipTransfers.orgId, orgId),
+                or(
+                  eq(ownershipTransfers.fromMembershipId, member.id),
+                  eq(ownershipTransfers.toMembershipId, member.id),
+                  eq(ownershipTransfers.initiatedByMembershipId, member.id),
+                ),
+              ),
+            );
+
+          await tx
+            .update(userDelegations)
+            .set({ status: "REVOKED", revokedAt: removalNow })
+            .where(
+              and(
+                eq(userDelegations.orgId, orgId),
+                eq(userDelegations.status, "ACTIVE"),
+                or(
+                  eq(userDelegations.delegatorMembershipId, member.id),
+                  eq(userDelegations.delegateeMembershipId, member.id),
+                ),
+              ),
+            );
+
           await tx
             .delete(organizationMembers)
             .where(
@@ -511,7 +749,15 @@ export class OrgMembershipService {
       throw err;
     }
 
-    await this.revokeOrgScopedAccess(orgId, memberUserId);
+    await this.revokeOrgScopedAccess(orgId, memberUserId, "removed");
+    await this.db
+      .delete(accountOrganizationIndex)
+      .where(
+        and(
+          eq(accountOrganizationIndex.userId, memberUserId),
+          eq(accountOrganizationIndex.orgId, orgId),
+        ),
+      );
     await this.invalidateMemberListCaches(orgId);
 
     this.audit.log({
@@ -524,11 +770,6 @@ export class OrgMembershipService {
 
     await this.notifyAccessLoss(orgId, memberUserId, "removed").catch(() => undefined);
 
-      // RT-006: Ably tokens are 1-hour TTL and were never revoked, so a removed or
-      // suspended member kept a live realtime connection after losing access.
-      // Revocation is post-commit and its failure is swallowed inside the service —
-      // realtime cleanup must never roll back an access revocation.
-    void this.ably.revokeUserTokens(memberUserId);
     return { success: true };
   }
 
@@ -658,10 +899,19 @@ export class OrgMembershipService {
     );
 
     if (status !== "active") {
-      await this.revokeOrgScopedAccess(orgId, memberUserId);
+      await this.revokeOrgScopedAccess(orgId, memberUserId, status);
     } else {
       await this.invalidateMemberSessionCaches(orgId, memberUserId);
     }
+    await this.db
+      .update(accountOrganizationIndex)
+      .set({ membershipStatus: userStatusToMembershipStatus(status) })
+      .where(
+        and(
+          eq(accountOrganizationIndex.userId, memberUserId),
+          eq(accountOrganizationIndex.orgId, orgId),
+        ),
+      );
     await this.invalidateMemberListCaches(orgId);
 
     this.audit.log({
@@ -830,11 +1080,6 @@ export class OrgMembershipService {
       })
       .catch(() => undefined);
 
-      // RT-006: Ably tokens are 1-hour TTL and were never revoked, so a removed or
-      // suspended member kept a live realtime connection after losing access.
-      // Revocation is post-commit and its failure is swallowed inside the service —
-      // realtime cleanup must never roll back an access revocation.
-    void this.ably.revokeUserTokens(memberUserId);
     return { success: true };
   }
 
@@ -871,6 +1116,35 @@ export class OrgMembershipService {
               `Transfer module ownership before leaving this organization. Owned modules: ${ownedModuleKeys.join(", ")}.`,
             );
           }
+
+          const leaveNow = new Date();
+
+          await tx
+            .delete(ownershipTransfers)
+            .where(
+              and(
+                eq(ownershipTransfers.orgId, orgId),
+                or(
+                  eq(ownershipTransfers.fromMembershipId, membership.id),
+                  eq(ownershipTransfers.toMembershipId, membership.id),
+                  eq(ownershipTransfers.initiatedByMembershipId, membership.id),
+                ),
+              ),
+            );
+
+          await tx
+            .update(userDelegations)
+            .set({ status: "REVOKED", revokedAt: leaveNow })
+            .where(
+              and(
+                eq(userDelegations.orgId, orgId),
+                eq(userDelegations.status, "ACTIVE"),
+                or(
+                  eq(userDelegations.delegatorMembershipId, membership.id),
+                  eq(userDelegations.delegateeMembershipId, membership.id),
+                ),
+              ),
+            );
 
           await tx
             .delete(organizationMembers)
@@ -920,9 +1194,17 @@ export class OrgMembershipService {
       );
 
       await Promise.all([
-        this.revokeOrgScopedAccess(orgId, userId),
+        this.revokeOrgScopedAccess(orgId, userId, "left"),
         this.cache.invalidateNamespaceForOrg(orgId, "org:profile"),
         this.invalidateMemberListCaches(orgId),
+        this.db
+          .delete(accountOrganizationIndex)
+          .where(
+            and(
+              eq(accountOrganizationIndex.userId, userId),
+              eq(accountOrganizationIndex.orgId, orgId),
+            ),
+          ),
       ]);
       this.audit.log({
         action: "org.member_left",
@@ -934,11 +1216,6 @@ export class OrgMembershipService {
 
       await this.notifyMemberLeft(orgId, userId).catch(() => undefined);
 
-      // RT-006: Ably tokens are 1-hour TTL and were never revoked, so a removed or
-      // suspended member kept a live realtime connection after losing access.
-      // Revocation is post-commit and its failure is swallowed inside the service —
-      // realtime cleanup must never roll back an access revocation.
-      void this.ably.revokeUserTokens(userId);
       return { success: true, nextOrgId };
     } catch (err) {
       if (err instanceof BadRequestException) throw err;

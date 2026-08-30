@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { resolveWindowedTotal, totalOverWindow, withoutTotal } from "../../../common/pagination/window-count";
 
 type VerificationQueueItem = {
   id: number;
@@ -59,14 +60,10 @@ export class KbVerificationService {
       or(overdue, neverVerified),
     );
 
-    const [countRow] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(kbArticles)
-      .where(where);
-    const total = countRow?.count ?? 0;
-
-    const items = await this.db
+    const offset = (page - 1) * capped;
+    const rows = await this.db
       .select({
+        total: totalOverWindow,
         id: kbArticles.id,
         spaceId: kbArticles.spaceId,
         categoryId: kbArticles.categoryId,
@@ -81,7 +78,16 @@ export class KbVerificationService {
       .where(where)
       .orderBy(asc(kbArticles.lastVerifiedAt))
       .limit(capped)
-      .offset((page - 1) * capped);
+      .offset(offset);
+
+    const total = await resolveWindowedTotal(rows, offset, async () => {
+      const [countRow] = await this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(kbArticles)
+        .where(where);
+      return Number(countRow?.count ?? 0);
+    });
+    const items = withoutTotal(rows);
 
     return { items, total, page, pageSize: capped, totalPages: Math.ceil(total / capped) };
   }

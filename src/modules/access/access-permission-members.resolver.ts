@@ -317,13 +317,23 @@ export class AccessPermissionMembersResolver {
     const deniedRows = await this.safeAccessTableRead(
       () =>
         this.db
-          .select({ userId: userModuleAccess.userId })
+          .select({ userId: organizationMembers.userId })
           .from(userModuleAccess)
+          .innerJoin(
+            organizationMembers,
+            and(
+              eq(organizationMembers.orgId, userModuleAccess.orgId),
+              eq(
+                organizationMembers.id,
+                userModuleAccess.organizationMembershipId,
+              ),
+            ),
+          )
           .where(
             and(
               eq(userModuleAccess.orgId, orgId),
               inArray(
-                userModuleAccess.userId,
+                organizationMembers.userId,
                 candidates.map((candidate) => candidate.userId),
               ),
               eq(userModuleAccess.moduleKey, permModule),

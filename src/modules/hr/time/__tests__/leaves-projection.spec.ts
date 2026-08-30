@@ -8,6 +8,7 @@ describe("LeavesService user projection", () => {
       {} as never,
       {} as never,
       {} as never,
+      { getFactsBatch: jest.fn().mockResolvedValue(new Map()) } as never,
     );
 
     await service.thisWeek("org-1");
@@ -20,11 +21,29 @@ describe("LeavesService user projection", () => {
       lastName: true,
       email: true,
       image: true,
-      designation: true,
     });
     expect(columns).not.toHaveProperty("totpSecret");
     expect(columns).not.toHaveProperty("bankDetails");
     expect(columns).not.toHaveProperty("taxId");
+  });
+
+  it("serves designation from the employment accessor, not from the users row", async () => {
+    const findMany = jest.fn().mockResolvedValue([{ id: 1, user: { id: "user-1" } }]);
+    const getFactsBatch = jest
+      .fn()
+      .mockResolvedValue(new Map([["user-1", { designation: "Staff Engineer" }]]));
+    const service = new LeavesService(
+      { query: { leaveRequests: { findMany } } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { getFactsBatch } as never,
+    );
+
+    const rows = await service.thisWeek("org-1");
+
+    expect(getFactsBatch).toHaveBeenCalledWith("org-1", ["user-1"]);
+    expect(rows[0]?.user?.designation).toBe("Staff Engineer");
   });
 
   it("uses an id cursor and a bounded self-service window", async () => {
@@ -35,6 +54,7 @@ describe("LeavesService user projection", () => {
     ]);
     const service = new LeavesService(
       { query: { leaveRequests: { findMany } } } as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

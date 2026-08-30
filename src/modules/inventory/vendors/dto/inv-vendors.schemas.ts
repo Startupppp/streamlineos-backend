@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const listVendorsSchema = z.object({
   search: z.string().trim().max(200).optional(),
   isActive: queryBoolean.optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ListVendorsInput = z.infer<typeof listVendorsSchema>;
 

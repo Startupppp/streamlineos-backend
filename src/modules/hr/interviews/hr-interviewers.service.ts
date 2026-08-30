@@ -2,11 +2,13 @@ import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import {
   calendarEvents,
+  eventAttendees,
   interviewBookingLinks,
   interviewPanelMembers,
   interviewScorecards,
   interviews,
   users,
+  organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -32,13 +34,18 @@ interface PerformanceAccumulator {
 export class HrInterviewersService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async availability(orgId: string, dateParam: string | undefined, idsParam: string | undefined) {
+  async availability(
+    orgId: string,
+    dateParam: string | undefined,
+    idsParam: string | undefined,
+  ) {
     if (!dateParam || !idsParam) {
       throw new BadRequestException("date and interviewerIds are required.");
     }
 
     const date = new Date(dateParam);
-    if (Number.isNaN(date.getTime())) throw new BadRequestException("Invalid date.");
+    if (Number.isNaN(date.getTime()))
+      throw new BadRequestException("Invalid date.");
 
     const interviewerIds = idsParam.split(",").filter(Boolean);
     if (interviewerIds.length === 0) {
@@ -56,7 +63,6 @@ export class HrInterviewersService {
         endDate: calendarEvents.endDate,
         allDay: calendarEvents.allDay,
         createdBy: calendarEvents.createdBy,
-        attendeeIds: calendarEvents.attendeeIds,
       })
       .from(calendarEvents)
       .where(
@@ -66,6 +72,36 @@ export class HrInterviewersService {
           gte(calendarEvents.endDate, dayStart),
         ),
       );
+
+    const attendeeRows =
+      events.length === 0
+        ? []
+        : await this.db
+            .select({
+              eventId: eventAttendees.eventId,
+              userId: organizationMembers.userId,
+            })
+            .from(eventAttendees)
+            .innerJoin(
+              organizationMembers,
+              eq(eventAttendees.membershipId, organizationMembers.id),
+            )
+            .where(
+              and(
+                eq(eventAttendees.orgId, orgId),
+                eq(organizationMembers.orgId, orgId),
+                inArray(
+                  eventAttendees.eventId,
+                  events.map((event) => event.id),
+                ),
+              ),
+            );
+    const attendeesByEvent = new Map<number, string[]>();
+    for (const attendee of attendeeRows) {
+      const ids = attendeesByEvent.get(attendee.eventId) ?? [];
+      ids.push(attendee.userId);
+      attendeesByEvent.set(attendee.eventId, ids);
+    }
 
     const interviewRows = await this.db
       .select({
@@ -89,9 +125,9 @@ export class HrInterviewersService {
     }
 
     for (const ev of events) {
-      const eventAttendees = ev.attendeeIds ?? [];
+      const eventAttendeeIds = attendeesByEvent.get(ev.id) ?? [];
       const relevantIds = interviewerIds.filter(
-        (id) => id === ev.createdBy || eventAttendees.includes(id),
+        (id) => id === ev.createdBy || eventAttendeeIds.includes(id),
       );
       for (const uid of relevantIds) {
         busyMap.get(uid)?.push({
@@ -104,7 +140,9 @@ export class HrInterviewersService {
 
     for (const iv of interviewRows) {
       if (iv.interviewerId && interviewerIds.includes(iv.interviewerId)) {
-        const endTime = new Date(iv.scheduledAt.getTime() + (iv.duration ?? 60) * 60_000);
+        const endTime = new Date(
+          iv.scheduledAt.getTime() + (iv.duration ?? 60) * 60_000,
+        );
         busyMap.get(iv.interviewerId)?.push({
           start: iv.scheduledAt.toISOString(),
           end: endTime.toISOString(),
@@ -120,7 +158,10 @@ export class HrInterviewersService {
         userId: interviewPanelMembers.userId,
       })
       .from(interviewPanelMembers)
-      .innerJoin(interviews, eq(interviewPanelMembers.interviewId, interviews.id))
+      .innerJoin(
+        interviews,
+        eq(interviewPanelMembers.interviewId, interviews.id),
+      )
       .where(
         and(
           eq(interviews.orgId, orgId),
@@ -132,7 +173,9 @@ export class HrInterviewersService {
 
     for (const pm of panelMemberRows) {
       if (busyMap.has(pm.userId)) {
-        const endTime = new Date(pm.scheduledAt.getTime() + (pm.duration ?? 60) * 60_000);
+        const endTime = new Date(
+          pm.scheduledAt.getTime() + (pm.duration ?? 60) * 60_000,
+        );
         busyMap.get(pm.userId)?.push({
           start: pm.scheduledAt.toISOString(),
           end: endTime.toISOString(),
@@ -190,7 +233,8 @@ export class HrInterviewersService {
           interviewerEmail: row.interviewerEmail,
           totalAssigned: 1,
           submitted: 1,
-          totalHoursToSubmit: hoursToSubmit != null && hoursToSubmit >= 0 ? hoursToSubmit : 0,
+          totalHoursToSubmit:
+            hoursToSubmit != null && hoursToSubmit >= 0 ? hoursToSubmit : 0,
           recommendations: { [row.recommendation]: 1 },
         });
       } else {
@@ -232,7 +276,8 @@ export class HrInterviewersService {
       submitted: item.submitted,
       pending: Math.max(
         0,
-        (assignedMap.get(item.interviewerId) ?? item.totalAssigned) - item.submitted,
+        (assignedMap.get(item.interviewerId) ?? item.totalAssigned) -
+          item.submitted,
       ),
       avgHoursToSubmit:
         item.submitted > 0
@@ -257,7 +302,9 @@ export class HrInterviewersService {
       orderBy: [desc(interviewBookingLinks.createdAt)],
       limit: 100,
       with: {
-        candidate: { columns: { id: true, firstName: true, lastName: true, email: true } },
+        candidate: {
+          columns: { id: true, firstName: true, lastName: true, email: true },
+        },
         jobPosting: { columns: { id: true, title: true } },
         creator: { columns: { id: true, name: true } },
       },
@@ -266,7 +313,10 @@ export class HrInterviewersService {
 
   async cancelBookingLink(orgId: string, linkId: number) {
     const existing = await this.db.query.interviewBookingLinks.findFirst({
-      where: and(eq(interviewBookingLinks.id, linkId), eq(interviewBookingLinks.orgId, orgId)),
+      where: and(
+        eq(interviewBookingLinks.id, linkId),
+        eq(interviewBookingLinks.orgId, orgId),
+      ),
       columns: { id: true },
     });
     if (!existing) return null;

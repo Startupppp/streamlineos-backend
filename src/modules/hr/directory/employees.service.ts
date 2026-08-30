@@ -18,6 +18,8 @@ import {
 } from "drizzle-orm";
 import {
   attendance,
+  hrEmployments,
+  hrPeople,
   leaveRequests,
   organizationMembers,
   performanceReviews,
@@ -38,12 +40,18 @@ import {
   decodeEmployeeListCursor,
   encodeEmployeeListCursor,
 } from "./employee-list-cursor";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../../directory/employment-query";
 
 @Injectable()
 export class EmployeesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   listEmployees(
@@ -127,7 +135,7 @@ export class EmployeesService {
     ];
     if (isActive === "true") baseConditions.push(eq(users.isActive, true));
     else if (isActive === "false") baseConditions.push(eq(users.isActive, false));
-    if (departmentId != null) baseConditions.push(eq(users.orgDepartmentId, departmentId));
+    if (departmentId != null) baseConditions.push(eq(hrEmployments.departmentId, departmentId));
     if (role) baseConditions.push(eq(organizationMembers.role, role));
     if (cursor) {
       baseConditions.push(
@@ -145,8 +153,8 @@ export class EmployeesService {
       ? or(
           ilike(users.name, `%${search}%`),
           ilike(users.email, `%${search}%`),
-          ilike(users.employeeId, `%${search}%`),
-          ilike(users.designation, `%${search}%`),
+          ilike(hrEmployments.employeeNumber, `%${search}%`),
+          ilike(hrEmployments.designation, `%${search}%`),
           ilike(users.firstName, `%${search}%`),
           ilike(users.lastName, `%${search}%`),
         )
@@ -163,21 +171,19 @@ export class EmployeesService {
           lastName: users.lastName,
           email: users.email,
           role: organizationMembers.role,
-          designation: users.designation,
-          employeeId: users.employeeId,
           orgDepartmentId: orgUnits.id,
           orgDepartmentName: orgUnits.name,
           image: users.image,
           isActive: users.isActive,
-          joiningDate: users.joiningDate,
-          reportingTo: users.reportingTo,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .leftJoin(
         orgUnits,
         and(
-          eq(users.orgDepartmentId, orgUnits.id),
+          eq(hrEmployments.departmentId, orgUnits.id),
           eq(orgUnits.orgId, orgId),
           eq(orgUnits.kind, "DEPARTMENT"),
         ),
@@ -189,26 +195,30 @@ export class EmployeesService {
     const hasMore = dataResult.length > limit;
     const pageRows = dataResult.slice(0, limit);
     const lastRow = pageRows.at(-1);
+    const factsMap = await this.employment.getFactsBatch(orgId, pageRows.map((r) => r.id));
 
     return {
-      data: pageRows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        firstName: row.firstName,
-        lastName: row.lastName,
-        email: row.email,
-        role: row.role,
-        designation: row.designation,
-        employeeId: row.employeeId,
-        department:
-          row.orgDepartmentId != null && row.orgDepartmentName
-            ? { id: row.orgDepartmentId, name: row.orgDepartmentName }
-            : null,
-        image: row.image,
-        isActive: row.isActive,
-        joiningDate: row.joiningDate,
-        reportingTo: row.reportingTo,
-      })),
+      data: pageRows.map((row) => {
+        const facts = factsMap.get(row.id);
+        return {
+          id: row.id,
+          name: row.name,
+          firstName: row.firstName,
+          lastName: row.lastName,
+          email: row.email,
+          role: row.role,
+          designation: facts?.designation ?? null,
+          employeeId: facts?.employeeNumber ?? null,
+          department:
+            row.orgDepartmentId != null && row.orgDepartmentName
+              ? { id: row.orgDepartmentId, name: row.orgDepartmentName }
+              : null,
+          image: row.image,
+          isActive: row.isActive,
+          joiningDate: facts?.joiningDate ?? null,
+          reportingTo: facts?.managerUserId ?? null,
+        };
+      }),
       pageInfo: {
         limit,
         hasMore,
@@ -351,12 +361,14 @@ export class EmployeesService {
     });
     if (!member) throw new NotFoundException("Employee not found");
 
-    return this.db
+    const reportIds = await this.employment.getDirectReportUserIds(orgId, employeeId);
+    if (reportIds.length === 0) return [];
+
+    const rows = await this.db
       .select({
         id: users.id,
         name: users.name,
         image: users.image,
-        designation: users.designation,
         email: users.email,
       })
       .from(users)
@@ -364,10 +376,13 @@ export class EmployeesService {
       .where(
         and(
           eq(organizationMembers.orgId, orgId),
-          eq(users.reportingTo, employeeId),
+          inArray(users.id, reportIds),
           eq(users.isActive, true),
         ),
       );
+
+    const factsMap = await this.employment.getFactsBatch(orgId, rows.map((r) => r.id));
+    return rows.map((r) => ({ ...r, designation: factsMap.get(r.id)?.designation ?? null }));
   }
 
   async getManagerScorecard(orgId: string, employeeId: string) {
@@ -377,22 +392,24 @@ export class EmployeesService {
     });
     if (!member) throw new NotFoundException("Employee not found");
 
-    const reports = await this.db
-      .select({
-        id: users.id,
-        name: users.name,
-        image: users.image,
-        designation: users.designation,
-      })
-      .from(users)
-      .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(users.reportingTo, employeeId),
-          eq(users.isActive, true),
-        ),
-      );
+    const directReportIds = await this.employment.getDirectReportUserIds(orgId, employeeId);
+    const reports = directReportIds.length > 0
+      ? await this.db
+          .select({
+            id: users.id,
+            name: users.name,
+            image: users.image,
+          })
+          .from(users)
+          .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              inArray(users.id, directReportIds),
+              eq(users.isActive, true),
+            ),
+          )
+      : [];
 
     if (reports.length === 0) {
       return {
@@ -406,6 +423,7 @@ export class EmployeesService {
     }
 
     const reportIds = reports.map((r) => r.id);
+    const reportFactsMap = await this.employment.getFactsBatch(orgId, reportIds);
 
     const [ratingsResult, attendanceResult] = await Promise.all([
       this.db
@@ -457,6 +475,7 @@ export class EmployeesService {
 
     const directReports = reports.map((r) => ({
       ...r,
+      designation: reportFactsMap.get(r.id)?.designation ?? null,
       avgRating: ratingsPerReport.find((rr) => rr.userId === r.id)?.avg ?? null,
     }));
 

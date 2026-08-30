@@ -3,6 +3,7 @@ import { and, desc, eq, lt } from "drizzle-orm";
 import { chatChannelMembers, chatMessages, chatSavedMessages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 
@@ -35,15 +36,14 @@ export class ChatSavedService {
       },
     });
 
-    const hasMore = rows.length > safeLimit;
-    if (hasMore) rows.pop();
+    const page = buildIdCursorPage(rows, safeLimit, (row) => row.id);
     const resolved = await this.entities.withResolvedReferences(
       actor,
-      rows.map((row) => row.message),
+      page.data.map((row) => row.message),
     );
     return {
-      items: rows.map((row, index) => ({ ...row, message: resolved[index] })),
-      nextCursor: hasMore ? rows[rows.length - 1]?.id : undefined,
+      items: page.data.map((row, index) => ({ ...row, message: resolved[index] })),
+      nextCursor: page.nextCursor,
     };
   }
 

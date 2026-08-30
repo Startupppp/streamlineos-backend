@@ -28,7 +28,7 @@ import {
 
 @Controller("timesheets/exceptions")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-export class ExceptionsController {
+export class TimesheetExceptionsController {
   constructor(
     private readonly exceptions: ExceptionsService,
     private readonly detector: ExceptionsDetectorService,

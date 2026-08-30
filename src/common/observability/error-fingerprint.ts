@@ -1,0 +1,57 @@
+import { createHash } from "node:crypto";
+
+/**
+ * Groups errors without an error tracker.
+ *
+ * The operator decision for this platform is structured logs only, and the cost
+ * recorded against that choice was grouping: one incident becomes N log lines
+ * rather than one alert. A stable fingerprint buys most of it back — an
+ * aggregator can `count(*) group by fingerprint` and get incidents instead of
+ * lines — provided the fingerprint is stable across occurrences of the same bug
+ * and different between different bugs.
+ *
+ * So the message is normalised before hashing. `permission denied for table
+ * notifications` must group with itself across a thousand requests, while ids,
+ * quantities and quoted values differ every time and would otherwise scatter one
+ * bug across a thousand groups.
+ */
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const LONG_HEX = /\b[0-9a-f]{16,}\b/gi;
+const NUMBERS = /\b\d+\b/g;
+const QUOTED = /(["'`])(?:\\.|(?!\1).)*\1/g;
+
+function normaliseMessage(message: string): string {
+  return message
+    .replace(UUID, "<id>")
+    .replace(LONG_HEX, "<id>")
+    .replace(QUOTED, "<value>")
+    .replace(NUMBERS, "<n>")
+    .slice(0, 300);
+}
+
+/**
+ * The first stack frame inside our own source. Node internals and
+ * `node_modules` frames are shared by unrelated failures, so keying on them
+ * would merge bugs that have nothing to do with each other.
+ */
+function originFrame(stack: string | undefined): string {
+  if (stack === undefined) return "";
+  for (const line of stack.split("\n").slice(1)) {
+    const frame = line.trim();
+    if (!frame.startsWith("at ")) continue;
+    if (frame.includes("node_modules")) continue;
+    if (frame.includes("node:internal")) continue;
+    return frame.replace(/:\d+:\d+\)?$/, "");
+  }
+  return "";
+}
+
+export function fingerprintOf(error: unknown, route?: string): string {
+  const name = error instanceof Error ? error.name : typeof error;
+  const message = error instanceof Error ? error.message : String(error);
+  const frame = error instanceof Error ? originFrame(error.stack) : "";
+  const digest = createHash("sha1")
+    .update([name, normaliseMessage(message), frame, route ?? ""].join("\u0000"))
+    .digest("hex");
+  return digest.slice(0, 12);
+}

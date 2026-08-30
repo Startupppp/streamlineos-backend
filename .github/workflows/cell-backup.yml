@@ -1,0 +1,80 @@
+name: Cell backup
+
+# The recovery drill measured an RPO of 47,468 s (~13 h) against a 5-minute target.
+# The cause was not slow recovery: backups were manual, so the recovery point was
+# whenever somebody last remembered to run one. This bounds it by a schedule.
+#
+# A logical dump CANNOT reach the PRD's 5-minute recovery point — it reads every
+# table. This job makes the recovery point bounded and known; Neon PITR is the
+# mechanism that reaches 5 minutes, and it needs NEON_API_KEY. Do not read a green
+# run here as the objective being met.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      region:
+        description: Cell region key to back up
+        required: false
+        default: cell-2
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.inputs.region || 'cell-2' }}
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # A backup job that takes no backup must NOT report success. Skipping every
+      # step behind a `configured` flag turns a missing secret into a green run
+      # every six hours forever, and the only signal is a warning annotation that
+      # never appears in a status check — so the recovery point silently goes
+      # unbounded while the schedule looks healthy. Fail instead.
+      - name: Require credentials
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error title=Backup impossible::CI_DATABASE_URL is not set. No backup can be taken, so the recovery point is unbounded. Set the secret or disable this schedule deliberately."
+            exit 1
+          fi
+        env:
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - name: Install
+        working-directory: backend
+        run: pnpm install --frozen-lockfile
+
+      - name: Take backup
+        working-directory: backend
+        run: pnpm cell:backup --region=${{ github.event.inputs.region || 'cell-2' }} --backup
+        env:
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
+
+      # A backup nobody reads back is a file, not a backup.
+      - name: Verify the backup reads back
+        working-directory: backend
+        run: pnpm cell:backup --region=${{ github.event.inputs.region || 'cell-2' }} --verify
+        env:
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cell-backup-${{ github.event.inputs.region || 'cell-2' }}-${{ github.run_id }}
+          path: backend/backups/*.ndjson
+          retention-days: 14

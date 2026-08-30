@@ -39,9 +39,15 @@ export async function authorize(
     reason about. The catalogue is the list of keys that mean something, and
     `gated-keys-are-catalogued.spec.ts` already guarantees every real
     `@RequirePermission` appears in it, so nothing legitimate is refused here.
+
+    The reason is FORBIDDEN rather than NO_MODULE. NO_MODULE becomes a 402 that
+    tells the caller to enable a module, and there is no module to enable — the
+    key means nothing. A client acting on that answer would send somebody to a
+    billing page over a typo, and the frontend's denied-versus-empty handling
+    reads this reason to decide which of the two it is looking at.
   */
   if (!CATALOGUED_KEYS.has(permissionKey)) {
-    return { allow: false, scope: "none", reason: "NO_MODULE" };
+    return { allow: false, scope: "none", reason: "FORBIDDEN" };
   }
 
   const moduleKey = moduleOf(permissionKey);

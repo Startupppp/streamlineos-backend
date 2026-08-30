@@ -1,5 +1,7 @@
 import { eq, and } from "drizzle-orm";
+import { livePersonOfUser, primaryEmploymentOfPerson, orgUnitInOrg } from "../../../directory/employment-query";
 import type { Db } from "../../../../db/drizzle.module";
+import { hrEmployments, hrPeople } from "../../../../db/schema/hr/core-people";
 import {
   payrollRuns,
   payrollLineItems,
@@ -66,6 +68,7 @@ export async function findRunForMonth(
 
 export async function getLineItemsForRun(
   db: Db,
+  orgId: string,
   runId: number,
   filters?: LineItemFilters,
 ): Promise<EnrichedLineItem[]> {
@@ -112,7 +115,9 @@ export async function getLineItemsForRun(
       eq(payrollLineItems.runEmployeeId, payrollRunEmployees.id),
     )
     .innerJoin(users, eq(payrollRunEmployees.userId, users.id))
-    .leftJoin(orgUnits, and(eq(orgUnits.id, users.orgDepartmentId), eq(orgUnits.kind, "DEPARTMENT")))
+    .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+    .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+    .leftJoin(orgUnits, and(orgUnitInOrg(orgId, hrEmployments.departmentId), eq(orgUnits.kind, "DEPARTMENT")))
     .leftJoin(
       employeeSalaryProfiles,
       eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId),

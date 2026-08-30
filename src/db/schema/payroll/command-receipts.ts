@@ -11,7 +11,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
-import { payrollRuns } from "../hr/payroll-runs";
+import { payrollRuns } from "./runs";
 
 export const payrollCommandStatusEnum = pgEnum("payroll_command_status", [
   "IN_FLIGHT",

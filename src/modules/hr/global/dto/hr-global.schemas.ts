@@ -1,9 +1,10 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const paginationSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 
 export const createWorkAuthSchema = z.object({

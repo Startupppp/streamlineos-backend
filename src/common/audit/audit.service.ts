@@ -17,6 +17,7 @@ export interface AuditEntry {
   targetId?: string | null;
   targetType?: string | null;
   actorUserId?: string | null;
+  actorMembershipId?: number | null;
   resourceType?: string | null;
   resourceId?: string | null;
   metadata?: Record<string, unknown>;
@@ -70,6 +71,7 @@ export class AuditService {
       targetId: entry.targetId ?? null,
       targetType: entry.targetType ?? null,
       actorUserId: entry.actorUserId ?? null,
+      actorMembershipId: entry.actorMembershipId ?? null,
       resourceType: entry.resourceType ?? null,
       resourceId: entry.resourceId ?? null,
       metadata: this.buildMetadata(entry),

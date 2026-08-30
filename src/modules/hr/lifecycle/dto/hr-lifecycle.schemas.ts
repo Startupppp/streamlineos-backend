@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { TERMINATION_REASONS, TERMINATION_REASON_OTHER, RESIGNATION_REASONS } from "../hr-separation.constants";
 
 const VALID_REASONS: readonly string[] = TERMINATION_REASONS;
@@ -51,7 +52,7 @@ export const resignationHrReviewSchema = z.object({
 });
 
 export const alumniListSchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: pageSizeField(50),
 });
 
 export const alumniCreateSchema = z.object({
@@ -105,8 +106,8 @@ export const terminationReviewSchema = z.object({
 });
 
 export const listTerminationsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   status: z.enum(["DRAFT", "PENDING_FINAL", "APPROVED", "REJECTED", "SENT", "COMPLETED"]).optional(),
 });
 
@@ -118,13 +119,13 @@ export const attendanceAnalyticsQuerySchema = z.object({
 export const listOnboardingDocsQuerySchema = z.object({
   userId: z.string().optional(),
   status: z.enum(["PENDING", "SUBMITTED", "APPROVED", "REJECTED", "RE_UPLOAD_REQUESTED"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 
 export const onboardingDocsSummaryQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   status: z.enum(["PENDING", "IN_PROGRESS", "SUBMITTED", "APPROVED"]).optional(),
   search: z.string().max(200).optional(),
 });
@@ -179,8 +180,8 @@ export type ListTerminationsQueryInput = z.infer<typeof listTerminationsQuerySch
 export type AttendanceAnalyticsQuery = z.infer<typeof attendanceAnalyticsQuerySchema>;
 
 export const listResignationsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   status: z
     .enum([
       "SUBMITTED", "PENDING_HR", "HR_APPROVED", "FINAL_APPROVED",

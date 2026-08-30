@@ -28,9 +28,10 @@ import { EssService } from "./ess.service";
 import { PayrollNotificationsService } from "./payroll-notifications.service";
 import { PayrollAiExplainController } from "./payroll-ai-explain.controller";
 import { PayrollAiExplainService } from "./payroll-ai-explain.service";
+import { EmploymentFactsModule } from "../../directory/employment-facts.module";
 
 @Module({
-  imports: [HrPayrollModule, NotificationsModule, AiModule],
+  imports: [EmploymentFactsModule, HrPayrollModule, NotificationsModule, AiModule],
   controllers: [
     ReportsController,
     JournalController,

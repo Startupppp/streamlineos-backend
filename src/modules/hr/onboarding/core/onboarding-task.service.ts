@@ -30,7 +30,7 @@ import type { DataScope } from "../../../access/access.types";
 import { AutomationService } from "../../../automation/automation.service";
 import { HrAutomationEngineService } from "../../automations/hr-automation-engine.service";
 import { OnboardingProbationService } from "./onboarding-probation.service";
-import { EmailService } from "../../../email/email.service";
+import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import { logger } from "../../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { UpdateTaskInput } from "./dto/onboarding.schemas";
@@ -56,7 +56,7 @@ export class OnboardingTaskService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly automation: AutomationService,
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly probation: OnboardingProbationService,
@@ -283,15 +283,18 @@ export class OnboardingTaskService {
 
     const employee = await this.db.query.users.findFirst({
       where: eq(users.id, employeeUserId),
-      columns: { email: true, name: true },
+      columns: { id: true, name: true, email: true },
     });
 
-    if (employee?.email) {
-      await this.email.sendOnboardingCompleteEmployeeEmail(
-        employee.email,
-        employee.name ?? "Team Member",
-      );
-    }
+    if (employee) await this.dispatch.emit({
+      eventKey: "hr.onboarding.completed",
+      orgId,
+      targetUserIds: [employee.id],
+      entityType: "employee",
+      entityId: employeeUserId,
+      message: "Your onboarding is complete.",
+      variables: { employeeName: employee.name ?? "Team Member" },
+    });
 
     const hrMembers = await this.access.membersWithPermission(
       orgId,
@@ -300,22 +303,19 @@ export class OnboardingTaskService {
 
     if (hrMembers.length > 0) {
       const hrUsers = await this.db
-        .select({ email: users.email, name: users.name })
+        .select({ id: users.id })
         .from(users)
         .where(inArray(users.id, hrMembers.map((m) => m.userId)));
 
-      const recipients = hrUsers.filter(
-        (m): m is { email: string; name: string | null } => Boolean(m.email),
-      );
-      await Promise.all(
-        recipients.map((m) =>
-          this.email.sendOnboardingCompleteHrEmail(
-            m.email,
-            m.name ?? "HR",
-            employee?.name ?? "Employee",
-          ),
-        ),
-      );
+      await this.dispatch.emit({
+        eventKey: "hr.onboarding.completed",
+        orgId,
+        targetUserIds: hrUsers.map((m) => m.id),
+        entityType: "employee",
+        entityId: employeeUserId,
+        message: `${employee?.name ?? "An employee"} completed onboarding.`,
+        variables: { employeeName: employee?.name ?? "Employee" },
+      });
     }
 
     const onboardedPayload = {

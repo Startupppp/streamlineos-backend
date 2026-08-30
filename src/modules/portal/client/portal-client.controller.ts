@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Request } from "express";
+import { AuthorizedInService } from "../../../common/auth/authorized-in-service.decorator";
 import { PortalJwtAuthGuard } from "../../../common/portal-auth/portal-jwt-auth.guard";
 import type { PortalUserContext } from "../../../common/portal-auth/portal-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
@@ -23,6 +24,9 @@ type PortalReq = Request & { portalUser: PortalUserContext };
 
 @Controller("portal/v1")
 @UseGuards(PortalJwtAuthGuard)
+@AuthorizedInService(
+  "PortalJwtAuthGuard, then PortalClientService scopes every read to the portal membership's granted projects",
+)
 export class PortalClientController {
   constructor(private readonly svc: PortalClientService) {}
 

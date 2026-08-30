@@ -37,3 +37,68 @@ describe("classifyRetiredPermissions", () => {
     });
   });
 });
+
+describe("PermissionCatalogSyncService.sync — administering module column", () => {
+  async function runSync(catalogModules: string[]) {
+    const { PermissionCatalogSyncService } = await import(
+      "./permission-catalog-sync.service"
+    );
+    let inserted: Array<Record<string, unknown>> = [];
+    let conflictSet: Record<string, unknown> = {};
+
+    const db = {
+      select: () => ({
+        from: () =>
+          Promise.resolve(catalogModules.map((moduleKey) => ({ moduleKey }))),
+      }),
+      insert: () => ({
+        values: (rows: Array<Record<string, unknown>>) => {
+          if (inserted.length === 0) inserted = rows;
+          return {
+            onConflictDoUpdate: (args: { set: Record<string, unknown> }) => {
+              if (Object.keys(conflictSet).length === 0) conflictSet = args.set;
+              return Promise.resolve();
+            },
+            onConflictDoNothing: () => Promise.resolve(),
+          };
+        },
+      }),
+      selectDistinct: () => ({ from: () => Promise.resolve([]) }),
+      delete: () => ({ where: () => Promise.resolve() }),
+    };
+
+    const service = new PermissionCatalogSyncService(db as never);
+    await service.sync().catch(() => undefined);
+    return { inserted, conflictSet };
+  }
+
+  it("sets administeringModuleKey for a key whose administering module is in the catalog", async () => {
+    const { inserted } = await runSync(["hr", "home", "crm"]);
+    const hrKey = inserted.find((row) => row.name === "hr:employees:view");
+    expect(hrKey).toBeDefined();
+    expect(hrKey?.administeringModuleKey).toBe("hr");
+  });
+
+  it("folds chat keys onto home, matching the composite foreign key", async () => {
+    const { inserted } = await runSync(["hr", "home", "crm"]);
+    const chatKey = inserted.find((row) => row.name === "chat:messages:read");
+    expect(chatKey?.administeringModuleKey).toBe("home");
+  });
+
+  it("leaves a platform namespace null so it can never be granted per person", async () => {
+    const { inserted } = await runSync(["hr", "home", "crm"]);
+    const settingsKey = inserted.find((row) => row.name === "settings:manage");
+    expect(settingsKey).toBeDefined();
+    expect(settingsKey?.administeringModuleKey).toBeNull();
+  });
+
+  it("re-syncs the column on conflict, so an existing row is corrected rather than left stale", async () => {
+    const { conflictSet } = await runSync(["hr", "home", "crm"]);
+    expect(conflictSet).toHaveProperty("administeringModuleKey");
+  });
+
+  it("never invents a module the catalog does not have", async () => {
+    const { inserted } = await runSync([]);
+    for (const row of inserted) expect(row.administeringModuleKey).toBeNull();
+  });
+});

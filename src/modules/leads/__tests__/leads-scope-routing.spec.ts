@@ -17,28 +17,24 @@ function withJoins<T extends object>(step: T): T {
   });
 }
 
-/*
-  One query per status now, not two.
-
-  The board used to read rows and then count them separately, and this mock
-  alternated between the two shapes on every `.where()`. It carries the total on
-  the rows themselves via `count(*) OVER ()`, so there is a single chain --
-  `.where().orderBy().limit()` -- resolving to rows that each carry `_total`.
-  The alternation left every other call without `.orderBy`, which is what broke.
-*/
-function buildDb() {
-  const page = {
-    orderBy: jest.fn().mockReturnValue({
-      limit: jest.fn().mockResolvedValue([]),
-    }),
-  };
-
+/**
+ * One query per status, not two. `getBoard` selects the rows and their
+ * `count(*) OVER ()` together and reads the total off the first row, so `where`
+ * must always answer the same `.orderBy().limit()` chain. The previous double
+ * alternated a rows-shape and a count-shape on `callN % 2`, which broke twice
+ * over: the second query no longer exists, and the per-status queries run inside
+ * `Promise.all`, so nothing orders the calls anyway.
+ */
+function buildDb(rows: Array<Record<string, unknown>> = []) {
   return {
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue(
         withJoins({
-          where: jest.fn().mockReturnValue(page),
-          ...page,
+          where: jest.fn().mockReturnValue({
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue(rows),
+            }),
+          }),
         }),
       ),
     }),
@@ -137,6 +133,24 @@ describe("LeadsBoardService.getBoard — DataScope routing (no branch filter)", 
       NEW: expect.objectContaining({ leads: [], total: 0 }),
       OPEN: expect.objectContaining({ leads: [], total: 0 }),
     });
+  });
+
+  it("takes the per-status total from the windowed count and keeps it off the lead", async () => {
+    // `_total` deliberately exceeds the row count: `limit` caps the page while
+    // `count(*) OVER ()` reports the whole status. Were the total read from
+    // `rows.length` instead, this would be 2 and the assertion would catch it.
+    const db = buildDb([
+      { id: "lead-1", status: "NEW", assignedToId: null, _total: "7" },
+      { id: "lead-2", status: "NEW", assignedToId: null, _total: "7" },
+    ]);
+    const cache = buildCache(["NEW"]);
+    const svc = new LeadsBoardService(db as never, cache as never);
+
+    const result = await svc.getBoard(ORG, { scope: "all", userId: USER });
+
+    expect(result.NEW?.total).toBe(7);
+    expect(result.NEW?.leads).toHaveLength(2);
+    expect(result.NEW?.leads[0]).not.toHaveProperty("_total");
   });
 });
 

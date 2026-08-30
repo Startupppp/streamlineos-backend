@@ -21,6 +21,7 @@ import {
 import { AccessService } from "../../access/access.service";
 import { ReimbursementsService } from "../hr-payroll/reimbursements.service";
 import { LoansService } from "../hr-payroll/loans.service";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 export interface ManagerTeamMember {
   userId: string;
@@ -74,7 +75,7 @@ export interface ManagerInboxResult {
 }
 
 /**
- * Manager payroll inbox — direct reports only (users.reportingTo).
+ * Manager payroll inbox — direct reports only.
  * Approve/reject requires hr:expenses:approve (claims) or hr:loans:manage (loans)
  * AND the subject must report to the actor.
  */
@@ -85,6 +86,7 @@ export class ManagerInboxService {
     private readonly access: AccessService,
     private readonly reimbursements: ReimbursementsService,
     private readonly loans: LoansService,
+    private readonly employmentFacts: EmploymentFactsService,
   ) {}
 
   async getInbox(orgId: string, managerUserId: string): Promise<ManagerInboxResult> {
@@ -95,21 +97,24 @@ export class ManagerInboxService {
     const canApproveLoans =
       perms.has("hr:expenses:approve") || perms.has("hr:loans:manage");
 
-    const reports = await this.db
-      .select({
-        id: users.id,
-        name: users.name,
-        email: users.email,
-      })
-      .from(users)
-      .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
-      .where(
-        and(
-          eq(users.reportingTo, managerUserId),
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      );
+    const directReportIds = await this.employmentFacts.getDirectReportUserIds(orgId, managerUserId);
+    const reports = directReportIds.length === 0
+      ? []
+      : await this.db
+          .select({
+            id: users.id,
+            name: users.name,
+            email: users.email,
+          })
+          .from(users)
+          .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+          .where(
+            and(
+              inArray(users.id, directReportIds),
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.status, "ACTIVE"),
+            ),
+          );
 
     const honestyNote =
       "Team payroll inbox is limited to your direct reports. Approving claims requires hr:expenses:approve; loans require hr:expenses:approve or hr:loans:manage. You cannot approve your own requests.";
@@ -424,7 +429,7 @@ export class ManagerInboxService {
     if (row.status !== "PENDING") {
       throw new BadRequestException(`Reimbursement is ${row.status}, not PENDING`);
     }
-    await this.assertIsDirectReport(managerUserId, row.userId);
+    await this.assertIsDirectReport(orgId, managerUserId, row.userId);
     return row;
   }
 
@@ -440,16 +445,13 @@ export class ManagerInboxService {
     if (row.status !== "PENDING") {
       throw new BadRequestException(`Loan is ${row.status}, not PENDING`);
     }
-    await this.assertIsDirectReport(managerUserId, row.userId);
+    await this.assertIsDirectReport(orgId, managerUserId, row.userId);
     return row;
   }
 
-  private async assertIsDirectReport(managerUserId: string, subjectUserId: string): Promise<void> {
-    const subject = await this.db.query.users.findFirst({
-      where: eq(users.id, subjectUserId),
-      columns: { reportingTo: true },
-    });
-    if (!subject || subject.reportingTo !== managerUserId) {
+  private async assertIsDirectReport(orgId: string, managerUserId: string, subjectUserId: string): Promise<void> {
+    const directReportIds = await this.employmentFacts.getDirectReportUserIds(orgId, managerUserId);
+    if (!directReportIds.includes(subjectUserId)) {
       throw new ForbiddenException(
         "You can only act on requests from your direct reports",
       );

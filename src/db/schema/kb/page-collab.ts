@@ -32,6 +32,7 @@ export const kbPageVersions = pgTable(
     uniqueIndex("uniq_kb_page_versions_page_version").on(table.pageId, table.versionNumber),
     index("idx_kb_page_versions_org_page").on(table.orgId, table.pageId),
     unique("uniq_kb_page_versions_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_versions_org_page" }).onDelete("cascade"),
   ],
 );
 
@@ -57,6 +58,8 @@ export const kbPageComments = pgTable(
       name: "fk_kb_page_comments_parent",
     }).onDelete("cascade"),
     unique("uniq_kb_page_comments_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_comments_org_page" }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.parentId], foreignColumns: [table.orgId, table.id], name: "fk_kb_page_comments_org_parent" }).onDelete("cascade"),
   ],
 );
 

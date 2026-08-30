@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const leaveAnalyticsQuerySchema = z.object({
   year: z.coerce.number().int().optional(),
@@ -20,7 +21,7 @@ export const leaveCalendarQuerySchema = z.object({
 export const listLeaveRequestsSchema = z
   .object({
     cursor: z.coerce.number().int().positive().optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
+    limit: pageSizeField(50),
   })
   .strict();
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalPageNumberField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createBonusSchema = z.object({
   userId: z.string().min(1),
@@ -50,15 +51,15 @@ export const updateLoanSchema = z.object({
 export type UpdateLoanInput = z.infer<typeof updateLoanSchema>;
 
 export const listPageQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
+  page: optionalPageNumberField(),
+  limit: optionalPageSizeField(),
 });
 export type ListPageQueryInput = z.infer<typeof listPageQuerySchema>;
 
 export const incentivesQuerySchema = z.object({
   status: z.string().optional(),
-  page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
+  page: optionalPageNumberField(),
+  limit: optionalPageSizeField(),
 });
 export type IncentivesQueryInput = z.infer<typeof incentivesQuerySchema>;
 

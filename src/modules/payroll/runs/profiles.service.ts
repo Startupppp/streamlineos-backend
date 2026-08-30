@@ -21,6 +21,20 @@ import { applyScope } from "../../access/apply-scope";
 import type { ListProfilesQuery, CreateProfileInput, PatchProfileInput } from "./dto/runs.schemas";
 import { AuditService } from "../../../common/audit/audit.service";
 
+const SALARY_PROFILE_COLUMNS = {
+  id: employeeSalaryProfiles.id,
+  userId: employeeSalaryProfiles.userId,
+  workerId: employeeSalaryProfiles.workerId,
+  workerType: employeeSalaryProfiles.workerType,
+  currency: employeeSalaryProfiles.currency,
+  payoutCurrency: employeeSalaryProfiles.payoutCurrency,
+  annualCtc: employeeSalaryProfiles.annualCtc,
+  taxRegime: employeeSalaryProfiles.taxRegime,
+  costCenter: employeeSalaryProfiles.costCenter,
+  status: employeeSalaryProfiles.status,
+  effectiveFrom: employeeSalaryProfiles.effectiveFrom,
+};
+
 @Injectable()
 export class ProfilesService {
   constructor(
@@ -132,12 +146,12 @@ export class ProfilesService {
   async getProfile(orgId: string, employeeUserId: string) {
     const [allProfiles, history] = await Promise.all([
       this.db
-        .select()
+        .select(SALARY_PROFILE_COLUMNS)
         .from(employeeSalaryProfiles)
         .where(and(eq(employeeSalaryProfiles.orgId, orgId), eq(employeeSalaryProfiles.userId, employeeUserId), eq(employeeSalaryProfiles.status, "ACTIVE")))
         .limit(1),
       this.db
-        .select()
+        .select(SALARY_PROFILE_COLUMNS)
         .from(employeeSalaryProfiles)
         .where(and(eq(employeeSalaryProfiles.orgId, orgId), eq(employeeSalaryProfiles.userId, employeeUserId)))
         .orderBy(desc(employeeSalaryProfiles.effectiveFrom)),
@@ -320,7 +334,7 @@ export class ProfilesService {
   async getProfileByWorker(orgId: string, workerId: string) {
     const [allProfiles, history] = await Promise.all([
       this.db
-        .select()
+        .select(SALARY_PROFILE_COLUMNS)
         .from(employeeSalaryProfiles)
         .where(
           and(
@@ -331,7 +345,7 @@ export class ProfilesService {
         )
         .limit(1),
       this.db
-        .select()
+        .select(SALARY_PROFILE_COLUMNS)
         .from(employeeSalaryProfiles)
         .where(
           and(eq(employeeSalaryProfiles.orgId, orgId), eq(employeeSalaryProfiles.workerId, workerId)),
@@ -614,7 +628,7 @@ export class ProfilesService {
 
   async listHistory(orgId: string, employeeUserId: string) {
     return this.db
-      .select()
+      .select(SALARY_PROFILE_COLUMNS)
       .from(employeeSalaryProfiles)
       .where(and(eq(employeeSalaryProfiles.orgId, orgId), eq(employeeSalaryProfiles.userId, employeeUserId)))
       .orderBy(desc(employeeSalaryProfiles.effectiveFrom))
@@ -623,7 +637,7 @@ export class ProfilesService {
 
   async listHistoryByWorker(orgId: string, workerId: string) {
     return this.db
-      .select()
+      .select(SALARY_PROFILE_COLUMNS)
       .from(employeeSalaryProfiles)
       .where(and(eq(employeeSalaryProfiles.orgId, orgId), eq(employeeSalaryProfiles.workerId, workerId)))
       .orderBy(desc(employeeSalaryProfiles.effectiveFrom))

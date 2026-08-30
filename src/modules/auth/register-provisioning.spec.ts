@@ -17,6 +17,15 @@ jest.mock("../../common/tenant", () => ({
   runWithTenantContext: jest.fn(
     async (_context: unknown, body: () => Promise<unknown>) => body(),
   ),
+  // `register` places the organisation and then opens a normal tenant
+  // transaction to mint the membership id. The double named only the
+  // create-time seam, so the call after it died on "withTenant is not a
+  // function" — inside the try, which is why the failure case saw that message
+  // instead of the one it throws.
+  withTenant: jest.fn(
+    async (_db: unknown, _context: unknown, body: (tx: unknown) => Promise<unknown>) =>
+      body(tx),
+  ),
 }));
 
 jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
@@ -31,6 +40,12 @@ jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
 
 jest.mock("../../common/region/region-registry", () => ({
   regionForNewOrg: jest.fn().mockReturnValue("eu"),
+  // `withNewOrgInRegion` asks whether a registry is configured before it binds a
+  // connection. A factory naming only `regionForNewOrg` leaves that undefined,
+  // and the provisioning path then dies on "hasRegionRegistry is not a function"
+  // rather than on anything this file is about.
+  hasRegionRegistry: jest.fn().mockReturnValue(false),
+  DEFAULT_REGION: "primary",
 }));
 
 jest.mock("../rbac/seed-system-roles", () => ({
@@ -58,9 +73,31 @@ import { AuthService } from "./auth.service";
 import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
 import { seedDemoDataset } from "../onboarding-activation/seed-demo-dataset";
 
+/**
+ * What `.values()` returns has to be both awaitable and chainable.
+ *
+ * Provisioning calls `.values(...).onConflictDoNothing()`, so a double whose
+ * `values` resolves straight to a promise dies on "onConflictDoNothing is not a
+ * function" — before reaching anything these cases assert. This returns a
+ * thenable that also carries the builder method, so both spellings work.
+ */
+function valuesResult(record?: (rows: unknown) => void) {
+  return (rows: unknown) => {
+    record?.(rows);
+    const settled = Promise.resolve(undefined);
+    return {
+      onConflictDoNothing: () => settled,
+      onConflictDoUpdate: () => settled,
+      returning: () => Promise.resolve([]),
+      then: (onFulfilled: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
+        settled.then(onFulfilled, onRejected),
+    };
+  };
+}
+
 const tx = {
   execute: jest.fn().mockResolvedValue([{ id: 7 }]),
-  insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
+  insert: jest.fn(() => ({ values: jest.fn(valuesResult()) })),
 };
 
 interface UserRow {
@@ -81,10 +118,15 @@ function buildService(options: {
       users: { findFirst: jest.fn().mockResolvedValue(options.existingUser ?? null) },
     },
     execute: jest.fn().mockResolvedValue([{ id: 7 }]),
+    // `placeOrganization` opens its own transaction to set `app.user_id`; the
+    // double runs the body against the same `tx` every other seam here uses.
+    transaction: jest.fn(async (body: (handle: unknown) => Promise<unknown>) => body(tx)),
     insert: jest.fn().mockImplementation(() => ({
-      values: jest.fn().mockImplementation(async (rows: unknown) => {
-        inserted.push({ table: "any", rows: Array.isArray(rows) ? rows : [rows] });
-      }),
+      values: jest.fn().mockImplementation(
+        valuesResult((rows) => {
+          inserted.push({ table: "any", rows: Array.isArray(rows) ? rows : [rows] });
+        }),
+      ),
     })),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockImplementation((patch: Record<string, unknown>) => {
@@ -103,9 +145,11 @@ function buildService(options: {
   };
 
   tx.insert.mockImplementation(() => ({
-    values: jest.fn().mockImplementation(async (rows: unknown) => {
-      inserted.push({ table: "tenant", rows: Array.isArray(rows) ? rows : [rows] });
-    }),
+    values: jest.fn(
+      valuesResult((rows) => {
+        inserted.push({ table: "tenant", rows: Array.isArray(rows) ? rows : [rows] });
+      }),
+    ),
   }));
 
   const service = new AuthService(

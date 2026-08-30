@@ -13,6 +13,7 @@ import { LoanAdjustmentsService } from "./loan-adjustments.service";
 import { ProfilesService } from "./profiles.service";
 import { GeneratePipelineService } from "./generate-pipeline.service";
 import { PayrollCommandReceiptsService } from "../command-receipts.service";
+import { withAccessResolution } from "../../../../test/helpers/access-stub";
 
 const mockCommandReceiptsService = {
   begin: jest.fn().mockResolvedValue({ kind: "fresh" as const, receiptId: 1, correlationId: "corr_1" }),
@@ -30,23 +31,26 @@ const ALL_RUNS_PERMS = new Map([
   ["payroll:salaries:update", "all"],
 ]);
 
-const permittedAccess = {
+const permittedAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(ALL_RUNS_PERMS),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
-const forbiddenAccess = {
+const forbiddenAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
-const viewOnlyAccess = {
+const viewOnlyAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(new Map([
     ["payroll:runs:view", "all"],
     ["payroll:salaries:view", "all"],
   ])),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
 const mockRun = { id: 1, orgId: "org_1", month: "2026-07", status: "DRAFT" };
 const mockEmployee = { id: 1, runId: 1, userId: "u1", status: "PENDING" };
@@ -98,6 +102,7 @@ const mockProfilesService = {
 
 const alwaysOnEntitlements = {
   isModuleEnabled: async (): Promise<boolean> => true,
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
   getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
   getEffectiveModuleMap: async (): Promise<Record<string, boolean>> => ({}),
 };

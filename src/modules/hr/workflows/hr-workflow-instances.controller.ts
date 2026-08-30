@@ -7,6 +7,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 import {
   ActOnInstanceSchema,
   RejectInstanceSchema,
@@ -17,10 +18,11 @@ import {
 } from "./dto/workflow.schemas";
 import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const PaginationSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 
 @RequireModule("hr")
@@ -73,6 +75,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/approve")
+  @Idempotent("hr.workflow-instance.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @HttpCode(200)
@@ -92,6 +95,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/reject")
+  @Idempotent("hr.workflow-instance.reject")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @HttpCode(200)

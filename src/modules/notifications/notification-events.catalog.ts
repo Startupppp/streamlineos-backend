@@ -98,7 +98,7 @@ const CHAT = [
     ttlSeconds: 300,
   }),
   e("chat.reply.reminder", "chat", "CHAT", "Reply reminder", {
-    defaultChannels: IA,
+    defaultChannels: IA_EMAIL,
     ttlSeconds: 3600,
       rateLimitWindowSeconds: 86400,
     rateLimitMax: 5,
@@ -161,6 +161,20 @@ const PROJECTS = [
     defaultPriority: "HIGH",
     defaultChannels: IA_EMAIL,
   }),
+  e("build.project.member_added", "build", "PROJECTS", "Added to a project", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("build.ticket.review_requested", "build", "PROJECTS", "Ticket ready for review", {
+    defaultPriority: "HIGH",
+    defaultChannels: IA_EMAIL,
+    visibilityResourceKind: BUILD_TICKET,
+  }),
+  e("build.ticket.changes_requested", "build", "PROJECTS", "Changes requested", {
+    defaultPriority: "HIGH",
+    defaultType: "WARNING",
+    defaultChannels: IA_EMAIL,
+    visibilityResourceKind: BUILD_TICKET,
+  }),
 ];
 
 const CRM = [
@@ -215,6 +229,50 @@ const CRM = [
 ];
 
 const HR = [
+  e("hr.holiday.announced", "hr", "HRMS", "Holiday announced", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.asset.assigned", "hr", "HRMS", "Asset assigned", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.helpdesk.ticket_created", "hr", "WORKFLOW", "HR helpdesk ticket created", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.helpdesk.ticket_assigned", "hr", "WORKFLOW", "HR helpdesk ticket assigned", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.helpdesk.ticket_status_changed", "hr", "WORKFLOW", "HR helpdesk ticket status changed", {
+    defaultChannels: IA,
+  }),
+  e("hr.resignation.submitted", "hr", "WORKFLOW", "Resignation submitted", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.resignation.approved", "hr", "WORKFLOW", "Resignation approved", {
+    defaultType: "SUCCESS",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.onboarding.started", "hr", "WORKFLOW", "Onboarding started", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.onboarding.completed", "hr", "WORKFLOW", "Onboarding completed", {
+    defaultType: "SUCCESS",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.performance.review_assigned", "hr", "HRMS", "Performance review assigned", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.leave.cancelled", "hr", "HRMS", "Leave cancelled", {
+    defaultType: "WARNING",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.worklog.approved", "hr", "HRMS", "Work log approved", {
+    defaultType: "SUCCESS",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.worklog.rejected", "hr", "HRMS", "Work log rejected", {
+    defaultType: "WARNING",
+    defaultChannels: IA_EMAIL,
+  }),
   e("hr.leave.requested", "hr", "WORKFLOW", "Leave request submitted", {
     defaultChannels: IA_EMAIL,
   }),
@@ -555,6 +613,10 @@ const CALENDAR = [
 ];
 
 const BILLING = [
+  e("billing.trial.expiring", "billing", "BILLING", "Trial ending soon", {
+    defaultPriority: "HIGH",
+    defaultChannels: IA_EMAIL,
+  }),
   e("billing.invoice.created", "billing", "BILLING", "Invoice created", {
     defaultChannels: IA_EMAIL,
   }),
@@ -654,6 +716,9 @@ const SUPPORT = [
     defaultPriority: "HIGH",
     defaultChannels: IA_EMAIL,
   }),
+  e("support.ticket.updated", "support", "SUPPORT", "Support ticket updated", {
+    defaultChannels: IA_EMAIL,
+  }),
   e(
     "support.ticket.customer_replied",
     "support",
@@ -722,6 +787,14 @@ const BROADCASTS = [
 ];
 
 const SYSTEM = [
+  e("system.weekly_recap", "system", "SYSTEM", "Weekly executive recap", {
+    defaultChannels: IA_EMAIL,
+    dedupeWindowSeconds: 86400,
+  }),
+  e("tasks.task.assigned", "tasks", "SYSTEM", "Task assigned to you", {
+    defaultPriority: "HIGH",
+    defaultChannels: IA_EMAIL,
+  }),
   e(
     "compliance.policy.updated",
     "system",
@@ -824,6 +897,13 @@ const OWNERSHIP = [
 ];
 
 const ORGANIZATION = [
+  e(
+    "organization.setup.completed",
+    "organization",
+    "SYSTEM",
+    "Organization setup completed",
+    { defaultChannels: IA_EMAIL },
+  ),
   e(
     "organization.invitation.accepted",
     "organization",

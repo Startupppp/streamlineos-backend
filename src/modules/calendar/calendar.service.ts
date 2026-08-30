@@ -8,14 +8,13 @@ import {
   users,
   userIntegrationConnections,
   organizationMembers,
+  notificationOutbox,
 } from "../../db/schema";
 import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateEventInput, RsvpInput, UpdateEventInput } from "./dto/calendar.schemas";
 import type { UpsertOccurrenceExceptionInput } from "./dto/occurrence-exception.schemas";
-import { EmailService } from "../email/email.service";
-import { getCalendarInviteEmail } from "../email/templates/calendar";
 import { CalendarEventsAggregateService } from "./calendar-events-aggregate.service";
 import { CalendarConflictService } from "./calendar-conflict.service";
 import type { CalendarEventItem, CalendarEventsResult, OooConflict } from "./calendar.types";
@@ -29,7 +28,6 @@ export class CalendarService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly sync: ExternalCalendarSyncService,
-    private readonly email: EmailService,
     private readonly eventsAggregate: CalendarEventsAggregateService,
     private readonly conflict: CalendarConflictService,
   ) {}
@@ -78,7 +76,7 @@ export class CalendarService {
 
     await assertUsersInOrg(this.db, orgId, attendeeIds);
 
-    const [{ event, eventConflicts }, oooConflicts] = await Promise.all([
+    const [{ event, eventConflicts, attendeeMemberships }, oooConflicts] = await Promise.all([
       this.db.transaction(async (tx) => {
         const conflicts = await this.conflict.checkConflictsInTx(
           tx,
@@ -103,7 +101,6 @@ export class CalendarService {
             category: input.category,
             entityType: input.entityType ?? null,
             entityId: input.entityId ?? null,
-            attendeeIds,
             agenda: input.agenda ?? null,
             linkedDealId: input.linkedDealId ?? null,
             linkedLeadId: input.linkedLeadId ?? null,
@@ -111,7 +108,40 @@ export class CalendarService {
             recurrenceEnd: input.recurrenceEnd ? new Date(input.recurrenceEnd) : null,
           })
           .returning();
-        return { event: insertedRows[0], eventConflicts: conflicts };
+        const memberships = attendeeIds.length === 0 ? [] : await tx
+          .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, attendeeIds)));
+        const event = insertedRows[0];
+        if (event && memberships.length > 0)
+          await tx.insert(eventAttendees).values(memberships.map((membership) => ({
+            orgId,
+            eventId: event.id,
+            membershipId: membership.id,
+            userId: membership.userId,
+          }))).onConflictDoNothing();
+        if (event && memberships.some((membership) => membership.userId !== userId))
+          await tx.insert(notificationOutbox).values({
+            orgId,
+            eventKey: "calendar.event.invited",
+            dedupeKey: `calendar:event:${event.id}:invited`,
+            actorUserId: userId,
+            targetUserIds: memberships.map((membership) => membership.userId).filter((recipientId) => recipientId !== userId),
+            entityType: "calendar_event",
+            entityId: String(event.id),
+            title: `Calendar invite: ${input.title}`,
+            message: `You have been invited to "${input.title}" on ${startDate.toDateString()}`,
+            link: "/calendar",
+            variables: {
+              eventTitle: input.title,
+              startIso: startDate.toISOString(),
+              endIso: endDate.toISOString(),
+              allDay: input.allDay ?? false,
+              location: input.location ?? null,
+              description: input.description ?? null,
+            },
+          }).onConflictDoNothing({ target: [notificationOutbox.orgId, notificationOutbox.dedupeKey] });
+        return { event, eventConflicts: conflicts, attendeeMemberships: memberships };
       }),
       this.getOooConflicts(orgId, attendeeIds, startDate, endDate),
     ] as const);
@@ -147,100 +177,7 @@ export class CalendarService {
         syncError = error instanceof Error ? error.message : "Failed to sync to external calendar";
       }
     }
-    if (event) {
-      void this.dispatchInviteEmails({
-        orgId,
-        organizerId: userId,
-        attendeeIds,
-        title: input.title,
-        start: startDate,
-        end: endDate,
-        allDay: input.allDay ?? false,
-        location: input.location ?? null,
-        meetingUrl,
-        description: input.description ?? null,
-      }).catch((err) =>
-        this.logger.warn(
-          `Failed to dispatch calendar invite emails for event ${event.id}: ${String(err)}`,
-        ),
-      );
-    }
     return { event: syncedEvent, oooConflicts, eventConflicts, meetingUrl, syncError };
-  }
-
-  private async dispatchInviteEmails(params: {
-    orgId: string;
-    organizerId: string;
-    attendeeIds: string[];
-    title: string;
-    start: Date;
-    end: Date;
-    allDay: boolean;
-    location: string | null;
-    meetingUrl: string | null;
-    description: string | null;
-  }): Promise<void> {
-    const recipientIds = params.attendeeIds.filter(
-      (id) => id !== params.organizerId,
-    );
-    if (recipientIds.length === 0) return;
-
-    const [recipients, organizerRows] = await Promise.all([
-      this.db
-        .select({
-          email: users.email,
-          name: users.name,
-          firstName: users.firstName,
-          lastName: users.lastName,
-        })
-        .from(users)
-        .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
-        .where(
-          and(
-            inArray(users.id, recipientIds),
-            eq(organizationMembers.orgId, params.orgId),
-            eq(organizationMembers.status, "ACTIVE"),
-          ),
-        ),
-      this.db
-        .select({
-          name: users.name,
-          firstName: users.firstName,
-          lastName: users.lastName,
-        })
-        .from(users)
-        .where(eq(users.id, params.organizerId))
-        .limit(1),
-    ]);
-
-    const org = organizerRows[0];
-    const organizerName = org
-      ? org.firstName
-        ? `${org.firstName} ${org.lastName ?? ""}`.trim()
-        : (org.name ?? "A colleague")
-      : "A colleague";
-
-    await Promise.allSettled(
-      recipients
-        .filter((r) => r.email)
-        .map((r) => {
-          const recipientName = r.firstName
-            ? `${r.firstName} ${r.lastName ?? ""}`.trim()
-            : (r.name ?? r.email);
-          const { subject, html } = getCalendarInviteEmail({
-            recipientName,
-            organizerName,
-            title: params.title,
-            start: params.start,
-            end: params.end,
-            allDay: params.allDay,
-            location: params.location,
-            meetingUrl: params.meetingUrl,
-            description: params.description,
-          });
-          return this.email.sendEmail({ to: r.email, subject, html });
-        }),
-    );
   }
 
   async updateEvent(orgId: string, userId: string, id: number, input: UpdateEventInput) {
@@ -257,7 +194,6 @@ export class CalendarService {
     if (input.entityId !== undefined) updateData.entityId = input.entityId ?? null;
     if (input.attendeeIds !== undefined) {
       await assertUsersInOrg(this.db, orgId, input.attendeeIds);
-      updateData.attendeeIds = input.attendeeIds;
     }
     if (input.timezone !== undefined) updateData.timezone = input.timezone;
     if (input.agenda !== undefined) updateData.agenda = input.agenda ?? null;
@@ -280,6 +216,21 @@ export class CalendarService {
         ),
       )
       .returning();
+
+    if (event && input.attendeeIds !== undefined) {
+      const memberships = await this.db
+        .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, input.attendeeIds)));
+      await this.db.delete(eventAttendees).where(and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, id)));
+      if (memberships.length > 0)
+        await this.db.insert(eventAttendees).values(memberships.map((membership) => ({
+          orgId,
+          eventId: id,
+          membershipId: membership.id,
+          userId: membership.userId,
+        }))).onConflictDoNothing();
+    }
 
     if (event?.integrationConnectionId && event.externalEventId) {
       try {
@@ -396,16 +347,28 @@ export class CalendarService {
     const event = await this.getEventForOrg(orgId, id);
     if (!event) return null;
 
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    if (!membership) return null;
+
     const [attendee] = await this.db
       .insert(eventAttendees)
       .values({
+        orgId,
         eventId: id,
+        membershipId: membership.id,
         userId,
         status: input.status,
         updatedAt: new Date(),
       })
       .onConflictDoUpdate({
-        target: [eventAttendees.eventId, eventAttendees.userId],
+        target: [eventAttendees.orgId, eventAttendees.eventId, eventAttendees.membershipId],
         set: { status: input.status, updatedAt: new Date() },
       })
       .returning();
@@ -418,7 +381,7 @@ export class CalendarService {
     if (!event) return null;
 
     return this.db.query.eventAttendees.findMany({
-      where: eq(eventAttendees.eventId, id),
+      where: and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, id)),
       limit: 100,
       with: {
         user: { columns: { id: true, name: true, email: true, image: true } },

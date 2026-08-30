@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, HttpCode } from "@nestjs/common";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -163,6 +164,7 @@ export class WorkflowsController {
   }
 
   @Post(":workflowId/publish")
+  @Idempotent("workflows.workflow.publish")
   @RequirePermission("workflows:workflows:publish")
   publishWorkflow(
     @Param("workflowId") workflowId: string,

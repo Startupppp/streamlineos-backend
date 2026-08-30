@@ -26,6 +26,7 @@ import {
   type ListTerminationsQueryInput,
 } from "./dto/hr-lifecycle.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("hr")
 @Controller("hr/termination")
@@ -86,6 +87,7 @@ export class TerminationController {
   }
 
   @Patch(":terminationId/submit")
+  @Idempotent("hr.termination.submit")
   @RequirePermission("hr:exit:manage")
   submit(
     @Param("terminationId", ParseIntPipe) terminationId: number,

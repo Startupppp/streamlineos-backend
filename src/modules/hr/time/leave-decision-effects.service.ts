@@ -1,15 +1,10 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { Injectable } from "@nestjs/common";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { logger } from "../../../common/logger/logger.service";
-import { DRIZZLE } from "../../../db/drizzle.constants";
-import type { Db } from "../../../db/drizzle.module";
-import { leaveTypes, users } from "../../../db/schema";
 import { AutomationService } from "../../automation/automation.service";
-import { EmailService } from "../../email/email.service";
-import { NotificationsService } from "../../notifications/notifications.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
 import { PayrollInputsService } from "../payroll-inputs/payroll-inputs.service";
 
@@ -23,11 +18,9 @@ export interface LeaveDecisionRecord {
 @Injectable()
 export class LeaveDecisionEffectsService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly automation: AutomationService,
     private readonly webhooksDispatch: WebhooksDispatchService,
-    private readonly notifications: NotificationsService,
     private readonly payrollInputs: PayrollInputsService,
     private readonly cache: CacheService,
   ) {}
@@ -54,22 +47,16 @@ export class LeaveDecisionEffectsService {
         : "";
     const commentNote = managerComment ? ` Manager note: "${managerComment}"` : "";
 
-    await this.notifications.create({
+    await this.dispatch.emit({
       orgId: currentUser.orgId,
-      userId: leaveDecision.userId,
-      type: "SUCCESS",
+      eventKey: "hr.leave.approved",
+      actorUserId: currentUser.userId,
+      targetUserIds: [leaveDecision.userId],
       title: "Leave Approved",
       message: `Your leave request has been approved.${lopNote}${commentNote}`,
       link: "/hr/leaves",
     });
 
-    void this.dispatchLeaveDecision(
-      currentUser,
-      leaveRequestId,
-      leaveDecision,
-      "APPROVED",
-      null,
-    );
     this.webhooksDispatch.dispatch(currentUser.orgId, "leave.approved", {
       leaveId: leaveRequestId,
       userId: leaveDecision.userId,
@@ -77,6 +64,7 @@ export class LeaveDecisionEffectsService {
       endDate: leaveDecision.endDate,
       leaveTypeId: leaveDecision.leaveTypeId,
     });
+    this.triggerLeaveAutomation(currentUser, leaveRequestId, leaveDecision, "APPROVED", null);
     this.rebuildPayrollInputsForLeaveRange(currentUser.orgId, currentUser.userId, leaveDecision);
     await this.invalidateLeaveAnalytics(currentUser.orgId);
   }
@@ -88,23 +76,18 @@ export class LeaveDecisionEffectsService {
     rejectionReason: string,
     managerComment: string | undefined,
   ): Promise<void> {
-    await this.notifications.create({
+    await this.dispatch.emit({
       orgId: currentUser.orgId,
-      userId: leaveDecision.userId,
-      type: "ERROR",
+      eventKey: "hr.leave.rejected",
+      actorUserId: currentUser.userId,
+      targetUserIds: [leaveDecision.userId],
       title: "Leave Rejected",
       message: `Your leave request has been rejected. Reason: ${rejectionReason}${managerComment ? ` — "${managerComment}"` : ""}`,
       link: "/hr/leaves",
     });
 
+    this.triggerLeaveAutomation(currentUser, leaveRequestId, leaveDecision, "REJECTED", rejectionReason);
     this.rebuildPayrollInputsForLeaveRange(currentUser.orgId, currentUser.userId, leaveDecision);
-    void this.dispatchLeaveDecision(
-      currentUser,
-      leaveRequestId,
-      leaveDecision,
-      "REJECTED",
-      rejectionReason,
-    );
     await this.invalidateLeaveAnalytics(currentUser.orgId);
   }
 
@@ -134,55 +117,20 @@ export class LeaveDecisionEffectsService {
     }
   }
 
-  private async dispatchLeaveDecision(
+  private triggerLeaveAutomation(
     currentUser: CurrentUserContext,
     leaveRequestId: number,
     leaveDecision: LeaveDecisionRecord,
     decision: "APPROVED" | "REJECTED",
     rejectionReason: string | null,
-  ): Promise<void> {
-    try {
-      const [employee, leaveType, approver] = await Promise.all([
-        this.db.query.users.findFirst({
-          where: eq(users.id, leaveDecision.userId),
-          columns: { email: true, name: true },
-        }),
-        leaveDecision.leaveTypeId
-          ? this.db.query.leaveTypes.findFirst({
-              where: eq(leaveTypes.id, leaveDecision.leaveTypeId),
-              columns: { name: true },
-            })
-          : Promise.resolve(null),
-        this.db.query.users.findFirst({
-          where: eq(users.id, currentUser.userId),
-          columns: { name: true },
-        }),
-      ]);
-
-      const leaveTypeName = leaveType?.name ?? "Leave";
-      const approverName = approver?.name ?? "HR";
-      if (employee?.email) {
-        await this.email.sendLeaveStatusUpdateEmail(
-          employee.email,
-          employee.name ?? "Employee",
-          leaveTypeName,
-          leaveDecision.startDate,
-          leaveDecision.endDate,
-          decision,
-          approverName,
-          decision === "REJECTED" ? (rejectionReason ?? undefined) : undefined,
-        );
-      }
-
-      await this.automation.runAutomationsForEvent(
+  ): void {
+    void this.automation
+      .runAutomationsForEvent(
         currentUser.orgId,
         decision === "APPROVED" ? "leave.approved" : "leave.rejected",
         {
           leaveRequestId,
           userId: leaveDecision.userId,
-          employeeName: employee?.name ?? "",
-          employeeEmail: employee?.email ?? "",
-          leaveType: leaveTypeName,
           startDate: leaveDecision.startDate,
           endDate: leaveDecision.endDate,
           decision,
@@ -190,9 +138,13 @@ export class LeaveDecisionEffectsService {
           rejectionReason: decision === "REJECTED" ? rejectionReason : null,
           decidedAt: new Date().toISOString(),
         },
-      );
-    } catch {
-      return;
-    }
+      )
+      .catch((error: unknown) => {
+        logger.warn("automation trigger after leave decision failed", {
+          orgId: currentUser.orgId,
+          leaveRequestId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 }

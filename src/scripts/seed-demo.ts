@@ -11,7 +11,8 @@ import {
   invitations,
 } from "../db/schema/common/auth";
 import { orgUnits } from "../db/schema/common/organization";
-import { subscriptions, auditLogs } from "../db/schema/common/shared";
+import { subscriptions } from "../db/schema/common/subscriptions";
+import { auditLogs } from "../db/schema/common/audit-logs";
 import { DEFAULT_REGION } from "../common/region/region-registry";
 
 type Db = PostgresJsDatabase<typeof schema>;

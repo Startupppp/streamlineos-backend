@@ -6,7 +6,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { EmailService } from "../../email/email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { AutomationService } from "../../automation/automation.service";
 import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
 import { CrmValidationService } from "../../crm/metadata/crm-validation.service";
@@ -79,7 +79,7 @@ describe("LeadsService plan-limit enforcement", () => {
         { provide: PlanLimitsService, useValue: planLimitsMock },
         { provide: CacheService, useValue: { invalidateNamespace: jest.fn() } },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: EmailService, useValue: { sendLeadAssignedEmail: jest.fn() } },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
         { provide: AutomationService, useValue: { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } },
         { provide: WebhooksDispatchService, useValue: { dispatch: jest.fn() } },
         { provide: CrmValidationService, useValue: { evaluate: jest.fn().mockResolvedValue({ valid: true, errors: [] }) } },

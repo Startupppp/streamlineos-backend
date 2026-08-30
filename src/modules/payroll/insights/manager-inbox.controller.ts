@@ -16,6 +16,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { ManagerInboxService } from "./manager-inbox.service";
 import { TeamRewardsService } from "./team-rewards.service";
 import { managerRejectSchema, type ManagerReject } from "./dto/insights.schemas";
@@ -56,6 +57,7 @@ export class ManagerInboxController {
   }
 
   @Post("reimbursements/:reimbursementId/approve")
+  @Idempotent("payroll.reimbursement.approve")
   @HttpCode(200)
   @RequirePermission("self:payroll")
   approveReimbursement(
@@ -66,6 +68,7 @@ export class ManagerInboxController {
   }
 
   @Post("reimbursements/:reimbursementId/reject")
+  @Idempotent("payroll.reimbursement.reject")
   @HttpCode(200)
   @RequirePermission("self:payroll")
   rejectReimbursement(
@@ -82,6 +85,7 @@ export class ManagerInboxController {
   }
 
   @Post("loans/:loanId/approve")
+  @Idempotent("payroll.loan.approve")
   @HttpCode(200)
   @RequirePermission("self:payroll")
   approveLoan(
@@ -92,6 +96,7 @@ export class ManagerInboxController {
   }
 
   @Post("loans/:loanId/reject")
+  @Idempotent("payroll.loan.reject")
   @HttpCode(200)
   @RequirePermission("self:payroll")
   rejectLoan(

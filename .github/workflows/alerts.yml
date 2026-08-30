@@ -1,0 +1,92 @@
+name: Alert self-tests and delivery check
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  self-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Dead-outbox alert self-test
+        run: pnpm alert:dead-outbox:self-test
+
+      - name: Dead-delivery alert self-test
+        run: pnpm alert:dead-delivery:self-test
+
+      - name: Sig-failures alert self-test
+        run: pnpm alert:sig-failures:self-test
+
+      - name: Tenant-ctx-errors alert self-test
+        run: pnpm alert:tenant-ctx-errors:self-test
+
+      - name: P95 alert self-test
+        run: pnpm alert:p95:self-test
+
+      - name: Seam-latency alert self-test
+        run: pnpm alert:seam-latency:self-test
+
+      - name: Dispatch alert self-test
+        run: pnpm alert:dispatch:self-test
+
+  # Fires a real test event to the configured webhook once per day so a human can
+  # confirm the end-to-end delivery path is intact. A skipped delivery must be
+  # visibly skipped rather than folded into a green run — the same philosophy as
+  # ci.yml's tenant-isolation job.
+  test-event:
+    if: github.event.schedule == '0 9 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check webhook configuration
+        id: webhook-check
+        run: |
+          if [ -z "$ALERT_WEBHOOK_URL" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Delivery Unconfirmed::ALERT_WEBHOOK_URL secret is not set. The test event was not sent. Set it in repository secrets (Settings > Secrets > ALERT_WEBHOOK_URL) to confirm end-to-end alert delivery."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+
+      - uses: actions/checkout@v4
+        if: steps.webhook-check.outputs.configured == 'true'
+
+      - uses: pnpm/action-setup@v4
+        if: steps.webhook-check.outputs.configured == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.webhook-check.outputs.configured == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+        if: steps.webhook-check.outputs.configured == 'true'
+
+      - name: Send daily test event
+        if: steps.webhook-check.outputs.configured == 'true'
+        run: pnpm alert:test-event
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}

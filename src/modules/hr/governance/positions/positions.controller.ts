@@ -80,7 +80,7 @@ export class PositionsController {
     @Body(new ZodValidationPipe(updatePositionSchema)) body: UpdatePositionInput,
     @Req() req: Request,
   ) {
-    return this.service.update(user.orgId, positionId, user.userId, body, req.ip);
+    return this.service.update(user.orgId, positionId, user.userId, user.isOrgOwner, body, req.ip);
   }
 
   @Delete("positions/:positionId")
@@ -102,7 +102,7 @@ export class PositionsController {
     @Body(new ZodValidationPipe(assignPositionSchema)) body: AssignPositionInput,
     @Req() req: Request,
   ) {
-    return this.service.assignEmployee(user.orgId, positionId, user.userId, body, req.ip);
+    return this.service.assignEmployee(user.orgId, positionId, user.userId, user.isOrgOwner, body, req.ip);
   }
 
   @Get("scenarios")

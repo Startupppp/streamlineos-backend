@@ -50,11 +50,11 @@ export const PERSONAL_DATA_TABLES: readonly PersonalDataTable[] = [
   { table: "api_keys", columns: ["ip_address", "user_agent"], scope: "org_id" },
   { table: "ar_documents", columns: ["ecommerce_gstin"], scope: "org_id" },
   { table: "audit_logs", columns: ["email_enabled", "ip_address", "user_agent", "whatsapp_enabled"], scope: "org_id" },
+  { table: "billing_invoice_snapshots", columns: ["buyer_address", "buyer_name", "seller_address", "seller_name"], scope: "org_id" },
   { table: "billing_profiles", columns: ["address_line1", "address_line2", "billing_email", "gstin", "pan", "pincode"], scope: "org_id" },
   { table: "biometric_devices", columns: ["ip_address"], scope: "org_id" },
   { table: "blog_authors", columns: ["email"], scope: "global" },
   { table: "booking_link_interviewers", columns: ["contact_email", "contact_phone", "reference_email", "reference_phone"], scope: "org_id" },
-  { table: "broadcasts", columns: ["email_enabled", "ip_address", "user_agent", "whatsapp_enabled"], scope: "org_id" },
   /*
     Took over from `leads`, `clients`, `contacts` and `crm_organizations`, which
     ticket 08 dropped. Their personal data did not go with them -- it was always
@@ -69,7 +69,6 @@ export const PERSONAL_DATA_TABLES: readonly PersonalDataTable[] = [
     have flagged.
   */
   { table: "business_parties", columns: ["acquisition_context", "email", "phone", "tax_number", "whatsapp_phone"], scope: "organization_id" },
-  { table: "calendar_events", columns: ["email_enabled", "whatsapp_enabled"], scope: "org_id" },
   { table: "calibration_participants", columns: ["contact_email", "contact_phone", "reference_email", "reference_phone"], scope: "org_id" },
   { table: "calibration_sessions", columns: ["contact_email", "contact_phone", "reference_email", "reference_phone"], scope: "org_id" },
   { table: "candidate_applications", columns: ["contact_email", "contact_phone", "reference_email", "reference_phone"], scope: "org_id" },

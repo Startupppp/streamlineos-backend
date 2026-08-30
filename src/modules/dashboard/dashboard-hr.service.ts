@@ -14,6 +14,8 @@ import {
 import {
   attendance,
   calendarEvents,
+  hrEmployments,
+  hrPeople,
   leaveBalances,
   leaveTypes,
   notifications,
@@ -27,14 +29,25 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
+import { applyScope } from "../access/apply-scope";
 import { getTodayString } from "../../common/date";
 import {
   resolveDashboardStatsFlags,
   resolvePersonalDashboardModules,
 } from "./dashboard-scope";
+import { resolveAttendanceReadScope } from "../hr/time/attendance-scope";
+import {
+  buildOrgDashboardCacheKey,
+  buildScopedDashboardCacheKey,
+} from "./dashboard-cache-key";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../directory/employment-query";
 
 export interface BirthdayEntry {
   id: string;
@@ -57,56 +70,58 @@ export class DashboardHrService {
   ) {}
 
   async getDashboardStats(orgId: string, u: CurrentUserContext) {
-    const [full, flags] = await Promise.all([
-      this.cache.cached(
-        CACHE_KEYS.dashboardStats(orgId),
-        async () => {
-          const today = getTodayString();
-          const [
-            org,
-            memberCountResult,
-            projectCountResult,
-            attendanceCountResult,
-          ] = await Promise.all([
-            this.db.query.organizations.findFirst({
-              where: eq(organizations.id, orgId),
-            }),
-            this.db
-              .select({ count: count() })
-              .from(organizationMembers)
-              .innerJoin(users, eq(organizationMembers.userId, users.id))
-              .where(
-                and(
-                  eq(organizationMembers.orgId, orgId),
-                  eq(users.isActive, true),
-                ),
-              ),
-            this.db
-              .select({ count: count() })
-              .from(projects)
-              .where(
-                and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-              ),
-            this.db
-              .select({ count: count() })
-              .from(attendance)
-              .where(
-                and(eq(attendance.orgId, orgId), eq(attendance.date, today)),
-              ),
-          ]);
-
-          return {
-            orgName: org?.name || "Organization",
-            totalEmployees: Number(memberCountResult[0]?.count || 0),
-            activeProjects: Number(projectCountResult[0]?.count || 0),
-            presentToday: Number(attendanceCountResult[0]?.count || 0),
-            orgSlug: org?.slug || orgId.slice(0, 8),
-          };
-        },
-        CACHE_TTL.SHORT,
-      ),
+    const [statsKey, flags] = await Promise.all([
+      buildOrgDashboardCacheKey(this.access, orgId, "stats"),
       resolveDashboardStatsFlags(this.access, u),
     ]);
+
+    const full = await this.cache.cachedForOrg(
+      orgId,
+      statsKey,
+      async () => {
+        const today = getTodayString();
+        const [
+          org,
+          memberCountResult,
+          projectCountResult,
+          attendanceCountResult,
+        ] = await Promise.all([
+          this.db.query.organizations.findFirst({
+            where: eq(organizations.id, orgId),
+          }),
+          this.db
+            .select({ count: count() })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.status, "ACTIVE"),
+              ),
+            ),
+          this.db
+            .select({ count: count() })
+            .from(projects)
+            .where(
+              and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
+            ),
+          this.db
+            .select({ count: count() })
+            .from(attendance)
+            .where(
+              and(eq(attendance.orgId, orgId), eq(attendance.date, today)),
+            ),
+        ]);
+
+        return {
+          orgName: org?.name || "Organization",
+          totalEmployees: Number(memberCountResult[0]?.count || 0),
+          activeProjects: Number(projectCountResult[0]?.count || 0),
+          presentToday: Number(attendanceCountResult[0]?.count || 0),
+          orgSlug: org?.slug || orgId.slice(0, 8),
+        };
+      },
+      CACHE_TTL.SHORT,
+    );
 
     return {
       orgName: full.orgName,
@@ -117,11 +132,25 @@ export class DashboardHrService {
     };
   }
 
-  getTeamAvailability(orgId: string) {
-    return this.cache.cached(
-      `dashboard:team-availability:${orgId}`,
+  async getTeamAvailability(u: CurrentUserContext) {
+    const { orgId, userId } = u;
+    const scope = await resolveAttendanceReadScope(this.access, u);
+    if (scope === "none") return [];
+    const today = getTodayString();
+    const key = await buildScopedDashboardCacheKey(
+      this.access,
+      u,
+      "availability",
+      scope,
+      today,
+    );
+    return this.cache.cachedForOrg(
+      orgId,
+      key,
       async () => {
-        const today = getTodayString();
+        const scopePredicate = applyScope(scope, orgId, userId, {
+          ownerColumn: attendance.userId,
+        });
         const todayAttendance = await this.db
           .select({
             userId: attendance.userId,
@@ -135,7 +164,13 @@ export class DashboardHrService {
           })
           .from(attendance)
           .innerJoin(users, eq(attendance.userId, users.id))
-          .where(and(eq(attendance.orgId, orgId), eq(attendance.date, today)));
+          .where(
+            and(
+              eq(attendance.orgId, orgId),
+              eq(attendance.date, today),
+              scopePredicate,
+            ),
+          );
 
         const byUser = new Map<string, (typeof todayAttendance)[number]>();
         for (const record of todayAttendance) {
@@ -157,9 +192,8 @@ export class DashboardHrService {
             const existingCreated = existing.createdAt
               ? new Date(existing.createdAt).getTime()
               : 0;
-            if (recordCreated > existingCreated) {
+            if (recordCreated > existingCreated)
               byUser.set(record.userId, record);
-            }
           }
         }
 
@@ -179,30 +213,57 @@ export class DashboardHrService {
     );
   }
 
-  getTeamAttendance(orgId: string) {
+  async getTeamAttendance(u: CurrentUserContext) {
+    const { orgId } = u;
+    const scope = await resolveAttendanceReadScope(this.access, u);
+    if (scope === "none")
+      return { total: 0, present: 0, clockedIn: 0, absent: 0, records: [] };
     const today = getTodayString();
-    return this.cache.cached(
-      `dashboard:team-attendance:${orgId}:${today}`,
-      () => this.buildTeamAttendance(orgId, today),
+    const key = await buildScopedDashboardCacheKey(
+      this.access,
+      u,
+      "attendance",
+      scope,
+      today,
+    );
+    return this.cache.cachedForOrg(
+      orgId,
+      key,
+      () => this.buildTeamAttendance(orgId, today, scope, u),
       CACHE_TTL.SHORT,
     );
   }
 
-  private async buildTeamAttendance(orgId: string, today: string) {
+  private async buildTeamAttendance(
+    orgId: string,
+    today: string,
+    scope: DataScope,
+    u: CurrentUserContext,
+  ) {
+    const memberScopePredicate = applyScope(scope, orgId, u.userId, {
+      ownerColumn: organizationMembers.userId,
+    });
+    const attendanceScopePredicate = applyScope(scope, orgId, u.userId, {
+      ownerColumn: attendance.userId,
+    });
+
     const [totalMembersResult, todayAttendance] = await Promise.all([
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(organizationMembers)
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(
-          and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)),
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.status, "ACTIVE"),
+            memberScopePredicate,
+          ),
         ),
       this.db
         .select({
           userId: attendance.userId,
           userName: users.name,
           userImage: users.image,
-          userDesignation: users.designation,
+          userDesignation: hrEmployments.designation,
           checkIn: attendance.checkIn,
           checkOut: attendance.checkOut,
           status: attendance.status,
@@ -210,7 +271,15 @@ export class DashboardHrService {
         })
         .from(attendance)
         .innerJoin(users, eq(attendance.userId, users.id))
-        .where(and(eq(attendance.orgId, orgId), eq(attendance.date, today))),
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+        .where(
+          and(
+            eq(attendance.orgId, orgId),
+            eq(attendance.date, today),
+            attendanceScopePredicate,
+          ),
+        ),
     ]);
 
     const byUser = new Map<string, (typeof todayAttendance)[number]>();
@@ -233,9 +302,7 @@ export class DashboardHrService {
         const existingCreated = existing.createdAt
           ? new Date(existing.createdAt).getTime()
           : 0;
-        if (recordCreated > existingCreated) {
-          byUser.set(record.userId, record);
-        }
+        if (recordCreated > existingCreated) byUser.set(record.userId, record);
       }
     }
 
@@ -262,9 +329,16 @@ export class DashboardHrService {
     };
   }
 
-  getBirthdays(orgId: string): Promise<BirthdayEntry[]> {
-    const key = `dashboard:birthdays:${orgId}:${new Date().toISOString().slice(0, 10)}`;
-    return this.cache.cached(
+  async getBirthdays(orgId: string): Promise<BirthdayEntry[]> {
+    const today = new Date().toISOString().slice(0, 10);
+    const key = await buildOrgDashboardCacheKey(
+      this.access,
+      orgId,
+      "birthdays",
+      today,
+    );
+    return this.cache.cachedForOrg(
+      orgId,
       key,
       () => this.buildBirthdays(orgId),
       CACHE_TTL.MEDIUM,
@@ -272,10 +346,10 @@ export class DashboardHrService {
   }
 
   private async buildBirthdays(orgId: string): Promise<BirthdayEntry[]> {
-    const today = new Date();
+    const todayDate = new Date();
     const windowDates = Array.from({ length: 8 }, (_, i) => {
-      const d = new Date(today);
-      d.setDate(today.getDate() + i);
+      const d = new Date(todayDate);
+      d.setDate(todayDate.getDate() + i);
       return {
         str: d.toISOString().split("T")[0],
         mmdd: `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
@@ -294,7 +368,7 @@ export class DashboardHrService {
         .select({
           id: users.id,
           name: users.name,
-          designation: users.designation,
+          designation: hrEmployments.designation,
           image: users.image,
           mmdd: sql<string>`to_char(${users.dateOfBirth}::date, 'MM-DD')`,
         })
@@ -303,6 +377,8 @@ export class DashboardHrService {
           organizationMembers,
           eq(organizationMembers.userId, users.id),
         )
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
@@ -316,22 +392,24 @@ export class DashboardHrService {
         .select({
           id: users.id,
           name: users.name,
-          designation: users.designation,
+          designation: hrEmployments.designation,
           image: users.image,
-          joiningDate: users.joiningDate,
-          mmdd: sql<string>`to_char(${users.joiningDate}::date, 'MM-DD')`,
+          joiningDate: hrEmployments.joiningDate,
+          mmdd: sql<string>`to_char(${hrEmployments.joiningDate}::date, 'MM-DD')`,
         })
         .from(users)
         .innerJoin(
           organizationMembers,
           eq(organizationMembers.userId, users.id),
         )
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
             eq(users.isActive, true),
-            sql`to_char(${users.joiningDate}::date, 'MM-DD') IN (${mmddValues})`,
-            sql`EXTRACT(YEAR FROM age(${users.joiningDate}::date)) >= 1`,
+            sql`to_char(${hrEmployments.joiningDate}::date, 'MM-DD') IN (${mmddValues})`,
+            sql`EXTRACT(YEAR FROM age(${hrEmployments.joiningDate}::date)) >= 1`,
           ),
         )
         .limit(50),
@@ -350,7 +428,8 @@ export class DashboardHrService {
         designation: m.designation,
         image: m.image,
         type: "birthday",
-        date: mmddByDate.get(m.mmdd) ?? today.toISOString().split("T")[0],
+        date:
+          mmddByDate.get(m.mmdd) ?? todayDate.toISOString().split("T")[0],
       });
     }
 
@@ -359,7 +438,7 @@ export class DashboardHrService {
       if (seen.has(key)) continue;
       seen.add(key);
       const dateStr =
-        mmddByDate.get(m.mmdd) ?? today.toISOString().split("T")[0];
+        mmddByDate.get(m.mmdd) ?? todayDate.toISOString().split("T")[0];
       const years = m.joiningDate
         ? new Date(dateStr).getFullYear() -
           new Date(m.joiningDate).getFullYear()

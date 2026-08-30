@@ -10,11 +10,13 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { EmailService } from "../email/email.service";
 import { appUrl } from "../email/app-url";
 import { logger } from "../../common/logger/logger.service";
 import { AiCreditsService } from "../billing/core/ai-credits.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { RevenueAnalyticsService } from "../billing/core/revenue-analytics.service";
+import { PLAN_PRICES_PAISE } from "../billing/core/plan-entitlements.constants";
+import { type Plan } from "../billing/core/dto/billing.schemas";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { forEachOrg } from "../../common/tenant";
 
@@ -34,9 +36,9 @@ interface DunningMeta {
 export class CronBillingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly email: EmailService,
     private readonly aiCredits: AiCreditsService,
     private readonly planLimits: PlanLimitsService,
+    private readonly revenue: RevenueAnalyticsService,
     private readonly dispatch: NotificationDispatchService,
   ) {}
 
@@ -56,11 +58,22 @@ export class CronBillingService {
             lt(subscriptions.trialEndsAt, now),
           ),
         )
-        .returning({ id: subscriptions.id });
+        .returning({ id: subscriptions.id, plan: subscriptions.plan });
       expired += expiredRows.length;
 
+      // A trial that lapses is a lost customer but no lost MRR — it never contributed any.
+      for (const row of expiredRows) {
+        await this.revenue.emit(tx, {
+          type: "churn",
+          orgId,
+          plan: row.plan,
+          mrr: 0,
+          metadata: { subscriptionId: row.id, source: "trial-expiry" },
+        });
+      }
+
       const ownerRows = await tx
-        .select({ email: users.email, orgName: organizations.name })
+        .select({ userId: users.id, email: users.email, orgName: organizations.name })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .innerJoin(organizations, eq(organizationMembers.orgId, organizations.id))
@@ -73,7 +86,7 @@ export class CronBillingService {
         )
         .limit(1);
       const owner = ownerRows[0];
-      if (!owner?.email) return;
+      if (!owner?.email || !owner.userId) return;
 
       for (const days of REMINDER_DAYS) {
         const windowStart = new Date(now);
@@ -97,8 +110,16 @@ export class CronBillingService {
 
         if (soonExpiring.length === 0) continue;
 
-        await this.email
-          .sendTrialReminderEmail(owner.email, owner.orgName ?? "Your Organization", days, `${appUrl()}/billing?tab=plan`)
+        await this.dispatch
+          .emit({
+            orgId,
+            eventKey: "billing.trial.expiring",
+            targetUserIds: [owner.userId],
+            title: `Your trial ends in ${days} day${days === 1 ? "" : "s"}`,
+            message: `Your ${owner.orgName ?? "organization"} trial is ending soon. Update your plan to keep access to your workspace.`,
+            link: `${appUrl()}/billing?tab=plan`,
+            dedupeKey: `trial-expiry:${now.toISOString().slice(0, 10)}:${days}`,
+          })
           .catch((err: unknown) => logger.warn("[billing-cron] email send failed", { err }));
         reminded++;
       }
@@ -193,11 +214,12 @@ export class CronBillingService {
     let suspended = 0;
     let skipped = 0;
 
-    await forEachOrg(this.db, "billing-dunning", async (_tx, orgId) => {
+    await forEachOrg(this.db, "billing-dunning", async (tx, orgId) => {
       const pastDueSubs = await this.db
         .select({
           id: subscriptions.id,
           orgId: subscriptions.orgId,
+          plan: subscriptions.plan,
           metadata: subscriptions.metadata,
           updatedAt: subscriptions.updatedAt,
         })
@@ -232,6 +254,15 @@ export class CronBillingService {
             .where(
               and(eq(subscriptions.id, sub.id), eq(subscriptions.status, "PAST_DUE")),
             );
+
+          // The one churn event per paying customer lost, emitted with the cancellation.
+          await this.revenue.emit(tx, {
+            type: "churn",
+            orgId: sub.orgId,
+            plan: sub.plan,
+            mrr: PLAN_PRICES_PAISE[sub.plan as Plan] ?? 0,
+            metadata: { subscriptionId: sub.id, source: "dunning-suspension" },
+          });
 
           await this.planLimits.bust(sub.orgId);
 

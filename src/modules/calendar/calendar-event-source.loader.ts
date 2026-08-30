@@ -41,7 +41,11 @@ export class CalendarEventSourceLoader {
           .select({ eventId: eventAttendees.eventId, status: eventAttendees.status })
           .from(eventAttendees)
           .where(
-            and(eq(eventAttendees.userId, userId), inArray(eventAttendees.eventId, eventIds)),
+            and(
+              eq(eventAttendees.orgId, orgId),
+              eq(eventAttendees.userId, userId),
+              inArray(eventAttendees.eventId, eventIds),
+            ),
           );
         for (const row of rows) rsvpMap.set(row.eventId, row.status ?? "pending");
       })(),

@@ -6,6 +6,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { TravelService } from "./travel.service";
 import {
   createTravelRequestSchema,
@@ -61,6 +62,7 @@ export class TravelController {
   }
 
   @Patch(":travelRequestId/reject")
+  @Idempotent("expenses.travel.reject")
   @RequirePermission("hr:travel:manage")
   reject(
     @CurrentUser() u: CurrentUserContext,

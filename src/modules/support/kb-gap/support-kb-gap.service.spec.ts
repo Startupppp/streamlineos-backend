@@ -8,6 +8,7 @@ import { KbEventsService } from "../../kb/core/kb-events.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb-gap";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const makeGatewayOk = <T>(data: T) => ({
   ok: true as const,
@@ -342,6 +343,7 @@ describe("SupportKbGapService", () => {
         isOrgOwner: false,
         sessionId: "sess-abc",
         tokenScopes: null,
+        principal: humanSessionPrincipal(1, false),
       };
       await service.proposeDraft("org1", 1, "actor-123", actorCtx);
 

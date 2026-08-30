@@ -1,26 +1,31 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { eq, desc, count, gte, and, SQL } from "drizzle-orm";
 import { DRIZZLE } from "../db/drizzle.constants";
 import { type Db } from "../db/drizzle.module";
 import { users, loginHistory, userSessions } from "../db/schema";
-import {
-  decrypt,
-  decryptBankDetails,
-  encryptBankDetails,
-} from "../modules/hr/onboarding/core/crypto.helpers";
 import type { UpdateProfileInput } from "./dto/me.schemas";
 import { withClientInfo } from "../common/http/parse-user-agent";
 import { readOrgDisplay, type OrgDisplay } from "./org-display";
+import { EmploymentFactsService } from "../modules/directory/employment-facts.service";
+import { syncCanonicalSensitiveFields } from "../common/hr/sync-canonical-sensitive-fields";
 
 @Injectable()
 export class MeService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly employmentFacts: EmploymentFactsService,
+  ) {}
 
   getOrgDisplay(organizationId: string): Promise<OrgDisplay> {
     return readOrgDisplay(this.db, organizationId);
   }
 
-  async getProfile(userId: string) {
+  async getProfile(userId: string, orgId: string | null) {
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, userId),
       columns: {
@@ -30,15 +35,22 @@ export class MeService {
 
     if (!user) throw new NotFoundException("User not found");
 
-    const { bankDetails, taxId, ...rest } = user;
+    const sensitive = orgId
+      ? await this.employmentFacts.getSensitiveFacts(orgId, userId)
+      : null;
+
     return {
-      ...rest,
-      taxId: taxId ? decrypt(taxId) : null,
-      bankDetails: decryptBankDetails(bankDetails),
+      ...user,
+      taxId: sensitive?.taxId ?? null,
+      bankDetails: sensitive?.bankDetails ?? null,
     };
   }
 
-  async updateProfile(userId: string, input: UpdateProfileInput): Promise<{ success: true }> {
+  async updateProfile(
+    userId: string,
+    orgId: string | null,
+    input: UpdateProfileInput,
+  ): Promise<{ success: true }> {
     const setFields = {
       ...(input.firstName !== undefined ? { firstName: input.firstName } : {}),
       ...(input.lastName !== undefined ? { lastName: input.lastName } : {}),
@@ -50,12 +62,22 @@ export class MeService {
       ...(input.phone !== undefined ? { phone: input.phone } : {}),
       ...(input.whatsappNumber !== undefined ? { whatsappNumber: input.whatsappNumber } : {}),
       ...(input.emergencyContact !== undefined ? { emergencyContact: input.emergencyContact } : {}),
-      ...(input.bankDetails !== undefined
-        ? { bankDetails: encryptBankDetails(input.bankDetails) }
-        : {}),
     };
 
-    await this.db.update(users).set(setFields).where(eq(users.id, userId));
+    if (input.bankDetails !== undefined && !orgId)
+      throw new BadRequestException(
+        "Bank details belong to an organization — select a workspace first",
+      );
+
+    await this.db.transaction(async (tx) => {
+      if (Object.keys(setFields).length > 0)
+        await tx.update(users).set(setFields).where(eq(users.id, userId));
+
+      if (input.bankDetails !== undefined && orgId)
+        await syncCanonicalSensitiveFields(tx, orgId, userId, {
+          bankDetails: input.bankDetails,
+        });
+    });
 
     return { success: true };
   }

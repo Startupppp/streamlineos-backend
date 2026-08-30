@@ -13,6 +13,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import {
+  accountOrganizationIndex,
   accounts,
   emailOtpCodes,
   loginHistory,
@@ -78,6 +79,21 @@ export class AuthTokensService {
     private readonly email: EmailService,
     private readonly sessions: SessionsService,
   ) {}
+
+  private async resolvePreferredOrgId(userId: string): Promise<string | null> {
+    const rows = await withIdentity(this.db, userId, (tx) =>
+      tx
+        .select({ orgId: accountOrganizationIndex.orgId })
+        .from(accountOrganizationIndex)
+        .where(eq(accountOrganizationIndex.userId, userId))
+        .orderBy(
+          sql`${accountOrganizationIndex.lastActivatedAt} DESC NULLS LAST`,
+          desc(accountOrganizationIndex.joinedAt),
+        )
+        .limit(1),
+    );
+    return rows[0]?.orgId ?? null;
+  }
 
   async resolveActiveMembership(
     userId: string,
@@ -550,7 +566,7 @@ export class AuthTokensService {
 
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, row.userId),
-      columns: { lastActiveOrgId: true, isActive: true, deletedAt: true },
+      columns: { isActive: true, deletedAt: true },
     });
 
     if (!user || !user.isActive || user.deletedAt !== null) {
@@ -566,8 +582,10 @@ export class AuthTokensService {
       .set({ emailVerified: new Date() })
       .where(and(eq(users.id, row.userId), isNull(users.emailVerified)));
 
+    const preferredOrgId = await this.resolvePreferredOrgId(row.userId).catch(() => null);
+
     const [membership, sessionId] = await Promise.all([
-      this.resolveActiveMembership(row.userId, user.lastActiveOrgId ?? null),
+      this.resolveActiveMembership(row.userId, preferredOrgId ?? null),
       this.createLoginSession(row.userId, context),
     ]);
 

@@ -12,7 +12,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { EmailService } from "../email/email.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { LeadNotificationAiService } from "./lead-notification-ai.service";
@@ -37,30 +37,24 @@ export class LeadsDetailService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly notificationAi: LeadNotificationAiService,
   ) {}
 
   private async sendAssignmentEmail(actorId: string, lead: LeadRow): Promise<void> {
     if (!lead.assignedToId) return;
-    const ids = Array.from(new Set([lead.assignedToId, actorId]));
-    const people = await this.db
-      .select({ id: users.id, email: users.email, name: users.name })
-      .from(users)
-      .where(inArray(users.id, ids));
-
-    const assignee = people.find((p) => p.id === lead.assignedToId);
-    if (!assignee?.email) return;
-
-    const assigner = people.find((p) => p.id === actorId);
-    await this.email.sendLeadAssignedEmail(
-      assignee.email,
-      assignee.name ?? "Team Member",
-      lead.name,
-      lead.source,
-      lead.priority,
-      assigner?.name ?? "A manager",
-    );
+    await this.dispatch.emit({
+      eventKey: "crm.lead.assigned",
+      orgId: lead.orgId,
+      actorUserId: actorId,
+      targetUserIds: [lead.assignedToId],
+      entityType: "lead",
+      entityId: String(lead.id),
+      title: "Lead assigned to you",
+      message: `You have been assigned lead: ${lead.name}`,
+      link: `/crm/leads/${lead.id}`,
+      variables: { leadName: lead.name, source: lead.source, priority: lead.priority },
+    });
   }
 
   getActivities(orgId: string, leadId: number, limit: number) {

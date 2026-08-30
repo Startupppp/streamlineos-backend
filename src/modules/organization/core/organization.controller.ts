@@ -18,17 +18,22 @@ import {
 } from "@nestjs/common";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { Universal } from "../../../common/auth/universal.decorator";
+import { AuthorizedInService } from "../../../common/auth/authorized-in-service.decorator";
 import { Public } from "../../../common/auth/public.decorator";
 import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
 import { NoTenantTransaction } from "../../../common/tenant";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
+import { assertOwnerOnly } from "../../../common/rbac/owner-only-operations";
+import { isStructuralOrgAdminContext } from "../../../common/rbac/is-structural-org-admin";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { OrganizationService } from "./organization.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
+import { OrganizationLegalHoldService } from "./lifecycle/organization-legal-hold.service";
 import { InvitationsService } from "./invitations.service";
 import { InvitationsReadService } from "./invitations-read.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
@@ -40,6 +45,7 @@ import {
   createHolidaySchema,
   deleteOrgSchema,
   listMembersSchema,
+  placeLegalHoldSchema,
   restoreOrgSchema,
   schedulePurgeSchema,
   securitySettingsSchema,
@@ -53,6 +59,7 @@ import {
   type CreateOrganizationInput,
   type DeleteOrgInput,
   type ListMembersInput,
+  type PlaceLegalHoldInput,
   type RestoreOrgInput,
   type SchedulePurgeInput,
   type SecuritySettingsInput,
@@ -71,6 +78,7 @@ export class OrganizationController {
     private readonly invitationsRead: InvitationsReadService,
     private readonly invitationAcceptance: InvitationAcceptanceService,
     private readonly rateLimit: RateLimitService,
+    private readonly legalHold: OrganizationLegalHoldService,
   ) {}
 
   private getIp(req: { ip?: string; headers: Record<string, string> }): string {
@@ -103,6 +111,7 @@ export class OrganizationController {
   }
 
   @Get()
+  @Universal()
   @AllowNoOrg()
   @NoTenantTransaction()
   listOrganizations(@CurrentUser() u: CurrentUserContext) {
@@ -110,6 +119,7 @@ export class OrganizationController {
   }
 
   @Get("archived")
+  @Universal()
   @AllowNoOrg()
   @NoTenantTransaction()
   listArchivedOrganizations(@CurrentUser() u: CurrentUserContext) {
@@ -118,18 +128,20 @@ export class OrganizationController {
 
   @Post()
   @HttpCode(201)
+  @AuthorizedInService("createOrganization rejects a caller who is not a structural org owner or org admin, below")
   @Idempotent("organization.create")
   createOrganization(
     @Body(new ZodValidationPipe(createOrganizationSchema)) body: CreateOrganizationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) {
+    if (!isStructuralOrgAdminContext(u)) {
       throw new ForbiddenException("Forbidden");
     }
     return this.organization.createOrganization(u.userId, body);
   }
 
   @Post("switch")
+  @Universal()
   @HttpCode(200)
   @AllowNoOrg()
   @NoTenantTransaction()
@@ -314,12 +326,13 @@ export class OrganizationController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   archiveOrg(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
+    assertOwnerOnly(u, "organization.archive");
     return this.organization.archiveOrg(u.orgId, u.userId);
   }
 
   @Post("restore")
   @HttpCode(200)
+  @AuthorizedInService("OrgLifecycleService.restoreOrg — an ACTIVE isOwner membership of the target org, 404 on a miss")
   @AllowNoOrg()
   @NoTenantTransaction()
   restoreOrg(
@@ -330,6 +343,7 @@ export class OrganizationController {
   }
 
   @Post("leave")
+  @Universal()
   @HttpCode(200)
   leaveOrg(@CurrentUser() u: CurrentUserContext) {
     return this.organization.leaveOrg(u.orgId, u.userId);
@@ -343,7 +357,7 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(deleteOrgSchema)) body: DeleteOrgInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
+    assertOwnerOnly(u, "organization.delete");
     return this.organization.deleteOrg(u.orgId, u.userId, body.confirmation);
   }
 
@@ -356,7 +370,7 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(schedulePurgeSchema)) body: SchedulePurgeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
+    assertOwnerOnly(u, "organization.purge.schedule");
     const targetOrgId = u.orgId;
     return this.organization.schedulePurge(
       targetOrgId,
@@ -374,8 +388,38 @@ export class OrganizationController {
     @Param("orgId") orgId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
+    assertOwnerOnly(u, "organization.purge.cancel");
     const targetOrgId = u.orgId;
     return this.organization.cancelPurge(targetOrgId, u.userId);
+  }
+
+  @Post("legal-holds")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:organization:manage")
+  placeLegalHold(
+    @Body(new ZodValidationPipe(placeLegalHoldSchema)) body: PlaceLegalHoldInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    assertOwnerOnly(u, "organization.legal-hold");
+    return this.legalHold.place(u.orgId, u.userId, body.reason);
+  }
+
+  @Get("legal-holds")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:organization:manage")
+  listLegalHolds(@CurrentUser() u: CurrentUserContext) {
+    return this.legalHold.listActive(u.orgId);
+  }
+
+  @Delete("legal-holds/:holdId")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:organization:manage")
+  releaseLegalHold(
+    @Param("holdId") holdId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    assertOwnerOnly(u, "organization.legal-hold");
+    return this.legalHold.release(holdId, u.orgId, u.userId);
   }
 }

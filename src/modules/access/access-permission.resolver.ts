@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import {
   groupRoleAssignments,
@@ -29,11 +29,22 @@ import {
   EMPLOYEE_SELF_SERVICE_GRANTS,
   evaluateMembershipGate,
 } from "./access-policy";
+import {
+  type Clock,
+  type GrantTransitions,
+  NO_TRANSITIONS,
+  SYSTEM_CLOCK,
+} from "./snapshot-validity";
 
 export type SafeAccessTableRead = <Result>(
   read: () => PromiseLike<Result>,
   fallback: Result,
 ) => Promise<Result>;
+
+export interface ResolvedPermissions {
+  perms: Record<string, DataScope>;
+  transitions: GrantTransitions;
+}
 
 export interface MembershipAccessState {
   exists: boolean;
@@ -55,6 +66,18 @@ export function membershipCacheKey(
   return `${orgId}:${userId}:${version}`;
 }
 
+function earliestAfter(
+  now: Date,
+  candidates: readonly (Date | null | undefined)[],
+): Date | null {
+  const cutoff = now.getTime();
+  const future = candidates
+    .filter((candidate): candidate is Date => Boolean(candidate))
+    .map((candidate) => candidate.getTime())
+    .filter((instant) => instant > cutoff);
+  return future.length === 0 ? null : new Date(Math.min(...future));
+}
+
 export class AccessPermissionResolver {
   constructor(
     private readonly getDatabase: () => Db,
@@ -62,6 +85,7 @@ export class AccessPermissionResolver {
     private readonly warnedUnknownKeys: Set<string>,
     private readonly membershipAccessCache: Map<string, MembershipAccessState>,
     private readonly deniedModulesTtlMs: number,
+    private readonly clock: Clock = SYSTEM_CLOCK,
   ) {}
 
   private get db(): Db {
@@ -72,7 +96,7 @@ export class AccessPermissionResolver {
     orgId: string,
     userId: string,
     version: number,
-  ): Promise<Record<string, DataScope>> {
+  ): Promise<ResolvedPermissions> {
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(
         eq(organizationMembers.userId, userId),
@@ -89,19 +113,24 @@ export class AccessPermissionResolver {
         (gate.isOwner || member?.role === ORG_MEMBER_ROLES.ORG_ADMIN),
       expiresAt: Date.now() + this.deniedModulesTtlMs,
     });
-    if (!gate.active) return {};
-    if (gate.isOwner) return allCatalogScopes();
-    if (member?.role === ORG_MEMBER_ROLES.ORG_ADMIN) return allCatalogScopes();
+    if (!gate.active) return { perms: {}, transitions: NO_TRANSITIONS };
+    if (gate.isOwner)
+      return { perms: allCatalogScopes(), transitions: NO_TRANSITIONS };
+    if (member?.role === ORG_MEMBER_ROLES.ORG_ADMIN)
+      return { perms: allCatalogScopes(), transitions: NO_TRANSITIONS };
 
     const membershipId = member?.id ?? 0;
-    const now = new Date();
+    const now = this.clock.now();
 
     const [assignmentRows, groupMemberRows, ownershipRows, personalGrantRows] =
       await Promise.all([
       this.safeAccessTableRead(
         () =>
           this.db
-            .select({ roleId: roleAssignments.roleId })
+            .select({
+              roleId: roleAssignments.roleId,
+              expiresAt: roleAssignments.expiresAt,
+            })
             .from(roleAssignments)
             .where(
               and(
@@ -113,7 +142,7 @@ export class AccessPermissionResolver {
                 ),
               ),
             ),
-        [] as { roleId: number }[],
+        [] as { roleId: number; expiresAt: Date | null }[],
       ),
       this.safeAccessTableRead(
         () =>
@@ -294,6 +323,8 @@ export class AccessPermissionResolver {
         this.db
           .select({
             permissionKey: userDelegationPermissions.permissionKey,
+            startsAt: userDelegations.startsAt,
+            endsAt: userDelegations.endsAt,
           })
           .from(userDelegationPermissions)
           .innerJoin(
@@ -306,15 +337,15 @@ export class AccessPermissionResolver {
           .where(
             and(
               eq(userDelegations.orgId, orgId),
-              eq(userDelegations.delegateeId, userId),
+              eq(userDelegations.delegateeMembershipId, membershipId),
               eq(userDelegations.status, "ACTIVE"),
-              lte(userDelegations.startsAt, now),
               gt(userDelegations.endsAt, now),
             ),
           ),
-      [] as { permissionKey: string }[],
+      [] as { permissionKey: string; startsAt: Date; endsAt: Date }[],
     );
     for (const row of delegatedPermissionRows) {
+      if (row.startsAt.getTime() > now.getTime()) continue;
       mergeIfKnown(row.permissionKey, "all", "delegation");
     }
 
@@ -331,6 +362,22 @@ export class AccessPermissionResolver {
     }
 
     deriveAccessViewImplication(result);
-    return result;
+    return {
+      perms: result,
+      transitions: {
+        roleAssignmentExpiry: earliestAfter(
+          now,
+          assignmentRows.map((row) => row.expiresAt),
+        ),
+        delegationStart: earliestAfter(
+          now,
+          delegatedPermissionRows.map((row) => row.startsAt),
+        ),
+        delegationEnd: earliestAfter(
+          now,
+          delegatedPermissionRows.map((row) => row.endsAt),
+        ),
+      },
+    };
   }
 }

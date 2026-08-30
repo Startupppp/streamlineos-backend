@@ -33,6 +33,7 @@ import {
   type UpdateEntryInput,
 } from "./dto/timesheets.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("build")
 @Controller("build/time-entries")
@@ -59,6 +60,7 @@ export class TimeEntriesController {
   }
 
   @Patch(":entryId/approve")
+  @Idempotent("build.timesheet.approve-entry")
   @RequirePermission("build:timesheets:manage")
   approveEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
@@ -68,6 +70,7 @@ export class TimeEntriesController {
   }
 
   @Patch(":entryId/reject")
+  @Idempotent("build.timesheet.reject-entry")
   @RequirePermission("build:timesheets:manage")
   rejectEntry(
     @Param("entryId", ParseIntPipe) entryId: number,

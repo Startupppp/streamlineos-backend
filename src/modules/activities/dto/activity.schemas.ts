@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { ACTIVITY_KINDS } from "../../../db/schema/crm/activities";
 import { queryBoolean } from "../../../common/validation/query-boolean";
 
@@ -75,7 +76,7 @@ export const timelineQuerySchema = z
     kind: z.enum(ACTIVITY_KINDS).optional(),
     cursor: z.string().optional(),
     // The platform page cap. A timeline of thousands is read a page at a time.
-    limit: z.coerce.number().int().min(1).max(100).default(25),
+    limit: pageSizeField(25),
   })
   .strict()
   .refine(
@@ -87,7 +88,7 @@ export const myTasksQuerySchema = z
   .object({
     includeCompleted: queryBoolean.default(false),
     cursor: z.string().optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(25),
+    limit: pageSizeField(25),
   })
   .strict();
 

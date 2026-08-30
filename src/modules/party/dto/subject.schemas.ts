@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 const FIELD_KINDS = [
   "text",
@@ -60,7 +61,7 @@ export const listSubjectsQuerySchema = z
     typeKey: slug.optional(),
     search: z.string().trim().max(200).optional(),
     cursor: z.string().optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    limit: pageSizeField(20),
   })
   .strict();
 

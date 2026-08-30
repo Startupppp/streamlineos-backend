@@ -6,7 +6,6 @@ import { CrmBlueprintsService } from "../crm/metadata/crm-blueprints.service";
 import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
-import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 
@@ -97,7 +96,7 @@ describe("DealsService — the stage ledger", () => {
         invalidateNamespace: jest.fn().mockResolvedValue(undefined),
       } as unknown as CacheService,
       { log: jest.fn() } as unknown as AuditService,
-      { sendDealAssigned: jest.fn() } as unknown as EmailService,
+      { emit: jest.fn().mockResolvedValue(undefined) } as unknown as import("../notifications/notification-dispatch.service").NotificationDispatchService,
       { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as unknown as AutomationService,
       { dispatch: jest.fn().mockResolvedValue(undefined) } as unknown as WebhooksDispatchService,
       {

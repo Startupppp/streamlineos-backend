@@ -45,6 +45,7 @@ import { CompOffGrantService } from "./comp-off-grant.service";
 import { LeaveApproverService } from "./leave-approver.service";
 import { LeaveTypesService } from "./leave-types.service";
 import { RateLimitModule } from "../../../common/ratelimit/rate-limit.module";
+import { DirectoryModule } from "../../directory/directory.module";
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { RateLimitModule } from "../../../common/ratelimit/rate-limit.module";
     HrPayrollInputsModule,
     RateLimitModule,
     HrLifecycleModule,
+    DirectoryModule,
   ],
   controllers: [
     EmployeeAttendanceController,

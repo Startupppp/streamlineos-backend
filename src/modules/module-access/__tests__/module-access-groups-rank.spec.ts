@@ -1,3 +1,8 @@
+jest.mock("../../../common/relocation/relocation-traffic-tracker", () => ({
+  refreshRelocationTargets: jest.fn().mockResolvedValue(undefined),
+  isRelocationTarget: jest.fn().mockReturnValue(false),
+}));
+
 import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
@@ -7,6 +12,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { ROLE_RANK } from "../../../common/rbac/grantability";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -16,6 +22,7 @@ function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext 
     isOrgOwner: false,
     sessionId: "s1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -27,9 +28,11 @@ import {
 } from "../directory/employees-scope";
 import {
   createCustomFieldSchema,
+  filterByCustomFieldQuerySchema,
   updateCustomFieldSchema,
   upsertCustomFieldValuesSchema,
   type CreateCustomFieldInput,
+  type FilterByCustomFieldQuery,
   type UpdateCustomFieldInput,
   type UpsertCustomFieldValuesInput,
 } from "./dto/hr-custom-fields.schemas";
@@ -156,5 +159,32 @@ export class HrCustomFieldsController {
       body,
       true,
     );
+  }
+
+  @Get(":entityType/filter")
+  @RequirePermission("hr:employees:view")
+  async filterByField(
+    @Param("entityType") entityType: string,
+    @Query(new ZodValidationPipe(filterByCustomFieldQuerySchema)) query: FilterByCustomFieldQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const scope = await resolveEmployeesScope(this.access, u);
+    let value: unknown = undefined;
+    if (query.value !== undefined) {
+      try {
+        value = JSON.parse(query.value);
+      } catch {
+        throw new BadRequestException("value must be valid JSON");
+      }
+    }
+    const ids = await this.svc.filterByCustomField(
+      u.orgId,
+      u.userId,
+      scope,
+      entityType,
+      query.fieldKey,
+      value,
+    );
+    return { ids };
   }
 }

@@ -21,6 +21,9 @@ import { CacheModule } from "./common/cache/cache.module";
 import { AuditModule } from "./common/audit/audit.module";
 import { RateLimitModule } from "./common/ratelimit/rate-limit.module";
 import { ActivationModule } from "./modules/onboarding-activation/activation.module";
+import { AdmissionModule } from "./common/admission/admission.module";
+import { AdmissionGuard } from "./common/admission/admission.guard";
+import { AdmissionInterceptor } from "./common/admission/admission.interceptor";
 import { LeadsModule } from "./modules/leads/leads.module";
 import { ContactsModule } from "./modules/contacts/contacts.module";
 import { CsatModule } from "./modules/csat/csat.module";
@@ -108,10 +111,12 @@ import { BuildModule } from "./modules/build/build.module";
 import { ZodValidationInterceptor } from "./common/validation/zod-validation.interceptor";
 import { DataQualityModule } from "./modules/data-quality/data-quality.module";
 import { IssuesModule } from "./modules/issues/issues.module";
+import { EmploymentFactsModule } from "./modules/directory/employment-facts.module";
 
 @Module({
   imports: [
     ActivationModule,
+    EmploymentFactsModule,
     DiscoveryModule,
     RegionModule,
     WorkflowModule,
@@ -125,6 +130,7 @@ import { IssuesModule } from "./modules/issues/issues.module";
     SurveysModule,
     ContactsModule,
     RateLimitModule,
+    AdmissionModule,
     AuditLogModule,
     GoalsModule,
     TasksModule,
@@ -220,8 +226,10 @@ import { IssuesModule } from "./modules/issues/issues.module";
     TenantContextService,
     { provide: APP_GUARD, useClass: RouteClassifierGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: AdmissionGuard },
     { provide: APP_GUARD, useClass: MfaGuard },
     { provide: APP_GUARD, useClass: ModuleGuard },
+    { provide: APP_INTERCEPTOR, useClass: AdmissionInterceptor },
     // First interceptor to run, so everything after it logs under a known caller.
     { provide: APP_INTERCEPTOR, useClass: ObservabilityEnrichmentInterceptor },
     { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },

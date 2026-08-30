@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createBenefitPlanSchema = z.object({
   name: z.string().min(1).max(200),
@@ -83,15 +84,15 @@ export type CreateVisitLogInput = z.infer<typeof createVisitLogSchema>;
 export const benefitPlansQuerySchema = z.object({
   status: z.enum(["draft", "active", "archived"]).optional(),
   category: z.enum(["health", "life", "accident", "retirement", "wellness", "perk", "other"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 export type BenefitPlansQuery = z.infer<typeof benefitPlansQuerySchema>;
 
 export const claimsQuerySchema = z.object({
   status: z.enum(["submitted", "in_review", "approved", "rejected", "paid"]).optional(),
   userId: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 export type ClaimsQuery = z.infer<typeof claimsQuerySchema>;

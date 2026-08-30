@@ -14,7 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
-import { salaryLoans } from "./payroll";
+import { salaryLoans } from "../payroll/claims-and-settlements";
 import { travelRequests } from "./travel";
 
 export const hrBenefitCategoryEnum = pgEnum("hr_benefit_category", [

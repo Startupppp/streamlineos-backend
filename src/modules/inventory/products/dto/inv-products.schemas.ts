@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const SKU_PATTERN = /^[A-Z0-9][A-Z0-9_-]*$/;
 const DECIMAL_PATTERN = /^\d+(\.\d{1,4})?$/;
@@ -8,8 +9,8 @@ export const listProductsSchema = z.object({
   productType: z.enum(["STOCKABLE", "CONSUMABLE", "SERVICE"]).optional(),
   categoryId: z.coerce.number().int().positive().optional(),
   search: z.string().trim().max(200).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ListProductsInput = z.infer<typeof listProductsSchema>;
 
@@ -114,8 +115,8 @@ export const listVariantsSchema = z.object({
     .union([z.literal("true"), z.literal("false")])
     .optional()
     .transform((v) => v === "true"),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ListVariantsInput = z.infer<typeof listVariantsSchema>;
 

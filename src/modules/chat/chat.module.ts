@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { BillingModule } from "../billing/core/billing.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { ChatActionsController } from "./chat-actions.controller";
 import { ChatEntityActionsController } from "./chat-entity-actions.controller";
 import { ChatChannelsController } from "./chat-channels.controller";
@@ -37,7 +38,7 @@ import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
 import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanout.provider";
 
 @Module({
-  imports: [BillingModule, RealtimeModule, EntityReferenceModule, OutboxModule],
+  imports: [BillingModule, NotificationsModule, RealtimeModule, EntityReferenceModule, OutboxModule],
   controllers: [
     ChatActionsController,
     ChatEntityActionsController,

@@ -4,6 +4,18 @@
  * designation.  A new cached read without a row in this file is caught in
  * review.
  *
+ * This file tracks INVALIDATION, not call-site style.  It used to carry a
+ * `migrated` flag per entry counting call sites moved onto the `*ForOrg`
+ * cache wrappers; that flag has been removed and the migration reverted.
+ * A `CACHE_KEYS.*` factory already takes `orgId` as a required typed
+ * parameter, so omitting the tenant is already a compile error — the safety
+ * property the wrappers were meant to add.  Swapping a factory for a literal
+ * passed to `*ForOrg` only moves the key into a magic string repeated at every
+ * call site, so a reader and its invalidator must independently agree on that
+ * string: the exact writer/invalidator divergence this matrix exists to catch.
+ * Use `CACHE_KEYS` for anything with a factory; reach for a `*ForOrg` wrapper
+ * only for a genuinely new key that has no registry entry.
+ *
  * Redis memory budget (volatile-lru, operator must set in Upstash console):
  *   Permission sets       1 M users × ~5 KB each          ≈  5 GB
  *   RBAC matrices         ~100 K orgs × ~10 KB each        ≈  1 GB
@@ -18,29 +30,20 @@
  *   Namespace version counters carry NO TTL by design — volatile-lru never
  *   evicts them, which is correct (evicting a counter would silently reset the
  *   version and allow stale entries to resurface).
- *   Session-revocation tombstones also carry TTL (SESSION_TTL_SECONDS).
+ *   Session-revocation tombstones also carry NO TTL, for the same reason.
  *
  * Session-revocation safety:
- *   The tombstone at revoked:session:<id> has a TTL matching the JWT lifetime,
- *   so an LRU eviction before expiry cannot be distinguished from "never
- *   revoked" in the current guard (jwt-auth.guard.ts) — it falls back to
- *   isRevokedInDatabase only on a Redis *error*, not on a null result, because
- *   a null result is also what every non-revoked session produces on every
- *   request. Falling back to the database on null was tried (2026-08-26) and
- *   reverted: JwtAuthGuard is a global APP_GUARD, so it turned into a
- *   mandatory database round trip on every request whose 5-second in-process
- *   cache (REVOCATION_CACHE_TTL_MS) had gone stale, for the entire platform's
- *   traffic — not just the rare evicted-tombstone case.
- *   The residual risk is bounded, not zero: an active session refreshes its
- *   tombstone's LRU position on every read, so a revoked session still being
- *   probed stays hot; the exposure is a revoked session that goes idle right
- *   as Redis is under memory pressure.
- *   The structurally correct fix is to stop relying on TTL-based eviction
- *   safety for tombstones at all: give them no TTL (matching how namespace
- *   version counters are protected from volatile-lru above) and clean them up
- *   with an explicit scheduled sweep instead of letting Redis expire them —
- *   not done here; recorded as the real follow-up rather than the null-check
- *   that was tried and reverted.
+ *   Tombstones at revoked:session:<id> carry NO TTL, so volatile-lru — which
+ *   only evicts keys that have one — can never drop a live revocation. This is
+ *   the same protection namespace version counters get above. They are reclaimed
+ *   by SessionsService.pruneExpiredRevocations, driven by the companion sorted
+ *   set revoked:sessions:index (scored by expiry), via the
+ *   POST /cron/session-revocation-prune sweep rather than by Redis expiry.
+ *
+ *   Do NOT "fix" this by falling back to the database on a null lookup: null is
+ *   also what every non-revoked session returns, and JwtAuthGuard is a global
+ *   APP_GUARD, so that turns a rare edge case into a database round trip on
+ *   effectively all traffic. That was tried on 2026-08-26 and reverted.
  */
 
 export type InvalidationTrigger =
@@ -51,7 +54,6 @@ export interface CacheNamespaceEntry {
   namespace: string;
   description: string;
   invalidation: InvalidationTrigger;
-  migrated: boolean;
 }
 
 export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
@@ -68,7 +70,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
         "OpeningBalancesService.postOpeningBalances",
       ],
     },
-    migrated: true,
   },
   {
     namespace: "acc:setup-status:<orgId>",
@@ -77,7 +78,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["AccountingSettingsService.updateSettings"],
     },
-    migrated: true,
   },
   {
     namespace: "acc:coa:tree:<orgId>",
@@ -91,7 +91,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
         "CoaService.applyTemplate",
       ],
     },
-    migrated: true,
   },
   {
     namespace: "acc:dimensions:<orgId>",
@@ -104,7 +103,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
         "DimensionsService.createDimensionValue",
       ],
     },
-    migrated: true,
   },
   {
     namespace: "accounting:periods:<orgId>",
@@ -118,7 +116,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
         "PeriodsService.reopenPeriod",
       ],
     },
-    migrated: true,
   },
   {
     namespace: "acc:statements:<orgId>",
@@ -132,7 +129,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
         "AccountingLedgerService.reverseJournalEntry",
       ],
     },
-    migrated: false,
   },
   {
     namespace: "fin:reports:<orgId>",
@@ -150,7 +146,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
         "TransfersService (bank transfers)",
       ],
     },
-    migrated: false,
   },
   {
     namespace: "fin:bva:<orgId>:<budgetId>",
@@ -159,7 +154,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["FinancePostingService.postJournal", "InvoicesWriteService (any invoice write)"],
     },
-    migrated: true,
   },
   {
     namespace: "fin:forecast:<orgId>",
@@ -168,7 +162,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["InvoicesWriteService (any invoice write)", "TransfersService (any transfer)"],
     },
-    migrated: true,
   },
   {
     namespace: "fin:banking:accounts:<orgId>",
@@ -177,7 +170,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["BankAccountsService (any write)"],
     },
-    migrated: true,
   },
   {
     namespace: "fin:assets:list:<orgId>",
@@ -186,19 +178,16 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["AssetsService (any write)"],
     },
-    migrated: true,
   },
   {
     namespace: "fin:asset-categories:<orgId>",
     description: "Asset categories",
     invalidation: { kind: "ttl-only", reason: "Low-churn reference data; TTL 5 min is acceptable" },
-    migrated: true,
   },
   {
     namespace: "fin:tax-codes:<orgId>",
     description: "Tax codes",
     invalidation: { kind: "ttl-only", reason: "Low-churn reference data; TTL 5 min is acceptable" },
-    migrated: true,
   },
   {
     namespace: "fin:tax-payments:<orgId>",
@@ -207,7 +196,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["TaxService (any write)"],
     },
-    migrated: true,
   },
   {
     namespace: "fin:tax-dashboard:<orgId>",
@@ -216,7 +204,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["InvoicesWriteService (any invoice write)"],
     },
-    migrated: true,
   },
   {
     namespace: "fin:tax-reports:<orgId>",
@@ -225,7 +212,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["InvoicesWriteService (any invoice write)"],
     },
-    migrated: true,
   },
   {
     namespace: "fin:expense-policies:<orgId>",
@@ -234,7 +220,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["ExpensePoliciesService (any write)"],
     },
-    migrated: true,
   },
   {
     namespace: "org:hierarchy:<orgId>",
@@ -243,7 +228,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["OrgHierarchyCacheService.invalidateAfterMutation (any hierarchy mutation)"],
     },
-    migrated: true,
   },
   {
     namespace: "hr:headcount:<orgId>",
@@ -252,7 +236,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["OrgHierarchyCacheService.invalidateAfterMutation (any hierarchy mutation)"],
     },
-    migrated: true,
   },
   {
     namespace: "hr:leave-analytics:<orgId>",
@@ -264,7 +247,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
         "LeaveDecisionEffectsService (approve/reject)",
       ],
     },
-    migrated: false,
   },
   {
     namespace: "hr:expenses:<orgId>",
@@ -273,7 +255,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["ExpensesService (any write)"],
     },
-    migrated: true,
   },
   {
     namespace: "sales:kpis:<orgId>",
@@ -282,7 +263,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["DealsService.updateDeal (stage change)"],
     },
-    migrated: false,
   },
   {
     namespace: "crm:contacts:list:<orgId>",
@@ -291,7 +271,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["ContactsService (any write)"],
     },
-    migrated: false,
   },
   {
     namespace: "crm:organizations:list:<orgId>",
@@ -300,7 +279,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["CrmOrganizationsService (any write)"],
     },
-    migrated: true,
   },
   {
     namespace: "crm:organizations:detail:<orgId>",
@@ -309,7 +287,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["CrmOrganizationsService (any write)"],
     },
-    migrated: true,
   },
   {
     namespace: "inv:products:list:<orgId>",
@@ -318,7 +295,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["InventoryProductsService (any write)"],
     },
-    migrated: true,
   },
   {
     namespace: "inv:po:list:<orgId>",
@@ -327,7 +303,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["PurchaseOrdersService (any write)"],
     },
-    migrated: true,
   },
   {
     namespace: "inv:grn:list:<orgId>",
@@ -336,7 +311,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["GrnService (any write)"],
     },
-    migrated: true,
   },
   {
     namespace: "inv:vendors:list:<orgId>",
@@ -345,7 +319,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["VendorsService (any write)"],
     },
-    migrated: false,
   },
   {
     namespace: "inv:so:list:<orgId>",
@@ -354,7 +327,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["SalesOrdersService (any write)"],
     },
-    migrated: true,
   },
   {
     namespace: "inv:stock:summary:<orgId>",
@@ -363,7 +335,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["StockService (any write)"],
     },
-    migrated: false,
   },
   {
     namespace: "inv:dashboard:<orgId>",
@@ -372,13 +343,11 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "ttl-only",
       reason: "Aggregate; TTL-only is a deliberate decision — staleness < 5 min is acceptable",
     },
-    migrated: true,
   },
   {
     namespace: "inv:replenishment:suggestions:<orgId>",
     description: "Replenishment suggestions",
     invalidation: { kind: "ttl-only", reason: "Computationally expensive aggregate; 5-min TTL accepted" },
-    migrated: false,
   },
   {
     namespace: "rbac:matrix:<orgId>:v<version>",
@@ -387,7 +356,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["AccessService: bumpPermissionsVersion on any role/grant mutation"],
     },
-    migrated: false,
   },
   {
     namespace: "module-access:roles:<orgId>",
@@ -396,7 +364,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["ModuleAccessService (any write)"],
     },
-    migrated: false,
   },
   {
     namespace: "module-access:members:<orgId>",
@@ -405,7 +372,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["ModuleAccessService (any write)"],
     },
-    migrated: false,
   },
   {
     namespace: "user:session:<userId>",
@@ -414,31 +380,26 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["SessionsService (login/logout/revoke)"],
     },
-    migrated: false,
   },
   {
     namespace: "dashboard:stats:<orgId>",
     description: "Dashboard statistics",
     invalidation: { kind: "ttl-only", reason: "Aggregate; short TTL acceptable" },
-    migrated: false,
   },
   {
     namespace: "dashboard:executive:<orgId>",
     description: "Executive dashboard",
     invalidation: { kind: "ttl-only", reason: "Aggregate; TTL-only is a deliberate decision" },
-    migrated: false,
   },
   {
     namespace: "support:dashboard:<orgId>",
     description: "Support dashboard",
     invalidation: { kind: "ttl-only", reason: "Aggregate; TTL-only is a deliberate decision" },
-    migrated: false,
   },
   {
     namespace: "support:reports:overview:<orgId>",
     description: "Support reports overview",
     invalidation: { kind: "ttl-only", reason: "Aggregate; TTL-only is a deliberate decision" },
-    migrated: true,
   },
   {
     namespace: "timesheets:payroll:summary:<orgId>",
@@ -447,7 +408,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["PayrollService (any run/post)"],
     },
-    migrated: true,
   },
   {
     namespace: "timesheets:payroll:exports:<orgId>",
@@ -456,13 +416,11 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["PayrollExportsService (any write)"],
     },
-    migrated: true,
   },
   {
     namespace: "search:<orgId>:<userId>",
     description: "Global search results (hash sub-keyed, user-scoped)",
     invalidation: { kind: "ttl-only", reason: "Short TTL; index-based; acceptable staleness" },
-    migrated: false,
   },
   {
     namespace: "access:perms:<orgId>:<userId>:v<version>",
@@ -471,17 +429,10 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["bumpPermissionsVersion in any role/grant/delegation mutation"],
     },
-    migrated: false,
   },
   {
     namespace: "feature-flags:all",
     description: "Feature flags (global, not tenant-scoped by design)",
     invalidation: { kind: "ttl-only", reason: "Global config; 5-min TTL acceptable" },
-    migrated: false,
   },
 ];
-
-export const CACHE_MIGRATION_STATUS = {
-  migratedInThisPR: CACHE_INVALIDATION_MATRIX.filter((e) => e.migrated).length,
-  pendingMigration: CACHE_INVALIDATION_MATRIX.filter((e) => !e.migrated).length,
-} as const;

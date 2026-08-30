@@ -45,10 +45,12 @@ describe("permission backfills name a role that can exist", () => {
    * Comments explain these slugs; only executable SQL grants to them. Without
    * stripping, a migration that documents the bug it repairs reports itself.
    */
+  // Split on /\r?\n/, not "\n": `.` does not match `\r`, so on a CRLF migration
+  // `--.*$` matched nothing and every comment survived stripping.
   const executableSql = (file: string): string =>
     readFileSync(join(migrationsDir, file), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, " ")
-      .split("\n")
+      .split(/\r?\n/)
       .map((line) => line.replace(/--.*$/, ""))
       .join("\n");
 

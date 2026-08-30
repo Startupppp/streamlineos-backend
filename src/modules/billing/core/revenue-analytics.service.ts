@@ -1,121 +1,144 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { revenueEvents, subscriptions } from "../../../db/schema";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { InboxConsumer } from "../../../common/outbox/inbox-consumer";
+import {
+  OutboxConsumerRegistry,
+  type OutboxEventConsumer,
+  type OutboxEventRow,
+} from "../../../common/outbox/outbox-consumer.registry";
+import { type DbOrTx } from "../../../common/rbac/access-invalidate";
+import { PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
+import type { Plan } from "./dto/billing.schemas";
+import {
+  REVENUE_EVENT_TYPE,
+  revenueEventPayloadSchema,
+  type RevenueEventInput,
+} from "./revenue-events";
+import { summariseMovements, type RevenueMovement } from "./revenue-metrics";
 
+const CONSUMER_NAME = "billing:revenue-event";
+
+// Owns both ends of the ledger: producers emit inside their transaction, this consumer writes the row.
 @Injectable()
-export class RevenueAnalyticsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleInit {
+  readonly eventType = REVENUE_EVENT_TYPE;
+  private readonly logger = new Logger(RevenueAnalyticsService.name);
 
-  async recordEvent(data: {
-    type:
-      | "new_subscription"
-      | "upgrade"
-      | "downgrade"
-      | "churn"
-      | "reactivation"
-      | "addon_purchase"
-      | "refund";
-    orgId: string;
-    plan?: string;
-    previousPlan?: string;
-    mrr: number;
-    amount?: number;
-    metadata?: Record<string, unknown>;
-  }) {
-    await this.db.insert(revenueEvents).values({
-      type: data.type,
-      orgId: data.orgId,
-      plan: data.plan,
-      previousPlan: data.previousPlan,
-      mrr: data.mrr,
-      amount: data.amount,
-      metadata: data.metadata,
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly registry: OutboxConsumerRegistry,
+  ) {}
+
+  onModuleInit(): void {
+    this.registry.register(this);
+  }
+
+  // Each event is its own aggregate, so the inbox version fence never suppresses a sibling.
+  async emit(tx: DbOrTx, input: RevenueEventInput): Promise<void> {
+    const eventId = randomUUID();
+    await OutboxWriter.emit(tx, {
+      eventId,
+      organizationId: input.orgId,
+      aggregateType: "revenue_event",
+      aggregateId: eventId,
+      aggregateVersion: 1,
+      eventType: REVENUE_EVENT_TYPE,
+      payload: {
+        type: input.type,
+        orgId: input.orgId,
+        plan: input.plan ?? null,
+        previousPlan: input.previousPlan ?? null,
+        mrr: input.mrr,
+        amount: input.amount ?? null,
+        metadata: input.metadata ?? null,
+      },
+      occurredAt: new Date(),
     });
   }
 
+  // The relay holds the tenant transaction; a failure is rethrown so the outbox retries it.
+  async handle(event: OutboxEventRow): Promise<void> {
+    const inbox = new InboxConsumer(this.db);
+    const claimed = await inbox.claim(CONSUMER_NAME, {
+      eventId: event.eventId,
+      organizationId: event.organizationId,
+      aggregateType: event.aggregateType,
+      aggregateId: event.aggregateId,
+      aggregateVersion: event.aggregateVersion,
+    });
+    if (!claimed) {
+      this.logger.debug(`revenue event ${event.eventId} already applied — skipping`);
+      return;
+    }
+
+    const parsed = revenueEventPayloadSchema.safeParse(event.payload);
+    if (!parsed.success) {
+      await inbox.markProcessed(CONSUMER_NAME, event.eventId, "FAILED", parsed.error.message);
+      return;
+    }
+    const payload = parsed.data;
+
+    await this.db.transaction(async (tx) => {
+      await tx.insert(revenueEvents).values({
+        type: payload.type,
+        orgId: event.organizationId,
+        plan: payload.plan ?? undefined,
+        previousPlan: payload.previousPlan ?? undefined,
+        mrr: payload.mrr,
+        amount: payload.amount ?? undefined,
+        metadata: payload.metadata ?? undefined,
+      });
+      await new InboxConsumer(tx).markProcessed(CONSUMER_NAME, event.eventId, "COMPLETED", null);
+    });
+  }
+
+  // MRR is read from subscription state: summing new_subscription rows double-counted every re-subscribe.
   async getMetrics() {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const [statusRows, movementRows] = await Promise.all([
+      this.db
+        .select({
+          status: subscriptions.status,
+          plan: subscriptions.plan,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(subscriptions)
+        .groupBy(subscriptions.status, subscriptions.plan),
+      this.db
+        .select({
+          type: revenueEvents.type,
+          mrr: sql<number>`coalesce(sum(${revenueEvents.mrr}), 0)::int`,
+          count: sql<number>`count(*)::int`,
+          recentMrr: sql<number>`coalesce(sum(${revenueEvents.mrr}) filter (where ${revenueEvents.createdAt} >= now() - interval '30 days'), 0)::int`,
+        })
+        .from(revenueEvents)
+        .groupBy(revenueEvents.type),
+    ]);
 
-    const [activeCount, trialCount, churnCount, expansionResult, refundCount, newSubCount] =
-      await Promise.all([
-        this.db
-          .select({ count: sql<number>`count(*)` })
-          .from(subscriptions)
-          .where(eq(subscriptions.status, "ACTIVE")),
-        this.db
-          .select({ count: sql<number>`count(*)` })
-          .from(subscriptions)
-          .where(eq(subscriptions.status, "TRIAL")),
-        this.db
-          .select({ count: sql<number>`count(*)` })
-          .from(revenueEvents)
-          .where(eq(revenueEvents.type, "churn")),
-        this.db
-          .select({ total: sql<number>`coalesce(sum(${revenueEvents.mrr}), 0)` })
-          .from(revenueEvents)
-          .where(
-            and(
-              eq(revenueEvents.type, "upgrade"),
-              gte(revenueEvents.createdAt, thirtyDaysAgo),
-            ),
-          ),
-        this.db
-          .select({ count: sql<number>`count(*)` })
-          .from(revenueEvents)
-          .where(eq(revenueEvents.type, "refund")),
-        this.db
-          .select({ count: sql<number>`count(*)` })
-          .from(revenueEvents)
-          .where(eq(revenueEvents.type, "new_subscription")),
-      ]);
+    let mrr = 0;
+    let totalActive = 0;
+    let totalTrial = 0;
+    for (const row of statusRows) {
+      const count = Number(row.count ?? 0);
+      if (row.status === "ACTIVE") {
+        totalActive += count;
+        mrr += (PLAN_PRICES_PAISE[row.plan as Plan] ?? 0) * count;
+      }
+      if (row.status === "TRIAL") totalTrial += count;
+    }
 
-    const totalActive = Number(activeCount[0]?.count ?? 0);
-    const totalTrial = Number(trialCount[0]?.count ?? 0);
-    const totalChurn = Number(churnCount[0]?.count ?? 0);
-    const totalRefunds = Number(refundCount[0]?.count ?? 0);
-    const totalNewSubs = Number(newSubCount[0]?.count ?? 0);
-    const expansionRevenue = Number(expansionResult[0]?.total ?? 0);
+    const movements: RevenueMovement[] = movementRows.map((row) => ({
+      type: row.type,
+      mrr: Number(row.mrr ?? 0),
+      count: Number(row.count ?? 0),
+      recentMrr: Number(row.recentMrr ?? 0),
+    }));
 
-    const mrrResult = await this.db
-      .select({ total: sql<number>`coalesce(sum(${revenueEvents.mrr}), 0)` })
-      .from(revenueEvents)
-      .innerJoin(subscriptions, eq(revenueEvents.orgId, subscriptions.orgId))
-      .where(
-        and(
-          eq(subscriptions.status, "ACTIVE"),
-          eq(revenueEvents.type, "new_subscription"),
-        ),
-      );
-
-    const mrr = Number(mrrResult[0]?.total ?? 0);
-    const arr = mrr * 12;
-    const arpu = totalActive > 0 ? Math.round(mrr / totalActive) : 0;
-    const churnRate =
-      totalActive > 0 ? Math.round((totalChurn / totalActive) * 100) : 0;
-
-    const ltv = churnRate > 0 ? Math.round(arpu / (churnRate / 100)) : arpu * 24;
-    const totalEver = totalActive + totalTrial + totalChurn;
-    const trialConversionRate =
-      totalEver > 0 ? Math.round((totalActive / totalEver) * 100 * 10) / 10 : 0;
-    const refundRate =
-      totalNewSubs > 0 ? Math.round((totalRefunds / totalNewSubs) * 100 * 10) / 10 : 0;
-
-    return {
-      mrr,
-      arr,
-      arpu,
-      churnRate,
-      activeSubscriptions: totalActive,
-      trialSubscriptions: totalTrial,
-      ltv,
-      cac: 0,
-      expansionRevenue,
-      trialConversionRate,
-      refundRate,
-    };
+    return summariseMovements({ mrr, totalActive, totalTrial, movements });
   }
 
   async getTimeSeriesData(period: string) {
@@ -140,23 +163,44 @@ export class RevenueAnalyticsService {
 
     for (const event of events) {
       const key = event.createdAt.toISOString().slice(0, 7);
-      if (!byMonth[key])
-        byMonth[key] = { month: key, newMrr: 0, churnMrr: 0, netNew: 0 };
+      const bucket = byMonth[key] ?? { month: key, newMrr: 0, churnMrr: 0, netNew: 0 };
+      byMonth[key] = bucket;
       if (
         event.type === "new_subscription" ||
         event.type === "upgrade" ||
         event.type === "reactivation"
       ) {
-        byMonth[key].newMrr += event.mrr;
+        bucket.newMrr += event.mrr;
       }
       if (event.type === "churn" || event.type === "downgrade") {
-        byMonth[key].churnMrr += event.mrr;
+        bucket.churnMrr += event.mrr;
       }
-      byMonth[key].netNew = byMonth[key].newMrr - byMonth[key].churnMrr;
+      bucket.netNew = bucket.newMrr - bucket.churnMrr;
     }
 
-    return Object.values(byMonth).sort((a, b) =>
-      a.month.localeCompare(b.month),
+    return Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month));
+  }
+
+  async reconcile(): Promise<{ reportedMrr: number; subscriptionMrr: number; reconciles: boolean }> {
+    const rows = await this.db
+      .select({ plan: subscriptions.plan, count: sql<number>`count(*)::int` })
+      .from(subscriptions)
+      .where(eq(subscriptions.status, "ACTIVE"))
+      .groupBy(subscriptions.plan);
+
+    const subscriptionMrr = rows.reduce(
+      (total, row) => total + (PLAN_PRICES_PAISE[row.plan as Plan] ?? 0) * Number(row.count ?? 0),
+      0,
     );
+    const { mrr } = await this.getMetrics();
+    return { reportedMrr: mrr, subscriptionMrr, reconciles: mrr === subscriptionMrr };
+  }
+
+  async countEventsSince(type: RevenueEventInput["type"], since: Date): Promise<number> {
+    const rows = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(revenueEvents)
+      .where(and(eq(revenueEvents.type, type), gte(revenueEvents.createdAt, since)));
+    return Number(rows[0]?.count ?? 0);
   }
 }

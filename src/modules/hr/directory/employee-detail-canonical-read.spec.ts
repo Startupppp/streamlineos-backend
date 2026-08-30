@@ -1,7 +1,7 @@
 import { EmployeeMutationsService } from "./employee-mutations.service";
 
 describe("EmployeeMutationsService canonical employment reads", () => {
-  it("prefers the tenant-scoped primary employment and retains legacy fallback fields", async () => {
+  it("reads employment facts from the organization's primary employment", async () => {
     const member = {
       role: "MEMBER",
       user: {
@@ -10,12 +10,6 @@ describe("EmployeeMutationsService canonical employment reads", () => {
         firstName: "Legacy",
         lastName: "Name",
         email: "legacy@example.com",
-        designation: "Legacy Role",
-        employeeId: "OLD-1",
-        orgDepartmentId: "old-dept",
-        joiningDate: "2020-01-01",
-        reportingTo: null,
-        monthlySalary: "100000.00",
         image: null,
         isActive: true,
         bio: null,
@@ -62,6 +56,7 @@ describe("EmployeeMutationsService canonical employment reads", () => {
       {} as never,
       {} as never,
       {} as never,
+      { getFacts: jest.fn().mockResolvedValue({ userId: "user-1", employmentId: 9, employeeNumber: "CAN-9", designation: "Canonical Role", joiningDate: "2026-01-01", departmentId: "canonical-dept", locationId: null, managerUserId: null }) } as never,
     );
 
     const result = await service.getEmployeeDetail(

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { INestApplication } from "@nestjs/common";
+import { VERSION_NEUTRAL, VersioningType } from "@nestjs/common";
 import { Test, type TestingModuleBuilder } from "@nestjs/testing";
 import { decodeJwt } from "jose";
 import type { NextFunction, Request, Response } from "express";
@@ -13,9 +14,15 @@ import { moduleAvailabilityResolver } from "src/common/rbac/module-availability"
 import { moduleDefinition, moduleIdFromStored } from "src/common/rbac/module-registry";
 import { ADMINISTRABLE_MODULES } from "src/common/rbac/module-vocabulary";
 import { RegionRegistry, setRegionRegistry } from "src/common/region/region-registry";
+import {
+  DEFAULT_DATABASE_SHARD,
+  DEFAULT_SEARCH_CLUSTER,
+  LEGACY_CELL_ID,
+} from "src/common/region/placement";
 import type { RegionDefinition } from "src/common/region/region.config";
 import type { Db } from "src/db/drizzle.types";
 import { DRIZZLE } from "src/db/drizzle.constants";
+import { API_VERSION_CURRENT } from "src/common/http/api-version";
 
 /**
  * Controller e2e specs assert the guard chain — 401 / 402 / 403 — and every one
@@ -228,6 +235,14 @@ export function installFixtureRegionRegistry(db: Db): void {
   const definition: RegionDefinition = {
     key: "primary",
     databaseUrl: process.env.DATABASE_URL ?? "",
+    cell: {
+      cellId: LEGACY_CELL_ID,
+      databaseShard: DEFAULT_DATABASE_SHARD,
+      searchCluster: DEFAULT_SEARCH_CLUSTER,
+      acceptedTenantClasses: ["SHARED"],
+      complianceZones: [],
+      cache: {},
+    },
     storage: {
       region: "auto",
       bucket: "fixture",
@@ -376,6 +391,10 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
   const ref = await builder.compile();
   installFixtureRegionRegistry(ref.get<Db>(DRIZZLE));
   const app = ref.createNestApplication();
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: [API_VERSION_CURRENT, VERSION_NEUTRAL],
+  });
   app.use((req: Request, _res: Response, next: NextFunction) =>
     storage.run(fixtureFromToken(req.headers.authorization), next),
   );

@@ -120,7 +120,16 @@ export class HrBenefitsEnrollmentService {
         .orderBy(desc(hrBenefitEnrollments.enrolledAt))
         .limit(50),
       this.db
-        .select()
+        .select({
+          id: hrDependents.id,
+          orgId: hrDependents.orgId,
+          userId: hrDependents.userId,
+          name: hrDependents.name,
+          relationship: hrDependents.relationship,
+          dateOfBirth: hrDependents.dateOfBirth,
+          isCovered: hrDependents.isCovered,
+          createdAt: hrDependents.createdAt,
+        })
         .from(hrDependents)
         .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userId, userId)))
         .orderBy(hrDependents.name),
@@ -132,7 +141,16 @@ export class HrBenefitsEnrollmentService {
 
   async listDependents(orgId: string, userId: string) {
     return this.db
-      .select()
+      .select({
+        id: hrDependents.id,
+        orgId: hrDependents.orgId,
+        userId: hrDependents.userId,
+        name: hrDependents.name,
+        relationship: hrDependents.relationship,
+        dateOfBirth: hrDependents.dateOfBirth,
+        isCovered: hrDependents.isCovered,
+        createdAt: hrDependents.createdAt,
+      })
       .from(hrDependents)
       .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userId, userId)))
       .orderBy(hrDependents.name)
@@ -149,7 +167,7 @@ export class HrBenefitsEnrollmentService {
 
   async updateDependent(orgId: string, userId: string, depId: number, data: PatchDependentInput) {
     const [existing] = await this.db
-      .select()
+      .select({ id: hrDependents.id })
       .from(hrDependents)
       .where(
         and(
@@ -172,7 +190,7 @@ export class HrBenefitsEnrollmentService {
 
   async deleteDependent(orgId: string, userId: string, depId: number) {
     const [existing] = await this.db
-      .select()
+      .select({ id: hrDependents.id })
       .from(hrDependents)
       .where(
         and(

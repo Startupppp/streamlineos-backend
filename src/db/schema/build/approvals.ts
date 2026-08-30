@@ -1,7 +1,7 @@
-import { pgEnum, text, timestamp, integer, index, unique } from "drizzle-orm/pg-core";
+import { pgEnum, text, timestamp, integer, index, unique, foreignKey } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { projects } from "./core";
 
 export const approvalEntityTypeEnum = pgEnum("approval_entity_type", [
@@ -35,6 +35,7 @@ export const projectApprovals = build.table("project_approvals", {
   reason: text("reason"),
   requestedById: text("requested_by_id").references(() => users.id, { onDelete: "set null" }),
   approverId: text("approver_id").references(() => users.id, { onDelete: "set null" }),
+  approverMembershipId: integer("approver_membership_id"),
   status: approvalStatusEnum("status").notNull().default("pending"),
   level: integer("level").notNull().default(1),
   dueAt: timestamp("due_at"),
@@ -48,5 +49,11 @@ export const projectApprovals = build.table("project_approvals", {
   index("idx_project_approvals_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
   index("idx_project_approvals_approver_status").on(t.approverId, t.status),
   index("idx_project_approvals_entity").on(t.entityType, t.entityId),
+  index("idx_project_approvals_org_approver_membership").on(t.orgId, t.approverMembershipId),
   unique("uniq_project_approvals_org_id").on(t.orgId, t.id),
+  foreignKey({
+    columns: [t.orgId, t.approverMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_project_approvals_approver_actor",
+  }).onDelete("restrict"),
 ]);

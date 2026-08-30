@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const projectModulesSchema = z.object({
   sprints: z.boolean(),
@@ -45,8 +46,8 @@ export function refineDueOnOrAfterStart(
 export const listProjectsSchema = z.object({
   search: z.string().optional(),
   status: z.enum(["ACTIVE", "COMPLETED", "ARCHIVED", "ALL"]).default("ALL"),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(9),
+  page: pageNumberField,
+  limit: pageSizeField(9),
   pmWorkspaceId: z.string().optional(),
 });
 

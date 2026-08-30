@@ -8,6 +8,10 @@ import { AiJobHandlerRegistry, type AiJobHandler, type AiJobContext } from "../.
 import { KbSearchService } from "./kb-search.service";
 import { KbEventsService } from "../core/kb-events.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import {
+  ACCOUNT_ONLY_PRINCIPAL,
+  humanSessionPrincipal,
+} from "../../../common/auth/principal";
 import { buildResearchBriefGraph, runResearchBrief } from "./kb-research-brief.graph";
 
 @Injectable()
@@ -87,6 +91,9 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
       isOrgOwner: member?.isOwner ?? false,
       tokenScopes: null,
       sessionId: "",
+      principal: member
+        ? humanSessionPrincipal(member.id, member.isOwner)
+        : ACCOUNT_ONLY_PRINCIPAL,
     };
   }
 }

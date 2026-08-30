@@ -6,6 +6,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { AccessService } from "../../access/access.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -65,19 +66,11 @@ describe("InvitationsService state transitions", () => {
         {
           provide: CacheService,
           useValue: {
-            // The revoke path evicts through the org-scoped form; the same spy
-            // is aliased onto it so the assertion below still sees the call.
-            invalidateForOrg: invalidate,
-            invalidateNamespaceForOrg: invalidateNamespace,
-            cachedForOrg: jest.fn().mockImplementation(
-              async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn(),
-            ),
-            cachedVersionedForOrg: jest.fn().mockImplementation(
-              async (_orgId: string, _ns: string, _key: string, fn: () => Promise<unknown>) => fn(),
-            ),
             invalidate,
             invalidatePattern,
             invalidateNamespace,
+            invalidateForOrg: (o: string, k: string) => invalidate(`${o}:${k}`),
+            invalidateNamespaceForOrg: (o: string, n: string) => invalidateNamespace(`${o}:${n}`),
           },
         },
         {
@@ -88,6 +81,7 @@ describe("InvitationsService state transitions", () => {
           },
         },
         { provide: PlanLimitsService, useValue: {} },
+        { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: AccessService,
           useValue: { canManageOrganizationMembership },

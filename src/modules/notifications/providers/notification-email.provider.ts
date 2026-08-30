@@ -34,6 +34,8 @@ function unsubscribeHeaders(input: ProviderSendInput): Record<string, string> | 
 }
 
 function buildHtml(input: ProviderSendInput): string {
+  const emailHtml = typeof input.metadata?.emailHtml === "string" ? input.metadata.emailHtml : undefined;
+  if (emailHtml) return emailHtml;
   const title = escapeHtml(input.title);
   const message = escapeHtml(input.message);
   const cta = input.link ? renderButton("Open", input.link) : "";
@@ -66,6 +68,13 @@ export class NotificationEmailProvider implements NotificationChannelProvider {
         html: buildHtml(input),
         organizationId: input.orgId,
         headers: unsubscribeHeaders(input),
+        attachments: Array.isArray(input.metadata?.attachments)
+          ? (input.metadata.attachments as Array<{ filename: string; contentBase64: string; type: string }>).map((a) => ({
+              filename: a.filename,
+              content: Buffer.from(a.contentBase64, "base64"),
+              type: a.type,
+            }))
+          : undefined,
       });
       return { status: "SENT", providerResponse: { provider: this.emailProvider.getEmailProvider() } };
     } catch (error) {

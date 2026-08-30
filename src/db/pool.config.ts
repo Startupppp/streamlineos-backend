@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type postgres from "postgres";
+import { SEAM_BUDGETS } from "../common/observability/seam-budgets";
 
 export type PoolOptions = NonNullable<Parameters<typeof postgres>[1]>;
 
@@ -7,7 +8,7 @@ const NEON_HOST = /\.neon\.tech/i;
 const POOLED_HOST = /-pooler\./i;
 
 const DEFAULT_APPLICATION_NAME = "streamlineos-api";
-const DEFAULT_SLOW_ACQUIRE_MS = 250;
+const DEFAULT_SLOW_ACQUIRE_MS = SEAM_BUDGETS['db.pool.wait'].thresholdMs;
 const DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 5;
 const DIRECT_ENDPOINT_SAFE_MAX = 10;
 
@@ -31,6 +32,7 @@ export const poolEnvShape = {
     emptyToUndefined,
     z.string().trim().min(1).max(63).optional(),
   ),
+  DB_REPLICA_URL: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
 } as const;
 
 const poolEnvSchema = z.object(poolEnvShape);
@@ -44,6 +46,7 @@ export interface TransactionGuards {
 export interface ResolvedPoolConfig {
   guards: TransactionGuards;
   connectionString: string;
+  replicaConnectionString?: string;
   role: "application" | "owner";
   host: string;
   isNeon: boolean;
@@ -155,6 +158,8 @@ export function resolvePoolConfig(env: NodeJS.ProcessEnv): ResolvedPoolConfig {
     ...(isNeon ? { ssl: "require" as const } : {}),
   };
 
+  const replicaRaw = tuning.DB_REPLICA_URL;
+
   return {
     max,
     host,
@@ -163,6 +168,7 @@ export function resolvePoolConfig(env: NodeJS.ProcessEnv): ResolvedPoolConfig {
     options,
     isPooled,
     connectionString,
+    replicaConnectionString: replicaRaw ? normalizeDatabaseUrl(replicaRaw) : undefined,
     warnings: collectWarnings({ max, isNeon, isPooled, isProduction, guards }),
     role: env.APP_DATABASE_URL ? "application" : "owner",
     slowAcquireMs: tuning.DB_SLOW_ACQUIRE_MS ?? DEFAULT_SLOW_ACQUIRE_MS,

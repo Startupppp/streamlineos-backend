@@ -3,6 +3,7 @@ import { TimesheetsService } from "./timesheets.service";
 import type { AccessService } from "../../access/access.service";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
 import type { EntriesPeriodService } from "../../timesheets/core/entries-period.service";
 
@@ -15,6 +16,7 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
   ...overrides,
 });
 
@@ -32,19 +34,9 @@ describe("TimesheetsService — approver cannot action their own entry", () => {
         set: jest.fn().mockReturnValue({ where: updateWhere }),
       }),
     } as unknown as Db;
-    /**
-     * The manage grant, expressed through the method the service actually calls.
-     *
-     * `TimesheetsService` asks `access.holds`; this described only
-     * `resolveUserPermissions`, so every call threw a `TypeError` — which the
-     * self-approval cases mistook for the `ForbiddenException` they assert,
-     * while the case that should succeed simply failed. The set below stays the
-     * one place the grant is stated.
-     */
-    const granted = new Set(["build:timesheets:manage"]);
     const access = {
-      resolveUserPermissions: jest.fn().mockResolvedValue(granted),
-      holds: jest.fn(async (_user: unknown, key: string) => granted.has(key)),
+      resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:timesheets:manage"])),
+      holds: jest.fn().mockResolvedValue(true),
     } as unknown as AccessService;
     const cache = { del: jest.fn(), get: jest.fn(), set: jest.fn() } as unknown as CacheService;
     const periods = {} as unknown as EntriesPeriodService;

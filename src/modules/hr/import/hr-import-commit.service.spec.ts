@@ -35,6 +35,11 @@ function buildTx(overrides: Partial<Tx> = {}): Tx {
     insert: jest.fn(),
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
+        innerJoin: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([]),
+          }),
+        }),
         where: jest.fn().mockReturnValue({
           limit: jest.fn().mockResolvedValue([]),
         }),
@@ -87,6 +92,11 @@ describe("HrImportCommitService.commitEmployee", () => {
       }),
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
+          innerJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([{ id: 77, organizationPersonId: null }]),
+            }),
+          }),
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([{ id: 77, organizationPersonId: null }]),
           }),
@@ -118,6 +128,11 @@ describe("HrImportCommitService.commitEmployee", () => {
       }),
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
+          innerJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([{ id: 77, organizationPersonId: "op-already" }]),
+            }),
+          }),
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([{ id: 77, organizationPersonId: "op-already" }]),
           }),

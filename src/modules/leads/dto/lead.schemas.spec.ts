@@ -3,7 +3,7 @@ import { listSchema, createSchema, updateSchema, ingestSchema } from "./lead.sch
 describe("lead schemas", () => {
   it("listSchema coerces page/limit and enforces limit<=100", () => {
     expect(listSchema.parse({ page: "2", limit: "50" })).toMatchObject({ page: 2, limit: 50 });
-    expect(() => listSchema.parse({ limit: "500" })).toThrow();
+    expect(listSchema.parse({ limit: "500" }).limit).toBe(100);
   });
   it("createSchema requires name and defaults source/priority", () => {
     expect(createSchema.parse({ name: "Acme" })).toMatchObject({ name: "Acme", source: "other", priority: "WARM" });

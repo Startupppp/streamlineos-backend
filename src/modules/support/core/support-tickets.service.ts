@@ -256,7 +256,7 @@ export class SupportTicketsService {
 
     if (finalAssigneeId) {
       void this.notifications
-        .sendAssignmentEmail(finalAssigneeId, userId, input.title, finalPriority, ticket.id, "User")
+        .sendAssignmentEmail(orgId, finalAssigneeId, userId, input.title, finalPriority, ticket.id, "User")
         .catch(logSideEffectFailure("support assignment email", { orgId, ticketId: ticket.id }));
     }
 
@@ -390,13 +390,14 @@ export class SupportTicketsService {
 
     if (input.status) {
       void this.notifications
-        .sendStatusEmail(ticket.createdBy, userId, ticket.title, ticketId, input.status)
+        .sendStatusEmail(orgId, ticket.createdBy, userId, ticket.title, ticketId, input.status)
         .catch(logSideEffectFailure("support assignment notification", { orgId, ticketId }));
     }
 
     if (input.assigneeId && input.assigneeId !== ticket.assigneeId) {
       void this.notifications
         .sendAssignmentEmail(
+          orgId,
           input.assigneeId,
           userId,
           ticket.title,

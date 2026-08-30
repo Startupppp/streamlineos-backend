@@ -33,6 +33,7 @@ import {
   type UpdateJobInput,
 } from "./dto/jobs.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -89,6 +90,7 @@ export class RecruitmentJobsController {
   }
 
   @Post("jobs/:jobId/publish")
+  @Idempotent("hr.job.publish")
   @RequirePermission("hr:employees:manage")
   publish(
     @Param("jobId", ParseIntPipe) jobId: number,

@@ -44,6 +44,7 @@ import {
   type UpdateReferralInput,
 } from "./dto/candidate-records.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("hr")
 @Controller("hr/recruitment/candidates/:candidateId")
@@ -154,6 +155,7 @@ export class RecruitmentCandidateRecordsController {
   }
 
   @Post("referral")
+  @Idempotent("hr.recruitment.referral.create")
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
   createReferral(
@@ -303,7 +305,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.records.deleteVaultDocument(u.orgId, candidateId, documentId);
+    await this.records.deleteVaultDocument(u.orgId, candidateId, documentId, u.userId);
   }
 
   @Get("vault/access-logs")

@@ -815,7 +815,7 @@ export class ModuleAccessGroupsService {
     );
     const baseJoin = and(
       eq(userModuleAccess.orgId, organizationMembers.orgId),
-      eq(userModuleAccess.userId, organizationMembers.userId),
+      eq(userModuleAccess.organizationMembershipId, organizationMembers.id),
       eq(userModuleAccess.moduleKey, moduleKey),
       eq(userModuleAccess.enabled, false),
     );
@@ -991,8 +991,23 @@ export class ModuleAccessGroupsService {
       );
     if (toMembership.status !== "ACTIVE")
       throw new BadRequestException("Target membership must be ACTIVE");
-    if (actorMembership.id === toMembership.id)
-      throw new BadRequestException("Cannot transfer ownership to yourself");
+
+    const [currentOwnership] = await this.db
+      .select({ ownerMembershipId: moduleOwnerships.ownerMembershipId })
+      .from(moduleOwnerships)
+      .where(
+        and(
+          eq(moduleOwnerships.orgId, actor.orgId),
+          eq(moduleOwnerships.moduleKey, moduleKey),
+        ),
+      )
+      .limit(1);
+    if (!currentOwnership)
+      throw new NotFoundException("Module ownership record not found");
+    if (currentOwnership.ownerMembershipId === toMembership.id)
+      throw new BadRequestException(
+        "That member already owns this module",
+      );
 
     try {
       const expiresAt = new Date(Date.now() + 48 * 3_600_000);
@@ -1003,7 +1018,8 @@ export class ModuleAccessGroupsService {
             orgId: actor.orgId,
             scope: "MODULE",
             moduleKey,
-            fromMembershipId: actorMembership.id,
+            fromMembershipId: currentOwnership.ownerMembershipId,
+            initiatedByMembershipId: actorMembership.id,
             toMembershipId: toMembership.id,
             status: "PENDING",
             expiresAt,
@@ -1278,17 +1294,17 @@ export class ModuleAccessGroupsService {
     await runInTenantTransaction(
       this.db,
       async (tx): Promise<void> => {
-        for (const groupId of input.groupIds) {
-          await tx
-            .insert(roleAssignments)
-            .values({
+        await tx
+          .insert(roleAssignments)
+          .values(
+            input.groupIds.map((groupId) => ({
               orgId: actor.orgId,
               organizationMembershipId: member.id,
               roleId: groupId,
               assignedByMembershipId: null,
-            })
-            .onConflictDoNothing();
-        }
+            })),
+          )
+          .onConflictDoNothing();
         await bumpPermissionsVersion(tx, actor.orgId);
       },
       { orgId: actor.orgId },
