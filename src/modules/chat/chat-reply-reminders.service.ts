@@ -6,6 +6,7 @@ import {
   chatMessages,
   chatReplyReminders,
   notificationPreferences,
+  organizationMembers,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -31,6 +32,18 @@ export class ChatReplyRemindersService {
 
   private readonly replyReminderMs: number;
 
+  private async resolveMembershipId(orgId: string, userId: string): Promise<number | null> {
+    const row = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    return row?.id ?? null;
+  }
+
   async scheduleForMessage(
     orgId: string,
     channelId: number,
@@ -41,9 +54,11 @@ export class ChatReplyRemindersService {
 
     await this.cancelPendingForRecipientInChannel(senderId, channelId);
 
+    const senderMembershipId = await this.resolveMembershipId(orgId, senderId);
+
     const members = await this.db.query.chatChannelMembers.findMany({
       where: and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)),
-      columns: { userId: true },
+      columns: { userId: true, membershipId: true },
     });
 
     const reminders = members
@@ -53,7 +68,9 @@ export class ChatReplyRemindersService {
         channelId,
         messageId,
         recipientUserId: member.userId,
+        recipientMembershipId: member.membershipId ?? null,
         senderUserId: senderId,
+        senderMembershipId,
         remindAt,
       }));
 

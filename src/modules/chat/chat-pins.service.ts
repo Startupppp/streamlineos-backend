@@ -68,6 +68,7 @@ export class ChatPinsService {
       channelId,
       messageId,
       pinnedBy: actor.userId,
+      pinnedByMembershipId: actor.membershipId ?? null,
     }).onConflictDoNothing();
     return { ok: true };
   }

@@ -73,6 +73,7 @@ export class ChatSavedService {
     await this.db.insert(chatSavedMessages).values({
       orgId: actor.orgId,
       userId: actor.userId,
+      membershipId: actor.membershipId ?? null,
       messageId,
     }).onConflictDoNothing();
     return { ok: true };

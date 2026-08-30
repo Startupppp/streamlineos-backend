@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, gt, ilike, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, ilike, sql } from "drizzle-orm";
 import {
   chatChannelMembers,
   chatMessages,
@@ -18,10 +18,23 @@ const PRESENCE_WINDOW_MS = 90 * 1000;
 export class ChatPresenceService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  private async resolveMembershipId(orgId: string, userId: string): Promise<number | null> {
+    const row = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    return row?.id ?? null;
+  }
+
   async heartbeat(userId: string, orgId: string) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     await this.db
       .insert(chatUserPresence)
-      .values({ userId, orgId, status: "ONLINE", lastSeenAt: new Date() })
+      .values({ userId, orgId, membershipId, status: "ONLINE", lastSeenAt: new Date() })
       .onConflictDoUpdate({
         target: [chatUserPresence.orgId, chatUserPresence.userId],
         set: { status: "ONLINE", lastSeenAt: new Date() },
@@ -47,9 +60,10 @@ export class ChatPresenceService {
   }
 
   async setStatus(userId: string, orgId: string, body: StatusInput) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     await this.db
       .insert(chatUserPresence)
-      .values({ userId, orgId, status: body.status, lastSeenAt: new Date() })
+      .values({ userId, orgId, membershipId, status: body.status, lastSeenAt: new Date() })
       .onConflictDoUpdate({
         target: [chatUserPresence.orgId, chatUserPresence.userId],
         set: { status: body.status, lastSeenAt: new Date() },

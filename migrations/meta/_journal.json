@@ -2927,6 +2927,20 @@
       "when": 1798000033000,
       "tag": "0711_timesheets_locked_by_membership_index",
       "breakpoints": true
+    },
+    {
+      "idx": 534,
+      "version": "7",
+      "when": 1798000034000,
+      "tag": "0712_chat_sender_channel_creator_fk_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 535,
+      "version": "7",
+      "when": 1798000035000,
+      "tag": "0713_chat_presence_membership_backfill",
+      "breakpoints": true
     }
   ]
 }

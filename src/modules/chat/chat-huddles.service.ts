@@ -173,12 +173,14 @@ export class ChatHuddlesService {
         })));
       }
 
+      const starterMembershipId = channelMembers.find((m) => m.userId === userId)?.membershipId ?? null;
+
       const [created] = await tx
         .insert(chatHuddles)
-        .values({ orgId, channelId, startedBy: userId, status: "active", calendarEventId: calEvent?.id, hasVideo: false })
+        .values({ orgId, channelId, startedBy: userId, startedByMembershipId: starterMembershipId, status: "active", calendarEventId: calEvent?.id, hasVideo: false })
         .returning();
 
-      await tx.insert(chatHuddleParticipants).values({ orgId, huddleId: created.id, userId });
+      await tx.insert(chatHuddleParticipants).values({ orgId, huddleId: created.id, userId, membershipId: starterMembershipId });
 
       return created;
     });
@@ -258,9 +260,18 @@ export class ChatHuddlesService {
       }
     }
 
+    const joinerMembership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+
     await this.db
       .insert(chatHuddleParticipants)
-      .values({ orgId, huddleId, userId })
+      .values({ orgId, huddleId, userId, membershipId: joinerMembership?.id ?? null })
       .onConflictDoUpdate({
         target: [chatHuddleParticipants.huddleId, chatHuddleParticipants.userId],
         set: { leftAt: null, joinedAt: new Date(), isMuted: false, handRaised: false, lastSeenAt: new Date() },
