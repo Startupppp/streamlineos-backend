@@ -64,6 +64,8 @@ const HISTORICAL_DUPLICATE_PREFIXES = new Set([
   "0430",
   "0431",
   "0432",
+  "0700",
+  "0701",
 ]);
 
 const CHAIN_GAPS_FILE = resolve(process.cwd(), ".chain-gaps");
