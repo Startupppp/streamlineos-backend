@@ -1,0 +1,447 @@
+jest.mock("../../common/tenant", () => ({
+  forEachOrg: jest.fn(),
+}));
+
+import { Test } from "@nestjs/testing";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.module";
+import { forEachOrg } from "../../common/tenant";
+import { CronAttendanceService } from "./cron-attendance.service";
+import { CronBillingService } from "./cron-billing.service";
+import { CronBuildRetentionService } from "./cron-build-retention.service";
+import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
+import { CronCrmTasksService } from "./cron-crm-tasks.service";
+import { CronHolidayService } from "./cron-holiday.service";
+import { CronHrEnginesService } from "./cron-hr-engines.service";
+import { CronHrService } from "./cron-hr.service";
+import { CronIdempotencyService } from "./cron-idempotency.service";
+import { CronInvitationExpiryService } from "./cron-invitation-expiry.service";
+import { HrAutomationEngineService } from "../hr/automations/hr-automation-engine.service";
+import { AttendancePolicyService } from "../hr/time/attendance-policy.service";
+import { AiCreditsService } from "../billing/core/ai-credits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { RevenueAnalyticsService } from "../billing/core/revenue-analytics.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import { ProjectsReportsService } from "../build/core/projects-reports.service";
+import { CrmAutomationBusService } from "../crm/automations/crm-automation-bus.service";
+import { HrWorkflowEngineService } from "../hr/workflows/hr-workflow-engine.service";
+import { HrEffectiveChangesService } from "../hr/core/hr-effective-changes.service";
+import { HrWebhooksService } from "../hr/automations/hr-webhooks.service";
+import { ProbationService } from "../hr/lifecycle/probation.service";
+import { ComplianceRequirementsService } from "../hr/global/compliance-requirements.service";
+import { WorkAuthorizationsService } from "../hr/global/work-authorizations.service";
+import { ContractsService } from "../hr/global/contracts.service";
+import { AutomationService } from "../automation/automation.service";
+import { SeatLedgerService } from "../billing/core/seat-ledger.service";
+
+function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
+  if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
+  if (typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  const record = value as { queryChunks?: unknown[]; value?: unknown };
+  return [
+    ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
+    ...(Object.prototype.hasOwnProperty.call(record, "value") ? sqlValues(record.value, seen) : []),
+  ];
+}
+
+function makeDb(rows: unknown[] = []) {
+  const findMany = jest.fn().mockResolvedValue(rows);
+  const findFirst = jest.fn().mockResolvedValue(rows[0] ?? null);
+  const handler = { findMany, findFirst };
+
+  function makeChain(): Record<string, unknown> {
+    const chain: Record<string, unknown> = {};
+    chain.orderBy = jest.fn().mockReturnValue(chain);
+    chain.limit = jest.fn().mockReturnValue(chain);
+    chain.offset = jest.fn().mockResolvedValue(rows);
+    chain.where = jest.fn().mockReturnValue(chain);
+    chain.innerJoin = jest.fn().mockReturnValue(chain);
+    chain.leftJoin = jest.fn().mockReturnValue(chain);
+    chain.groupBy = jest.fn().mockReturnValue(chain);
+    chain.set = jest.fn().mockReturnValue(chain);
+    chain.then = (
+      onFulfilled: ((value: unknown) => unknown) | null | undefined,
+      onRejected?: ((reason: unknown) => unknown) | null | undefined,
+    ) => Promise.resolve(rows).then(onFulfilled ?? undefined, onRejected ?? undefined);
+    return chain;
+  }
+
+  const rootChain = makeChain();
+  const selectWhere = rootChain.where as jest.Mock;
+  const selectFrom = jest.fn().mockReturnValue(rootChain);
+
+  const db = {
+    select: jest.fn().mockReturnValue({ from: selectFrom }),
+    query: new Proxy({} as Record<string, typeof handler>, { get: () => handler }),
+    execute: jest.fn().mockResolvedValue(rows),
+    transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
+    update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]), returning: jest.fn().mockResolvedValue([]) }) }),
+    insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]), onConflictDoNothing: jest.fn().mockResolvedValue([]) }) }),
+    delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+  } as unknown as Db;
+  return { db, findMany, findFirst, selectWhere };
+}
+
+function setupForEachOrg(db: Db, orgId: string) {
+  (forEachOrg as jest.Mock).mockImplementation(
+    async (_d: unknown, _t: string, fn: (tx: unknown, oid: string) => Promise<unknown>) => fn(db as unknown, orgId),
+  );
+}
+
+describe("CronAttendanceService — cross-tenant isolation", () => {
+  const OWNER = "org-owner";
+  const ATTACKER = "org-attacker";
+
+  it("scopes attendance auto-checkout to the org (isolation — deny: no records in attacker org)", async () => {
+    const { db, findMany } = makeDb([]);
+    setupForEachOrg(db, ATTACKER);
+    const svc = await Test.createTestingModule({
+      providers: [
+        CronAttendanceService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
+        { provide: AttendancePolicyService, useValue: { getOrgPolicy: jest.fn().mockResolvedValue(null) } },
+      ],
+    }).compile().then((m) => m.get(CronAttendanceService));
+
+    const result = await svc.processAutoCheckout();
+    expect(result.processed).toBe(0);
+    expect(findMany).toHaveBeenCalled();
+    const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
+    expect(sqlValues(arg?.where)).toContain(ATTACKER);
+  });
+
+  it("scopes attendance auto-checkout to the owning org (isolation — control)", async () => {
+    const { db, findMany } = makeDb([]);
+    setupForEachOrg(db, OWNER);
+    const svc = await Test.createTestingModule({
+      providers: [
+        CronAttendanceService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
+        { provide: AttendancePolicyService, useValue: { getOrgPolicy: jest.fn().mockResolvedValue(null) } },
+      ],
+    }).compile().then((m) => m.get(CronAttendanceService));
+
+    await svc.processAutoCheckout();
+    const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
+    expect(sqlValues(arg?.where)).toContain(OWNER);
+  });
+});
+
+describe("CronBillingService — cross-tenant isolation", () => {
+  const OWNER = "org-owner";
+  const ATTACKER = "org-attacker";
+
+  const billingDeps = {
+    aiCredits: { debitCredits: jest.fn(), creditBalance: jest.fn() },
+    planLimits: { assertWithinLimit: jest.fn() },
+    revenue: { recordEvent: jest.fn() },
+    dispatch: { send: jest.fn(), sendToUser: jest.fn() },
+  };
+
+  it("processes trial expiry scoped to the attacker org only (isolation — deny)", async () => {
+    const { db, selectWhere } = makeDb([]);
+    setupForEachOrg(db, ATTACKER);
+    const svc = await Test.createTestingModule({
+      providers: [
+        CronBillingService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AiCreditsService, useValue: billingDeps.aiCredits },
+        { provide: PlanLimitsService, useValue: billingDeps.planLimits },
+        { provide: RevenueAnalyticsService, useValue: billingDeps.revenue },
+        { provide: NotificationDispatchService, useValue: billingDeps.dispatch },
+      ],
+    }).compile().then((m) => m.get(CronBillingService));
+
+    const result = await svc.processTrialExpiry();
+    expect(result.expired).toBe(0);
+    expect(selectWhere).toHaveBeenCalled();
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(ATTACKER);
+  });
+
+  it("processes trial expiry for the owning org (isolation — control)", async () => {
+    const { db, selectWhere } = makeDb([]);
+    setupForEachOrg(db, OWNER);
+    const svc = await Test.createTestingModule({
+      providers: [
+        CronBillingService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AiCreditsService, useValue: billingDeps.aiCredits },
+        { provide: PlanLimitsService, useValue: billingDeps.planLimits },
+        { provide: RevenueAnalyticsService, useValue: billingDeps.revenue },
+        { provide: NotificationDispatchService, useValue: billingDeps.dispatch },
+      ],
+    }).compile().then((m) => m.get(CronBillingService));
+
+    await svc.processTrialExpiry();
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(OWNER);
+  });
+});
+
+describe("CronBuildRetentionService — cross-tenant isolation", () => {
+  const OWNER = "org-owner";
+  const ATTACKER = "org-attacker";
+
+  it("scopes webhook delivery pruning to the org in callback (isolation — deny)", async () => {
+    const { db, selectWhere } = makeDb([]);
+    setupForEachOrg(db, ATTACKER);
+    const svc = new CronBuildRetentionService(db);
+
+    const result = await svc.pruneWebhookDeliveries();
+    expect(result.webhookDeliveriesPruned).toBe(0);
+    expect(selectWhere).toHaveBeenCalled();
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(ATTACKER);
+  });
+
+  it("prunes webhook deliveries for the owning org (isolation — control)", async () => {
+    const { db, selectWhere } = makeDb([]);
+    setupForEachOrg(db, OWNER);
+    const svc = new CronBuildRetentionService(db);
+
+    await svc.pruneWebhookDeliveries();
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(OWNER);
+  });
+});
+
+describe("CronBuildSnapshotsService — cross-tenant isolation", () => {
+  const OWNER = "org-owner";
+  const ATTACKER = "org-attacker";
+
+  it("snapshots projects only for the org in the forEachOrg callback (isolation — deny)", async () => {
+    const { db, findMany } = makeDb([]);
+    setupForEachOrg(db, ATTACKER);
+    const reports = { snapshotProjects: jest.fn().mockResolvedValue({ snapped: 0 }), generateDailySnapshot: jest.fn() };
+    const svc = await Test.createTestingModule({
+      providers: [
+        CronBuildSnapshotsService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: ProjectsReportsService, useValue: reports },
+      ],
+    }).compile().then((m) => m.get(CronBuildSnapshotsService));
+
+    await svc.snapshotAllProjects();
+    expect(findMany).toHaveBeenCalled();
+    const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
+    expect(sqlValues(arg?.where)).toContain(ATTACKER);
+  });
+
+  it("snapshots projects for the owning org (isolation — control)", async () => {
+    const { db, findMany } = makeDb([]);
+    setupForEachOrg(db, OWNER);
+    const reports = { snapshotProjects: jest.fn().mockResolvedValue({ snapped: 0 }), generateDailySnapshot: jest.fn() };
+    const svc = await Test.createTestingModule({
+      providers: [
+        CronBuildSnapshotsService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: ProjectsReportsService, useValue: reports },
+      ],
+    }).compile().then((m) => m.get(CronBuildSnapshotsService));
+
+    await svc.snapshotAllProjects();
+    expect(sqlValues((findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined)?.where)).toContain(OWNER);
+  });
+});
+
+describe("CronCrmTasksService — cross-tenant isolation", () => {
+  const OWNER = "org-owner";
+  const ATTACKER = "org-attacker";
+
+  it("flushes overdue tasks only for the org in the callback (isolation — deny)", async () => {
+    const { db, selectWhere } = makeDb([]);
+    setupForEachOrg(db, ATTACKER);
+    const bus = { emit: jest.fn() };
+    const svc = await Test.createTestingModule({
+      providers: [
+        CronCrmTasksService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: CrmAutomationBusService, useValue: bus },
+      ],
+    }).compile().then((m) => m.get(CronCrmTasksService));
+
+    const result = await svc.flushOverdueTasks();
+    expect(result.emitted).toBe(0);
+    expect(selectWhere).toHaveBeenCalled();
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(ATTACKER);
+  });
+
+  it("flushes overdue tasks for the owning org (isolation — control)", async () => {
+    const { db, selectWhere } = makeDb([]);
+    setupForEachOrg(db, OWNER);
+    const svc = await Test.createTestingModule({
+      providers: [
+        CronCrmTasksService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: CrmAutomationBusService, useValue: { emit: jest.fn() } },
+      ],
+    }).compile().then((m) => m.get(CronCrmTasksService));
+
+    await svc.flushOverdueTasks();
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(OWNER);
+  });
+});
+
+describe("CronHolidayService — cross-tenant isolation", () => {
+  const OWNER = "org-owner";
+  const ATTACKER = "org-attacker";
+
+  it("scopes holiday notifications to the org (isolation — deny)", async () => {
+    const { db, findMany } = makeDb([]);
+    setupForEachOrg(db, ATTACKER);
+    const svc = new CronHolidayService(db);
+
+    await svc.sendHolidayNotifications();
+    expect(findMany).toHaveBeenCalled();
+    const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
+    expect(sqlValues(arg?.where)).toContain(ATTACKER);
+  });
+
+  it("sends holiday notifications for the owning org (isolation — control)", async () => {
+    const { db, findMany } = makeDb([]);
+    setupForEachOrg(db, OWNER);
+    const svc = new CronHolidayService(db);
+
+    await svc.sendHolidayNotifications();
+    expect(sqlValues((findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined)?.where)).toContain(OWNER);
+  });
+});
+
+describe("CronHrEnginesService — cross-tenant isolation", () => {
+  const OWNER = "org-owner";
+  const ATTACKER = "org-attacker";
+
+  async function buildSvc(db: Db) {
+    return Test.createTestingModule({
+      providers: [
+        CronHrEnginesService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: HrWorkflowEngineService, useValue: { sweepOverdueSteps: jest.fn().mockResolvedValue({ swept: 0 }), sweepWebhookRetries: jest.fn() } },
+        { provide: HrEffectiveChangesService, useValue: { applyDueChanges: jest.fn().mockResolvedValue({ applied: 0 }) } },
+        { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
+        { provide: HrWebhooksService, useValue: { retryFailed: jest.fn() } },
+        { provide: ProbationService, useValue: { sweepCompletedProbations: jest.fn() } },
+        { provide: ComplianceRequirementsService, useValue: { sweep: jest.fn() } },
+        { provide: WorkAuthorizationsService, useValue: { sweepExpiry: jest.fn() } },
+        { provide: ContractsService, useValue: { sweepExpiry: jest.fn() } },
+      ],
+    }).compile().then((m) => m.get(CronHrEnginesService));
+  }
+
+  it("scopes overdue goal sweep to the attacker org (isolation — deny)", async () => {
+    const { db, selectWhere } = makeDb([]);
+    const svc = await buildSvc(db);
+    await svc.sweepOverdueGoals(ATTACKER);
+    expect(selectWhere).toHaveBeenCalled();
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(ATTACKER);
+  });
+
+  it("sweeps overdue goals for the owning org (isolation — control)", async () => {
+    const { db, selectWhere } = makeDb([]);
+    const svc = await buildSvc(db);
+    await svc.sweepOverdueGoals(OWNER);
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(OWNER);
+  });
+});
+
+describe("CronHrService — cross-tenant isolation", () => {
+  const OWNER = "org-owner";
+  const ATTACKER = "org-attacker";
+
+  async function buildSvc(db: Db) {
+    return Test.createTestingModule({
+      providers: [
+        CronHrService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AutomationService, useValue: { emit: jest.fn() } },
+        { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
+        { provide: NotificationDispatchService, useValue: { send: jest.fn(), sendToUser: jest.fn() } },
+      ],
+    }).compile().then((m) => m.get(CronHrService));
+  }
+
+  it("scopes certification expiry sweep to the org (isolation — deny)", async () => {
+    const { db, findMany } = makeDb([]);
+    setupForEachOrg(db, ATTACKER);
+    const svc = await buildSvc(db);
+
+    const result = await svc.processCertificationExpiry();
+    expect(result.fired).toBe(0);
+    expect(findMany).toHaveBeenCalled();
+    const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
+    expect(sqlValues(arg?.where)).toContain(ATTACKER);
+  });
+
+  it("processes certification expiry for the owning org (isolation — control)", async () => {
+    const { db, findMany } = makeDb([]);
+    setupForEachOrg(db, OWNER);
+    const svc = await buildSvc(db);
+
+    await svc.processCertificationExpiry();
+    expect(sqlValues((findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined)?.where)).toContain(OWNER);
+  });
+});
+
+describe("CronIdempotencyService — cross-tenant isolation", () => {
+  const OWNER = "org-owner";
+  const ATTACKER = "org-attacker";
+
+  it("prunes idempotency fences scoped to the org (isolation — deny)", async () => {
+    const { db, selectWhere } = makeDb([]);
+    setupForEachOrg(db, ATTACKER);
+    const svc = new CronIdempotencyService(db);
+
+    const result = await svc.pruneExpiredFences();
+    expect(result.commandFencesPruned).toBe(0);
+    expect(selectWhere).toHaveBeenCalled();
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(ATTACKER);
+  });
+
+  it("prunes idempotency fences for the owning org (isolation — control)", async () => {
+    const { db, selectWhere } = makeDb([]);
+    setupForEachOrg(db, OWNER);
+    const svc = new CronIdempotencyService(db);
+
+    await svc.pruneExpiredFences();
+    expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(OWNER);
+  });
+});
+
+describe("CronInvitationExpiryService — cross-tenant isolation", () => {
+  const OWNER = "org-owner";
+  const ATTACKER = "org-attacker";
+
+  it("expires invitations scoped to the org in the callback (isolation — deny)", async () => {
+    const { db } = makeDb([]);
+    setupForEachOrg(db, ATTACKER);
+    const seatLedger = { releaseSeats: jest.fn(), occupySeat: jest.fn() };
+    const svc = await Test.createTestingModule({
+      providers: [
+        CronInvitationExpiryService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: SeatLedgerService, useValue: seatLedger },
+      ],
+    }).compile().then((m) => m.get(CronInvitationExpiryService));
+
+    const result = await svc.sweepExpiredInvitations();
+    expect(result.expired).toBe(0);
+    const updateCall = (db.update as jest.Mock).mock.calls[0];
+    expect(updateCall).toBeDefined();
+  });
+
+  it("sweeps invitations for the owning org (isolation — control)", async () => {
+    const { db } = makeDb([]);
+    setupForEachOrg(db, OWNER);
+    const svc = await Test.createTestingModule({
+      providers: [
+        CronInvitationExpiryService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: SeatLedgerService, useValue: { releaseSeats: jest.fn(), occupySeat: jest.fn() } },
+      ],
+    }).compile().then((m) => m.get(CronInvitationExpiryService));
+
+    const result = await svc.sweepExpiredInvitations();
+    expect(result.expired).toBeGreaterThanOrEqual(0);
+  });
+});

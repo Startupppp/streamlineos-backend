@@ -83,10 +83,10 @@ async function pageThrough(harness: ReturnType<typeof buildHarness>, limit: numb
   for (let guard = 0; guard < 50; guard++) {
     const page = (await harness.service.list(ORG, { limit, cursor } as never)) as {
       items: StoredBroadcast[];
-      nextCursor: number | undefined;
+      nextCursor: number | null;
     };
     ids.push(...page.items.map((b) => b.id));
-    if (page.nextCursor === undefined) return ids;
+    if (page.nextCursor == null) return ids;
     cursor = page.nextCursor;
   }
   throw new Error("paging did not terminate");
@@ -118,7 +118,7 @@ describe("broadcast paging — every row exactly once", () => {
 
     const first = (await harness.service.list(ORG, { limit } as never)) as {
       items: StoredBroadcast[];
-      nextCursor: number | undefined;
+      nextCursor: number | null;
     };
 
     expect(first.items).toHaveLength(limit);
@@ -129,9 +129,9 @@ describe("broadcast paging — every row exactly once", () => {
     const harness = buildHarness(new BroadcastStore(5));
 
     const page = (await harness.service.list(ORG, { limit: 5 } as never)) as {
-      nextCursor: number | undefined;
+      nextCursor: number | null;
     };
 
-    expect(page.nextCursor).toBeUndefined();
+    expect(page.nextCursor).toBeNull();
   });
 });

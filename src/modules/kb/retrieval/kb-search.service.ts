@@ -299,7 +299,7 @@ export class KbSearchService {
         .from(kbArticleChunks)
         .innerJoin(kbArticles, and(
           eq(kbArticles.id, kbArticleChunks.articleId),
-          sql`(${kbArticleChunks.aclRevision} IS NULL OR ${kbArticleChunks.aclRevision} = ${kbArticles.aclRevision})`,
+          eq(kbArticleChunks.aclRevision, kbArticles.aclRevision),
         ))
         .where(and(...conditions))
         .orderBy(distance)
@@ -370,7 +370,7 @@ export class KbSearchService {
         .from(kbArticleChunks)
         .innerJoin(kbPages, and(
           eq(kbPages.id, kbArticleChunks.pageId),
-          sql`(${kbArticleChunks.aclRevision} IS NULL OR ${kbArticleChunks.aclRevision} = ${kbPages.aclRevision})`,
+          eq(kbArticleChunks.aclRevision, kbPages.aclRevision),
         ))
         .where(
           and(
