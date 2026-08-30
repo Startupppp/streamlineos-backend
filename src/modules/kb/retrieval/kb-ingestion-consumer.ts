@@ -50,20 +50,49 @@ export class KbIngestionConsumer implements OutboxEventConsumer, OnModuleInit {
     const orgId = event.organizationId;
     const current = this.orgConcurrency.get(orgId) ?? 0;
     if (current >= KB_MAX_CONCURRENT_PER_ORG) {
-      this.logger.warn(`KB ingestion per-org concurrency limit reached (${KB_MAX_CONCURRENT_PER_ORG})`, { orgId });
+      this.logger.warn("KB ingestion per-org concurrency limit reached", {
+        orgId,
+        limit: KB_MAX_CONCURRENT_PER_ORG,
+        active: current,
+      });
       throw new Error("KB_CONCURRENCY_LIMIT");
     }
 
     const payload = kbIndexPayloadSchema.parse(event.payload);
     const adapter = this.adapterRegistry.get(payload.contentType);
     if (!adapter) {
-      this.logger.error(`No KB content adapter for type: ${payload.contentType}`, { orgId });
+      this.logger.error("No KB content adapter for contentType", {
+        orgId,
+        contentType: payload.contentType,
+      });
       throw new Error(`Unhandled KB content type: ${payload.contentType}`);
     }
 
     this.orgConcurrency.set(orgId, current + 1);
+    const startMs = Date.now();
+    this.logger.log("KB ingestion started", {
+      orgId,
+      contentType: payload.contentType,
+      contentId: payload.contentId,
+    });
+
     try {
       await adapter.handle(orgId, payload.contentId);
+      this.logger.log("KB ingestion completed", {
+        orgId,
+        contentType: payload.contentType,
+        contentId: payload.contentId,
+        durationMs: Date.now() - startMs,
+      });
+    } catch (err) {
+      this.logger.error("KB ingestion failed", {
+        orgId,
+        contentType: payload.contentType,
+        contentId: payload.contentId,
+        durationMs: Date.now() - startMs,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
     } finally {
       const after = (this.orgConcurrency.get(orgId) ?? 1) - 1;
       if (after <= 0) this.orgConcurrency.delete(orgId);

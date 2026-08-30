@@ -17,7 +17,7 @@ import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { DashboardStatsService } from "./dashboard-stats.service";
 import { DashboardAvailabilityService } from "./dashboard-availability.service";
 import { DashboardBirthdaysService } from "./dashboard-birthdays.service";
@@ -70,9 +70,9 @@ export class DashboardController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
+  @Validate({ body: createAnnouncementSchema })
   async createAnnouncement(
-    @Body(new ZodValidationPipe(createAnnouncementSchema))
-    body: CreateAnnouncementInput,
+    @Body() body: CreateAnnouncementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.announcements.createAnnouncement(
@@ -88,9 +88,9 @@ export class DashboardController {
   @Delete("announcements")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
+  @Validate({ query: deleteAnnouncementSchema })
   async deleteAnnouncement(
-    @Query(new ZodValidationPipe(deleteAnnouncementSchema))
-    query: DeleteAnnouncementInput,
+    @Query() query: DeleteAnnouncementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.announcements.deleteAnnouncement(

@@ -5,7 +5,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { BillingService } from "./billing.service";
 import { MarketplaceService } from "./marketplace.service";
 import { AiCreditsService } from "./ai-credits.service";
@@ -84,8 +83,9 @@ export class BillingMarketplaceController {
   @Get("ai-credits/transactions")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:view")
+  @Validate({ query: listTransactionsSchema })
   listAiCreditTransactions(
-    @Query(new ZodValidationPipe(listTransactionsSchema)) query: ReturnType<typeof listTransactionsSchema.parse>,
+    @Query() query: ReturnType<typeof listTransactionsSchema.parse>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.aiCredits.listTransactions(u.orgId, query.page, query.limit);
@@ -94,8 +94,9 @@ export class BillingMarketplaceController {
   @Get("ai-credits/usage")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:view")
+  @Validate({ query: aiCreditsUsageQuerySchema })
   getAiCreditsUsage(
-    @Query(new ZodValidationPipe(aiCreditsUsageQuerySchema)) query: ReturnType<typeof aiCreditsUsageQuerySchema.parse>,
+    @Query() query: ReturnType<typeof aiCreditsUsageQuerySchema.parse>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.aiCreditsUsage.getUsage(u.orgId, query.days);
@@ -105,8 +106,9 @@ export class BillingMarketplaceController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:purchase")
+  @Validate({ body: autoTopUpSchema })
   async configureAutoTopUp(
-    @Body(new ZodValidationPipe(autoTopUpSchema)) body: ReturnType<typeof autoTopUpSchema.parse>,
+    @Body() body: ReturnType<typeof autoTopUpSchema.parse>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.aiCredits.updateAutoTopUp(
@@ -122,8 +124,9 @@ export class BillingMarketplaceController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:purchase")
+  @Validate({ body: purchaseAiPackSchema })
   async purchaseAiCredits(
-    @Body(new ZodValidationPipe(purchaseAiPackSchema)) body: PurchaseAiPackInput,
+    @Body() body: PurchaseAiPackInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (body.paymentId) {

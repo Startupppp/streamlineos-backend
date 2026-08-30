@@ -10,7 +10,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
 import { crmConnectorRecords, crmConnectorSyncs } from "../../../db/schema";
 import { ComposioGateway } from "../../integrations/core/composio.gateway";
-import { CrmImportService, MAX_ROWS } from "./crm-import.service";
+import { CrmImportService } from "./crm-import.service";
+import { MAX_ROWS } from "./crm-import-preview.service";
 import { streamFor } from "./connectors/connector-catalog";
 import { watermarkAfterWalk } from "./connectors/connector-watermark";
 import {

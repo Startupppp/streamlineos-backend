@@ -1,5 +1,5 @@
 import { pgEnum, bigserial, text, integer, timestamp, index, foreignKey } from "drizzle-orm/pg-core";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { sprints } from "./core";
 import { tickets } from "./ticket-core";
 import { buildEvents } from "./namespaces";
@@ -28,9 +28,6 @@ export const sprintScopeEvents = buildEvents.table(
     eventType: sprintScopeEventTypeEnum("event_type").notNull(),
     previousPoints: integer("previous_points"),
     newPoints: integer("new_points"),
-    actorId: text("actor_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
     actorMembershipId: integer("actor_membership_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

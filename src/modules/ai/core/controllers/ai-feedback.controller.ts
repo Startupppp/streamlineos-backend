@@ -4,7 +4,7 @@ import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../../common/validation/validate.decorator";
 import { AiFeedbackService } from "../services/ai-feedback.service";
 import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import {
@@ -23,8 +23,9 @@ export class AiFeedbackController {
   @Post()
   @HttpCode(201)
   @RequirePermission("ai:feedback:create")
+  @Validate({ body: createFeedbackSchema })
   async create(
-    @Body(new ZodValidationPipe(createFeedbackSchema)) body: CreateFeedbackDto,
+    @Body() body: CreateFeedbackDto,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.aiFeedback.insertFeedback(u.orgId, u.userId, body);
@@ -33,8 +34,9 @@ export class AiFeedbackController {
 
   @Get("summary")
   @RequirePermission("settings:manage")
+  @Validate({ query: feedbackSummaryQuerySchema })
   async summary(
-    @Query(new ZodValidationPipe(feedbackSummaryQuerySchema)) query: FeedbackSummaryQuery,
+    @Query() query: FeedbackSummaryQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.aiFeedback.getSummary(u.orgId, query.feature, query.days);

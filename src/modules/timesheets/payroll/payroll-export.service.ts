@@ -17,6 +17,7 @@ import {
   leaveRequests,
   users,
   organizationMembers,
+  organizationPeople,
 } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -55,7 +56,7 @@ function toExportDto(
     note: row.note,
     ackStatus: row.ackStatus,
     ackAt: row.ackAt ? row.ackAt.toISOString() : null,
-    createdBy: row.createdBy,
+    createdBy: null,
     createdByName: creatorName,
     createdAt: row.createdAt.toISOString(),
   };
@@ -188,7 +189,6 @@ export class PayrollExportService {
           entryCount: eligible.length,
           totalHours: totalHours.toString(),
           note: input.note ?? null,
-          createdBy: userId,
           createdByMembershipId: actorMember?.id ?? null,
         })
         .returning();
@@ -240,11 +240,17 @@ export class PayrollExportService {
         const rows = await this.db
           .select({
             export: timesheetExports,
-            creatorName: users.name,
+            creatorName: organizationPeople.displayName,
             windowTotal: sql<string>`count(*) OVER ()`,
           })
           .from(timesheetExports)
-          .leftJoin(users, eq(timesheetExports.createdBy, users.id))
+          .leftJoin(
+            organizationPeople,
+            and(
+              eq(organizationPeople.organizationId, timesheetExports.orgId),
+              eq(organizationPeople.organizationMembershipId, timesheetExports.createdByMembershipId),
+            ),
+          )
           .where(eq(timesheetExports.orgId, orgId))
           .orderBy(desc(timesheetExports.createdAt))
           .limit(query.pageSize)
@@ -279,9 +285,15 @@ export class PayrollExportService {
 
   async getExportRows(orgId: string, exportId: number) {
     const [result] = await this.db
-      .select({ export: timesheetExports, creatorName: users.name })
+      .select({ export: timesheetExports, creatorName: organizationPeople.displayName })
       .from(timesheetExports)
-      .leftJoin(users, eq(timesheetExports.createdBy, users.id))
+      .leftJoin(
+        organizationPeople,
+        and(
+          eq(organizationPeople.organizationId, timesheetExports.orgId),
+          eq(organizationPeople.organizationMembershipId, timesheetExports.createdByMembershipId),
+        ),
+      )
       .where(and(eq(timesheetExports.id, exportId), eq(timesheetExports.orgId, orgId)))
       .limit(1);
 
@@ -303,9 +315,8 @@ export class PayrollExportService {
 
   async ackExport(orgId: string, userId: string, exportId: number, input: AckExportInput) {
     const [existing] = await this.db
-      .select({ id: timesheetExports.id, creatorName: users.name })
+      .select({ id: timesheetExports.id })
       .from(timesheetExports)
-      .leftJoin(users, eq(timesheetExports.createdBy, users.id))
       .where(and(eq(timesheetExports.id, exportId), eq(timesheetExports.orgId, orgId)))
       .limit(1);
 
@@ -323,7 +334,6 @@ export class PayrollExportService {
         ackStatus: input.status,
         ackNote: input.note ?? null,
         ackAt: new Date(),
-        ackBy: userId,
         ackByMembershipId: ackActorMember?.id ?? null,
       })
       .where(and(eq(timesheetExports.id, exportId), eq(timesheetExports.orgId, orgId)))

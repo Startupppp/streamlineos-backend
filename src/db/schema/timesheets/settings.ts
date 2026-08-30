@@ -15,7 +15,7 @@ import {
   timesheetApprovalModeEnum,
   timesheetPayPeriodEnum,
 } from "./enums";
-import { organizations, users, organizationMembers } from "../common";
+import { organizations, organizationMembers } from "../common";
 
 export const timesheetSettingsHistory = pgTable("timesheet_settings_history", {
   id: serial("id").primaryKey(),
@@ -24,7 +24,6 @@ export const timesheetSettingsHistory = pgTable("timesheet_settings_history", {
     .references(() => organizations.id, { onDelete: "cascade" }),
   version: integer("version").notNull(),
   settings: jsonb("settings").notNull(),
-  changedBy: text("changed_by").references(() => users.id, { onDelete: "set null" }),
   changedByMembershipId: integer("changed_by_membership_id"),
   changeReason: text("change_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

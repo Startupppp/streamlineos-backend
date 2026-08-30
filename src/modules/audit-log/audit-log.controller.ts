@@ -6,7 +6,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { AuditLogService } from "./audit-log.service";
 import {
   exportSchema,
@@ -22,8 +22,9 @@ export class AuditLogController {
 
   @Get()
   @RequirePermission("audit-log:read")
+  @Validate({ query: listSchema })
   list(
-    @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
+    @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.auditLog.list(u.orgId, filters);
@@ -33,8 +34,9 @@ export class AuditLogController {
   @RequirePermission("audit-log:read")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="audit-log-export.csv"')
+  @Validate({ query: exportSchema })
   async exportCsv(
-    @Query(new ZodValidationPipe(exportSchema)) filters: ExportInput,
+    @Query() filters: ExportInput,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {

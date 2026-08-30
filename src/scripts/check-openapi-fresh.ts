@@ -155,9 +155,18 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const MIN_STAMPED_OPS = 500;
+  if (generated.stamped < MIN_STAMPED_OPS) {
+    process.stderr.write(
+      `openapi.json: x-exposure stamping produced only ${String(generated.stamped)} of ${String(generated.operations)} operations — ` +
+        `the recordRouteClassification lookup is broken (expected ≥${String(MIN_STAMPED_OPS)}). Run: pnpm openapi:generate and inspect the output.\n`,
+    );
+    process.exit(1);
+  }
+
   if (committed === generated.json) {
     process.stdout.write(
-      `openapi.json is current — ${String(generated.operations)} operations, ${String(generated.contractsApplied)} carrying a zod contract\n`,
+      `openapi.json is current — ${String(generated.operations)} operations, ${String(generated.contractsApplied)} carrying a zod contract, ${String(generated.stamped)} exposure-stamped\n`,
     );
     return;
   }

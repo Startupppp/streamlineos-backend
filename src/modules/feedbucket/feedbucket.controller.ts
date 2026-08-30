@@ -19,7 +19,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { FeedbucketWidgetsService } from "./feedbucket-widgets.service";
 import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
 import { FeedbucketAiService } from "./feedbucket-ai.service";
@@ -62,9 +61,10 @@ export class FeedbucketController {
   @Post("widgets")
   @RequirePermission("feedbucket:widgets:create")
   @HttpCode(201)
+  @Validate({ body: createWidgetSchema })
   createWidget(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createWidgetSchema)) dto: CreateWidgetInput,
+    @Body() dto: CreateWidgetInput,
   ) {
     return this.widgets.create(user.orgId, user.userId, dto);
   }
@@ -81,11 +81,11 @@ export class FeedbucketController {
 
   @Patch("widgets/:widgetId")
   @RequirePermission("feedbucket:widgets:update")
-  @Validate({ params: widgetIdParams })
+  @Validate({ params: widgetIdParams, body: updateWidgetSchema })
   updateWidget(
     @CurrentUser() user: CurrentUserContext,
     @Param("widgetId", ParseIntPipe) widgetId: number,
-    @Body(new ZodValidationPipe(updateWidgetSchema)) dto: UpdateWidgetInput,
+    @Body() dto: UpdateWidgetInput,
   ) {
     return this.widgets.update(user.orgId, widgetId, dto);
   }
@@ -113,9 +113,10 @@ export class FeedbucketController {
 
   @Get("submissions")
   @RequirePermission("feedbucket:submissions:view")
+  @Validate({ query: listSubmissionsQuerySchema })
   listSubmissions(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listSubmissionsQuerySchema)) query: ListSubmissionsQuery,
+    @Query() query: ListSubmissionsQuery,
     @Req() req: Request,
   ) {
     const scope = readRequestScope(req);
@@ -134,11 +135,11 @@ export class FeedbucketController {
 
   @Patch("submissions/:submissionId")
   @RequirePermission("feedbucket:submissions:update")
-  @Validate({ params: submissionIdParams })
+  @Validate({ params: submissionIdParams, body: updateSubmissionSchema })
   updateSubmission(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
-    @Body(new ZodValidationPipe(updateSubmissionSchema)) dto: UpdateSubmissionInput,
+    @Body() dto: UpdateSubmissionInput,
   ) {
     return this.submissions.update(user.orgId, submissionId, dto);
   }
@@ -167,11 +168,11 @@ export class FeedbucketController {
   @Post("submissions/:submissionId/ai-analyze")
   @RequirePermission("feedbucket:submissions:ai")
   @HttpCode(200)
-  @Validate({ params: submissionIdParams })
+  @Validate({ params: submissionIdParams, body: analyzeBodySchema })
   analyzeSubmission(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
-    @Body(new ZodValidationPipe(analyzeBodySchema)) body: AnalyzeBodyInput,
+    @Body() body: AnalyzeBodyInput,
   ) {
     return this.feedbucketAi.analyze(user, submissionId, body.force ?? false);
   }

@@ -12,7 +12,6 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { BranchesService } from "./branches.service";
@@ -52,8 +51,9 @@ export class BranchesController {
 
   @Post()
   @RequirePermission("branch:create")
+  @Validate({ body: createBranchSchema })
   async create(
-    @Body(new ZodValidationPipe(createBranchSchema)) body: CreateBranchInput,
+    @Body() body: CreateBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.branches.create(u.orgId, body);
@@ -61,10 +61,10 @@ export class BranchesController {
 
   @Patch(":branchId")
   @RequirePermission("branch:update")
-  @Validate({ params: branchIdParams })
+  @Validate({ params: branchIdParams, body: updateBranchSchema })
   async update(
     @Param("branchId") branchId: string,
-    @Body(new ZodValidationPipe(updateBranchSchema)) body: UpdateBranchInput,
+    @Body() body: UpdateBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.branches.update(u.orgId, branchId, body);

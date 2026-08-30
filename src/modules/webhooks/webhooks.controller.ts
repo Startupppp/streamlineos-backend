@@ -17,7 +17,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { WebhooksService } from "./webhooks.service";
 import { WebhooksDispatchService } from "./webhooks-dispatch.service";
@@ -48,8 +47,9 @@ export class WebhooksController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
+  @Validate({ query: listSchema })
   list(
-    @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
+    @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.webhooks.list(u.orgId, filters);
@@ -59,8 +59,9 @@ export class WebhooksController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
+  @Validate({ body: createSchema })
   create(
-    @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
+    @Body() body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.webhooks.create(u.orgId, u.userId, body);
@@ -94,10 +95,10 @@ export class WebhooksController {
   @Patch(":webhookId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
-  @Validate({ params: webhookIdParams })
+  @Validate({ params: webhookIdParams, body: updateSchema })
   async update(
     @Param("webhookId", ParseIntPipe) webhookId: number,
-    @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
+    @Body() body: UpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.webhooks.update(u.orgId, webhookId, body);
@@ -121,10 +122,10 @@ export class WebhooksController {
   @Get(":webhookId/logs")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
-  @Validate({ params: webhookIdParams })
+  @Validate({ params: webhookIdParams, query: logsSchema })
   async listLogs(
     @Param("webhookId", ParseIntPipe) webhookId: number,
-    @Query(new ZodValidationPipe(logsSchema)) filters: LogsInput,
+    @Query() filters: LogsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.webhooks.listLogs(u.orgId, webhookId, filters);

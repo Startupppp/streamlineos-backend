@@ -8,7 +8,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignWatermarkService } from "./sign-watermark.service";
 import { SignEnvelopesService } from "./sign-envelopes.service";
@@ -20,6 +19,7 @@ import {
 } from "./dto/e-sign.schemas";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
+const updateWatermarkPolicyBodySchema = watermarkPolicyInputSchema.partial();
 
 @RequireModule("sign")
 @Controller("sign/admin")
@@ -39,7 +39,8 @@ export class SignAdminController {
 
   @Patch("settings")
   @RequirePermission("sign:admin:manage")
-  updateSettings(@Body(new ZodValidationPipe(updateSignSettingsSchema)) body: UpdateSignSettingsInput, @CurrentUser() u: CurrentUserContext) {
+  @Validate({ body: updateSignSettingsSchema })
+  updateSettings(@Body() body: UpdateSignSettingsInput, @CurrentUser() u: CurrentUserContext) {
     return this.settings.update(u.orgId, body, u.userId);
   }
 
@@ -59,16 +60,17 @@ export class SignAdminController {
   @Post("watermark-policies")
   @HttpCode(201)
   @RequirePermission("sign:admin:manage")
-  createWatermarkPolicy(@Body(new ZodValidationPipe(watermarkPolicyInputSchema)) body: WatermarkPolicyInput, @CurrentUser() u: CurrentUserContext) {
+  @Validate({ body: watermarkPolicyInputSchema })
+  createWatermarkPolicy(@Body() body: WatermarkPolicyInput, @CurrentUser() u: CurrentUserContext) {
     return this.watermark.create(u.orgId, u.userId, body);
   }
 
   @Patch("watermark-policies/:policyId")
   @RequirePermission("sign:admin:manage")
-  @Validate({ params: policyIdParams })
+  @Validate({ params: policyIdParams, body: updateWatermarkPolicyBodySchema })
   updateWatermarkPolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
-    @Body(new ZodValidationPipe(watermarkPolicyInputSchema.partial())) body: Partial<WatermarkPolicyInput>,
+    @Body() body: Partial<WatermarkPolicyInput>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.watermark.update(u.orgId, policyId, u.userId, body);

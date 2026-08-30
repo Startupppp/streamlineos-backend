@@ -7,7 +7,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { BillingService } from "./billing.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import {
@@ -64,8 +63,9 @@ export class BillingController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
+  @Validate({ body: createOrderSchema })
   checkout(
-    @Body(new ZodValidationPipe(createOrderSchema)) body: CreateOrderInput,
+    @Body() body: CreateOrderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.createOrder(u.orgId, u.userId, body.plan, body.billingCycle, body.couponId);
@@ -76,8 +76,9 @@ export class BillingController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
+  @Validate({ body: purchaseAddonSchema })
   purchaseAddon(
-    @Body(new ZodValidationPipe(purchaseAddonSchema)) body: PurchaseAddonInput,
+    @Body() body: PurchaseAddonInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.purchaseAddon(u.orgId, body.addonId, body.quantity);
@@ -129,8 +130,9 @@ export class BillingController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
+  @Validate({ body: createOrderSchema })
   createOrder(
-    @Body(new ZodValidationPipe(createOrderSchema)) body: CreateOrderInput,
+    @Body() body: CreateOrderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.createOrder(u.orgId, u.userId, body.plan, body.billingCycle, body.couponId);
@@ -140,8 +142,9 @@ export class BillingController {
   @Idempotent("billing.subscription.verify")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
+  @Validate({ body: verifyPaymentSchema })
   verifyPayment(
-    @Body(new ZodValidationPipe(verifyPaymentSchema)) body: VerifyPaymentInput,
+    @Body() body: VerifyPaymentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.verifyAndActivate(u.orgId, u.userId, body);
@@ -157,8 +160,9 @@ export class BillingController {
   @Patch("profile")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:profile:update")
+  @Validate({ body: updateBillingProfileSchema })
   updateBillingProfile(
-    @Body(new ZodValidationPipe(updateBillingProfileSchema)) body: UpdateBillingProfileInput,
+    @Body() body: UpdateBillingProfileInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.updateBillingProfile(u.orgId, body);
@@ -189,17 +193,18 @@ export class BillingController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
-  createCoupon(@Body(new ZodValidationPipe(createCouponSchema)) body: CreateCouponInput) {
+  @Validate({ body: createCouponSchema })
+  createCoupon(@Body() body: CreateCouponInput) {
     return this.billing.createCoupon(body);
   }
 
   @Patch("coupons/:couponId")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
-  @Validate({ params: couponIdParams })
+  @Validate({ params: couponIdParams, body: updateCouponSchema })
   updateCoupon(
     @Param("couponId", ParseIntPipe) couponId: number,
-    @Body(new ZodValidationPipe(updateCouponSchema)) body: UpdateCouponInput,
+    @Body() body: UpdateCouponInput,
   ) {
     return this.billing.updateCoupon(couponId, body);
   }

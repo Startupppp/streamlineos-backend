@@ -9,7 +9,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SignRecipientsService } from "./sign-recipients.service";
 import {
   createRecipientSchema,
@@ -36,10 +35,10 @@ export class SignRecipientsController {
   @Post("envelopes/:envelopeId/recipients")
   @HttpCode(201)
   @RequirePermission("sign:envelope:create")
-  @Validate({ params: envelopeIdParams })
+  @Validate({ params: envelopeIdParams, body: createRecipientSchema })
   add(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
-    @Body(new ZodValidationPipe(createRecipientSchema)) body: CreateRecipientInput,
+    @Body() body: CreateRecipientInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -55,10 +54,10 @@ export class SignRecipientsController {
 
   @Patch("recipients/:recipientId")
   @RequirePermission("sign:envelope:create")
-  @Validate({ params: recipientIdParams })
+  @Validate({ params: recipientIdParams, body: updateRecipientSchema })
   update(
     @Param("recipientId", ParseIntPipe) recipientId: number,
-    @Body(new ZodValidationPipe(updateRecipientSchema)) body: UpdateRecipientInput,
+    @Body() body: UpdateRecipientInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {

@@ -5,7 +5,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { BillingService } from "./billing.service";
 import { AffiliateService } from "./affiliate.service";
 import { ReferralService } from "./referral.service";
@@ -68,8 +67,9 @@ export class BillingEnterpriseController {
   @Idempotent("billing.referral.create")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:referrals:manage")
+  @Validate({ body: createReferralSchema })
   async createReferral(
-    @Body(new ZodValidationPipe(createReferralSchema)) body: ReturnType<typeof createReferralSchema.parse>,
+    @Body() body: ReturnType<typeof createReferralSchema.parse>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.referral.createReferral(u.orgId, u.userId, body.email);
@@ -85,7 +85,8 @@ export class BillingEnterpriseController {
   @Get("analytics")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:analytics:view")
-  async getAnalytics(@Query(new ZodValidationPipe(analyticsQuerySchema)) query: ReturnType<typeof analyticsQuerySchema.parse>) {
+  @Validate({ query: analyticsQuerySchema })
+  async getAnalytics(@Query() query: ReturnType<typeof analyticsQuerySchema.parse>) {
     const [metrics, timeSeries] = await Promise.all([
       this.analytics.getMetrics(),
       this.analytics.getTimeSeriesData(query.period),
@@ -108,8 +109,9 @@ export class BillingEnterpriseController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:create")
+  @Validate({ body: createEnterpriseQuoteSchema })
   createEnterpriseQuote(
-    @Body(new ZodValidationPipe(createEnterpriseQuoteSchema)) body: CreateEnterpriseQuoteInput,
+    @Body() body: CreateEnterpriseQuoteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.enterpriseQuotes.create(u.orgId, u.userId, body);
@@ -144,10 +146,10 @@ export class BillingEnterpriseController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
-  @Validate({ params: quoteIdParams })
+  @Validate({ params: quoteIdParams, body: approveEnterpriseQuoteSchema })
   approveEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
-    @Body(new ZodValidationPipe(approveEnterpriseQuoteSchema)) body: ApproveEnterpriseQuoteInput,
+    @Body() body: ApproveEnterpriseQuoteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.enterpriseQuotes.approve(u.orgId, quoteId, u.userId, body);
@@ -158,10 +160,10 @@ export class BillingEnterpriseController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
-  @Validate({ params: quoteIdParams })
+  @Validate({ params: quoteIdParams, body: rejectEnterpriseQuoteSchema })
   rejectEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
-    @Body(new ZodValidationPipe(rejectEnterpriseQuoteSchema)) body: RejectEnterpriseQuoteInput,
+    @Body() body: RejectEnterpriseQuoteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.enterpriseQuotes.reject(u.orgId, quoteId, u.userId, body);

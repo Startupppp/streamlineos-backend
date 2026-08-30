@@ -3,7 +3,7 @@ import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { Universal } from "../../../common/auth/universal.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { OrgMembersService } from "./org-members.service";
 import { OrgSetupService } from "./org-setup.service";
 import { setupSchema, type SetupInput } from "./dto/org.schemas";
@@ -51,8 +51,9 @@ export class OrgController {
   @Post("setup/complete")
   @Universal()
   @AllowNoOrg()
+  @Validate({ body: setupSchema })
   complete(
-    @Body(new ZodValidationPipe(setupSchema)) body: SetupInput,
+    @Body() body: SetupInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.setup.completeSetup(u, body);
@@ -61,8 +62,9 @@ export class OrgController {
   @Post("setup/skip")
   @Universal()
   @AllowNoOrg()
+  @Validate({ body: orgSetupSkipSchema })
   skip(
-    @Body(new ZodValidationPipe(orgSetupSkipSchema)) body: OrgSetupSkipInput,
+    @Body() body: OrgSetupSkipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.setup.skipSetup(u, body.reason);

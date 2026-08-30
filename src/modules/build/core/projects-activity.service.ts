@@ -135,7 +135,6 @@ export class ProjectsActivityService {
     await this.db.insert(ticketActivityLog).values({
       orgId,
       ticketId,
-      userId: userId ?? null,
       userMembershipId,
       action,
       fromValue: fromValue ?? null,
@@ -199,7 +198,6 @@ export class ProjectsActivityService {
       entries.map((entry) => ({
         orgId,
         ticketId,
-        userId,
         userMembershipId,
         action: entry.action,
         fromValue: entry.from,

@@ -8,7 +8,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SignTemplatesService } from "./sign-templates.service";
 import {
   createTemplateSchema,
@@ -33,7 +32,8 @@ export class SignTemplatesController {
   @Post("templates")
   @HttpCode(201)
   @RequirePermission("sign:template:manage")
-  create(@Body(new ZodValidationPipe(createTemplateSchema)) body: CreateTemplateInput, @CurrentUser() u: CurrentUserContext) {
+  @Validate({ body: createTemplateSchema })
+  create(@Body() body: CreateTemplateInput, @CurrentUser() u: CurrentUserContext) {
     return this.templates.create(u.orgId, u.userId, body);
   }
 
@@ -66,10 +66,10 @@ export class SignTemplatesController {
 
   @Patch("templates/:templateId")
   @RequirePermission("sign:template:manage")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: updateTemplateSchema })
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(updateTemplateSchema)) body: UpdateTemplateInput,
+    @Body() body: UpdateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.update(u.orgId, templateId, body, { orgId: u.orgId, userId: u.userId });
@@ -85,10 +85,10 @@ export class SignTemplatesController {
   @Post("templates/:templateId/create-envelope")
   @HttpCode(201)
   @RequirePermission("sign:envelope:create")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: createEnvelopeFromTemplateSchema })
   createEnvelope(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(createEnvelopeFromTemplateSchema)) body: CreateEnvelopeFromTemplateInput,
+    @Body() body: CreateEnvelopeFromTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.instantiate(u.orgId, u.userId, templateId, body);
@@ -96,10 +96,10 @@ export class SignTemplatesController {
 
   @Post("templates/:templateId/publish-public-form")
   @RequirePermission("sign:template:manage")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: publishPublicFormSchema })
   publishPublicForm(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(publishPublicFormSchema)) body: PublishPublicFormInput,
+    @Body() body: PublishPublicFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.publishPublicForm(u.orgId, u.userId, templateId, body);

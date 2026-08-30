@@ -13,7 +13,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AllowWithoutMfa } from "../../common/auth/allow-without-mfa.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { MfaService } from "./mfa.service";
 import {
   verifyMfaSchema,
@@ -40,8 +40,9 @@ export class MfaController {
   @Post("verify")
   @Universal()
   @HttpCode(200)
+  @Validate({ body: verifyMfaSchema })
   verify(
-    @Body(new ZodValidationPipe(verifyMfaSchema)) body: VerifyMfaInput,
+    @Body() body: VerifyMfaInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mfa.verify(u.userId, body);
@@ -50,8 +51,9 @@ export class MfaController {
   @Post("disable")
   @Universal()
   @HttpCode(200)
+  @Validate({ body: disableMfaSchema })
   disable(
-    @Body(new ZodValidationPipe(disableMfaSchema)) body: DisableMfaInput,
+    @Body() body: DisableMfaInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mfa.disable(u.userId, u.orgId, body);
@@ -67,7 +69,8 @@ export class MfaController {
   @HttpCode(200)
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermission("settings:mfa")
-  reset(@Body(new ZodValidationPipe(resetMfaSchema)) body: ResetMfaInput) {
+  @Validate({ body: resetMfaSchema })
+  reset(@Body() body: ResetMfaInput) {
     return this.mfa.reset(body.userId);
   }
 }

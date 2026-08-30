@@ -15,7 +15,6 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AnnouncementsService } from "./announcements.service";
 import {
   createHrAnnouncementSchema,
@@ -49,10 +48,10 @@ export class AnnouncementsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:announcements:manage")
+  @Validate({ body: createHrAnnouncementSchema })
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createHrAnnouncementSchema))
-    body: CreateHrAnnouncementInput,
+    @Body() body: CreateHrAnnouncementInput,
   ) {
     const { targetIds = [], publishAt, expiresAt, ...rest } = body;
     return this.service.create(u.orgId, u.userId, targetIds, {
@@ -65,12 +64,11 @@ export class AnnouncementsController {
   @Patch(":announcementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:announcements:manage")
-  @Validate({ params: announcementIdParams })
+  @Validate({ params: announcementIdParams, body: updateHrAnnouncementSchema })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("announcementId", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(updateHrAnnouncementSchema))
-    body: UpdateHrAnnouncementInput,
+    @Body() body: UpdateHrAnnouncementInput,
   ) {
     const { targetIds, publishAt, expiresAt, ...rest } = body;
     return this.service.update(u.orgId, id, targetIds, {

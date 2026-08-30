@@ -279,7 +279,6 @@ export class ApprovalsService {
           approvedByMembershipId: approverActor.membershipId,
           approvedAt: now,
           lockedAt: lockAfterApproval ? now : null,
-          lockedBy: lockAfterApproval ? u.userId : null,
           lockedByMembershipId: lockAfterApproval ? approverActor.membershipId : null,
           updatedAt: now,
         })

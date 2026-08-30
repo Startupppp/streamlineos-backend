@@ -12,7 +12,7 @@ import {
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import {
   timesheetExportTypeEnum,
   timesheetExportStatusEnum,
@@ -37,9 +37,7 @@ export const timesheetExports = pgTable("timesheet_exports", {
   ackStatus: text("ack_status"),
   ackNote: text("ack_note"),
   ackAt: timestamp("ack_at"),
-  ackBy: text("ack_by").references(() => users.id, { onDelete: "set null" }),
   ackByMembershipId: integer("ack_by_membership_id"),
-  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
@@ -48,7 +46,6 @@ export const timesheetExports = pgTable("timesheet_exports", {
     table.exportType,
     table.createdAt,
   ),
-  index("idx_timesheet_exports_created_by").on(table.createdBy),
   uniqueIndex("uniq_timesheet_exports_idem")
     .on(table.orgId, table.idempotencyKey)
     .where(sql`idempotency_key IS NOT NULL`),

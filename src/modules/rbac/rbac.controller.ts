@@ -12,7 +12,7 @@ import { Universal } from "../../common/auth/universal.decorator";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { AccessService } from "../access/access.service";
@@ -43,9 +43,9 @@ export class RbacController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ body: assignRolePermissionSchema })
   assignRolePermission(
-    @Body(new ZodValidationPipe(assignRolePermissionSchema))
-    body: AssignRolePermissionInput,
+    @Body() body: AssignRolePermissionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rbac.assignRolePermission(u, body);
@@ -55,9 +55,9 @@ export class RbacController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ body: revokeRolePermissionSchema })
   revokeRolePermission(
-    @Body(new ZodValidationPipe(revokeRolePermissionSchema))
-    body: RevokeRolePermissionInput,
+    @Body() body: RevokeRolePermissionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rbac.revokeRolePermission(u, body);

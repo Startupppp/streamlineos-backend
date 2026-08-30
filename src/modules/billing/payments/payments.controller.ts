@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PaymentProviderSetupService } from "./payment-provider-setup.service";
 import { PaymentTestTransactionService } from "./payment-test-transaction.service";
 import { PaymentWebhookHealthService } from "./payment-webhook-health.service";
@@ -105,8 +104,9 @@ export class PaymentsController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:manage")
+  @Validate({ body: createProviderSchema })
   createProvider(
-    @Body(new ZodValidationPipe(createProviderSchema)) body: CreateProviderInput,
+    @Body() body: CreateProviderInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -124,10 +124,10 @@ export class PaymentsController {
   @Patch("providers/:providerKey")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:manage")
-  @Validate({ params: providerKeyParams })
+  @Validate({ params: providerKeyParams, body: updateProviderSchema })
   updateProvider(
     @Param("providerKey") providerKey: string,
-    @Body(new ZodValidationPipe(updateProviderSchema)) body: UpdateProviderInput,
+    @Body() body: UpdateProviderInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -151,10 +151,10 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:credentials:manage")
-  @Validate({ params: providerKeyParams })
+  @Validate({ params: providerKeyParams, body: saveCredentialsSchema })
   saveCredentials(
     @Param("providerKey") providerKey: string,
-    @Body(new ZodValidationPipe(saveCredentialsSchema)) body: SaveCredentialsInput,
+    @Body() body: SaveCredentialsInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -165,10 +165,10 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:credentials:manage")
-  @Validate({ params: providerKeyParams })
+  @Validate({ params: providerKeyParams, body: saveCredentialsSchema })
   rotateCredentials(
     @Param("providerKey") providerKey: string,
-    @Body(new ZodValidationPipe(saveCredentialsSchema)) body: SaveCredentialsInput,
+    @Body() body: SaveCredentialsInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -179,10 +179,10 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:credentials:manage")
-  @Validate({ params: providerKeyParams })
+  @Validate({ params: providerKeyParams, body: disconnectCredentialsSchema })
   disconnectCredentials(
     @Param("providerKey") providerKey: string,
-    @Body(new ZodValidationPipe(disconnectCredentialsSchema)) body: DisconnectCredentialsInput,
+    @Body() body: DisconnectCredentialsInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -201,10 +201,10 @@ export class PaymentsController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:test:run")
-  @Validate({ params: providerKeyParams })
+  @Validate({ params: providerKeyParams, body: createTestTransactionSchema })
   createTestTransaction(
     @Param("providerKey") providerKey: string,
-    @Body(new ZodValidationPipe(createTestTransactionSchema)) body: CreateTestTransactionInput,
+    @Body() body: CreateTestTransactionInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -214,11 +214,11 @@ export class PaymentsController {
   @Patch("providers/:providerKey/test-transactions/:transactionId/verify")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:test:run")
-  @Validate({ params: providerKeytransactionIdParams })
+  @Validate({ params: providerKeytransactionIdParams, body: verifyTestTransactionSchema })
   verifyTestTransaction(
     @Param("providerKey") providerKey: string,
     @Param("transactionId", ParseIntPipe) transactionId: number,
-    @Body(new ZodValidationPipe(verifyTestTransactionSchema)) body: VerifyTestTransactionInput,
+    @Body() body: VerifyTestTransactionInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -229,10 +229,10 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:webhooks:manage")
-  @Validate({ params: providerKeyParams })
+  @Validate({ params: providerKeyParams, body: generateWebhookSchema })
   generateWebhook(
     @Param("providerKey") providerKey: string,
-    @Body(new ZodValidationPipe(generateWebhookSchema)) body: GenerateWebhookInput,
+    @Body() body: GenerateWebhookInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -243,10 +243,10 @@ export class PaymentsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:webhooks:manage")
-  @Validate({ params: providerKeyParams })
+  @Validate({ params: providerKeyParams, body: verifyWebhookSchema })
   verifyWebhook(
     @Param("providerKey") providerKey: string,
-    @Body(new ZodValidationPipe(verifyWebhookSchema)) body: VerifyWebhookInput,
+    @Body() body: VerifyWebhookInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -324,8 +324,9 @@ export class PaymentsController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:manual-methods:manage")
+  @Validate({ body: createManualMethodSchema })
   createManualMethod(
-    @Body(new ZodValidationPipe(createManualMethodSchema)) body: CreateManualMethodInput,
+    @Body() body: CreateManualMethodInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -335,10 +336,10 @@ export class PaymentsController {
   @Patch("manual-methods/:methodId")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:manual-methods:manage")
-  @Validate({ params: methodIdParams })
+  @Validate({ params: methodIdParams, body: updateManualMethodSchema })
   updateManualMethod(
     @Param("methodId", ParseIntPipe) methodId: number,
-    @Body(new ZodValidationPipe(updateManualMethodSchema)) body: UpdateManualMethodInput,
+    @Body() body: UpdateManualMethodInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {

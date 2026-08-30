@@ -150,7 +150,8 @@ export class ProjectsTicketSubresourcesService {
         fromValue: ticketActivityLog.fromValue,
         toValue: ticketActivityLog.toValue,
         createdAt: ticketActivityLog.createdAt,
-        userId: ticketActivityLog.userId,
+        userMembershipId: ticketActivityLog.userMembershipId,
+        actorUserId: organizationPeople.userId,
         displayName: organizationPeople.displayName,
         firstName: organizationPeople.firstName,
         lastName: organizationPeople.lastName,
@@ -159,7 +160,7 @@ export class ProjectsTicketSubresourcesService {
       .from(ticketActivityLog)
       .leftJoin(organizationPeople, and(
         eq(organizationPeople.organizationId, ticketActivityLog.orgId),
-        eq(organizationPeople.userId, ticketActivityLog.userId),
+        eq(organizationPeople.organizationMembershipId, ticketActivityLog.userMembershipId),
       ))
       .where(and(...conditions))
       .orderBy(desc(ticketActivityLog.id))
@@ -175,8 +176,8 @@ export class ProjectsTicketSubresourcesService {
         fromValue: row.fromValue,
         toValue: row.toValue,
         createdAt: row.createdAt,
-        user: row.userId
-          ? { id: row.userId, name: resolvedName, image: row.avatarUrl ?? null }
+        user: row.userMembershipId !== null && row.userMembershipId !== undefined
+          ? { id: row.actorUserId ?? null, name: resolvedName ?? "Former Member", image: row.avatarUrl ?? null }
           : null,
       };
     });

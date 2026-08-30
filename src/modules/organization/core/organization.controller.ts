@@ -29,7 +29,6 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { OrganizationService } from "./organization.service";
@@ -142,8 +141,9 @@ export class OrganizationController {
   @AuthorizedInService("any authenticated user may create a new organisation; plan limits enforced in OrgProfileService.createOrganization")
   @UseRateLimit("organization:create")
   @Idempotent("organization.create")
+  @Validate({ body: createOrganizationSchema })
   createOrganization(
-    @Body(new ZodValidationPipe(createOrganizationSchema)) body: CreateOrganizationInput,
+    @Body() body: CreateOrganizationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.organization.createOrganization(u.userId, body);
@@ -154,8 +154,9 @@ export class OrganizationController {
   @HttpCode(200)
   @AllowNoOrg()
   @NoTenantTransaction()
+  @Validate({ body: switchOrgSchema })
   switchOrg(
-    @Body(new ZodValidationPipe(switchOrgSchema)) body: SwitchOrgInput,
+    @Body() body: SwitchOrgInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.organization.switchOrg(u.userId, body.orgId);
@@ -164,8 +165,9 @@ export class OrganizationController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:view")
   @Get("members")
+  @Validate({ query: listMembersSchema })
   listMembers(
-    @Query(new ZodValidationPipe(listMembersSchema)) query: ListMembersInput,
+    @Query() query: ListMembersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.organization.listMembers(u.orgId, query);
@@ -174,10 +176,10 @@ export class OrganizationController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
   @Patch("members/:memberId")
-  @Validate({ params: memberIdParams })
+  @Validate({ params: memberIdParams, body: updateMemberRoleSchema })
   updateMemberRole(
     @Param("memberId") memberId: string,
-    @Body(new ZodValidationPipe(updateMemberRoleSchema)) body: UpdateMemberRoleInput,
+    @Body() body: UpdateMemberRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.organization.updateMemberRole(
@@ -233,8 +235,9 @@ export class OrganizationController {
   @Patch("settings")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
+  @Validate({ body: updateOrgSettingsSchema })
   updateSettings(
-    @Body(new ZodValidationPipe(updateOrgSettingsSchema)) body: UpdateOrgSettingsInput,
+    @Body() body: UpdateOrgSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.updateSettings(u.orgId, u.userId, body);
@@ -243,8 +246,9 @@ export class OrganizationController {
   @Patch("security")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
+  @Validate({ body: securitySettingsSchema })
   updateSecuritySettings(
-    @Body(new ZodValidationPipe(securitySettingsSchema)) body: SecuritySettingsInput,
+    @Body() body: SecuritySettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.updateSecuritySettings(u.orgId, u.userId, body);
@@ -253,8 +257,9 @@ export class OrganizationController {
   @Public()
   @Post("invitations/accept")
   @HttpCode(200)
+  @Validate({ body: acceptInvitationSchema })
   async acceptInvitation(
-    @Body(new ZodValidationPipe(acceptInvitationSchema)) body: AcceptInvitationInput,
+    @Body() body: AcceptInvitationInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("invite:accept", this.getIp(req));
@@ -264,8 +269,9 @@ export class OrganizationController {
   @Public()
   @Post("invitations/decline")
   @HttpCode(200)
+  @Validate({ body: declineInvitationSchema })
   async declineInvitation(
-    @Body(new ZodValidationPipe(declineInvitationSchema)) body: DeclineInvitationInput,
+    @Body() body: DeclineInvitationInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("invite:accept", this.getIp(req));
@@ -282,8 +288,9 @@ export class OrganizationController {
   @Post("custom-domains")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
+  @Validate({ body: addCustomDomainSchema })
   addCustomDomain(
-    @Body(new ZodValidationPipe(addCustomDomainSchema)) body: AddCustomDomainInput,
+    @Body() body: AddCustomDomainInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.addCustomDomain(u.orgId, u.userId, body);
@@ -322,8 +329,9 @@ export class OrganizationController {
   @Post("holidays")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
+  @Validate({ body: createHolidaySchema })
   createHoliday(
-    @Body(new ZodValidationPipe(createHolidaySchema)) body: CreateHolidayInput,
+    @Body() body: CreateHolidayInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.createHoliday(u.orgId, u.userId, body);
@@ -351,8 +359,9 @@ export class OrganizationController {
   @AuthorizedInService("OrgLifecycleService.restoreOrg — an ACTIVE isOwner membership of the target org, 404 on a miss")
   @AllowNoOrg()
   @NoTenantTransaction()
+  @Validate({ body: restoreOrgSchema })
   restoreOrg(
-    @Body(new ZodValidationPipe(restoreOrgSchema)) body: RestoreOrgInput,
+    @Body() body: RestoreOrgInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.organization.restoreOrg(body.orgId, u.userId);
@@ -369,8 +378,9 @@ export class OrganizationController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
+  @Validate({ body: deleteOrgSchema })
   deleteOrg(
-    @Body(new ZodValidationPipe(deleteOrgSchema)) body: DeleteOrgInput,
+    @Body() body: DeleteOrgInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     assertOwnerOnly(u, "organization.delete");
@@ -381,10 +391,10 @@ export class OrganizationController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
-  @Validate({ params: orgIdParams })
+  @Validate({ params: orgIdParams, body: schedulePurgeSchema })
   schedulePurge(
     @Param("orgId") orgId: string,
-    @Body(new ZodValidationPipe(schedulePurgeSchema)) body: SchedulePurgeInput,
+    @Body() body: SchedulePurgeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     assertOwnerOnly(u, "organization.purge.schedule");
@@ -414,8 +424,9 @@ export class OrganizationController {
   @Post("legal-holds")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
+  @Validate({ body: placeLegalHoldSchema })
   placeLegalHold(
-    @Body(new ZodValidationPipe(placeLegalHoldSchema)) body: PlaceLegalHoldInput,
+    @Body() body: PlaceLegalHoldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     assertOwnerOnly(u, "organization.legal-hold");

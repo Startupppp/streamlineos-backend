@@ -17,7 +17,6 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Universal } from "../../common/auth/universal.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { AccessService } from "../access/access.service";
@@ -61,8 +60,9 @@ export class RolesController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ query: listRolesQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listRolesQuerySchema)) query: ListRolesQuery,
+    @Query() query: ListRolesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.getRoles(u.orgId, query);
@@ -85,9 +85,9 @@ export class RolesController {
   @Get("simulate/candidates")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ query: simulationCandidatesQuerySchema })
   listSimulationCandidates(
-    @Query(new ZodValidationPipe(simulationCandidatesQuerySchema))
-    query: SimulationCandidatesQuery,
+    @Query() query: SimulationCandidatesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.listSimulationCandidates(u.orgId, query);
@@ -134,9 +134,9 @@ export class RolesController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ body: materializeTemplateSchema })
   materializeTemplate(
-    @Body(new ZodValidationPipe(materializeTemplateSchema))
-    body: MaterializeTemplateInput,
+    @Body() body: MaterializeTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.materializeTemplate(u, body.templateId);
@@ -167,10 +167,10 @@ export class RolesController {
   @Patch(":roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
-  @Validate({ params: roleIdParams })
+  @Validate({ params: roleIdParams, body: updateRoleSchema })
   update(
     @Param("roleId") roleId: string,
-    @Body(new ZodValidationPipe(updateRoleSchema)) body: UpdateRoleInput,
+    @Body() body: UpdateRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.updateRole(u, this.parseRoleId(roleId), body);
@@ -201,11 +201,10 @@ export class RolesController {
   @Put(":roleId/permissions")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
-  @Validate({ params: roleIdParams })
+  @Validate({ params: roleIdParams, body: setRolePermissionsSchema })
   setPermissions(
     @Param("roleId") roleId: string,
-    @Body(new ZodValidationPipe(setRolePermissionsSchema))
-    body: SetRolePermissionsInput,
+    @Body() body: SetRolePermissionsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.setRolePermissions(u, this.parseRoleId(roleId), body);
@@ -226,10 +225,10 @@ export class RolesController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
-  @Validate({ params: roleIdParams })
+  @Validate({ params: roleIdParams, body: roleMemberSchema })
   addMember(
     @Param("roleId") roleId: string,
-    @Body(new ZodValidationPipe(roleMemberSchema)) body: RoleMemberInput,
+    @Body() body: RoleMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.addRoleMember(u, this.parseRoleId(roleId), body);
@@ -238,10 +237,10 @@ export class RolesController {
   @Delete(":roleId/members")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
-  @Validate({ params: roleIdParams })
+  @Validate({ params: roleIdParams, body: roleMemberSchema })
   removeMember(
     @Param("roleId") roleId: string,
-    @Body(new ZodValidationPipe(roleMemberSchema)) body: RoleMemberInput,
+    @Body() body: RoleMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.removeRoleMember(u, this.parseRoleId(roleId), body);

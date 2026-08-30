@@ -396,7 +396,7 @@ export class PeriodsService {
 
       await tx
         .update(timesheets)
-        .set({ lockedAt: null, lockedBy: null, lockedByMembershipId: null, updatedAt: new Date() })
+        .set({ lockedAt: null, lockedByMembershipId: null, updatedAt: new Date() })
         .where(
           and(
             eq(timesheets.timesheetPeriodId, periodId),
@@ -437,7 +437,7 @@ export class PeriodsService {
 
       await tx
         .update(timesheets)
-        .set({ lockedAt: new Date(), lockedBy: u.userId, lockedByMembershipId, updatedAt: new Date() })
+        .set({ lockedAt: new Date(), lockedByMembershipId, updatedAt: new Date() })
         .where(
           and(
             eq(timesheets.timesheetPeriodId, periodId),
@@ -472,7 +472,7 @@ export class PeriodsService {
 
       await tx
         .update(timesheets)
-        .set({ lockedAt: null, lockedBy: null, lockedByMembershipId: null, updatedAt: new Date() })
+        .set({ lockedAt: null, lockedByMembershipId: null, updatedAt: new Date() })
         .where(
           and(
             eq(timesheets.timesheetPeriodId, periodId),

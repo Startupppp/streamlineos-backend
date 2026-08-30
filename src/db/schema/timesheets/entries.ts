@@ -56,7 +56,6 @@ export const timesheets = pgTable("timesheets", {
   invoicingStatus: timesheetInvoicingStatusEnum("invoicing_status").notNull().default("UNINVOICED"),
   submittedAt: timestamp("submitted_at"),
   lockedAt: timestamp("locked_at"),
-  lockedBy: text("locked_by").references(() => users.id, { onDelete: "set null" }),
   lockedByMembershipId: integer("locked_by_membership_id"),
   voidedAt: timestamp("voided_at"),
   voidReason: text("void_reason"),

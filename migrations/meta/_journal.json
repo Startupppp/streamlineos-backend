@@ -2941,6 +2941,27 @@
       "when": 1798000035000,
       "tag": "0713_chat_presence_membership_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 536,
+      "version": "7",
+      "when": 1798000036000,
+      "tag": "0714_kb_chunk_search_hybrid",
+      "breakpoints": true
+    },
+    {
+      "idx": 537,
+      "version": "7",
+      "when": 1798000037000,
+      "tag": "0715_timesheets_attr_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 538,
+      "version": "7",
+      "when": 1798000038000,
+      "tag": "0716_build_attr_contract",
+      "breakpoints": true
     }
   ]
 }

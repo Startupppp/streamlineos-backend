@@ -36,7 +36,6 @@ export const ticketActivityLog = buildEvents.table("ticket_activity_log", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   userMembershipId: integer("user_membership_id"),
   action: ticketActivityActionEnum("action").notNull(),
   fromValue: text("from_value"),
@@ -74,7 +73,6 @@ export const ticketCommentMentions = build.table("ticket_comment_mentions", {
 export const ticketActivityLogRelations = relations(ticketActivityLog, ({ one }) => ({
   ticket: one(tickets, { fields: [ticketActivityLog.ticketId], references: [tickets.id] }),
   organization: one(organizations, { fields: [ticketActivityLog.orgId], references: [organizations.id] }),
-  user: one(users, { fields: [ticketActivityLog.userId], references: [users.id] }),
   actorMembership: one(organizationMembers, {
     fields: [ticketActivityLog.orgId, ticketActivityLog.userMembershipId],
     references: [organizationMembers.orgId, organizationMembers.id],

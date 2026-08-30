@@ -99,7 +99,6 @@ export class ExceptionsService {
       .set({
         status: toStatus,
         resolutionReason: reason,
-        resolvedBy: u.userId,
         resolvedByMembershipId,
         resolvedAt: new Date(),
         updatedAt: new Date(),

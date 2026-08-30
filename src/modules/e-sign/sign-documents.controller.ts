@@ -24,7 +24,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SignDocumentsService } from "./sign-documents.service";
 import { uploadDocumentMetaSchema, type UploadDocumentMetaInput } from "./dto/e-sign.schemas";
 
@@ -47,10 +46,11 @@ export class SignDocumentsController {
   @HttpCode(201)
   @RequirePermission("sign:documents:upload")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
+  @Validate({ query: uploadDocumentMetaSchema })
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Query("envelopeId", ParseIntPipe) envelopeId: number,
-    @Query(new ZodValidationPipe(uploadDocumentMetaSchema)) query: UploadDocumentMetaInput,
+    @Query() query: UploadDocumentMetaInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {

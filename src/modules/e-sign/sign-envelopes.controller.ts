@@ -9,7 +9,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { readRequestScope } from "../organization/core/read-request-scope";
 import { SignEnvelopesService } from "./sign-envelopes.service";
@@ -49,14 +48,16 @@ export class SignEnvelopesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("sign:envelope:create")
-  create(@Body(new ZodValidationPipe(createEnvelopeSchema)) body: CreateEnvelopeInput, @CurrentUser() u: CurrentUserContext) {
+  @Validate({ body: createEnvelopeSchema })
+  create(@Body() body: CreateEnvelopeInput, @CurrentUser() u: CurrentUserContext) {
     return this.envelopes.create(u.orgId, u.userId, body);
   }
 
   @Get()
   @RequirePermission("sign:envelope:view")
+  @Validate({ query: listEnvelopesSchema })
   list(
-    @Query(new ZodValidationPipe(listEnvelopesSchema)) query: ListEnvelopesInput,
+    @Query() query: ListEnvelopesInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -73,10 +74,10 @@ export class SignEnvelopesController {
 
   @Patch(":envelopeId")
   @RequirePermission("sign:envelope:create")
-  @Validate({ params: envelopeIdParams })
+  @Validate({ params: envelopeIdParams, body: updateEnvelopeSchema })
   update(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
-    @Body(new ZodValidationPipe(updateEnvelopeSchema)) body: UpdateEnvelopeInput,
+    @Body() body: UpdateEnvelopeInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -108,10 +109,10 @@ export class SignEnvelopesController {
   @Post(":envelopeId/void")
   @Idempotent("sign:envelope.void")
   @RequirePermission("sign:envelope:void")
-  @Validate({ params: envelopeIdParams })
+  @Validate({ params: envelopeIdParams, body: voidEnvelopeSchema })
   voidEnvelope(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
-    @Body(new ZodValidationPipe(voidEnvelopeSchema)) body: VoidEnvelopeInput,
+    @Body() body: VoidEnvelopeInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -121,10 +122,10 @@ export class SignEnvelopesController {
   @Post(":envelopeId/correct")
   @Idempotent("sign:envelope.correct")
   @RequirePermission("sign:envelope:correct")
-  @Validate({ params: envelopeIdParams })
+  @Validate({ params: envelopeIdParams, body: correctEnvelopeSchema })
   correct(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
-    @Body(new ZodValidationPipe(correctEnvelopeSchema)) body: CorrectEnvelopeInput,
+    @Body() body: CorrectEnvelopeInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -149,10 +150,10 @@ export class SignEnvelopesController {
 
   @Post(":envelopeId/extend-expiration")
   @RequirePermission("sign:envelope:correct")
-  @Validate({ params: envelopeIdParams })
+  @Validate({ params: envelopeIdParams, body: extendExpirationSchema })
   extendExpiration(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
-    @Body(new ZodValidationPipe(extendExpirationSchema)) body: ExtendExpirationInput,
+    @Body() body: ExtendExpirationInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {

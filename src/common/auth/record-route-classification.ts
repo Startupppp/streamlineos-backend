@@ -5,6 +5,7 @@ import { AUTHORIZED_IN_SERVICE } from "./authorized-in-service.decorator";
 import { IS_PUBLIC } from "./public.decorator";
 import { IS_UNIVERSAL } from "./universal.decorator";
 import { REQUIRE_PERMISSION } from "../../modules/access/require-permission.decorator";
+import { DEPRECATION_KEY, type DeprecationMeta } from "../deprecation/deprecated.decorator";
 
 export type RouteExposure =
   | { mode: "public" }
@@ -63,6 +64,18 @@ export function describeExposure(exposure: RouteExposure): string {
   }
 }
 
+// URI versioning appends "_<version>" to operationId (e.g. "ClassName_method_1").
+// Strip it so the lookup matches the map key "ClassName_method" regardless of which
+// versioned copy of the route the document contains.
+export function normalizeOperationId(id: string): string {
+  return id.replace(/_\d+$/, "");
+}
+
+interface OperationMeta {
+  exposure: RouteExposure;
+  deprecation?: DeprecationMeta;
+}
+
 // Read from the same four metadata keys the guard reads, so the document cannot drift.
 export function recordRouteClassification(
   app: INestApplication,
@@ -71,7 +84,7 @@ export function recordRouteClassification(
   const discovery = app.get(DiscoveryService);
   const scanner = app.get(MetadataScanner);
 
-  const byOperationId = new Map<string, RouteExposure>();
+  const byOperationId = new Map<string, OperationMeta>();
   for (const wrapper of discovery.getControllers()) {
     const { instance } = wrapper;
     if (!instance || typeof instance !== "object") continue;
@@ -82,10 +95,13 @@ export function recordRouteClassification(
       const handler: unknown = Reflect.get(proto, methodName);
       if (typeof handler !== "function") continue;
       if (Reflect.getMetadata(PATH_METADATA, handler) === undefined) continue;
-      byOperationId.set(
-        `${classRef.name}_${methodName}`,
-        classifyHandler(handler, classRef),
-      );
+      const depMeta: unknown = read(DEPRECATION_KEY, handler, classRef);
+      byOperationId.set(`${classRef.name}_${methodName}`, {
+        exposure: classifyHandler(handler, classRef),
+        deprecation: typeof depMeta === "object" && depMeta !== null
+          ? (depMeta as DeprecationMeta)
+          : undefined,
+      });
     }
   }
 
@@ -98,9 +114,10 @@ export function recordRouteClassification(
     if (typeof pathItem !== "object" || pathItem === null) continue;
     for (const operation of Object.values(pathItem)) {
       if (!stampable(operation)) continue;
-      const exposure = byOperationId.get(String(operation.operationId));
-      if (!exposure) continue;
+      const meta = byOperationId.get(normalizeOperationId(String(operation.operationId)));
+      if (!meta) continue;
 
+      const { exposure, deprecation } = meta;
       const summary = describeExposure(exposure);
       operation["x-exposure"] = exposure.mode;
       if (exposure.mode === "permissioned") operation["x-permission"] = exposure.permission;
@@ -108,6 +125,11 @@ export function recordRouteClassification(
       operation.description = operation.description
         ? `${operation.description}\n\nExposure: ${summary}`
         : `Exposure: ${summary}`;
+      if (deprecation !== undefined) {
+        operation["deprecated"] = true;
+        if (deprecation.sunset) operation["x-sunset"] = deprecation.sunset;
+        if (deprecation.link) operation["x-deprecation-link"] = deprecation.link;
+      }
       stamped++;
       if (exposure.mode === "undeclared") undeclared++;
     }

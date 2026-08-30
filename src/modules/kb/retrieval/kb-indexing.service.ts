@@ -75,6 +75,17 @@ export class KbIndexingService {
       contentHash,
     );
 
+    const resumedFrom = cached.size > 0 ? Math.min(...cached.keys()) : chunks.length;
+    if (cached.size > 0)
+      this.logger.log("KB ingestion resuming from checkpoint", {
+        orgId,
+        contentType,
+        contentId,
+        cachedChunks: cached.size,
+        totalChunks: chunks.length,
+        resumedFrom,
+      });
+
     const embeddings: number[][] = [];
     for (let i = 0; i < chunks.length; i++) {
       const hit = cached.get(i);
@@ -93,6 +104,14 @@ export class KbIndexingService {
         emb,
       );
       embeddings.push(emb);
+      if ((i + 1) % 10 === 0 || i === chunks.length - 1)
+        this.logger.log("KB ingestion chunk progress", {
+          orgId,
+          contentType,
+          contentId,
+          embedded: i + 1,
+          total: chunks.length,
+        });
     }
     return embeddings;
   }
@@ -140,6 +159,12 @@ export class KbIndexingService {
 
     if (firstExisting?.contentHash === contentHash) return;
 
+    this.logger.log("KB article indexing started", {
+      orgId,
+      articleId,
+      chunks: chunks.length,
+    });
+
     const embeddings = await this.embedWithResumption(
       orgId,
       "article",
@@ -181,6 +206,12 @@ export class KbIndexingService {
       );
 
       await this.checkpoint.clearCheckpoints(tx, orgId, "article", articleId);
+    });
+
+    this.logger.log("KB article indexing committed", {
+      orgId,
+      articleId,
+      chunks: chunks.length,
     });
   }
 
@@ -225,6 +256,7 @@ export class KbIndexingService {
 
       if (!aclChanged) return 0;
 
+      this.logger.log("KB page ACL updated (content unchanged)", { orgId, pageId });
       await this.db
         .update(kbArticleChunks)
         .set({
@@ -250,6 +282,12 @@ export class KbIndexingService {
       await this.removePageChunks(orgId, pageId);
       return 0;
     }
+
+    this.logger.log("KB page indexing started", {
+      orgId,
+      pageId,
+      chunks: chunks.length,
+    });
 
     const embeddings = await this.embedWithResumption(
       orgId,
@@ -293,6 +331,12 @@ export class KbIndexingService {
       );
 
       await this.checkpoint.clearCheckpoints(tx, orgId, "page", pageId);
+    });
+
+    this.logger.log("KB page indexing committed", {
+      orgId,
+      pageId,
+      chunks: chunks.length,
     });
 
     return chunks.length;

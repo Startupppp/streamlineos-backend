@@ -3,7 +3,7 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Universal } from "../../common/auth/universal.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { EmploymentFactsService } from "./employment-facts.service";
 import {
   listEmploymentFactsQuerySchema,
@@ -18,9 +18,9 @@ export class EmploymentFactsController {
 
   @Get()
   @Universal()
+  @Validate({ query: listEmploymentFactsQuerySchema })
   async list(
-    @Query(new ZodValidationPipe(listEmploymentFactsQuerySchema))
-    query: ListEmploymentFactsQuery,
+    @Query() query: ListEmploymentFactsQuery,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<{ data: EmploymentFacts[] }> {
     const resolved = await this.facts.getFactsBatch(user.orgId, query.userIds);

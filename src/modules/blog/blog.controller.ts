@@ -8,7 +8,6 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Public } from "../../common/auth/public.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BlogService } from "./blog.service";
 import {
   feedSchema,
@@ -48,7 +47,8 @@ export class BlogController {
 
   @Public()
   @Get("feed")
-  feed(@Query(new ZodValidationPipe(feedSchema)) query: FeedInput) {
+  @Validate({ query: feedSchema })
+  feed(@Query() query: FeedInput) {
     return this.blog.getPublishedPosts(query);
   }
 }

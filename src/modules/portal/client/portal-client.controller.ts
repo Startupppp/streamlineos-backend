@@ -13,7 +13,6 @@ import type { Request } from "express";
 import { AuthorizedInService } from "../../../common/auth/authorized-in-service.decorator";
 import { PortalJwtAuthGuard } from "../../../common/portal-auth/portal-jwt-auth.guard";
 import type { PortalUserContext } from "../../../common/portal-auth/portal-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PortalClientService } from "./portal-client.service";
 import {
   submitChangeRequestSchema,
@@ -59,11 +58,10 @@ export class PortalClientController {
 
   @Post("projects/:projectId/change-requests")
   @HttpCode(201)
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: submitChangeRequestSchema })
   submitChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(submitChangeRequestSchema))
-    body: SubmitChangeRequestInput,
+    @Body() body: SubmitChangeRequestInput,
     @Req() req: PortalReq,
   ) {
     const ctx = req.portalUser;

@@ -98,7 +98,6 @@ export class SettingsService {
         orgId: u.orgId,
         version: (latest?.version ?? 0) + 1,
         settings: current ?? updateData,
-        changedBy: u.userId,
         changedByMembershipId,
         changeReason: changeReason ?? null,
       });

@@ -86,7 +86,6 @@ export class WorkflowService {
         requiresApproval: input.requiresApproval ?? false,
         requiredFields: input.requiredFields ?? [],
         allowedRoles: input.allowedRoles ?? [],
-        createdBy: userId,
         createdByMembershipId: membership?.id ?? null,
       })
       .returning();

@@ -21,7 +21,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CalendarService } from "./calendar.service";
 import { ExternalCalendarEventsService } from "./external-calendar-events.service";
 import { CalendarSourceRegistry } from "./calendar-source.registry";
@@ -87,8 +86,9 @@ export class CalendarController {
 
   @Get("events")
   @Universal()
+  @Validate({ query: listEventsSchema })
   getEvents(
-    @Query(new ZodValidationPipe(listEventsSchema)) query: ListEventsInput,
+    @Query() query: ListEventsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.calendar.getEvents(
@@ -101,9 +101,9 @@ export class CalendarController {
 
   @Get("external-events")
   @Universal()
+  @Validate({ query: externalEventsQuerySchema })
   getExternalEvents(
-    @Query(new ZodValidationPipe(externalEventsQuerySchema))
-    query: ExternalEventsQueryInput,
+    @Query() query: ExternalEventsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.externalEvents.getExternalEvents(
@@ -117,8 +117,9 @@ export class CalendarController {
   @Post("events")
   @Universal()
   @HttpCode(201)
+  @Validate({ body: createEventSchema })
   createEvent(
-    @Body(new ZodValidationPipe(createEventSchema)) body: CreateEventInput,
+    @Body() body: CreateEventInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.calendar.createEvent(u.orgId, u.userId, body);
@@ -126,10 +127,10 @@ export class CalendarController {
 
   @Put("events/:eventId")
   @Universal()
-  @Validate({ params: eventIdParams })
+  @Validate({ params: eventIdParams, body: updateEventSchema })
   async updateEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
-    @Body(new ZodValidationPipe(updateEventSchema)) body: UpdateEventInput,
+    @Body() body: UpdateEventInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const event = await this.calendar.updateEvent(
@@ -156,10 +157,10 @@ export class CalendarController {
   @Post("events/:eventId/rsvp")
   @Universal()
   @HttpCode(200)
-  @Validate({ params: eventIdParams })
+  @Validate({ params: eventIdParams, body: rsvpSchema })
   async rsvp(
     @Param("eventId", ParseIntPipe) eventId: number,
-    @Body(new ZodValidationPipe(rsvpSchema)) body: RsvpInput,
+    @Body() body: RsvpInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const attendee = await this.calendar.rsvp(u.orgId, u.userId, eventId, body);
@@ -170,12 +171,11 @@ export class CalendarController {
   @Patch("events/:eventId/occurrences/:occurrenceStart")
   @Universal()
   @HttpCode(200)
-  @Validate({ params: eventIdoccurrenceStartParams })
+  @Validate({ params: eventIdoccurrenceStartParams, body: upsertOccurrenceExceptionSchema })
   async upsertOccurrenceException(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Param("occurrenceStart") occurrenceStart: string,
-    @Body(new ZodValidationPipe(upsertOccurrenceExceptionSchema))
-    body: UpsertOccurrenceExceptionInput,
+    @Body() body: UpsertOccurrenceExceptionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const row = await this.calendar.upsertOccurrenceException(
@@ -224,8 +224,9 @@ export class CalendarController {
   @Get("export")
   @UseGuards(PermissionGuard)
   @RequirePermission("calendar:events:export")
+  @Validate({ query: exportSchema })
   async exportEvents(
-    @Query(new ZodValidationPipe(exportSchema)) query: ExportInput,
+    @Query() query: ExportInput,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
@@ -284,10 +285,10 @@ export class CalendarController {
   @Put("sources/:sourceKey")
   @Universal()
   @HttpCode(200)
-  @Validate({ params: sourceKeyParams })
+  @Validate({ params: sourceKeyParams, body: setSourcePreferenceSchema })
   async setSourcePreference(
     @Param("sourceKey") sourceKey: string,
-    @Body(new ZodValidationPipe(setSourcePreferenceSchema)) body: SetSourcePreferenceInput,
+    @Body() body: SetSourcePreferenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.sourcePreferences.setPreference(u.orgId, u.userId, sourceKey, body.enabled);

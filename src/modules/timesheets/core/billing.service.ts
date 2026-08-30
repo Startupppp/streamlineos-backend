@@ -271,7 +271,6 @@ export class BillingService {
           snapshot: snapshot,
           entryCount: entries.length,
           totalHours: round2(totalHours).toString(),
-          createdBy: u.userId,
           createdByMembershipId: actorMember?.id ?? null,
         })
         .returning({ id: timesheetExports.id });
@@ -405,7 +404,6 @@ export class BillingService {
           snapshot: snapshot,
           entryCount: entries.length,
           totalHours: "0",
-          createdBy: u.userId,
           createdByMembershipId: draftActorMember?.id ?? null,
         })
         .returning({ id: timesheetExports.id });

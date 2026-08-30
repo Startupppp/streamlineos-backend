@@ -54,8 +54,9 @@ export class UsersController {
 
   @RequirePermission("settings:view")
   @Get()
+  @Validate({ query: listUsersSchema })
   listUsers(
-    @Query(new ZodValidationPipe(listUsersSchema)) query: ListUsersInput,
+    @Query() query: ListUsersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.users.listUsers(u.orgId, query);
@@ -64,8 +65,9 @@ export class UsersController {
   @RequirePermission("settings:view")
   @Version(API_VERSION_NEXT)
   @Get()
+  @Validate({ query: listUsersSchema })
   async listUsersV2(
-    @Query(new ZodValidationPipe(listUsersSchema)) query: ListUsersInput,
+    @Query() query: ListUsersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return toUserIdentityPage(await this.users.listUsers(u.orgId, query));
@@ -88,8 +90,9 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Get("invitations")
+  @Validate({ query: listInvitationsSchema })
   listInvitations(
-    @Query(new ZodValidationPipe(listInvitationsSchema)) query: ListInvitationsInput,
+    @Query() query: ListInvitationsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.invitationsRead.listPaginated(u.orgId, {
@@ -103,8 +106,9 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Get("audit")
+  @Validate({ query: listAuditSchema })
   getOrgAuditLog(
-    @Query(new ZodValidationPipe(listAuditSchema)) query: ListAuditInput,
+    @Query() query: ListAuditInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.userActivity.getAuditLog(u.orgId, query);
@@ -114,8 +118,9 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Post()
+  @Validate({ body: createUserSchema })
   createUser(
-    @Body(new ZodValidationPipe(createUserSchema)) body: CreateUserInput,
+    @Body() body: CreateUserInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.users.createUser(u.orgId, body, { userId: u.userId, isOrgOwner: u.isOrgOwner });
@@ -124,8 +129,9 @@ export class UsersController {
   @RequirePermission("settings:organization:manage")
   @Post("invite")
   @Idempotent("users.invitation.create")
+  @Validate({ body: inviteUserSchema })
   inviteUser(
-    @Body(new ZodValidationPipe(inviteUserSchema)) body: InviteUserInput,
+    @Body() body: InviteUserInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.invitations.invite(
@@ -139,8 +145,9 @@ export class UsersController {
   @RequirePermission("settings:organization:manage")
   @Post("bulk-invite")
   @Idempotent("users.invitation.bulk-create")
+  @Validate({ body: bulkInviteSchema })
   bulkInvite(
-    @Body(new ZodValidationPipe(bulkInviteSchema)) body: BulkInviteInput,
+    @Body() body: BulkInviteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.invitations.bulkInvite(u.orgId, { userId: u.userId, isOrgOwner: u.isOrgOwner }, body.emails, body.role);
@@ -149,8 +156,9 @@ export class UsersController {
   @RequirePermission("settings:organization:manage")
   @Post("bulk-suspend")
   @HttpCode(200)
+  @Validate({ body: bulkActionSchema })
   bulkSuspend(
-    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
+    @Body() body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.userOps.bulkSuspend(u.orgId, body.userIds, u.userId);
@@ -159,8 +167,9 @@ export class UsersController {
   @RequirePermission("settings:organization:manage")
   @Post("bulk-archive")
   @HttpCode(200)
+  @Validate({ body: bulkActionSchema })
   bulkArchive(
-    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
+    @Body() body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.userOps.bulkArchive(u.orgId, body.userIds, u.userId);
@@ -169,8 +178,9 @@ export class UsersController {
   @RequirePermission("settings:organization:manage")
   @Post("bulk-restore")
   @HttpCode(200)
+  @Validate({ body: bulkActionSchema })
   bulkRestore(
-    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
+    @Body() body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.userOps.bulkRestore(u.orgId, body.userIds, u.userId);
@@ -179,8 +189,9 @@ export class UsersController {
   @RequirePermission("settings:organization:manage")
   @Post("bulk-update")
   @HttpCode(200)
+  @Validate({ body: bulkUpdateUsersSchema })
   bulkUpdate(
-    @Body(new ZodValidationPipe(bulkUpdateUsersSchema)) body: BulkUpdateUsersInput,
+    @Body() body: BulkUpdateUsersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.userOps.bulkUpdateUsers(u.orgId, body, { userId: u.userId, isOrgOwner: u.isOrgOwner });
@@ -213,10 +224,10 @@ export class UsersController {
   @RequirePermission("settings:organization:manage")
   @Patch("invitations/:invitationId/role")
   @HttpCode(200)
-  @Validate({ params: invitationIdParams })
+  @Validate({ params: invitationIdParams, body: changeInviteRoleSchema })
   changeInviteRole(
     @Param("invitationId") invitationId: string,
-    @Body(new ZodValidationPipe(changeInviteRoleSchema)) body: ChangeInviteRoleInput,
+    @Body() body: ChangeInviteRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.invitations.changeRole(
@@ -259,10 +270,10 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Patch(":userId")
-  @Validate({ params: userIdParams })
+  @Validate({ params: userIdParams, body: updateUserSchema })
   updateUser(
     @Param("userId") userId: string,
-    @Body(new ZodValidationPipe(updateUserSchema)) body: UpdateUserInput,
+    @Body() body: UpdateUserInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.users.updateUser(u.orgId, userId, body, { userId: u.userId, isOrgOwner: u.isOrgOwner });
@@ -270,10 +281,10 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Patch(":userId/status")
-  @Validate({ params: userIdParams })
+  @Validate({ params: userIdParams, body: updateUserStatusSchema })
   updateStatus(
     @Param("userId") userId: string,
-    @Body(new ZodValidationPipe(updateUserStatusSchema)) body: UpdateUserStatusInput,
+    @Body() body: UpdateUserStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.users.updateUserStatus(u.orgId, userId, body.status, u.userId, body.reason);
@@ -334,10 +345,10 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Patch(":userId/preferences")
-  @Validate({ params: userIdParams })
+  @Validate({ params: userIdParams, body: updatePreferencesSchema })
   updatePreferences(
     @Param("userId") userId: string,
-    @Body(new ZodValidationPipe(updatePreferencesSchema)) body: UpdatePreferencesInput,
+    @Body() body: UpdatePreferencesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.userProfile.updatePreferences(u.orgId, userId, body);
@@ -345,10 +356,10 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Get(":userId/login-history")
-  @Validate({ params: userIdParams })
+  @Validate({ params: userIdParams, query: listLoginHistorySchema })
   getLoginHistory(
     @Param("userId") userId: string,
-    @Query(new ZodValidationPipe(listLoginHistorySchema)) query: ListLoginHistoryInput,
+    @Query() query: ListLoginHistoryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.userProfile.getLoginHistory(u.orgId, userId, query);
@@ -363,10 +374,10 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Patch(":userId/membership")
-  @Validate({ params: userIdParams })
+  @Validate({ params: userIdParams, body: updateMembershipSchema })
   updateMembership(
     @Param("userId") userId: string,
-    @Body(new ZodValidationPipe(updateMembershipSchema)) body: UpdateMembershipInput,
+    @Body() body: UpdateMembershipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.userProfile.updateMembership(u.orgId, userId, body, u.userId);
@@ -383,10 +394,10 @@ export class UsersController {
 
   @RequirePermission("settings:organization:manage")
   @Get(":userId/audit")
-  @Validate({ params: userIdParams })
+  @Validate({ params: userIdParams, query: listAuditSchema })
   getUserAuditLog(
     @Param("userId") userId: string,
-    @Query(new ZodValidationPipe(listAuditSchema)) query: ListAuditInput,
+    @Query() query: ListAuditInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.userActivity.getUserAuditLog(u.orgId, userId, query);

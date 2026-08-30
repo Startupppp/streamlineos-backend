@@ -7,7 +7,6 @@ import { timesheetPeriods } from "./periods";
 import { timerSessions } from "./timer";
 import { timesheetRateCards, timesheetRates } from "./rates";
 import { timesheetBudgets } from "./budgets";
-import { timesheetExports } from "./exports";
 
 export const timesheetsRelations = relations(timesheets, ({ one }) => ({
   ticket: one(tickets, { fields: [timesheets.ticketId], references: [tickets.id] }),
@@ -43,6 +42,3 @@ export const timesheetBudgetsRelations = relations(timesheetBudgets, ({ one }) =
   project: one(projects, { fields: [timesheetBudgets.projectId], references: [projects.id] }),
 }));
 
-export const timesheetExportsRelations = relations(timesheetExports, ({ one }) => ({
-  createdByUser: one(users, { fields: [timesheetExports.createdBy], references: [users.id] }),
-}));

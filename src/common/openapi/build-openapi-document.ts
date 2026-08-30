@@ -4,7 +4,10 @@ import {
   SwaggerModule,
   type OpenAPIObject,
 } from "@nestjs/swagger";
-import { recordRouteClassification } from "../auth/record-route-classification";
+import {
+  normalizeOperationId,
+  recordRouteClassification,
+} from "../auth/record-route-classification";
 import {
   CONTRACT_PARAMETERS,
   CONTRACT_RESPONSES,
@@ -199,7 +202,7 @@ export function buildOpenApiDocument(app: INestApplication): BuiltDocument {
     if (typeof pathItem !== "object" || pathItem === null) continue;
     for (const [method, operation] of Object.entries(pathItem)) {
       if (!isOperation(operation)) continue;
-      const contract = contracts.get(String(operation.operationId));
+      const contract = contracts.get(normalizeOperationId(String(operation.operationId)));
       if (!contract) continue;
       applyOperationContract(method.toLowerCase(), operation, contract);
       contractsApplied += 1;

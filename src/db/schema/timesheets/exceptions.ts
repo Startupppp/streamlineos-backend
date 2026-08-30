@@ -26,7 +26,6 @@ export const timesheetExceptions = pgTable("timesheet_exceptions", {
   ownerUserId: text("owner_user_id").references(() => users.id, { onDelete: "set null" }),
   dueDate: date("due_date"),
   resolutionReason: text("resolution_reason"),
-  resolvedBy: text("resolved_by").references(() => users.id, { onDelete: "set null" }),
   resolvedByMembershipId: integer("resolved_by_membership_id"),
   resolvedAt: timestamp("resolved_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
