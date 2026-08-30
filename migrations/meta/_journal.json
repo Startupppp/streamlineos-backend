@@ -2752,6 +2752,27 @@
       "when": 1788091262000,
       "tag": "0675_chat_remaining_membership_fks",
       "breakpoints": true
+    },
+    {
+      "idx": 392,
+      "version": "7",
+      "when": 1788091263000,
+      "tag": "0676_fix_kb_acl_revision_notnull_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 393,
+      "version": "7",
+      "when": 1788091264000,
+      "tag": "0677_rls_fix_guc_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 394,
+      "version": "7",
+      "when": 1788091265000,
+      "tag": "0678_rls_fix_feedback_cycle_responses",
+      "breakpoints": true
     }
   ]
 }

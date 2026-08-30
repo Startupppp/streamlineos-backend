@@ -35,9 +35,11 @@ export const feedbackCycleRequests = pgTable("feedback_cycle_requests", {
 export const feedbackCycleResponses = pgTable("feedback_cycle_responses", {
   id: serial("id").primaryKey(),
   requestId: integer("request_id").references(() => feedbackCycleRequests.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   responses: jsonb("responses").$type<{ questionId: string; rating?: number; text?: string }[]>().default([]).notNull(),
   overallRating: integer("overall_rating"),
   submittedAt: timestamp("submitted_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_fb_cycle_responses_request").on(table.requestId),
+  index("idx_feedback_cycle_responses_org_request").on(table.orgId, table.requestId),
 ]);
