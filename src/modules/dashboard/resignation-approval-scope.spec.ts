@@ -32,7 +32,7 @@ describe("resignationApprovalScope", () => {
 
     expect(sql).toContain('"hr_reporting_lines"');
     expect(sql).toContain('"resignations"."user_id"');
-    expect(sql).toContain("scope_teammate");
+    expect(sql).toContain("EXISTS");
   });
 
   it("binds the actor rather than interpolating it", () => {

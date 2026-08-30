@@ -38,10 +38,10 @@ import {
 @UseGuards(JwtAuthGuard)
 export class DashboardController {
   constructor(
-    private readonly stats: DashboardStatsService,
+    private readonly statsService: DashboardStatsService,
     private readonly availability: DashboardAvailabilityService,
-    private readonly birthdays: DashboardBirthdaysService,
-    private readonly personal: DashboardPersonalService,
+    private readonly birthdaysService: DashboardBirthdaysService,
+    private readonly personalService: DashboardPersonalService,
     private readonly leave: DashboardLeaveService,
     private readonly announcements: DashboardAnnouncementsService,
     private readonly crm: DashboardCrmService,
@@ -107,7 +107,7 @@ export class DashboardController {
   @UseGuards(ModuleGuard)
   @RequireModule("hr")
   birthdays(@CurrentUser() u: CurrentUserContext) {
-    return this.birthdays.getBirthdays(u.orgId);
+    return this.birthdaysService.getBirthdays(u.orgId);
   }
 
   @Get("executive")
@@ -154,7 +154,7 @@ export class DashboardController {
   @Get("personal")
   @Universal()
   personal(@CurrentUser() u: CurrentUserContext) {
-    return this.personal.getPersonalDashboard(u);
+    return this.personalService.getPersonalDashboard(u);
   }
 
   @Get("recent-activity")
@@ -176,7 +176,7 @@ export class DashboardController {
   @Get("stats")
   @Universal()
   stats(@CurrentUser() u: CurrentUserContext) {
-    return this.stats.getDashboardStats(u.orgId, u);
+    return this.statsService.getDashboardStats(u.orgId, u);
   }
 
   @Get("team-attendance")

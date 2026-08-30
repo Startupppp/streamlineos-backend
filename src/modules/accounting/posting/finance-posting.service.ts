@@ -31,6 +31,7 @@ import type {
   PostJournalInput,
   PostJournalResult,
   ReverseJournalResult,
+  SystemAccountPurpose,
 } from "../core/finance-posting.types";
 import { FinancePostingAccountsService } from "./finance-posting-accounts.service";
 
@@ -55,6 +56,10 @@ export class FinancePostingService {
     private readonly dispatch: NotificationDispatchService,
     private readonly cache: CacheService,
   ) {}
+
+  async resolveSystemAccount(orgId: string, purpose: SystemAccountPurpose): Promise<number> {
+    return this.accounts.resolveSystemAccount(orgId, purpose);
+  }
 
   async assertPeriodOpen(orgId: string, date: string): Promise<void> {
     const periods = await this.db
