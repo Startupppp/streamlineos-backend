@@ -48,7 +48,6 @@ interface MeetingEventContext {
   entityId: string | null;
   linkedLeadId: number | null;
   linkedDealId: number | null;
-  createdBy: string;
   externalEventId: string | null;
   integrationConnectionId: number | null;
   attendees: MeetingAttendee[];
@@ -84,7 +83,6 @@ export class MeetingsPrepService {
         entityId: calendarEvents.entityId,
         linkedLeadId: calendarEvents.linkedLeadId,
         linkedDealId: calendarEvents.linkedDealId,
-        createdBy: calendarEvents.createdBy,
         externalEventId: calendarEvents.externalEventId,
         integrationConnectionId: calendarEvents.integrationConnectionId,
       })

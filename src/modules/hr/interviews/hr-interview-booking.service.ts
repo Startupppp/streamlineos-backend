@@ -104,6 +104,12 @@ export class HrInterviewBookingService {
         if (!created)
           throw new BadRequestException("Failed to create the interview.");
 
+        const creatorMembership = await tx.query.organizationMembers.findFirst({
+          columns: { id: true },
+          where: and(eq(organizationMembers.orgId, link.orgId), eq(organizationMembers.userId, link.createdBy), eq(organizationMembers.status, "ACTIVE")),
+        });
+        if (!creatorMembership) throw new BadRequestException("Booking link creator no longer has an active membership.");
+
         const [calendarEvent] = await tx
           .insert(calendarEvents)
           .values({
@@ -117,7 +123,7 @@ export class HrInterviewBookingService {
             category: "interview",
             entityType: "interview",
             entityId: String(created.id),
-            createdBy: link.createdBy,
+            createdByMembershipId: creatorMembership.id,
           })
           .returning({ id: calendarEvents.id });
         const memberships = await tx

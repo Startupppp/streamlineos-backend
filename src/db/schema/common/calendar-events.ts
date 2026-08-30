@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, boolean, integer, index, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "./auth";
+import { organizations, organizationMembers } from "./auth";
 
 export const calendarEvents = pgTable("calendar_events", {
   id: serial("id").primaryKey(),
@@ -18,7 +18,6 @@ export const calendarEvents = pgTable("calendar_events", {
   visibility: text("visibility").notNull().default("org"),
   entityType: text("entity_type"),
   entityId: text("entity_id"),
-  createdBy: text("created_by").references(() => users.id).notNull(),
   createdByMembershipId: integer("created_by_membership_id").notNull(),
   agenda: text("agenda"),
   postMeetingNotes: text("post_meeting_notes"),
@@ -34,7 +33,6 @@ export const calendarEvents = pgTable("calendar_events", {
 }, (table) => [
   index("idx_calendar_events_org_date").on(table.orgId, table.startDate),
   index("idx_calendar_events_category").on(table.category),
-  index("idx_calendar_events_created_by").on(table.createdBy),
   index("idx_calendar_events_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
   index("idx_calendar_events_external").on(table.integrationConnectionId, table.externalEventId),
   unique("uniq_calendar_events_org_id").on(table.orgId, table.id),
@@ -63,7 +61,6 @@ export const eventAttendees = pgTable("event_attendees", {
 
 export const calendarEventsRelations = relations(calendarEvents, ({ one, many }) => ({
   organization: one(organizations, { fields: [calendarEvents.orgId], references: [organizations.id] }),
-  creator: one(users, { fields: [calendarEvents.createdBy], references: [users.id] }),
   creatorMembership: one(organizationMembers, { fields: [calendarEvents.orgId, calendarEvents.createdByMembershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
   attendees: many(eventAttendees),
 }));

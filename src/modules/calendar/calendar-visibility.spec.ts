@@ -20,7 +20,7 @@ function visibilityPredicate(orgId: string, userId: string, callerMembershipId: 
     gt(calendarEvents.endDate, start),
     or(
       eq(calendarEvents.visibility, "org"),
-      eq(calendarEvents.createdBy, userId),
+      eq(calendarEvents.createdByMembershipId, callerMembershipId),
       isNotNull(callerAtt.id),
     ),
   );
@@ -59,12 +59,12 @@ describe("calendar event visibility — SQL predicate structure", () => {
     expect(params).toContain("org");
   });
 
-  it("predicate includes the organizer arm (created_by = caller userId)", () => {
+  it("predicate includes the organizer arm (created_by_membership_id = caller membershipId)", () => {
     const cond = visibilityPredicate(ORG, ACTOR, CALLER_MID, start, end);
     const { sql: sqlStr } = dialect.sqlToQuery(cond as SQL);
-    expect(sqlStr).toContain('"calendar_events"."created_by"');
+    expect(sqlStr).toContain('"calendar_events"."created_by_membership_id"');
     const { params } = dialect.sqlToQuery(cond as SQL);
-    expect(params).toContain(ACTOR);
+    expect(params).toContain(CALLER_MID);
   });
 
   it("predicate includes the attendee arm (IS NOT NULL check on aliased attendee join)", () => {
@@ -73,11 +73,11 @@ describe("calendar event visibility — SQL predicate structure", () => {
     expect(sqlStr).toContain("is not null");
   });
 
-  it("organizer arm uses caller userId, not any other user", () => {
+  it("organizer arm uses caller membershipId, not any other membership", () => {
     const cond = visibilityPredicate(ORG, ACTOR, CALLER_MID, start, end);
     const { params } = dialect.sqlToQuery(cond as SQL);
-    expect(params).toContain(ACTOR);
-    expect(params).not.toContain(OTHER_USER);
+    expect(params).toContain(CALLER_MID);
+    expect(params).not.toContain(OTHER_MID);
   });
 
   it("time range bounds are present in the predicate", () => {

@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, inArray, isNotNull, lte, notInArray, sql } from "drizzle-orm";
+import { aliasedTable, and, eq, inArray, isNotNull, lte, notInArray, sql } from "drizzle-orm";
 import { calendarEvents, eventAttendees, invoices, organizationMembers, signEnvelopes, supportTickets } from "../../../db/schema";
+
+const calendarCreatorMember = aliasedTable(organizationMembers, "notif_calendar_creator");
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { forEachOrg } from "../../../common/tenant";
@@ -194,9 +196,16 @@ export class NotificationTimeSweepsService {
         id: calendarEvents.id,
         title: calendarEvents.title,
         startDate: calendarEvents.startDate,
-        createdBy: calendarEvents.createdBy,
+        createdByUserId: calendarCreatorMember.userId,
       })
       .from(calendarEvents)
+      .innerJoin(
+        calendarCreatorMember,
+        and(
+          eq(calendarCreatorMember.orgId, calendarEvents.orgId),
+          eq(calendarCreatorMember.id, calendarEvents.createdByMembershipId),
+        ),
+      )
       .where(
         and(
           eq(calendarEvents.orgId, orgId),
@@ -228,7 +237,7 @@ export class NotificationTimeSweepsService {
 
     for (const event of rows) {
       const attendees = attendeesByEvent.get(event.id) ?? [];
-      const targets = [...new Set([...attendees, event.createdBy])].filter(Boolean);
+      const targets = [...new Set([...attendees, event.createdByUserId])].filter(Boolean);
       if (targets.length === 0) continue;
       await this.dispatch.emit({
         eventKey: "calendar.event.starting_soon",

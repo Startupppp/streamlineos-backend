@@ -176,6 +176,12 @@ export class HrInterviewSchedulingService {
       return created;
     });
 
+    const creatorMembership = await this.db.query.organizationMembers.findFirst({
+      columns: { id: true },
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")),
+    });
+    if (!creatorMembership) throw new BadRequestException("Active organization membership required.");
+
     const [calendarEvent] = await this.db
       .insert(calendarEvents)
       .values({
@@ -189,7 +195,7 @@ export class HrInterviewSchedulingService {
         category: "interview",
         entityType: "interview",
         entityId: String(interview.id),
-        createdBy: userId,
+        createdByMembershipId: creatorMembership.id,
       })
       .returning({ id: calendarEvents.id });
     const memberships = await this.db

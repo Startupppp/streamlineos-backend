@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { aliasedTable, and, desc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import {
   calendarEvents,
   eventAttendees,
@@ -13,6 +13,8 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { endOfDay, startOfDay, subDays } from "../../../common/date";
+
+const creatorMember = aliasedTable(organizationMembers, "interviewer_creator_member");
 
 export interface BusyBlock {
   start: string;
@@ -62,9 +64,16 @@ export class HrInterviewersService {
         startDate: calendarEvents.startDate,
         endDate: calendarEvents.endDate,
         allDay: calendarEvents.allDay,
-        createdBy: calendarEvents.createdBy,
+        createdByUserId: creatorMember.userId,
       })
       .from(calendarEvents)
+      .innerJoin(
+        creatorMember,
+        and(
+          eq(creatorMember.orgId, calendarEvents.orgId),
+          eq(creatorMember.id, calendarEvents.createdByMembershipId),
+        ),
+      )
       .where(
         and(
           eq(calendarEvents.orgId, orgId),
@@ -127,7 +136,7 @@ export class HrInterviewersService {
     for (const ev of events) {
       const eventAttendeeIds = attendeesByEvent.get(ev.id) ?? [];
       const relevantIds = interviewerIds.filter(
-        (id) => id === ev.createdBy || eventAttendeeIds.includes(id),
+        (id) => id === ev.createdByUserId || eventAttendeeIds.includes(id),
       );
       for (const uid of relevantIds) {
         busyMap.get(uid)?.push({

@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import {
   calendarEvents,
@@ -146,6 +146,9 @@ export class ChatHuddlesService {
       ))
       .where(and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)));
 
+    const starterMembershipId = channelMembers.find((m) => m.userId === userId)?.membershipId ?? null;
+    if (!starterMembershipId) throw new BadRequestException("Active membership required to start a huddle");
+
     const now = new Date();
     const estimatedEnd = new Date(now.getTime() + 2 * 60 * 60 * 1000);
 
@@ -161,7 +164,7 @@ export class ChatHuddlesService {
           startDate: now,
           endDate: estimatedEnd,
           allDay: false,
-          createdBy: userId,
+          createdByMembershipId: starterMembershipId,
         })
         .returning({ id: calendarEvents.id });
       if (calEvent && channelMembers.length > 0) {
@@ -172,7 +175,6 @@ export class ChatHuddlesService {
         })));
       }
 
-      const starterMembershipId = channelMembers.find((m) => m.userId === userId)?.membershipId ?? null;
 
       const [created] = await tx
         .insert(chatHuddles)

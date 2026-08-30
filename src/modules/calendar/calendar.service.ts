@@ -99,7 +99,6 @@ export class CalendarService {
           .insert(calendarEvents)
           .values({
             orgId,
-            createdBy: userId,
             createdByMembershipId: creatorMembership.id,
             title: input.title,
             description: input.description ?? null,

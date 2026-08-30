@@ -159,7 +159,19 @@ export class DashboardPersonalService {
                 gte(calendarEvents.startDate, now),
                 or(
                   eq(calendarEvents.visibility, "org"),
-                  eq(calendarEvents.createdBy, userId),
+                  exists(
+                    this.db
+                      .select({ one: sql`1` })
+                      .from(organizationMembers)
+                      .where(
+                        and(
+                          eq(organizationMembers.orgId, calendarEvents.orgId),
+                          eq(organizationMembers.id, calendarEvents.createdByMembershipId),
+                          eq(organizationMembers.userId, userId),
+                          eq(organizationMembers.status, "ACTIVE"),
+                        ),
+                      )
+                  ),
                   exists(
                     this.db
                       .select({ one: sql`1` })

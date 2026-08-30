@@ -2,7 +2,8 @@
  * Verifies that DashboardPersonalService.getPersonalDashboard applies the
  * calendar-event visibility predicate to the upcoming-events query.
  *
- * Required gate: visibility = "org" OR creator = caller OR
+ * Required gate: visibility = "org" OR
+ *   EXISTS(creator membership WHERE membership.id = createdByMembershipId AND userId = caller) OR
  *   EXISTS(attendee joined through organization_members WHERE status = "ACTIVE"
  *          AND attendee.status != "declined")
  *
@@ -14,8 +15,13 @@
  *
  * The tests capture raw Drizzle SQL condition objects and inspect them using
  * PgDialect.sqlToQuery (for pure Drizzle SQL objects in the inner EXISTS
- * subquery) and a recursive column-name walker (for the outer condition, which
- * contains an exists() wrapping a mock sub-chain that cannot be serialized).
+ * subqueries) and a recursive column-name walker (for the outer condition).
+ *
+ * Capture order (one push per .where() call on the mock chain):
+ *   captured[0] = creator EXISTS subquery WHERE
+ *   captured[1] = attendee EXISTS subquery WHERE
+ *   captured[2] = outer upcomingEvents WHERE
+ *   captured[3] = notifications WHERE
  */
 
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -43,8 +49,7 @@ function makeAccess() {
 /**
  * Walks the Drizzle SQL object tree and returns true when a Column node with
  * the given name is found. Used to verify the outer WHERE condition contains a
- * specific column reference without needing to fully serialize it (the outer
- * condition's exists() arm wraps a mock chain, not a real sub-SELECT).
+ * specific column reference without needing to fully serialize it.
  */
 function hasColumnNamed(v: unknown, name: string, seen = new Set<object>()): boolean {
   if (!v || typeof v !== "object") return false;
@@ -58,13 +63,12 @@ function hasColumnNamed(v: unknown, name: string, seen = new Set<object>()): boo
 
 /**
  * Builds a mock DB that captures ALL WHERE conditions across every
- * .select().from().where() call. The inner subquery for EXISTS is captured
- * because it is evaluated before the outer .where() is called.
+ * .select().from().where() call.
  *
- * capturedConditions[0] = inner EXISTS subquery WHERE
- * capturedConditions[1] = outer upcomingEvents WHERE
- * capturedConditions[2] = notifications WHERE
- * (timesheets / leaveBalance calls are suppressed via moduleAvailability=false)
+ * captured[0] = creator EXISTS subquery WHERE
+ * captured[1] = attendee EXISTS subquery WHERE
+ * captured[2] = outer upcomingEvents WHERE
+ * captured[3] = notifications WHERE
  */
 function makeDb(capturedConditions: unknown[]) {
   const makeMockChain = (): Record<string, unknown> => {
@@ -92,6 +96,33 @@ function makeDb(capturedConditions: unknown[]) {
 }
 
 describe("DashboardPersonalService — P0-A: upcoming-events visibility gate", () => {
+  describe("inner EXISTS subquery (creator arm)", () => {
+    let creatorCond: SQL;
+
+    beforeEach(async () => {
+      const captured: unknown[] = [];
+      const svc = new DashboardPersonalService(makeDb(captured), makeAccess());
+      await svc.getPersonalDashboard(makeUser(ORG));
+      creatorCond = captured[0] as SQL;
+    });
+
+    it("SCENARIO 1 — creator arm: checks created_by_membership_id against the caller membership", () => {
+      const { sql: sqlStr } = dialect.sqlToQuery(creatorCond);
+      expect(sqlStr).toContain('"calendar_events"."created_by_membership_id"');
+    });
+
+    it("creator arm restricts to ACTIVE organization_members", () => {
+      const { sql: sqlStr, params } = dialect.sqlToQuery(creatorCond);
+      expect(sqlStr).toContain('"organization_members"."status"');
+      expect(params).toContain("ACTIVE");
+    });
+
+    it("creator arm binds the caller userId to resolve the membership", () => {
+      const { params } = dialect.sqlToQuery(creatorCond);
+      expect(params).toContain(USER);
+    });
+  });
+
   describe("inner EXISTS subquery (attendee arm)", () => {
     let innerCond: SQL;
 
@@ -99,8 +130,7 @@ describe("DashboardPersonalService — P0-A: upcoming-events visibility gate", (
       const captured: unknown[] = [];
       const svc = new DashboardPersonalService(makeDb(captured), makeAccess());
       await svc.getPersonalDashboard(makeUser(ORG));
-      // First captured condition is the inner EXISTS subquery WHERE
-      innerCond = captured[0] as SQL;
+      innerCond = captured[1] as SQL;
     });
 
     it("SCENARIO 2 — declined-attendee arm: excludes event_attendees rows where status = declined", () => {
@@ -139,16 +169,15 @@ describe("DashboardPersonalService — P0-A: upcoming-events visibility gate", (
       const captured: unknown[] = [];
       const svc = new DashboardPersonalService(makeDb(captured), makeAccess());
       await svc.getPersonalDashboard(makeUser(ORG, USER));
-      // Second captured condition is the outer upcomingEvents WHERE
-      outerCond = captured[1];
+      outerCond = captured[2];
     });
 
     it("SCENARIO 1 — private-event arm: outer WHERE contains a visibility column reference", () => {
       expect(hasColumnNamed(outerCond, "visibility")).toBe(true);
     });
 
-    it("SCENARIO 1 — organizer arm: outer WHERE references created_by for creator check", () => {
-      expect(hasColumnNamed(outerCond, "created_by")).toBe(true);
+    it("SCENARIO 1 — organizer arm: outer WHERE contains a created_by_membership_id column reference", () => {
+      expect(hasColumnNamed(outerCond, "created_by_membership_id")).toBe(true);
     });
 
     it("SCENARIO 4 — cross-org: outer WHERE references the org_id column on calendar_events", () => {
@@ -157,10 +186,10 @@ describe("DashboardPersonalService — P0-A: upcoming-events visibility gate", (
   });
 
   describe("schema — columns required by the visibility predicate are present", () => {
-    it("calendarEvents schema columns include both 'visibility' and 'createdBy'", () => {
+    it("calendarEvents schema columns include both 'visibility' and 'createdByMembershipId'", () => {
       const keys = Object.keys(calendarEvents);
       expect(keys).toContain("visibility");
-      expect(keys).toContain("createdBy");
+      expect(keys).toContain("createdByMembershipId");
     });
 
     it("eventAttendees schema includes status column (needed for declined-attendee exclusion)", () => {

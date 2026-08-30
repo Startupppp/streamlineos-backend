@@ -2997,6 +2997,13 @@
       "when": 1798000043000,
       "tag": "0721_calendar_attendee_user_id_contract",
       "breakpoints": true
+    },
+    {
+      "idx": 544,
+      "version": "7",
+      "when": 1798000044000,
+      "tag": "0722_calendar_events_created_by_contract",
+      "breakpoints": true
     }
   ]
 }

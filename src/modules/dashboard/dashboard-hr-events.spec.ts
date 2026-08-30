@@ -18,13 +18,26 @@ function buildVisibilityPredicate(orgId: string, userId: string, db: { select: u
         innerJoin: (t: unknown, on: unknown) => {
           where: (cond: unknown) => unknown;
         };
+        where: (cond: unknown) => unknown;
       };
     };
   };
 
   return or(
     eq(calendarEvents.visibility, "org"),
-    eq(calendarEvents.createdBy, userId),
+    exists(
+      dbSelect
+        .select({ one: sql`1` })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, calendarEvents.orgId),
+            eq(organizationMembers.id, calendarEvents.createdByMembershipId),
+            eq(organizationMembers.userId, userId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        ) as SQL,
+    ),
     exists(
       dbSelect
         .select({ one: sql`1` })
@@ -97,6 +110,7 @@ describe("calendar visibility predicate — SQL isolation", () => {
         innerJoin: (_table: unknown, _on: unknown) => ({
           where: (cond: unknown) => cond,
         }),
+        where: (cond: unknown) => cond,
       }),
     }),
   };
@@ -110,7 +124,7 @@ describe("calendar visibility predicate — SQL isolation", () => {
   it("visibility predicate includes creator arm — event author always sees their own event", () => {
     const pred = buildVisibilityPredicate(ORG, ACTOR, fakeDb);
     const { sql: sqlStr, params } = dialect.sqlToQuery(pred as SQL);
-    expect(sqlStr).toContain('"calendar_events"."created_by"');
+    expect(sqlStr).toContain('"calendar_events"."created_by_membership_id"');
     expect(params).toContain(ACTOR);
   });
 
@@ -167,6 +181,7 @@ describe("upcoming events full predicate composition", () => {
           innerJoin: (_table: unknown, _on: unknown) => ({
             where: (cond: unknown) => cond,
           }),
+          where: (cond: unknown) => cond,
         }),
       }),
     };
@@ -192,6 +207,7 @@ describe("upcoming events full predicate composition", () => {
           innerJoin: (_table: unknown, _on: unknown) => ({
             where: (cond: unknown) => cond,
           }),
+          where: (cond: unknown) => cond,
         }),
       }),
     };
