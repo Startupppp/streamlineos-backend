@@ -4,6 +4,8 @@ import { Test } from "@nestjs/testing";
 import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { OrgMembershipService } from "./org-membership.service";
+import { OrgMembershipStatusService } from "./org-membership-status.service";
+import { OrgMemberDepartureService } from "./org-member-departure.service";
 import { OrgMembershipReadService } from "./org-membership-read.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -37,6 +39,8 @@ describe("OrgMembershipService member status guards", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
+        OrgMembershipStatusService,
+        OrgMemberDepartureService,
         { provide: AblyService, useValue: { revokeUserTokens: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: EmailService,
@@ -172,6 +176,8 @@ describe("OrgMembershipService — module-ownership guards", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
+        OrgMembershipStatusService,
+        OrgMemberDepartureService,
         { provide: AblyService, useValue: { revokeUserTokens: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: EmailService,

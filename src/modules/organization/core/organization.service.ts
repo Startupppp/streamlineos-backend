@@ -2,6 +2,8 @@ import { Injectable } from "@nestjs/common";
 import type { InviteActor } from "./invitations.service";
 import { OrgProfileService } from "./org-profile.service";
 import { OrgMembershipService } from "./org-membership.service";
+import { OrgMembershipStatusService } from "./org-membership-status.service";
+import { OrgMemberDepartureService } from "./org-member-departure.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
 import type {
   CreateOrganizationInput,
@@ -13,6 +15,8 @@ export class OrganizationService {
   constructor(
     private readonly orgProfile: OrgProfileService,
     private readonly orgMembership: OrgMembershipService,
+    private readonly orgMembershipStatus: OrgMembershipStatusService,
+    private readonly orgMemberDeparture: OrgMemberDepartureService,
     private readonly orgLifecycle: OrgLifecycleService,
   ) {}
 
@@ -37,15 +41,15 @@ export class OrganizationService {
   }
 
   async removeMember(orgId: string, actorUserId: string, memberUserId: string) {
-    return this.orgMembership.removeMember(orgId, actorUserId, memberUserId);
+    return this.orgMemberDeparture.removeMember(orgId, actorUserId, memberUserId);
   }
 
   async suspendMember(orgId: string, actorUserId: string, memberUserId: string) {
-    return this.orgMembership.suspendMember(orgId, actorUserId, memberUserId);
+    return this.orgMembershipStatus.suspendMember(orgId, actorUserId, memberUserId);
   }
 
   async reactivateMember(orgId: string, actorUserId: string, memberUserId: string) {
-    return this.orgMembership.reactivateMember(orgId, actorUserId, memberUserId);
+    return this.orgMembershipStatus.reactivateMember(orgId, actorUserId, memberUserId);
   }
 
   async updateMemberRole(
@@ -58,7 +62,7 @@ export class OrganizationService {
   }
 
   async leaveOrg(orgId: string, userId: string) {
-    return this.orgMembership.leaveOrg(orgId, userId);
+    return this.orgMemberDeparture.leaveOrg(orgId, userId);
   }
 
   async listArchivedOwnedOrganizations(userId: string) {

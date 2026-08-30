@@ -7,6 +7,8 @@ import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { SessionsService } from "../../sessions/sessions.service";
 import { OrgMembershipService } from "./org-membership.service";
+import { OrgMembershipStatusService } from "./org-membership-status.service";
+import { OrgMemberDepartureService } from "./org-member-departure.service";
 import { OrgMembershipReadService } from "./org-membership-read.service";
 import { AblyService } from "../../realtime/ably.service";
 
@@ -92,6 +94,8 @@ describe("OrgMembershipService access notifications", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
+        OrgMembershipStatusService,
+        OrgMemberDepartureService,
         { provide: AblyService, useValue: { revokeUserTokens: jest.fn().mockResolvedValue(undefined) } },
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },

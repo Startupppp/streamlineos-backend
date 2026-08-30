@@ -8,6 +8,8 @@ import { SessionsService } from "../../sessions/sessions.service";
 import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { OrgMembershipService } from "./org-membership.service";
+import { OrgMembershipStatusService } from "./org-membership-status.service";
+import { OrgMemberDepartureService } from "./org-member-departure.service";
 import { OrgMembershipReadService } from "./org-membership-read.service";
 import { AblyService } from "../../realtime/ably.service";
 
@@ -52,6 +54,8 @@ describe("OrgMembershipService access revocation", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
+        { provide: OrgMembershipStatusService, useValue: {} },
+        { provide: OrgMemberDepartureService, useValue: {} },
         { provide: AblyService, useValue: { revokeUserTokens: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: EmailService,

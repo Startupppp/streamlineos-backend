@@ -37,7 +37,7 @@ import {
   membershipStatusToUserStatus,
   type MemberLifecycleStatus,
   userStatusToMembershipStatus,
-} from "./org-membership.service";
+} from "./member-lifecycle.types";
 import { SessionsService } from "../../sessions/sessions.service";
 import { EmailService } from "../../email/email.service";
 import { AblyService } from "../../realtime/ably.service";

@@ -85,6 +85,10 @@ export const CONTEXT_EXIT_ALLOWLIST = new Map([
     "src/modules/organization/core/org-membership-access-revocation.ts",
     "exits the tenant context to count remaining active memberships across other organizations after revocation; a tenant-scoped GUC would restrict visibility to only the current org and produce an incorrect zero count",
   ],
+  [
+    "src/modules/organization/core/org-membership-status.service.ts",
+    "planLastActiveOrganizationChange exits the tenant context to query the user's active memberships across all organizations when computing the new lastActiveOrgId after suspension or reactivation; a tenant-scoped GUC would restrict the query to only the current org",
+  ],
 ]);
 
 export const WITH_IDENTITY_ALLOWLIST = new Map([
@@ -97,8 +101,8 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
     "pre-tenant: membership count for plan enforcement during sign-in; org context is not yet established",
   ],
   [
-    "src/modules/auth/auth-tokens.service.ts",
-    "pre-tenant token refresh and session resumption; the org context is being derived from the token, not yet known",
+    "src/modules/auth/auth-membership-resolver.service.ts",
+    "pre-tenant membership resolution: resolvePreferredOrgId, resolveActiveMembership and resolveSuspendedMembership all run before the org context is known, reading cross-org identity tables under user identity",
   ],
   [
     "src/modules/auth/auth.service.ts",
@@ -131,6 +135,10 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
   [
     "src/modules/organization/core/org-membership-access-revocation.ts",
     "reads organizationMembers cross-org under user identity to determine whether the removed member has other active organizations; must run outside any single org's tenant context",
+  ],
+  [
+    "src/modules/organization/core/org-membership-status.service.ts",
+    "planLastActiveOrganizationChange reads cross-org membership under user identity to determine which organization should become the user's new lastActiveOrgId after suspension or reactivation; must not run under any single org's tenant context",
   ],
 ]);
 
