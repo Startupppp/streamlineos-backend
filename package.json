@@ -136,6 +136,8 @@
     "check:outbox-consumers:self-test": "node src/scripts/check-outbox-consumers.mjs --self-test",
     "check:mock-surface": "node src/scripts/check-mock-surface.mjs",
     "check:mock-surface:self-test": "node src/scripts/check-mock-surface.mjs --self-test",
+    "check:module-di": "node src/scripts/check-module-di.mjs",
+    "check:module-di:self-test": "node src/scripts/check-module-di.mjs --self-test",
     "compliance:drill": "node --env-file-if-exists=.env src/scripts/compliance-drill.mjs",
     "scan:legacy-actors": "node src/scripts/scan-legacy-org-actors.mjs",
     "scan:legacy-actors:check": "node src/scripts/scan-legacy-org-actors.mjs --check",

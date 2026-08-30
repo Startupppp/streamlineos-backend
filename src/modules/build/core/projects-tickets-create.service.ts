@@ -77,7 +77,7 @@ export class ProjectsTicketsCreateService {
     if (body.assigneeId) allAssigneeIds.add(body.assigneeId);
     if (body.assigneeIds) body.assigneeIds.forEach((uid) => allAssigneeIds.add(uid));
 
-    const batchIds = new Set<string>([reporterUserId, ...allAssigneeIds]);
+    const batchIds = new Set<string>([u.userId, reporterUserId, ...allAssigneeIds]);
     const actorMap = await resolveOrganizationActorsByUserIds(this.db, u.orgId, [...batchIds]);
 
     for (const uid of allAssigneeIds) {
@@ -153,7 +153,7 @@ export class ProjectsTicketsCreateService {
       await tx.insert(ticketActivityLog).values({
         orgId: u.orgId,
         ticketId: created.id,
-        userId: u.userId,
+        userMembershipId: actorMap.get(u.userId)?.membershipId ?? null,
         action: "created",
       });
 
@@ -240,6 +240,8 @@ export class ProjectsTicketsCreateService {
     projectId: number,
     input: { title: string; description: string; type?: string },
   ): Promise<{ id: number }> {
+    const feedbackActorMap = await resolveOrganizationActorsByUserIds(this.db, orgId, [actingUserId]);
+    const feedbackActorMembershipId = feedbackActorMap.get(actingUserId)?.membershipId ?? null;
     const [ticket] = await this.db.transaction(async (tx) => {
       const nextNum = await allocateTicketNumbers(tx, orgId, projectId);
 
@@ -264,7 +266,7 @@ export class ProjectsTicketsCreateService {
       await tx.insert(ticketActivityLog).values({
         orgId,
         ticketId: created.id,
-        userId: actingUserId,
+        userMembershipId: feedbackActorMembershipId,
         action: "created",
       });
 
