@@ -1,4 +1,5 @@
 import { Injectable, Inject, Logger, ConflictException } from "@nestjs/common";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { and, eq, inArray, sql, count, desc, lt, lte, or, isNotNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -21,7 +22,8 @@ import type { SensitiveEmploymentFacts } from "../../directory/employment-facts.
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
-import { GeneratePipelineService, type ProfileData } from "./generate-pipeline.service";
+import { GeneratePipelineService } from "./generate-pipeline.service";
+import type { ProfileData } from "./run-types";
 import { RunBatchLoaderService } from "./run-batch-loader.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { PayrollRunLockService } from "../run-lock.service";
@@ -505,9 +507,11 @@ export class GenerateService {
     });
 
     if (finalExceptionCount > 0) {
-      this.notifications
-        .notifyExceptions(orgId, actorId, runId, finalExceptionCount)
-        .catch(e => this.logger.error("notifyExceptions failed", { error: e, orgId, runId }));
+      const notifyFn = () =>
+        this.notifications
+          .notifyExceptions(orgId, actorId, runId, finalExceptionCount)
+          .catch(e => this.logger.error("notifyExceptions failed", { error: e, orgId, runId }));
+      if (!registerAfterCommit(notifyFn)) void notifyFn();
     }
 
     return { ok: true };

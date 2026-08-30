@@ -27,6 +27,7 @@ import {
 import { AccessService } from "../../access/access.service";
 import { ROLE_DEFAULT_PERMISSIONS } from "../../rbac/permissions";
 import { logger } from "../../../common/logger/logger.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import {
   DEFAULT_PAYROLL_TOGGLES,
   type PayrollApprovalStageDef,
@@ -150,21 +151,25 @@ export class ApprovalsService {
         actorId: userId,
       });
 
-      if (firstStage && firstStageApprovers.length > 0) {
-        const { stageName } = firstStage;
-        void Promise.all(
+      return { autoApproved: false, runStatus: "PENDING_APPROVAL" as const, stagesCreated: chain.length };
+    });
+
+    if (firstStage && firstStageApprovers.length > 0) {
+      const { stageName } = firstStage;
+      const notifyPending = () =>
+        Promise.all(
           firstStageApprovers.map((approverId) =>
             this.notifications.notifyApprovalPending(orgId, approverId, runId, stageName),
           ),
         ).catch((e: unknown) => logger.error("notifyApprovalPending failed", { error: String(e) }));
-      }
+      if (!registerAfterCommit(notifyPending)) void notifyPending();
+    }
 
-      void this.notifications
+    const notifySubmitted = () =>
+      this.notifications
         .notifyApprovalSubmitted(orgId, userId, runId)
         .catch((e: unknown) => logger.error("notifyApprovalSubmitted failed", { error: String(e) }));
-
-      return { autoApproved: false, runStatus: "PENDING_APPROVAL" as const, stagesCreated: chain.length };
-    });
+    if (!registerAfterCommit(notifySubmitted)) void notifySubmitted();
 
     this.audit.log({
       action: "payroll.run_approval_submitted",
@@ -351,17 +356,19 @@ export class ApprovalsService {
           : "APPROVED"
         : "PENDING_APPROVAL";
 
-      if (nextStage && nextStageApprovers.length > 0) {
-        const { stageName } = nextStage;
-        void Promise.all(
+      return { success: true, runStatus };
+    });
+
+    if (nextStage && nextStageApprovers.length > 0) {
+      const { stageName } = nextStage;
+      const notifyNext = () =>
+        Promise.all(
           nextStageApprovers.map((approverId) =>
             this.notifications.notifyApprovalPending(orgId, approverId, runId, stageName),
           ),
         ).catch((e: unknown) => logger.error("notifyApprovalPending failed", { error: String(e) }));
-      }
-
-      return { success: true, runStatus };
-    });
+      if (!registerAfterCommit(notifyNext)) void notifyNext();
+    }
 
     this.audit.log({
       action: "payroll.run_approval_stage_approved",

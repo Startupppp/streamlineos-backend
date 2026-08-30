@@ -199,12 +199,16 @@ export async function checkRunCompletion(
       .limit(1);
 
     if (paidRun[0]) {
-      void deps.payrollPosting.postPaid(
-        systemActor("payroll.run.payout-posting", orgId, actorId),
-        runId,
-        paidRun[0].month,
-        paidRun[0].netTotal ?? "0",
-      );
+      deps.payrollPosting
+        .postPaid(
+          systemActor("payroll.run.payout-posting", orgId, actorId),
+          runId,
+          paidRun[0].month,
+          paidRun[0].netTotal ?? "0",
+        )
+        .catch((e: unknown) =>
+          deps.logger.warn("postPaid accounting integration failed", { error: String(e), runId, orgId }),
+        );
       void autoSnapshotJournal(deps, orgId, actorId, paidRun[0].month, runId);
     }
   }

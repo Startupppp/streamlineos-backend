@@ -478,7 +478,7 @@ describe('Scenario 1 — Idempotency replay', () => {
 
     it('rejects creating a salary profile for a user who is not a member of the caller org', async () => {
       const auditSvc = new AuditService(db);
-      const svc = new ProfilesService(db, auditSvc);
+      const svc = new ProfilesService(db, auditSvc, {} as never);
 
       await expect(
         svc.createProfile(ORG_A, USER_B, USER_A, {

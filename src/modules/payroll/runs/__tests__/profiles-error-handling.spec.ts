@@ -52,7 +52,7 @@ describe("ProfilesService insert error handling", () => {
 
   it("createProfile: logs error and rethrows on a non-23505 insert failure", async () => {
     const dbErr = Object.assign(new Error("connection reset"), { code: "08006" });
-    const svc = new ProfilesService(makeDb(makeTx(() => Promise.reject(dbErr))) as never, audit as never);
+    const svc = new ProfilesService(makeDb(makeTx(() => Promise.reject(dbErr))) as never, audit as never, {} as never);
 
     await expect(svc.createProfile(ORG, UID, "actor-1", baseBody)).rejects.toBe(dbErr);
     expect(
@@ -64,7 +64,7 @@ describe("ProfilesService insert error handling", () => {
 
   it("createProfile: throws ConflictException on a 23505 insert failure", async () => {
     const dbErr = Object.assign(new Error("unique violation"), { code: "23505" });
-    const svc = new ProfilesService(makeDb(makeTx(() => Promise.reject(dbErr))) as never, audit as never);
+    const svc = new ProfilesService(makeDb(makeTx(() => Promise.reject(dbErr))) as never, audit as never, {} as never);
 
     await expect(svc.createProfile(ORG, UID, "actor-1", baseBody)).rejects.toBeInstanceOf(ConflictException);
     expect(logger.error as jest.Mock).not.toHaveBeenCalled();
@@ -72,7 +72,7 @@ describe("ProfilesService insert error handling", () => {
 
   it("createProfileByWorker: logs error and rethrows on a non-23505 insert failure", async () => {
     const dbErr = Object.assign(new Error("rls deny"), { code: "42501" });
-    const svc = new ProfilesService(makeDb(makeTx(() => Promise.reject(dbErr))) as never, audit as never);
+    const svc = new ProfilesService(makeDb(makeTx(() => Promise.reject(dbErr))) as never, audit as never, {} as never);
 
     await expect(svc.createProfileByWorker(ORG, WID, "actor-1", baseBody)).rejects.toBe(dbErr);
     expect(
@@ -84,7 +84,7 @@ describe("ProfilesService insert error handling", () => {
 
   it("createProfileByWorker: throws ConflictException on a 23505 insert failure", async () => {
     const dbErr = Object.assign(new Error("unique violation"), { code: "23505" });
-    const svc = new ProfilesService(makeDb(makeTx(() => Promise.reject(dbErr))) as never, audit as never);
+    const svc = new ProfilesService(makeDb(makeTx(() => Promise.reject(dbErr))) as never, audit as never, {} as never);
 
     await expect(svc.createProfileByWorker(ORG, WID, "actor-1", baseBody)).rejects.toBeInstanceOf(ConflictException);
     expect(logger.error as jest.Mock).not.toHaveBeenCalled();

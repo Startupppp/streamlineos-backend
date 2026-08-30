@@ -266,9 +266,6 @@ describe("pay-projection-exposure", () => {
       const service = new EssService(
         db as never,
         {} as never,
-        {} as never,
-        {} as never,
-        {} as never,
       );
 
       const result = await service.getOwnFnf("org-1", "u1");

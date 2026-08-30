@@ -14,7 +14,7 @@ import {
   taxDeclarations,
 } from "../../../db/schema";
 import type { PayrollToggles } from "../payroll.types";
-import type { ResolvedComponent, CalcInputPulls } from "./lib/calculation-engine";
+import type { CalcInputPulls } from "./lib/calculation-engine";
 import {
   buildPulledInputsFromSections,
   loadLiveAttendanceByUser,
@@ -22,7 +22,8 @@ import {
   type PulledInputs,
   type SectionMap,
 } from "./lib/input-puller";
-import type { ProfileData } from "./generate-pipeline.service";
+import type { ResolvedComponent } from "./lib/calculation-engine";
+import type { ProfileData, RunBatchData } from "./run-types";
 
 type RunInputRow = typeof payrollInputs.$inferSelect;
 type BonusRow = { id: number; userId: string; amount: string; type: string; taxable: boolean };
@@ -40,19 +41,6 @@ type TaxDeclarationRow = {
   previousEmployerTds: string;
   status: string;
 };
-
-export interface RunBatchData {
-  lockedPeriodId: number | null;
-  lockedSectionsByUser: Map<string, SectionMap>;
-  runInputsByUser: Map<string, RunInputRow>;
-  liveAttendanceByUser: Map<string, PulledInputs | null>;
-  componentsByProfileId: Map<number, ResolvedComponent[]>;
-  bonusesByUser: Map<string, BonusRow[]>;
-  incentivesByUser: Map<string, IncentiveRow[]>;
-  reimbursementsByUser: Map<string, ReimbursementRow[]>;
-  loansByUser: Map<string, CalcInputPulls["activeLoans"]>;
-  taxDeclarationByUser: Map<string, TaxDeclarationRow>;
-}
 
 function getFyString(month: string): string {
   const [yearStr, monStr] = month.split("-");

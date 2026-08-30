@@ -75,16 +75,25 @@ const emittedByFile = new Map();
 /** Consumed event types: file path → Set<string>. */
 const consumedByFile = new Map();
 
+// Pass 1 — collect every const declaration across ALL files before resolving
+// anything. A consumer whose eventType is an imported const is otherwise
+// dropped when its file happens to be scanned before the file declaring it,
+// which reports a consumed event as an orphan.
+const CONST_RE = /\bconst\s+([A-Z][A-Z0-9_]+)\s*=\s*(["'][^"']+["'])/gm;
+const sourceByFile = new Map();
 for (const filePath of allFiles) {
   const src = readFileSync(filePath, "utf8");
-
-  // Collect const declarations: `const SOME_CONST = "some.value"`
-  const constRe = /\bconst\s+([A-Z][A-Z0-9_]+)\s*=\s*(["'][^"']+["'])/gm;
-  for (const m of src.matchAll(constRe)) {
+  sourceByFile.set(filePath, src);
+  for (const m of src.matchAll(CONST_RE)) {
     const name = m[1];
     const val = m[2].slice(1, -1);
     if (!constMap.has(name)) constMap.set(name, val);
   }
+}
+
+// Pass 2 — resolve emissions and consumers against the complete const map.
+for (const filePath of allFiles) {
+  const src = sourceByFile.get(filePath);
 
   // Find OutboxWriter.emit(...) calls and extract eventType value
   // The eventType property appears within the next ~600 chars after OutboxWriter.emit(

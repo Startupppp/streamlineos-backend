@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { PayrollPolicyConfig, PayrollToggles, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
-import { calcPayroll, type ResolvedComponent, type CalcInputPulls } from "./lib/calculation-engine";
+import { calcPayroll, type CalcInputPulls, type ResolvedComponent } from "./lib/calculation-engine";
 import { detectExceptions, type ExceptionInput } from "./lib/exception-engine";
 import {
   buildCalcPullsFromSections,
@@ -8,18 +8,7 @@ import {
 } from "./lib/input-puller";
 import { daysInMonth } from "./lib/money";
 import { payrollSubjectKey, isWorkerOnlySubject } from "../lib/payroll-subject";
-import type { RunBatchData } from "./run-batch-loader.service";
-
-export interface ProfileData {
-  id: number;
-  userId: string | null;
-  workerId: string | null;
-  workerType: "EMPLOYEE" | "CONTRACTOR" | "CONSULTANT" | "INTERN" | "EOR";
-  currency: string;
-  payoutCurrency: string | null;
-  annualCtc: string;
-  taxRegime: "OLD" | "NEW" | null;
-}
+import type { ProfileData, RunBatchData } from "./run-types";
 
 @Injectable()
 export class GeneratePipelineService {
