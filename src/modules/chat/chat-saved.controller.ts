@@ -7,6 +7,10 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatSavedService } from "./chat-saved.service";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const messageIdParams = z.object({ messageId: z.coerce.number().int().positive() }).strict();
 
 @ApiTags("Chat Saved Messages")
 @ApiBearerAuth()
@@ -38,6 +42,7 @@ export class ChatSavedController {
   @Post(":messageId")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
+  @Validate({ params: messageIdParams })
   save(@Param("messageId", ParseIntPipe) messageId: number, @CurrentUser() u: CurrentUserContext) {
     return this.saved.save(
       { orgId: u.orgId, userId: u.userId, isOrgOwner: u.isOrgOwner },
@@ -49,6 +54,7 @@ export class ChatSavedController {
   @ApiResponse({ status: 200, description: "OK" })
   @Delete(":messageId")
   @RequirePermission("chat:messages:write")
+  @Validate({ params: messageIdParams })
   unsave(@Param("messageId", ParseIntPipe) messageId: number, @CurrentUser() u: CurrentUserContext) {
     return this.saved.unsave(
       { orgId: u.orgId, userId: u.userId, isOrgOwner: u.isOrgOwner },

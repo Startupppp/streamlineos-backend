@@ -39,6 +39,11 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { z } from "zod";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { actorOf } from "../entity-reference/entity-actor";
+import { Validate } from "../../common/validation/validate.decorator";
+
+const entityTypeentityIdParams = z.object({ entityType: z.string().min(1), entityId: z.string().min(1) }).strict();
+const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
+const channelIduserIdParams = z.object({ channelId: z.coerce.number().int().positive(), userId: z.string().min(1) }).strict();
 
 @ApiTags("Chat Channels")
 @ApiBearerAuth()
@@ -80,6 +85,7 @@ export class ChatChannelsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get("entity/:entityType/:entityId")
   @RequirePermission("chat:channels:read")
+  @Validate({ params: entityTypeentityIdParams })
   getByEntity(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
@@ -108,6 +114,7 @@ export class ChatChannelsController {
   @ApiResponse({ status: 404, description: "Not found" })
   @Get(":channelId")
   @RequirePermission("chat:channels:read")
+  @Validate({ params: channelIdParams })
   async getOne(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -121,6 +128,7 @@ export class ChatChannelsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Patch(":channelId")
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIdParams })
   update(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body(new ZodValidationPipe(updateChannelSchema)) body: UpdateChannelInput,
@@ -133,6 +141,7 @@ export class ChatChannelsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":channelId/members")
   @RequirePermission("chat:channels:read")
+  @Validate({ params: channelIdParams })
   listMembers(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -145,6 +154,7 @@ export class ChatChannelsController {
   @Post(":channelId/members")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIdParams })
   addMember(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body(new ZodValidationPipe(addMemberSchema)) body: AddMemberInput,
@@ -158,6 +168,7 @@ export class ChatChannelsController {
   @Post(":channelId/refresh-name")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIdParams })
   async refreshEntityChannelName(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -171,6 +182,7 @@ export class ChatChannelsController {
   @Delete(":channelId/members/:userId")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIduserIdParams })
   removeMember(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("userId") targetUserId: string,
@@ -186,6 +198,7 @@ export class ChatChannelsController {
   @Post(":channelId/join")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIdParams })
   join(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -198,6 +211,7 @@ export class ChatChannelsController {
   @Post(":channelId/leave")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIdParams })
   leave(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -210,6 +224,7 @@ export class ChatChannelsController {
   @Post(":channelId/archive")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIdParams })
   archive(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
     return this.members.archiveChannel(channelId, u.userId);
   }
@@ -219,6 +234,7 @@ export class ChatChannelsController {
   @Post(":channelId/unarchive")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIdParams })
   unarchive(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
     return this.members.unarchiveChannel(channelId, u.userId);
   }
@@ -228,6 +244,7 @@ export class ChatChannelsController {
   @Post(":channelId/read")
   @HttpCode(200)
   @RequirePermission("chat:messages:read")
+  @Validate({ params: channelIdParams })
   read(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -240,6 +257,7 @@ export class ChatChannelsController {
   @Post(":channelId/mark-unread")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
+  @Validate({ params: channelIdParams })
   markUnread(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
     return this.members.markChannelUnread(channelId, u.userId);
   }
@@ -249,6 +267,7 @@ export class ChatChannelsController {
   @Post(":channelId/mute")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIdParams })
   mute(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body(new ZodValidationPipe(muteChannelSchema)) body: MuteChannelInput,
@@ -262,6 +281,7 @@ export class ChatChannelsController {
   @Post(":channelId/unmute")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIdParams })
   unmute(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -274,6 +294,7 @@ export class ChatChannelsController {
   @Post(":channelId/favorite")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIdParams })
   favorite(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
     return this.members.favoriteChannel(channelId, u.userId);
   }
@@ -283,6 +304,7 @@ export class ChatChannelsController {
   @Post(":channelId/unfavorite")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIdParams })
   unfavorite(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
     return this.members.unfavoriteChannel(channelId, u.userId);
   }
@@ -292,6 +314,7 @@ export class ChatChannelsController {
   @Post(":channelId/notification-preference")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIdParams })
   setNotificationPreference(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body(new ZodValidationPipe(notificationPreferenceSchema)) body: NotificationPreferenceInput,
@@ -304,6 +327,7 @@ export class ChatChannelsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":channelId/files")
   @RequirePermission("chat:messages:read")
+  @Validate({ params: channelIdParams })
   listFiles(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Query("cursor") cursor: string | undefined,
@@ -321,6 +345,7 @@ export class ChatChannelsController {
   @Post(":channelId/typing")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
+  @Validate({ params: channelIdParams })
   async setTyping(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -333,6 +358,7 @@ export class ChatChannelsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":channelId/typing")
   @RequirePermission("chat:messages:read")
+  @Validate({ params: channelIdParams })
   getTyping(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -344,6 +370,7 @@ export class ChatChannelsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Patch(":channelId/members/:userId/role")
   @RequirePermission("chat:channels:write")
+  @Validate({ params: channelIduserIdParams })
   updateRole(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("userId") targetUserId: string,

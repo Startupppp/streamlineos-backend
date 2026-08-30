@@ -128,8 +128,13 @@ async function main() {
   const db = postgres(url, { max: 1, prepare: false, ssl, onnotice: () => {} });
 
   try {
+    // Self-test: use a budget whose params never returns null so the harness always exercises
+    // the breach path. BUDGETS[0] (scoped-board-page) returns null when no project exists,
+    // causing a SKIP that never touches breaches — a guard that cannot fail is useless.
+    // org-members-list uses params: (f) => [f.orgId], which is always non-null.
+    const selfTestBudget = BUDGETS.find((b) => b.id === "org-members-list") ?? BUDGETS[0];
     const budgets = SELF_TEST
-      ? [{ ...BUDGETS[0], id: "self-test", ceiling: 0 }]
+      ? [{ ...selfTestBudget, id: "self-test", ceiling: 0 }]
       : filterIds
         ? BUDGETS.filter((b) => filterIds.has(b.id))
         : BUDGETS;

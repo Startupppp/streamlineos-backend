@@ -66,7 +66,7 @@ export class ChatNotificationsService {
         notificationPreference: chatChannelMembers.notificationPreference,
       })
       .from(chatChannelMembers)
-      .where(eq(chatChannelMembers.channelId, channelId));
+      .where(and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)));
 
     const settings = await this.orgSettings.getSettings(orgId);
     const defaultPreference = settings.defaultNotificationPreference;

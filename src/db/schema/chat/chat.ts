@@ -239,6 +239,7 @@ export const chatPinnedMessages = pgTable(
     unique("uniq_chat_pinned_messages_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_pins_org_channel" }),
     foreignKey({ columns: [table.orgId, table.messageId], foreignColumns: [chatMessages.orgId, chatMessages.id], name: "fk_chat_pins_org_message" }),
+    foreignKey({ columns: [table.orgId, table.pinnedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_pinned_messages_org_pinner_membership" }).onDelete("set null"),
   ],
 );
 
@@ -264,6 +265,7 @@ export const chatSavedMessages = pgTable(
     index("idx_chat_saved_messages_org").on(table.orgId),
     unique("uniq_chat_saved_messages_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.messageId], foreignColumns: [chatMessages.orgId, chatMessages.id], name: "fk_chat_saved_messages_org_message" }),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_saved_messages_org_membership" }).onDelete("cascade"),
   ],
 );
 
@@ -306,6 +308,8 @@ export const chatReplyReminders = pgTable(
     unique("uniq_chat_reply_reminders_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_reply_reminders_org_channel" }),
     foreignKey({ columns: [table.orgId, table.messageId], foreignColumns: [chatMessages.orgId, chatMessages.id], name: "fk_chat_reply_reminders_org_message" }),
+    foreignKey({ columns: [table.orgId, table.recipientMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_reply_reminders_org_recipient_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.senderMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_reply_reminders_org_sender_membership" }).onDelete("set null"),
   ],
 );
 
@@ -435,6 +439,7 @@ export const chatHuddles = pgTable(
     index("idx_chat_huddles_org").on(table.orgId),
     unique("uniq_chat_huddles_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_huddles_org_channel" }),
+    foreignKey({ columns: [table.orgId, table.startedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_huddles_org_starter_membership" }).onDelete("set null"),
   ],
 );
 
@@ -467,6 +472,7 @@ export const chatHuddleParticipants = pgTable(
     index("idx_chat_huddle_participants_org").on(table.orgId),
     unique("uniq_chat_huddle_participants_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.huddleId], foreignColumns: [chatHuddles.orgId, chatHuddles.id], name: "fk_chat_huddle_participants_org_huddle" }),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_huddle_participants_org_membership" }).onDelete("cascade"),
   ],
 );
 
@@ -483,9 +489,6 @@ export const chatChannelInviteLinks = pgTable(
     token: text("token"),
     tokenHash: text("token_hash"),
     tokenEncrypted: text("token_encrypted"),
-    createdBy: text("created_by")
-      .references(() => users.id)
-      .notNull(),
     createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     revokedAt: timestamp("revoked_at"),
@@ -497,6 +500,7 @@ export const chatChannelInviteLinks = pgTable(
     index("idx_chat_channel_invite_links_org").on(table.orgId),
     unique("uniq_chat_channel_invite_links_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_invite_links_org_channel" }),
+    foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_invite_links_created_by_membership" }).onDelete("set null"),
   ],
 );
 
@@ -507,9 +511,9 @@ export const chatChannelInviteLinksRelations = relations(
       fields: [chatChannelInviteLinks.channelId],
       references: [chatChannels.id],
     }),
-    createdByUser: one(users, {
-      fields: [chatChannelInviteLinks.createdBy],
-      references: [users.id],
+    createdByMembership: one(organizationMembers, {
+      fields: [chatChannelInviteLinks.createdByMembershipId],
+      references: [organizationMembers.id],
     }),
   }),
 );
@@ -530,7 +534,6 @@ export const chatOrgSettings = pgTable(
     maxHuddleParticipants: integer("max_huddle_participants")
       .default(50)
       .notNull(),
-    updatedBy: text("updated_by").references(() => users.id),
     updatedByMembershipId: integer("updated_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -541,6 +544,7 @@ export const chatOrgSettings = pgTable(
   (table) => [
     uniqueIndex("uniq_chat_org_settings_org").on(table.orgId),
     unique("uniq_chat_org_settings_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.updatedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_org_settings_updated_by_membership" }).onDelete("set null"),
   ],
 );
 

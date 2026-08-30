@@ -35,6 +35,7 @@ describe("ChatMessageTimelineService — cross-tenant isolation", () => {
   let service: ChatMessageTimelineService;
   let db: {
     query: {
+      chatChannels: { findFirst: jest.Mock };
       chatChannelMembers: { findFirst: jest.Mock };
       chatMessages: { findMany: jest.Mock; findFirst: jest.Mock };
     };
@@ -44,6 +45,7 @@ describe("ChatMessageTimelineService — cross-tenant isolation", () => {
     jest.clearAllMocks();
     db = {
       query: {
+        chatChannels: { findFirst: jest.fn().mockResolvedValue(null) },
         chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
         chatMessages: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn().mockResolvedValue(null) },
       },
@@ -59,39 +61,53 @@ describe("ChatMessageTimelineService — cross-tenant isolation", () => {
   });
 
   describe("list", () => {
-    it("DENY: attacker org cannot read messages from another org's channel", async () => {
+    it("DENY: channel not found in attacker org returns NotFoundException (404, not 403)", async () => {
       const actor = makeActor(ORG_B);
-      await expect(service.list(CHANNEL_ID, actor, undefined, 20)).rejects.toThrow(ForbiddenException);
+      await expect(service.list(CHANNEL_ID, actor, undefined, 20)).rejects.toThrow(NotFoundException);
 
-      const call = db.query.chatChannelMembers.findFirst.mock.calls[0]?.[0];
-      expect(flatValues(call?.where)).toContain(ORG_B);
+      const channelCall = db.query.chatChannels.findFirst.mock.calls[0]?.[0];
+      expect(flatValues(channelCall?.where)).toContain(ORG_B);
+      expect(db.query.chatChannelMembers.findFirst).not.toHaveBeenCalled();
+      expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
+    });
+
+    it("DENY: channel in org-a, user not a member returns ForbiddenException (403)", async () => {
+      const actor = makeActor(ORG_A);
+      db.query.chatChannels.findFirst.mockResolvedValue({ id: CHANNEL_ID });
+      db.query.chatChannelMembers.findFirst.mockResolvedValue(undefined);
+      await expect(service.list(CHANNEL_ID, actor, undefined, 20)).rejects.toThrow(ForbiddenException);
       expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
     });
 
     it("CONTROL: member of org-a can read their channel messages", async () => {
       const actor = makeActor(ORG_A);
+      db.query.chatChannels.findFirst.mockResolvedValue({ id: CHANNEL_ID });
       db.query.chatChannelMembers.findFirst.mockResolvedValue({ id: MEMBERSHIP_A });
       db.query.chatMessages.findMany.mockResolvedValue([]);
 
       const result = await service.list(CHANNEL_ID, actor, undefined, 20);
       expect(result).toHaveProperty("messages");
-      const call = db.query.chatChannelMembers.findFirst.mock.calls[0]?.[0];
-      expect(flatValues(call?.where)).toContain(ORG_A);
+      const channelCall = db.query.chatChannels.findFirst.mock.calls[0]?.[0];
+      expect(flatValues(channelCall?.where)).toContain(ORG_A);
+      const memberCall = db.query.chatChannelMembers.findFirst.mock.calls[0]?.[0];
+      expect(flatValues(memberCall?.where)).toContain(ORG_A);
     });
   });
 
   describe("poll", () => {
-    it("DENY: attacker org cannot poll messages from another org's channel", async () => {
+    it("DENY: channel not found in attacker org returns NotFoundException (404, not 403)", async () => {
       const actor = makeActor(ORG_B);
-      await expect(service.poll(CHANNEL_ID, actor, new Date())).rejects.toThrow(ForbiddenException);
+      await expect(service.poll(CHANNEL_ID, actor, new Date())).rejects.toThrow(NotFoundException);
 
-      const call = db.query.chatChannelMembers.findFirst.mock.calls[0]?.[0];
-      expect(flatValues(call?.where)).toContain(ORG_B);
+      const channelCall = db.query.chatChannels.findFirst.mock.calls[0]?.[0];
+      expect(flatValues(channelCall?.where)).toContain(ORG_B);
+      expect(db.query.chatChannelMembers.findFirst).not.toHaveBeenCalled();
       expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
     });
 
     it("CONTROL: member of org-a can poll their channel", async () => {
       const actor = makeActor(ORG_A);
+      db.query.chatChannels.findFirst.mockResolvedValue({ id: CHANNEL_ID });
       db.query.chatChannelMembers.findFirst.mockResolvedValue({ id: MEMBERSHIP_A });
       db.query.chatMessages.findMany.mockResolvedValue([]);
 
@@ -103,10 +119,13 @@ describe("ChatMessageTimelineService — cross-tenant isolation", () => {
   describe("listThreadReplies", () => {
     const MESSAGE_ID = 99;
 
-    it("DENY: message not found in attacker org returns NotFoundException", async () => {
+    it("DENY: message not found in attacker org returns NotFoundException (orgId filter applied)", async () => {
       db.query.chatMessages.findFirst.mockResolvedValue(null);
       const actor = makeActor(ORG_B);
       await expect(service.listThreadReplies(MESSAGE_ID, actor, undefined, 20)).rejects.toThrow(NotFoundException);
+
+      const msgCall = db.query.chatMessages.findFirst.mock.calls[0]?.[0];
+      expect(flatValues(msgCall?.where)).toContain(ORG_B);
       expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
     });
 

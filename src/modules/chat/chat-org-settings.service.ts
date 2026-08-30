@@ -23,7 +23,7 @@ export class ChatOrgSettingsService {
     return { orgId, ...DEFAULT_CHAT_ORG_SETTINGS };
   }
 
-  async updateSettings(orgId: string, userId: string, patch: UpdateChatOrgSettingsInput) {
+  async updateSettings(orgId: string, membershipId: number | null, patch: UpdateChatOrgSettingsInput) {
     const existing = await this.db.query.chatOrgSettings.findFirst({
       where: eq(chatOrgSettings.orgId, orgId),
     });
@@ -31,7 +31,7 @@ export class ChatOrgSettingsService {
     if (existing) {
       const [updated] = await this.db
         .update(chatOrgSettings)
-        .set({ ...patch, updatedBy: userId })
+        .set({ ...patch, updatedByMembershipId: membershipId })
         .where(eq(chatOrgSettings.orgId, orgId))
         .returning();
       return updated;
@@ -39,7 +39,7 @@ export class ChatOrgSettingsService {
 
     const [created] = await this.db
       .insert(chatOrgSettings)
-      .values({ orgId, ...DEFAULT_CHAT_ORG_SETTINGS, ...patch, updatedBy: userId })
+      .values({ orgId, ...DEFAULT_CHAT_ORG_SETTINGS, ...patch, updatedByMembershipId: membershipId })
       .returning();
     return created;
   }

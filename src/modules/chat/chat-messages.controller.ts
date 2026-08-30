@@ -39,6 +39,11 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { actorOf } from "../entity-reference/entity-actor";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const messageIdParams = z.object({ messageId: z.coerce.number().int().positive() }).strict();
+const messageIdemojiParams = z.object({ messageId: z.coerce.number().int().positive(), emoji: z.string().min(1) }).strict();
 
 @ApiTags("Chat Messages")
 @ApiBearerAuth()
@@ -104,6 +109,7 @@ export class ChatMessagesController {
   @ApiResponse({ status: 200, description: "OK" })
   @Patch(":messageId")
   @RequirePermission("chat:messages:write")
+  @Validate({ params: messageIdParams })
   edit(
     @Param("messageId", ParseIntPipe) messageId: number,
     @Body(new ZodValidationPipe(editMessageSchema)) body: EditMessageInput,
@@ -116,6 +122,7 @@ export class ChatMessagesController {
   @ApiResponse({ status: 200, description: "OK" })
   @Delete(":messageId")
   @RequirePermission("chat:messages:write")
+  @Validate({ params: messageIdParams })
   remove(
     @Param("messageId", ParseIntPipe) messageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -128,6 +135,7 @@ export class ChatMessagesController {
   @Post(":messageId/reactions")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
+  @Validate({ params: messageIdParams })
   addReaction(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,
@@ -142,6 +150,7 @@ export class ChatMessagesController {
   @Delete(":messageId/reactions/:emoji")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
+  @Validate({ params: messageIdemojiParams })
   removeReaction(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,
@@ -155,6 +164,7 @@ export class ChatMessagesController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":messageId/thread")
   @RequirePermission("chat:messages:read")
+  @Validate({ params: messageIdParams })
   listThread(
     @Param("messageId", ParseIntPipe) messageId: number,
     @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
@@ -168,6 +178,7 @@ export class ChatMessagesController {
   @Post(":messageId/thread")
   @HttpCode(201)
   @RequirePermission("chat:messages:write")
+  @Validate({ params: messageIdParams })
   sendThreadReply(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,

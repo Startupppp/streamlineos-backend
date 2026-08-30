@@ -9,6 +9,10 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ChatPinsService } from "./chat-pins.service";
 import { pinMessageSchema, type PinMessageInput } from "./dto/chat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const messageIdParams = z.object({ messageId: z.coerce.number().int().positive() }).strict();
 
 @ApiTags("Chat Pins")
 @ApiBearerAuth()
@@ -52,6 +56,7 @@ export class ChatPinsController {
   @Delete(":messageId")
   @HttpCode(200)
   @RequirePermission("chat:messages:pin")
+  @Validate({ params: messageIdParams })
   unpin(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,

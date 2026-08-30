@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gt, lt } from "drizzle-orm";
-import { chatChannelMembers, chatMessages } from "../../db/schema";
+import { chatChannelMembers, chatChannels, chatMessages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { buildIdCursorPage } from "../../common/pagination/cursor";
@@ -62,6 +62,12 @@ export class ChatMessageTimelineService {
     cursor: number | undefined,
     limit: number,
   ) {
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, actor.orgId)),
+      columns: { id: true },
+    });
+    if (!channel) throw new NotFoundException("Channel not found");
+
     if (
       !(await this.isMember(channelId, actor.orgId, actor.membershipId, actor.userId))
     )
@@ -90,6 +96,12 @@ export class ChatMessageTimelineService {
   }
 
   async poll(channelId: number, actor: EntityActor, since: Date) {
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, actor.orgId)),
+      columns: { id: true },
+    });
+    if (!channel) throw new NotFoundException("Channel not found");
+
     if (
       !(await this.isMember(channelId, actor.orgId, actor.membershipId, actor.userId))
     )
@@ -119,7 +131,7 @@ export class ChatMessageTimelineService {
     limit: number,
   ) {
     const parentMessage = await this.db.query.chatMessages.findFirst({
-      where: eq(chatMessages.id, parentMessageId),
+      where: and(eq(chatMessages.id, parentMessageId), eq(chatMessages.orgId, actor.orgId)),
       with: {
         sender: { columns: { id: true, name: true, image: true } },
         attachments: true,

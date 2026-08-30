@@ -61,7 +61,7 @@ export class ChatInviteLinksService {
       token: null,
       tokenHash: minted.tokenHash,
       tokenEncrypted: minted.tokenEncrypted,
-      createdBy: userId,
+      createdByMembershipId: member.membershipId ?? null,
     });
     return { token: minted.token };
   }
@@ -86,7 +86,7 @@ export class ChatInviteLinksService {
       token: null,
       tokenHash: minted.tokenHash,
       tokenEncrypted: minted.tokenEncrypted,
-      createdBy: userId,
+      createdByMembershipId: member.membershipId ?? null,
     });
     return { token: minted.token };
   }

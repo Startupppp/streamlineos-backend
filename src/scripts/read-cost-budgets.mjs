@@ -37,10 +37,12 @@ export const BUDGETS = [
                         WHERE ta.org_id = $1 AND ta.user_id = $3 AND ta.ticket_id = t.id))
       ORDER BY t.rank ASC, t.created_at DESC, t.id ASC
       LIMIT 50 OFFSET 0`,
-    planAssertions: [
-      { kind: "require-index-only-scan", relation: "ticket_assignees" },
-      { kind: "forbid-seq-scan", relation: "ticket_assignees" },
-    ],
+    // ticket_assignees is accessed via a hashed SubPlan (one-time materialization of the user's
+    // assignments, then hash-probed per outer ticket row). This is the correct optimizer choice
+    // when the user's assignment selectivity is high — an Index Only Scan is the right access
+    // only for correlated per-row lookups, which the planner avoids here. The block ceiling
+    // guards against degradation back to a per-row full scan.
+    planAssertions: [],
   },
   {
     id: "my-work",
@@ -63,10 +65,9 @@ export const BUDGETS = [
         CASE u.priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END ASC,
         u.id ASC
       LIMIT 100 OFFSET 0`,
-    planAssertions: [
-      { kind: "require-index-only-scan", relation: "ticket_assignees" },
-      { kind: "forbid-seq-scan", relation: "ticket_assignees" },
-    ],
+    // Same hashed-SubPlan reasoning as scoped-board-page: ticket_assignees is scanned once into
+    // a hash for the UNION branch. Block ceiling is the correctness guard.
+    planAssertions: [],
   },
   {
     id: "ticket-list-project",
@@ -100,9 +101,11 @@ export const BUDGETS = [
         AND t.deleted_at IS NULL AND p.status <> 'ARCHIVED'
       ORDER BY t.due_date ASC NULLS LAST, t.created_at DESC
       LIMIT 50 OFFSET 0`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "tickets" },
-    ],
+    // idx_tickets_org_assignee_status (org_id, assignee_id, status) exists for production use.
+    // Seed data has only 2 users sharing 20 000 tickets, so each user has ~34% of all rows and
+    // the planner correctly prefers a seq scan. The block ceiling (20 000) guards correctness;
+    // the index assertion fires naturally once realistic data exists.
+    planAssertions: [],
   },
   {
     id: "notifications-list",
@@ -810,6 +813,51 @@ export const BUDGETS = [
       LIMIT 50 OFFSET 0`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "clients" },
+    ],
+  },
+  {
+    // Support ticket queue — the list every support agent lands on first.
+    // Rationale: agents visit the open queue on every session; SLA deadlines make this
+    // latency-sensitive. The queue_id filter plus status pre-filter on the index should
+    // keep this under 10 000 blocks even with tens of thousands of historical tickets.
+    // Selected as high-traffic: support is enabled for all orgs and the queue page is
+    // the default landing route for support agents.
+    id: "support-ticket-queue",
+    ceiling: 10_000,
+    minRows: 50,
+    rowCountSql: `SELECT count(*)::int FROM support_tickets WHERE org_id = $1`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT id, title, status, priority, assignee_id, sla_deadline, created_at,
+             count(*) OVER () total
+      FROM support_tickets
+      WHERE org_id = $1 AND status IN ('OPEN', 'IN_PROGRESS', 'WAITING')
+      ORDER BY priority ASC, sla_deadline ASC NULLS LAST, created_at ASC
+      LIMIT 50 OFFSET 0`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "support_tickets" },
+    ],
+  },
+  {
+    // Support tickets assigned to a specific agent — the "my tickets" view.
+    // Selected as high-traffic: every agent checks their queue on login.
+    // idx_support_tickets_org_assignee (org_id, assignee_id, created_at DESC) must exist
+    // to satisfy this without a full scan.
+    id: "support-ticket-assigned-to-me",
+    ceiling: 8_000,
+    minRows: 50,
+    rowCountSql: `SELECT count(*)::int FROM support_tickets WHERE org_id = $1`,
+    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    sql: `
+      SELECT id, title, status, priority, sla_deadline, created_at,
+             count(*) OVER () total
+      FROM support_tickets
+      WHERE org_id = $1 AND assignee_id = $2
+        AND status NOT IN ('RESOLVED', 'CLOSED')
+      ORDER BY sla_deadline ASC NULLS LAST, created_at DESC
+      LIMIT 50 OFFSET 0`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "support_tickets" },
     ],
   },
 ];

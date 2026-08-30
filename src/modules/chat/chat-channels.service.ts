@@ -133,6 +133,7 @@ export class ChatChannelsService {
         .from(chatChannelMembers)
         .where(
           and(
+            eq(chatChannelMembers.orgId, orgId),
             actor.membershipId !== undefined
               ? eq(chatChannelMembers.membershipId, actor.membershipId)
               : eq(chatChannelMembers.userId, userId),

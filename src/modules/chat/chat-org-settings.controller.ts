@@ -5,6 +5,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
@@ -34,6 +35,6 @@ export class ChatOrgSettingsController {
     @Body(new ZodValidationPipe(updateChatOrgSettingsSchema)) body: UpdateChatOrgSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.updateSettings(u.orgId, u.userId, body);
+    return this.settings.updateSettings(u.orgId, actingMembershipId(u.principal), body);
   }
 }

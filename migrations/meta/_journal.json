@@ -2724,6 +2724,34 @@
       "when": 1787941809254,
       "tag": "0671_kb_chunks_acl_index_membership",
       "breakpoints": true
+    },
+    {
+      "idx": 388,
+      "version": "7",
+      "when": 1788091200000,
+      "tag": "0672_chat_attribution_contraction_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 389,
+      "version": "7",
+      "when": 1788091260000,
+      "tag": "0673_chat_attribution_contraction_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 390,
+      "version": "7",
+      "when": 1788091261001,
+      "tag": "0674_support_ticket_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 391,
+      "version": "7",
+      "when": 1788091262000,
+      "tag": "0675_chat_remaining_membership_fks",
+      "breakpoints": true
     }
   ]
 }

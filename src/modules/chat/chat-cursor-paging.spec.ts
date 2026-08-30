@@ -98,6 +98,7 @@ function buildHarness(store: MessageStore): Harness {
 
   const db = {
     query: {
+      chatChannels: { findFirst: jest.fn().mockResolvedValue({ id: CHANNEL_ID }) },
       chatChannelMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
       chatMessages: {
         findMany: jest.fn().mockImplementation(({ where, limit }: { where: SQL; limit: number }) => {

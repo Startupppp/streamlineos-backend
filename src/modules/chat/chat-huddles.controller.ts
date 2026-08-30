@@ -35,6 +35,10 @@ import { z } from "zod";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
+import { Validate } from "../../common/validation/validate.decorator";
+
+const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
+const huddleIdParams = z.object({ huddleId: z.coerce.number().int().positive() }).strict();
 
 @ApiTags("Chat Huddles & Video")
 @ApiBearerAuth()
@@ -53,6 +57,7 @@ export class ChatHuddlesController {
   @Post("channels/:channelId/huddle/start")
   @HttpCode(201)
   @RequirePermission("chat:huddles:start")
+  @Validate({ params: channelIdParams })
   async startHuddle(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -66,6 +71,7 @@ export class ChatHuddlesController {
   @ApiResponse({ status: 200, description: "Active huddle or null" })
   @Get("channels/:channelId/huddle")
   @RequirePermission("chat:channels:read")
+  @Validate({ params: channelIdParams })
   getActiveHuddle(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -78,6 +84,7 @@ export class ChatHuddlesController {
   @Post("huddles/:huddleId/join")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: huddleIdParams })
   joinHuddle(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -90,6 +97,7 @@ export class ChatHuddlesController {
   @Post("huddles/:huddleId/leave")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: huddleIdParams })
   leaveHuddle(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -102,6 +110,7 @@ export class ChatHuddlesController {
   @Patch("huddles/:huddleId/mute")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
+  @Validate({ params: huddleIdParams })
   setMute(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @Body(new ZodValidationPipe(muteSchema)) body: MuteInput,
@@ -115,6 +124,7 @@ export class ChatHuddlesController {
   @Patch("huddles/:huddleId/hand")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
+  @Validate({ params: huddleIdParams })
   raiseHand(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @Body(new ZodValidationPipe(raiseHandSchema)) body: RaiseHandInput,
@@ -128,6 +138,7 @@ export class ChatHuddlesController {
   @Patch("huddles/:huddleId/deafen")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: huddleIdParams })
   deafen(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @Body(new ZodValidationPipe(z.object({ deafened: z.boolean() }))) body: { deafened: boolean },
@@ -142,6 +153,7 @@ export class ChatHuddlesController {
   @Post("huddles/:huddleId/signal")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
+  @Validate({ params: huddleIdParams })
   async sendSignal(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @Body(new ZodValidationPipe(huddleSignalSchema)) body: HuddleSignalInput,
@@ -158,6 +170,7 @@ export class ChatHuddlesController {
   @Patch("huddles/:huddleId/heartbeat")
   @HttpCode(200)
   @RequirePermission("chat:channels:read")
+  @Validate({ params: huddleIdParams })
   async heartbeat(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -172,6 +185,7 @@ export class ChatHuddlesController {
   @Patch("huddles/:huddleId/screenshare")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
+  @Validate({ params: huddleIdParams })
   setScreenShare(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @Body(new ZodValidationPipe(screenShareSchema)) body: ScreenShareInput,
@@ -185,6 +199,7 @@ export class ChatHuddlesController {
   @Post("huddles/:huddleId/kick")
   @HttpCode(200)
   @RequirePermission("chat:huddles:moderate")
+  @Validate({ params: huddleIdParams })
   kickParticipant(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @Body(new ZodValidationPipe(kickSchema)) body: KickInput,
@@ -199,6 +214,7 @@ export class ChatHuddlesController {
   @Idempotent("chat.huddle.invite")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
+  @Validate({ params: huddleIdParams })
   invite(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @Body(new ZodValidationPipe(z.object({ userIds: z.array(z.string().min(1)).min(1) }))) body: { userIds: string[] },
