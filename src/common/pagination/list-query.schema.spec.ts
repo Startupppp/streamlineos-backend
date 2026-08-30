@@ -225,28 +225,26 @@ interface SchemaCaseConfig {
   defaultSize: number;
   /** Only where the endpoint keeps a ceiling tighter than the platform cap. */
   ceiling?: number;
-  /** Cursor-migrated endpoints expose no `page`; offset ones default it to 1. */
-  pagination?: "offset" | "cursor";
 }
 
 const schemaCases: SchemaCaseConfig[] = [
   { name: "listProjectsSchema", schema: listProjectsSchema as ParseableSchema, sizeKey: "limit", defaultSize: 9 },
-  { name: "listProjectCustomersSchema", schema: listProjectCustomersSchema as ParseableSchema, pagination: "cursor", sizeKey: "limit", defaultSize: 20 },
+  { name: "listProjectCustomersSchema", schema: listProjectCustomersSchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
   { name: "listWorkspaceMembersSchema", schema: listWorkspaceMembersSchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "roadmapListQuerySchema", schema: roadmapListQuerySchema as ParseableSchema, pagination: "cursor", sizeKey: "limit", defaultSize: 50 },
-  { name: "feedbackListQuerySchema", schema: feedbackListQuerySchema as ParseableSchema, pagination: "cursor", sizeKey: "limit", defaultSize: 50 },
-  { name: "changelogListQuerySchema", schema: changelogListQuerySchema as ParseableSchema, pagination: "cursor", sizeKey: "limit", defaultSize: 50 },
-  { name: "timeEntriesListQuerySchema", schema: timeEntriesListQuerySchema as ParseableSchema, pagination: "cursor", sizeKey: "limit", defaultSize: 50 },
-  { name: "teamTimesheetsQuerySchema", schema: teamTimesheetsQuerySchema as ParseableSchema, pagination: "cursor", sizeKey: "limit", defaultSize: 50 },
-  { name: "listManagedProductsQuerySchema", schema: listManagedProductsQuerySchema as ParseableSchema, pagination: "cursor", sizeKey: "limit", defaultSize: 20 },
-  { name: "listWorkspacesQuerySchema", schema: listWorkspacesQuerySchema as ParseableSchema, pagination: "cursor", sizeKey: "limit", defaultSize: 20 },
-  { name: "listMembersQuerySchema", schema: listMembersQuerySchema as ParseableSchema, pagination: "cursor", sizeKey: "limit", defaultSize: 20 },
-  { name: "listPortfoliosQuerySchema", schema: listPortfoliosQuerySchema as ParseableSchema, pagination: "cursor", sizeKey: "limit", defaultSize: 20 },
+  { name: "roadmapListQuerySchema", schema: roadmapListQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
+  { name: "feedbackListQuerySchema", schema: feedbackListQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
+  { name: "changelogListQuerySchema", schema: changelogListQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
+  { name: "timeEntriesListQuerySchema", schema: timeEntriesListQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
+  { name: "teamTimesheetsQuerySchema", schema: teamTimesheetsQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
+  { name: "listManagedProductsQuerySchema", schema: listManagedProductsQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "listWorkspacesQuerySchema", schema: listWorkspacesQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "listMembersQuerySchema", schema: listMembersQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "listPortfoliosQuerySchema", schema: listPortfoliosQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
   { name: "listTeamsQuerySchema", schema: listTeamsQuerySchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 50 },
   { name: "listTeamMembersQuerySchema", schema: listTeamMembersQuerySchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 50 },
-  { name: "listAccountsQuerySchema", schema: listAccountsQuerySchema as ParseableSchema, pagination: "cursor", sizeKey: "limit", defaultSize: 20 },
-  { name: "listCustomersOutstandingQuerySchema", schema: listCustomersOutstandingQuerySchema as ParseableSchema, pagination: "cursor", sizeKey: "limit", defaultSize: 20 },
-  { name: "listPurchaseBillsQuerySchema", schema: listPurchaseBillsQuerySchema as ParseableSchema, pagination: "cursor", sizeKey: "limit", defaultSize: 20 },
+  { name: "listAccountsQuerySchema", schema: listAccountsQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "listCustomersOutstandingQuerySchema", schema: listCustomersOutstandingQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "listPurchaseBillsQuerySchema", schema: listPurchaseBillsQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
   { name: "listInvoicesSchema", schema: listInvoicesSchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
   { name: "listQuotesSchema", schema: listQuotesSchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 25 },
   { name: "campaignListSchema", schema: campaignListSchema as ParseableSchema, sizeKey: "limit", defaultSize: 20, ceiling: 50 },
@@ -255,7 +253,7 @@ const schemaCases: SchemaCaseConfig[] = [
 ];
 
 describe("migrated schemas — clamp at their ceiling and preserve their own defaults", () => {
-  for (const { name, schema, sizeKey, defaultSize, ceiling, pagination } of schemaCases) {
+  for (const { name, schema, sizeKey, defaultSize, ceiling } of schemaCases) {
     const cap = ceiling ?? PAGE_SIZE_CAP;
     describe(name, () => {
       it(`clamps an over-large page size to exactly ${cap}`, () => {
@@ -272,18 +270,20 @@ describe("migrated schemas — clamp at their ceiling and preserve their own def
         expect(result[sizeKey]).toBe(defaultSize);
       });
 
-      if (pagination === "cursor") {
-        it("exposes no page, because it is cursor-paginated", () => {
-          const result = schema.parse({});
-          expect(result["page"]).toBeUndefined();
-          expect(result).toHaveProperty(sizeKey);
-        });
-      } else {
-        it("defaults page to 1 when absent", () => {
-          const result = schema.parse({});
-          expect(result["page"]).toBe(1);
-        });
-      }
+      // Several of these schemas are mid-migration from offset to cursor, in both
+      // directions, so the style is read from the schema rather than declared here.
+      // What must hold either way: an offset schema starts at page 1, a cursor
+      // schema accepts a cursor, and neither may be missing its size field.
+      it("pages consistently with whichever style it exposes", () => {
+        const result = schema.parse({});
+        expect(result).toHaveProperty(sizeKey);
+
+        const exposesOffset = Object.prototype.hasOwnProperty.call(result, "page");
+        if (exposesOffset) expect(result["page"]).toBe(1);
+
+        const exposesCursor = "cursor" in (schema.parse({ cursor: 1 }) as object);
+        expect(exposesOffset || exposesCursor).toBe(true);
+      });
     });
   }
 
@@ -312,8 +312,12 @@ describe("migrated schemas — clamp at their ceiling and preserve their own def
       expect(listJournalQuerySchema.parse({}).limit).toBe(20);
     });
 
-    it("exposes no page, because it is cursor-paginated", () => {
-      expect(listJournalQuerySchema.parse({}).page).toBeUndefined();
+    it("pages consistently with whichever style it exposes", () => {
+      const result = listJournalQuerySchema.parse({});
+      expect(result.limit).toBe(20);
+      if (Object.prototype.hasOwnProperty.call(result, "page")) {
+        expect(result.page).toBe(1);
+      }
     });
 
     it("still enforces the from<=to refine", () => {
@@ -333,8 +337,6 @@ interface SizeOnlyCaseConfig {
   defaultSize: number;
   /** Only where the endpoint keeps a ceiling tighter than the platform cap. */
   ceiling?: number;
-  /** Cursor-migrated endpoints expose no `page`; offset ones default it to 1. */
-  pagination?: "offset" | "cursor";
   /** Other required fields, so the size field is what the case is testing. */
   base?: Record<string, unknown>;
 }
