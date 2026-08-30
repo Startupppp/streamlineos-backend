@@ -121,14 +121,14 @@ found on this branch were that shape.
 
 ## 3. Migrations
 
-Numbers 0548–0575 belong to this programme.
+Numbers 0548–0579 belong to this programme.
 
-**A cold build now does real work at `0575`, and that is a new failure
-surface.** Until it, a fresh database simply never had inventory's composite
-tenant foreign keys (risk 4). `0575` creates all 79 and validates them against
-whatever rows the earlier migrations produced — so if any seed or backfill in
-`migrations/` writes a cross-tenant reference that the live database never
-contained, the cold build fails there. That is the correct place to fail: the
+**A cold build now does real work at `0575`–`0579`, and that is a new failure
+surface.** Until them, a fresh database simply never had the platform's
+composite tenant foreign keys (risk 4). The four files create 714 constraints and
+validate 710 against whatever rows the earlier migrations produced — so if any
+seed or backfill in `migrations/` writes a cross-tenant reference that the live
+database never contained, the cold build fails there. That is the correct place to fail: the
 constraint is right and the data is wrong. But it is a failure that could not
 happen before, and it will present as "0575 broke the build" rather than as
 "migration N wrote a bad row".
@@ -445,11 +445,11 @@ abstract.
    `src/db/schema/inventory/stock.ts` (which declares only the single-column
    reference) **and is not created by any migration** — see risk 4. It exists on
    the Neon branch and nowhere else. So the argument above is sound *for this
-   database* and false for a database rebuilt from `migrations/`: there the
-   composite FK is absent, nothing stops a stock level referencing a location in
-   another organisation, and the two forms diverge silently. No test can catch
-   it, because the case cannot be constructed on the database the tests run
-   against.
+   database*. It **was** false for a database rebuilt from `migrations/` — the
+   composite FK existed nowhere else — until `0575` authored it; see risk 4,
+   which is now closed. A cold build gets the constraint, so the argument holds
+   in both places today. It still cannot be tested: the case cannot be
+   constructed on any database that has the FK, which is now all of them.
 
    That is the sharper argument for A1's single-formula rule than "a copy might
    already be wrong": **a copy's correctness depends on a schema constraint two
@@ -461,39 +461,17 @@ abstract.
    or forge an RLS state the application cannot produce, and a test asserting
    behaviour in an impossible state would pass forever and tell nobody anything.
 
-4. **Inventory's composite tenant foreign keys are authored now. 635 of the
-   platform's are not.** 79 of inventory's 119 composite same-tenant FKs existed
-   only on the Neon branch, created by no migration. Migration `0575` authors
-   all 79 — added `NOT VALID` and validated separately per §3's lock rules, both
-   halves guarded on `pg_constraint` so the file is a no-op here and the
-   creating statement on a fresh database. Verified idempotent by applying it
-   twice: 119 before, 119 after, 0 unvalidated.
+4. **CLOSED — every composite tenant foreign key is now authored. Four are
+   deliberately left `NOT VALID`.** 635 of the platform's 799 composite
+   same-tenant FKs existed only on the Neon branch, created by no migration, so
+   a database rebuilt from `migrations/` had nothing stopping a child row
+   referencing a parent in another organisation — the constraints
+   `backend/CLAUDE.md` §3 requires and says RLS does not replace. Inventory's 79
+   were authored in `0575`; the remaining 635 in `0576`–`0579`. Verified: **799
+   live, 0 unauthored.**
 
-   **Inventory is complete: 0 of 119 remain unauthored.** The estate is not.
-   Across the whole database there are **799** composite tenant FKs and **635
-   are still created by no migration** — inventory was about a ninth of the
-   problem. By owning module:
-
-   | | missing | | missing |
-   |---|---|---|---|
-   | kb | 64 | project | 27 |
-   | hr | 45 | crm | 25 |
-   | survey | 40 | support | 17 |
-   | fin | 29 | sign | 17 |
-   | payroll | 28 | ticket | 14 |
-   | chat | 28 | candidate / acc / workflow | 13 / 13 / 12 |
-
-   These are the constraints `backend/CLAUDE.md` §3 requires so a child row
-   cannot reference a parent in another organisation, and it says explicitly
-   that application predicates and RLS do not replace them. On a database built
-   from `migrations/`, every module above is missing most of them.
-
-   This is the handoff's own §3 rule biting: *"applied to the Neon branch" ≠
-   migrated — it counts only when it is in the Drizzle journal AND `db:migrate`
-   reproduces it on an EMPTY DB.* Every one was applied by hand.
-
-   Reproduce with — the filter must be on the **definition**, and must not
-   restrict the schema:
+   The number was got wrong twice on the way, in opposite directions, so the
+   query is pinned here — filter on the **definition**, across **all schemas**:
 
    ```sql
    SELECT n.nspname, c.conname, pg_get_constraintdef(c.oid)
@@ -505,27 +483,59 @@ abstract.
    ORDER BY 1, 2;
    ```
 
-   then grep `migrations/` for each `conname`. **Both axes were got wrong once,
-   in opposite directions**, which is why the query is pinned here:
+   A *name* filter (`conname LIKE 'fk\_%\_org'`) over-counted by 7 in
+   inventory; restricting to `nspname = 'public'` under-counted by 132, because
+   `build` (129) and `build_events` (3) are real application tables from
+   migrations `0431`/`0432`. Distribution: public 667, build 129,
+   build_events 3.
 
-   - filtering by *name* (`conname LIKE 'fk\_%\_org'`) **over-counts** — it
-     caught 7 constraints on `inv_*` that are not `(org_id, …)` composites,
-     which is where this entry's earlier figure of 126 came from;
-   - filtering to `nspname = 'public'` **under-counts by 132** — `build` (129)
-     and `build_events` (3) are real application tables from migrations `0431`
-     and `0432`, not partition internals.
+   **Two traps worth keeping, because both fail silently.**
 
-   **Whoever authors the remaining 635 has a wrinkle `0575` did not: 123 of them
-   are outside `public`** (120 `build`, 3 `build_events`; the other 512 are
-   `public`). Inventory is entirely `public`, so `0575`'s guards are
-   `to_regclass('public.…')` throughout and a generator copied from it will be
-   wrong for those 123 — and wrong *silently*: `to_regclass('public.x')` on a
-   `build` table returns `NULL`, the guard decides the table does not exist,
-   and the constraint is never created on a fresh build. That is the guard's
-   own protection inverted, and it produces exactly the state this risk
-   describes. Schema-qualify both the `to_regclass` probe and the `ALTER TABLE`.
+   *Schema qualification.* 123 of the 635 live outside `public`. Inventory is
+   entirely inside it, so `0575`'s guards are `to_regclass('public.…')`
+   throughout, and a generator copied from it skips those 123 without error:
+   `to_regclass('public.x')` on a `build` table returns `NULL`, the guard
+   concludes the table is absent, and the constraint is never created on a fresh
+   build — the guard's own protection inverted. `0576`–`0579` qualify both the
+   probe and the `ALTER TABLE`.
 
-   `0575` is the worked example for everything else about the shape.
+   *Definitions that already say `NOT VALID`.* Four constraints are unvalidated
+   on this database, and `pg_get_constraintdef` returns the trailing `NOT VALID`
+   inside the definition string. A generator that appends its own emits invalid
+   SQL. Worse, emitting a `VALIDATE` half for them would succeed on an empty
+   database and fail on one carrying the offending data — two environments
+   disagreeing about whether a constraint holds, which is the whole defect this
+   risk describes. They are therefore added `NOT VALID` with **no** `VALIDATE`,
+   reproducing the source state rather than improving on it:
+
+   - `fk_chat_channels_org_creator_membership`
+   - `fk_chat_messages_org_sender_membership`
+   - `fk_kb_pages_org_created_membership`
+   - `fk_kb_pages_org_owner_membership`
+
+   All four reference `organization_members(org_id, id)`. **Why they are
+   `NOT VALID` is not established.** The assumption was orphaned membership
+   references, but checked on 2026-08-30 all four have **zero** violating rows,
+   so nothing prevents validating them today. That may mean the data was cleaned,
+   or that the cold rebuild this branch went through took the offending rows with
+   it — this database was rebuilt empty mid-programme (§6). Do not validate them
+   on that evidence alone: a production database may hold rows this one does not,
+   and the reason they were left unvalidated has an owner who is not this
+   programme. **Whoever owns chat and KB should decide**, and the check is:
+
+   ```sql
+   SELECT count(*) FROM kb_pages t
+   WHERE t.owner_membership_id IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM organization_members m
+                     WHERE m.org_id = t.org_id AND m.id = t.owner_membership_id);
+   ```
+
+   Verification that these files are idempotent used the **name diff**, not a
+   count: 635 `ADD CONSTRAINT` against 631 `VALIDATE CONSTRAINT`, the difference
+   being exactly those four. A before/after count cannot catch a constraint left
+   unvalidated by mistake, because every one already exists and is valid here —
+   a fresh build is the only place it would surface, and that is the one place
+   nobody runs. Applied twice: 799 live and 4 unvalidated both times.
 
 5. **The seeded suites share one Neon dev branch.** Coverage is not thin: a
    little over 100 seeded e2e assertions currently run green against a real
