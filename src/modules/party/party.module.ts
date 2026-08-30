@@ -8,10 +8,11 @@ import { PartyRevertService } from "./party-revert.service";
 import { PartyRolesService } from "./party-roles.service";
 import { SubjectController } from "./subject.controller";
 import { SubjectService } from "./subject.service";
+import { SubjectTypeService } from "./subject-type.service";
 
 @Module({
   controllers: [PartyController, PartyMergeController, SubjectController],
-  providers: [PartyService, PartyDivergenceService, PartyMergeService, PartyRevertService, PartyRolesService, SubjectService],
-  exports: [PartyDivergenceService, PartyMergeService, PartyRevertService, PartyRolesService, SubjectService],
+  providers: [PartyService, PartyDivergenceService, PartyMergeService, PartyRevertService, PartyRolesService, SubjectService, SubjectTypeService],
+  exports: [PartyDivergenceService, PartyMergeService, PartyRevertService, PartyRolesService, SubjectService, SubjectTypeService],
 })
 export class PartyModule {}
