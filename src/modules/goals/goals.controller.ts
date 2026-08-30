@@ -18,12 +18,13 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { GoalsService } from "./goals.service";
 import {
-  GoalsService,
+  GoalLinksService,
   isLinkGoalNotFound,
   isLinkProjectNotFound,
   isLinkTicketNotFound,
-} from "./goals.service";
+} from "./goal-links.service";
 import {
   checkInSchema,
   createLinkSchema,
@@ -48,7 +49,10 @@ const goalIdParams = z.object({ goalId: z.coerce.number().int().positive() }).st
 @Controller("goals")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class GoalsController {
-  constructor(private readonly goals: GoalsService) {}
+  constructor(
+    private readonly goals: GoalsService,
+    private readonly links: GoalLinksService,
+  ) {}
 
   @Get()
   @RequirePermission("build:goals:view")
@@ -132,7 +136,7 @@ export class GoalsController {
     @Param("goalId", ParseIntPipe) goalId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.goals.getLinks(u.orgId, goalId);
+    return this.links.getLinks(u.orgId, goalId);
   }
 
   @Post(":goalId/links")
@@ -144,7 +148,7 @@ export class GoalsController {
     @Body(new ZodValidationPipe(createLinkSchema)) body: CreateLinkInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.goals.createLink(u.orgId, goalId, body);
+    const result = await this.links.createLink(u.orgId, goalId, body);
     if (isLinkGoalNotFound(result)) throw new NotFoundException("Goal not found");
     if (isLinkTicketNotFound(result)) throw new NotFoundException("Ticket not found");
     if (isLinkProjectNotFound(result)) throw new NotFoundException("Project not found");
@@ -159,7 +163,7 @@ export class GoalsController {
     @Query(new ZodValidationPipe(deleteLinkSchema)) query: DeleteLinkInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.goals.removeLink(u.orgId, goalId, query.linkId);
+    const result = await this.links.removeLink(u.orgId, goalId, query.linkId);
     if (!result) throw new NotFoundException("Link not found");
     return result;
   }
