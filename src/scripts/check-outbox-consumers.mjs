@@ -18,7 +18,9 @@ import { fileURLToPath } from "node:url";
 const SELF_TEST = process.argv.includes("--self-test");
 
 // ---------------------------------------------------------------------------
-// Self-test: inject a fake set and assert exactly one violation is detected
+// Self-test: inject a fake set and assert exactly one violation is detected,
+// then verify that the inline registry.register({ eventType }) pattern is
+// detected correctly.
 // ---------------------------------------------------------------------------
 if (SELF_TEST) {
   const fakeEmitted = ["test.event.orphaned", "accounting.invoice.reminder.due"];
@@ -30,6 +32,36 @@ if (SELF_TEST) {
     process.exit(1);
   }
   console.log("SELF-TEST PASSED: orphan detection correctly identified 1 violation");
+
+  // Verify inline registry.register({ eventType: "..." }) detection
+  const sampleSrc = `
+    onModuleInit() {
+      this.registry.register(this);
+      this.registry.register({ eventType: "test.inline.alpha", handle: (e) => this.handle(e) });
+      this.registry.register({ eventType: "test.inline.beta", handle: (e) => this.handle(e) });
+    }
+  `;
+  const inlineTestRe = /\bregistry\.register\s*\(/g;
+  const inlineConsumed = new Set();
+  let testMatch;
+  while ((testMatch = inlineTestRe.exec(sampleSrc)) !== null) {
+    const window = sampleSrc.slice(testMatch.index, testMatch.index + 400);
+    const tm = /\beventType\s*:\s*(["'][^"']+["']|[A-Z][A-Z0-9_]+)/.exec(window);
+    if (!tm) continue;
+    const val = tm[1].startsWith('"') || tm[1].startsWith("'") ? tm[1].slice(1, -1) : tm[1];
+    inlineConsumed.add(val);
+  }
+  if (!inlineConsumed.has("test.inline.alpha") || !inlineConsumed.has("test.inline.beta")) {
+    console.error("SELF-TEST FAILED: inline registry.register({ eventType }) detection missed expected event types");
+    console.error("Got:", [...inlineConsumed]);
+    process.exit(1);
+  }
+  if (inlineConsumed.size !== 2) {
+    console.error(`SELF-TEST FAILED: expected exactly 2 inline types, got ${inlineConsumed.size}`);
+    process.exit(1);
+  }
+  console.log("SELF-TEST PASSED: inline registry.register({ eventType }) detection works");
+
   process.exit(0);
 }
 
@@ -114,6 +146,21 @@ for (const filePath of allFiles) {
   const consumerRe = /\breadonly\s+eventType\s*=\s*(["'][^"']+["']|[A-Z][A-Z0-9_]+)/g;
   while ((match = consumerRe.exec(src)) !== null) {
     const resolved = resolveValue(match[1], constMap);
+    if (!resolved) continue;
+    const entry = consumedByFile.get(filePath) ?? new Set();
+    entry.add(resolved);
+    consumedByFile.set(filePath, entry);
+  }
+
+  // Find inline object literal registrations: registry.register({ eventType: "..." })
+  // This pattern is used when one consumer class handles multiple event types by
+  // registering extra event types in onModuleInit via plain object literals.
+  const inlineRe = /\bregistry\.register\s*\(/g;
+  while ((match = inlineRe.exec(src)) !== null) {
+    const window = src.slice(match.index, match.index + 400);
+    const typeMatch = /\beventType\s*:\s*(["'][^"']+["']|[A-Z][A-Z0-9_]+)/.exec(window);
+    if (!typeMatch) continue;
+    const resolved = resolveValue(typeMatch[1], constMap);
     if (!resolved) continue;
     const entry = consumedByFile.get(filePath) ?? new Set();
     entry.add(resolved);
