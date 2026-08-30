@@ -85,6 +85,39 @@ describe("CsatService — cross-tenant isolation", () => {
     });
   });
 
+  describe("deleteSurvey", () => {
+    it("includes orgId in delete WHERE so cross-tenant survey is not deleted (cross-tenant DENY)", async () => {
+      const deleteWhere = jest.fn().mockResolvedValue([]);
+      const db = {
+        query: { csatSurveys: { findFirst: jest.fn().mockResolvedValue({ id: 99 }) } },
+        delete: jest.fn().mockReturnValue({ where: deleteWhere }),
+      } as unknown as Db;
+      const svc = new CsatService(db);
+
+      await svc.deleteSurvey(ATTACKER_ORG, 99);
+
+      expect(deleteWhere).toHaveBeenCalledTimes(1);
+      const whereArg = deleteWhere.mock.calls[0]?.[0];
+      expect(sqlValues(whereArg)).toContain(ATTACKER_ORG);
+      expect(sqlValues(whereArg)).not.toContain(OWNER_ORG);
+    });
+
+    it("includes orgId in delete WHERE for the owning org (same-tenant CONTROL)", async () => {
+      const deleteWhere = jest.fn().mockResolvedValue([]);
+      const db = {
+        query: { csatSurveys: { findFirst: jest.fn().mockResolvedValue({ id: 99 }) } },
+        delete: jest.fn().mockReturnValue({ where: deleteWhere }),
+      } as unknown as Db;
+      const svc = new CsatService(db);
+
+      const result = await svc.deleteSurvey(OWNER_ORG, 99);
+
+      expect(result).toHaveProperty("success", true);
+      const whereArg = deleteWhere.mock.calls[0]?.[0];
+      expect(sqlValues(whereArg)).toContain(OWNER_ORG);
+    });
+  });
+
   describe("listResponses", () => {
     it("returns null (survey not found) when survey belongs to a different org (cross-tenant DENY)", async () => {
       const findFirst = jest.fn().mockResolvedValue(undefined);

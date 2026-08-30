@@ -57,4 +57,44 @@ describe("SurveyAssessmentService — cross-tenant isolation", () => {
 
     await expect(svc.createAttempt(ATTACKER_ORG, 99, null)).rejects.toThrow(NotFoundException);
   });
+
+  describe("completeAttempt — TOCTOU write fix", () => {
+    it("includes orgId in the update WHERE so the write cannot cross tenant boundaries (cross-tenant DENY)", async () => {
+      const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) });
+      const db = {
+        query: {
+          surveyForms: { findFirst: jest.fn().mockResolvedValue({ id: 5, orgId: ATTACKER_ORG, settings: {} }) },
+          surveyAssessmentAttempts: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: ATTACKER_ORG, sessionId: 10, participantId: null }) },
+        },
+        update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
+      } as unknown as Db;
+      const svc = new SurveyAssessmentService(db);
+
+      await svc.completeAttempt(ATTACKER_ORG, 5, 10, 80);
+
+      expect(updateWhere).toHaveBeenCalledTimes(1);
+      const whereArg = updateWhere.mock.calls[0]?.[0];
+      expect(sqlValues(whereArg)).toContain(ATTACKER_ORG);
+      expect(sqlValues(whereArg)).not.toContain(OWNER_ORG);
+    });
+
+    it("includes orgId in the update WHERE for the owning org (same-tenant CONTROL)", async () => {
+      const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1, orgId: OWNER_ORG, status: "passed", score: 90, passed: true }]) });
+      const db = {
+        query: {
+          surveyForms: { findFirst: jest.fn().mockResolvedValue({ id: 5, orgId: OWNER_ORG, settings: { passScore: 70 } }) },
+          surveyAssessmentAttempts: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER_ORG, sessionId: 10, participantId: null }) },
+        },
+        update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
+      } as unknown as Db;
+      const svc = new SurveyAssessmentService(db);
+
+      const result = await svc.completeAttempt(OWNER_ORG, 5, 10, 90);
+
+      expect(result).toMatchObject({ id: 1, status: "passed" });
+      expect(updateWhere).toHaveBeenCalledTimes(1);
+      const whereArg = updateWhere.mock.calls[0]?.[0];
+      expect(sqlValues(whereArg)).toContain(OWNER_ORG);
+    });
+  });
 });

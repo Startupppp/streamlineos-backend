@@ -113,6 +113,41 @@ describe("HrInterviewResultsService — cross-tenant isolation", () => {
     expect(args).toContain(OWNER);
   });
 
+  it("includes orgId in the update WHERE so a cross-tenant write cannot succeed (TOCTOU write fix — cross-tenant DENY)", async () => {
+    const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) });
+    const db = {
+      query: { interviews: { findFirst: jest.fn().mockResolvedValue(ROW) } },
+      update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
+    } as unknown as Db;
+    const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
+    const mockEmail = { sendEmail: jest.fn() };
+    const svc = new HrInterviewResultsService(db, mockAutomation as never, mockEmail as never);
+
+    await svc.updateInterview(ATTACKER, 1, { type: "VIDEO" });
+
+    expect(updateWhere).toHaveBeenCalledTimes(1);
+    const whereArg = updateWhere.mock.calls[0]?.[0];
+    expect(sqlValues(whereArg)).toContain(ATTACKER);
+    expect(sqlValues(whereArg)).not.toContain(OWNER);
+  });
+
+  it("includes orgId in the update WHERE for the owning org (TOCTOU write fix — same-tenant CONTROL)", async () => {
+    const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([ROW]) });
+    const db = {
+      query: { interviews: { findFirst: jest.fn().mockResolvedValue(ROW) } },
+      update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
+    } as unknown as Db;
+    const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
+    const mockEmail = { sendEmail: jest.fn() };
+    const svc = new HrInterviewResultsService(db, mockAutomation as never, mockEmail as never);
+
+    await svc.updateInterview(OWNER, 1, { type: "VIDEO" });
+
+    expect(updateWhere).toHaveBeenCalledTimes(1);
+    const whereArg = updateWhere.mock.calls[0]?.[0];
+    expect(sqlValues(whereArg)).toContain(OWNER);
+  });
+
   it("scopes getScorecard interview check to org (cross-tenant isolation)", async () => {
     const { db, findFirst } = makeDb([]);
     const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };

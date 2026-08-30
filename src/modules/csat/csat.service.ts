@@ -99,7 +99,7 @@ export class CsatService {
     });
     if (!existing) return null;
 
-    await this.db.delete(csatSurveys).where(eq(csatSurveys.id, surveyId));
+    await this.db.delete(csatSurveys).where(and(eq(csatSurveys.id, surveyId), eq(csatSurveys.orgId, orgId)));
 
     return { success: true };
   }

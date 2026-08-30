@@ -47,7 +47,8 @@ export class PushController {
   @Validate({ query: unsubscribeSchema })
   unsubscribe(
     @Query() query: UnsubscribeInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.push.unsubscribe(query.endpoint);
+    return this.push.unsubscribe(query.endpoint, u.userId);
   }
 }

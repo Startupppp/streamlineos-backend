@@ -80,7 +80,7 @@ export class SurveyAssessmentService {
     const [updated] = await this.db
       .update(surveyAssessmentAttempts)
       .set({ status: passed ? "passed" : "failed", score, passed, submittedAt: new Date() })
-      .where(eq(surveyAssessmentAttempts.id, attempt.id))
+      .where(and(eq(surveyAssessmentAttempts.id, attempt.id), eq(surveyAssessmentAttempts.orgId, orgId)))
       .returning();
 
     if (passed && settings.certificateOnPass && attempt.participantId) {
