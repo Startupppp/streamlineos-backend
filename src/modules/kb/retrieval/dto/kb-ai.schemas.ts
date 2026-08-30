@@ -47,7 +47,7 @@ export const kbAiFeedbackSchema = z.object({
   rating: z.enum(["helpful", "not_helpful", "missing_source"]),
   question: z.string().trim().min(3).max(1000),
   comment: z.string().trim().max(500).optional(),
-});
+}).strict();
 export type KbAiFeedbackInput = z.infer<typeof kbAiFeedbackSchema>;
 
 export const kbResearchBriefCreateSchema = z.object({

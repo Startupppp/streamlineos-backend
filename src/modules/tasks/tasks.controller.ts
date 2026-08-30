@@ -19,7 +19,9 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { TasksService, isSequenceNotFound, isSequenceNoSteps } from "./tasks.service";
+import { TasksService } from "./tasks.service";
+import { TaskSequencesService, isSequenceNotFound, isSequenceNoSteps } from "./task-sequences.service";
+import { TaskAnalyticsService } from "./task-analytics.service";
 import {
   analyticsSchema,
   completeSchema,
@@ -43,10 +45,15 @@ import { z } from "zod";
 
 const sequenceIdParams = z.object({ sequenceId: z.coerce.number().int().positive() }).strict();
 const taskIdParams = z.object({ taskId: z.coerce.number().int().positive() }).strict();
+
 @Controller("tasks")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class TasksController {
-  constructor(private readonly tasks: TasksService) {}
+  constructor(
+    private readonly tasks: TasksService,
+    private readonly sequences: TaskSequencesService,
+    private readonly analytics: TaskAnalyticsService,
+  ) {}
 
   @Get()
   @RequirePermission("tasks:read")
@@ -78,7 +85,7 @@ export class TasksController {
     @Query() query: AnalyticsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tasks.analytics(u.orgId, query);
+    return this.analytics.analytics(u.orgId, query);
   }
 
   @Get("sequences")
@@ -88,7 +95,7 @@ export class TasksController {
     @Query() query: SequenceListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tasks.listSequences(u.orgId, query);
+    return this.sequences.listSequences(u.orgId, query);
   }
 
   @Post("sequences")
@@ -99,7 +106,7 @@ export class TasksController {
     @Body() body: SequenceCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tasks.createSequence(u.orgId, u.userId, body);
+    return this.sequences.createSequence(u.orgId, u.userId, body);
   }
 
   @Delete("sequences/:sequenceId")
@@ -109,7 +116,7 @@ export class TasksController {
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.tasks.removeSequence(u.orgId, sequenceId);
+    const result = await this.sequences.removeSequence(u.orgId, sequenceId);
     if (!result) throw new NotFoundException("Sequence not found");
     return result;
   }
@@ -123,7 +130,7 @@ export class TasksController {
     @Body() body: SequenceApplyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.tasks.applySequence(u.orgId, u.userId, sequenceId, body);
+    const result = await this.sequences.applySequence(u.orgId, u.userId, sequenceId, body);
     if (isSequenceNotFound(result)) throw new NotFoundException("Sequence not found");
     if (isSequenceNoSteps(result)) throw new BadRequestException("Sequence has no steps");
     return result;

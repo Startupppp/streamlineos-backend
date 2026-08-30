@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -7,7 +7,8 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAiFeedbackService } from "./kb-ai-feedback.service";
-import { kbAiFeedbackSchema } from "../retrieval/dto/kb-ai.schemas";
+import { kbAiFeedbackSchema, type KbAiFeedbackInput } from "../retrieval/dto/kb-ai.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -19,13 +20,12 @@ export class KbAiFeedbackController {
   @RequirePermission("kb:pages:view")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("kb:ask")
+  @Validate({ body: kbAiFeedbackSchema })
   async submitFeedback(
-    @Body() body: unknown,
+    @Body() body: KbAiFeedbackInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<{ success: boolean }> {
-    const parsed = kbAiFeedbackSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    await this.feedback.recordAnswerFeedback(u.orgId, u.userId, parsed.data);
+    await this.feedback.recordAnswerFeedback(u.orgId, u.userId, body);
     return { success: true };
   }
 }

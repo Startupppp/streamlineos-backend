@@ -125,13 +125,10 @@ describe("KbIndexingService — cross-tenant isolation", () => {
       contentRevision: 1,
       aclRevision: 1,
     });
-    const selectWhere = jest.fn().mockReturnValue({
-      then: (fn: (v: unknown[]) => unknown) => Promise.resolve([{ contentHash: "DIFFERENT" }]).then(fn),
-      limit: jest.fn().mockResolvedValue([{ contentHash: "DIFFERENT" }]),
-    });
+    const deleteWhere = jest.fn().mockResolvedValue([]);
     const db = {
       query: { kbArticles: { findFirst } },
-      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: selectWhere }) }),
+      delete: jest.fn().mockReturnValue({ where: deleteWhere }),
     } as unknown as Db;
     const embeddings = { isConfigured: jest.fn().mockReturnValue(false) } as never;
     const checkpoint = {} as never;

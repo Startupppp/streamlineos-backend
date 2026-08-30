@@ -22,6 +22,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { AccessService } from "../access/access.service";
 import type { DataScope } from "../access/access.types";
 import { RolesService } from "./roles.service";
+import { RolesQueryService } from "./roles-query.service";
 import {
   materializeTemplateSchema,
   type MaterializeTemplateInput,
@@ -54,6 +55,7 @@ interface SimulateAccessResponse {
 export class RolesController {
   constructor(
     private readonly roles: RolesService,
+    private readonly query: RolesQueryService,
     private readonly access: AccessService,
   ) {}
 
@@ -72,7 +74,7 @@ export class RolesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   getAnalytics(@CurrentUser() u: CurrentUserContext) {
-    return this.roles.getRoleAnalytics(u.orgId);
+    return this.query.getRoleAnalytics(u.orgId);
   }
 
   @Get("permissions/matrix")
@@ -90,7 +92,7 @@ export class RolesController {
     @Query() query: SimulationCandidatesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roles.listSimulationCandidates(u.orgId, query);
+    return this.query.listSimulationCandidates(u.orgId, query);
   }
 
   @Get("simulate/:targetUserId")
@@ -102,7 +104,7 @@ export class RolesController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<SimulateAccessResponse> {
     if (!targetUserId) throw new NotFoundException("targetUserId is required");
-    const target = await this.roles.getSimulationTarget(u.orgId, targetUserId);
+    const target = await this.query.getSimulationTarget(u.orgId, targetUserId);
     const resolved = await this.access.resolveUserPermissions(
       u.orgId,
       targetUserId,
@@ -153,7 +155,7 @@ export class RolesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   listAssignableDepartments(@CurrentUser() u: CurrentUserContext) {
-    return this.roles.listAssignableDepartments(u.orgId);
+    return this.query.listAssignableDepartments(u.orgId);
   }
 
   @Get(":roleId")
