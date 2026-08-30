@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import request from "supertest";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
@@ -23,7 +24,7 @@ import { SoCoreService } from "src/modules/inventory/sales-orders/so-core.servic
 import { SoLifecycleService } from "src/modules/inventory/sales-orders/so-lifecycle.service";
 import { SoFulfillmentService } from "src/modules/inventory/sales-orders/so-fulfillment.service";
 import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
-import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
+import { createSeededE2eApp, signSeededToken, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 
 /**
@@ -66,7 +67,25 @@ const PERMISSIONS = [
   "inventory:channels:manage",
   "inventory:kits:assemble",
   "inventory:dock:manage",
+  "inventory:labor:read",
   "inventory:reports:read",
+] as const;
+
+/**
+ * NEO-7 — the second operator, and the reader who may not read.
+ *
+ * One member carries both roles deliberately. They can pick, so they generate a
+ * second person's labour rows; they hold no `inventory:labor:read`, so the same
+ * token proves the board is gated. A board that named individual people and
+ * rated their work would otherwise arrive with an ordinary stock summary.
+ */
+const PICKER_PERMISSIONS = [
+  "inventory:warehouses:scope-all",
+  "inventory:warehouses:read",
+  "inventory:stock:read",
+  "inventory:sales-orders:create",
+  "inventory:sales-orders:confirm",
+  "inventory:sales-orders:ship",
 ] as const;
 
 /** Shared with the original golden path: a busy database makes 120s a coin toss. */
@@ -119,11 +138,17 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
   let catchWeightSoId: number;
   let waveId: number;
   let wavelessSoB: number;
+  let secondUserId: string;
+  let keeperToken: string;
+  let pickerToken: string;
 
   const asTenant = <T>(work: () => Promise<T>): Promise<T> =>
     runInNewTenantTransaction(app.app.get<Db>(DRIZZLE), scene.orgId, work);
 
   const db = () => app.app.get<Db>(DRIZZLE);
+
+  /** NEO-7 reads the board through the guard, not around it. */
+  const http = () => request(app.app.getHttpServer());
 
   /** Through the canonical expression, never a copy of it. */
   const atp = async (variantId: number): Promise<number> => {
@@ -223,14 +248,29 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
     const seeded = await seedOrg(app.seedDb)
       .onPlan("PAID")
       .addMember("keeper", { permissionKeys: [...PERMISSIONS] })
+      .addMember("picker", { permissionKeys: [...PICKER_PERMISSIONS] })
       .build();
     teardown = () => seeded.teardown();
+
+    // NEO-7. Two people, and the tokens that make the board a real HTTP read
+    // rather than a service call with the guard skipped.
+    secondUserId = seeded.members.picker!.userId;
+    keeperToken = await signSeededToken(seeded.members.keeper!.userId, seeded.orgId);
+    pickerToken = await signSeededToken(secondUserId, seeded.orgId);
 
     const tag = randomUUID().slice(0, 6);
     scene = await runInNewTenantTransaction(db(), seeded.orgId, async () => {
       const userId = seeded.members.keeper!.userId;
       const one = async <T extends Record<string, unknown>>(q: ReturnType<typeof sql>) =>
         (await db().execute<T>(q))[0]!;
+
+      // NEO-7 reads the board over HTTP, and `ModuleGuard` answers 402 before
+      // any authority check when the tenant has no `org_modules` row —
+      // `SeedBuilder` writes none. Without this the denial test proves
+      // entitlement rather than permission.
+      await db().execute(sql`
+        INSERT INTO org_modules (org_id, module_key, enabled)
+        VALUES (${seeded.orgId}, 'inventory', true) ON CONFLICT DO NOTHING`);
 
       const uom = await one<{ id: number }>(sql`
         INSERT INTO inv_uom (org_id, name, abbreviation, is_base)
@@ -1254,6 +1294,130 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
     expect(own.pickListId).not.toBe(fresh.pickListId);
     expect(await waveOfSo(soE)).toEqual([own.pickListId]);
     await expectReconciled("NEO-14 waveless off");
+  }, SLICE_TIMEOUT_MS);
+
+  /**
+   * NEO-7 — the labour board, read against two people.
+   *
+   * The standards and the arithmetic had unit coverage and records were written
+   * from inside pick confirm, but nobody had ever looked at the board: one
+   * operator is indistinguishable from a `GROUP BY` that does not group, and a
+   * rate is a number nothing had ever divided.
+   *
+   * Read over HTTP on purpose. The board names individual people and rates
+   * their work, and `PermissionGuard` is not global — a service call would
+   * prove the arithmetic and nothing about who may see it.
+   */
+  it("NEO-7: a second operator picks their own wave", async () => {
+    const soId = await confirmedOrderFor(7, `neo-labor-so-${scene.tag}`);
+    const wave = await asTenant(() =>
+      app.app.get(PickWaveService).createWave(scene.orgId, secondUserId, {
+        warehouseId: scene.warehouseId,
+        soIds: [soId],
+      }),
+    );
+    const [line] = await asTenant(() =>
+      db().execute<{ id: number }>(sql`
+        SELECT id FROM inv_pick_list_lines
+        WHERE org_id = ${scene.orgId} AND pick_list_id = ${wave.pickListId}
+        ORDER BY id LIMIT 1`),
+    );
+
+    await asTenant(() =>
+      app.app.get(PickWaveService).claimWave(scene.orgId, secondUserId, wave.pickListId),
+    );
+    await asTenant(() =>
+      app.app.get(PickConfirmService).confirmPick(
+        scene.orgId,
+        secondUserId,
+        wave.pickListId,
+        { pickLineId: line!.id, quantityPicked: "7.0000" },
+        `neo-labor-confirm-${scene.tag}`,
+      ),
+    );
+
+    // Two people, measured. Written from inside the confirm, not by this spec.
+    const rows = await asTenant(() =>
+      db().execute<{ user_id: string }>(sql`
+        SELECT DISTINCT user_id FROM inv_labor_records
+        WHERE org_id = ${scene.orgId} AND task_kind = 'PICK'`),
+    );
+    expect(new Set(rows.map((r) => String(r.user_id))).size).toBe(2);
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-7: the board shows both of them, with a rate and a figure against standard", async () => {
+    const res = await http()
+      .get(`/inventory/labor/board?warehouseId=${scene.warehouseId}&taskKind=PICK`)
+      .set("Authorization", `Bearer ${keeperToken}`);
+    expect(res.status).toBe(200);
+
+    const board = res.body as Array<{
+      userId: string;
+      lines: number;
+      unitsDone: number;
+      unitsPerHour: number | null;
+      performancePct: number;
+    }>;
+
+    const byUser = new Map(board.map((row) => [row.userId, row]));
+    // Two distinct people, named individually — the whole reason this read is
+    // behind its own key.
+    expect(byUser.has(scene.userId)).toBe(true);
+    expect(byUser.has(secondUserId)).toBe(true);
+    expect(scene.userId).not.toBe(secondUserId);
+
+    for (const userId of [scene.userId, secondUserId]) {
+      const row = byUser.get(userId)!;
+      expect(row.lines).toBeGreaterThan(0);
+      expect(row.unitsDone).toBeGreaterThan(0);
+      // A rate, not a null: `unitsPerHour` is null whenever the measured window
+      // is zero, which is what a board nobody had read would have shown.
+      expect(row.unitsPerHour).not.toBeNull();
+      expect(row.unitsPerHour!).toBeGreaterThan(0);
+      expect(row.performancePct).toBeGreaterThan(0);
+    }
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-7: refuses the board to somebody who may only read stock", async () => {
+    // The same person whose work is on it. Being measured is not the authority
+    // to measure.
+    const denied = await http()
+      .get(`/inventory/labor/board?warehouseId=${scene.warehouseId}`)
+      .set("Authorization", `Bearer ${pickerToken}`);
+    expect(denied.status).toBe(403);
+
+    // And it is the labour key that is missing, not the module: the same token
+    // reads stock perfectly well, so this is a 403 about authority rather than
+    // a 402 about entitlement or a 401 about the token.
+    const allowed = await http()
+      .get("/inventory/handling-units")
+      .set("Authorization", `Bearer ${pickerToken}`);
+    expect(allowed.status).toBe(200);
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-7: measuring work writes nothing to payroll", async () => {
+    // Named by pattern rather than by list, so a payroll table added next year
+    // is covered without anybody remembering to add it here. NEO-7 is a lite
+    // model with a bin-change proxy; a number from it in a pay run would be a
+    // performance review nobody surveyed the building for.
+    const written = await asTenant(() =>
+      db().execute<{ relname: string; n: number }>(sql`
+        SELECT c.relname,
+               (xpath('/row/c/text()',
+                      query_to_xml(format(
+                        'SELECT count(*) AS c FROM %I WHERE org_id = %L', c.relname, ${scene.orgId}::text),
+                        false, true, '')))[1]::text::int AS n
+          FROM pg_class c
+          JOIN pg_namespace ns ON ns.oid = c.relnamespace
+         WHERE ns.nspname = 'public' AND c.relkind = 'r'
+           AND (c.relname LIKE 'payroll%' OR c.relname LIKE '%salar%' OR c.relname LIKE '%wage%')
+           AND EXISTS (
+             SELECT 1 FROM information_schema.columns col
+              WHERE col.table_schema = 'public' AND col.table_name = c.relname
+                AND col.column_name = 'org_id')`),
+    );
+    expect(written.length).toBeGreaterThan(0);
+    expect(written.filter((row) => Number(row.n) > 0).map((row) => row.relname)).toEqual([]);
   }, SLICE_TIMEOUT_MS);
 
   it("NEO-11: consigned stock is on hand and is never promisable", async () => {
