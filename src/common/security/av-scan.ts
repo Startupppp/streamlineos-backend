@@ -31,7 +31,7 @@
  *   and are NOT cached.
  */
 
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { createHmac, randomBytes } from "node:crypto";
 
 export type AvScanResult =
@@ -44,14 +44,22 @@ export abstract class AvScanner {
 }
 
 @Injectable()
-export class NoopAvScanner extends AvScanner {
+export class NoopAvScanner extends AvScanner implements OnModuleInit {
   private readonly logger = new Logger(NoopAvScanner.name);
 
-  async scan(_buffer: Buffer, filename: string, _mimeType: string): Promise<AvScanResult> {
-    if (process.env.NODE_ENV === "production" && !process.env.AV_SCANNER) {
+  onModuleInit(): void {
+    if (process.env.NODE_ENV === "production") {
       this.logger.warn(
-        `NoopAvScanner in production for file "${filename}" — set AV_SCANNER to enable real scanning`,
+        "MALWARE SCANNING DISABLED — set AV_SCANNER=clamav|virustotal to enable real scanning (uploads pass through unscanned)",
       );
+    } else {
+      this.logger.log("AV scanner: noop/disabled (development mode — not suitable for production)");
+    }
+  }
+
+  async scan(_buffer: Buffer, filename: string, _mimeType: string): Promise<AvScanResult> {
+    if (process.env.NODE_ENV === "production") {
+      this.logger.warn(`File "${filename}" uploaded without malware scan — scanning is disabled`);
     }
     return { status: "clean" };
   }

@@ -11,6 +11,7 @@ import {
   Query,
   Res,
   ServiceUnavailableException,
+  UnprocessableEntityException,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -37,6 +38,7 @@ import {
 import { StorageService, type FileStreamResult } from "./storage.service";
 import { validateMagicBytes } from "./file-signatures";
 import { AccessService } from "../access/access.service";
+import { AvScanner } from "../../common/security/av-scan";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 
@@ -101,6 +103,7 @@ export class StorageController {
     private readonly storage: StorageService,
     private readonly audit: AuditService,
     private readonly access: AccessService,
+    private readonly avScanner: AvScanner,
   ) {}
 
   @Post("upload")
@@ -127,6 +130,12 @@ export class StorageController {
     if (!validateMagicBytes(file.buffer, file.mimetype)) {
       throw new BadRequestException("File content does not match declared type");
     }
+
+    const scanResult = await this.avScanner.scan(file.buffer, file.originalname, file.mimetype);
+    if (scanResult.status === "infected")
+      throw new UnprocessableEntityException(`Upload rejected: malware detected (${scanResult.threat})`);
+    if (scanResult.status === "error")
+      throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
 
     try {
       const result = await this.storage.uploadCompressed(

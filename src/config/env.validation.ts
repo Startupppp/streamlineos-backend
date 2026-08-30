@@ -200,6 +200,12 @@ const baseSchema = z
       emptyToUndefined,
       z.enum(["clamav", "virustotal"]).optional(),
     ),
+    CLAMAV_HOST: z.preprocess(emptyToUndefined, z.string().optional()),
+    CLAMAV_PORT: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().positive().optional(),
+    ),
+    VIRUSTOTAL_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
     OUTBOX_DISPATCH_ENABLED: z.preprocess(
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
