@@ -1,6 +1,7 @@
 import type { PulledInputs, SectionMap } from "./lib/input-puller";
 import type { ResolvedComponent, CalcInputPulls } from "./lib/calculation-engine";
-import type { PayrollInputSource } from "../payroll.types";
+import type { PayrollInputSource, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
+import type { DetectedExceptions } from "./lib/exception-engine";
 
 export interface ProfileData {
   id: number;
@@ -11,6 +12,14 @@ export interface ProfileData {
   payoutCurrency: string | null;
   annualCtc: string;
   taxRegime: "OLD" | "NEW" | null;
+}
+
+export interface EmployeeCalcResult {
+  profile: ProfileData;
+  inputs: InputsSnapshot;
+  pulls: CalcInputPulls;
+  snapshot: CalculationSnapshot;
+  exceptions: DetectedExceptions[];
 }
 
 export interface RunBatchData {

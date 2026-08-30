@@ -13,6 +13,8 @@ import {
   PayoutRunController,
 } from "./payout-batches.controller";
 import { PayoutBatchesService } from "./payout-batches.service";
+import { BatchCreatorService } from "./batch-creator.service";
+import { BatchStatusService } from "./batch-status.service";
 import { PayoutValidationService } from "./payout-validation.service";
 import { PayslipTemplatesController } from "./payslip-templates.controller";
 import { PayslipTemplatesService } from "./payslip-templates.service";
@@ -36,6 +38,8 @@ import { NotificationsModule } from "../../notifications/notifications.module";
     ApprovalsService,
     LockingService,
     PayoutBatchesService,
+    BatchCreatorService,
+    BatchStatusService,
     PayoutValidationService,
     PayslipTemplatesService,
     PublishingService,

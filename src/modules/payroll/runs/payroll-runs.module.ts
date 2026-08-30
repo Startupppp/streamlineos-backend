@@ -26,6 +26,9 @@ import { PayrollRunLockService } from "../run-lock.service";
 import { PayrollRunCalculationGuardsService } from "./payroll-run-calculation-guards.service";
 import { PayrollRunVarianceService } from "./payroll-run-variance.service";
 import { SalaryProfilesRepository } from "./salary-profiles.repository";
+import { RunDataLoaderService } from "./run-data-loader.service";
+import { RunResultPersisterService } from "./run-result-persister.service";
+import { LoanRecoveryService } from "./loan-recovery.service";
 
 @Module({
   imports: [AccessModule, PayrollInsightsModule, PayrollEntitiesModule, DirectoryModule],
@@ -55,6 +58,9 @@ import { SalaryProfilesRepository } from "./salary-profiles.repository";
     PayrollRunCalculationGuardsService,
     PayrollRunVarianceService,
     SalaryProfilesRepository,
+    RunDataLoaderService,
+    RunResultPersisterService,
+    LoanRecoveryService,
   ],
   exports: [GenerateService, PayrollCommandReceiptsService, PayrollRunLockService],
 })

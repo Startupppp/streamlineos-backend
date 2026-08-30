@@ -20,6 +20,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PayoutBatchesService } from "./payout-batches.service";
+import { BatchCreatorService } from "./batch-creator.service";
+import { BatchStatusService } from "./batch-status.service";
 import { PayoutValidationService } from "./payout-validation.service";
 import {
   batchesQuerySchema,
@@ -39,14 +41,15 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
 const batchIdParams = z.object({ batchId: z.coerce.number().int().positive() }).strict();
-const batchIditemIdParams = z.object({ batchId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
+const batchItemIdParams = z.object({ batchId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
+const employeeUserIdParams = z.object({ employeeUserId: z.string().min(1) }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/runs/:runId/payout")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayoutRunController {
   constructor(
-    private readonly batches: PayoutBatchesService,
+    private readonly batchCreator: BatchCreatorService,
     private readonly validation: PayoutValidationService,
   ) {}
 
@@ -68,7 +71,7 @@ export class PayoutRunController {
     @Headers("idempotency-key") idempotencyKey: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.batches.createBatch(u.orgId, runId, u.userId, idempotencyKey, body.format);
+    return this.batchCreator.createBatch(u.orgId, runId, u.userId, idempotencyKey, body.format);
   }
 }
 
@@ -76,7 +79,10 @@ export class PayoutRunController {
 @Controller("payroll/payout")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayoutBatchesController {
-  constructor(private readonly batches: PayoutBatchesService) {}
+  constructor(
+    private readonly batches: PayoutBatchesService,
+    private readonly batchStatus: BatchStatusService,
+  ) {}
 
   @Get("batches")
   @RequirePermission("payroll:bank:manage")
@@ -84,7 +90,7 @@ export class PayoutBatchesController {
     @Query(new ZodValidationPipe(batchesQuerySchema)) query: BatchesQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.batches.listBatches(u.orgId, query.runId);
+    return this.batches.listBatches(u.orgId, query.runId, query.cursor, query.limit);
   }
 
   @Get("batches/:batchId")
@@ -115,7 +121,7 @@ export class PayoutBatchesController {
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.batches.markSent(u.orgId, batchId, u.userId);
+    return this.batchStatus.markSent(u.orgId, batchId, u.userId);
   }
 
   @Post("batches/:batchId/mark-paid")
@@ -127,13 +133,9 @@ export class PayoutBatchesController {
     @Body(new ZodValidationPipe(markBatchPaidSchema)) body: MarkBatchPaidInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.batches.markBatchPaid(u.orgId, batchId, body.transactionRef, u.userId);
+    return this.batchStatus.markBatchPaid(u.orgId, batchId, body.transactionRef, u.userId);
   }
 
-  /**
-   * Import bank return/ack CSV (manual). Does not call bank APIs.
-   * Columns: itemId|userId, status, transactionRef, failureReason
-   */
   @Post("batches/:batchId/import-return")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
@@ -144,33 +146,33 @@ export class PayoutBatchesController {
     @Body(new ZodValidationPipe(bankReturnImportSchema)) body: BankReturnImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.batches.importBankReturn(u.orgId, batchId, u.userId, body.csv);
+    return this.batchStatus.importBankReturn(u.orgId, batchId, u.userId, body.csv);
   }
 
   @Post("batches/:batchId/items/:itemId/mark-paid")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
-  @Validate({ params: batchIditemIdParams })
+  @Validate({ params: batchItemIdParams })
   markItemPaid(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Param("itemId", ParseIntPipe) itemId: number,
     @Body(new ZodValidationPipe(markItemPaidSchema)) body: MarkItemPaidInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.batches.markItemPaid(u.orgId, batchId, itemId, body.transactionRef, u.userId);
+    return this.batchStatus.markItemPaid(u.orgId, batchId, itemId, body.transactionRef, u.userId);
   }
 
   @Post("batches/:batchId/items/:itemId/mark-failed")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
-  @Validate({ params: batchIditemIdParams })
+  @Validate({ params: batchItemIdParams })
   markItemFailed(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Param("itemId", ParseIntPipe) itemId: number,
     @Body(new ZodValidationPipe(markItemFailedSchema)) body: MarkItemFailedInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.batches.markItemFailed(u.orgId, batchId, itemId, body.failureReason, u.userId);
+    return this.batchStatus.markItemFailed(u.orgId, batchId, itemId, body.failureReason, u.userId);
   }
 }
 
@@ -182,6 +184,7 @@ export class PayoutEmployeeBankController {
 
   @Get("bank")
   @RequirePermission("payroll:bank:view")
+  @Validate({ params: employeeUserIdParams })
   getBankDetails(
     @Param("employeeUserId") employeeUserId: string,
     @CurrentUser() u: CurrentUserContext,
