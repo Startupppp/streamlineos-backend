@@ -1,9 +1,10 @@
-﻿import { Test } from "@nestjs/testing";
+import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { NotFoundException } from "@nestjs/common";
 import { KbPublicPagesController } from "./kb-public-pages.controller";
 import { KbPagesService } from "./kb-pages.service";
+import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 
 describe("KbPublicPagesController (e2e)", () => {
   let app: INestApplication;
@@ -18,9 +19,14 @@ describe("KbPublicPagesController (e2e)", () => {
       },
     };
 
+    const mockRateLimit = { check: jest.fn().mockResolvedValue({ allowed: true }) };
+
     const ref = await Test.createTestingModule({
       controllers: [KbPublicPagesController],
-      providers: [{ provide: KbPagesService, useValue: mockPagesService }],
+      providers: [
+        { provide: KbPagesService, useValue: mockPagesService },
+        { provide: RateLimitService, useValue: mockRateLimit },
+      ],
     }).compile();
 
     app = ref.createNestApplication();

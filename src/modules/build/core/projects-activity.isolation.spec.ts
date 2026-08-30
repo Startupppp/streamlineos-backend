@@ -10,10 +10,10 @@ function makeInsertMock() {
 }
 
 function makeEmptySelectMock() {
+  const limitMock = jest.fn().mockResolvedValue([]);
+  const whereMock = jest.fn().mockReturnValue({ limit: limitMock });
   return jest.fn().mockReturnValue({
-    from: jest.fn().mockReturnValue({
-      where: jest.fn().mockResolvedValue([]),
-    }),
+    from: jest.fn().mockReturnValue({ where: whereMock }),
   });
 }
 

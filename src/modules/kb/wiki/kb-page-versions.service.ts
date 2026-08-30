@@ -10,6 +10,7 @@ import { kbPages, kbPageVersions, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { resyncPageLinks, snapshotIfNeeded } from "./kb-page-edit.util";
 
@@ -25,6 +26,7 @@ const VERSION_COLUMNS = {
   contentText: kbPageVersions.contentText,
   changeSummary: kbPageVersions.changeSummary,
   authorId: kbPageVersions.authorId,
+  authorMembershipId: kbPageVersions.authorMembershipId,
   authorName: users.name,
   createdAt: kbPageVersions.createdAt,
 };
@@ -93,8 +95,9 @@ export class KbPageVersionsService {
     });
     if (!version) throw new NotFoundException("Version not found");
 
+    const membershipId = actingMembershipId(user.principal);
     return this.db.transaction(async (tx) => {
-      await snapshotIfNeeded(tx, orgId, current, user.userId, null, true);
+      await snapshotIfNeeded(tx, orgId, current, user.userId, null, true, membershipId);
 
       const [updated] = await tx
         .update(kbPages)
@@ -115,6 +118,7 @@ export class KbPageVersionsService {
         user.userId,
         `Restored from version ${versionNumber}`,
         true,
+        membershipId,
       );
 
       if (version.content) {

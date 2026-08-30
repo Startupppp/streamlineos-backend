@@ -79,8 +79,10 @@ describe("KbAskService — source citation re-verification", () => {
   };
 
   beforeEach(async () => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     mockEvents.record.mockResolvedValue(undefined);
+    mockSearch.retrieveTopArticles.mockResolvedValue([]);
+    mockSearch.retrieveAttachmentSnippets.mockResolvedValue("");
 
     const selectChain = {
       from: jest.fn().mockReturnThis(),
@@ -136,6 +138,42 @@ describe("KbAskService — source citation re-verification", () => {
 
     const sourceCitations = result.citations.filter((c) => c.kind === "source");
     expect(sourceCitations).toHaveLength(0);
+  });
+
+  it("resolveVisibleArticles WHERE predicate includes caller orgId — removing eq(orgId) changes the compiled predicate", async () => {
+    const articleForTest = {
+      kind: "article" as const,
+      id: 42,
+      title: "Policy Doc",
+      slug: "policy-doc",
+      spaceId: 5,
+      contentText: "Policy content",
+      updatedAt: new Date("2024-01-01"),
+    };
+
+    mockSearch.retrieveTopArticles.mockResolvedValue([articleForTest]);
+    mockSearch.retrieveTopSources.mockResolvedValue([]);
+    mockSearch.retrieveAttachmentSnippets.mockResolvedValue("");
+    mockAccess.getAccessibleSpaceIds.mockResolvedValue([5]);
+
+    const capturedArgs: unknown[] = [];
+    const selectChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn((cond) => {
+        capturedArgs.push(cond);
+        return Promise.resolve([{ id: 42 }]);
+      }),
+    };
+    mockDb.select = jest.fn().mockReturnValue(selectChain);
+
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Answer about articles."));
+
+    await service.ask(makeUser(), { question: "what is the policy?" });
+
+    expect(capturedArgs.length).toBeGreaterThan(0);
+    const compiled = serializePredicate(capturedArgs);
+    expect(compiled).toContain("org-1");
+    expect(compiled).toContain("published");
   });
 
   it("re-queries kbSources with live space access predicate, not cached retrieval state", async () => {

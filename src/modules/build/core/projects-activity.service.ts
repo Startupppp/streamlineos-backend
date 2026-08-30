@@ -112,6 +112,16 @@ export class ProjectsActivityService {
     private readonly dispatch: NotificationDispatchService,
   ) {}
 
+  private async resolveMembershipId(orgId: string, userId: string | null): Promise<number | null> {
+    if (!userId) return null;
+    const [row] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    return row?.id ?? null;
+  }
+
   async logTicketActivity(
     orgId: string,
     ticketId: number,
@@ -120,10 +130,12 @@ export class ProjectsActivityService {
     fromValue?: string | null,
     toValue?: string | null,
   ): Promise<void> {
+    const userMembershipId = await this.resolveMembershipId(orgId, userId);
     await this.db.insert(ticketActivityLog).values({
       orgId,
       ticketId,
       userId: userId ?? null,
+      userMembershipId,
       action,
       fromValue: fromValue ?? null,
       toValue: toValue ?? null,
@@ -181,11 +193,13 @@ export class ProjectsActivityService {
 
     if (entries.length === 0) return;
 
+    const userMembershipId = await this.resolveMembershipId(orgId, userId);
     await this.db.insert(ticketActivityLog).values(
       entries.map((entry) => ({
         orgId,
         ticketId,
         userId,
+        userMembershipId,
         action: entry.action,
         fromValue: entry.from,
         toValue: entry.to,
@@ -263,6 +277,13 @@ export class ProjectsActivityService {
     );
     if (mentioned.length === 0) return;
 
+    const mentionedUserIds = mentioned.map((u) => u.id);
+    const memberRows = await this.db
+      .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, input.orgId), inArray(organizationMembers.userId, mentionedUserIds)));
+    const membershipByUserId = new Map(memberRows.map((r) => [r.userId, r.id]));
+
     try {
       await this.db
         .insert(ticketCommentMentions)
@@ -271,6 +292,7 @@ export class ProjectsActivityService {
             orgId: input.orgId,
             commentId: input.commentId,
             mentionedUserId: user.id,
+            mentionedUserMembershipId: membershipByUserId.get(user.id) ?? null,
           })),
         )
         .onConflictDoNothing();

@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import {
   projects,
   sprints,
@@ -208,4 +208,8 @@ export const sprintScopeEventsRelations = relations(sprintScopeEvents, ({ one })
   sprint: one(sprints, { fields: [sprintScopeEvents.sprintId], references: [sprints.id] }),
   ticket: one(tickets, { fields: [sprintScopeEvents.ticketId], references: [tickets.id] }),
   actor: one(users, { fields: [sprintScopeEvents.actorId], references: [users.id] }),
+  actorMembership: one(organizationMembers, {
+    fields: [sprintScopeEvents.orgId, sprintScopeEvents.actorMembershipId],
+    references: [organizationMembers.orgId, organizationMembers.id],
+  }),
 }));

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleFeedback, kbArticleTags, kbArticleVersions, kbTags } from "../../../db/schema";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -202,7 +203,7 @@ export class KbArticlesService {
             })
             .returning();
 
-          await this.snapshot(tx, orgId, article, user.userId);
+          await this.snapshot(tx, orgId, article, user.userId, undefined, actingMembershipId(user.principal));
           const resolvedTags = await this.syncArticleTags(tx, orgId, article.id, tagNames);
           return { ...article, tags: resolvedTags };
         });
@@ -266,7 +267,7 @@ export class KbArticlesService {
       }
 
       if (titleChanged || contentChanged) {
-        await this.snapshot(tx, orgId, result, user.userId, input.changeSummary);
+        await this.snapshot(tx, orgId, result, user.userId, input.changeSummary, actingMembershipId(user.principal));
       }
 
       if (result.status === "published" && (contentChanged || aclChanged)) {
@@ -345,7 +346,7 @@ export class KbArticlesService {
         .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
         .returning();
 
-      await this.snapshot(tx, orgId, result, user.userId);
+      await this.snapshot(tx, orgId, result, user.userId, undefined, actingMembershipId(user.principal));
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),
         organizationId: orgId,
@@ -467,7 +468,7 @@ export class KbArticlesService {
         .returning();
       if (!result) throw new NotFoundException("Article not found");
 
-      await this.snapshot(tx, orgId, result, user.userId, `Restored v${versionNumber}`);
+      await this.snapshot(tx, orgId, result, user.userId, `Restored v${versionNumber}`, actingMembershipId(user.principal));
       if (result.status === "published") {
         await OutboxWriter.emit(tx, {
           eventId: randomUUID(),
@@ -566,6 +567,7 @@ export class KbArticlesService {
     article: SnapshotSource,
     userId: string,
     changeSummary?: string,
+    membershipId: number | null = null,
   ): Promise<void> {
     const versionNumber = await this.nextVersionNumber(tx, orgId, article.id);
     await tx.insert(kbArticleVersions).values({
@@ -577,6 +579,7 @@ export class KbArticlesService {
       excerpt: article.excerpt,
       changeSummary: changeSummary ?? null,
       authorId: userId,
+      authorMembershipId: membershipId,
     });
   }
 }

@@ -2787,6 +2787,13 @@
       "when": 1788091267000,
       "tag": "0680_kb_versions_author_membership",
       "breakpoints": true
+    },
+    {
+      "idx": 500,
+      "version": "7",
+      "when": 1798000000000,
+      "tag": "0689_hr_person_search_function",
+      "breakpoints": true
     }
   ]
 }

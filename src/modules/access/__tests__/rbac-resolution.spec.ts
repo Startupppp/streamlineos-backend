@@ -116,6 +116,9 @@ function buildService(db: unknown): AccessService {
     cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
       return this.cached(`${o}:${k}`, fn, ttl);
     },
+    cachedForOrgWith<T>(o: string, k: string, fn: () => Promise<T>) {
+      return this.cached(`${o}:${k}`, fn);
+    },
     invalidateForOrg: jest.fn().mockResolvedValue(undefined),
   };
   const allEnabled: Record<string, boolean> = {};

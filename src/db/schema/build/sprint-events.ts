@@ -31,6 +31,7 @@ export const sprintScopeEvents = buildEvents.table(
     actorId: text("actor_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    actorMembershipId: integer("actor_membership_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -42,5 +43,10 @@ export const sprintScopeEvents = buildEvents.table(
       table.createdAt,
     ),
     index("idx_sprint_scope_events_ticket").on(table.ticketId),
+    foreignKey({
+      name: "fk_sprint_scope_events_actor",
+      columns: [table.orgId, table.actorMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("restrict"),
   ],
 );

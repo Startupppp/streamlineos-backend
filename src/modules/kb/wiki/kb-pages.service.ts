@@ -221,7 +221,7 @@ export class KbPagesService {
       if (!updated) throw new NotFoundException("Page not found");
 
       if (contentChanged && input.content !== undefined) {
-        await snapshotIfNeeded(tx, orgId, updated, user.userId, input.changeSummary ?? null);
+        await snapshotIfNeeded(tx, orgId, updated, user.userId, input.changeSummary ?? null, false, this.membershipId(user));
         await resyncPageLinks(tx, orgId, pageId, input.content);
 
         const oldMentions = new Set(extractMentionUserIds(current.content));

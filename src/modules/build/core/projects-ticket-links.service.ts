@@ -8,6 +8,7 @@ import {
 import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   gitTicketLinks,
+  organizationMembers,
   projects,
   ticketRelatedLinks,
   tickets,
@@ -114,6 +115,11 @@ export class ProjectsTicketLinksService {
       .where(eq(ticketRelatedLinks.ticketId, ticketId));
     if (existing.length >= 20)
       throw new BadRequestException("A ticket can have at most 20 related links");
+    const [membership] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
+      .limit(1);
     const [created] = await this.db
       .insert(ticketRelatedLinks)
       .values({
@@ -122,6 +128,7 @@ export class ProjectsTicketLinksService {
         url: body.url,
         label: body.label ?? null,
         createdBy: u.userId,
+        createdByMembershipId: membership?.id ?? null,
       })
       .returning();
     return created;

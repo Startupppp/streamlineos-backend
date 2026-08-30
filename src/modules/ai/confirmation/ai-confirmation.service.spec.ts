@@ -1,5 +1,9 @@
 ﻿import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import { AiConfirmationService } from "./ai-confirmation.service";
+
+const dialect = new PgDialect();
 
 process.env.AI_CONFIRMATION_SECRET = "test-secret-for-unit-tests-xxxxxxxxxxxxx";
 
@@ -772,5 +776,52 @@ describe("AiConfirmationService — ORACLE-1 existence oracle fix", () => {
     }).catch((e) => e);
 
     expect(err).toBeInstanceOf(NotFoundException);
+  });
+
+  it("confirm WHERE predicate includes caller orgId — removing eq(orgId) changes the compiled predicate", async () => {
+    const proposeStore = makeStore();
+    const proposeDbHandle = makeFakeDb(proposeStore);
+    const proposeSvc = new AiConfirmationService(
+      proposeDbHandle.db as never,
+      { log: jest.fn() } as never,
+    );
+    const proposed = await proposeSvc.propose({
+      orgId: "org-victim",
+      userId: "u1",
+      action: "delete",
+      payload: {},
+    });
+
+    let capturedCondition: unknown;
+    const captureDb: Record<string, unknown> = {
+      select: () => ({
+        from: () => ({
+          where: (condition: unknown) => {
+            capturedCondition = condition;
+            return {
+              for: () => ({
+                limit: (n: number) => ({
+                  then(resolve: (v: FakeRow[]) => void, reject: (e: unknown) => void) {
+                    return Promise.resolve([].slice(0, n)).then(resolve, reject);
+                  },
+                }),
+              }),
+            };
+          },
+        }),
+      }),
+      execute: jest.fn().mockResolvedValue([]),
+      transaction: async <T>(cb: (tx: Record<string, unknown>) => Promise<T>): Promise<T> => cb(captureDb),
+    };
+
+    const svc2 = new AiConfirmationService(captureDb as never, { log: jest.fn() } as never);
+    await svc2
+      .confirm({ token: proposed.token, actor: { orgId: "org-ATTACKER", userId: "u1" } })
+      .catch(() => {});
+
+    expect(capturedCondition).toBeDefined();
+    const { sql: compiledSql, params } = dialect.sqlToQuery(capturedCondition as SQL);
+    expect(compiledSql).toMatch(/org_id/);
+    expect(params).toContain("org-ATTACKER");
   });
 });

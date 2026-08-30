@@ -6,6 +6,8 @@ import {
 import { and, desc, eq, isNull, lt } from "drizzle-orm";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import {
+  organizationMembers,
+  organizationPeople,
   ticketActivityLog,
   ticketAttachments,
   ticketLabelMappings,
@@ -151,22 +153,29 @@ export class ProjectsTicketSubresourcesService {
         toValue: ticketActivityLog.toValue,
         createdAt: ticketActivityLog.createdAt,
         userId: ticketActivityLog.userId,
-        userName: users.name,
-        userFirstName: users.firstName,
-        userLastName: users.lastName,
-        userImage: users.image,
+        userMembershipId: ticketActivityLog.userMembershipId,
+        displayName: organizationPeople.displayName,
+        firstName: organizationPeople.firstName,
+        lastName: organizationPeople.lastName,
+        avatarUrl: organizationPeople.avatarUrl,
       })
       .from(ticketActivityLog)
-      .leftJoin(users, eq(users.id, ticketActivityLog.userId))
+      .leftJoin(organizationMembers, and(
+        eq(organizationMembers.orgId, ticketActivityLog.orgId),
+        eq(organizationMembers.id, ticketActivityLog.userMembershipId),
+      ))
+      .leftJoin(organizationPeople, and(
+        eq(organizationPeople.organizationId, organizationMembers.orgId),
+        eq(organizationPeople.userId, organizationMembers.userId),
+        isNull(organizationPeople.deletedAt),
+      ))
       .where(and(...conditions))
       .orderBy(desc(ticketActivityLog.id))
       .limit(opts.limit + 1);
 
     const mapped = rows.map((row) => {
-      const fallbackName =
-        `${row.userFirstName ?? ""} ${row.userLastName ?? ""}`.trim();
-      const resolvedName =
-        row.userName ?? (fallbackName.length > 0 ? fallbackName : null);
+      const fallbackName = `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim();
+      const resolvedName = row.displayName ?? (fallbackName.length > 0 ? fallbackName : null);
       return {
         id: row.id,
         action: row.action,
@@ -175,7 +184,7 @@ export class ProjectsTicketSubresourcesService {
         toValue: row.toValue,
         createdAt: row.createdAt,
         user: row.userId
-          ? { id: row.userId, name: resolvedName, image: row.userImage }
+          ? { id: row.userId, name: resolvedName, image: row.avatarUrl ?? null }
           : null,
       };
     });
