@@ -13,8 +13,15 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { HrInterviewersService } from "./hr-interviewers.service";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import {
+  interviewerAvailabilityQuerySchema,
+  interviewerPerformanceQuerySchema,
+  type InterviewerAvailabilityQuery,
+  type InterviewerPerformanceQuery,
+} from "./dto/hr-interviews.schemas";
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -24,21 +31,22 @@ export class HrInterviewersController {
 
   @Get("interviewers/availability")
   @RequirePermission("hr:interviews:view")
+  @Validate({ query: interviewerAvailabilityQuerySchema })
   availability(
-    @Query("date") date: string | undefined,
-    @Query("interviewerIds") interviewerIds: string | undefined,
+    @Query() query: InterviewerAvailabilityQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.interviewers.availability(u.orgId, date, interviewerIds);
+    return this.interviewers.availability(u.orgId, query.date, query.interviewerIds);
   }
 
   @Get("interviewer-performance")
   @RequirePermission("hr:interviews:view")
+  @Validate({ query: interviewerPerformanceQuerySchema })
   interviewerPerformance(
-    @Query("days") daysParam: string | undefined,
+    @Query() query: InterviewerPerformanceQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const days = Math.min(Number(daysParam ?? "90"), 365);
+    const days = Math.min(query.days ?? 90, 365);
     return this.interviewers.interviewerPerformance(u.orgId, days);
   }
 

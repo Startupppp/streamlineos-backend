@@ -174,6 +174,15 @@ export const taxDeclarationsQuerySchema = z.object({
 });
 export type TaxDeclarationsQuery = z.infer<typeof taxDeclarationsQuerySchema>;
 
+export const journalQuerySchema = z.object({
+  month: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+    .optional(),
+  format: z.enum(["json", "csv"]).optional(),
+});
+export type JournalQuery = z.infer<typeof journalQuerySchema>;
+
 export const reportsQuerySchema = z.object({
   month: z
     .string()

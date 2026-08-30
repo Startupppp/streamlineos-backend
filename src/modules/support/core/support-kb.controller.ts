@@ -40,6 +40,16 @@ import {
 } from "./dto/support.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
+const articleAndAttachmentIdParams = z
+  .object({
+    articleId: z.coerce.number().int().positive(),
+    attachmentId: z.coerce.number().int().positive(),
+  })
+  .strict();
 
 @RequireModule("support")
 @Controller("support/kb")
@@ -199,6 +209,7 @@ export class SupportKbController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @HttpCode(201)
+  @Validate({ params: articleIdParams })
   createAttachment(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body(new ZodValidationPipe(createKbAttachmentSchema)) body: CreateKbAttachmentInput,
@@ -210,6 +221,7 @@ export class SupportKbController {
   @Delete("articles/:articleId/attachments/:attachmentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
+  @Validate({ params: articleAndAttachmentIdParams })
   deleteAttachment(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("attachmentId", ParseIntPipe) attachmentId: number,
@@ -232,6 +244,7 @@ export class SupportKbController {
   @Get("articles/:articleId/index-status")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
+  @Validate({ params: articleIdParams })
   getArticleIndexStatus(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -243,6 +256,7 @@ export class SupportKbController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @HttpCode(200)
+  @Validate({ params: articleIdParams })
   reindexArticle(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,

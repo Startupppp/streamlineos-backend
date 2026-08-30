@@ -1,9 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { Validate } from "../../common/validation/validate.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SurveyBuilderService } from "./survey-builder.service";
 import { SurveyLogicService } from "./survey-logic.service";
@@ -24,6 +26,11 @@ import {
   type PatchLogicRuleInput,
 } from "./dto/survey-builder.schemas";
 
+const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
+const surveyAndSectionIdParams = z.object({ surveyId: z.coerce.number().int().positive(), sectionId: z.coerce.number().int().positive() }).strict();
+const surveyAndQuestionIdParams = z.object({ surveyId: z.coerce.number().int().positive(), questionId: z.coerce.number().int().positive() }).strict();
+const surveyAndRuleIdParams = z.object({ surveyId: z.coerce.number().int().positive(), ruleId: z.coerce.number().int().positive() }).strict();
+
 @Controller("surveys/:surveyId")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class SurveyBuilderController {
@@ -34,6 +41,7 @@ export class SurveyBuilderController {
 
   @Get("builder")
   @RequirePermission("surveys:view")
+  @Validate({ params: surveyIdParams })
   getBuilder(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.builder.getBuilder(u.orgId, surveyId);
   }
@@ -41,6 +49,7 @@ export class SurveyBuilderController {
   @Post("sections")
   @HttpCode(201)
   @RequirePermission("surveys:update")
+  @Validate({ params: surveyIdParams })
   createSection(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(createSectionSchema)) body: CreateSectionInput,
@@ -51,6 +60,7 @@ export class SurveyBuilderController {
 
   @Patch("sections/:sectionId")
   @RequirePermission("surveys:update")
+  @Validate({ params: surveyAndSectionIdParams })
   patchSection(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("sectionId", ParseIntPipe) sectionId: number,
@@ -62,6 +72,7 @@ export class SurveyBuilderController {
 
   @Delete("sections/:sectionId")
   @RequirePermission("surveys:update")
+  @Validate({ params: surveyAndSectionIdParams })
   deleteSection(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("sectionId", ParseIntPipe) sectionId: number,
@@ -73,6 +84,7 @@ export class SurveyBuilderController {
   @Post("questions")
   @HttpCode(201)
   @RequirePermission("surveys:update")
+  @Validate({ params: surveyIdParams })
   createQuestion(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(createQuestionSchema)) body: CreateQuestionInput,
@@ -83,6 +95,7 @@ export class SurveyBuilderController {
 
   @Patch("questions/:questionId")
   @RequirePermission("surveys:update")
+  @Validate({ params: surveyAndQuestionIdParams })
   patchQuestion(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("questionId", ParseIntPipe) questionId: number,
@@ -94,6 +107,7 @@ export class SurveyBuilderController {
 
   @Delete("questions/:questionId")
   @RequirePermission("surveys:update")
+  @Validate({ params: surveyAndQuestionIdParams })
   deleteQuestion(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("questionId", ParseIntPipe) questionId: number,
@@ -104,6 +118,7 @@ export class SurveyBuilderController {
 
   @Post("questions/:questionId/duplicate")
   @RequirePermission("surveys:update")
+  @Validate({ params: surveyAndQuestionIdParams })
   duplicateQuestion(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("questionId", ParseIntPipe) questionId: number,
@@ -114,6 +129,7 @@ export class SurveyBuilderController {
 
   @Patch("reorder")
   @RequirePermission("surveys:update")
+  @Validate({ params: surveyIdParams })
   reorder(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(reorderSchema)) body: ReorderInput,
@@ -124,6 +140,7 @@ export class SurveyBuilderController {
 
   @Get("logic")
   @RequirePermission("surveys:view")
+  @Validate({ params: surveyIdParams })
   listLogic(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.logic.list(u.orgId, surveyId);
   }
@@ -131,6 +148,7 @@ export class SurveyBuilderController {
   @Post("logic")
   @HttpCode(201)
   @RequirePermission("surveys:update")
+  @Validate({ params: surveyIdParams })
   createLogic(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(createLogicRuleSchema)) body: CreateLogicRuleInput,
@@ -141,6 +159,7 @@ export class SurveyBuilderController {
 
   @Patch("logic/:ruleId")
   @RequirePermission("surveys:update")
+  @Validate({ params: surveyAndRuleIdParams })
   patchLogic(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -152,6 +171,7 @@ export class SurveyBuilderController {
 
   @Delete("logic/:ruleId")
   @RequirePermission("surveys:update")
+  @Validate({ params: surveyAndRuleIdParams })
   deleteLogic(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("ruleId", ParseIntPipe) ruleId: number,

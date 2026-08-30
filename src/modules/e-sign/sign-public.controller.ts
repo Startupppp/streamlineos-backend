@@ -1,7 +1,9 @@
 import { Body, Controller, Get, HttpCode, HttpException, Param, ParseIntPipe, Post, Req } from "@nestjs/common";
+import { z } from "zod";
 import type { Request } from "express";
 import { Public } from "../../common/auth/public.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
+import { Validate } from "../../common/validation/validate.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SignPublicService } from "./sign-public.service";
 import {
@@ -25,6 +27,9 @@ function clientIp(req: Request): string {
   return (raw?.split(",")[0]?.trim() || req.ip || "anon").slice(0, 100);
 }
 
+const tokenAndDocumentIdParams = z.object({ token: z.string().min(1), documentId: z.coerce.number().int().positive() }).strict();
+const tokenAndFieldIdParams = z.object({ token: z.string().min(1), fieldId: z.coerce.number().int().positive() }).strict();
+
 @Public()
 @Controller("public/sign")
 export class SignPublicController {
@@ -45,6 +50,7 @@ export class SignPublicController {
   }
 
   @Get(":token/documents/:documentId/preview")
+  @Validate({ params: tokenAndDocumentIdParams })
   async getDocumentPreview(@Param("token") token: string, @Param("documentId", ParseIntPipe) documentId: number, @Req() req: Request) {
     await this.guard("sign:public-session", token, req);
     return this.publicSigning.getDocumentPreview(token, documentId);
@@ -81,6 +87,7 @@ export class SignPublicController {
 
   @Post(":token/fields/:fieldId")
   @HttpCode(200)
+  @Validate({ params: tokenAndFieldIdParams })
   async setFieldValue(
     @Param("token") token: string,
     @Param("fieldId", ParseIntPipe) fieldId: number,

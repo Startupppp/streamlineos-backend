@@ -1,9 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { Validate } from "../../common/validation/validate.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SurveyAutomationService } from "./survey-automation.service";
 import {
@@ -13,6 +15,9 @@ import {
   type PatchAutomationInput,
 } from "./dto/survey-automation.schemas";
 
+const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
+const surveyAndAutomationIdParams = z.object({ surveyId: z.coerce.number().int().positive(), automationId: z.string().min(1) }).strict();
+
 @Controller("surveys/:surveyId/automations")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class SurveyAutomationController {
@@ -20,6 +25,7 @@ export class SurveyAutomationController {
 
   @Get()
   @RequirePermission("surveys:automations:manage")
+  @Validate({ params: surveyIdParams })
   list(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.automations.list(u.orgId, surveyId);
   }
@@ -27,6 +33,7 @@ export class SurveyAutomationController {
   @Post()
   @HttpCode(201)
   @RequirePermission("surveys:automations:manage")
+  @Validate({ params: surveyIdParams })
   create(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(createAutomationSchema)) body: CreateAutomationInput,
@@ -37,6 +44,7 @@ export class SurveyAutomationController {
 
   @Patch(":automationId")
   @RequirePermission("surveys:automations:manage")
+  @Validate({ params: surveyAndAutomationIdParams })
   patch(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("automationId") automationId: string,
@@ -48,6 +56,7 @@ export class SurveyAutomationController {
 
   @Delete(":automationId")
   @RequirePermission("surveys:automations:manage")
+  @Validate({ params: surveyAndAutomationIdParams })
   remove(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("automationId") automationId: string,

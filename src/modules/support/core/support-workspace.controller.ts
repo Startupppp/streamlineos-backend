@@ -31,6 +31,13 @@ import {
 } from "./dto/support.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { z } from "zod";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const queueIdParams = z.object({ queueId: z.coerce.number().int().positive() }).strict();
+const viewIdParams = z.object({ viewId: z.coerce.number().int().positive() }).strict();
+const ticketIdParams = z.object({ supportTicketId: z.coerce.number().int().positive() }).strict();
+const ticketAndTagIdParams = z.object({ supportTicketId: z.coerce.number().int().positive(), tagId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("support")
 @Controller("support")
@@ -56,6 +63,7 @@ export class SupportWorkspaceController {
 
   @Patch("queues/:queueId")
   @RequirePermission("support:queues:manage")
+  @Validate({ params: queueIdParams })
   updateQueue(
     @Param("queueId", ParseIntPipe) queueId: number,
     @Body(new ZodValidationPipe(updateQueueSchema)) body: UpdateQueueInput,
@@ -66,6 +74,7 @@ export class SupportWorkspaceController {
 
   @Delete("queues/:queueId")
   @RequirePermission("support:queues:manage")
+  @Validate({ params: queueIdParams })
   deleteQueue(@Param("queueId", ParseIntPipe) queueId: number, @CurrentUser() u: CurrentUserContext) {
     return this.workspace.deleteQueue(u.orgId, queueId);
   }
@@ -88,6 +97,7 @@ export class SupportWorkspaceController {
 
   @Patch("views/:viewId")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: viewIdParams })
   updateSavedView(
     @Param("viewId", ParseIntPipe) viewId: number,
     @Body(new ZodValidationPipe(updateSavedViewSchema)) body: UpdateSavedViewInput,
@@ -98,6 +108,7 @@ export class SupportWorkspaceController {
 
   @Delete("views/:viewId")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: viewIdParams })
   deleteSavedView(@Param("viewId", ParseIntPipe) viewId: number, @CurrentUser() u: CurrentUserContext) {
     return this.workspace.deleteSavedView(u.orgId, u.userId, viewId);
   }
@@ -120,6 +131,7 @@ export class SupportWorkspaceController {
 
   @Get(":supportTicketId/tags")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: ticketIdParams })
   listTicketTags(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -130,6 +142,7 @@ export class SupportWorkspaceController {
   @Post(":supportTicketId/tags/:tagId")
   @RequirePermission("support:tickets:manage")
   @HttpCode(200)
+  @Validate({ params: ticketAndTagIdParams })
   attachTag(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Param("tagId", ParseIntPipe) tagId: number,
@@ -140,6 +153,7 @@ export class SupportWorkspaceController {
 
   @Delete(":supportTicketId/tags/:tagId")
   @RequirePermission("support:tickets:manage")
+  @Validate({ params: ticketAndTagIdParams })
   detachTag(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Param("tagId", ParseIntPipe) tagId: number,
@@ -150,6 +164,7 @@ export class SupportWorkspaceController {
 
   @Get(":supportTicketId/watchers")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: ticketIdParams })
   listWatchers(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -160,12 +175,14 @@ export class SupportWorkspaceController {
   @Post(":supportTicketId/follow")
   @RequirePermission("support:tickets:view")
   @HttpCode(200)
+  @Validate({ params: ticketIdParams })
   follow(@Param("supportTicketId", ParseIntPipe) supportTicketId: number, @CurrentUser() u: CurrentUserContext) {
     return this.workspace.follow(u.orgId, supportTicketId, u.userId);
   }
 
   @Delete(":supportTicketId/follow")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: ticketIdParams })
   unfollow(@Param("supportTicketId", ParseIntPipe) supportTicketId: number, @CurrentUser() u: CurrentUserContext) {
     return this.workspace.unfollow(u.orgId, supportTicketId, u.userId);
   }

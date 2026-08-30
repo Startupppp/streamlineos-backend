@@ -38,6 +38,10 @@ import {
   type MarkSignedInput,
 } from "./dto/quote.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { z } from "zod";
+import { Validate } from "../../common/validation/validate.decorator";
+
+const quoteIdParams = z.object({ quoteId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("quotes")
@@ -83,6 +87,7 @@ export class QuotesController {
 
   @Get(":quoteId")
   @RequirePermission("crm:quotes:read")
+  @Validate({ params: quoteIdParams })
   async get(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -94,6 +99,7 @@ export class QuotesController {
 
   @Patch(":quoteId")
   @RequirePermission("crm:quotes:update")
+  @Validate({ params: quoteIdParams })
   async update(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
@@ -106,6 +112,7 @@ export class QuotesController {
 
   @Delete(":quoteId")
   @RequirePermission("crm:quotes:delete")
+  @Validate({ params: quoteIdParams })
   async remove(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -118,6 +125,7 @@ export class QuotesController {
   @Post(":quoteId/send")
   @RequirePermission("crm:quotes:update")
   @Idempotent("crm.quote.send")
+  @Validate({ params: quoteIdParams })
   async send(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -131,6 +139,7 @@ export class QuotesController {
   @Post(":quoteId/approve")
   @Idempotent("quotes.quote.approve")
   @RequirePermission("crm:quotes:approve")
+  @Validate({ params: quoteIdParams })
   async approve(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -141,6 +150,7 @@ export class QuotesController {
   @Post(":quoteId/reject")
   @Idempotent("quotes.quote.reject")
   @RequirePermission("crm:quotes:approve")
+  @Validate({ params: quoteIdParams })
   async reject(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @Body(new ZodValidationPipe(approveRejectSchema)) body: ApproveRejectInput,
@@ -152,6 +162,7 @@ export class QuotesController {
   @Post(":quoteId/convert-to-invoice")
   @RequirePermission("crm:quotes:create")
   @Idempotent("crm.quote.convertToInvoice")
+  @Validate({ params: quoteIdParams })
   async convertToInvoice(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -161,6 +172,7 @@ export class QuotesController {
 
   @Post(":quoteId/mark-signed")
   @RequirePermission("crm:quotes:update")
+  @Validate({ params: quoteIdParams })
   async markSigned(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @Body(new ZodValidationPipe(markSignedSchema)) body: MarkSignedInput,

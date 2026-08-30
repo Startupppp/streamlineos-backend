@@ -1,4 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { z } from "zod";
+import { Validate } from "../../common/validation/validate.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -30,6 +32,8 @@ import {
 } from "./dto/data-quality.schemas";
 
 const VIEW = "crm:data-quality:view";
+const findingIdParams = z.object({ findingId: z.string().min(1) }).strict();
+const resolutionIdParams = z.object({ resolutionId: z.string().min(1) }).strict();
 
 /**
  * The data-quality queue.
@@ -64,6 +68,7 @@ export class DataQualityController {
 
   @Get("findings/:findingId")
   @RequirePermission(VIEW)
+  @Validate({ params: findingIdParams })
   getFinding(@Param("findingId") findingId: string, @CurrentUser() u: CurrentUserContext) {
     return this.queue.getFinding(u.orgId, findingId);
   }
@@ -147,6 +152,7 @@ export class DataQualityController {
   @Post("resolutions/:resolutionId/reverse")
   @Idempotent("crm.data-quality.reverse")
   @RequirePermission("crm:data-quality:resolve")
+  @Validate({ params: resolutionIdParams })
   reverse(
     @Param("resolutionId") resolutionId: string,
     @Body(new ZodValidationPipe(reverseResolutionSchema)) body: ReverseResolutionInput,

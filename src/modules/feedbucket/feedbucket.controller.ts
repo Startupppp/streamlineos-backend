@@ -36,6 +36,11 @@ import {
   type UpdateWidgetInput,
 } from "./feedbucket.schemas";
 import { analyzeBodySchema, type AnalyzeBodyInput } from "./feedbucket-ai.schemas";
+import { z } from "zod";
+import { Validate } from "../../common/validation/validate.decorator";
+
+const widgetIdParams = z.object({ widgetId: z.coerce.number().int().positive() }).strict();
+const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("feedbucket")
 @Controller("feedbucket")
@@ -66,6 +71,7 @@ export class FeedbucketController {
 
   @Get("widgets/:widgetId")
   @RequirePermission("feedbucket:widgets:view")
+  @Validate({ params: widgetIdParams })
   getWidget(
     @CurrentUser() user: CurrentUserContext,
     @Param("widgetId", ParseIntPipe) widgetId: number,
@@ -75,6 +81,7 @@ export class FeedbucketController {
 
   @Patch("widgets/:widgetId")
   @RequirePermission("feedbucket:widgets:update")
+  @Validate({ params: widgetIdParams })
   updateWidget(
     @CurrentUser() user: CurrentUserContext,
     @Param("widgetId", ParseIntPipe) widgetId: number,
@@ -85,6 +92,7 @@ export class FeedbucketController {
 
   @Delete("widgets/:widgetId")
   @RequirePermission("feedbucket:widgets:delete")
+  @Validate({ params: widgetIdParams })
   deleteWidget(
     @CurrentUser() user: CurrentUserContext,
     @Param("widgetId", ParseIntPipe) widgetId: number,
@@ -95,6 +103,7 @@ export class FeedbucketController {
   @Post("widgets/:widgetId/rotate-key")
   @RequirePermission("feedbucket:widgets:manage")
   @HttpCode(200)
+  @Validate({ params: widgetIdParams })
   rotateKey(
     @CurrentUser() user: CurrentUserContext,
     @Param("widgetId", ParseIntPipe) widgetId: number,
@@ -115,6 +124,7 @@ export class FeedbucketController {
 
   @Get("submissions/:submissionId")
   @RequirePermission("feedbucket:submissions:view")
+  @Validate({ params: submissionIdParams })
   getSubmission(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
@@ -124,6 +134,7 @@ export class FeedbucketController {
 
   @Patch("submissions/:submissionId")
   @RequirePermission("feedbucket:submissions:update")
+  @Validate({ params: submissionIdParams })
   updateSubmission(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
@@ -134,6 +145,7 @@ export class FeedbucketController {
 
   @Delete("submissions/:submissionId")
   @RequirePermission("feedbucket:submissions:delete")
+  @Validate({ params: submissionIdParams })
   deleteSubmission(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
@@ -144,6 +156,7 @@ export class FeedbucketController {
   @Post("submissions/:submissionId/convert-to-ticket")
   @RequirePermission("feedbucket:submissions:manage")
   @HttpCode(201)
+  @Validate({ params: submissionIdParams })
   convertToTicket(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
@@ -154,6 +167,7 @@ export class FeedbucketController {
   @Post("submissions/:submissionId/ai-analyze")
   @RequirePermission("feedbucket:submissions:ai")
   @HttpCode(200)
+  @Validate({ params: submissionIdParams })
   analyzeSubmission(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
@@ -165,6 +179,7 @@ export class FeedbucketController {
   @Post("submissions/:submissionId/ai-create-ticket")
   @RequirePermission("feedbucket:submissions:manage")
   @HttpCode(201)
+  @Validate({ params: submissionIdParams })
   createTicketFromAnalysis(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,

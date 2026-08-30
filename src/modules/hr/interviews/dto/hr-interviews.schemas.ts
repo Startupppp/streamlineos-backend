@@ -181,3 +181,14 @@ export const createScheduledReportSchema = z.object({
   recipients: z.array(z.string().email()).min(1),
 });
 export type CreateScheduledReportInput = z.infer<typeof createScheduledReportSchema>;
+
+export const interviewerAvailabilityQuerySchema = z.object({
+  date: z.string().optional(),
+  interviewerIds: z.string().optional(),
+});
+export type InterviewerAvailabilityQuery = z.infer<typeof interviewerAvailabilityQuerySchema>;
+
+export const interviewerPerformanceQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).optional(),
+});
+export type InterviewerPerformanceQuery = z.infer<typeof interviewerPerformanceQuerySchema>;

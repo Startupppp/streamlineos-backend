@@ -12,6 +12,7 @@ import type { Request, Response } from "express";
 import { Public } from "../../common/auth/public.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { PlatformService } from "./platform.service";
+import { Validate } from "../../common/validation/validate.decorator";
 import {
   visitSchema,
   contactFormSchema,
@@ -32,6 +33,7 @@ export class PlatformController {
 
   @Public()
   @Post("visit")
+  @Validate({ body: visitSchema })
   async visit(@Req() req: Request, @Res() res: Response) {
     const forwardedFor = headerValue(req.headers["x-forwarded-for"]);
     const ip =

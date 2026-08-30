@@ -44,6 +44,7 @@ export const createAdjustmentSchema = z.object({
 export const rejectAdjustmentSchema = z.object({
   reason: z.string().min(1).max(1000),
 });
+export type RejectAdjustmentInput = z.infer<typeof rejectAdjustmentSchema>;
 
 export type CreatePeriodInput = z.infer<typeof createPeriodSchema>;
 export type ListPeriodsInput = z.infer<typeof listPeriodsSchema>;

@@ -42,6 +42,13 @@ import {
 } from "./dto/support.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { z } from "zod";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const macroIdParams = z.object({ macroId: z.coerce.number().int().positive() }).strict();
+const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
+const clientIdParams = z.object({ clientId: z.coerce.number().int().positive() }).strict();
+const userIdStringParams = z.object({ userId: z.string().min(1) }).strict();
 
 @RequireModule("support")
 @Controller("support")
@@ -83,6 +90,7 @@ export class SupportMacrosController {
   @Patch("macros/:macroId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
+  @Validate({ params: macroIdParams })
   updateMacro(
     @Param("macroId", ParseIntPipe) macroId: number,
     @Body(new ZodValidationPipe(updateMacroSchema)) body: UpdateMacroInput,
@@ -94,6 +102,7 @@ export class SupportMacrosController {
   @Delete("macros/:macroId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
+  @Validate({ params: macroIdParams })
   deleteMacro(
     @Param("macroId", ParseIntPipe) macroId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -105,6 +114,7 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:view")
   @HttpCode(200)
+  @Validate({ params: macroIdParams })
   previewMacro(
     @Param("macroId", ParseIntPipe) macroId: number,
     @Body(new ZodValidationPipe(applyMacroSchema)) body: ApplyMacroInput,
@@ -117,6 +127,7 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:tickets:reply")
   @HttpCode(200)
+  @Validate({ params: macroIdParams })
   applyMacro(
     @Param("macroId", ParseIntPipe) macroId: number,
     @Body(new ZodValidationPipe(applyMacroSchema)) body: ApplyMacroInput,
@@ -148,6 +159,7 @@ export class SupportMacrosController {
   @Patch("routing-rules/:ruleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
+  @Validate({ params: ruleIdParams })
   async updateRoutingRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(updateRoutingRuleSchema)) body: UpdateRoutingRuleInput,
@@ -161,6 +173,7 @@ export class SupportMacrosController {
   @Delete("routing-rules/:ruleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
+  @Validate({ params: ruleIdParams })
   async deleteRoutingRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -180,6 +193,7 @@ export class SupportMacrosController {
   @Put("agent-skills/:userId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
+  @Validate({ params: userIdStringParams })
   async setAgentSkills(
     @Param("userId") userId: string,
     @Body(new ZodValidationPipe(setAgentSkillsSchema)) body: SetAgentSkillsInput,
@@ -230,6 +244,7 @@ export class SupportMacrosController {
   @Delete("vip-clients/:clientId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
+  @Validate({ params: clientIdParams })
   async removeVipClient(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,

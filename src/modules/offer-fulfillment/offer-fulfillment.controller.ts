@@ -19,7 +19,11 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { z } from "zod";
+import { Validate } from "../../common/validation/validate.decorator";
 import { OfferFulfillmentService } from "./offer-fulfillment.service";
+
+const offerFulfillmentComponentIdParams = z.object({ offerFulfillmentComponentId: z.coerce.number().int().positive() }).strict();
 import {
   createOfferFulfillmentSchema,
   listOfferFulfillmentQuerySchema,
@@ -47,6 +51,7 @@ export class OfferFulfillmentController {
 
   @Get(":offerFulfillmentComponentId")
   @RequirePermission("crm:offer-fulfillment:view")
+  @Validate({ params: offerFulfillmentComponentIdParams })
   getComponent(
     @Param("offerFulfillmentComponentId", ParseIntPipe) offerFulfillmentComponentId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -67,6 +72,7 @@ export class OfferFulfillmentController {
 
   @Patch(":offerFulfillmentComponentId")
   @RequirePermission("crm:offer-fulfillment:update")
+  @Validate({ params: offerFulfillmentComponentIdParams })
   updateComponent(
     @Param("offerFulfillmentComponentId", ParseIntPipe) offerFulfillmentComponentId: number,
     @Body(new ZodValidationPipe(updateOfferFulfillmentSchema))
@@ -79,6 +85,7 @@ export class OfferFulfillmentController {
   @Delete(":offerFulfillmentComponentId")
   @HttpCode(200)
   @RequirePermission("crm:offer-fulfillment:delete")
+  @Validate({ params: offerFulfillmentComponentIdParams })
   deleteComponent(
     @Param("offerFulfillmentComponentId", ParseIntPipe) offerFulfillmentComponentId: number,
     @CurrentUser() u: CurrentUserContext,

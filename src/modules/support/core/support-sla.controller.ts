@@ -32,6 +32,12 @@ import {
 } from "./dto/support.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { z } from "zod";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const businessHoursIdParams = z.object({ businessHoursId: z.coerce.number().int().positive() }).strict();
+const slaPolicyIdParams = z.object({ slaPolicyId: z.coerce.number().int().positive() }).strict();
+const supportTicketIdParams = z.object({ supportTicketId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("support")
 @Controller("support")
@@ -62,6 +68,7 @@ export class SupportSlaController {
 
   @Patch("business-hours/:businessHoursId")
   @RequirePermission("support:settings:manage")
+  @Validate({ params: businessHoursIdParams })
   async updateBusinessHours(
     @Param("businessHoursId", ParseIntPipe) businessHoursId: number,
     @Body(new ZodValidationPipe(updateBusinessHoursSchema)) body: UpdateBusinessHoursInput,
@@ -74,6 +81,7 @@ export class SupportSlaController {
 
   @Delete("business-hours/:businessHoursId")
   @RequirePermission("support:settings:manage")
+  @Validate({ params: businessHoursIdParams })
   async deleteBusinessHours(@Param("businessHoursId", ParseIntPipe) businessHoursId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.sla.deleteBusinessHours(u.orgId, businessHoursId);
     await this.audit.record(u.orgId, u.userId, "business_hours", businessHoursId, "deleted");
@@ -100,6 +108,7 @@ export class SupportSlaController {
 
   @Patch("sla-policies/:slaPolicyId")
   @RequirePermission("support:settings:manage")
+  @Validate({ params: slaPolicyIdParams })
   async updateSlaPolicy(
     @Param("slaPolicyId", ParseIntPipe) slaPolicyId: number,
     @Body(new ZodValidationPipe(updateSlaPolicySchema)) body: UpdateSlaPolicyInput,
@@ -112,6 +121,7 @@ export class SupportSlaController {
 
   @Delete("sla-policies/:slaPolicyId")
   @RequirePermission("support:settings:manage")
+  @Validate({ params: slaPolicyIdParams })
   async deleteSlaPolicy(@Param("slaPolicyId", ParseIntPipe) slaPolicyId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.sla.deleteSlaPolicy(u.orgId, slaPolicyId);
     await this.audit.record(u.orgId, u.userId, "sla_policy", slaPolicyId, "deleted");
@@ -141,6 +151,7 @@ export class SupportSlaController {
 
   @Get(":supportTicketId/risk")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: supportTicketIdParams })
   getTicketRisk(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,

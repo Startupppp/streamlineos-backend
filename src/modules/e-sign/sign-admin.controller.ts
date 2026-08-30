@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -6,6 +7,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { Validate } from "../../common/validation/validate.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignWatermarkService } from "./sign-watermark.service";
@@ -16,6 +18,8 @@ import {
   type UpdateSignSettingsInput,
   type WatermarkPolicyInput,
 } from "./dto/e-sign.schemas";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("sign")
 @Controller("sign/admin")
@@ -47,6 +51,7 @@ export class SignAdminController {
 
   @Get("watermark-policies/:policyId")
   @RequirePermission("sign:admin:manage")
+  @Validate({ params: policyIdParams })
   getWatermarkPolicy(@Param("policyId", ParseIntPipe) policyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.watermark.get(u.orgId, policyId);
   }
@@ -60,6 +65,7 @@ export class SignAdminController {
 
   @Patch("watermark-policies/:policyId")
   @RequirePermission("sign:admin:manage")
+  @Validate({ params: policyIdParams })
   updateWatermarkPolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Body(new ZodValidationPipe(watermarkPolicyInputSchema.partial())) body: Partial<WatermarkPolicyInput>,
@@ -70,6 +76,7 @@ export class SignAdminController {
 
   @Delete("watermark-policies/:policyId")
   @RequirePermission("sign:admin:manage")
+  @Validate({ params: policyIdParams })
   async removeWatermarkPolicy(@Param("policyId", ParseIntPipe) policyId: number, @CurrentUser() u: CurrentUserContext) {
     await this.watermark.remove(u.orgId, policyId, u.userId);
     return { success: true };

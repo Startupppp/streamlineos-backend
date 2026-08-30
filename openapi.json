@@ -297,6 +297,27 @@
         "operationId": "AccountingLedgerController_listAccounts",
         "parameters": [
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -2590,6 +2611,16 @@
             }
           },
           {
+            "name": "invoiceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -2896,6 +2927,27 @@
       "get": {
         "operationId": "AccountingPayablesReceivablesController_listCustomers",
         "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
           {
             "name": "page",
             "in": "query",
@@ -3940,6 +3992,27 @@
         "operationId": "AccountingLedgerController_listJournal",
         "parameters": [
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -4859,6 +4932,27 @@
       "get": {
         "operationId": "AccountingPayablesReceivablesController_listPurchaseBills",
         "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
           {
             "name": "page",
             "in": "query",
@@ -9645,6 +9739,27 @@
       "get": {
         "operationId": "AccountingPayablesReceivablesController_listVendors",
         "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
           {
             "name": "page",
             "in": "query",
@@ -16962,7 +17077,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -16986,7 +17103,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -17109,7 +17228,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -21085,7 +21206,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -32054,6 +32177,13 @@
                     "default": "general",
                     "type": "string"
                   },
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "org",
+                      "private"
+                    ]
+                  },
                   "entityType": {
                     "type": "string"
                   },
@@ -32187,6 +32317,13 @@
                   },
                   "category": {
                     "type": "string"
+                  },
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "org",
+                      "private"
+                    ]
                   },
                   "entityType": {
                     "anyOf": [
@@ -33908,7 +34045,7 @@
     },
     "/chat/channels/{channelId}/messages/{messageId}/reactions": {
       "post": {
-        "operationId": "ChatMessagesController_react",
+        "operationId": "ChatMessagesController_addReaction",
         "parameters": [
           {
             "name": "channelId",
@@ -33937,7 +34074,7 @@
             "bearer": []
           }
         ],
-        "summary": "Toggle an emoji reaction on a message",
+        "summary": "Add an emoji reaction to a message (idempotent)",
         "tags": [
           "Chat Messages"
         ],
@@ -33964,6 +34101,54 @@
             }
           }
         }
+      }
+    },
+    "/chat/channels/{channelId}/messages/{messageId}/reactions/{emoji}": {
+      "delete": {
+        "operationId": "ChatMessagesController_removeReaction",
+        "parameters": [
+          {
+            "name": "channelId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "emoji",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove an emoji reaction from a message (idempotent)",
+        "tags": [
+          "Chat Messages"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "chat:messages:write",
+        "description": "Exposure: permission — chat:messages:write"
       }
     },
     "/chat/channels/{channelId}/messages/{messageId}/thread": {
@@ -41241,7 +41426,8 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             }
           }
         ],
@@ -41379,7 +41565,8 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             }
           },
           {
@@ -53371,7 +53558,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -53395,7 +53584,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -53459,7 +53650,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -53485,7 +53678,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -53526,7 +53721,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -53552,7 +53749,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -53675,7 +53874,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -53699,7 +53900,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -53788,7 +53991,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -53814,7 +54019,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -55766,10 +55973,12 @@
         "parameters": [
           {
             "name": "departmentId",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -55792,10 +56001,12 @@
         "parameters": [
           {
             "name": "departmentId",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -55818,10 +56029,12 @@
         "parameters": [
           {
             "name": "departmentId",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -55844,18 +56057,46 @@
         "parameters": [
           {
             "name": "metric",
-            "required": true,
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "attrition",
+                "leave",
+                "attendance",
+                "cases"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           },
           {
             "name": "departmentId",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -55895,10 +56136,12 @@
         "parameters": [
           {
             "name": "departmentId",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -55955,10 +56198,12 @@
         "parameters": [
           {
             "name": "cycleId",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -56038,7 +56283,47 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:workforce:manage",
-        "description": "Exposure: permission — hr:workforce:manage"
+        "description": "Exposure: permission — hr:workforce:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fiscalYear": {
+                    "type": "integer",
+                    "minimum": 2020,
+                    "maximum": 2050
+                  },
+                  "departmentId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "budgetedHeadcount": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "budgetedCostCents": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "fiscalYear",
+                  "budgetedHeadcount"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/hr/analytics-plus/workforce/plans/{planId}": {
@@ -56064,7 +56349,38 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:workforce:manage",
-        "description": "Exposure: permission — hr:workforce:manage"
+        "description": "Exposure: permission — hr:workforce:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "departmentId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "budgetedHeadcount": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "budgetedCostCents": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/hr/analytics-plus/workforce/skills-gap": {
@@ -81833,6 +82149,74 @@
         "x-exposure": "permissioned",
         "x-permission": "hr:payroll:generate",
         "description": "Exposure: permission — hr:payroll:generate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "periodId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "userId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "adjustmentType": {
+                    "type": "string",
+                    "enum": [
+                      "arrears",
+                      "recovery",
+                      "correction"
+                    ]
+                  },
+                  "section": {
+                    "type": "string",
+                    "enum": [
+                      "employee_master",
+                      "compensation",
+                      "attendance",
+                      "leave",
+                      "overtime",
+                      "reimbursement",
+                      "deduction",
+                      "lifecycle"
+                    ]
+                  },
+                  "amountCents": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "days": {
+                    "type": "number"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
+                  "sourceChangeRef": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "userId",
+                  "adjustmentType",
+                  "section",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
         "x-idempotency-command": "payroll.adjustment.create",
         "x-idempotent": true
       }
@@ -81895,6 +82279,26 @@
         "x-exposure": "permissioned",
         "x-permission": "hr:payroll:approve",
         "description": "Exposure: permission — hr:payroll:approve",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
         "x-idempotency-command": "payroll.adjustment.reject",
         "x-idempotent": true
       }
@@ -81902,7 +82306,44 @@
     "/hr/payroll-inputs/periods": {
       "get": {
         "operationId": "PayrollInputsController_listPeriods",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "building",
+                "built",
+                "locked"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -81928,7 +82369,30 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:payroll:generate",
-        "description": "Exposure: permission — hr:payroll:generate"
+        "description": "Exposure: permission — hr:payroll:generate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "periodKey": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}$"
+                  },
+                  "cutoffDate": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  }
+                },
+                "required": [
+                  "periodKey"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/hr/payroll-inputs/periods/{periodId}": {
@@ -81968,6 +82432,36 @@
             "schema": {
               "type": "number"
             }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -81993,6 +82487,36 @@
             "in": "path",
             "schema": {
               "type": "number"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -82046,6 +82570,36 @@
             "schema": {
               "type": "number"
             }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -82098,6 +82652,36 @@
             "schema": {
               "type": "number"
             }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -82123,6 +82707,36 @@
             "in": "path",
             "schema": {
               "type": "number"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -89276,7 +89890,18 @@
     "/hr/recruitment/interviewer-performance": {
       "get": {
         "operationId": "HrInterviewersController_interviewerPerformance",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 365
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -89293,7 +89918,24 @@
     "/hr/recruitment/interviewers/availability": {
       "get": {
         "operationId": "HrInterviewersController_availability",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "interviewerIds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -108986,7 +109628,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -109119,7 +109763,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -109214,7 +109860,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -120610,7 +121258,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -120634,7 +121284,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -120721,7 +121373,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -123818,8 +124472,8 @@
           "Organization"
         ],
         "x-exposure": "in-service",
-        "x-authorized-in-service": "createOrganization rejects a caller who is not a structural org owner or org admin, below",
-        "description": "Exposure: authorized in service — createOrganization rejects a caller who is not a structural org owner or org admin, below",
+        "x-authorized-in-service": "any authenticated user may create a new organisation; plan limits enforced in OrgProfileService.createOrganization",
+        "description": "Exposure: authorized in service — any authenticated user may create a new organisation; plan limits enforced in OrgProfileService.createOrganization",
         "requestBody": {
           "required": true,
           "content": {
@@ -124276,10 +124930,12 @@
         "parameters": [
           {
             "name": "token",
-            "required": true,
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
             }
           }
         ],
@@ -129994,12 +130650,9 @@
                   "jobType": {
                     "type": "string",
                     "enum": [
-                      "PREVIEW",
                       "GENERATE",
                       "RECALCULATE",
                       "PDF_PUBLISH",
-                      "EXPORT",
-                      "RECONCILE",
                       "FILING_EXPORT"
                     ]
                   },
@@ -132451,7 +133104,29 @@
     "/payroll/reports/journal": {
       "get": {
         "operationId": "JournalController_getJournal",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "csv"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -135136,7 +135811,44 @@
           "Platform"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sessionToken": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "referrer": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "sessionToken",
+                  "path"
+                ]
+              }
+            }
+          }
+        }
       },
       "get": {
         "operationId": "PlatformController_visitUsage",
@@ -138021,7 +138733,8 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             }
           },
           {
@@ -138029,7 +138742,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -138054,7 +138769,8 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             }
           },
           {
@@ -138062,7 +138778,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -139092,7 +139810,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -139116,7 +139836,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -139221,7 +139943,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -139247,7 +139971,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -139278,7 +140004,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -139309,7 +140037,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -139350,7 +140080,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -139396,7 +140128,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -143408,7 +144142,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -143432,7 +144168,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -143559,7 +144297,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -143670,7 +144410,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -143696,7 +144438,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -143722,7 +144466,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -143748,7 +144494,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -143774,7 +144522,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144029,7 +144779,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144053,7 +144805,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144179,7 +144933,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144231,7 +144987,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144257,7 +145015,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144283,7 +145043,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -144362,7 +145124,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144388,7 +145152,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144434,7 +145200,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144588,7 +145356,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144614,7 +145384,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144640,7 +145412,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144740,7 +145514,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144766,7 +145542,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144792,7 +145570,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -144823,7 +145603,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144849,7 +145631,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -144880,7 +145664,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -144911,7 +145697,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -144937,7 +145725,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -144988,7 +145778,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -145122,7 +145914,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -145148,7 +145942,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -145244,7 +146040,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -145390,7 +146188,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -145414,7 +146214,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -145499,7 +146301,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -145589,7 +146393,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -145615,7 +146421,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146304,7 +147112,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146328,7 +147138,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146608,7 +147420,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146750,7 +147564,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146776,7 +147592,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -146784,7 +147602,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146808,7 +147628,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -146816,7 +147638,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146842,7 +147666,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -147128,7 +147954,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -147240,7 +148068,8 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             }
           }
         ],
@@ -148083,7 +148912,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -148267,7 +149098,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -148585,7 +149418,8 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             }
           }
         ],
@@ -148608,7 +149442,8 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             }
           }
         ],
@@ -148754,7 +149589,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -148826,7 +149663,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -149402,7 +150241,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -149479,7 +150320,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -149487,7 +150330,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -149643,7 +150488,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -149669,7 +150516,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -150162,7 +151011,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -150259,7 +151110,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -150285,7 +151138,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -150331,7 +151186,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -150759,7 +151616,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -150826,7 +151685,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -151287,7 +152148,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -151422,7 +152285,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -151622,7 +152487,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -151733,7 +152600,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -151924,7 +152793,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -151985,7 +152856,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -152063,7 +152936,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -152229,7 +153104,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -152253,7 +153130,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -152336,7 +153215,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -152362,7 +153243,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -152388,7 +153271,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -152527,7 +153412,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -152551,7 +153438,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -152634,7 +153523,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -152642,7 +153533,8 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             }
           }
         ],
@@ -152719,7 +153611,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -152727,7 +153621,8 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             }
           }
         ],
@@ -152753,7 +153648,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -152805,7 +153702,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -153011,7 +153910,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -153037,7 +153938,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -153097,7 +154000,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -153142,7 +154047,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -153166,7 +154073,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -153284,7 +154193,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -153292,7 +154203,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -153403,7 +154316,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -153411,7 +154326,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -153711,7 +154628,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -153737,7 +154656,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -153768,7 +154689,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -153922,7 +154845,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -153930,7 +154855,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154090,7 +155017,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -154098,7 +155027,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154124,7 +155055,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -154132,7 +155065,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154158,7 +155093,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154246,7 +155183,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -154319,7 +155258,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -154327,7 +155268,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154353,7 +155296,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154415,7 +155360,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -154423,7 +155370,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154480,7 +155429,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -154488,7 +155439,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154514,7 +155467,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154540,7 +155495,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154566,7 +155523,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154592,7 +155551,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154618,7 +155579,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154644,7 +155607,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -160320,14 +161285,11 @@
         "operationId": "WorkflowsController_listWorkflows",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -160339,6 +161301,32 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "updatedAt",
+              "type": "string",
+              "enum": [
+                "updatedAt",
+                "createdAt"
+              ]
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
             }
           },
           {
@@ -160609,14 +161597,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -160628,6 +161613,19 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
             }
           },
           {
@@ -161195,14 +162193,11 @@
         "operationId": "WorkflowsController_listAllExecutions",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -161214,6 +162209,19 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
             }
           },
           {

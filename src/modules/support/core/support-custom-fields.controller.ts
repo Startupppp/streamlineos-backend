@@ -19,7 +19,12 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { z } from "zod";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
+
+const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).strict();
+const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 import { SupportSettingsAuditService } from "./support-settings-audit.service";
 import {
   createCustomFieldSchema,
@@ -57,6 +62,7 @@ export class SupportCustomFieldsController {
 
   @Patch("custom-fields/:fieldId")
   @RequirePermission("support:settings:manage")
+  @Validate({ params: fieldIdParams })
   async updateField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @Body(new ZodValidationPipe(updateCustomFieldSchema)) body: UpdateCustomFieldInput,
@@ -69,6 +75,7 @@ export class SupportCustomFieldsController {
 
   @Delete("custom-fields/:fieldId")
   @RequirePermission("support:settings:manage")
+  @Validate({ params: fieldIdParams })
   async deleteField(@Param("fieldId", ParseIntPipe) fieldId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.customFields.deleteField(u.orgId, fieldId);
     await this.audit.record(u.orgId, u.userId, "custom_field", fieldId, "deleted");
@@ -77,6 +84,7 @@ export class SupportCustomFieldsController {
 
   @Get(":ticketId/custom-fields")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: ticketIdParams })
   getTicketFieldValues(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     return this.customFields.getFieldValues(u.orgId, ticketId);
   }
