@@ -98,9 +98,24 @@ it.
 
 ### Three things about that run you need to know
 
-**`drizzle-kit migrate` does not complete a cold build here**, and neither does
-`drizzle-kit push` (it throws `Do not know how to serialize a BigInt`). The
-migrations were applied with `psql` file by file, in journal order.
+**No path builds this schema from empty.** Three were tried:
+
+| Path | What happens |
+|---|---|
+| `pnpm db:bootstrap` — the supported one | `FAILED at 0352_custom_fields_consolidation (72/355 ok before failure)`, reason `relation "custom_field_definitions" already exists`. It fails **loudly and legibly**, which is exactly what it is for. |
+| `drizzle-kit migrate` | Dies at the same point without an error anybody can read — spinners, then a non-zero exit. |
+| `drizzle-kit push` | Throws `Do not know how to serialize a BigInt` before it does anything. |
+
+The root cause of the first is one line: `custom_field_definitions` is created
+unguarded by **both** `0000_light_vance_astro.sql:6074` and
+`0352_custom_fields_consolidation.sql:50`. On a database that already has it,
+0352 is skipped as applied; on an empty one it is reached and refuses. That is a
+one-file fix (`CREATE TABLE IF NOT EXISTS`, or a `DO` guard) and it is somebody's
+next twenty minutes — but it is not the only such collision, and the 91 skipped
+files below are the rest of them.
+
+For this run the migrations were applied with `psql` file by file in journal
+order, continuing past failures and recording every one.
 
 **91 pre-existing migrations fail on a cold local build**, and all 91 are from
 other programmes. They fall into three groups: duplicate-numbered files whose
@@ -111,12 +126,18 @@ columns the skipped migrations would have added. **None of NEO's eight
 migrations was among them** — 0580 through 0587 and 0588 all applied cleanly,
 including the exclusion constraint.
 
-That is worth stating plainly: **`db:migrate` cannot currently build this schema
-from empty.** It is not a NEO regression — the previous handoff already
-identified `0575`–`0579` as a new cold-build failure surface — but it is now
-demonstrated rather than suspected, and it is the single biggest risk in this
+That is worth stating plainly: **this schema cannot currently be rebuilt from
+empty by any available path.** It is not a NEO regression — the previous handoff
+already identified `0575`–`0579` as a new cold-build failure surface — but it is
+now demonstrated rather than suspected, and it is the single biggest risk in this
 repository. A schema that cannot be rebuilt is a schema whose migrations are
-decoration.
+decoration, and every claim of the form "migration N is applied" rests on a
+database nobody can reproduce.
+
+It is also, on the evidence, not a large fix. The first failure is one unguarded
+`CREATE TABLE` and the bulk of the rest are the same shape. Working `db:bootstrap`
+through to `REACHED_HEAD` is the highest-value next piece of work in this
+repository, and it is worth more than any remaining item in §6.
 
 **Four columns were added to the local database by hand** so the run could
 finish: `client_party_id` on `inv_sales_orders` and `inv_customer_returns`, and
