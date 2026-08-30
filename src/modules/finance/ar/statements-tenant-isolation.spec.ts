@@ -25,7 +25,12 @@ describe("StatementsService — cross-tenant isolation", () => {
         },
       },
       select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([]),
+            then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
+          }),
+        }),
       }),
     } as unknown as Db;
     const svc = new StatementsService(db);
