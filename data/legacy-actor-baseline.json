@@ -1,15 +1,15 @@
 {
-  "capturedAt": "2026-08-28T18:46:43.304Z",
+  "capturedAt": "2026-08-30T15:33:42.991Z",
   "totals": {
     "byClass": {
-      "organizational": 555,
+      "organizational": 689,
       "bridge": 3,
       "authentication": 5,
       "unknown": 0
     },
     "byModule": {
       "accounting": {
-        "organizational": 27,
+        "organizational": 44,
         "bridge": 0,
         "authentication": 0,
         "unknown": 0
@@ -26,6 +26,12 @@
         "authentication": 0,
         "unknown": 0
       },
+      "build": {
+        "organizational": 74,
+        "bridge": 0,
+        "authentication": 0,
+        "unknown": 0
+      },
       "calendar": {
         "organizational": 1,
         "bridge": 0,
@@ -33,7 +39,7 @@
         "unknown": 0
       },
       "chat": {
-        "organizational": 12,
+        "organizational": 10,
         "bridge": 0,
         "authentication": 0,
         "unknown": 0
@@ -45,7 +51,7 @@
         "unknown": 0
       },
       "crm": {
-        "organizational": 51,
+        "organizational": 76,
         "bridge": 0,
         "authentication": 0,
         "unknown": 0
@@ -63,13 +69,13 @@
         "unknown": 0
       },
       "hr": {
-        "organizational": 219,
+        "organizational": 222,
         "bridge": 1,
         "authentication": 0,
         "unknown": 0
       },
       "inventory": {
-        "organizational": 37,
+        "organizational": 58,
         "bridge": 0,
         "authentication": 0,
         "unknown": 0
@@ -87,7 +93,7 @@
         "unknown": 0
       },
       "payroll": {
-        "organizational": 55,
+        "organizational": 56,
         "bridge": 0,
         "authentication": 0,
         "unknown": 0
@@ -111,7 +117,7 @@
         "unknown": 0
       },
       "timesheets": {
-        "organizational": 15,
+        "organizational": 10,
         "bridge": 0,
         "authentication": 0,
         "unknown": 0
@@ -528,6 +534,598 @@
       "file": "src/db/schema/billing/seat-ledger.ts"
     },
     {
+      "table": "ticket_comment_mentions",
+      "column": "mentioned_user_id",
+      "jsName": "mentionedUserId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/activity.ts"
+    },
+    {
+      "table": "project_approvals",
+      "column": "requested_by_id",
+      "jsName": "requestedById",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/approvals.ts"
+    },
+    {
+      "table": "project_approvals",
+      "column": "approver_id",
+      "jsName": "approverId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/approvals.ts"
+    },
+    {
+      "table": "project_approvals",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/approvals.ts"
+    },
+    {
+      "table": "change_requests",
+      "column": "requested_by_id",
+      "jsName": "requestedById",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/change-requests.ts"
+    },
+    {
+      "table": "change_requests",
+      "column": "approval_owner_id",
+      "jsName": "approvalOwnerId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/change-requests.ts"
+    },
+    {
+      "table": "change_requests",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/change-requests.ts"
+    },
+    {
+      "table": "comment_drafts",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/comment-drafts.ts"
+    },
+    {
+      "table": "projects",
+      "column": "client_id",
+      "jsName": "clientId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/core.ts"
+    },
+    {
+      "table": "projects",
+      "column": "manager_id",
+      "jsName": "managerId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/core.ts"
+    },
+    {
+      "table": "cycles",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/core.ts"
+    },
+    {
+      "table": "modules",
+      "column": "lead_id",
+      "jsName": "leadId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/core.ts"
+    },
+    {
+      "table": "modules",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/core.ts"
+    },
+    {
+      "table": "project_templates",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/core.ts"
+    },
+    {
+      "table": "feedbucket_widgets",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/feedback.ts"
+    },
+    {
+      "table": "feedbucket_submissions",
+      "column": "assignee_id",
+      "jsName": "assigneeId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/feedback.ts"
+    },
+    {
+      "table": "project_forms",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/forms.ts"
+    },
+    {
+      "table": "form_submissions",
+      "column": "submitted_by_id",
+      "jsName": "submittedById",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/forms.ts"
+    },
+    {
+      "table": "git_connections",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/git.ts"
+    },
+    {
+      "table": "okr_goals",
+      "column": "owner_id",
+      "jsName": "ownerId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/goals.ts"
+    },
+    {
+      "table": "okr_goals",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/goals.ts"
+    },
+    {
+      "table": "okr_updates",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/goals.ts"
+    },
+    {
+      "table": "project_risks",
+      "column": "owner_id",
+      "jsName": "ownerId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/governance.ts"
+    },
+    {
+      "table": "project_risks",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/governance.ts"
+    },
+    {
+      "table": "project_decisions",
+      "column": "owner_id",
+      "jsName": "ownerId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/governance.ts"
+    },
+    {
+      "table": "project_decisions",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/governance.ts"
+    },
+    {
+      "table": "project_incidents",
+      "column": "owner_id",
+      "jsName": "ownerId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/incidents.ts"
+    },
+    {
+      "table": "project_incidents",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/incidents.ts"
+    },
+    {
+      "table": "incident_updates",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/incidents.ts"
+    },
+    {
+      "table": "managed_products",
+      "column": "owner_id",
+      "jsName": "ownerId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/managed-products.ts"
+    },
+    {
+      "table": "managed_product_releases",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/managed-products.ts"
+    },
+    {
+      "table": "project_meetings",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/meetings.ts"
+    },
+    {
+      "table": "meeting_attendees",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/meetings.ts"
+    },
+    {
+      "table": "meeting_action_items",
+      "column": "assignee_id",
+      "jsName": "assigneeId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/meetings.ts"
+    },
+    {
+      "table": "meeting_action_items",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/meetings.ts"
+    },
+    {
+      "table": "meeting_standup_entries",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/meetings.ts"
+    },
+    {
+      "table": "project_members",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/members.ts"
+    },
+    {
+      "table": "project_views",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/members.ts"
+    },
+    {
+      "table": "pages",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/members.ts"
+    },
+    {
+      "table": "project_milestones",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/members.ts"
+    },
+    {
+      "table": "project_portfolios",
+      "column": "owner_id",
+      "jsName": "ownerId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/portfolios.ts"
+    },
+    {
+      "table": "project_portfolios",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/portfolios.ts"
+    },
+    {
+      "table": "project_programs",
+      "column": "owner_id",
+      "jsName": "ownerId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/portfolios.ts"
+    },
+    {
+      "table": "project_programs",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/portfolios.ts"
+    },
+    {
+      "table": "test_suites",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/qa.ts"
+    },
+    {
+      "table": "test_cases",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/qa.ts"
+    },
+    {
+      "table": "test_runs",
+      "column": "tester_id",
+      "jsName": "testerId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/qa.ts"
+    },
+    {
+      "table": "test_runs",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/qa.ts"
+    },
+    {
+      "table": "test_run_results",
+      "column": "executed_by",
+      "jsName": "executedBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/qa.ts"
+    },
+    {
+      "table": "bugs",
+      "column": "assignee_id",
+      "jsName": "assigneeId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/qa.ts"
+    },
+    {
+      "table": "bugs",
+      "column": "reporter_id",
+      "jsName": "reporterId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/qa.ts"
+    },
+    {
+      "table": "bugs",
+      "column": "qa_owner_id",
+      "jsName": "qaOwnerId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/qa.ts"
+    },
+    {
+      "table": "bugs",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/qa.ts"
+    },
+    {
+      "table": "roadmap_items",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/roadmap.ts"
+    },
+    {
+      "table": "feedback_posts",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/roadmap.ts"
+    },
+    {
+      "table": "changelog_entries",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/roadmap.ts"
+    },
+    {
+      "table": "project_team_members",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/teams.ts"
+    },
+    {
+      "table": "project_workspace_members",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/teams.ts"
+    },
+    {
+      "table": "ticket_assignees",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/ticket-collaboration.ts"
+    },
+    {
+      "table": "ticket_assignees",
+      "column": "assigned_by",
+      "jsName": "assignedBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/ticket-collaboration.ts"
+    },
+    {
+      "table": "ticket_comments",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/ticket-collaboration.ts"
+    },
+    {
+      "table": "ticket_attachments",
+      "column": "uploaded_by",
+      "jsName": "uploadedBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/ticket-collaboration.ts"
+    },
+    {
+      "table": "ticket_watchers",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/ticket-collaboration.ts"
+    },
+    {
+      "table": "ticket_checklist_items",
+      "column": "assignee_id",
+      "jsName": "assigneeId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/ticket-collaboration.ts"
+    },
+    {
+      "table": "ticket_comment_reactions",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/ticket-collaboration.ts"
+    },
+    {
+      "table": "ticket_related_links",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/ticket-collaboration.ts"
+    },
+    {
+      "table": "tickets",
+      "column": "assignee_id",
+      "jsName": "assigneeId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/ticket-core.ts"
+    },
+    {
+      "table": "tickets",
+      "column": "reporter_id",
+      "jsName": "reporterId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/ticket-core.ts"
+    },
+    {
+      "table": "project_webhooks",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/ticket-integrations.ts"
+    },
+    {
+      "table": "project_automations",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/ticket-integrations.ts"
+    },
+    {
+      "table": "project_releases",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/ticket-releases.ts"
+    },
+    {
+      "table": "project_whiteboards",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/whiteboards.ts"
+    },
+    {
+      "table": "project_whiteboard_shares",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/whiteboards.ts"
+    },
+    {
+      "table": "project_whiteboard_shares",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "build",
+      "file": "src/db/schema/build/whiteboards.ts"
+    },
+    {
       "table": "calendar_source_preferences",
       "column": "user_id",
       "jsName": "userId",
@@ -611,22 +1209,6 @@
       "table": "chat_huddle_participants",
       "column": "user_id",
       "jsName": "userId",
-      "class": "organizational",
-      "module": "chat",
-      "file": "src/db/schema/chat/chat.ts"
-    },
-    {
-      "table": "chat_channel_invite_links",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "chat",
-      "file": "src/db/schema/chat/chat.ts"
-    },
-    {
-      "table": "chat_org_settings",
-      "column": "updated_by",
-      "jsName": "updatedBy",
       "class": "organizational",
       "module": "chat",
       "file": "src/db/schema/chat/chat.ts"
@@ -1189,6 +1771,230 @@
       "jsName": "assignedToId",
       "class": "organizational",
       "module": "crm",
+      "file": "src/db/schema/crm/deal-pipeline.ts"
+    },
+    {
+      "table": "deal_activities",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-pipeline.ts"
+    },
+    {
+      "table": "deal_meetings",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-pipeline.ts"
+    },
+    {
+      "table": "deal_approval_rules",
+      "column": "approver_user_id",
+      "jsName": "approverUserId",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-pipeline.ts"
+    },
+    {
+      "table": "deal_approvals",
+      "column": "requested_by",
+      "jsName": "requestedBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-pipeline.ts"
+    },
+    {
+      "table": "deal_approvals",
+      "column": "approved_by",
+      "jsName": "approvedBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-pipeline.ts"
+    },
+    {
+      "table": "crm_forecast_snapshots",
+      "column": "created_by_id",
+      "jsName": "createdById",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-pipeline.ts"
+    },
+    {
+      "table": "crm_forecast_snapshots",
+      "column": "overridden_by",
+      "jsName": "overriddenBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-pipeline.ts"
+    },
+    {
+      "table": "sales_quotas",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-sales.ts"
+    },
+    {
+      "table": "sales_quotas",
+      "column": "set_by_id",
+      "jsName": "setById",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-sales.ts"
+    },
+    {
+      "table": "commissions",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-sales.ts"
+    },
+    {
+      "table": "incentive_config",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-sales.ts"
+    },
+    {
+      "table": "incentives",
+      "column": "sales_rep_id",
+      "jsName": "salesRepId",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-sales.ts"
+    },
+    {
+      "table": "incentives",
+      "column": "approved_by",
+      "jsName": "approvedBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-sales.ts"
+    },
+    {
+      "table": "territories",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-sales.ts"
+    },
+    {
+      "table": "tasks",
+      "column": "assignee_id",
+      "jsName": "assigneeId",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-tasks.ts"
+    },
+    {
+      "table": "tasks",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-tasks.ts"
+    },
+    {
+      "table": "task_sequences",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deal-tasks.ts"
+    },
+    {
+      "table": "sales_quotas",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deals-sales.ts"
+    },
+    {
+      "table": "sales_quotas",
+      "column": "set_by_id",
+      "jsName": "setById",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deals-sales.ts"
+    },
+    {
+      "table": "commissions",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deals-sales.ts"
+    },
+    {
+      "table": "incentive_config",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deals-sales.ts"
+    },
+    {
+      "table": "incentives",
+      "column": "sales_rep_id",
+      "jsName": "salesRepId",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deals-sales.ts"
+    },
+    {
+      "table": "incentives",
+      "column": "approved_by",
+      "jsName": "approvedBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deals-sales.ts"
+    },
+    {
+      "table": "tasks",
+      "column": "assignee_id",
+      "jsName": "assigneeId",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deals-tasks.ts"
+    },
+    {
+      "table": "tasks",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deals-tasks.ts"
+    },
+    {
+      "table": "task_sequences",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deals-tasks.ts"
+    },
+    {
+      "table": "territories",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "crm",
+      "file": "src/db/schema/crm/deals-territories.ts"
+    },
+    {
+      "table": "deals",
+      "column": "assigned_to_id",
+      "jsName": "assignedToId",
+      "class": "organizational",
+      "module": "crm",
       "file": "src/db/schema/crm/deals.ts"
     },
     {
@@ -1243,86 +2049,6 @@
       "table": "crm_forecast_snapshots",
       "column": "overridden_by",
       "jsName": "overriddenBy",
-      "class": "organizational",
-      "module": "crm",
-      "file": "src/db/schema/crm/deals.ts"
-    },
-    {
-      "table": "sales_quotas",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "crm",
-      "file": "src/db/schema/crm/deals.ts"
-    },
-    {
-      "table": "sales_quotas",
-      "column": "set_by_id",
-      "jsName": "setById",
-      "class": "organizational",
-      "module": "crm",
-      "file": "src/db/schema/crm/deals.ts"
-    },
-    {
-      "table": "commissions",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "crm",
-      "file": "src/db/schema/crm/deals.ts"
-    },
-    {
-      "table": "incentive_config",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "crm",
-      "file": "src/db/schema/crm/deals.ts"
-    },
-    {
-      "table": "incentives",
-      "column": "sales_rep_id",
-      "jsName": "salesRepId",
-      "class": "organizational",
-      "module": "crm",
-      "file": "src/db/schema/crm/deals.ts"
-    },
-    {
-      "table": "incentives",
-      "column": "approved_by",
-      "jsName": "approvedBy",
-      "class": "organizational",
-      "module": "crm",
-      "file": "src/db/schema/crm/deals.ts"
-    },
-    {
-      "table": "tasks",
-      "column": "assignee_id",
-      "jsName": "assigneeId",
-      "class": "organizational",
-      "module": "crm",
-      "file": "src/db/schema/crm/deals.ts"
-    },
-    {
-      "table": "tasks",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "crm",
-      "file": "src/db/schema/crm/deals.ts"
-    },
-    {
-      "table": "task_sequences",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "crm",
-      "file": "src/db/schema/crm/deals.ts"
-    },
-    {
-      "table": "territories",
-      "column": "created_by",
-      "jsName": "createdBy",
       "class": "organizational",
       "module": "crm",
       "file": "src/db/schema/crm/deals.ts"
@@ -2344,68 +3070,12 @@
       "file": "src/db/schema/hr/governance.ts"
     },
     {
-      "table": "hiring_flows",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "job_postings",
-      "column": "posted_by",
-      "jsName": "postedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "candidate_sources",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
       "table": "candidates",
       "column": "referred_by",
       "jsName": "referredBy",
       "class": "organizational",
       "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "interviews",
-      "column": "interviewer_id",
-      "jsName": "interviewerId",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "scorecard_templates",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "interview_scorecards",
-      "column": "interviewer_id",
-      "jsName": "interviewerId",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "interview_booking_links",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
+      "file": "src/db/schema/hr/hiring-candidates.ts"
     },
     {
       "table": "candidate_referrals",
@@ -2413,39 +3083,7 @@
       "jsName": "referredBy",
       "class": "organizational",
       "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "calibration_sessions",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "interview_panel_members",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "booking_link_interviewers",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "calibration_participants",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
+      "file": "src/db/schema/hr/hiring-candidates.ts"
     },
     {
       "table": "candidate_documents_vault",
@@ -2453,7 +3091,7 @@
       "jsName": "uploadedBy",
       "class": "organizational",
       "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
+      "file": "src/db/schema/hr/hiring-candidates.ts"
     },
     {
       "table": "vault_access_logs",
@@ -2461,15 +3099,7 @@
       "jsName": "accessedBy",
       "class": "organizational",
       "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "interview_questions",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
+      "file": "src/db/schema/hr/hiring-candidates.ts"
     },
     {
       "table": "candidate_reference_checks",
@@ -2477,87 +3107,7 @@
       "jsName": "createdBy",
       "class": "organizational",
       "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "candidate_offers",
-      "column": "offered_by",
-      "jsName": "offeredBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "candidate_offers",
-      "column": "approved_by",
-      "jsName": "approvedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "offer_versions",
-      "column": "changed_by",
-      "jsName": "changedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "offer_negotiations",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "pipeline_automations",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "offer_letter_templates",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "email_sequences",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "recruitment_vendors",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "headcount_requests",
-      "column": "requested_by",
-      "jsName": "requestedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
-    },
-    {
-      "table": "headcount_requests",
-      "column": "approved_by",
-      "jsName": "approvedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
+      "file": "src/db/schema/hr/hiring-candidates.ts"
     },
     {
       "table": "candidate_messages",
@@ -2565,7 +3115,183 @@
       "jsName": "sentBy",
       "class": "organizational",
       "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
+      "file": "src/db/schema/hr/hiring-candidates.ts"
+    },
+    {
+      "table": "hiring_flows",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-core.ts"
+    },
+    {
+      "table": "scorecard_templates",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-core.ts"
+    },
+    {
+      "table": "job_postings",
+      "column": "posted_by",
+      "jsName": "postedBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-core.ts"
+    },
+    {
+      "table": "candidate_sources",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-core.ts"
+    },
+    {
+      "table": "interviews",
+      "column": "interviewer_id",
+      "jsName": "interviewerId",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-interviews.ts"
+    },
+    {
+      "table": "interview_scorecards",
+      "column": "interviewer_id",
+      "jsName": "interviewerId",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-interviews.ts"
+    },
+    {
+      "table": "interview_booking_links",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-interviews.ts"
+    },
+    {
+      "table": "interview_panel_members",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-interviews.ts"
+    },
+    {
+      "table": "booking_link_interviewers",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-interviews.ts"
+    },
+    {
+      "table": "calibration_sessions",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-interviews.ts"
+    },
+    {
+      "table": "calibration_participants",
+      "column": "user_id",
+      "jsName": "userId",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-interviews.ts"
+    },
+    {
+      "table": "interview_questions",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-interviews.ts"
+    },
+    {
+      "table": "pipeline_automations",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
+    },
+    {
+      "table": "offer_letter_templates",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
+    },
+    {
+      "table": "candidate_offers",
+      "column": "offered_by",
+      "jsName": "offeredBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
+    },
+    {
+      "table": "candidate_offers",
+      "column": "approved_by",
+      "jsName": "approvedBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
+    },
+    {
+      "table": "offer_versions",
+      "column": "changed_by",
+      "jsName": "changedBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
+    },
+    {
+      "table": "offer_negotiations",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
+    },
+    {
+      "table": "email_sequences",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
+    },
+    {
+      "table": "recruitment_vendors",
+      "column": "created_by",
+      "jsName": "createdBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
+    },
+    {
+      "table": "headcount_requests",
+      "column": "requested_by",
+      "jsName": "requestedBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
+    },
+    {
+      "table": "headcount_requests",
+      "column": "approved_by",
+      "jsName": "approvedBy",
+      "class": "organizational",
+      "module": "hr",
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
     },
     {
       "table": "job_recruiters",
@@ -2573,7 +3299,7 @@
       "jsName": "userId",
       "class": "organizational",
       "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
     },
     {
       "table": "job_recruiters",
@@ -2581,7 +3307,7 @@
       "jsName": "assignedBy",
       "class": "organizational",
       "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
     },
     {
       "table": "recruiter_activity_log",
@@ -2589,7 +3315,7 @@
       "jsName": "recruiterId",
       "class": "organizational",
       "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
     },
     {
       "table": "scheduled_reports",
@@ -2597,7 +3323,7 @@
       "jsName": "createdBy",
       "class": "organizational",
       "module": "hr",
-      "file": "src/db/schema/hr/hiring.ts"
+      "file": "src/db/schema/hr/hiring-pipeline.ts"
     },
     {
       "table": "hr_import_jobs",
@@ -4528,14 +5254,6 @@
       "file": "src/db/schema/timesheets/entries.ts"
     },
     {
-      "table": "timesheets",
-      "column": "locked_by",
-      "jsName": "lockedBy",
-      "class": "organizational",
-      "module": "timesheets",
-      "file": "src/db/schema/timesheets/entries.ts"
-    },
-    {
       "table": "timesheet_exceptions",
       "column": "user_id",
       "jsName": "userId",
@@ -4550,30 +5268,6 @@
       "class": "organizational",
       "module": "timesheets",
       "file": "src/db/schema/timesheets/exceptions.ts"
-    },
-    {
-      "table": "timesheet_exceptions",
-      "column": "resolved_by",
-      "jsName": "resolvedBy",
-      "class": "organizational",
-      "module": "timesheets",
-      "file": "src/db/schema/timesheets/exceptions.ts"
-    },
-    {
-      "table": "timesheet_exports",
-      "column": "ack_by",
-      "jsName": "ackBy",
-      "class": "organizational",
-      "module": "timesheets",
-      "file": "src/db/schema/timesheets/exports.ts"
-    },
-    {
-      "table": "timesheet_exports",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "timesheets",
-      "file": "src/db/schema/timesheets/exports.ts"
     },
     {
       "table": "timesheet_periods",
@@ -4608,20 +5302,404 @@
       "file": "src/db/schema/timesheets/rates.ts"
     },
     {
-      "table": "timesheet_settings_history",
-      "column": "changed_by",
-      "jsName": "changedBy",
-      "class": "organizational",
-      "module": "timesheets",
-      "file": "src/db/schema/timesheets/settings.ts"
-    },
-    {
       "table": "timer_sessions",
       "column": "user_id",
       "jsName": "userId",
       "class": "organizational",
       "module": "timesheets",
       "file": "src/db/schema/timesheets/timer.ts"
+    },
+    {
+      "table": "ap_allocations",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "ap_documents",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "ap_documents",
+      "column": "posted_by",
+      "jsName": "posted_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "ap_payments",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "ar_allocations",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "ar_documents",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "ar_documents",
+      "column": "posted_by",
+      "jsName": "posted_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "ar_receipts",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "bank_matches",
+      "column": "matched_by",
+      "jsName": "matched_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "bank_statements",
+      "column": "imported_by",
+      "jsName": "imported_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "bank_statements",
+      "column": "reconciled_by",
+      "jsName": "reconciled_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "gl_books",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "gl_document_attachments",
+      "column": "uploaded_by",
+      "jsName": "uploaded_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "gl_fx_rates",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "gl_journals",
+      "column": "posted_by_user_id",
+      "jsName": "posted_by_user_id",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "gl_parties",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "gl_periods",
+      "column": "locked_by",
+      "jsName": "locked_by",
+      "class": "organizational",
+      "module": "accounting",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "crm_commission_accrual_parts",
+      "column": "user_id",
+      "jsName": "user_id",
+      "class": "organizational",
+      "module": "crm",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "crm_commission_accrual_snapshots",
+      "column": "user_id",
+      "jsName": "user_id",
+      "class": "organizational",
+      "module": "crm",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "crm_commission_assignments",
+      "column": "user_id",
+      "jsName": "user_id",
+      "class": "organizational",
+      "module": "crm",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "crm_commission_earnings",
+      "column": "approved_by",
+      "jsName": "approved_by",
+      "class": "organizational",
+      "module": "crm",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "crm_commission_earnings",
+      "column": "user_id",
+      "jsName": "user_id",
+      "class": "organizational",
+      "module": "crm",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "crm_commission_plan_versions",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "crm",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "crm_commission_plans",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "crm",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "employee_career_plans",
+      "column": "mentor_id",
+      "jsName": "mentor_id",
+      "class": "organizational",
+      "module": "hr",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "employee_career_plans",
+      "column": "user_id",
+      "jsName": "user_id",
+      "class": "organizational",
+      "module": "hr",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "learning_paths",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "hr",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "expense_export_jobs",
+      "column": "requested_by",
+      "jsName": "requested_by",
+      "class": "organizational",
+      "module": "payroll",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_ai_feedback",
+      "column": "user_id",
+      "jsName": "user_id",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_ai_insights",
+      "column": "acknowledged_by",
+      "jsName": "acknowledged_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_allocation_overrides",
+      "column": "actor_user_id",
+      "jsName": "actor_user_id",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_audit_export_jobs",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_channel_snapshot_diffs",
+      "column": "resolved_by",
+      "jsName": "resolved_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_compliance_documents",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_customer_return_lines",
+      "column": "inspected_by",
+      "jsName": "inspected_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_customer_shelf_life_rules",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_demand_forecasts",
+      "column": "generated_by",
+      "jsName": "generated_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_grns",
+      "column": "posted_by",
+      "jsName": "posted_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_inspection_plan_versions",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_inspection_plans",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_landed_cost_vouchers",
+      "column": "applied_by",
+      "jsName": "applied_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_landed_cost_vouchers",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_pick_list_lines",
+      "column": "exception_owner_id",
+      "jsName": "exception_owner_id",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_pick_list_lines",
+      "column": "exception_reported_by",
+      "jsName": "exception_reported_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_pick_list_lines",
+      "column": "exception_resolved_by",
+      "jsName": "exception_resolved_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_pick_lists",
+      "column": "assigned_to",
+      "jsName": "assigned_to",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_proposal_overrides",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_putaway_tasks",
+      "column": "assigned_to",
+      "jsName": "assigned_to",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
+    },
+    {
+      "table": "inv_putaway_tasks",
+      "column": "created_by",
+      "jsName": "created_by",
+      "class": "organizational",
+      "module": "inventory",
+      "file": "raw-sql-migration"
     }
   ]
 }
