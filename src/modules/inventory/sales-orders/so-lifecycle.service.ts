@@ -20,7 +20,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
-import { subDec, cmpDec, availableQty } from "../stock-engine/decimal";
+import { cmpDec, availableQty } from "../stock-engine/decimal";
 import { verdictFor, type EligibilityPolicy, type LotFacts } from "./lot-eligibility";
 import { clientBehindSource, resolveShelfLifeFloor } from "../settings/min-shelf-life";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";

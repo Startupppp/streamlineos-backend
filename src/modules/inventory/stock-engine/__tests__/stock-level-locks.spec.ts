@@ -45,6 +45,14 @@ describe("lockLevels", () => {
 
     expect(forward.inserts).toEqual(reverse.inserts);
     expect(forward.inserts).toEqual([levelKey(GRAIN_C), levelKey(GRAIN_B), levelKey(GRAIN_A)]);
+
+    // NEO-4. Same bin, same lot, different pallet: a distinct grain, and it sorts
+    // after the loose one rather than colliding with it. Asserted here because a
+    // key that quietly lost a dimension addresses a different row, and the
+    // ordering is what stops two concurrent commands deadlocking on the insert.
+    const withUnit = recordingTx();
+    await lockLevels(withUnit.tx, "org1", [GRAIN_D, GRAIN_B]);
+    expect(withUnit.inserts).toEqual([levelKey(GRAIN_B), levelKey(GRAIN_D)]);
   });
 
   it("locks with ORDER BY id FOR UPDATE", async () => {
