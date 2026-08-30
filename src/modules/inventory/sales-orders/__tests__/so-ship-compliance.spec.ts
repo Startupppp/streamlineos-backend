@@ -69,6 +69,8 @@ function settings(overrides: Partial<InvSettingsRow> = {}): InvSettingsRow {
     pharmacyH1RegisterEnabled: false,
     qcZeptoEmailPoEnabled: false,
     asnRequiredForGrn: false,
+    wavelessPicking: false,
+    wavelessMaxLines: 50,
     gstMode: "REGULAR",
     nearExpiryPolicy: "DEPRIORITIZE",
     nearExpiryWindowDays: 30,

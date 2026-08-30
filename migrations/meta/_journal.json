@@ -2479,6 +2479,13 @@
       "when": 1788134409030,
       "tag": "0587_inventory_catch_weight_consignment",
       "breakpoints": true
+    },
+    {
+      "idx": 355,
+      "version": "7",
+      "when": 1788134409031,
+      "tag": "0588_inventory_dock_waveless",
+      "breakpoints": true
     }
   ]
 }

@@ -75,6 +75,22 @@ export const invSettings = pgTable("inv_settings", {
    */
   asnRequiredForGrn: boolean("asn_required_for_grn").default(false).notNull(),
   /**
+   * NEO-14 - whether a newly reserved order may join a wave that is already open.
+   *
+   * Off by default, and that default is the safe one: a wave a picker is halfway
+   * through is a physical walk they have planned, and adding a line to it behind
+   * them is a change to work in progress. An organisation that wants order
+   * streaming turns it on deliberately, having decided that a slightly longer
+   * walk beats a second trip.
+   */
+  wavelessPicking: boolean("waveless_picking").default(false).notNull(),
+  /**
+   * The most lines a wave may reach by joining. A wave that grows without bound
+   * is a picker who never finishes, which is the failure mode of every "just add
+   * it to the current one" scheme.
+   */
+  wavelessMaxLines: integer("waveless_max_lines").default(50).notNull(),
+  /**
    * D2 — short-dated stock is a different question from expired stock.
    *
    * `expiry_reservation_policy` decides whether an already-expired lot may be

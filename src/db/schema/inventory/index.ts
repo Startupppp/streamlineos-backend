@@ -20,3 +20,4 @@ export * from "./handling-units";
 export * from "./slotting";
 export * from "./labor";
 export * from "./kitting";
+export * from "./dock";

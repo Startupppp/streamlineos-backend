@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { InvStockEngineModule } from "../../stock-engine/inv-stock-engine.module";
+import { InvDockModule } from "../../dock/inv-dock.module";
 import { QuickCommerceController } from "./quick-commerce.controller";
 import { QuickCommerceInboundService } from "./quick-commerce-inbound.service";
 import { FillRateService } from "./fill-rate.service";
@@ -10,7 +11,7 @@ import { FillRateService } from "./fill-rate.service";
  * carrying a copy.
  */
 @Module({
-  imports: [InvStockEngineModule],
+  imports: [InvStockEngineModule, InvDockModule],
   controllers: [QuickCommerceController],
   providers: [QuickCommerceInboundService, FillRateService],
   exports: [QuickCommerceInboundService, FillRateService],

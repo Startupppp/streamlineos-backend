@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { invPickListLines } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -11,6 +11,7 @@ import { runIdempotent } from "../stock-engine/idempotency";
 import { addDec, cmpDec } from "../stock-engine/decimal";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
 import { LaborService } from "../labor/labor.service";
+import { NoopWesAdapter, notifyWes } from "../wes/wes-adapter";
 import { allocateFromAvailableStock } from "./pick-allocation";
 import type { ConfirmPickInput } from "./dto/picking.schemas";
 import {
@@ -82,6 +83,8 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
  */
 @Injectable()
 export class PickConfirmService {
+  private readonly logger = new Logger(PickConfirmService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly barcode: InvBarcodeService,
@@ -90,6 +93,7 @@ export class PickConfirmService {
     private readonly settings: InventorySettingsService,
     private readonly soCore: SoCoreService,
     private readonly labor: LaborService,
+    private readonly wes: NoopWesAdapter,
   ) {}
 
   /**
@@ -221,6 +225,25 @@ export class PickConfirmService {
       unitsDone: input.quantityPicked,
       scanCount: input.scannedPayload ? 1 : 0,
     });
+
+    // NEO-13. Best-effort, and the helper is what makes that true rather than a
+    // convention: an adapter that throws, hangs or refuses leaves the pick
+    // exactly as it was. A picker whose confirmation was rejected because a
+    // conveyor did not answer would rightly stop trusting the device, and the
+    // units have already moved. With no adapter connected this is a debug line.
+    await notifyWes(
+      this.wes,
+      {
+        taskRef: `pick:${pickListId}:${input.pickLineId}`,
+        kind: "PICK",
+        warehouseId: wave.warehouseId ?? 0,
+        productVariantId: line.productVariantId,
+        fromLocationCode: null,
+        toLocationCode: null,
+        quantity: input.quantityPicked,
+      },
+      this.logger,
+    );
 
     // Step 1 of the hand-off. Before the recompute, always.
     const released = await this.completion.consumeCoveredReservations(

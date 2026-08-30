@@ -352,6 +352,12 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     description: "Print barcode labels, goods-receipt notes and pick lists",
   },
   {
+    name: "inventory:dock:manage",
+    resource: "inventory:dock",
+    action: "manage",
+    description: "Book and manage dock appointments: which vehicle is at which door, and when",
+  },
+  {
     name: "inventory:kits:assemble",
     resource: "inventory:kits",
     action: "assemble",

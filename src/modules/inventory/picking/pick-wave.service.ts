@@ -19,6 +19,7 @@ import { InventorySettingsService } from "../stock-engine/inventory-settings.ser
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { SoCoreService } from "../sales-orders/so-core.service";
 import { allocateWaveLines } from "./pick-allocation";
+import { decideWaveJoin } from "./waveless";
 import { pickConstraintsResolver } from "./pick-allocation-constraints";
 import { assertClaimHeldBy } from "./pick-line";
 import { PICK_LINE_CLOSED_SQL } from "./pick-exception-policy";
@@ -62,6 +63,56 @@ export class PickWaveService {
    * projection grain. So "no bin" is a state somebody is handed, not a null that
    * travels quietly into the ledger.
    */
+  /**
+   * NEO-14 - which open wave, if any, these orders should join.
+   *
+   * Read-only and separate from `createWave` on purpose: the caller asks, decides
+   * and then either joins or raises a new wave, and a `createWave` that silently
+   * appended to somebody else's wave would be the surprise this whole setting is
+   * hedged about. The rule itself is `decideWaveJoin`, one paragraph in
+   * `waveless.ts`.
+   */
+  async proposeWaveJoin(orgId: string, userId: string, input: CreateWaveInput) {
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, input.warehouseId);
+    const settings = await this.settingsService.get(orgId);
+
+    const lineCount = await this.db
+      .select({ id: invSoLines.id })
+      .from(invSoLines)
+      .where(and(eq(invSoLines.orgId, orgId), inArray(invSoLines.soId, input.soIds)));
+
+    const openWaves = await this.db.execute<{
+      id: number; warehouse_id: number | null; status: string;
+      line_count: number; lines_picked: number;
+    }>(sql`
+      SELECT pl.id, pl.warehouse_id, pl.status,
+             COUNT(pll.id)::int AS line_count,
+             COUNT(pll.id) FILTER (WHERE pll.quantity_picked::numeric > 0)::int AS lines_picked
+      FROM inv_pick_lists pl
+      LEFT JOIN inv_pick_list_lines pll ON pll.org_id = pl.org_id AND pll.pick_list_id = pl.id
+      WHERE pl.org_id = ${orgId}
+        AND pl.warehouse_id = ${input.warehouseId}
+        AND pl.status IN ('PENDING', 'ASSIGNED')
+      GROUP BY pl.id, pl.warehouse_id, pl.status
+      ORDER BY pl.id
+      LIMIT 50
+    `);
+
+    return decideWaveJoin({
+      wavelessPicking: settings.wavelessPicking,
+      maxLines: settings.wavelessMaxLines,
+      warehouseId: input.warehouseId,
+      newLineCount: lineCount.length,
+      openWaves: openWaves.map((wave) => ({
+        id: Number(wave.id),
+        warehouseId: wave.warehouse_id === null ? null : Number(wave.warehouse_id),
+        status: wave.status,
+        lineCount: Number(wave.line_count),
+        linesPicked: Number(wave.lines_picked),
+      })),
+    });
+  }
+
   async createWave(orgId: string, userId: string, input: CreateWaveInput) {
     await this.warehouseScope.assertWarehouseVisible(orgId, userId, input.warehouseId);
 

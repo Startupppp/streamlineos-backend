@@ -55,6 +55,24 @@ export class PickWaveController {
     return this.waves.createWave(u.orgId, u.userId, body);
   }
 
+  /**
+   * NEO-14 - would these orders join a wave that is already open?
+   *
+   * A question, not a command: it reads and returns a decision, and the caller
+   * then either posts to the join route or raises a new wave. A `createWave`
+   * that silently appended to somebody else's wave would be exactly the surprise
+   * this setting is hedged about, so the two acts stay separate at the API too.
+   */
+  @Post("waves/propose-join")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:ship")
+  proposeJoin(
+    @Body(new ZodValidationPipe(createWaveSchema)) body: CreateWaveInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.waves.proposeWaveJoin(u.orgId, u.userId, body);
+  }
+
   /** B4, item 5. The workbench queue: waves waiting, and waves this picker holds. */
   @Get("waves")
   @UseGuards(PermissionGuard)

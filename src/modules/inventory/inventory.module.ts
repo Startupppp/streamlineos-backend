@@ -35,6 +35,8 @@ import { InvSlottingModule } from "./slotting/inv-slotting.module";
 import { InvLaborModule } from "./labor/inv-labor.module";
 import { InvKittingModule } from "./kitting/inv-kitting.module";
 import { InvStockTypesModule } from "./stock-types/inv-stock-types.module";
+import { InvDockModule } from "./dock/inv-dock.module";
+import { InvWesModule } from "./wes/inv-wes.module";
 
 const INVENTORY_MODULES = [
   InvProductsModule,
@@ -73,6 +75,8 @@ const INVENTORY_MODULES = [
   InvLaborModule,
   InvKittingModule,
   InvStockTypesModule,
+  InvDockModule,
+  InvWesModule,
 ];
 
 @Module({

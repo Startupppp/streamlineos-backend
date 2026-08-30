@@ -10,6 +10,7 @@ import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
 import { InvBarcodeModule } from "../barcode/inv-barcode.module";
 import { InvSalesOrdersModule } from "../sales-orders/inv-sales-orders.module";
 import { InvLaborModule } from "../labor/inv-labor.module";
+import { InvWesModule } from "../wes/inv-wes.module";
 
 @Module({
   // PickWaveService injects WarehouseScopeService, NumberSequenceService,
@@ -25,7 +26,7 @@ import { InvLaborModule } from "../labor/inv-labor.module";
   // ReservationService and StockProjectionService; PickExceptionService adds
   // WarehouseScopeService. Nest resolves all of these at runtime; typecheck
   // cannot see a missing import, and the application simply fails to boot.
-  imports: [InvStockEngineModule, InvBarcodeModule, InvSalesOrdersModule, InvLaborModule],
+  imports: [InvStockEngineModule, InvBarcodeModule, InvSalesOrdersModule, InvLaborModule, InvWesModule],
   controllers: [PickWaveController, PickExceptionController],
   providers: [
     PickWaveService,

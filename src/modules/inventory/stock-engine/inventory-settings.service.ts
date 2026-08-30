@@ -42,6 +42,8 @@ const toSettingsRow = (row: InvSettingsSelect | InvSettingsInsert): InvSettingsR
   pharmacyH1RegisterEnabled: row.pharmacyH1RegisterEnabled ?? false,
   qcZeptoEmailPoEnabled: row.qcZeptoEmailPoEnabled ?? false,
   asnRequiredForGrn: row.asnRequiredForGrn ?? false,
+  wavelessPicking: row.wavelessPicking ?? false,
+  wavelessMaxLines: row.wavelessMaxLines ?? 50,
 });
 
 const buildDefaults = (orgId: string): InvSettingsInsert => ({
@@ -75,6 +77,8 @@ const buildDefaults = (orgId: string): InvSettingsInsert => ({
   pharmacyH1RegisterEnabled: false,
   qcZeptoEmailPoEnabled: false,
   asnRequiredForGrn: false,
+  wavelessPicking: false,
+  wavelessMaxLines: 50,
 });
 
 /**

@@ -186,6 +186,14 @@ export interface InvSettingsRow {
    * and nothing else.
    */
   asnRequiredForGrn: boolean;
+  /**
+   * NEO-14. Whether a newly reserved order may join an open wave, and how large
+   * a wave may grow that way. Off by default: a wave a picker is halfway through
+   * is a walk they have planned, and adding to it behind them changes work in
+   * progress.
+   */
+  wavelessPicking: boolean;
+  wavelessMaxLines: number;
 }
 
 /** D2 — short-dated, not expired. See `invNearExpiryPolicyEnum`. */

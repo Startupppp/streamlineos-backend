@@ -26,6 +26,7 @@ import { InventoryAuditService } from "../../stock-engine/inventory-audit.servic
 import { NumberSequenceService } from "../../stock-engine/number-sequence.service";
 import { ChannelPoolService } from "../../stock-engine/channel-pool.service";
 import { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
+import { DockService } from "../../dock/dock.service";
 import { runIdempotent } from "../../stock-engine/idempotency";
 import { addDec, mulDec } from "../../stock-engine/decimal";
 import {
@@ -82,6 +83,7 @@ export class QuickCommerceInboundService {
     private readonly numSeq: NumberSequenceService,
     private readonly channelPools: ChannelPoolService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly dock: DockService,
   ) {}
 
   /**
@@ -679,7 +681,12 @@ export class QuickCommerceInboundService {
     }
 
     const [asn] = await tx
-      .select({ id: invAsns.id, poId: invAsns.poId, status: invAsns.status })
+      .select({
+        id: invAsns.id,
+        poId: invAsns.poId,
+        status: invAsns.status,
+        appointmentStart: invAsns.appointmentStart,
+      })
       .from(invAsns)
       .where(and(eq(invAsns.orgId, orgId), eq(invAsns.id, params.asnId)));
     if (!asn) throw new NotFoundException("Not found");
@@ -688,6 +695,20 @@ export class QuickCommerceInboundService {
     }
     if (asn.status === "CANCELLED" || asn.status === "CLOSED") {
       throw new BadRequestException(`That advance shipping notice is ${asn.status.toLowerCase()}`);
+    }
+
+    // NEO-12. Where the organisation demands an announced delivery, it also
+    // demands a slot: an ASN with no appointment is a lorry nobody expected at a
+    // door nobody freed. The window on the ASN itself counts, and so does a dock
+    // appointment booked against it — the two are the same statement made in
+    // different places, and refusing one because the other was used would be a
+    // rule about our data model rather than about the dock.
+    const hasSlot =
+      asn.appointmentStart !== null || (await this.dock.hasAppointmentForAsn(orgId, asn.id));
+    if (!hasSlot) {
+      throw new BadRequestException(
+        "This organisation requires an announced delivery to have a dock slot before it can be received",
+      );
     }
   }
 }

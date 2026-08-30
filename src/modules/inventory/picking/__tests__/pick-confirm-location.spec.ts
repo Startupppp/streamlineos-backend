@@ -131,6 +131,9 @@ function buildService(options: {
     settings as never,
     soCore as never,
     labor as never,
+    // NEO-13's WES boundary. The noop is the real one: there is no adapter
+    // connected, and this spec asserts nothing about it.
+    { name: "noop", isLive: false, assignTask: jest.fn(async () => ({ taskRef: "", accepted: false })), ack: jest.fn() } as never,
   );
   return { svc, tx, completion, soCore, audit };
 }

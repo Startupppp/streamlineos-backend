@@ -801,3 +801,21 @@ export const invLaborTaskKindEnum = pgEnum("inv_labor_task_kind", [
   "COUNT",
   "RECEIVE",
 ]);
+
+/**
+ * NEO-12 - a dock appointment's life.
+ *
+ * `BOOKED` is a slot somebody holds. `ARRIVED` is a vehicle at the door.
+ * `COMPLETED` is unloaded or loaded. `NO_SHOW` is kept rather than deleted,
+ * because a carrier that misses three slots is a fact worth being able to see.
+ */
+export const invDockAppointmentStatusEnum = pgEnum("inv_dock_appointment_status", [
+  "BOOKED",
+  "ARRIVED",
+  "COMPLETED",
+  "CANCELLED",
+  "NO_SHOW",
+]);
+
+/** NEO-12. Which way goods move through a door. */
+export const invDockDirectionEnum = pgEnum("inv_dock_direction", ["INBOUND", "OUTBOUND"]);
