@@ -35,6 +35,7 @@ export class DashboardProjectService {
 
   async getRecentProjects(orgId: string, u: CurrentUserContext) {
     const scope = await resolveBuildDashboardScope(this.access, u);
+    if (scope === "none") return [];
 
     if (scope === "all") {
       return this.db.query.projects.findMany({
@@ -110,6 +111,7 @@ export class DashboardProjectService {
 
   async getActiveSprintSummary(orgId: string, u: CurrentUserContext) {
     const scope = await resolveBuildDashboardScope(this.access, u);
+    if (scope === "none") return null;
     const projectIds = await this.resolveProjectIds(orgId, u.userId, scope === "all");
     if (projectIds.length === 0) return null;
 
@@ -184,6 +186,7 @@ export class DashboardProjectService {
 
   async getRecentActivity(orgId: string, u: CurrentUserContext) {
     const scope = await resolveBuildDashboardScope(this.access, u);
+    if (scope === "none") return [];
     const projectIds = await this.resolveProjectIds(orgId, u.userId, scope === "all");
     if (projectIds.length === 0) return [];
 

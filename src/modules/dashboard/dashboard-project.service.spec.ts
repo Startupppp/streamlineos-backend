@@ -111,6 +111,58 @@ describe("DashboardProjectService — projectMembers org predicate", () => {
   });
 });
 
+describe("DashboardProjectService — scope none is a deny, not a member fallback", () => {
+  function makeCountingDb() {
+    const counts = { select: 0, where: 0, findMany: 0, findFirst: 0 };
+    const db = {
+      select: () => { counts.select++; return db; },
+      from: () => db,
+      where: () => { counts.where++; return Promise.resolve([{ projectId: 10 }]); },
+      query: {
+        projects: { findMany: async () => { counts.findMany++; return [{ id: 10 }]; } },
+        sprints: { findFirst: async () => { counts.findFirst++; return null; } },
+        tickets: { findMany: async () => { counts.findMany++; return []; } },
+      },
+    };
+    return { db, counts };
+  }
+
+  it("getRecentProjects issues no query at all for scope none", async () => {
+    const { db, counts } = makeCountingDb();
+    const service = new DashboardProjectService(db as never, makeAccess("none"));
+    const result = await service.getRecentProjects(ORG, makeUser(USER, ORG));
+
+    expect(result).toEqual([]);
+    expect(counts).toEqual({ select: 0, where: 0, findMany: 0, findFirst: 0 });
+  });
+
+  it("getActiveSprintSummary issues no query at all for scope none", async () => {
+    const { db, counts } = makeCountingDb();
+    const service = new DashboardProjectService(db as never, makeAccess("none"));
+    const result = await service.getActiveSprintSummary(ORG, makeUser(USER, ORG));
+
+    expect(result).toBeNull();
+    expect(counts).toEqual({ select: 0, where: 0, findMany: 0, findFirst: 0 });
+  });
+
+  it("getRecentActivity issues no query at all for scope none", async () => {
+    const { db, counts } = makeCountingDb();
+    const service = new DashboardProjectService(db as never, makeAccess("none"));
+    const result = await service.getRecentActivity(ORG, makeUser(USER, ORG));
+
+    expect(result).toEqual([]);
+    expect(counts).toEqual({ select: 0, where: 0, findMany: 0, findFirst: 0 });
+  });
+
+  it("scope own still reaches the project-membership query, so the guard is on none alone", async () => {
+    const { db, counts } = makeCountingDb();
+    const service = new DashboardProjectService(db as never, makeAccess("own"));
+    await service.getRecentActivity(ORG, makeUser(USER, ORG));
+
+    expect(counts.where).toBeGreaterThan(0);
+  });
+});
+
 describe("DashboardProjectService — getActiveSprintSummary SQL aggregate", () => {
   it("returns null when no active sprint is found", async () => {
     const db = makeSelectBuilder();
