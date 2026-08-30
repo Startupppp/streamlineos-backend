@@ -405,7 +405,17 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
     checking never happened. Seeding is idempotent, so suites that seed their own
     organisations are unaffected.
   */
-  await seedOrg(ref.get<Db>(DRIZZLE), FIXTURE_ORG_ID, FIXTURE_ORG_ID);
+  const seedTarget = ref.get<Db>(DRIZZLE) as Db & {
+    transaction?: unknown;
+    insert?: unknown;
+  };
+  // Only where there is a database to seed. A spec that overrides `DRIZZLE` with
+  // a double is testing something that never reaches one, and seeding against
+  // the double dies on `tx.insert` before the spec starts. `insert` is the
+  // discriminator rather than `transaction`, because the doubles tend to carry a
+  // `transaction` that hands back a `tx` with only the two methods they need.
+  if (typeof seedTarget.transaction === "function" && typeof seedTarget.insert === "function")
+    await seedOrg(seedTarget, FIXTURE_ORG_ID, FIXTURE_ORG_ID);
   const app = ref.createNestApplication();
   app.enableVersioning({
     type: VersioningType.URI,
