@@ -48,7 +48,7 @@ export class ApprovalsService {
     private readonly generate: GenerateService,
   ) {}
 
-  async submitApproval(orgId: string, userId: string, runId: number) {
+  async submitApproval(orgId: string, userId: string, runId: number, requestId?: string | null) {
     const run = await this.db.query.payrollRuns.findFirst({
       where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
       with: { policyVersion: true },
@@ -109,13 +109,20 @@ export class ApprovalsService {
         action: "payroll.run_approval_submitted",
         userId,
         orgId,
+        actorMembershipId: approverActor.membershipId,
         targetId: String(runId),
         targetType: "payroll_run",
+        requestId: requestId ?? null,
         metadata: { runId, autoApproved: true },
       });
 
       return autoResult;
     }
+
+    const submitterActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
 
     const rawChain = policyConfig?.approvalChain;
     const chain: PayrollApprovalStageDef[] =
@@ -175,8 +182,10 @@ export class ApprovalsService {
       action: "payroll.run_approval_submitted",
       userId,
       orgId,
+      actorMembershipId: submitterActor.membershipId,
       targetId: String(runId),
       targetType: "payroll_run",
+      requestId: requestId ?? null,
       metadata: { runId, autoApproved: false, stagesCreated: chain.length },
     });
 
@@ -224,6 +233,7 @@ export class ApprovalsService {
     runId: number,
     approvalId: number,
     comment?: string,
+    requestId?: string | null,
   ) {
     const [approval, run] = await Promise.all([
       this.db.query.payrollApprovals.findFirst({
@@ -374,8 +384,10 @@ export class ApprovalsService {
       action: "payroll.run_approval_stage_approved",
       userId,
       orgId,
+      actorMembershipId: stageActor.membershipId,
       targetId: String(runId),
       targetType: "payroll_run",
+      requestId: requestId ?? null,
       metadata: { approvalId, stageName: approval.stageName, resultingStatus: result.runStatus },
     });
 
@@ -444,6 +456,7 @@ export class ApprovalsService {
     runId: number,
     approvalId: number,
     comment: string,
+    requestId?: string | null,
   ) {
     const [approval, run] = await Promise.all([
       this.db.query.payrollApprovals.findFirst({
@@ -535,9 +548,11 @@ export class ApprovalsService {
       action: "payroll.run_approval_stage_rejected",
       userId,
       orgId,
+      actorMembershipId: rejectActor.membershipId,
       targetId: String(runId),
       targetType: "payroll_run",
-      metadata: { approvalId, stageName: approval.stageName, comment },
+      requestId: requestId ?? null,
+      metadata: { approvalId, stageName: approval.stageName, reason: comment },
     });
 
     return result;

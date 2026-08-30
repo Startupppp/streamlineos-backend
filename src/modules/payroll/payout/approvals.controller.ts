@@ -61,7 +61,7 @@ export class ApprovalsController {
       throw new ConflictException("Approval submission already in progress for this key");
     }
     try {
-      const result = await this.approvals.submitApproval(u.orgId, u.userId, runId);
+      const result = await this.approvals.submitApproval(u.orgId, u.userId, runId, begin.correlationId);
       const response = { ...result, correlationId: begin.correlationId };
       await this.receipts.succeed(begin.receiptId, response);
       return response;
@@ -104,7 +104,7 @@ export class ApprovalsController {
       throw new ConflictException("Stage approval already in progress for this key");
     }
     try {
-      const result = await this.approvals.approveStage(u.orgId, u.userId, runId, approvalId, body.comment);
+      const result = await this.approvals.approveStage(u.orgId, u.userId, runId, approvalId, body.comment, begin.correlationId);
       const response = { ...result, correlationId: begin.correlationId };
       await this.receipts.succeed(begin.receiptId, response);
       return response;
@@ -138,7 +138,7 @@ export class ApprovalsController {
       throw new ConflictException("Stage rejection already in progress for this key");
     }
     try {
-      const result = await this.approvals.rejectStage(u.orgId, u.userId, runId, approvalId, body.comment);
+      const result = await this.approvals.rejectStage(u.orgId, u.userId, runId, approvalId, body.comment, begin.correlationId);
       const response = { ...result, correlationId: begin.correlationId };
       await this.receipts.succeed(begin.receiptId, response);
       return response;
