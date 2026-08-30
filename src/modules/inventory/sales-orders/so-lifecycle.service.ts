@@ -338,7 +338,7 @@ export class SoLifecycleService {
       nearExpiryWindowDays: number;
       minShelfLifeDays: number;
     },
-  ): Promise<{ locationId: number; lotId?: number } | null> {
+  ): Promise<{ locationId: number; lotId?: number; handlingUnitId?: number } | null> {
     const levels = await this.db.query.invStockLevels.findMany({
       where: and(
         eq(invStockLevels.orgId, orgId),
@@ -352,6 +352,16 @@ export class SoLifecycleService {
         locationId: true,
         lotId: true,
         serialId: true,
+        // NEO-4. The allocator picks a *stock row*, and since handling units
+        // joined the natural key a row is a pallet as well as a bin. Returning
+        // only the location made the reservation that follows look up a loose row
+        // that does not exist — the pallet's hundred units were invisible to it,
+        // and the promise was refused with the stock standing in front of it.
+        handlingUnitId: true,
+        // NEO-11. Same reason, the other new dimension: consigned stock is on
+        // hand and is not ours, and `availableQty` already returns zero for it —
+        // but the row has to be told apart from the owned one to be excluded.
+        ownership: true,
         onHand: true,
         committed: true,
         blockedQty: true,
@@ -397,6 +407,7 @@ export class SoLifecycleService {
         quality_hold_qty: level.qualityHoldQty,
         outgoing_qty: level.outgoingQty,
         is_sellable: level.location?.isSellable ?? null,
+        ownership: level.ownership,
       });
       return cmpDec(available, qty) >= 0;
     });
@@ -434,7 +445,11 @@ export class SoLifecycleService {
 
     const chosen = ordered[0];
     if (!chosen) return null;
-    return { locationId: chosen.locationId, lotId: chosen.lotId ?? undefined };
+    return {
+      locationId: chosen.locationId,
+      lotId: chosen.lotId ?? undefined,
+      handlingUnitId: chosen.handlingUnitId ?? undefined,
+    };
   }
 
   private async autoReserve(
@@ -498,6 +513,7 @@ export class SoLifecycleService {
           warehouseId: warehouseId ?? undefined,
           locationId: available.locationId,
           lotId: available.lotId,
+          handlingUnitId: available.handlingUnitId ?? null,
           qty: line.quantity,
           channelId: channelId ?? null,
         });

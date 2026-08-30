@@ -45,6 +45,7 @@ describe("allocateFromAvailableStock", () => {
       locationId: 55,
       lotId: 9,
       serialId: null,
+      handlingUnitId: null,
     });
   });
 });
@@ -75,6 +76,7 @@ describe("allocateWaveLines", () => {
       locationId: 42,
       lotId: 7,
       serialId: null,
+      handlingUnitId: null,
     });
     expect(findLot).not.toHaveBeenCalled();
   });
@@ -96,6 +98,7 @@ describe("allocateWaveLines", () => {
       locationId: 77,
       lotId: 3,
       serialId: null,
+      handlingUnitId: null,
     });
     // D2. The finder is handed the order the line serves, so it can resolve that
     // customer's contracted shelf-life floor rather than allocating without one.
@@ -128,6 +131,7 @@ describe("allocateWaveLines", () => {
       locationId: 42,
       lotId: null,
       serialId: null,
+      handlingUnitId: null,
     });
     expect(out.get(10)).toEqual({ status: "NEEDS_DECISION" });
     expect(findLot).toHaveBeenCalledTimes(1);

@@ -368,7 +368,15 @@ export class PickConfirmService {
       });
     }
 
-    return { locationId: allocation.locationId, lotId: line.lotId ?? allocation.lotId, handlingUnitId };
+    return {
+      locationId: allocation.locationId,
+      lotId: line.lotId ?? allocation.lotId,
+      // NEO-4. Where the picker did not scan a pallet and the line carried none,
+      // take the one the allocator actually chose: it picked a stock row, and a
+      // row is a pallet as well as a bin. Falling back to loose here would put
+      // the pick on a row with nothing on it.
+      handlingUnitId: handlingUnitId ?? allocation.handlingUnitId ?? null,
+    };
   }
 
 

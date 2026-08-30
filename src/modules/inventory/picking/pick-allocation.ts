@@ -20,6 +20,8 @@ export type PickAllocation =
       locationId: number;
       lotId: number | null;
       serialId: number | null;
+      /** NEO-4 - the pallet the row stands on, or null for loose stock. */
+      handlingUnitId: number | null;
     }
   /** No reservation and no eligible stock. The line is real work that needs a decision, not a walk. */
   | { status: "NEEDS_DECISION" };
@@ -43,7 +45,7 @@ export type LotFinder = (
   productVariantId: number,
   quantity: string,
   soId: number | null,
-) => Promise<{ locationId: number; lotId?: number } | null>;
+) => Promise<{ locationId: number; lotId?: number; handlingUnitId?: number } | null>;
 
 /**
  * The fallback half of the allocator, on its own so both callers share it.
@@ -71,6 +73,11 @@ export async function allocateFromAvailableStock(
     // reserve does not either. A serial-tracked line is settled at the shelf
     // from the scan instead, which is the only place the actual unit is known.
     serialId: null,
+    // NEO-4. The allocator picked a stock row, and a row is a pallet as well as
+    // a bin. Dropping it here would put the pick on a loose row with nothing on
+    // it, and the whole point of the shared helper is that this module does not
+    // get to hold a different opinion from the reserve path.
+    handlingUnitId: found.handlingUnitId ?? null,
   };
 }
 
@@ -122,9 +129,11 @@ export async function allocateWaveLines(
     location_id: number | null;
     lot_id: number | null;
     serial_id: number | null;
+    handling_unit_id: number | null;
   }>(sql`
     SELECT DISTINCT ON (res.source_line_id)
-           res.source_line_id, res.location_id, res.lot_id, res.serial_id
+           res.source_line_id, res.location_id, res.lot_id, res.serial_id,
+           res.handling_unit_id
       FROM inv_stock_reservations res
      WHERE res.org_id = ${orgId}
        AND res.source_type = 'inv_sales_order'
@@ -144,6 +153,14 @@ export async function allocateWaveLines(
       locationId: Number(row.location_id),
       lotId: row.lot_id === null ? null : Number(row.lot_id),
       serialId: row.serial_id === null ? null : Number(row.serial_id),
+      // NEO-4. The reservation already stands on a grain, and the wave line has
+      // to be built on the same one or the pick empties a different row than the
+      // promise holds.
+      // `== null` catches both: a row whose column is NULL, and one where the
+      // column was never selected. `Number(undefined)` is NaN, and a NaN
+      // handling-unit id reaches the level lookup as a grain that matches
+      // nothing at all.
+      handlingUnitId: row.handling_unit_id == null ? null : Number(row.handling_unit_id),
     });
   }
 

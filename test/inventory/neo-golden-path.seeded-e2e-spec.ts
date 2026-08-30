@@ -1,0 +1,675 @@
+import { randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import type { Db } from "src/db/drizzle.module";
+import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
+import { availableQtySumSql } from "src/modules/inventory/stock-engine/available-sql";
+import { ChannelPoolService } from "src/modules/inventory/stock-engine/channel-pool.service";
+import { QuickCommerceInboundService } from "src/modules/inventory/channels/quick-commerce/quick-commerce-inbound.service";
+import { FillRateService } from "src/modules/inventory/channels/quick-commerce/fill-rate.service";
+import { DockService } from "src/modules/inventory/dock/dock.service";
+import { HandlingUnitService } from "src/modules/inventory/handling-units/handling-unit.service";
+import { KitService } from "src/modules/inventory/kitting/kit.service";
+import { OwnershipService } from "src/modules/inventory/stock-types/ownership.service";
+import { SlottingService } from "src/modules/inventory/slotting/slotting.service";
+import { StockEngineService } from "src/modules/inventory/stock-engine/stock-engine.service";
+import { PutawayService } from "src/modules/inventory/warehouses/putaway.service";
+import { PoService } from "src/modules/inventory/purchase-orders/po.service";
+import { GrnService } from "src/modules/inventory/purchase-orders/grn.service";
+import { SoCoreService } from "src/modules/inventory/sales-orders/so-core.service";
+import { SoLifecycleService } from "src/modules/inventory/sales-orders/so-lifecycle.service";
+import { SoFulfillmentService } from "src/modules/inventory/sales-orders/so-fulfillment.service";
+import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
+import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
+import { seedOrg } from "test/helpers/seed-builder";
+
+/**
+ * NEO-16 - the whole of the NEO programme, once, in the order a warehouse works
+ * in.
+ *
+ * `golden-path.seeded-e2e-spec.ts` walks the original module end to end and
+ * still does; this walks what NEO added, for the same reason that one exists.
+ * Fourteen units were built here and each has its own green suite, and a chain
+ * can be broken at a seam while every link passes: the earlier programme found
+ * `packSo` and `shipSo` both looking up pick lists by a column that is null for
+ * a wave, with green unit suites on both.
+ *
+ * **Every assertion names its unit.** A failure here has to point at the unit
+ * that owns it, or somebody reads a red suite and cannot tell whether the pool,
+ * the handling unit or the pick broke.
+ *
+ * The observables are business ones: what may be promised, where stock is
+ * standing, and whether the ledger still explains the projection after every
+ * step. A step that silently does nothing shows up as stock that did not move.
+ *
+ *   pnpm test:e2e:seeded --testPathPattern=neo-golden-path
+ */
+const PERMISSIONS = [
+  "inventory:warehouses:scope-all",
+  "inventory:warehouses:read",
+  "inventory:warehouses:manage",
+  "inventory:stock:read",
+  "inventory:stock:reserve",
+  "inventory:stock:adjust",
+  "inventory:stock:transfer",
+  "inventory:products:read",
+  "inventory:products:update",
+  "inventory:purchase-orders:create",
+  "inventory:purchase-orders:approve",
+  "inventory:purchase-orders:receive",
+  "inventory:sales-orders:create",
+  "inventory:sales-orders:confirm",
+  "inventory:sales-orders:ship",
+  "inventory:channels:manage",
+  "inventory:kits:assemble",
+  "inventory:dock:manage",
+  "inventory:reports:read",
+] as const;
+
+/** Shared with the original golden path: a busy database makes 120s a coin toss. */
+const SLICE_TIMEOUT_MS = 300_000;
+
+interface Scene {
+  orgId: string;
+  userId: string;
+  tag: string;
+  warehouseId: number;
+  receivingId: number;
+  goldBinId: number;
+  backBinId: number;
+  zoneId: number;
+  shippingId: number;
+  vendorId: number;
+  /** The SKU the platform orders and we ship. */
+  variantId: number;
+  sku: string;
+  ean: string;
+  /** Sold as a kit built from the two below. */
+  kitVariantId: number;
+  componentAId: number;
+  componentBId: number;
+  channelId: number;
+}
+
+describe("[seeded-e2e] NEO-16 the world-class path", () => {
+  let app: SeededE2eApp;
+  let scene: Scene;
+  let teardown: () => Promise<void>;
+
+  let platformPoId: number;
+  let poId: number;
+  let poLineId: number;
+  let asnId: number;
+  let handlingUnitId: number;
+  let grnId: number;
+
+  const asTenant = <T>(work: () => Promise<T>): Promise<T> =>
+    runInNewTenantTransaction(app.app.get<Db>(DRIZZLE), scene.orgId, work);
+
+  const db = () => app.app.get<Db>(DRIZZLE);
+
+  /** Through the canonical expression, never a copy of it. */
+  const atp = async (variantId: number): Promise<number> => {
+    const [row] = await asTenant(() =>
+      db().execute<{ available: string }>(sql`
+        SELECT ${availableQtySumSql("sl")}::text AS available
+        FROM inv_stock_levels sl
+        WHERE sl.org_id = ${scene.orgId} AND sl.product_variant_id = ${variantId}`),
+    );
+    return Number(row!.available);
+  };
+
+  const onHandAt = async (variantId: number, locationId: number): Promise<number> => {
+    const [row] = await asTenant(() =>
+      db().execute<{ qty: string }>(sql`
+        SELECT COALESCE(SUM(on_hand), 0)::text AS qty FROM inv_stock_levels
+        WHERE org_id = ${scene.orgId} AND product_variant_id = ${variantId}
+          AND location_id = ${locationId}`),
+    );
+    return Number(row!.qty);
+  };
+
+  const onHandOnUnit = async (variantId: number, huId: number): Promise<number> => {
+    const [row] = await asTenant(() =>
+      db().execute<{ qty: string }>(sql`
+        SELECT COALESCE(SUM(on_hand), 0)::text AS qty FROM inv_stock_levels
+        WHERE org_id = ${scene.orgId} AND product_variant_id = ${variantId}
+          AND handling_unit_id = ${huId}`),
+    );
+    return Number(row!.qty);
+  };
+
+  /** The invariant after every step: the ledger explains the projection. */
+  const expectReconciled = async (step: string): Promise<void> => {
+    const report = await asTenant(() =>
+      app.app.get(InvReconciliationService).report(scene.orgId, scene.userId, { limit: 50 }),
+    );
+    expect({ step, drift: report.drift }).toEqual({ step, drift: [] });
+  };
+
+  beforeAll(async () => {
+    app = await createSeededE2eApp();
+    const seeded = await seedOrg(app.seedDb)
+      .onPlan("PAID")
+      .addMember("keeper", { permissionKeys: [...PERMISSIONS] })
+      .build();
+    teardown = () => seeded.teardown();
+
+    const tag = randomUUID().slice(0, 6);
+    scene = await runInNewTenantTransaction(db(), seeded.orgId, async () => {
+      const userId = seeded.members.keeper!.userId;
+      const one = async <T extends Record<string, unknown>>(q: ReturnType<typeof sql>) =>
+        (await db().execute<T>(q))[0]!;
+
+      const uom = await one<{ id: number }>(sql`
+        INSERT INTO inv_uom (org_id, name, abbreviation, is_base)
+        VALUES (${seeded.orgId}, ${`Each ${tag}`}, ${`E${tag}`}, true) RETURNING id`);
+
+      const makeVariant = async (name: string, code: string) => {
+        const product = await one<{ id: number }>(sql`
+          INSERT INTO inv_products (org_id, uom_id, name, sku, created_by)
+          VALUES (${seeded.orgId}, ${uom.id}, ${name}, ${`${code}-${tag}`}, ${userId}) RETURNING id`);
+        const variant = await one<{ id: number }>(sql`
+          INSERT INTO inv_product_variants (org_id, product_id, name, sku)
+          VALUES (${seeded.orgId}, ${product.id}, 'Default', ${`${code}-${tag}-V`}) RETURNING id`);
+        return variant.id;
+      };
+
+      const variantId = await makeVariant("NEO widget", "NEO");
+      const kitVariantId = await makeVariant("NEO gift set", "NEOKIT");
+      const componentAId = await makeVariant("NEO component A", "NEOCA");
+      const componentBId = await makeVariant("NEO component B", "NEOCB");
+
+      // NEO-2 matches a platform line on the barcode both sides agreed on.
+      const ean = `890${tag.replace(/\D/g, "0").padEnd(10, "0").slice(0, 10)}`;
+      await db().execute(sql`
+        INSERT INTO inv_barcodes (org_id, product_variant_id, code, barcode_type, is_primary)
+        VALUES (${seeded.orgId}, ${variantId}, ${ean}, 'GTIN', true)`);
+
+      const warehouse = await one<{ id: number }>(sql`
+        INSERT INTO inv_warehouses (org_id, name, code, created_by)
+        VALUES (${seeded.orgId}, 'NEO', ${`NW${tag}`}, ${userId}) RETURNING id`);
+      const receiving = await one<{ id: number }>(sql`
+        INSERT INTO inv_locations (org_id, warehouse_id, name, code, location_type, is_receivable, is_pickable)
+        VALUES (${seeded.orgId}, ${warehouse.id}, 'Dock', ${`ND${tag}`}, 'RECEIVING', true, false)
+        RETURNING id`);
+      // NEO-6: a gold zone with one bin under it, and a back bin outside it.
+      const zone = await one<{ id: number }>(sql`
+        INSERT INTO inv_locations (org_id, warehouse_id, name, code, location_type, is_receivable, is_pickable)
+        VALUES (${seeded.orgId}, ${warehouse.id}, 'Gold zone', ${`NZ${tag}`}, 'ZONE', false, false)
+        RETURNING id`);
+      const goldBin = await one<{ id: number }>(sql`
+        INSERT INTO inv_locations (org_id, warehouse_id, parent_location_id, name, code, location_type, is_receivable, is_pickable)
+        VALUES (${seeded.orgId}, ${warehouse.id}, ${zone.id}, 'Gold bin', ${`NG${tag}`}, 'BIN', true, true)
+        RETURNING id`);
+      const backBin = await one<{ id: number }>(sql`
+        INSERT INTO inv_locations (org_id, warehouse_id, name, code, location_type, is_receivable, is_pickable)
+        VALUES (${seeded.orgId}, ${warehouse.id}, 'Back bin', ${`NB${tag}`}, 'BIN', true, true)
+        RETURNING id`);
+      const shipping = await one<{ id: number }>(sql`
+        INSERT INTO inv_locations (org_id, warehouse_id, name, code, location_type, is_receivable, is_pickable)
+        VALUES (${seeded.orgId}, ${warehouse.id}, 'Staging', ${`NS${tag}`}, 'SHIPPING', true, true)
+        RETURNING id`);
+      const vendor = await one<{ id: number }>(sql`
+        INSERT INTO inv_vendors (org_id, name, code, created_by)
+        VALUES (${seeded.orgId}, 'NEO vendor', ${`NV${tag}`}, ${userId}) RETURNING id`);
+
+      // NEO-1/NEO-2: the platform, as a channel.
+      const channel = await one<{ id: number }>(sql`
+        INSERT INTO inv_channels (org_id, name, channel_type, status, qc_provider)
+        VALUES (${seeded.orgId}, ${`Blinkit ${tag}`}, 'MARKETPLACE', 'ACTIVE', 'BLINKIT')
+        RETURNING id`);
+
+      // NEO-2's pack, and NEO-2's flag. Both off by default; this organisation
+      // has asked for them.
+      await db().execute(sql`
+        INSERT INTO inv_settings (org_id, pack_quick_commerce)
+        VALUES (${seeded.orgId}, true)
+        ON CONFLICT (org_id) DO UPDATE SET pack_quick_commerce = true`);
+
+      return {
+        orgId: seeded.orgId,
+        userId,
+        tag,
+        warehouseId: warehouse.id,
+        receivingId: receiving.id,
+        goldBinId: goldBin.id,
+        backBinId: backBin.id,
+        zoneId: zone.id,
+        shippingId: shipping.id,
+        vendorId: vendor.id,
+        variantId,
+        sku: `NEO-${tag}-V`,
+        ean,
+        kitVariantId,
+        componentAId,
+        componentBId,
+        channelId: channel.id,
+      };
+    });
+  }, 300_000);
+
+  afterAll(async () => {
+    await teardown?.().catch(() => undefined);
+    await app?.close();
+  }, 120_000);
+
+  it("NEO-0: starts with nothing on the shelf and nothing promisable", async () => {
+    expect(await atp(scene.variantId)).toBe(0);
+    await expectReconciled("NEO-0 empty");
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-2: ingests a Blinkit purchase order and matches every line to the catalogue", async () => {
+    const result = await asTenant(() =>
+      app.app.get(QuickCommerceInboundService).ingestPurchaseOrder(
+        scene.orgId,
+        scene.userId,
+        {
+          provider: "BLINKIT",
+          warehouseId: scene.warehouseId,
+          payload: {
+            po_number: `BLK-${scene.tag}`,
+            facility_code: "BLR-DARK-07",
+            expected_delivery_date: "2026-09-01",
+            line_items: [
+              { item_code: "BLK-1", ean: scene.ean, mrp: "125.50", pack_size: 12, quantity: 100, landing_rate: "4.0000" },
+            ],
+          },
+        },
+        `neo-ingest-${scene.tag}`,
+      ),
+    );
+
+    platformPoId = result.id;
+    expect(result.status).toBe("RECEIVED");
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0]!.validationError).toBeNull();
+    expect(result.lines[0]!.productVariantId).toBe(scene.variantId);
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-2: is idempotent on the platform's own purchase-order number", async () => {
+    // A retried delivery, a re-uploaded file and a re-parsed email must land on
+    // one row rather than making three purchase orders.
+    const again = await asTenant(() =>
+      app.app.get(QuickCommerceInboundService).ingestPurchaseOrder(
+        scene.orgId,
+        scene.userId,
+        {
+          provider: "BLINKIT",
+          warehouseId: scene.warehouseId,
+          payload: {
+            po_number: `BLK-${scene.tag}`,
+            line_items: [{ ean: scene.ean, quantity: 100 }],
+          },
+        },
+        `neo-ingest-again-${scene.tag}`,
+      ),
+    );
+    expect(again.id).toBe(platformPoId);
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-2/NEO-1: accepting raises a purchase order and claims the stock for the channel", async () => {
+    const accepted = await asTenant(() =>
+      app.app.get(QuickCommerceInboundService).acceptPurchaseOrder(
+        scene.orgId,
+        scene.userId,
+        platformPoId,
+        {
+          vendorId: scene.vendorId,
+          warehouseId: scene.warehouseId,
+          orderDate: "2026-08-01",
+          reserveIntoChannelPool: false,
+        },
+        `neo-accept-${scene.tag}`,
+      ),
+    );
+    expect(accepted.poId).not.toBeNull();
+    poId = accepted.poId!;
+
+    await asTenant(() => app.app.get(PoService).sendPo(scene.orgId, poId, scene.userId));
+    const [line] = await asTenant(() =>
+      db().execute<{ id: number }>(sql`
+        SELECT id FROM inv_po_lines WHERE org_id = ${scene.orgId} AND po_id = ${poId}`),
+    );
+    poLineId = line!.id;
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-2/NEO-12: announces the shipment and books it a dock slot", async () => {
+    const asn = await asTenant(() =>
+      app.app.get(QuickCommerceInboundService).createAsn(
+        scene.orgId,
+        scene.userId,
+        {
+          poId,
+          platformPoId,
+          warehouseId: scene.warehouseId,
+          expectedArrival: "2026-09-01",
+          lines: [
+            { poLineId, productVariantId: scene.variantId, quantityExpected: "100.0000" },
+          ],
+        },
+        `neo-asn-${scene.tag}`,
+      ),
+    );
+    asnId = asn.id;
+
+    const door = await asTenant(() =>
+      app.app.get(DockService).createDoor(scene.orgId, scene.userId, {
+        warehouseId: scene.warehouseId,
+        code: `D1-${scene.tag}`,
+        direction: "INBOUND",
+      }),
+    );
+
+    const booked = await asTenant(() =>
+      app.app.get(DockService).book(scene.orgId, scene.userId, {
+        doorId: door!.id,
+        direction: "INBOUND",
+        windowStart: "2026-09-01T09:00:00.000Z",
+        windowEnd: "2026-09-01T10:00:00.000Z",
+        asnId,
+        carrierName: "NEO Carriers",
+      }),
+    );
+    expect(booked!.status).toBe("BOOKED");
+
+    // The rule the calendar exists for: two vehicles cannot hold one door.
+    await expect(
+      asTenant(() =>
+        app.app.get(DockService).book(scene.orgId, scene.userId, {
+          doorId: door!.id,
+          direction: "INBOUND",
+          windowStart: "2026-09-01T09:30:00.000Z",
+          windowEnd: "2026-09-01T10:30:00.000Z",
+        }),
+      ),
+    ).rejects.toThrow(/already booked/i);
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-4: receives the delivery onto a pallet, not loose onto the dock", async () => {
+    const unit = await asTenant(() =>
+      app.app.get(HandlingUnitService).create(
+        scene.orgId,
+        scene.userId,
+        { kind: "PALLET", locationId: scene.receivingId },
+        `neo-hu-${scene.tag}`,
+      ),
+    );
+    handlingUnitId = unit.id;
+
+    const grn = await asTenant(() =>
+      app.app.get(GrnService).receiveGoods(scene.orgId, poId, scene.userId, `neo-receive-${scene.tag}`, {
+        receivedDate: "2026-09-01",
+        locationId: scene.receivingId,
+        asnId,
+        lines: [
+          {
+            poLineId,
+            quantityReceived: "100.0000",
+            qualityStatus: "ACCEPTED",
+            handlingUnitId,
+          },
+        ],
+      }),
+    );
+    grnId = (grn as { id: number }).id;
+
+    expect(await onHandOnUnit(scene.variantId, handlingUnitId)).toBe(100);
+    expect(await onHandAt(scene.variantId, scene.receivingId)).toBe(100);
+    expect(await atp(scene.variantId)).toBe(100);
+    await expectReconciled("NEO-4 received into a handling unit");
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-6: puts the gold-zone bin first once a slotting rule says so", async () => {
+    const before = await asTenant(() =>
+      app.app.get(PutawayService).suggest(scene.orgId, scene.userId, {
+        warehouseId: scene.warehouseId,
+        productVariantId: scene.variantId,
+        quantity: "100.0000",
+      }),
+    );
+    expect(before.every((s) => !s.inSlot)).toBe(true);
+
+    await asTenant(() =>
+      app.app.get(SlottingService).createRule(scene.orgId, scene.userId, {
+        warehouseId: scene.warehouseId,
+        name: `Gold ${scene.tag}`,
+        matchType: "PRODUCT_VARIANT",
+        productVariantId: scene.variantId,
+        targetZoneLocationId: scene.zoneId,
+        priority: 10,
+      }),
+    );
+
+    const after = await asTenant(() =>
+      app.app.get(PutawayService).suggest(scene.orgId, scene.userId, {
+        warehouseId: scene.warehouseId,
+        productVariantId: scene.variantId,
+        quantity: "100.0000",
+      }),
+    );
+    expect(after[0]!.locationId).toBe(scene.goldBinId);
+    expect(after[0]!.inSlot).toBe(true);
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-4: moves the whole pallet to the gold bin in one command", async () => {
+    await asTenant(() =>
+      app.app.get(HandlingUnitService).move(
+        scene.orgId,
+        scene.userId,
+        handlingUnitId,
+        { toLocationId: scene.goldBinId },
+        `neo-hu-move-${scene.tag}`,
+      ),
+    );
+
+    expect(await onHandAt(scene.variantId, scene.receivingId)).toBe(0);
+    expect(await onHandAt(scene.variantId, scene.goldBinId)).toBe(100);
+    expect(await onHandOnUnit(scene.variantId, handlingUnitId)).toBe(100);
+    expect(await atp(scene.variantId)).toBe(100);
+    await expectReconciled("NEO-4 pallet moved");
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-1: a channel claim withholds stock from a direct sale", async () => {
+    await asTenant(() =>
+      app.app.get(ChannelPoolService).allocate(scene.orgId, scene.userId, {
+        channelId: scene.channelId,
+        productVariantId: scene.variantId,
+        warehouseId: scene.warehouseId,
+        deltaQty: "60.0000",
+        idempotencyKey: `neo-pool-${scene.tag}`,
+      }),
+    );
+
+    const direct = await asTenant(() =>
+      app.app.get(ChannelPoolService).availabilityFor(scene.orgId, {
+        productVariantId: scene.variantId,
+        warehouseId: scene.warehouseId,
+      }),
+    );
+    expect(Number(direct.available)).toBe(100);
+    expect(Number(direct.reservedByOthers)).toBe(60);
+    expect(Number(direct.netAvailable)).toBe(40);
+
+    const forChannel = await asTenant(() =>
+      app.app.get(ChannelPoolService).availabilityFor(scene.orgId, {
+        productVariantId: scene.variantId,
+        warehouseId: scene.warehouseId,
+        forChannelId: scene.channelId,
+      }),
+    );
+    // The channel sees its own claim as its own, not as somebody else's.
+    expect(Number(forChannel.netAvailable)).toBe(100);
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-1: the channel's own order ships, and draws its claim down", async () => {
+    const so = await asTenant(() =>
+      app.app.get(SoCoreService).createSo(scene.orgId, scene.userId, {
+        orderDate: "2026-09-02",
+        warehouseId: scene.warehouseId,
+        channelId: scene.channelId,
+        platformPoId,
+        currency: "INR",
+        lines: [
+          {
+            productVariantId: scene.variantId,
+            quantity: 60,
+            unitPrice: "10.0000",
+            taxRate: "0",
+            lineOrder: 0,
+          },
+        ],
+      }),
+    );
+    const soId = (so as { id: number }).id;
+
+    await asTenant(() =>
+      app.app.get(SoLifecycleService).confirmSo(scene.orgId, soId, scene.userId, `neo-confirm-${scene.tag}`),
+    );
+    await asTenant(() =>
+      app.app.get(SoFulfillmentService).shipSo(scene.orgId, soId, scene.userId, `neo-ship-${scene.tag}`, {
+        shipDate: "2026-09-03",
+      }),
+    );
+
+    expect(await onHandAt(scene.variantId, scene.goldBinId)).toBe(40);
+
+    const after = await asTenant(() =>
+      app.app.get(ChannelPoolService).availabilityFor(scene.orgId, {
+        productVariantId: scene.variantId,
+        warehouseId: scene.warehouseId,
+      }),
+    );
+    // The claim existed to stop anybody else selling those units; once they have
+    // gone there is nothing left to hold.
+    expect(Number(after.reservedByOthers)).toBe(0);
+    expect(Number(after.netAvailable)).toBe(40);
+    await expectReconciled("NEO-1 channel order shipped");
+
+    const fillRate = await asTenant(() =>
+      app.app.get(FillRateService).report(scene.orgId, scene.userId, { platformPoId }),
+    );
+    // NEO-3: 100 ordered, 60 shipped.
+    expect(Number(fillRate.orderedQty)).toBe(100);
+    expect(Number(fillRate.acceptedQty)).toBe(60);
+    expect(Number(fillRate.fillRatePct)).toBeCloseTo(60, 2);
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-9: assembles a kit, consuming its components and costing it from them", async () => {
+    // Seeded through the engine, not by inserting a level row. A hand-written
+    // projection is drift the moment `expectReconciled` looks at it, and the
+    // check would be right: the ledger would not explain it. Going through the
+    // engine also writes the valuation layers the kit is later costed from.
+    await asTenant(() =>
+      app.app.get(StockEngineService).execute(scene.orgId, scene.userId, {
+        idempotencyKey: `neo-components-${scene.tag}`,
+        sourceType: "inv_opening_balance",
+        sourceId: `neo-${scene.tag}`,
+        reason: "Opening components for the kit",
+        movements: [scene.componentAId, scene.componentBId].map((componentId) => ({
+          transactionType: "OPENING_BALANCE",
+          productVariantId: componentId,
+          locationId: scene.backBinId,
+          quantityDelta: "10.0000",
+          unitCost: "5.0000",
+        })),
+      }),
+    );
+
+    await asTenant(() =>
+      app.app.get(KitService).setBom(scene.orgId, scene.userId, scene.kitVariantId, {
+        components: [
+          { componentVariantId: scene.componentAId, quantityPer: "2.0000" },
+          { componentVariantId: scene.componentBId, quantityPer: "1.0000" },
+        ],
+      }),
+    );
+
+    const buildable = await asTenant(() =>
+      app.app.get(KitService).buildable(scene.orgId, scene.kitVariantId, scene.warehouseId),
+    );
+    expect(Number(buildable)).toBe(5);
+
+    // Short by construction: five is all the components allow.
+    await expect(
+      asTenant(() =>
+        app.app.get(KitService).assemble(
+          scene.orgId,
+          scene.userId,
+          { kitVariantId: scene.kitVariantId, locationId: scene.backBinId, quantity: "6.0000" },
+          `neo-kit-short-${scene.tag}`,
+        ),
+      ),
+    ).rejects.toThrow();
+
+    const built = await asTenant(() =>
+      app.app.get(KitService).assemble(
+        scene.orgId,
+        scene.userId,
+        { kitVariantId: scene.kitVariantId, locationId: scene.backBinId, quantity: "3.0000" },
+        `neo-kit-${scene.tag}`,
+      ),
+    );
+
+    expect(await atp(scene.kitVariantId)).toBe(3);
+    expect(await onHandAt(scene.componentAId, scene.backBinId)).toBe(4);
+    expect(await onHandAt(scene.componentBId, scene.backBinId)).toBe(7);
+    // Three kits of (2 x 5) + (1 x 5) = 45.
+    expect(Number(built.totalCost)).toBeCloseTo(45, 4);
+    await expectReconciled("NEO-9 kit assembled");
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-11: consigned stock is on hand and is never promisable", async () => {
+    const consignedVariant = scene.componentAId;
+    const ownedBefore = await atp(consignedVariant);
+
+    // Received as the supplier's, through the engine like any other receipt.
+    await asTenant(() =>
+      app.app.get(StockEngineService).execute(scene.orgId, scene.userId, {
+        idempotencyKey: `neo-consigned-${scene.tag}`,
+        sourceType: "inv_opening_balance",
+        sourceId: `neo-consigned-${scene.tag}`,
+        reason: "Supplier-owned stock on our shelf",
+        movements: [
+          {
+            transactionType: "OPENING_BALANCE",
+            productVariantId: consignedVariant,
+            locationId: scene.backBinId,
+            ownership: "VENDOR",
+            quantityDelta: "10.0000",
+            unitCost: "5.0000",
+          },
+        ],
+      }),
+    );
+
+    // On hand went up by ten; what may be promised did not move at all.
+    const [onHand] = await asTenant(() =>
+      db().execute<{ qty: string }>(sql`
+        SELECT COALESCE(SUM(on_hand), 0)::text AS qty FROM inv_stock_levels
+        WHERE org_id = ${scene.orgId} AND product_variant_id = ${consignedVariant}`),
+    );
+    expect(Number(onHand!.qty)).toBe(ownedBefore + 10);
+    expect(await atp(consignedVariant)).toBe(ownedBefore);
+
+    // Taking title makes it ours, and only then may it be promised.
+    await asTenant(() =>
+      app.app.get(OwnershipService).convert(
+        scene.orgId,
+        scene.userId,
+        {
+          productVariantId: consignedVariant,
+          locationId: scene.backBinId,
+          quantity: "4.0000",
+          fromOwnership: "VENDOR",
+          toOwnership: "OWNED",
+          unitCost: "5.0000",
+        },
+        `neo-title-${scene.tag}`,
+      ),
+    );
+
+    expect(await atp(consignedVariant)).toBe(ownedBefore + 4);
+    await expectReconciled("NEO-11 title taken");
+  }, SLICE_TIMEOUT_MS);
+});

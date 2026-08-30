@@ -205,7 +205,10 @@ describe("PickConfirmService — where the units came from", () => {
     expect(completion.syncGrains).toHaveBeenCalledWith(
       expect.anything(),
       "org1",
-      [{ productVariantId: 100, locationId: 77, lotId: 3, serialId: null }],
+      // NEO-4 added the handling unit to the grain. The allocator resolved loose
+      // stock here, so it is null — and asserting it explicitly is the point:
+      // a grain that silently lost a dimension addresses a different row.
+      [{ productVariantId: 100, locationId: 77, lotId: 3, serialId: null, handlingUnitId: null }],
     );
   });
 

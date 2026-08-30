@@ -235,10 +235,24 @@ export class DockService {
   }
 }
 
+/**
+ * Postgres' own SQLSTATE, from wherever the driver left it.
+ *
+ * Drizzle wraps the postgres.js error, so the code is on `cause` rather than on
+ * the error the caller catches — and a check that only looked at the top level
+ * silently never matched, which the golden path found by getting a raw query
+ * dump where it expected a 409. The chain is walked to a small depth rather
+ * than one level, because "which layer wrapped it" is a driver detail that has
+ * changed before.
+ */
 function pgCode(error: unknown): string | null {
-  if (typeof error !== "object" || error === null) return null;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === "string" ? code : null;
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && typeof current === "object" && current !== null; depth += 1) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
 }
 
 function isExclusionViolation(error: unknown): boolean {

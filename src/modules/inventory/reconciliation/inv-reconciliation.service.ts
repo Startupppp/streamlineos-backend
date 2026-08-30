@@ -196,20 +196,29 @@ export const reconciliationQueries = {
   bucketDrift(tx: Executor, orgId: string, where: SQL, cap: number) {
     return tx.execute<DriftQueryRow>(sql`
       WITH ledger AS (
-        SELECT product_variant_id, location_id, lot_id, serial_id, quantity_bucket,
+        -- NEO-4 and NEO-11 widened the projection's natural key with the
+        -- handling unit and the ownership, so the ledger has to be grouped the
+        -- same way. Without it a pallet's hundred units and the loose row at the
+        -- same bin are compared against one shared ledger total, and the check
+        -- reports drift on stock that is perfectly reconciled -- the checker
+        -- disagreeing with the writer, which is the failure this whole module
+        -- was written to remove.
+        SELECT product_variant_id, location_id, lot_id, serial_id, handling_unit_id,
+               ownership, quantity_bucket,
                SUM(quantity_change::numeric) AS total
         FROM inv_stock_transactions
         WHERE org_id = ${orgId}
-        GROUP BY product_variant_id, location_id, lot_id, serial_id, quantity_bucket
+        GROUP BY product_variant_id, location_id, lot_id, serial_id, handling_unit_id,
+                 ownership, quantity_bucket
       )
       SELECT sl.id AS stock_level_id, sl.product_variant_id, sl.location_id, sl.lot_id, sl.serial_id,
              b.field, b.projected::text, b.expected::text, (b.projected - b.expected)::text AS difference
       FROM inv_stock_levels sl
       CROSS JOIN LATERAL (
         VALUES
-          ('on_hand', sl.on_hand::numeric, COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.quantity_bucket = 'ON_HAND'), 0)),
-          ('blocked_qty', COALESCE(sl.blocked_qty, 0)::numeric, COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.quantity_bucket = 'BLOCKED'), 0)),
-          ('quality_hold_qty', COALESCE(sl.quality_hold_qty, 0)::numeric, COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.quantity_bucket = 'QUALITY_HOLD'), 0))
+          ('on_hand', sl.on_hand::numeric, COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.handling_unit_id IS NOT DISTINCT FROM sl.handling_unit_id AND l.ownership = sl.ownership AND l.quantity_bucket = 'ON_HAND'), 0)),
+          ('blocked_qty', COALESCE(sl.blocked_qty, 0)::numeric, COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.handling_unit_id IS NOT DISTINCT FROM sl.handling_unit_id AND l.ownership = sl.ownership AND l.quantity_bucket = 'BLOCKED'), 0)),
+          ('quality_hold_qty', COALESCE(sl.quality_hold_qty, 0)::numeric, COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.handling_unit_id IS NOT DISTINCT FROM sl.handling_unit_id AND l.ownership = sl.ownership AND l.quantity_bucket = 'QUALITY_HOLD'), 0))
       ) AS b(field, projected, expected)
       WHERE ${where} AND b.projected <> b.expected
       ORDER BY sl.id, b.field
@@ -334,9 +343,9 @@ export const reconciliationQueries = {
       ),
       target AS (
         SELECT sl.id,
-               COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.quantity_bucket = 'ON_HAND'), 0) AS on_hand,
-               COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.quantity_bucket = 'BLOCKED'), 0) AS blocked_qty,
-               COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.quantity_bucket = 'QUALITY_HOLD'), 0) AS quality_hold_qty,
+               COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.handling_unit_id IS NOT DISTINCT FROM sl.handling_unit_id AND l.ownership = sl.ownership AND l.quantity_bucket = 'ON_HAND'), 0) AS on_hand,
+               COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.handling_unit_id IS NOT DISTINCT FROM sl.handling_unit_id AND l.ownership = sl.ownership AND l.quantity_bucket = 'BLOCKED'), 0) AS blocked_qty,
+               COALESCE((SELECT total FROM ledger l WHERE l.product_variant_id = sl.product_variant_id AND l.location_id IS NOT DISTINCT FROM sl.location_id AND l.lot_id IS NOT DISTINCT FROM sl.lot_id AND l.serial_id IS NOT DISTINCT FROM sl.serial_id AND l.handling_unit_id IS NOT DISTINCT FROM sl.handling_unit_id AND l.ownership = sl.ownership AND l.quantity_bucket = 'QUALITY_HOLD'), 0) AS quality_hold_qty,
                ${EXPECTED_COMMITTED} AS committed,
                ${EXPECTED_ON_ORDER} AS on_order,
                ${EXPECTED_OUTGOING} AS outgoing_qty

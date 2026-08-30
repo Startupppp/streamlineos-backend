@@ -117,8 +117,15 @@ export class StockProjectionService {
       -- migration 0515's non-negative bucket CHECK.
       SELECT ${orgId}, ${productVariantId}, target.id, GREATEST(0, ${quantity}::numeric)
         FROM target
+      -- NEO-4 and NEO-11 widened the natural key with the handling unit and the
+      -- ownership. A conflict target that does not match the unique index in full
+      -- matches no constraint at all, and Postgres refuses the statement rather
+      -- than falling back to a plain insert -- which is how the golden path found
+      -- this the moment the key changed. Every column of
+      -- uniq_inv_stock_levels_natural_key, in its order.
       ON CONFLICT (org_id, product_variant_id, location_id,
-                   COALESCE(lot_id, 0), COALESCE(serial_id, 0))
+                   COALESCE(lot_id, 0), COALESCE(serial_id, 0),
+                   COALESCE(handling_unit_id, 0), ownership)
       DO UPDATE SET on_order = GREATEST(
         0, COALESCE(inv_stock_levels.on_order, 0) + ${quantity}::numeric
       )

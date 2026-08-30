@@ -224,6 +224,10 @@ export class PickWaveService {
               locationId: allocated?.locationId ?? null,
               lotId: allocated?.lotId ?? null,
               serialId: allocated?.serialId ?? null,
+              // NEO-4. The wave line stands on the same grain the allocation
+              // resolved, or the pick empties a different row than the promise
+              // holds.
+              handlingUnitId: allocated?.handlingUnitId ?? null,
               quantityToPick: String(line.quantity),
               quantityPicked: "0",
             };

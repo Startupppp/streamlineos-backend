@@ -142,6 +142,7 @@ export class SoFulfillmentService {
               warehouseId: data.warehouseId ?? so.warehouseId ?? undefined,
               locationId: available.locationId,
               lotId: available.lotId,
+              handlingUnitId: available.handlingUnitId ?? null,
               qty: line.quantity,
               channelId: so.channelId ?? null,
             });
