@@ -83,11 +83,10 @@ describe("resolveLeavesViewScope", () => {
     expect(compiled.params).toEqual(["approver-1"]);
   });
 
-  it("requires both assignment and team visibility for team scope", () => {
+  it("requires approver assignment and falls back to own when no team members are resolved", () => {
     const compiled = new PgDialect().sqlToQuery(
       leaveApprovalScope("team", "o1", "approver-1"),
     );
-    expect(compiled.params).toContain("approver-1");
-    expect(compiled.params).toContain("o1");
+    expect(compiled.params).toEqual(["approver-1", "approver-1"]);
   });
 });

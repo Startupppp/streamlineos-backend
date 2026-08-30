@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import type { DataScope } from "./access.types";
 

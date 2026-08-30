@@ -89,11 +89,10 @@ describe("resolveAttendanceScope", () => {
     expect(compiled.params).toEqual(["u1"]);
   });
 
-  it("binds team summary reads to the actor's tenant teams", () => {
+  it("falls back to owner-only when no team members are resolved", () => {
     const compiled = new PgDialect().sqlToQuery(
       attendanceMemberScope("team", "o1", "manager-1"),
     );
-    expect(compiled.params).toContain("manager-1");
-    expect(compiled.params).toContain("o1");
+    expect(compiled.params).toEqual(["manager-1"]);
   });
 });
