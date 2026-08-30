@@ -152,7 +152,7 @@ export class InvoicesPaymentService {
       return payment;
     });
 
-    void this.postArFxGainLoss(orgId, userId, invoice, input.amount, input.paymentDate);
+    await this.postArFxGainLoss(orgId, userId, invoice, input.amount, input.paymentDate);
 
     const members = await this.db
       .select({ userId: organizationMembers.userId })
@@ -214,19 +214,13 @@ export class InvoicesPaymentService {
       const baseAmountSettled = (allocatedAmount * settledRate).toFixed(4);
       const user = systemActor("invoices.payment.fx-posting", orgId, userId);
 
-      this.fx
-        .postRealizedGainLoss(user, {
-          sourceType: "invoice",
-          sourceId: String(invoice.id),
-          baseAmountBooked,
-          baseAmountSettled,
-          counterPurpose: "AR",
-        })
-        .catch((err: unknown) => {
-          this.classLogger.warn(
-            `FX gain/loss post failed for invoice ${invoice.id}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        });
+      await this.fx.postRealizedGainLoss(user, {
+        sourceType: "invoice",
+        sourceId: String(invoice.id),
+        baseAmountBooked,
+        baseAmountSettled,
+        counterPurpose: "AR",
+      });
     } catch (err) {
       this.classLogger.warn(
         `No exchange rate for FX on invoice ${invoice.id}: ${err instanceof Error ? err.message : String(err)}`,

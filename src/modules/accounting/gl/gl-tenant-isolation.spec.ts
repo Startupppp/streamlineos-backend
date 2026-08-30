@@ -122,14 +122,12 @@ describe("GL — cross-tenant isolation", () => {
 
     it("closes a period when the caller's org matches — CONTROL case", async () => {
       const period = { id: 77, orgId: "org-owner", status: "OPEN", name: "Jan 2024" };
-      const updatedPeriod = { ...period, status: "CLOSED", closedBy: "user-x", closedAt: new Date() };
+      const updatedPeriod = { ...period, status: "CLOSED", closedByMembershipId: 1, closedAt: new Date() };
 
       const db = {
-        select: jest.fn().mockReturnValue({
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([period]) }),
-          }),
-        }),
+        select: jest.fn()
+          .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([period]) }) }) })
+          .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ id: 1 }]) }) }) }),
         update: jest.fn().mockReturnValue({
           set: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([updatedPeriod]) }),

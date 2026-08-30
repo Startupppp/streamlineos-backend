@@ -2969,6 +2969,27 @@
       "when": 1798000039000,
       "tag": "0717_kb_chunk_search_restore_fence",
       "breakpoints": true
+    },
+    {
+      "idx": 540,
+      "version": "7",
+      "when": 1798000040000,
+      "tag": "0718_accounting_attr_expand",
+      "breakpoints": true
+    },
+    {
+      "idx": 541,
+      "version": "7",
+      "when": 1798000041000,
+      "tag": "0719_accounting_attr_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 542,
+      "version": "7",
+      "when": 1798000042000,
+      "tag": "0720_accounting_attr_contract",
+      "breakpoints": true
     }
   ]
 }

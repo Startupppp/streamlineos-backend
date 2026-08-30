@@ -12,6 +12,7 @@ import {
   finBankAccounts,
   finBankImports,
   finBankTransactions,
+  organizationMembers,
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -119,6 +120,13 @@ export class ImportsService {
       });
     }
 
+    const [actorMember] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    const createdByMembershipId = actorMember?.id ?? null;
+
     const [importRecord] = await this.db
       .insert(finBankImports)
       .values({
@@ -131,7 +139,7 @@ export class ImportsService {
         duplicateCount: 0,
         status: "PENDING",
         columnMapping: input.columnMapping,
-        createdBy: userId,
+        createdByMembershipId,
       })
       .returning();
 

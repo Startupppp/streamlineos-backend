@@ -13,6 +13,7 @@ import {
   finReconciliationMatches,
   journalEntries,
   journalLines,
+  organizationMembers,
 } from "../../../db/schema";
 import {
   checkApprovalPolicy,
@@ -202,6 +203,13 @@ export class ReconciliationService {
           ),
         );
 
+      const [reconActor] = await tx
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+        .limit(1);
+      const confirmedByMembershipId = reconActor?.id ?? null;
+
       await tx.insert(finReconciliationMatches).values({
         orgId,
         bankTransactionId: txn.id,
@@ -211,7 +219,7 @@ export class ReconciliationService {
         amount: txn.amount,
         confidence: "100.00",
         isConfirmed: true,
-        confirmedBy: userId,
+        confirmedByMembershipId,
         confirmedAt: new Date(),
       });
 

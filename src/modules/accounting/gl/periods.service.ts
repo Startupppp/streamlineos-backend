@@ -10,6 +10,7 @@ import {
   accountingPeriods,
   accountingSettings,
   journalEntries,
+  organizationMembers,
   purchaseBills,
   finBankTransactions,
   finApprovalRequests,
@@ -189,9 +190,16 @@ export class PeriodsService {
       throw new BadRequestException(`Cannot close a period in status ${period[0].status}`);
     }
 
+    const [actorMember] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    const closedByMembershipId = actorMember?.id ?? null;
+
     const [updated] = await this.db
       .update(accountingPeriods)
-      .set({ status: "CLOSED", closedBy: userId, closedAt: new Date() })
+      .set({ status: "CLOSED", closedByMembershipId, closedAt: new Date() })
       .where(and(eq(accountingPeriods.id, periodId), eq(accountingPeriods.orgId, orgId)))
       .returning();
 
@@ -223,9 +231,16 @@ export class PeriodsService {
       throw new BadRequestException(`Period must be CLOSED before locking (current: ${period[0].status})`);
     }
 
+    const [lockActor] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    const lockedByMembershipId = lockActor?.id ?? null;
+
     const [updated] = await this.db
       .update(accountingPeriods)
-      .set({ status: "LOCKED", lockedBy: userId, lockedAt: new Date() })
+      .set({ status: "LOCKED", lockedByMembershipId, lockedAt: new Date() })
       .where(and(eq(accountingPeriods.id, periodId), eq(accountingPeriods.orgId, orgId)))
       .returning();
 

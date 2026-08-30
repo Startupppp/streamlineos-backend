@@ -11,6 +11,7 @@ import {
   finBankAccounts,
   finBankTransactions,
   finBankTransfers,
+  organizationMembers,
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -119,6 +120,13 @@ export class TransfersService {
         ],
       });
 
+      const [transferActor] = await tx
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+        .limit(1);
+      const createdByMembershipId = transferActor?.id ?? null;
+
       const [transfer] = await tx
         .insert(finBankTransfers)
         .values({
@@ -129,7 +137,7 @@ export class TransfersService {
           transferDate: input.transferDate,
           reference: input.reference ?? null,
           journalEntryId: postResult.entryId,
-          createdBy: userId,
+          createdByMembershipId,
         })
         .returning();
 

@@ -1,6 +1,6 @@
 import { boolean, date, decimal, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { ledgerAccounts, journalEntries } from "./accounting";
 
 export const finBankAccountTypeEnum = pgEnum("fin_bank_account_type", ["BANK", "CASH", "CARD", "WALLET"]);
@@ -44,7 +44,7 @@ export const finBankImports = pgTable("fin_bank_imports", {
   duplicateCount: integer("duplicate_count").default(0).notNull(),
   status: finBankImportStatusEnum("status").default("PENDING").notNull(),
   columnMapping: jsonb("column_mapping"),
-  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_fin_bank_imports_org_id").on(table.orgId, table.id),
@@ -83,7 +83,7 @@ export const finReconciliationMatches = pgTable("fin_reconciliation_matches", {
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   confidence: decimal("confidence", { precision: 5, scale: 2 }),
   isConfirmed: boolean("is_confirmed").default(false).notNull(),
-  confirmedBy: text("confirmed_by").references(() => users.id),
+  confirmedByMembershipId: integer("confirmed_by_membership_id"),
   confirmedAt: timestamp("confirmed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
@@ -116,7 +116,7 @@ export const finBankTransfers = pgTable("fin_bank_transfers", {
   transferDate: date("transfer_date").notNull(),
   reference: text("reference"),
   journalEntryId: integer("journal_entry_id").references(() => journalEntries.id),
-  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_fin_bank_transfers_org_id").on(table.orgId, table.id),
@@ -135,7 +135,7 @@ export const finBankAccountsRelations = relations(finBankAccounts, ({ one, many 
 export const finBankImportsRelations = relations(finBankImports, ({ one, many }) => ({
   organization: one(organizations, { fields: [finBankImports.orgId], references: [organizations.id] }),
   bankAccount: one(finBankAccounts, { fields: [finBankImports.bankAccountId], references: [finBankAccounts.id] }),
-  creator: one(users, { fields: [finBankImports.createdBy], references: [users.id] }),
+  creatorMember: one(organizationMembers, { fields: [finBankImports.orgId, finBankImports.createdByMembershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
   transactions: many(finBankTransactions),
 }));
 
@@ -151,7 +151,7 @@ export const finReconciliationMatchesRelations = relations(finReconciliationMatc
   organization: one(organizations, { fields: [finReconciliationMatches.orgId], references: [organizations.id] }),
   bankTransaction: one(finBankTransactions, { fields: [finReconciliationMatches.bankTransactionId], references: [finBankTransactions.id] }),
   journalEntry: one(journalEntries, { fields: [finReconciliationMatches.journalEntryId], references: [journalEntries.id] }),
-  confirmedByUser: one(users, { fields: [finReconciliationMatches.confirmedBy], references: [users.id] }),
+  confirmedByMember: one(organizationMembers, { fields: [finReconciliationMatches.orgId, finReconciliationMatches.confirmedByMembershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
 }));
 
 export const finReconciliationRulesRelations = relations(finReconciliationRules, ({ one }) => ({
@@ -163,6 +163,6 @@ export const finBankTransfersRelations = relations(finBankTransfers, ({ one }) =
   fromAccount: one(finBankAccounts, { fields: [finBankTransfers.fromBankAccountId], references: [finBankAccounts.id], relationName: "transferFrom" }),
   toAccount: one(finBankAccounts, { fields: [finBankTransfers.toBankAccountId], references: [finBankAccounts.id], relationName: "transferTo" }),
   journalEntry: one(journalEntries, { fields: [finBankTransfers.journalEntryId], references: [journalEntries.id] }),
-  creator: one(users, { fields: [finBankTransfers.createdBy], references: [users.id] }),
+  creatorMember: one(organizationMembers, { fields: [finBankTransfers.orgId, finBankTransfers.createdByMembershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
 }));
 

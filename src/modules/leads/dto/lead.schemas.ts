@@ -54,14 +54,19 @@ export const updateSchema = z.object({
   priority: z.string().optional(),
 });
 
-export const ingestSchema = z.object({
-  name: z.string().min(1).optional(),
-  email: z.string().email().optional(),
-  phone: z.string().optional(),
-  company: z.string().optional(),
-  source: z.string().optional(),
-  notes: z.string().optional(),
-});
+export const ingestSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    email: z.string().email().optional(),
+    phone: z.string().optional(),
+    company: z.string().optional(),
+    source: z.string().optional(),
+    notes: z.string().optional(),
+  })
+  .superRefine((d, ctx) => {
+    if (!d.name && !d.email && !d.phone)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "At least one of name, email, or phone is required" });
+  });
 
 export type ListInput = z.infer<typeof listSchema>;
 export type CreateInput = z.infer<typeof createSchema>;

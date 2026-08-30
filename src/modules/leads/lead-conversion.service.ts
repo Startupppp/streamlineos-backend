@@ -5,8 +5,8 @@ import {
   clientPartyMap,
   projects,
   tickets,
-  users,
 } from "../../db/schema";
+import { allocateTicketNumbers } from "../build/core/lib/allocate-ticket-number";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { TenantTx } from "../../db/drizzle.types";
@@ -291,23 +291,30 @@ export class LeadConversionService {
         where: and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       });
       if (firstProject) {
-        const ticketCountResult = await this.db
-          .select({ count: count() })
-          .from(tickets)
-          .where(eq(tickets.projectId, firstProject.id));
-        const nextTicketNumber = (ticketCountResult[0]?.count ?? 0) + 1;
-
-        await this.db.insert(tickets).values({
-          orgId,
-          title: `Onboard converted lead: ${lead.name}`,
-          description: `Lead "${lead.name}" has been converted.\nCompany: ${lead.company || "N/A"}\nEmail: ${lead.email || "N/A"}\nPhone: ${lead.phone || "N/A"}`,
-          type: "TASK",
-          status: "TODO",
-          priority: "HIGH",
-          projectId: firstProject.id,
-          ticketNumber: nextTicketNumber,
-          reporterId: userId,
+        const existingOnboardTicket = await this.db.query.tickets.findFirst({
+          where: and(
+            eq(tickets.projectId, firstProject.id),
+            eq(tickets.orgId, orgId),
+            eq(tickets.title, `Onboard converted lead: ${lead.name}`),
+          ),
+          columns: { id: true },
         });
+        if (!existingOnboardTicket) {
+          await this.db.transaction(async (tx) => {
+            const nextTicketNumber = await allocateTicketNumbers(tx, orgId, firstProject.id);
+            await tx.insert(tickets).values({
+              orgId,
+              title: `Onboard converted lead: ${lead.name}`,
+              description: `Lead "${lead.name}" has been converted.\nCompany: ${lead.company || "N/A"}\nEmail: ${lead.email || "N/A"}\nPhone: ${lead.phone || "N/A"}`,
+              type: "TASK",
+              status: "TODO",
+              priority: "HIGH",
+              projectId: firstProject.id,
+              ticketNumber: nextTicketNumber,
+              reporterId: userId,
+            });
+          });
+        }
       }
 
       await this.dispatch.emit({

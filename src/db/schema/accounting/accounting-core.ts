@@ -1,6 +1,6 @@
 import { boolean, date, decimal, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { ledgerAccounts } from "./accounting";
 
 export const accPeriodStatusEnum = pgEnum("acc_period_status", ["OPEN", "CLOSING", "CLOSED", "LOCKED"]);
@@ -26,9 +26,9 @@ export const accountingPeriods = pgTable("accounting_periods", {
   startDate: date("start_date").notNull(),
   endDate: date("end_date").notNull(),
   status: accPeriodStatusEnum("status").default("OPEN").notNull(),
-  closedBy: text("closed_by").references(() => users.id),
+  closedByMembershipId: integer("closed_by_membership_id"),
   closedAt: timestamp("closed_at"),
-  lockedBy: text("locked_by").references(() => users.id),
+  lockedByMembershipId: integer("locked_by_membership_id"),
   lockedAt: timestamp("locked_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -184,8 +184,8 @@ export const finRecurringJournalTemplates = pgTable("fin_recurring_journal_templ
 
 export const accountingPeriodsRelations = relations(accountingPeriods, ({ one }) => ({
   organization: one(organizations, { fields: [accountingPeriods.orgId], references: [organizations.id] }),
-  closedByUser: one(users, { fields: [accountingPeriods.closedBy], references: [users.id], relationName: "periodClosedBy" }),
-  lockedByUser: one(users, { fields: [accountingPeriods.lockedBy], references: [users.id], relationName: "periodLockedBy" }),
+  closedByMember: one(organizationMembers, { fields: [accountingPeriods.orgId, accountingPeriods.closedByMembershipId], references: [organizationMembers.orgId, organizationMembers.id], relationName: "periodClosedBy" }),
+  lockedByMember: one(organizationMembers, { fields: [accountingPeriods.orgId, accountingPeriods.lockedByMembershipId], references: [organizationMembers.orgId, organizationMembers.id], relationName: "periodLockedBy" }),
 }));
 
 export const accountingDimensionsRelations = relations(accountingDimensions, ({ one, many }) => ({
