@@ -62,6 +62,7 @@ export const listMembersQuerySchema = z.object({
   page: pageNumberField,
   pageSize: pageSizeField(20),
   userId: z.string().min(1).max(64).optional(),
+  cursor: z.coerce.number().int().nonneg().optional(),
 });
 
 export const memberCandidatesQuerySchema = z.object({

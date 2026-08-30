@@ -31,3 +31,9 @@ export interface Pagination {
   total: number;
   totalPages: number;
 }
+
+export interface MembersPage {
+  data: FlatModuleMember[];
+  pagination: Pagination;
+  nextCursor: number | null;
+}
