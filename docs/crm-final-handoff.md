@@ -1,7 +1,7 @@
 # CRM Final Handoff
 
 **Date:** 2026-08-30
-**Branch:** `crm/phase-2-3-consolidated` (backend), `crm/phase-4-5-frontend` (frontend)
+**Branch:** `crm/phase-2-3-consolidated` (backend, PR #12), `crm/phase-4-5-frontend` (frontend, PR #31)
 
 ---
 
@@ -48,30 +48,24 @@ dependencies, and each is caught immediately by one that does not.
 ## Verified
 
 Run against local PostgreSQL 18, on a database created empty and built only by
-`db:bootstrap`, with `APP_DATABASE_URL` pointing at a non-owner
-(`NOBYPASSRLS`) role.
+`db:bootstrap`, with `APP_DATABASE_URL` pointing at a non-owner (`NOBYPASSRLS`)
+role — and, since the merge below, against a schema that includes main's.
 
 | Gate | Result |
 |---|---|
-| `db:bootstrap` from `CREATE DATABASE` | **348/348, REACHED_HEAD** |
+| `db:bootstrap` from `CREATE DATABASE` | **416/416, REACHED_HEAD** |
 | `check-schema-drift` (declared vs built) | **0 tables, 0 columns** the database cannot satisfy |
 | Legacy CRM identity tables present afterwards | **none** — G3 observed rather than inferred |
 | Backend `tsc --noEmit` | clean |
-| Backend unit suite | **8,382 passing**; 23 failing, all pre-existing and non-CRM (kb, hr, build, storage, automation, cache, notifications), verified identical at `51bf2046` in a baseline worktree |
-| Seeded e2e (`jest-e2e-seeded`) | **129/129, 6/6 suites** — harness, tenant isolation, inbound ingress, import round trip, golden path, kb |
+| Backend unit suite | **10,797 passing, 0 failing** |
+| Seeded e2e (`jest-e2e-seeded`) | **129/129, 6/6 suites** |
+| `AppModule` resolves | passes; fails with the exact Nest error when a provider is unwired |
 | Frontend `tsc --noEmit` | clean |
-| Frontend `eslint` | **0 errors** (242 warnings) |
-| Frontend suite | **1,254/1,254, 144/144 suites** |
+| Frontend `eslint` | **0 errors** |
+| Frontend suite | **1,435/1,435, 163/163 suites** |
 
-`test/app-module-resolves.e2e-spec.ts` compiles the real module graph in about
-twenty seconds with no database, and fails with the exact Nest error when the
-`PartyService` export is removed — checked both ways.
-
-`src/scripts/check-schema-drift.ts` diffs every declared Drizzle table against
-`information_schema` and exits non-zero on anything the database cannot satisfy.
-It is how the missing 27 were found and how they stay found.
-
----
+The backend unit suite was 8,382 passing with 23 failures before the merge. The
+23 are gone — fixed, not skipped — and main's suites bring the total to 10,797.
 
 ## G1 — the golden path
 
@@ -102,6 +96,23 @@ to a moment inside working hours — which is `pending.md`'s "3am local is not
 sent", and nothing else in the suite covers it.
 
 ---
+
+## The merge with main
+
+Both PRs conflicted with `main`, and none of it was CRM code: this branch line
+carries the accounting rewrite that replaced `src/modules/finance/`, and main had
+put 149 commits into the module it replaced. 94 backend conflicts and 10 on the
+frontend, all of them that one collision.
+
+Resolved the way the rewrite intends — `finance/` stays deleted, `accounting/`
+keeps the `gl_*` kernel, and main's own modules take main's side except where a
+file imports something the rewrite removed. Both PRs are **MERGEABLE**.
+
+What only a real build could then say is in the commit log: eight of main's
+migrations name tables the rewrite removed and had to be guarded per table; two
+are snapshots of a database whose `search_path` reaches `app`; `record_layout_adjustments`
+existed in two incompatible shapes, and main's is the one that survives a build,
+so main's module is now the one registered.
 
 ## Not done
 
@@ -144,33 +155,23 @@ exactly the "do not disturb other modules" line. HR is left as it was.
 
 ### The non-seeded e2e suite
 
-`jest-e2e.json` also runs now — it could not before, because `AppModule` did not
-boot. It is green: **2,902 passing, 0 failing**, 48 skipped across 149 suites.
+Green before the merge — 2,902 passing, 0 failing — and the merge brought main's
+suites in, which found real things. Every one of them was a genuine defect rather
+than a test to adjust:
 
-The first time it ran end to end it reported 336 failures across 35 suites, and
-the interesting part is that **not one of them was the code under test**. They
-fell into three shapes, all of them fixtures describing themselves rather than
-the application:
-
-- The shared controller harness had drifted from the guard chain it fakes, and
-  from `AccessService` itself. Its stub was missing `getPermissionsVersion`,
-  `listModules` and `membersWithPermission`, so `/search`, `/entitlements/modules`
-  and support assignment each threw and answered 500 — under suites that only
-  assert 401 and 403, which is how they stayed green while the endpoints did not
-  work.
-- Two accounting fakes declared `uploadFile`/`getFileStream` without the leading
-  `orgId` that `StorageService` takes, so every argument arrived one place to the
-  left. An upload keyed itself off the PDF buffer, whose NUL bytes made
-  PostgreSQL reject the write, and a download looked the object up under the org
-  id.
-- Specs that build their own client demanded TLS of a database that does not
-  speak it, so they did not fail, they failed to run. `requiresTls` is now
-  exported from `pool.config` next to the rule it encodes.
-
-One caveat on timing rather than result: a suite reported 11,941 s and a hook
-timeout in the run that produced these numbers, having taken 15 s in every other
-run. The host slept mid-run, and a wall-clock jump reads to Jest as an elapsed
-hook. It passes with its neighbours.
+- **The admission guard leaked a slot on every refusal.** It increments the
+  in-flight count, and only the interceptor's `finalize` decrements it — but
+  interceptors run after guards, so a request refused by `ModuleGuard` with a 402
+  never released. A deployment answering a steady trickle of 402s sheds more and
+  more real traffic until it sheds all of it. Release now happens on the
+  response's own end, however it ends.
+- **Idempotency wrote its fence outside the tenant.** `command_fences` is under
+  row-level security, so every idempotent route 500'd on its own fence before the
+  handler ran.
+- **Payment provider resolution read two tenant tables bare**, and the caller
+  that needs them most is a provider webhook — a public route with no ambient
+  context. A bad signature and an outage looked identical from outside, and a
+  provider retries a 500.
 
 ### Pre-existing failures not touched
 
@@ -196,7 +197,7 @@ hook. It passes with its neighbours.
 createdb streamline_crm_e2e
 psql -d streamline_crm_e2e -c 'CREATE EXTENSION vector; CREATE EXTENSION pg_trgm; CREATE EXTENSION "uuid-ossp"; CREATE EXTENSION pgcrypto; CREATE EXTENSION btree_gin;'
 psql -d streamline_crm_e2e -c 'CREATE SCHEMA build; CREATE SCHEMA build_events;'
-pnpm db:bootstrap                       # 350/350
+pnpm db:bootstrap                       # 416/416
 APP_DB_SCHEMA=public pnpm db:bootstrap-role
 # set APP_DATABASE_URL to the streamline_app role, then:
 NODE_OPTIONS=--max-old-space-size=12288 pnpm test:e2e:seeded
