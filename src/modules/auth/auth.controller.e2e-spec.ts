@@ -44,7 +44,7 @@ describe("Auth controller (e2e)", () => {
   });
 
   it("403 on GET /auth/audit/analytics with valid JWT but no settings:manage permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+    const token = await signToken({ permissions: [], enabledModules: [...ALL_MODULES, "settings"] });
     const res = await request(app.getHttpServer())
       .get("/auth/audit/analytics")
       .set("Authorization", `Bearer ${token}`);
