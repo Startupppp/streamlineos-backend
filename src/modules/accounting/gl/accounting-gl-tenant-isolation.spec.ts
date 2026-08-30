@@ -63,6 +63,7 @@ describe("GL services — cross-tenant isolation", () => {
         to: "2024-01-31",
         page: 1,
         pageSize: 50,
+        format: "json",
       });
 
       expect(result.items).toEqual([]);
@@ -92,6 +93,7 @@ describe("GL services — cross-tenant isolation", () => {
         to: "2024-01-31",
         page: 1,
         pageSize: 50,
+        format: "json",
       });
       expect(result).toBeDefined();
     });

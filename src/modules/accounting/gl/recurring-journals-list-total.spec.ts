@@ -23,8 +23,10 @@ function makeTemplate(id: number) {
 }
 
 function buildService(rows: ReturnType<typeof makeTemplate>[]): RecurringJournalsService {
-  const limit = jest.fn().mockResolvedValue(rows);
-  const orderBy = jest.fn().mockReturnValue({ limit });
+  const rowsWithTotal = rows.map((r) => ({ ...r, total: String(rows.length) }));
+  const limit = jest.fn().mockImplementation((n: number) => Promise.resolve(rowsWithTotal.slice(0, n)));
+  const offset = jest.fn().mockReturnValue({ limit });
+  const orderBy = jest.fn().mockReturnValue({ offset });
   const where = jest.fn().mockReturnValue({ orderBy });
   const db = {
     select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
@@ -33,33 +35,33 @@ function buildService(rows: ReturnType<typeof makeTemplate>[]): RecurringJournal
 }
 
 describe("recurring journal templates — cursor pagination", () => {
-  it("returns data with hasMore false when fewer rows than limit", async () => {
+  it("returns items with no further pages when fewer rows than limit", async () => {
     const svc = buildService([makeTemplate(1), makeTemplate(2)]);
 
     const result = await svc.listTemplates(ORG_ID, undefined, 50);
 
-    expect(result.data).toHaveLength(2);
-    expect(result.hasMore).toBe(false);
-    expect(result.nextCursor).toBeNull();
+    expect(result.items).toHaveLength(2);
+    expect(result.page >= result.totalPages).toBe(true);
+    expect(result.totalPages).toBe(1);
   });
 
-  it("sets hasMore and nextCursor when sentinel row is present", async () => {
+  it("reports more pages when total exceeds page size", async () => {
     const rows = Array.from({ length: 11 }, (_, i) => makeTemplate(i + 1));
     const svc = buildService(rows);
 
     const result = await svc.listTemplates(ORG_ID, undefined, 10);
 
-    expect(result.data).toHaveLength(10);
-    expect(result.hasMore).toBe(true);
-    expect(result.nextCursor).toBe(10);
+    expect(result.items).toHaveLength(10);
+    expect(result.page < result.totalPages).toBe(true);
+    expect(result.totalPages).toBe(2);
   });
 
-  it("returns empty data on no rows", async () => {
+  it("returns empty items on no rows", async () => {
     const svc = buildService([]);
 
     const result = await svc.listTemplates(ORG_ID, undefined, 50);
 
-    expect(result.data).toHaveLength(0);
-    expect(result.hasMore).toBe(false);
+    expect(result.items).toHaveLength(0);
+    expect(result.totalPages).toBe(0);
   });
 });

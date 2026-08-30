@@ -213,7 +213,7 @@ async function buildHarness(
   return { ledger, posting: module.get(FinancePostingService), statements };
 }
 
-const range = { from: new Date("2024-01-01T00:00:00.000Z"), to: new Date("2024-01-31T00:00:00.000Z") };
+const range = { from: "2024-01-01", to: "2024-01-31" };
 
 describe("accounting statements — read after write", () => {
   it("serves a stale statement when nothing invalidates (the cache is real)", async () => {
