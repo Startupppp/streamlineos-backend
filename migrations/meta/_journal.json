@@ -2794,6 +2794,76 @@
       "when": 1798000000000,
       "tag": "0689_hr_person_search_function",
       "breakpoints": true
+    },
+    {
+      "idx": 501,
+      "version": "7",
+      "when": 1798000001000,
+      "tag": "0690_build_ticket_activity_log_user_membership_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 502,
+      "version": "7",
+      "when": 1798000002000,
+      "tag": "0691_build_ticket_activity_log_user_membership_id_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 503,
+      "version": "7",
+      "when": 1798000003000,
+      "tag": "0692_build_ticket_comment_mentions_membership_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 504,
+      "version": "7",
+      "when": 1798000004000,
+      "tag": "0693_build_ticket_comment_mentions_membership_id_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 505,
+      "version": "7",
+      "when": 1798000005000,
+      "tag": "0694_build_ticket_related_links_created_by_membership_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 506,
+      "version": "7",
+      "when": 1798000006000,
+      "tag": "0695_build_ticket_related_links_created_by_membership_id_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 507,
+      "version": "7",
+      "when": 1798000007000,
+      "tag": "0696_build_sprint_scope_events_actor_membership_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 508,
+      "version": "7",
+      "when": 1798000008000,
+      "tag": "0697_build_sprint_scope_events_actor_membership_id_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 509,
+      "version": "7",
+      "when": 1798000009000,
+      "tag": "0698_build_workflow_transitions_created_by_membership_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 510,
+      "version": "7",
+      "when": 1798000010000,
+      "tag": "0699_build_workflow_transitions_created_by_membership_id_validate",
+      "breakpoints": true
     }
   ]
 }

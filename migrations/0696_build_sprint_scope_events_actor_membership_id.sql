@@ -10,9 +10,16 @@ WHERE om.user_id = t.actor_id
   AND om.org_id  = t.org_id
   AND t.actor_id IS NOT NULL;
 
-ALTER TABLE build_events.sprint_scope_events
-  ADD CONSTRAINT fk_sprint_scope_events_actor
-  FOREIGN KEY (org_id, actor_membership_id)
-  REFERENCES public.organization_members (org_id, id)
-  ON DELETE RESTRICT
-  NOT VALID;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_sprint_scope_events_actor'
+  ) THEN
+    ALTER TABLE build_events.sprint_scope_events
+      ADD CONSTRAINT fk_sprint_scope_events_actor
+      FOREIGN KEY (org_id, actor_membership_id)
+      REFERENCES public.organization_members (org_id, id)
+      ON DELETE RESTRICT
+      NOT VALID;
+  END IF;
+END $$;
