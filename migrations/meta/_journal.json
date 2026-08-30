@@ -2773,6 +2773,20 @@
       "when": 1788091265000,
       "tag": "0678_rls_fix_feedback_cycle_responses",
       "breakpoints": true
+    },
+    {
+      "idx": 395,
+      "version": "7",
+      "when": 1788091266000,
+      "tag": "0679_payroll_run_export_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 396,
+      "version": "7",
+      "when": 1788091267000,
+      "tag": "0680_kb_versions_author_membership",
+      "breakpoints": true
     }
   ]
 }
