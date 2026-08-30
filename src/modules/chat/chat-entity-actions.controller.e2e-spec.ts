@@ -31,6 +31,14 @@ const messages = {
   sendSystemMessage: jest.fn().mockResolvedValue(undefined),
 };
 
+/*
+  The action route carries `@Idempotent` now, and refuses a request without the
+  header before it reaches the membership check, the permission check or the
+  reference resolver — which is every decision these cases are about. A counter
+  rather than a constant, so no two of them collide on one fence.
+*/
+let idempotencyKey = 0;
+
 describe("Chat entity actions (e2e, no DB required)", () => {
   let app: INestApplication;
 
@@ -78,6 +86,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/entity-actions/submit")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", `chat-entity-${String(idempotencyKey++)}`)
       .send({ channelId: 1, reference: DEAL, actionId: "stage", input: {} });
 
     expect(res.status).toBe(403);
@@ -89,6 +98,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/entity-actions/submit")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", `chat-entity-${String(idempotencyKey++)}`)
       .send({ channelId: 1, reference: DEAL, actionId: "stage", input: {} });
 
     expect(res.status).toBe(201);
@@ -102,6 +112,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/entity-actions/submit")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", `chat-entity-${String(idempotencyKey++)}`)
       .send({ channelId: 1, reference: DEAL, actionId: "stage", input: {} });
 
     expect(res.status).toBe(403);
@@ -114,6 +125,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/entity-actions/submit")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", `chat-entity-${String(idempotencyKey++)}`)
       .send({ channelId: 1, reference: DEAL, actionId: "stage", input: {} });
 
     expect(res.status).toBe(404);
@@ -125,6 +137,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/entity-actions/submit")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", `chat-entity-${String(idempotencyKey++)}`)
       .send({ channelId: 1, reference: DEAL, actionId: "stage", input: {} });
 
     expect(res.status).toBe(402);
@@ -137,6 +150,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/entity-actions/available")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", `chat-entity-${String(idempotencyKey++)}`)
       .send({
         channelId: 1,
         references: [DEAL, { type: "ticket", id: "7" }],
@@ -153,6 +167,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/entity-actions/available")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", `chat-entity-${String(idempotencyKey++)}`)
       .send({ channelId: 1, references: [DEAL] });
 
     expect(res.body.references[0]).toMatchObject({
@@ -167,6 +182,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/entity-actions/available")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", `chat-entity-${String(idempotencyKey++)}`)
       .send({ channelId: 1, references: [] });
 
     expect(res.status).toBe(400);

@@ -50,9 +50,21 @@ describe("Storage auth/RBAC (e2e)", () => {
   ];
 
   it.each(vaultRoutes)("403 on %s %s for a caller without hr:documents:manage", async (method, path) => {
-    const token = await signToken({ sub: "user_1" });
+    // With `hr` enabled, because this case is about the permission and not the
+    // module: without it `ModuleGuard` answers 402 first and the permission is
+    // never consulted.
+    const token = await signToken({ sub: "user_1", enabledModules: ["hr"] });
     const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Forbidden" });
+    /*
+      The code, not the wording.
+
+      These two routes are refused by different mechanisms — one by
+      `PermissionGuard`, which says "Permission denied", and one further in,
+      which says "Forbidden". What the case is about is that both refuse, and
+      that a client can tell why from `code`.
+    */
+    expect(res.body).toMatchObject({ code: "FORBIDDEN" });
+    expect(typeof (res.body as { message?: unknown }).message).toBe("string");
   });
 });

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -41,14 +42,25 @@ export class PaymentProviderResolver {
     private readonly setup: PaymentProviderSetupService,
   ) {}
 
+  /*
+    Both reads open the organisation's own transaction.
+
+    `payment_providers` is under row-level security, and the caller that needs it
+    most is a provider webhook — a public route with no ambient tenant context at
+    all. Reading it bare matches nothing and the webhook 500s, which a payment
+    provider retries, so a signature failure and an outage look the same from
+    outside. The organisation is named in the URL; this is where it gets used.
+  */
   async resolve(
     orgId: string,
     providerKey: string,
     requestedEnvironment?: PaymentEnvironment,
   ): Promise<OrganizationPaymentProvider | undefined> {
-    const provider = await this.db.query.paymentProviders.findFirst({
-      where: and(eq(paymentProviders.orgId, orgId), eq(paymentProviders.providerKey, providerKey)),
-    });
+    const provider = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx.query.paymentProviders.findFirst({
+        where: and(eq(paymentProviders.orgId, orgId), eq(paymentProviders.providerKey, providerKey)),
+      }),
+    );
     const adapter = this.registry.get(providerKey);
     if (!provider || provider.status === "disabled" || !adapter) return undefined;
 
@@ -62,10 +74,12 @@ export class PaymentProviderResolver {
     orgId: string,
     requestedEnvironment?: PaymentEnvironment,
   ): Promise<OrganizationPaymentProvider | undefined> {
-    const providers = await this.db.query.paymentProviders.findMany({
-      where: eq(paymentProviders.orgId, orgId),
-      orderBy: [desc(paymentProviders.isPrimary), asc(paymentProviders.id)],
-    });
+    const providers = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx.query.paymentProviders.findMany({
+        where: eq(paymentProviders.orgId, orgId),
+        orderBy: [desc(paymentProviders.isPrimary), asc(paymentProviders.id)],
+      }),
+    );
 
     for (const provider of providers) {
       if (provider.status === "disabled") continue;
