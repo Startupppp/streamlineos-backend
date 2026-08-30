@@ -127,10 +127,24 @@ export const rsvpSchema = z.object({
   status: z.enum(["accepted", "declined", "tentative"]),
 });
 
-export const exportSchema = z.object({
-  from: z.string(),
-  to: z.string(),
-});
+export const EXPORT_MAX_SPAN_DAYS = 366;
+
+export const exportSchema = z
+  .object({
+    from: parseableDate,
+    to: parseableDate,
+  })
+  .refine(
+    (v) => new Date(v.to) > new Date(v.from),
+    { message: "to must be after from", path: ["to"] },
+  )
+  .refine(
+    (v) => {
+      const diffMs = new Date(v.to).getTime() - new Date(v.from).getTime();
+      return diffMs / (1000 * 60 * 60 * 24) <= EXPORT_MAX_SPAN_DAYS;
+    },
+    { message: `Export range may not exceed ${EXPORT_MAX_SPAN_DAYS} days`, path: ["to"] },
+  );
 
 export const externalEventsQuerySchema = z.object({
   start: parseableDate,

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -232,9 +231,6 @@ export class CalendarController {
   ) {
     const fromDate = new Date(query.from);
     const toDate = new Date(query.to);
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-      throw new BadRequestException("Invalid date format: use YYYY-MM-DD");
-    }
 
     const events = await this.calendar.exportEvents(u.orgId, fromDate, toDate);
 
