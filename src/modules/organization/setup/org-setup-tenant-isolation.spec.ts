@@ -1,4 +1,5 @@
 import { OrgSetupService } from "./org-setup.service";
+import { OrgSetupResolverService } from "./org-setup-resolver.service";
 import type { Db } from "../../../db/drizzle.module";
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
@@ -74,7 +75,6 @@ describe("OrgSetupService — cross-tenant isolation", () => {
       },
     } as unknown as Db;
 
-    const onboarding = { generateFirstSteps: jest.fn().mockResolvedValue(undefined) };
     const dispatch = { emit: jest.fn().mockResolvedValue(undefined) };
     const cache = {
       get: jest.fn().mockResolvedValue(null), set: jest.fn(), del: jest.fn(),
@@ -84,7 +84,8 @@ describe("OrgSetupService — cross-tenant isolation", () => {
       cachedForOrg: jest.fn((_o: string, _k: string, fn: () => Promise<unknown>) => fn()),
     };
     const audit = { log: jest.fn() };
-    const svc = new OrgSetupService(db, onboarding as never, dispatch as never, cache as never, audit as never);
+    const resolver = new OrgSetupResolverService(db, cache as never, audit as never);
+    const svc = new OrgSetupService(db, audit as never, cache as never, {} as never, {} as never, dispatch as never, resolver);
     return { svc, db, memberWhere };
   }
 

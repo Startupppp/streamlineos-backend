@@ -18,6 +18,7 @@ import { KbMediaService } from "./kb-media.service";
 import { KbSourcesService } from "./kb-sources.service";
 import { KbImportExportService } from "./kb-import-export.service";
 import { KbPageAiService } from "./kb-page-ai.service";
+import { KbPageStatusService } from "./kb-page-status.service";
 import { KbSpacesController } from "./kb-spaces.controller";
 import { KbMembersController } from "./kb-members.controller";
 import { KbPagesController } from "./kb-pages.controller";
@@ -51,6 +52,7 @@ import { KbPageAiController } from "./kb-page-ai.controller";
     KbSpacesService,
     KbMembersService,
     KbPagesService,
+    KbPageStatusService,
     KbPageVersionsService,
     KbPageVisitsService,
     KbPageTreeService,

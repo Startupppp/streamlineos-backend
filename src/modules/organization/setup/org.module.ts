@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { OrgController } from "./org.controller";
 import { OrgMembersService } from "./org-members.service";
 import { OrgSetupService } from "./org-setup.service";
+import { OrgSetupResolverService } from "./org-setup-resolver.service";
 import { AnnouncementsController } from "./announcements.controller";
 import { AnnouncementsService } from "./announcements.service";
 import { OnboardingFlowModule } from "../../hr/onboarding/flow/onboarding-flow.module";
@@ -10,6 +11,6 @@ import { NotificationsModule } from "../../notifications/notifications.module";
 @Module({
   imports: [OnboardingFlowModule, NotificationsModule],
   controllers: [OrgController, AnnouncementsController],
-  providers: [OrgMembersService, OrgSetupService, AnnouncementsService],
+  providers: [OrgMembersService, OrgSetupService, OrgSetupResolverService, AnnouncementsService],
 })
 export class OrgModule {}

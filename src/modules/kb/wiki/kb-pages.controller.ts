@@ -20,6 +20,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPageStatusService } from "./kb-page-status.service";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
@@ -53,6 +54,7 @@ const pageIdversionNumberParams = z.object({ pageId: z.coerce.number().int().pos
 export class KbPagesController {
   constructor(
     private readonly pages: KbPagesService,
+    private readonly status: KbPageStatusService,
     private readonly versions: KbPageVersionsService,
     private readonly visits: KbPageVisitsService,
     private readonly tree: KbPageTreeService,
@@ -277,7 +279,7 @@ export class KbPagesController {
     @Body() body: LockPageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.lock(u, pageId, body.isLocked);
+    return this.status.lock(u, pageId, body.isLocked);
   }
 
   @Patch("pages/:pageId/visibility")
@@ -301,7 +303,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.publish(u, pageId);
+    return this.status.publish(u, pageId);
   }
 
   @Post("pages/:pageId/archive")
@@ -312,7 +314,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.archive(u, pageId);
+    return this.status.archive(u, pageId);
   }
 
   @Post("pages/:pageId/unarchive")
@@ -323,7 +325,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.unarchive(u, pageId);
+    return this.status.unarchive(u, pageId);
   }
 
   @Post("pages/:pageId/verify")
@@ -335,7 +337,7 @@ export class KbPagesController {
     @Body() body: VerifyPageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.verify(u, pageId, body);
+    return this.status.verify(u, pageId, body);
   }
 
   @Post("pages/:pageId/mark-stale")
@@ -346,7 +348,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.markStale(u, pageId);
+    return this.status.markStale(u, pageId);
   }
 
   private async resolveCanManage(u: CurrentUserContext): Promise<boolean> {

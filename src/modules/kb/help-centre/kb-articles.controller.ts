@@ -20,6 +20,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { KbArticlesService } from "./kb-articles.service";
+import { KbArticleQueryService } from "./kb-article-query.service";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
 import {
   createArticleSchema,
@@ -46,6 +47,7 @@ const articleIdversionNumberParams = z.object({ articleId: z.coerce.number().int
 export class KbArticlesController {
   constructor(
     private readonly articles: KbArticlesService,
+    private readonly query: KbArticleQueryService,
     private readonly access: AccessService,
   ) {}
 
@@ -57,7 +59,7 @@ export class KbArticlesController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     const scope = await resolveKbArticlesViewScope(this.access, u);
-    return await this.articles.list(u, query, scope);
+    return await this.query.list(u, query, scope);
   }
 
   @Post("articles")
@@ -167,7 +169,7 @@ export class KbArticlesController {
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.articles.listVersions(u, articleId);
+    return await this.query.listVersions(u, articleId);
   }
 
   @Post("articles/:articleId/versions/:versionNumber/restore")
