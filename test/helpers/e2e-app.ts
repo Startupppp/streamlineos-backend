@@ -9,6 +9,7 @@ import { AllExceptionsFilter } from "src/common/http/all-exceptions.filter";
 import { MembershipStateService } from "src/common/auth/membership-state.service";
 import { EntitlementsService } from "src/modules/access/entitlements.service";
 import { AccessService } from "src/modules/access/access.service";
+import { MfaPolicyService } from "src/modules/access/mfa-policy.service";
 import type { DataScope } from "src/modules/access/access.types";
 import { moduleAvailabilityResolver } from "src/common/rbac/module-availability";
 import { RegionRegistry, setRegionRegistry } from "src/common/region/region-registry";
@@ -21,6 +22,10 @@ import type { RegionDefinition } from "src/common/region/region.config";
 import type { Db } from "src/db/drizzle.types";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import { API_VERSION_CURRENT } from "src/common/http/api-version";
+import {
+  COMMAND_FENCE_STORE,
+  InMemoryCommandFenceStore,
+} from "src/common/idempotency/command-fence-store";
 
 /**
  * Controller e2e specs assert the guard chain — 401 / 402 / 403 — and every one
@@ -82,6 +87,20 @@ const membershipStub = {
     const fixture = current();
     return { active: true, isOwner: fixture.isOrgOwner, role: fixture.role };
   },
+};
+
+/**
+ * MFA policy: no org enforces MFA in the e2e harness. Without this stub the
+ * MfaGuard queries a local DB that has no `users` table, catches the error and
+ * returns the safe-fail `UNDETERMINED` state (`enforced: true, satisfied: false`),
+ * which throws MFA_REQUIRED 403 BEFORE PermissionGuard can answer — every
+ * permission-tier test reports the wrong status code.
+ */
+const mfaPolicyStub = {
+  resolve: async (): Promise<{ enforced: boolean; satisfied: boolean }> =>
+    ({ enforced: false, satisfied: true }),
+  invalidateOrg: async (): Promise<void> => undefined,
+  invalidateUser: async (): Promise<void> => undefined,
 };
 
 const entitlementsStub = {
@@ -198,7 +217,11 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
     .overrideProvider(EntitlementsService)
     .useValue(entitlementsStub)
     .overrideProvider(AccessService)
-    .useValue(accessStub);
+    .useValue(accessStub)
+    .overrideProvider(MfaPolicyService)
+    .useValue(mfaPolicyStub)
+    .overrideProvider(COMMAND_FENCE_STORE)
+    .useValue(new InMemoryCommandFenceStore());
 
   for (const override of options.overrides ?? [])
     builder = builder.overrideProvider(override.provide).useValue(override.useValue);

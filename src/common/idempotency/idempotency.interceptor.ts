@@ -9,46 +9,31 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { and, eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { Observable, of } from "rxjs";
 import { tap } from "rxjs/operators";
-import { DRIZZLE } from "../../db/drizzle.constants";
-import { type Db } from "../../db/drizzle.module";
-import { commandFences } from "../../db/schema";
 import type { CurrentUserContext } from "../auth/backend-claims";
-import {
-  IDEMPOTENCY_COMMAND,
-  IDEMPOTENCY_LEASE_MS,
-  IDEMPOTENCY_TTL_MS,
-} from "./idempotency.constants";
-
-interface ClaimParams {
-  orgId: string;
-  audience: string;
-  idempotencyKey: string;
-  commandName: string;
-  requestHash: string;
-  principalId: string;
-}
-
-type ClaimResult =
-  | { kind: "proceed"; fenceId: number }
-  | { kind: "replay"; responseBody: unknown; responseStatus: number }
-  | { kind: "inflight" }
-  | { kind: "mismatch" };
+import { IDEMPOTENCY_COMMAND } from "./idempotency.constants";
+import { COMMAND_FENCE_STORE, type CommandFenceStore } from "./command-fence-store";
 
 /**
  * Enforces the sensitive-command idempotency contract for any handler decorated with
- * `@Idempotent(commandName)`. It runs as an inner (method-level) interceptor, so the raw
- * handler result it stores and replays is re-wrapped by the global response transformer
- * identically on both the first call and any replay.
+ * `@Idempotent(commandName)`. It runs as a global APP_INTERCEPTOR registered after
+ * `TenantContextInterceptor`, so it always executes inside the tenant transaction context.
+ * The raw handler result it stores and replays is re-wrapped by the global response
+ * transformer identically on both the first call and any replay.
+ *
+ * Persistence is delegated to {@link CommandFenceStore} (real: DrizzleCommandFenceStore;
+ * tests: InMemoryCommandFenceStore). The interceptor owns all policy: header validation,
+ * request hashing, and the four ClaimResult branches. A store failure propagates as-is —
+ * the fence is fail-closed because these are sensitive commands where a double-execution
+ * is worse than a client retry.
  */
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
   constructor(
     private readonly reflector: Reflector,
-    @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(COMMAND_FENCE_STORE) private readonly store: CommandFenceStore,
   ) {}
 
   async intercept(
@@ -89,7 +74,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
       .update(JSON.stringify({ commandName, body: req.body ?? null }))
       .digest("hex");
 
-    const claim = await this.claim({
+    const claim = await this.store.claim({
       orgId: user.orgId,
       audience,
       idempotencyKey,
@@ -123,124 +108,12 @@ export class IdempotencyInterceptor implements NestInterceptor {
           const res = context
             .switchToHttp()
             .getResponse<{ statusCode?: number }>();
-          void this.complete(fenceId, res?.statusCode ?? 200, data);
+          void this.store.complete(fenceId, res?.statusCode ?? 200, data);
         },
         error: () => {
-          void this.fail(fenceId);
+          void this.store.fail(fenceId);
         },
       }),
     );
-  }
-
-  private async claim(params: ClaimParams): Promise<ClaimResult> {
-    const now = Date.now();
-    const leaseExpiresAt = new Date(now + IDEMPOTENCY_LEASE_MS);
-    const expiresAt = new Date(now + IDEMPOTENCY_TTL_MS);
-
-    const inserted = await this.db
-      .insert(commandFences)
-      .values({
-        organizationId: params.orgId,
-        audience: params.audience,
-        idempotencyKey: params.idempotencyKey,
-        commandName: params.commandName,
-        requestHash: params.requestHash,
-        principalId: params.principalId,
-        status: "IN_FLIGHT",
-        leaseExpiresAt,
-        expiresAt,
-      })
-      .onConflictDoNothing({
-        target: [
-          commandFences.organizationId,
-          commandFences.audience,
-          commandFences.idempotencyKey,
-        ],
-      })
-      .returning({ fenceId: commandFences.commandFenceId });
-
-    if (inserted.length > 0) return { kind: "proceed", fenceId: inserted[0].fenceId };
-
-    const [existing] = await this.db
-      .select()
-      .from(commandFences)
-      .where(
-        and(
-          eq(commandFences.organizationId, params.orgId),
-          eq(commandFences.audience, params.audience),
-          eq(commandFences.idempotencyKey, params.idempotencyKey),
-        ),
-      )
-      .limit(1);
-
-    // Conflicting row vanished between insert and read (e.g. expiry sweep) — treat as in-flight; client retries.
-    if (!existing) return { kind: "inflight" };
-
-    if (existing.requestHash !== params.requestHash) return { kind: "mismatch" };
-
-    if (existing.status === "COMPLETED") {
-      return {
-        kind: "replay",
-        responseBody: existing.responseBody ?? null,
-        responseStatus: existing.responseStatus ?? 200,
-      };
-    }
-
-    if (
-      existing.status === "IN_FLIGHT" &&
-      existing.leaseExpiresAt.getTime() > now
-    ) {
-      return { kind: "inflight" };
-    }
-
-    // Expired in-flight lease or a prior FAILED attempt — reclaim under an optimistic lock on the
-    // observed lease timestamp, so exactly one concurrent reclaimer wins.
-    const reclaimed = await this.db
-      .update(commandFences)
-      .set({
-        status: "IN_FLIGHT",
-        leaseExpiresAt,
-        expiresAt,
-        requestHash: params.requestHash,
-        principalId: params.principalId,
-        responseBody: null,
-        responseStatus: null,
-      })
-      .where(
-        and(
-          eq(commandFences.commandFenceId, existing.commandFenceId),
-          eq(commandFences.leaseExpiresAt, existing.leaseExpiresAt),
-        ),
-      )
-      .returning({ fenceId: commandFences.commandFenceId });
-
-    if (reclaimed.length > 0) return { kind: "proceed", fenceId: reclaimed[0].fenceId };
-    return { kind: "inflight" };
-  }
-
-  private async complete(
-    fenceId: number,
-    responseStatus: number,
-    data: unknown,
-  ): Promise<void> {
-    try {
-      await this.db
-        .update(commandFences)
-        .set({ status: "COMPLETED", responseBody: data ?? null, responseStatus })
-        .where(eq(commandFences.commandFenceId, fenceId));
-    } catch {
-      // best-effort: a lost completion write just means the next retry re-executes after the lease.
-    }
-  }
-
-  private async fail(fenceId: number): Promise<void> {
-    try {
-      await this.db
-        .update(commandFences)
-        .set({ status: "FAILED" })
-        .where(eq(commandFences.commandFenceId, fenceId));
-    } catch {
-      // best-effort
-    }
   }
 }

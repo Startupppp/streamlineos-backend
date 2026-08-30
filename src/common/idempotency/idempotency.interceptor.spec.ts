@@ -7,9 +7,9 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { createHash } from "node:crypto";
-import { firstValueFrom, of } from "rxjs";
+import { firstValueFrom, of, throwError } from "rxjs";
 import { IdempotencyInterceptor } from "./idempotency.interceptor";
-import type { Db } from "../../db/drizzle.module";
+import type { ClaimResult, CommandFenceStore } from "./command-fence-store";
 
 const COMMAND = "portal.createGrant";
 const BODY = { partyContactId: "c1" };
@@ -17,41 +17,21 @@ const MATCHING_HASH = createHash("sha256")
   .update(JSON.stringify({ commandName: COMMAND, body: BODY }))
   .digest("hex");
 
-interface DbMockOptions {
-  insertReturning?: Array<{ fenceId: number }>;
-  selectResult?: Record<string, unknown>[];
-  updateReturning?: Array<{ fenceId: number }>;
-}
-
-function makeDb(opts: DbMockOptions) {
-  const setCalls: Record<string, unknown>[] = [];
-  const db = {
-    insert: () => ({
-      values: () => ({
-        onConflictDoNothing: () => ({
-          returning: () => Promise.resolve(opts.insertReturning ?? []),
-        }),
-      }),
+function makeStore(claimResult: ClaimResult): { store: CommandFenceStore; completeCalls: unknown[]; failCalls: number[] } {
+  const completeCalls: unknown[] = [];
+  const failCalls: number[] = [];
+  const store: CommandFenceStore = {
+    claim: jest.fn().mockResolvedValue(claimResult),
+    complete: jest.fn().mockImplementation((_id: number, _status: number, _data: unknown) => {
+      completeCalls.push(_data);
+      return Promise.resolve();
     }),
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: () => Promise.resolve(opts.selectResult ?? []),
-        }),
-      }),
-    }),
-    update: () => ({
-      set: (vals: Record<string, unknown>) => {
-        setCalls.push(vals);
-        const whereResult: Promise<undefined> & {
-          returning?: () => Promise<Array<{ fenceId: number }>>;
-        } = Promise.resolve(undefined);
-        whereResult.returning = () => Promise.resolve(opts.updateReturning ?? []);
-        return { where: () => whereResult };
-      },
+    fail: jest.fn().mockImplementation((_id: number) => {
+      failCalls.push(_id);
+      return Promise.resolve();
     }),
   };
-  return { db: db as unknown as Db, setCalls };
+  return { store, completeCalls, failCalls };
 }
 
 function makeReflector(commandName: string | undefined): Reflector {
@@ -83,60 +63,56 @@ function makeHandler(value: unknown): CallHandler {
 
 describe("IdempotencyInterceptor", () => {
   it("passes through when the handler is not decorated", async () => {
-    const { db } = makeDb({});
-    const interceptor = new IdempotencyInterceptor(makeReflector(undefined), db);
+    const { store } = makeStore({ kind: "proceed", fenceId: 1 });
+    const interceptor = new IdempotencyInterceptor(makeReflector(undefined), store);
     const handler = makeHandler("ok");
     const result$ = await interceptor.intercept(makeCtx(makeReq(), {}), handler);
     expect(await firstValueFrom(result$)).toBe("ok");
     expect(handler.handle).toHaveBeenCalled();
+    expect(store.claim).not.toHaveBeenCalled();
   });
 
   it("requires an Idempotency-Key header", async () => {
-    const { db } = makeDb({});
-    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), db);
+    const { store } = makeStore({ kind: "proceed", fenceId: 1 });
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
     const req = makeReq({ headers: {} });
     await expect(
       interceptor.intercept(makeCtx(req, {}), makeHandler("ok")),
     ).rejects.toBeInstanceOf(BadRequestException);
+    expect(store.claim).not.toHaveBeenCalled();
   });
 
   it("skips the fence when there is no tenant context", async () => {
-    const { db } = makeDb({});
-    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), db);
+    const { store } = makeStore({ kind: "proceed", fenceId: 1 });
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
     const req = makeReq({ user: { userId: "u1", sessionId: "s" } });
     const handler = makeHandler("ok");
     const result$ = await interceptor.intercept(makeCtx(req, {}), handler);
     expect(await firstValueFrom(result$)).toBe("ok");
     expect(handler.handle).toHaveBeenCalled();
+    expect(store.claim).not.toHaveBeenCalled();
   });
 
   it("executes a fresh command and marks the fence completed", async () => {
-    const { db, setCalls } = makeDb({ insertReturning: [{ fenceId: 7 }] });
-    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), db);
+    const { store, completeCalls } = makeStore({ kind: "proceed", fenceId: 7 });
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
     const handler = makeHandler({ created: true });
     const res = { statusCode: 201, status: jest.fn() };
     const result$ = await interceptor.intercept(makeCtx(makeReq(), res), handler);
     expect(await firstValueFrom(result$)).toEqual({ created: true });
     await Promise.resolve();
     expect(handler.handle).toHaveBeenCalled();
-    expect(setCalls.some((c) => c.status === "COMPLETED")).toBe(true);
+    expect(store.complete).toHaveBeenCalledWith(7, 201, { created: true });
+    expect(completeCalls).toHaveLength(1);
   });
 
   it("replays the stored response for a completed duplicate", async () => {
-    const { db } = makeDb({
-      insertReturning: [],
-      selectResult: [
-        {
-          commandFenceId: 7,
-          requestHash: MATCHING_HASH,
-          status: "COMPLETED",
-          responseBody: { created: true },
-          responseStatus: 201,
-          leaseExpiresAt: new Date(),
-        },
-      ],
+    const { store } = makeStore({
+      kind: "replay",
+      responseBody: { created: true },
+      responseStatus: 201,
     });
-    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), db);
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
     const handler = makeHandler({ created: "SHOULD_NOT_RUN" });
     const res = { statusCode: 200, status: jest.fn() };
     const result$ = await interceptor.intercept(makeCtx(makeReq(), res), handler);
@@ -146,38 +122,59 @@ describe("IdempotencyInterceptor", () => {
   });
 
   it("rejects an in-flight duplicate with 409", async () => {
-    const { db } = makeDb({
-      insertReturning: [],
-      selectResult: [
-        {
-          commandFenceId: 7,
-          requestHash: MATCHING_HASH,
-          status: "IN_FLIGHT",
-          leaseExpiresAt: new Date(Date.now() + 60_000),
-        },
-      ],
-    });
-    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), db);
+    const { store } = makeStore({ kind: "inflight" });
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
     await expect(
       interceptor.intercept(makeCtx(makeReq(), {}), makeHandler("x")),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it("rejects a reused key with a different body with 422", async () => {
-    const { db } = makeDb({
-      insertReturning: [],
-      selectResult: [
-        {
-          commandFenceId: 7,
-          requestHash: "a-different-hash",
-          status: "COMPLETED",
-          leaseExpiresAt: new Date(),
-        },
-      ],
-    });
-    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), db);
+    const { store } = makeStore({ kind: "mismatch" });
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
     await expect(
       interceptor.intercept(makeCtx(makeReq(), {}), makeHandler("x")),
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
+  it("marks the fence FAILED when the handler errors", async () => {
+    const { store, failCalls } = makeStore({ kind: "proceed", fenceId: 11 });
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
+    const errorHandler: CallHandler = { handle: () => throwError(() => new Error("pipe-validation-error")) };
+    const result$ = await interceptor.intercept(makeCtx(makeReq(), {}), errorHandler);
+    await firstValueFrom(result$).catch(() => undefined);
+    await Promise.resolve();
+    expect(store.fail).toHaveBeenCalledWith(11);
+    expect(failCalls).toHaveLength(1);
+  });
+
+  it("reclaims a FAILED fence with a different body hash (retry after validation failure succeeds)", async () => {
+    const { store } = makeStore({ kind: "proceed", fenceId: 10 });
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
+    const handler = makeHandler({ created: true });
+    const result$ = await interceptor.intercept(makeCtx(makeReq(), {}), handler);
+    expect(await firstValueFrom(result$)).toEqual({ created: true });
+    expect(handler.handle).toHaveBeenCalled();
+    expect(store.claim).toHaveBeenCalled();
+  });
+
+  it("still rejects a hash mismatch on a COMPLETED fence", async () => {
+    const { store } = makeStore({ kind: "mismatch" });
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
+    await expect(
+      interceptor.intercept(makeCtx(makeReq(), {}), makeHandler("x")),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
+  it("propagates store errors (fail-closed: no catch wrapper)", async () => {
+    const store: CommandFenceStore = {
+      claim: jest.fn().mockRejectedValue(new Error("db exploded")),
+      complete: jest.fn(),
+      fail: jest.fn(),
+    };
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
+    await expect(
+      interceptor.intercept(makeCtx(makeReq(), {}), makeHandler("x")),
+    ).rejects.toThrow("db exploded");
   });
 });

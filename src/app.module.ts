@@ -93,6 +93,7 @@ import { CrmImportModule } from "./modules/crm/import/crm-import.module";
 import { PortalModule } from "./modules/portal/portal.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
+import { IdempotencyInterceptor } from "./common/idempotency/idempotency.interceptor";
 import { OutboxModule } from "./common/outbox/outbox.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
@@ -209,6 +210,7 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: ZodValidationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
   ],
 })
 export class AppModule {}

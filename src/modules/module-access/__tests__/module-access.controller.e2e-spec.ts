@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
+import type { CallHandler, ExecutionContext } from "@nestjs/common";
 import request from "supertest";
 import { signToken } from "test/helpers/sign-token";
 import { createE2eApp } from "test/helpers/e2e-app";
@@ -13,6 +14,8 @@ import { ModuleAccessGroupsService } from "../module-access-groups.service";
 import { ModuleStandingMutationsService } from "../module-standing-mutations.service";
 import { ModuleStandingRosterService } from "../module-standing-roster.service";
 import { ACCESS_MANAGED_MODULES } from "src/modules/rbac/permissions/module-access";
+import { IdempotencyInterceptor } from "src/common/idempotency/idempotency.interceptor";
+import { RateLimitService } from "src/common/ratelimit/rate-limit.service";
 
 const ROLE_ID = 7;
 const GROUP_ID = 9;
@@ -98,6 +101,18 @@ const mockModuleStandingRosterService = {
   describeGrantable: jest.fn(),
 };
 
+/**
+ * `@Idempotent` persists the key before the handler runs, which needs tenant
+ * rows this fixture does not create. Passing through keeps the spec about
+ * authorization; idempotency has its own unit spec at
+ * common/idempotency/idempotency.interceptor.spec.ts.
+ */
+const idempotencyPassThrough = {
+  intercept: (_ctx: ExecutionContext, next: CallHandler) => next.handle(),
+};
+
+const rateLimitAllowAll = { check: async () => ({ allowed: true }) };
+
 describe("ModuleAccessController auth / RBAC (e2e)", () => {
   let app: INestApplication;
 
@@ -108,6 +123,8 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
         { provide: ModuleAccessGroupsService, useValue: mockModuleAccessGroupsService },
         { provide: ModuleStandingMutationsService, useValue: mockModuleStandingMutationsService },
         { provide: ModuleStandingRosterService, useValue: mockModuleStandingRosterService },
+        { provide: IdempotencyInterceptor, useValue: idempotencyPassThrough },
+        { provide: RateLimitService, useValue: rateLimitAllowAll },
       ],
     });
   });
