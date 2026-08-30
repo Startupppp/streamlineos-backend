@@ -170,4 +170,50 @@ describe("WorkflowsCrudService — cross-tenant isolation", () => {
       expect(result).toMatchObject({ name: "Updated" });
     });
   });
+
+  describe("publishWorkflow — write includes orgId (TOCTOU guard)", () => {
+    it("throws NotFoundException when workflow belongs to a different org (cross-tenant deny)", async () => {
+      const findFirst = jest.fn().mockResolvedValue(null);
+      const db = {
+        query: { workflows: { findFirst } },
+      } as unknown as Db;
+
+      const svc = new WorkflowsCrudService(db);
+      await expect(
+        svc.publishWorkflow(ATTACKER_ORG, USER_ID, WORKFLOW_ID, { definitionJson: {} }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("includes orgId in the update where clause for the owning org (control)", async () => {
+      const findFirst = jest.fn().mockResolvedValue({ id: WORKFLOW_ID, version: 1 });
+      const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ ...WORKFLOW_ROW, status: "published" }]) });
+      const insertReturning = jest.fn().mockResolvedValue([{ id: 99, version: 2 }]);
+      const auditInsertValues = jest.fn().mockResolvedValue(undefined);
+
+      let insertCallCount = 0;
+      const db = {
+        query: { workflows: { findFirst } },
+        transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+          const tx = {
+            insert: jest.fn().mockImplementation(() => {
+              insertCallCount++;
+              if (insertCallCount === 1)
+                return { values: jest.fn().mockReturnValue({ returning: insertReturning }) };
+              return { values: auditInsertValues };
+            }),
+            update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
+          };
+          return cb(tx);
+        }),
+      } as unknown as Db;
+
+      const svc = new WorkflowsCrudService(db);
+      await svc.publishWorkflow(OWNER_ORG, USER_ID, WORKFLOW_ID, { definitionJson: {} });
+
+      expect(updateWhere).toHaveBeenCalledTimes(1);
+      const whereArg = updateWhere.mock.calls[0]?.[0];
+      expect(sqlValues(whereArg)).toContain(OWNER_ORG);
+      expect(sqlValues(whereArg)).toContain(WORKFLOW_ID);
+    });
+  });
 });

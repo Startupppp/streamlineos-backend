@@ -25,7 +25,7 @@ export function visibleTo(
   const unscoped = sql`(
     (${columns.visibility} IN ('org', 'public') AND ${columns.projectId} IS NULL)
     OR ${columns.createdById} = ${userId}
-    ${membershipId === null || columns.createdByMembershipId === undefined ? sql`` : sql`OR ${columns.createdByMembershipId} = ${membershipId}`}
+    ${membershipId == null || columns.createdByMembershipId === undefined ? sql`` : sql`OR ${columns.createdByMembershipId} = ${membershipId}`}
   )`;
   if (accessibleProjectIds.length === 0) return unscoped;
   const projectIdList = sql.join(

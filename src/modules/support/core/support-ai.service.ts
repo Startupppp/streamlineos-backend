@@ -24,6 +24,7 @@ import { logger } from "../../../common/logger/logger.service";
 import { SupportAiSettingsService } from "./support-ai-settings.service";
 import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
 import { SupportAiReportHelper, type AiReportFilters } from "./support-ai-report.helper";
+import { KbAccessService } from "../../kb/core/kb-access.service";
 import type { ResolveAiSuggestionInput } from "./dto/support.schemas";
 
 const KB_SIMILARITY_THRESHOLD = 0.2;
@@ -77,6 +78,7 @@ export class SupportAiService {
     private readonly aiSettings: SupportAiSettingsService,
     private readonly embHelper: SupportAiEmbeddingsHelper,
     private readonly reportHelper: SupportAiReportHelper,
+    private readonly kbAccess: KbAccessService,
   ) {}
 
   private async isAvailable(orgId: string): Promise<boolean> {
@@ -107,10 +109,34 @@ export class SupportAiService {
     return row;
   }
 
-  private async searchKbForTicket(orgId: string, query: string): Promise<KbSource[]> {
+  private async searchKbForTicket(orgId: string, userId: string, query: string): Promise<KbSource[]> {
     if (!this.embeddings.isConfigured()) return [];
+    const user = { orgId, userId };
+    const accessibleSpaceIds = await this.kbAccess.getAccessibleSpaceIds(user);
+    if (accessibleSpaceIds.length === 0) return [];
+    const principal = await this.kbAccess.getPrincipalIds(user);
     const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
     const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
+    const kar = kbArticleRestrictions;
+    const restrictionFilter = sql`(
+      NOT EXISTS (
+        SELECT 1 FROM ${kar}
+        WHERE ${kar.articleId} = ${kbArticles.id}
+          AND ${kar.orgId} = ${orgId}
+          AND ${kar.level} = 'view'
+      )
+      OR EXISTS (
+        SELECT 1 FROM ${kar}
+        WHERE ${kar.articleId} = ${kbArticles.id}
+          AND ${kar.orgId} = ${orgId}
+          AND ${kar.level} = 'view'
+          AND (${kar.userId} = ${principal.userId} OR ${
+            principal.roleSlugs.length > 0
+              ? sql`${kar.role} = ANY(${principal.roleSlugs})`
+              : sql`false`
+          })
+      )
+    )`;
     const results = await this.db
       .select({ articleId: kbArticles.id, title: kbArticles.title, slug: kbArticles.slug, similarity: sql<number>`(1 - (${distance}))::float8` })
       .from(kbArticleChunks)
@@ -119,7 +145,8 @@ export class SupportAiService {
       .where(and(
         eq(kbArticleChunks.orgId, orgId),
         eq(kbArticles.status, "published"),
-        sql`NOT EXISTS (SELECT 1 FROM ${kbArticleRestrictions} r WHERE r.article_id = ${kbArticles.id} AND r.org_id = ${orgId} AND r.level = 'view')`,
+        inArray(kbArticles.spaceId, accessibleSpaceIds),
+        restrictionFilter,
       ))
       .orderBy(distance)
       .limit(12);
@@ -176,7 +203,7 @@ export class SupportAiService {
     return rows.filter(Boolean);
   }
 
-  async suggestReply(orgId: string, ticketId: number, userId?: string) {
+  async suggestReply(orgId: string, ticketId: number, userId: string) {
     if (!(await this.isAvailable(orgId))) return null;
     const ticket = await this.getTicketOrThrow(orgId, ticketId);
     const [messages, sources, confidence, { confidenceThreshold }] = await Promise.all([
@@ -186,7 +213,7 @@ export class SupportAiService {
         limit: 20,
         columns: { body: true, authorId: true },
       }),
-      this.searchKbForTicket(orgId, redactSensitiveData(`${ticket.title}\n${ticket.description ?? ""}`.trim())),
+      this.searchKbForTicket(orgId, userId, redactSensitiveData(`${ticket.title}\n${ticket.description ?? ""}`.trim())),
       this.getTicketConfidence(orgId, ticketId),
       this.aiSettings.getSettings(orgId),
     ]);
@@ -245,12 +272,12 @@ export class SupportAiService {
     return this.insertSuggestion(orgId, ticketId, "macro", { macroId: result.macroId, reason: result.reason }, result.confidence);
   }
 
-  async suggestKbArticles(orgId: string, ticketId: number) {
+  async suggestKbArticles(orgId: string, ticketId: number, userId: string) {
     if (!this.embeddings.isConfigured()) return null;
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.supportAi) return null;
     const ticket = await this.getTicketOrThrow(orgId, ticketId);
-    const articles = await this.searchKbForTicket(orgId, redactSensitiveData(`${ticket.title}\n${ticket.description ?? ""}`.trim()));
+    const articles = await this.searchKbForTicket(orgId, userId, redactSensitiveData(`${ticket.title}\n${ticket.description ?? ""}`.trim()));
     if (articles.length === 0) return null;
     await this.replacePendingSuggestions(orgId, ticketId, ["kb_article"]);
     return this.insertSuggestion(orgId, ticketId, "kb_article", { articles }, null);
@@ -357,7 +384,7 @@ export class SupportAiService {
     return gatewayResult.data;
   }
 
-  async generateHandoffSummary(orgId: string, ticketId: number, userId?: string) {
+  async generateHandoffSummary(orgId: string, ticketId: number, userId: string) {
     if (!(await this.isAvailable(orgId))) return null;
     const ticket = await this.getTicketOrThrow(orgId, ticketId);
     const [messages, sources] = await Promise.all([
@@ -367,7 +394,7 @@ export class SupportAiService {
         limit: 40,
         columns: { body: true, isInternal: true, authorId: true },
       }),
-      this.searchKbForTicket(orgId, redactSensitiveData(`${ticket.title}\n${ticket.description ?? ""}`.trim())),
+      this.searchKbForTicket(orgId, userId, redactSensitiveData(`${ticket.title}\n${ticket.description ?? ""}`.trim())),
     ]);
     const thread = messages.map((m) => `${m.isInternal ? "Internal note" : m.authorId ? "Agent" : "Customer"}: ${redactSensitiveData(m.body)}`).join("\n\n");
     const gatewayResult = await this.aiGateway.invokeStructured({
@@ -429,12 +456,12 @@ export class SupportAiService {
     return this.reportHelper.getAiReport(orgId, filters);
   }
 
-  async runFullAnalysis(orgId: string, ticketId: number): Promise<void> {
+  async runFullAnalysis(orgId: string, ticketId: number, userId: string): Promise<void> {
     if (!(await this.isAvailable(orgId))) return;
     await Promise.allSettled([
       this.analyzeTicket(orgId, ticketId),
       this.findDuplicates(orgId, ticketId),
-      this.suggestKbArticles(orgId, ticketId),
+      this.suggestKbArticles(orgId, ticketId, userId),
     ]);
   }
 

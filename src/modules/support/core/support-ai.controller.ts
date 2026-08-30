@@ -108,7 +108,7 @@ export class SupportAiController {
   @Validate({ params: ticketIdParams })
   async suggestKbArticles(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
-    return this.ai.suggestKbArticles(u.orgId, ticketId);
+    return this.ai.suggestKbArticles(u.orgId, ticketId, u.userId);
   }
 
   @Post(":ticketId/ai/suggest-reply")

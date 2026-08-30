@@ -270,13 +270,13 @@ export class WebhooksService {
         attempts: event.attempts + 1,
         ...(status === "DELIVERED" && { deliveredAt: new Date() }),
       })
-      .where(eq(invWebhookEvents.id, eventId))
+      .where(and(eq(invWebhookEvents.id, eventId), eq(invWebhookEvents.orgId, orgId)))
       .returning();
 
     await this.db
       .update(invWebhooks)
       .set({ lastDeliveryAt: new Date(), lastDeliveryStatus: status })
-      .where(eq(invWebhooks.id, webhook.id));
+      .where(and(eq(invWebhooks.id, webhook.id), eq(invWebhooks.orgId, orgId)));
 
     await this.audit.insert(this.db, {
       orgId,

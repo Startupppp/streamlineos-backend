@@ -9,6 +9,7 @@ import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { EmbeddingsService } from "../../ai/core/providers/embeddings.service";
 import { OrgFeaturesService } from "../../ai/core/services/org-features.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { KbAccessService } from "../../kb/core/kb-access.service";
 
 const mockDb = {
   query: {
@@ -75,6 +76,11 @@ const mockEmbeddings = {
 
 const mockOrgFeatures = { getFlags: jest.fn().mockResolvedValue({ supportAi: true }) };
 
+const mockKbAccess = {
+  getAccessibleSpaceIds: jest.fn().mockResolvedValue(["space-1"]),
+  getPrincipalIds: jest.fn().mockResolvedValue({ userId: "u1", roleSlugs: [] }),
+};
+
 const baseTicket = { id: 42, orgId: "org1", title: "Can't log in", description: "It just spins", category: null, status: "OPEN", priority: "MEDIUM" };
 
 describe("SupportAiService", () => {
@@ -104,6 +110,7 @@ describe("SupportAiService", () => {
         { provide: OrgFeaturesService, useValue: mockOrgFeatures },
         { provide: SupportAiSettingsService, useValue: mockAiSettings },
         { provide: SupportAiReportHelper, useValue: mockReportHelper },
+        { provide: KbAccessService, useValue: mockKbAccess },
       ],
     }).compile();
     service = module.get(SupportAiService);

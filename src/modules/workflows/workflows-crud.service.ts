@@ -205,7 +205,7 @@ export class WorkflowsCrudService {
           status: "published",
           updatedAt: new Date(),
         })
-        .where(eq(workflows.id, workflowId))
+        .where(and(eq(workflows.id, workflowId), eq(workflows.orgId, orgId)))
         .returning();
 
       await tx.insert(workflowAuditLogs).values({

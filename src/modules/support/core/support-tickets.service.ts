@@ -223,7 +223,7 @@ export class SupportTicketsService {
     if (!registerAfterCommit(createdAutomationTask)) void createdAutomationTask();
 
     const aiTask = () =>
-      this.ai.runFullAnalysis(orgId, ticket.id).catch(logSideEffectFailure("support AI analysis", { orgId, ticketId: ticket.id }));
+      this.ai.runFullAnalysis(orgId, ticket.id, userId).catch(logSideEffectFailure("support AI analysis", { orgId, ticketId: ticket.id }));
     if (!registerAfterCommit(aiTask)) void aiTask();
 
     if (finalAssigneeId) {
