@@ -196,7 +196,7 @@ export class DirectoryIdentityService {
             membershipId: organizationMembers.id,
             userId: users.id,
             email: users.email,
-            name: users.name as unknown as string | null,
+            name: users.name,
             firstName: users.firstName,
             lastName: users.lastName,
             phone: users.phone,

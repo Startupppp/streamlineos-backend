@@ -15,7 +15,7 @@ describe("SurveyExportService — export cap", () => {
     } as unknown as Db;
     const svc = new SurveyExportService(db);
 
-    await svc.exportResponsesCsv("org-1", 1, {});
+    await svc.exportResponsesCsv("org-1", 1, { format: "csv" });
 
     expect(sessionsFindMany).toHaveBeenCalledTimes(1);
     const args = sessionsFindMany.mock.calls[0]?.[0] as { limit?: number } | undefined;
@@ -37,7 +37,7 @@ describe("SurveyExportService — export cap", () => {
     } as unknown as Db;
     const svc = new SurveyExportService(db);
 
-    const result = await svc.exportResponsesCsv("org-1", 1, {});
+    const result = await svc.exportResponsesCsv("org-1", 1, { format: "csv" });
 
     expect(result.truncated).toBe(false);
     expect(result.rowCount).toBe(1);
@@ -58,7 +58,7 @@ describe("SurveyExportService — export cap", () => {
     } as unknown as Db;
     const svc = new SurveyExportService(db);
 
-    const result = await svc.exportResponsesCsv("org-1", 1, {});
+    const result = await svc.exportResponsesCsv("org-1", 1, { format: "csv" });
 
     expect(result.truncated).toBe(true);
     expect(result.rowCount).toBe(cap);

@@ -109,7 +109,7 @@ describe("ChatSearchService — tenant isolation", () => {
   it("DENY: searchMessages binds conditions to ATTACKER_ORG and returns empty results", async () => {
     const { db, getCaptured } = makeDb();
     const service = new ChatSearchService(db, makeEntities());
-    const actor = { orgId: ATTACKER_ORG, userId: "user-x" };
+    const actor = { orgId: ATTACKER_ORG, userId: "user-x", isOrgOwner: false };
 
     // term length < 3 → skips db.execute, goes straight to findMany
     const result = await service.searchMessages(actor, "hi", 20);
@@ -145,7 +145,7 @@ describe("ChatSearchService — tenant isolation", () => {
       withResolvedReferences: jest.fn().mockImplementation((_actor: unknown, rows: unknown[]) => Promise.resolve(rows)),
     } as unknown as EntityReferenceService;
     const service = new ChatSearchService(db, entities);
-    const actor = { orgId: OWNER_ORG, userId: "user-owner" };
+    const actor = { orgId: OWNER_ORG, userId: "user-owner", isOrgOwner: false };
 
     const result = await service.searchMessages(actor, "hi", 20);
 
@@ -171,7 +171,7 @@ describe("ChatSummarizeService — tenant isolation", () => {
     const service = new ChatSummarizeService(db, moduleRef);
 
     await expect(service.summarize(5, { orgId: ATTACKER_ORG, userId: "user-x" })).rejects.toThrow(ForbiddenException);
-    expect(db.query.chatChannelMembers.findFirst).toHaveBeenCalledOnce?.();
+    expect(db.query.chatChannelMembers.findFirst).toHaveBeenCalledTimes(1);
   });
 
   it("CONTROL: summarize returns a summary when caller is a member and AI responds", async () => {
@@ -200,7 +200,7 @@ describe("ChatSummarizeService — tenant isolation", () => {
     const result = await service.summarize(5, { orgId: OWNER_ORG, userId: "u1" });
 
     expect(result).toEqual({ summary: "meeting summary" });
-    expect(invokeText).toHaveBeenCalledOnce?.();
+    expect(invokeText).toHaveBeenCalledTimes(1);
   });
 });
 

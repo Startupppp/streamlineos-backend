@@ -1,4 +1,5 @@
 import type { Db } from "../../../db/drizzle.module";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { SupportAiService } from "./support-ai.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -82,11 +83,20 @@ describe("SupportAiService — KB space ACL in RAG search (cross-tenant isolatio
   const OWNER_USER = "user-owner-1";
   const TICKET_ID = 1;
 
+  const ownerCtx: CurrentUserContext = {
+    orgId: OWNER_ORG,
+    userId: OWNER_USER,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s1",
+    tokenScopes: null,
+    principal: { kind: "human-session", membershipId: 1, isOrgOwner: false },
+  };
+
   it("returns null when caller has no accessible KB spaces (cross-tenant deny — private space)", async () => {
     const { svc, selectWhere } = makeSvc([], []);
 
-    const result = await (svc as unknown as { suggestKbArticles: (orgId: string, ticketId: number, userId: string) => Promise<unknown> })
-      .suggestKbArticles(OWNER_ORG, TICKET_ID, OWNER_USER);
+    const result = await svc.suggestKbArticles(ownerCtx, TICKET_ID);
 
     expect(result).toBeNull();
     expect(selectWhere).not.toHaveBeenCalled();
@@ -96,8 +106,7 @@ describe("SupportAiService — KB space ACL in RAG search (cross-tenant isolatio
     const spaceIds = [10, 20];
     const { svc, selectWhere } = makeSvc(spaceIds, []);
 
-    await (svc as unknown as { suggestKbArticles: (orgId: string, ticketId: number, userId: string) => Promise<unknown> })
-      .suggestKbArticles(OWNER_ORG, TICKET_ID, OWNER_USER);
+    await svc.suggestKbArticles(ownerCtx, TICKET_ID);
 
     expect(selectWhere).toHaveBeenCalled();
     const whereArg = selectWhere.mock.calls[0]?.[0];

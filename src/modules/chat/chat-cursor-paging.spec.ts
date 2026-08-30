@@ -175,7 +175,7 @@ describe("chat message paging — every row exactly once", () => {
     expect(first.messages).toHaveLength(limit);
     expect(first.nextCursor).toBe(Math.min(...first.messages.map((m) => m.id)));
 
-    const second = await harness.service.list(CHANNEL_ID, ACTOR, first.nextCursor, limit);
+    const second = await harness.service.list(CHANNEL_ID, ACTOR, first.nextCursor ?? undefined, limit);
     expect(second.messages).toHaveLength(1);
     expect(second.nextCursor).toBeNull();
 

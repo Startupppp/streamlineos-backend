@@ -108,7 +108,7 @@ export class SupportAiController {
   @Validate({ params: ticketIdParams })
   async suggestKbArticles(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
-    return this.ai.suggestKbArticles(u.orgId, ticketId, u.userId);
+    return this.ai.suggestKbArticles(u, ticketId);
   }
 
   @Post(":ticketId/ai/suggest-reply")
@@ -119,7 +119,7 @@ export class SupportAiController {
   @Validate({ params: ticketIdParams })
   async suggestReply(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
-    return this.ai.suggestReply(u.orgId, ticketId, u.userId);
+    return this.ai.suggestReply(u, ticketId);
   }
 
   @Post(":ticketId/ai/suggest-macro")
@@ -156,7 +156,7 @@ export class SupportAiController {
   @Validate({ params: ticketIdParams })
   async generateHandoffSummary(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
-    return this.ai.generateHandoffSummary(u.orgId, ticketId, u.userId);
+    return this.ai.generateHandoffSummary(u, ticketId);
   }
 
   @Post(":ticketId/ai/root-cause-cluster")

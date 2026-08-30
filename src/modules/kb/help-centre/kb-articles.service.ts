@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleFeedback, kbArticleTags, kbArticleVersions, kbTags } from "../../../db/schema";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { DRIZZLE } from "../../../db/drizzle.constants";

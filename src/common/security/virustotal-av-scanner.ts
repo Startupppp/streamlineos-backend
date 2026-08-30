@@ -68,7 +68,7 @@ export class VirusTotalScanner extends AvScanner implements OnModuleInit {
 
   private async uploadFile(buffer: Buffer, filename: string, mimeType: string): Promise<string | null> {
     const form = new FormData();
-    const blob = new Blob([buffer], { type: mimeType });
+    const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
     form.append("file", blob, filename);
     const res = await fetch(`${VT_BASE}/files`, {
       method: "POST",

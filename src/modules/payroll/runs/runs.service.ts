@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, Inject } from "@nestjs/common";
-import { and, eq, desc, asc, gt, ilike, lt, or, isNull, type SQL } from "drizzle-orm";
+import { and, count, eq, desc, asc, gt, ilike, lt, or, isNull, type SQL } from "drizzle-orm";
 import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -382,9 +382,9 @@ export class RunsService {
     scope: DataScope,
     userId: string,
   ): Promise<CursorPage<{
-    id: number; userId: string; workerType: string; currency: string;
+    id: number; userId: string | null; workerType: string; currency: string;
     gross: string; totalDeductions: string; net: string; status: string;
-    holdReason: string | null; userName: string | null; userEmail: string | null;
+    holdReason: string | null; userName: string | null; userEmail: string;
   }> | null> {
     const runCheck = await this.db
       .select({ id: payrollRuns.id })

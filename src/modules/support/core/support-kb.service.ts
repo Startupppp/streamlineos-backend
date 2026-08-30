@@ -404,14 +404,6 @@ export class SupportKbService {
         createdAt: kbArticleAttachments.createdAt,
       });
 
-    if (inserted) {
-      void this.indexing
-        .indexAttachment(orgId, inserted.id)
-        .catch((err) =>
-          this.logger.warn(`Attachment indexing failed (${inserted.id}): ${err}`),
-        );
-    }
-
     return inserted;
   }
 

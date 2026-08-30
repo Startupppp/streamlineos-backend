@@ -30,7 +30,7 @@ function buildDb(selectCallCount: { count: number }) {
 function makeService(db: Db) {
   const dispatch = { emit: jest.fn().mockResolvedValue(undefined) };
   const svc = new TaxComplianceService(db, dispatch as never);
-  jest.spyOn(svc as never, "daysBetween").mockReturnValue(3);
+  jest.spyOn(svc as unknown as { daysBetween: () => number }, "daysBetween").mockReturnValue(3);
   return svc;
 }
 

@@ -87,7 +87,7 @@ function buildService(db: Db, cache: { invalidate: jest.Mock }) {
   return { svc: new VendorCreditsService(db, audit as never, cache as never, financePosting as never, journalPosting as never), u };
 }
 
-function orderedCache(order) {
+function orderedCache(order: string[]) {
   const invalidate = jest.fn().mockImplementation(async () => {
     await new Promise((resolve) => setImmediate(resolve));
     order.push("invalidate");
@@ -136,7 +136,7 @@ describe("VendorCreditsService — cache.invalidate is not fire-and-forget", () 
       .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([MOCK_BILL]) }) }) });
 
     const enrichedDb = { ...db, select: selectFn };
-    const { svc, u } = buildService(enrichedDb as Db, cache);
+    const { svc, u } = buildService(enrichedDb as unknown as Db, cache);
 
     await svc.applyVendorCredit(u as never, VC_ID, { billId: BILL_ID, amount: 100 });
 

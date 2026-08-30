@@ -315,8 +315,15 @@ export class PayrollExportService {
 
   async ackExport(orgId: string, userId: string, exportId: number, input: AckExportInput) {
     const [existing] = await this.db
-      .select({ id: timesheetExports.id })
+      .select({ id: timesheetExports.id, creatorName: organizationPeople.displayName })
       .from(timesheetExports)
+      .leftJoin(
+        organizationPeople,
+        and(
+          eq(organizationPeople.organizationId, timesheetExports.orgId),
+          eq(organizationPeople.organizationMembershipId, timesheetExports.createdByMembershipId),
+        ),
+      )
       .where(and(eq(timesheetExports.id, exportId), eq(timesheetExports.orgId, orgId)))
       .limit(1);
 

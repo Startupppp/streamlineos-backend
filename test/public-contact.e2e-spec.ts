@@ -1,20 +1,28 @@
+import { BadRequestException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
 import request from "supertest";
 import { AllExceptionsFilter } from "src/common/http/all-exceptions.filter";
+import { ZodValidationInterceptor } from "src/common/validation/zod-validation.interceptor";
+import { APP_CONFIG } from "src/config/config.module";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import { RateLimitGuard } from "src/common/ratelimit/rate-limit.guard";
 import { RateLimitService } from "src/common/ratelimit/rate-limit.service";
+import { TurnstileService } from "src/common/security/turnstile.service";
 import { EmailService } from "src/modules/email/email.service";
 import { ContactService } from "src/modules/public/contact.service";
 import { CrmService } from "src/modules/public/crm.service";
 import { IntakeService } from "src/modules/public/intake.service";
 import { KbService } from "src/modules/public/kb.service";
 import { OrgService } from "src/modules/public/org.service";
+import { PublicCareersService } from "src/modules/public/public-careers.service";
 import { PublicController } from "src/modules/public/public.controller";
 import { PublicFormsService } from "src/modules/public/public-forms.service";
-import { RecruitmentService } from "src/modules/public/recruitment.service";
+import { PublicOffersService } from "src/modules/public/public-offers.service";
+import { PublicReferrersService } from "src/modules/public/public-referrers.service";
 import { RoadmapService } from "src/modules/public/roadmap.service";
+import { WaitlistService } from "src/modules/public/waitlist.service";
 
 const validSubmission = {
   name: "Ada Lovelace",
@@ -42,9 +50,26 @@ describe("Public contact form (e2e)", () => {
         RateLimitGuard,
         { provide: RateLimitService, useValue: { check: checkRateLimit } },
         { provide: EmailService, useValue: { sendEmail } },
+        {
+          provide: APP_CONFIG,
+          useValue: { CONTACT_NOTIFICATION_EMAIL: process.env.CONTACT_NOTIFICATION_EMAIL },
+        },
+        {
+          provide: TurnstileService,
+          useValue: {
+            verify: async (token: string | undefined) => {
+              const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
+              if (!secret) return;
+              if (!token) throw new BadRequestException("Bot verification is required");
+            },
+          },
+        },
         ContactService,
-        { provide: RecruitmentService, useValue: {} },
+        { provide: PublicCareersService, useValue: {} },
+        { provide: PublicOffersService, useValue: {} },
+        { provide: PublicReferrersService, useValue: {} },
         { provide: RoadmapService, useValue: {} },
+        { provide: WaitlistService, useValue: {} },
         { provide: KbService, useValue: {} },
         { provide: CrmService, useValue: {} },
         { provide: IntakeService, useValue: {} },
@@ -56,6 +81,7 @@ describe("Public contact form (e2e)", () => {
 
     app = moduleRef.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
+    app.useGlobalInterceptors(new ZodValidationInterceptor(app.get(Reflector)));
     await app.init();
   });
 

@@ -46,7 +46,7 @@ function buildService(db: Db, cache: { invalidate: jest.Mock }) {
   return new RecurringBillsService(db, audit as never, cache as never, dispatch as never);
 }
 
-function orderedCache(order) {
+function orderedCache(order: string[]) {
   const invalidate = jest.fn().mockImplementation(async () => {
     await new Promise((resolve) => setImmediate(resolve));
     order.push("invalidate");

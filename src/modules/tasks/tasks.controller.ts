@@ -81,7 +81,7 @@ export class TasksController {
   @Get("analytics")
   @RequirePermission("tasks:read")
   @Validate({ query: analyticsSchema })
-  analytics(
+  getAnalytics(
     @Query() query: AnalyticsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {

@@ -84,9 +84,9 @@ function fixtureFromToken(header: string | undefined): E2eFixture {
 
 const membershipStub = {
   isAccountActive: async (): Promise<boolean> => true,
-  resolve: async (): Promise<{ active: boolean; isOwner: boolean; role: string }> => {
+  resolve: async (): Promise<{ active: boolean; isOwner: boolean; role: string; membershipId: number | null }> => {
     const fixture = current();
-    return { active: true, isOwner: fixture.isOrgOwner, role: fixture.role };
+    return { active: true, isOwner: fixture.isOrgOwner, role: fixture.role, membershipId: 1 };
   },
 };
 

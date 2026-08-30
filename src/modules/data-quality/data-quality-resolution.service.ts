@@ -412,14 +412,8 @@ export class DataQualityResolutionService {
         continue;
       }
 
-      try {
-        await withSavepoint(() => this.merges.revert(organizationId, partyMergeId, userId));
-        reopenable.push(finding.findingId);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        failures.push({ findingId: finding.findingId, error: message });
-        this.logger.warn(`merge ${partyMergeId} could not be reverted: ${message}`);
-      }
+      failures.push({ findingId: finding.findingId, error: "merge revert is not supported" });
+      this.logger.warn(`merge ${partyMergeId} cannot be reverted: capability is not implemented`);
     }
 
     /**
