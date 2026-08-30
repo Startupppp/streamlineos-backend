@@ -6,6 +6,7 @@ import { invoices, purchaseBills } from "../../../db/schema/crm/invoicing";
 import { organizations } from "../../../db/schema/common/auth";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
+import { getTenantContext } from "../../../common/tenant";
 
 const INVOICE_POSTED = ["ISSUED", "PAID", "FAILED"] as const;
 const BILL_POSTED = ["POSTED", "PARTIALLY_PAID", "PAID"] as const;
@@ -50,7 +51,8 @@ export class TaxComplianceService {
       return [];
     }
 
-    const orgIds = orgId ? [orgId] : await this.getAllActiveOrgIds();
+    const effectiveOrgId = orgId ?? getTenantContext()?.orgId;
+    const orgIds = effectiveOrgId ? [effectiveOrgId] : await this.getAllActiveOrgIds();
     const results: DueResult[] = [];
 
     for (const oid of orgIds) {

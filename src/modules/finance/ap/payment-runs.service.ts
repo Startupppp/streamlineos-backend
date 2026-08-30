@@ -235,7 +235,7 @@ export class PaymentRunsService {
       .where(and(eq(finPaymentRuns.id, runId), eq(finPaymentRuns.orgId, orgId)))
       .returning();
 
-    void this.cache.invalidate(PAYMENT_RUN_CACHE_KEY(orgId));
+    await this.cache.invalidate(PAYMENT_RUN_CACHE_KEY(orgId));
 
     this.audit.log({
       action: "accounting.payment_run.approve",
@@ -265,7 +265,7 @@ export class PaymentRunsService {
       .set({ status: "CANCELLED", updatedAt: new Date() })
       .where(and(eq(finPaymentRuns.id, runId), eq(finPaymentRuns.orgId, orgId)));
 
-    void this.cache.invalidate(PAYMENT_RUN_CACHE_KEY(orgId));
+    await this.cache.invalidate(PAYMENT_RUN_CACHE_KEY(orgId));
 
     this.audit.log({
       action: "accounting.payment_run.cancel",

@@ -108,7 +108,7 @@ export class RecurringBillsService {
       .returning();
 
     if (!inserted) throw new Error("Recurring bill template insert returned no rows");
-    void this.cache.invalidate(RECURRING_CACHE_KEY(orgId));
+    await this.cache.invalidate(RECURRING_CACHE_KEY(orgId));
 
     this.audit.log({
       action: "accounting.recurring_bill.create",
@@ -140,7 +140,7 @@ export class RecurringBillsService {
       .where(and(eq(finRecurringBillTemplates.id, templateId), eq(finRecurringBillTemplates.orgId, orgId)))
       .returning();
 
-    void this.cache.invalidate(RECURRING_CACHE_KEY(orgId));
+    await this.cache.invalidate(RECURRING_CACHE_KEY(orgId));
 
     this.audit.log({
       action: "accounting.recurring_bill.update",
@@ -161,7 +161,7 @@ export class RecurringBillsService {
       .delete(finRecurringBillTemplates)
       .where(and(eq(finRecurringBillTemplates.id, templateId), eq(finRecurringBillTemplates.orgId, orgId)));
 
-    void this.cache.invalidate(RECURRING_CACHE_KEY(orgId));
+    await this.cache.invalidate(RECURRING_CACHE_KEY(orgId));
 
     this.audit.log({
       action: "accounting.recurring_bill.delete",

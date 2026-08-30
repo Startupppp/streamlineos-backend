@@ -187,7 +187,7 @@ export class VendorCreditsService {
       return vc;
     });
 
-    void this.cache.invalidate(VC_CACHE_KEY(orgId));
+    await this.cache.invalidate(VC_CACHE_KEY(orgId));
 
     this.audit.log({
       action: "accounting.vendor_credit.create",
@@ -242,7 +242,7 @@ export class VendorCreditsService {
       .set({ status: "POSTED", updatedAt: new Date() })
       .where(and(eq(vendorCredits.id, vendorCreditId), eq(vendorCredits.orgId, orgId)));
 
-    void this.cache.invalidate(VC_CACHE_KEY(orgId));
+    await this.cache.invalidate(VC_CACHE_KEY(orgId));
 
     this.audit.log({
       action: "accounting.vendor_credit.post",
@@ -325,7 +325,7 @@ export class VendorCreditsService {
         .where(and(eq(purchaseBills.id, input.billId), eq(purchaseBills.orgId, orgId)));
     });
 
-    void this.cache.invalidate(VC_CACHE_KEY(orgId));
+    await this.cache.invalidate(VC_CACHE_KEY(orgId));
 
     this.audit.log({
       action: "accounting.vendor_credit.apply",
