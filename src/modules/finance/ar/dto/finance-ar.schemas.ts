@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
-import { pageNumberField, pageSizeField, optionalPageNumberField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listCreditNotesSchema = z.object({
   status: z.enum(["DRAFT", "POSTED", "APPLIED", "VOID"]).optional(),
@@ -60,9 +60,7 @@ export const updateRecurringTemplateSchema = createRecurringTemplateSchema.parti
 });
 
 export const listReminderPoliciesSchema = z.object({
-  page: optionalPageNumberField(),
-  pageSize: optionalPageSizeField(100),
-  limit: optionalPageSizeField(100),
+  limit: pageSizeField(50, 100),
   cursor: idCursorSchema,
 });
 
@@ -79,9 +77,7 @@ export const updateReminderPolicySchema = createReminderPolicySchema.partial().e
 
 export const listReminderLogSchema = z.object({
   invoiceId: z.coerce.number().int().positive().optional(),
-  page: optionalPageNumberField(),
-  pageSize: optionalPageSizeField(100),
-  limit: optionalPageSizeField(100),
+  limit: pageSizeField(50, 100),
   cursor: idCursorSchema,
 });
 

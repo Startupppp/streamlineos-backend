@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, gte, isNull, lt, lte } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { accTaxPayments } from "../../../db/schema/accounting/finance-tax";
@@ -9,7 +9,6 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type { CreateTaxPaymentInput, ListTaxPaymentsQuery } from "./dto/tax-payments.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -31,16 +30,14 @@ export class TaxPaymentsService {
   ) {}
 
   async list(orgId: string, query: ListTaxPaymentsQuery) {
-    const page = query.page ?? 1;
-    const pageSize = query.limit ?? query.pageSize ?? 50;
-    const cacheKey = `${query.cursor ?? "first"}:${page}:${pageSize}:${query.taxType ?? ""}:${query.from ?? ""}:${query.to ?? ""}`;
+    const pageLimit = Math.min(query.limit, 100);
+    const cacheKey = `cursor:${query.cursor ?? "first"}:${pageLimit}:${query.taxType ?? ""}:${query.from ?? ""}:${query.to ?? ""}`;
     return this.cache.cachedVersioned(CACHE_KEYS.finTaxPaymentsNamespace(orgId), cacheKey, async () => {
       const conditions = [eq(accTaxPayments.orgId, orgId), isNull(accTaxPayments.archivedAt)];
       if (query.taxType) conditions.push(eq(accTaxPayments.taxType, query.taxType));
       if (query.from) conditions.push(gte(accTaxPayments.paidDate, query.from));
       if (query.to) conditions.push(lte(accTaxPayments.paidDate, query.to));
-      if (query.cursor !== undefined) conditions.push(lt(accTaxPayments.id, query.cursor));
-      const where = and(...conditions);
+      if (query.cursor) conditions.push(lt(accTaxPayments.id, query.cursor));
       const projection = {
         id: accTaxPayments.id,
         taxType: accTaxPayments.taxType,
@@ -54,17 +51,9 @@ export class TaxPaymentsService {
         createdBy: accTaxPayments.createdBy,
         createdAt: accTaxPayments.createdAt,
       };
-      if (query.cursor !== undefined || query.limit !== undefined) {
-        const rows = await this.db.select(projection).from(accTaxPayments).where(where).orderBy(desc(accTaxPayments.id)).limit(pageSize + 1);
-        const result = buildIdCursorPage(rows, pageSize, (row) => row.id);
-        return { items: result.data, pagination: { limit: pageSize, hasMore: result.hasMore, nextCursor: result.nextCursor === undefined ? null : String(result.nextCursor) } };
-      }
-      const { limit, offset } = paginateOffset({ page, pageSize });
-      const [items, totals] = await Promise.all([
-        this.db.select(projection).from(accTaxPayments).where(where).orderBy(desc(accTaxPayments.createdAt), desc(accTaxPayments.id)).limit(limit).offset(offset),
-        this.db.select({ c: count() }).from(accTaxPayments).where(where),
-      ]);
-      return buildListResponse(items, Number(totals[0]?.c ?? 0), { page, pageSize });
+      const rows = await this.db.select(projection).from(accTaxPayments).where(and(...conditions)).orderBy(desc(accTaxPayments.id)).limit(pageLimit + 1);
+      const result = buildIdCursorPage(rows, pageLimit, (row) => row.id);
+      return { items: result.data, pagination: { limit: pageLimit, hasMore: result.hasMore, nextCursor: result.nextCursor } };
     }, 120);
   }
 

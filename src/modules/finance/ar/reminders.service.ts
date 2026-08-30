@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
 import { finReminderPolicies, finReminderLog, invoices, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -7,7 +7,6 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { randomUUID } from "node:crypto";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { INVOICE_REMINDER_EVENT, invoiceReminderPayloadSchema } from "./dto/reminder-outbox.schemas";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type { CreateReminderPolicyInput, UpdateReminderPolicyInput, ListReminderPoliciesQuery, ListReminderLogQuery } from "./dto/finance-ar.schemas";
 import { boundedMap } from "../../../common/async/bounded-map";
@@ -28,11 +27,9 @@ export class RemindersService {
   ) {}
 
   async listPolicies(orgId: string, query: ListReminderPoliciesQuery) {
-    const page = query.page ?? 1;
-    const pageSize = query.limit ?? query.pageSize ?? 50;
+    const pageLimit = Math.min(query.limit, 100);
     const conditions = [eq(finReminderPolicies.orgId, orgId), isNull(finReminderPolicies.archivedAt)];
-    if (query.cursor !== undefined) conditions.push(gt(finReminderPolicies.id, query.cursor));
-    const where = and(...conditions);
+    if (query.cursor) conditions.push(gt(finReminderPolicies.id, query.cursor));
     const projection = {
       id: finReminderPolicies.id,
       orgId: finReminderPolicies.orgId,
@@ -44,17 +41,9 @@ export class RemindersService {
       createdAt: finReminderPolicies.createdAt,
       updatedAt: finReminderPolicies.updatedAt,
     };
-    if (query.cursor !== undefined || query.limit !== undefined) {
-      const rows = await this.db.select(projection).from(finReminderPolicies).where(where).orderBy(asc(finReminderPolicies.id)).limit(pageSize + 1);
-      const result = buildIdCursorPage(rows, pageSize, (row) => row.id);
-      return { items: result.data, pagination: { limit: pageSize, hasMore: result.hasMore, nextCursor: result.nextCursor === undefined ? null : String(result.nextCursor) } };
-    }
-    const { limit, offset } = paginateOffset({ page, pageSize });
-    const [rows, [{ count }]] = await Promise.all([
-      this.db.select(projection).from(finReminderPolicies).where(where).orderBy(desc(finReminderPolicies.createdAt), desc(finReminderPolicies.id)).limit(limit).offset(offset),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(finReminderPolicies).where(where),
-    ]);
-    return buildListResponse(rows, count, { page, pageSize });
+    const rows = await this.db.select(projection).from(finReminderPolicies).where(and(...conditions)).orderBy(asc(finReminderPolicies.id)).limit(pageLimit + 1);
+    const result = buildIdCursorPage(rows, pageLimit, (row) => row.id);
+    return { items: result.data, pagination: { limit: pageLimit, hasMore: result.hasMore, nextCursor: result.nextCursor } };
   }
 
   async createPolicy(orgId: string, input: CreateReminderPolicyInput) {
@@ -95,12 +84,10 @@ export class RemindersService {
   }
 
   async listLog(orgId: string, query: ListReminderLogQuery) {
-    const page = query.page ?? 1;
-    const pageSize = query.limit ?? query.pageSize ?? 50;
+    const pageLimit = Math.min(query.limit, 100);
     const conditions = [eq(finReminderLog.orgId, orgId), isNull(finReminderLog.archivedAt)];
     if (query.invoiceId) conditions.push(eq(finReminderLog.invoiceId, query.invoiceId));
-    if (query.cursor !== undefined) conditions.push(gt(finReminderLog.id, query.cursor));
-    const where = and(...conditions);
+    if (query.cursor) conditions.push(gt(finReminderLog.id, query.cursor));
     const projection = {
       id: finReminderLog.id,
       orgId: finReminderLog.orgId,
@@ -110,17 +97,9 @@ export class RemindersService {
       offsetDays: finReminderLog.offsetDays,
       status: finReminderLog.status,
     };
-    if (query.cursor !== undefined || query.limit !== undefined) {
-      const rows = await this.db.select(projection).from(finReminderLog).where(where).orderBy(asc(finReminderLog.id)).limit(pageSize + 1);
-      const result = buildIdCursorPage(rows, pageSize, (row) => row.id);
-      return { items: result.data, pagination: { limit: pageSize, hasMore: result.hasMore, nextCursor: result.nextCursor === undefined ? null : String(result.nextCursor) } };
-    }
-    const { limit, offset } = paginateOffset({ page, pageSize });
-    const [rows, [{ count }]] = await Promise.all([
-      this.db.select(projection).from(finReminderLog).where(where).orderBy(desc(finReminderLog.sentAt), desc(finReminderLog.id)).limit(limit).offset(offset),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(finReminderLog).where(where),
-    ]);
-    return buildListResponse(rows, count, { page, pageSize });
+    const rows = await this.db.select(projection).from(finReminderLog).where(and(...conditions)).orderBy(asc(finReminderLog.id)).limit(pageLimit + 1);
+    const result = buildIdCursorPage(rows, pageLimit, (row) => row.id);
+    return { items: result.data, pagination: { limit: pageLimit, hasMore: result.hasMore, nextCursor: result.nextCursor } };
   }
 
   async processDueReminders(orgId?: string): Promise<{ sent: number }> {
