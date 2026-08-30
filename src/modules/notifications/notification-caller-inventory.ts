@@ -29,7 +29,7 @@ const EXEMPT = (
 export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
   [
     EXEMPT(
-      "modules/auth/auth-tokens.service.ts",
+      "modules/auth/auth-passwordless.service.ts",
       DeliveryClass.OPERATOR_ALERT,
       "credential and account-recovery mail has no tenant-member notification recipient",
     ),
@@ -146,7 +146,17 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
     EXEMPT(
       "modules/organization/core/org-membership.service.ts",
       DeliveryClass.OPERATOR_ALERT,
-      "access-loss notice targets suspended or removed members; dispatch filters inactive recipients",
+      "retains backward-compatible delegators for external callers; access-loss notice targets suspended or removed members",
+    ),
+    EXEMPT(
+      "modules/organization/core/org-member-departure.service.ts",
+      DeliveryClass.OPERATOR_ALERT,
+      "access-loss notice targets removed members; dispatch filters inactive recipients",
+    ),
+    EXEMPT(
+      "modules/organization/core/org-membership-status.service.ts",
+      DeliveryClass.OPERATOR_ALERT,
+      "access-loss notice targets suspended members; dispatch filters inactive recipients",
     ),
     EXEMPT(
       "modules/organization/core/org-membership-access-revocation.ts",
