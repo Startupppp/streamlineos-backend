@@ -43,7 +43,7 @@ export class CronLeaveService {
     let totalExpiredCount = 0;
     let totalYearlyResetCount: number | null = null;
 
-    await forEachOrg(this.db, "monthly-leave-reset", async (_tx, orgId) => {
+    await forEachOrg(this.db, "monthly-leave-reset", async (tx, orgId) => {
       const sweepStart = Date.now();
 
       const accrual = await this.accrueMonthlyLeaves(now, orgId);
@@ -52,10 +52,10 @@ export class CronLeaveService {
       const expiry = await this.expireUnusedMonthlyLeaves(orgId);
       totalExpiredCount += expiry.expiredCount;
 
-      const yearStartMonth = await this.reset.resolveLeaveYearStartMonth(orgId);
+      const yearStartMonth = await this.reset.resolveLeaveYearStartMonth(tx, orgId);
       let resetCount: number | undefined;
       if (yearStartMonth === currentMonth) {
-        const result = await this.reset.resetYearlyLeaveBalances(orgId, now.getFullYear());
+        const result = await this.reset.resetYearlyLeaveBalances(tx, orgId, now.getFullYear());
         totalYearlyResetCount = (totalYearlyResetCount ?? 0) + result.resetCount;
         resetCount = result.resetCount;
       }

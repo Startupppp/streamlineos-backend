@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import {
   hrLeaveLedger,
@@ -7,8 +7,7 @@ import {
   leaveTypes,
   organizationMembers,
 } from "../../db/schema";
-import { DRIZZLE } from "../../db/drizzle.constants";
-import { type Db } from "../../db/drizzle.module";
+import type { TenantTx } from "../../db/drizzle.types";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
 
 function toDateStr(date: Date): string {
@@ -17,13 +16,10 @@ function toDateStr(date: Date): string {
 
 @Injectable()
 export class CronLeaveResetService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly employmentFacts: EmploymentFactsService,
-  ) {}
+  constructor(private readonly employmentFacts: EmploymentFactsService) {}
 
-  async resolveLeaveYearStartMonth(orgId: string): Promise<number> {
-    const orgPolicy = await this.db.query.leavePolicies.findFirst({
+  async resolveLeaveYearStartMonth(tx: TenantTx, orgId: string): Promise<number> {
+    const orgPolicy = await tx.query.leavePolicies.findFirst({
       where: and(
         eq(leavePolicies.orgId, orgId),
         eq(leavePolicies.isActive, true),
@@ -37,10 +33,11 @@ export class CronLeaveResetService {
   }
 
   async resetYearlyLeaveBalances(
+    tx: TenantTx,
     orgId: string,
     newYear: number,
   ): Promise<{ resetCount: number }> {
-    const annualPolicies = await this.db
+    const annualPolicies = await tx
       .select({
         leaveTypeId: leavePolicies.leaveTypeId,
         accrualRate: leavePolicies.accrualRate,
@@ -58,13 +55,13 @@ export class CronLeaveResetService {
 
     if (annualPolicies.length === 0) return { resetCount: 0 };
 
-    const types = await this.db.query.leaveTypes.findMany({
+    const types = await tx.query.leaveTypes.findMany({
       where: eq(leaveTypes.orgId, orgId),
       columns: { id: true, name: true, daysPerYear: true, carryForward: true },
     });
     const typeById = new Map(types.map((t) => [t.id, t]));
 
-    const members = await this.db.query.organizationMembers.findMany({
+    const members = await tx.query.organizationMembers.findMany({
       where: eq(organizationMembers.orgId, orgId),
       columns: { userId: true },
       with: { user: { columns: { id: true, isActive: true } } },
@@ -79,7 +76,7 @@ export class CronLeaveResetService {
     );
 
     const prevYear = newYear - 1;
-    const prevYearBalances = await this.db.query.leaveBalances.findMany({
+    const prevYearBalances = await tx.query.leaveBalances.findMany({
       where: and(eq(leaveBalances.orgId, orgId), eq(leaveBalances.year, prevYear)),
       columns: { userId: true, leaveTypeId: true, balance: true },
     });
@@ -88,7 +85,7 @@ export class CronLeaveResetService {
       prevBalMap.set(`${b.userId}:${b.leaveTypeId}`, Number(b.balance));
     }
 
-    const existingNewYear = await this.db.query.leaveBalances.findMany({
+    const existingNewYear = await tx.query.leaveBalances.findMany({
       where: and(eq(leaveBalances.orgId, orgId), eq(leaveBalances.year, newYear)),
       columns: { userId: true, leaveTypeId: true },
     });
@@ -162,10 +159,10 @@ export class CronLeaveResetService {
 
     let resetCount = 0;
     if (toInsertBalances.length > 0) {
-      await this.db.transaction(async (tx) => {
-        await tx.insert(leaveBalances).values(toInsertBalances).onConflictDoNothing();
+      await tx.transaction(async (savepointTx) => {
+        await savepointTx.insert(leaveBalances).values(toInsertBalances).onConflictDoNothing();
         if (ledgerEntries.length > 0) {
-          await tx.insert(hrLeaveLedger).values(ledgerEntries);
+          await savepointTx.insert(hrLeaveLedger).values(ledgerEntries);
         }
       });
       resetCount = toInsertBalances.length;
