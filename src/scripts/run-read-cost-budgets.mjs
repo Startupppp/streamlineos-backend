@@ -221,6 +221,24 @@ async function main() {
         WHERE n.nspname = 'app' AND p.proname = 'search_kb_page_ids'
         LIMIT 1`)) ?? [null];
 
+    const [roadmapRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM build.roadmap_items WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
+    const [feedbackRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM build.feedback_posts WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
+    const [changelogRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM build.changelog_entries WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
+    const [taxPaymentRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM acc_tax_payments WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
+    const [reminderPolicyRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM fin_reminder_policies WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
+    const [mailMessageRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM mail_message_metadata WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
     const fixtures = {
         orgId: ORG,
         projectId: project?.project_id ?? null,
@@ -233,6 +251,12 @@ async function main() {
         payrollRunId: payrollRun?.run_id ?? null,
         leaveTypeIds,
         hasKbPageProbe: kbPageProbe !== undefined && kbPageProbe !== null,
+        hasRoadmapItems: roadmapRow !== null && roadmapRow !== undefined,
+        hasFeedbackPosts: feedbackRow !== null && feedbackRow !== undefined,
+        hasChangelogEntries: changelogRow !== null && changelogRow !== undefined,
+        hasTaxPayments: taxPaymentRow !== null && taxPaymentRow !== undefined,
+        hasReminderPolicies: reminderPolicyRow !== null && reminderPolicyRow !== undefined,
+        hasMailMessages: mailMessageRow !== null && mailMessageRow !== undefined,
         period,
       };
 
