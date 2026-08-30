@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { HttpException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
 
@@ -122,7 +122,7 @@ describe("ProjectsTicketCommentsService.getComment — ROW-76 historical identit
     expect(result.content).toBe("Old comment");
   });
 
-  it("DENY — comment not found (cross-org) returns NotFoundException", async () => {
+  it("DENY — comment not found (cross-org) returns an HttpException (404 semantics)", async () => {
     const ticket = {
       id: TICKET_ID,
       orgId: OWNER_ORG,
@@ -138,7 +138,7 @@ describe("ProjectsTicketCommentsService.getComment — ROW-76 historical identit
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
 
     await expect(svc.getComment(u, PROJECT_ID, TICKET_ID, COMMENT_ID)).rejects.toThrow(
-      NotFoundException,
+      HttpException,
     );
   });
 

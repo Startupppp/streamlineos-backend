@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProgramsService } from "./programs.service";
 import {
   createProgramSchema,
@@ -43,8 +42,9 @@ export class ProgramsController {
 
   @Get("programs")
   @RequirePermission("build:programs:view")
+  @Validate({ query: listProgramsQuerySchema })
   listPrograms(
-    @Query(new ZodValidationPipe(listProgramsQuerySchema)) query: ListProgramsQuery,
+    @Query() query: ListProgramsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listPrograms(u.orgId, query);
@@ -63,8 +63,9 @@ export class ProgramsController {
   @Post("programs")
   @HttpCode(201)
   @RequirePermission("build:programs:manage")
+  @Validate({ body: createProgramSchema })
   createProgram(
-    @Body(new ZodValidationPipe(createProgramSchema)) body: CreateProgramInput,
+    @Body() body: CreateProgramInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createProgram(u.orgId, u.userId, body);
@@ -72,10 +73,10 @@ export class ProgramsController {
 
   @Patch("programs/:programId")
   @RequirePermission("build:programs:manage")
-  @Validate({ params: programIdParams })
+  @Validate({ params: programIdParams, body: updateProgramSchema })
   updateProgram(
     @Param("programId", ParseIntPipe) programId: number,
-    @Body(new ZodValidationPipe(updateProgramSchema)) body: UpdateProgramInput,
+    @Body() body: UpdateProgramInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateProgram(u.orgId, u.userId, programId, body);
@@ -95,10 +96,10 @@ export class ProgramsController {
   @Post("programs/:programId/projects")
   @HttpCode(200)
   @RequirePermission("build:programs:manage")
-  @Validate({ params: programIdParams })
+  @Validate({ params: programIdParams, body: linkProjectSchema })
   linkProject(
     @Param("programId", ParseIntPipe) programId: number,
-    @Body(new ZodValidationPipe(linkProjectSchema)) body: LinkProjectInput,
+    @Body() body: LinkProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.linkProject(u.orgId, u.userId, programId, body);

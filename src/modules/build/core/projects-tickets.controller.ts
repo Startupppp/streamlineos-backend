@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsTicketsService } from "./projects-tickets.service";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import {
@@ -60,8 +59,9 @@ export class ProjectsTicketsController {
 
   @Get("all-work")
   @RequirePermission("build:tickets:view")
+  @Validate({ query: allWorkQuerySchema })
   getAllWork(
-    @Query(new ZodValidationPipe(allWorkQuerySchema)) query: AllWorkQuery,
+    @Query() query: AllWorkQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.getAllWork(u, query);
@@ -69,8 +69,9 @@ export class ProjectsTicketsController {
 
   @Get("search/tickets")
   @RequirePermission("build:tickets:view")
+  @Validate({ query: searchTicketsQuerySchema })
   searchTickets(
-    @Query(new ZodValidationPipe(searchTicketsQuerySchema)) query: SearchTicketsQuery,
+    @Query() query: SearchTicketsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.searchOrgTickets(u.orgId, u.userId, query.q, query.limit);
@@ -90,10 +91,10 @@ export class ProjectsTicketsController {
   @RequirePermission("build:tickets:create")
   @HttpCode(200)
   @Idempotent("build.ticket.import")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: importTicketsSchema })
   importTickets(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(importTicketsSchema)) body: ImportTicketsInput,
+    @Body() body: ImportTicketsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.importTickets(u, projectId, body);
@@ -101,10 +102,10 @@ export class ProjectsTicketsController {
 
   @Get(":projectId/tickets")
   @RequirePermission("build:tickets:view")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, query: ticketsListQuerySchema })
   listTickets(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(ticketsListQuerySchema)) query: TicketsListQuery,
+    @Query() query: TicketsListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.listTickets(u, projectId, query);
@@ -114,10 +115,10 @@ export class ProjectsTicketsController {
   @RequirePermission("build:tickets:create")
   @HttpCode(201)
   @Idempotent("build.ticket.create")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createTicketSchema })
   createTicket(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createTicketSchema)) body: CreateTicketInput,
+    @Body() body: CreateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.createTicket(u, projectId, body);
@@ -127,10 +128,10 @@ export class ProjectsTicketsController {
   @RequirePermission("build:tickets:update")
   @HttpCode(200)
   @Idempotent("build.ticket.bulk-update")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: bulkUpdateSchema })
   bulkUpdate(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(bulkUpdateSchema)) body: BulkUpdateInput,
+    @Body() body: BulkUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.bulkUpdate(u, projectId, body);
@@ -138,11 +139,11 @@ export class ProjectsTicketsController {
 
   @Patch(":projectId/tickets/:ticketId/rank")
   @RequirePermission("build:tickets:update")
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectIdticketIdParams, body: rankTicketSchema })
   rankTicket(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(rankTicketSchema)) body: RankTicketInput,
+    @Body() body: RankTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.rankTicket(u, projectId, ticketId, body);
@@ -150,11 +151,11 @@ export class ProjectsTicketsController {
 
   @Get(":projectId/tickets/:ticketId/activity")
   @RequirePermission("build:tickets:view")
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectIdticketIdParams, query: ticketActivityQuerySchema })
   getActivity(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Query(new ZodValidationPipe(ticketActivityQuerySchema)) query: TicketActivityQuery,
+    @Query() query: TicketActivityQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.getActivity(u.orgId, projectId, ticketId, {
@@ -186,10 +187,10 @@ export class ProjectsTicketsController {
 
   @Patch(":projectId/tickets/:ticketId")
   @RequirePermission("build:tickets:update")
-  @Validate({ params: projectIdticketIdParams_ })
+  @Validate({ params: projectIdticketIdParams_, body: updateTicketSchema })
   updateTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(updateTicketSchema)) body: UpdateTicketInput,
+    @Body() body: UpdateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.updateTicket(u, ticketId, body);

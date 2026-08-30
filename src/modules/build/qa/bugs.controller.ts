@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { BugsService } from "./bugs.service";
 import {
   bugListQuerySchema,
@@ -40,9 +39,10 @@ export class BugsController {
 
   @Get()
   @RequirePermission("build:bugs:view")
+  @Validate({ query: bugListQuerySchema })
   listBugs(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(bugListQuerySchema)) query: BugListQuery,
+    @Query() query: BugListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listBugs(u.orgId, projectId, query);
@@ -62,9 +62,10 @@ export class BugsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:bugs:create")
+  @Validate({ body: createBugSchema })
   createBug(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createBugSchema)) body: CreateBugInput,
+    @Body() body: CreateBugInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createBug(u.orgId, u.userId, projectId, body);
@@ -72,11 +73,11 @@ export class BugsController {
 
   @Patch(":bugId")
   @RequirePermission("build:bugs:update")
-  @Validate({ params: bugIdParams })
+  @Validate({ params: bugIdParams, body: updateBugSchema })
   updateBug(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("bugId", ParseIntPipe) bugId: number,
-    @Body(new ZodValidationPipe(updateBugSchema)) body: UpdateBugInput,
+    @Body() body: UpdateBugInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateBug(u.orgId, u.userId, projectId, bugId, body);

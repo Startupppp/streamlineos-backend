@@ -16,7 +16,6 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ParseResourceIdPipe } from "../../../common/pipes/parse-resource-id.pipe";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ProjectsService } from "./projects.service";
 import {
@@ -45,10 +44,10 @@ export class ProjectsByIdController {
 
   @Patch(":projectId")
   @RequirePermission("build:update")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: updateProjectSchema })
   updateProject(
     @Param("projectId", ParseResourceIdPipe) projectId: number,
-    @Body(new ZodValidationPipe(updateProjectSchema)) body: UpdateProjectInput,
+    @Body() body: UpdateProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.projects.updateProject(u, projectId, body);
@@ -67,11 +66,10 @@ export class ProjectsByIdController {
 
   @Patch(":projectId/managed-product")
   @RequirePermission("build:managed-products:update")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: linkManagedProductSchema })
   linkManagedProduct(
     @Param("projectId", ParseResourceIdPipe) projectId: number,
-    @Body(new ZodValidationPipe(linkManagedProductSchema))
-    body: LinkManagedProductInput,
+    @Body() body: LinkManagedProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.projects.linkProjectToManagedProduct(u, projectId, body);

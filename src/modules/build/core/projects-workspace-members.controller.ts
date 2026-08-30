@@ -15,7 +15,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsWorkspaceMembersService } from "./projects-workspace-members.service";
 import {
   addWorkspaceMemberSchema,
@@ -36,9 +35,9 @@ export class ProjectsWorkspaceMembersController {
 
   @Get()
   @RequirePermission("build:members:view")
+  @Validate({ query: listWorkspaceMembersSchema })
   list(
-    @Query(new ZodValidationPipe(listWorkspaceMembersSchema))
-    query: ListWorkspaceMembersInput,
+    @Query() query: ListWorkspaceMembersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workspace.list(u.orgId, query);
@@ -47,9 +46,9 @@ export class ProjectsWorkspaceMembersController {
   @Post()
   @RequirePermission("build:members:manage")
   @HttpCode(201)
+  @Validate({ body: addWorkspaceMemberSchema })
   add(
-    @Body(new ZodValidationPipe(addWorkspaceMemberSchema))
-    body: AddWorkspaceMemberInput,
+    @Body() body: AddWorkspaceMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workspace.add(u.orgId, u.userId, body);

@@ -16,7 +16,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PmWorkspacesService } from "./pm-workspaces.service";
 import {
   addWorkspaceMemberSchema,
@@ -44,8 +43,9 @@ export class PmWorkspacesController {
 
   @Get()
   @RequirePermission("build:workspaces:view")
+  @Validate({ query: listWorkspacesQuerySchema })
   listWorkspaces(
-    @Query(new ZodValidationPipe(listWorkspacesQuerySchema)) query: ListWorkspacesQuery,
+    @Query() query: ListWorkspacesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listWorkspaces(u.orgId, query);
@@ -64,8 +64,9 @@ export class PmWorkspacesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:workspaces:create")
+  @Validate({ body: createWorkspaceSchema })
   createWorkspace(
-    @Body(new ZodValidationPipe(createWorkspaceSchema)) body: CreateWorkspaceInput,
+    @Body() body: CreateWorkspaceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createWorkspace(u.orgId, u.userId, body);
@@ -73,10 +74,10 @@ export class PmWorkspacesController {
 
   @Patch(":pmWorkspaceId")
   @RequirePermission("build:workspaces:update")
-  @Validate({ params: pmWorkspaceIdParams })
+  @Validate({ params: pmWorkspaceIdParams, body: updateWorkspaceSchema })
   updateWorkspace(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
-    @Body(new ZodValidationPipe(updateWorkspaceSchema)) body: UpdateWorkspaceInput,
+    @Body() body: UpdateWorkspaceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateWorkspace(u.orgId, u.userId, pmWorkspaceId, body);
@@ -95,10 +96,10 @@ export class PmWorkspacesController {
 
   @Get(":pmWorkspaceId/members")
   @RequirePermission("build:workspaces:members:view")
-  @Validate({ params: pmWorkspaceIdParams })
+  @Validate({ params: pmWorkspaceIdParams, query: listMembersQuerySchema })
   listMembers(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
-    @Query(new ZodValidationPipe(listMembersQuerySchema)) query: ListMembersQuery,
+    @Query() query: ListMembersQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listMembers(u.orgId, pmWorkspaceId, query);
@@ -107,10 +108,10 @@ export class PmWorkspacesController {
   @Post(":pmWorkspaceId/members")
   @HttpCode(201)
   @RequirePermission("build:workspaces:members:manage")
-  @Validate({ params: pmWorkspaceIdParams })
+  @Validate({ params: pmWorkspaceIdParams, body: addWorkspaceMemberSchema })
   addMember(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
-    @Body(new ZodValidationPipe(addWorkspaceMemberSchema)) body: AddWorkspaceMemberInput,
+    @Body() body: AddWorkspaceMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.addMember(u.orgId, u.userId, pmWorkspaceId, body);

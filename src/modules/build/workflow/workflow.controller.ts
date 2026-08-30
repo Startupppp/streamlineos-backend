@@ -16,7 +16,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { WorkflowService } from "./workflow.service";
 import {
   createTransitionSchema,
@@ -51,9 +50,10 @@ export class WorkflowController {
   @Post("transitions")
   @HttpCode(201)
   @RequirePermission("build:workflow:manage")
+  @Validate({ body: createTransitionSchema })
   createTransition(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createTransitionSchema)) body: CreateTransitionInput,
+    @Body() body: CreateTransitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createTransition(u.orgId, u.userId, projectId, body);
@@ -61,11 +61,11 @@ export class WorkflowController {
 
   @Patch("transitions/:transitionId")
   @RequirePermission("build:workflow:manage")
-  @Validate({ params: transitionIdParams })
+  @Validate({ params: transitionIdParams, body: updateTransitionSchema })
   updateTransition(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("transitionId", ParseIntPipe) transitionId: number,
-    @Body(new ZodValidationPipe(updateTransitionSchema)) body: UpdateTransitionInput,
+    @Body() body: UpdateTransitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateTransition(u.orgId, u.userId, projectId, transitionId, body);
@@ -96,11 +96,11 @@ export class WorkflowController {
 
   @Patch("statuses/:statusId/wip")
   @RequirePermission("build:workflow:manage")
-  @Validate({ params: statusIdParams })
+  @Validate({ params: statusIdParams, body: wipLimitSchema })
   updateWipLimit(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("statusId", ParseIntPipe) statusId: number,
-    @Body(new ZodValidationPipe(wipLimitSchema)) body: WipLimitInput,
+    @Body() body: WipLimitInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateWipLimit(u.orgId, u.userId, projectId, statusId, body);

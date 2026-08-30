@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TestRunsService } from "./test-runs.service";
 import {
   createBugFromResultSchema,
@@ -45,9 +44,10 @@ export class TestRunsController {
 
   @Get()
   @RequirePermission("build:qa:view")
+  @Validate({ query: testRunListQuerySchema })
   listRuns(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(testRunListQuerySchema)) query: TestRunListQuery,
+    @Query() query: TestRunListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listRuns(u.orgId, projectId, query);
@@ -67,9 +67,10 @@ export class TestRunsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:qa:manage")
+  @Validate({ body: createTestRunSchema })
   createRun(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createTestRunSchema)) body: CreateTestRunInput,
+    @Body() body: CreateTestRunInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createRun(u.orgId, u.userId, projectId, body);
@@ -77,11 +78,11 @@ export class TestRunsController {
 
   @Patch(":runId")
   @RequirePermission("build:qa:manage")
-  @Validate({ params: runIdParams })
+  @Validate({ params: runIdParams, body: updateTestRunSchema })
   updateRun(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("runId", ParseIntPipe) runId: number,
-    @Body(new ZodValidationPipe(updateTestRunSchema)) body: UpdateTestRunInput,
+    @Body() body: UpdateTestRunInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateRun(u.orgId, u.userId, projectId, runId, body);
@@ -101,12 +102,12 @@ export class TestRunsController {
 
   @Patch(":runId/results/:resultId")
   @RequirePermission("build:qa:execute")
-  @Validate({ params: runIdresultIdParams })
+  @Validate({ params: runIdresultIdParams, body: updateTestResultSchema })
   updateResult(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("runId", ParseIntPipe) runId: number,
     @Param("resultId", ParseIntPipe) resultId: number,
-    @Body(new ZodValidationPipe(updateTestResultSchema)) body: UpdateTestResultInput,
+    @Body() body: UpdateTestResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateResult(u.orgId, projectId, runId, resultId, body, u.userId);
@@ -115,12 +116,12 @@ export class TestRunsController {
   @Post(":runId/results/:resultId/bug")
   @HttpCode(201)
   @RequirePermission("build:bugs:create")
-  @Validate({ params: runIdresultIdParams })
+  @Validate({ params: runIdresultIdParams, body: createBugFromResultSchema })
   createBugFromResult(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("runId", ParseIntPipe) runId: number,
     @Param("resultId", ParseIntPipe) resultId: number,
-    @Body(new ZodValidationPipe(createBugFromResultSchema)) body: CreateBugFromResultInput,
+    @Body() body: CreateBugFromResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createBugFromResult(u.orgId, u.userId, projectId, runId, resultId, body);

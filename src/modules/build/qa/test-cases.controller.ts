@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TestManagementService } from "./test-management.service";
 import {
   createTestCaseSchema,
@@ -40,9 +39,10 @@ export class TestCasesController {
 
   @Get()
   @RequirePermission("build:qa:view")
+  @Validate({ query: testCaseListQuerySchema })
   listCases(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(testCaseListQuerySchema)) query: TestCaseListQuery,
+    @Query() query: TestCaseListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listCases(u.orgId, projectId, query);
@@ -62,9 +62,10 @@ export class TestCasesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:qa:manage")
+  @Validate({ body: createTestCaseSchema })
   createCase(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createTestCaseSchema)) body: CreateTestCaseInput,
+    @Body() body: CreateTestCaseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createCase(u.orgId, u.userId, projectId, body);
@@ -72,11 +73,11 @@ export class TestCasesController {
 
   @Patch(":caseId")
   @RequirePermission("build:qa:manage")
-  @Validate({ params: caseIdParams })
+  @Validate({ params: caseIdParams, body: updateTestCaseSchema })
   updateCase(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("caseId", ParseIntPipe) caseId: number,
-    @Body(new ZodValidationPipe(updateTestCaseSchema)) body: UpdateTestCaseInput,
+    @Body() body: UpdateTestCaseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateCase(u.orgId, projectId, caseId, body);
