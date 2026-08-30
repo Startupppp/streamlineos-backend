@@ -1,0 +1,301 @@
+# InventoryOS — NEO handoff
+
+**Branch:** `feat/inventory-world-class-implementation` (both repos)
+**Written:** 2026-08-30. Re-verify anything dated before you rely on it.
+
+This is the closing record for the NEO programme described in `neo_research.md`.
+It follows `docs/inventory-final-handoff.md`, which closed `inventory.md` and
+`pending one.md`, and it uses that document's vocabulary deliberately — **proven**,
+**reachable**, **written** — because the failure both programmes kept hitting is
+the gap between them.
+
+Read `docs/inventory-final-handoff.md` first if you have not. Everything it says
+about reachability, about planners with no executor, and about "committed is not
+reachable" still applies, and NEO added two more ratchets in the same spirit.
+
+---
+
+## 1. The one thing to read first
+
+**Fourteen units had green unit suites and four of them were broken at a seam.**
+
+`test/inventory/neo-golden-path.seeded-e2e-spec.ts` walks the whole programme in
+the order a warehouse works in. It found, in one run:
+
+| What was wrong | Why no unit test caught it |
+|---|---|
+| `addOnOrder`'s `ON CONFLICT` named the pre-NEO natural key | The statement is only reached when a purchase order is *sent*, and its own spec mocks the executor. A conflict target that does not match the index in full matches no constraint at all, and Postgres refuses the statement outright — every PO sent after NEO-4 would have failed. |
+| Reconciliation grouped the ledger by the old grain | A pallet's hundred units and the loose row at the same bin were compared against one shared ledger total, so reconciled stock reported drift. The checker disagreeing with the writer is the exact defect `projection-definitions.ts` is a monument to, one grain deeper. |
+| The dock's SQLSTATE check only read the top-level error | Drizzle wraps the postgres.js error, so `error.code` is on `cause`. The exclusion constraint fired correctly and the caller got a raw query dump instead of a 409 — the constraint worked and the product looked broken. |
+| The allocator returned a location but not the pallet | Every reservation after a handling-unit receipt looked up a loose row that does not exist. The promise was refused with the stock standing in front of it. |
+
+Every one of those is the same shape: **a grain changed, and something that keys
+against that grain did not follow.** If you add another dimension to
+`inv_stock_levels`, the checklist is:
+
+1. `LevelGrain` / `levelKey` / `byNaturalKey` / the `lockLevels` predicate;
+2. `EXPECTED_COMMITTED` and `EXPECTED_OUTGOING`;
+3. `StockProjectionService.syncOutgoing` **and** `addOnOrder`'s conflict target;
+4. `reconciliationQueries.bucketDrift`'s ledger `GROUP BY` and its three
+   correlated matches;
+5. the allocator's returned row, and everything that carries it — reservations,
+   wave lines, pick confirms, ship movements;
+6. the unique index in the migration.
+
+Six places. The golden path is what finds the one you miss.
+
+---
+
+## 2. What "done" means here
+
+The three grades from the previous handoff, used the same way.
+
+| Unit | Grade | Evidence |
+|---|---|---|
+| NEO-0 branch and truth | Proven | `inventory-reachability.spec.ts` and `inventory-route-states.test.ts` both green before any change. 86 `inv_*` tables at the start, 100 at the end. |
+| NEO-1 channel pools | **Proven** | Golden path: 100 on hand, 60 claimed by the channel, direct ATP 40, the channel's own view 100, the claim drawn to zero on ship. |
+| NEO-2 platform PO + ASN | **Proven** | Golden path ingests a Blinkit fixture, matches on EAN, is idempotent on the platform's PO number, accepts into a Streamline PO, and receives against the ASN. |
+| NEO-3 fill rate + payout | Reachable, arithmetic proven | Golden path asserts 100 ordered / 60 accepted / 60%. The payout matcher has unit coverage; no payout file has been walked end to end. |
+| NEO-4 handling units | **Proven** | Golden path receives 100 onto a pallet, moves the pallet, and asserts on-hand at the unit, at the old bin and at the new one, with reconciliation clean after each. |
+| NEO-5 RF task shell | Reachable | Route-states green; `rf-surface.test.ts` pins no-table, capture-before-command and denied/offline/queued. Not walked by a human on a 375px device. |
+| NEO-6 slotting | **Proven** | Golden path: no rule ⇒ the pre-NEO order; a rule ⇒ the gold-zone bin first. |
+| NEO-7 labour lite | Reachable | Standards and performance have unit coverage including the payroll ratchet. Records are written from inside pick confirm and putaway complete; no two-picker board has been read against real data. |
+| NEO-8 cross-dock | Reachable | Structural spec pins leg ordering, cost inheritance, the staging refusal and the reservation. Not walked end to end — see §6. |
+| NEO-9 kitting | **Proven** | Golden path: buildable 5, a 6-kit build refused, a 3-kit build consuming 6 and 3 and costing 45 exactly, reconciliation clean. |
+| NEO-10 catch-weight | Reachable | Rules and the work order's own fixture have unit coverage. No catch-weight SKU has been received and sold end to end — see §6. |
+| NEO-11 consignment | **Proven** | Golden path: 10 consigned, on-hand up by ten, ATP unmoved; take title of 4 and ATP moves by exactly 4. |
+| NEO-12 dock lite | **Proven** | Golden path books a slot and asserts the second overlapping booking is refused by the exclusion constraint. |
+| NEO-13 WES stub | Reachable | Unit spec asserts it reports `accepted: false`, that a throwing adapter cannot fail a pick, and that the file cannot reach the engine or a database at all. |
+| NEO-14 waveless join | Reachable | The decision is a pure function with a spec per condition. No wave has actually been joined. |
+| NEO-15 dead schema | **Proven** | 100 tables audited; 99 have a reader; one parked with its evidence. Ratchet green. |
+| NEO-16 golden path | **Proven** | Green twice consecutively, with the original golden path green beside it. |
+| NEO-17 handoff | This document | — |
+
+Nothing is in the **written** grade.
+
+---
+
+## 3. Where the golden path was run, and what that means
+
+**On a local Postgres, not on Neon.** `DATABASE_URL` in `.env` points at a shared
+Neon branch that other sessions use, and applying eight new migrations to it is
+not a call this session should make on its own. A throwaway local database was
+built instead:
+
+```
+createdb cornerstone_neo16
+psql -d cornerstone_neo16 -c "CREATE EXTENSION vector; CREATE EXTENSION pg_trgm;
+  CREATE EXTENSION btree_gist; CREATE EXTENSION pgcrypto; CREATE EXTENSION \"uuid-ossp\";"
+# then apply migrations/*.sql in journal order
+DATABASE_URL=postgres://<you>@localhost:5432/cornerstone_neo16 \
+  node --max-old-space-size=12288 ./node_modules/jest/bin/jest.js \
+  --config ./jest-e2e-seeded.json --forceExit --runInBand \
+  --testPathPattern=neo-golden-path
+```
+
+`btree_gist` is required — NEO-12's exclusion constraint does not exist without
+it.
+
+### Three things about that run you need to know
+
+**`drizzle-kit migrate` does not complete a cold build here**, and neither does
+`drizzle-kit push` (it throws `Do not know how to serialize a BigInt`). The
+migrations were applied with `psql` file by file, in journal order.
+
+**91 pre-existing migrations fail on a cold local build**, and all 91 are from
+other programmes. They fall into three groups: duplicate-numbered files whose
+constraint already exists, `0486_hr_people_org_person_link` which contains
+`ADD CONSTRAINT IF NOT EXISTS` (not valid Postgres syntax), and the
+`0575`–`0579` composite-tenant-FK files, which then fail because they reference
+columns the skipped migrations would have added. **None of NEO's eight
+migrations was among them** — 0580 through 0587 and 0588 all applied cleanly,
+including the exclusion constraint.
+
+That is worth stating plainly: **`db:migrate` cannot currently build this schema
+from empty.** It is not a NEO regression — the previous handoff already
+identified `0575`–`0579` as a new cold-build failure surface — but it is now
+demonstrated rather than suspected, and it is the single biggest risk in this
+repository. A schema that cannot be rebuilt is a schema whose migrations are
+decoration.
+
+**Four columns were added to the local database by hand** so the run could
+finish: `client_party_id` on `inv_sales_orders` and `inv_customer_returns`, and
+`vendor_party_id`/`party_id` on the vendor side. All four belong to skipped party
+migrations. They are a property of that throwaway database and of nothing else —
+no repository file was changed to accommodate them.
+
+---
+
+## 4. Migrations
+
+`0580`–`0588` belong to this programme.
+
+| File | What it does |
+|---|---|
+| `0580_inventory_channel_pools` | `inv_channel_pools`; `inv_sales_orders.channel_id`. |
+| `0581_inventory_quick_commerce_asn` | Platform POs, ASNs, payout lines; `inv_channels.qc_provider`; `inv_grns.asn_id`; three settings flags; `inv_sales_orders.platform_po_id`. |
+| `0582_inventory_handling_units` | `inv_handling_units`; `handling_unit_id` on levels, transactions, reservations, pick lines and GRN lines; **the natural-key index is dropped and recreated**. |
+| `0583_inventory_slotting` | Slotting rules, velocity classes, re-slot recommendations. |
+| `0584_inventory_labor` | `inv_labor_records`; the `inventory:labor:read` backfill. |
+| `0585_inventory_cross_dock` | `inv_grn_lines.cross_dock_so_id`. |
+| `0586_inventory_kitting` | `inv_kit_components`; four `inv_txn_type` labels; the `inventory:kits:assemble` backfill. |
+| `0587_inventory_catch_weight_consignment` | `measure_mode`, `quantity_pieces`, `ownership`; **the natural-key index is dropped and recreated again**. |
+| `0588_inventory_dock_waveless` | Dock doors and appointments with the exclusion constraint; two waveless settings; the `inventory:dock:manage` backfill. |
+
+**Two of them rebuild `uniq_inv_stock_levels_natural_key`.** A unique index on an
+expression cannot be extended in place. Both are safe on existing data — every
+row coalesces to the same value the old index enforced — but on a large table
+this is a real index build under `lock_timeout`, and it will fail fast rather
+than queue if the table is busy. Run them when it is not.
+
+`0586` adds enum labels with `ALTER TYPE ... ADD VALUE`. That is legal inside a
+transaction from Postgres 12 onwards **provided the new label is not used in the
+same transaction**, and nothing in that file writes one. A later migration that
+both adds a label and inserts it must be split.
+
+### Permission keys and their backfills
+
+Three new keys, each with a backfill onto `INVENTORY_MODULE_OWNER` and
+`INVENTORY_MODULE_ADMIN` — role templates grant on role *creation* only, so a new
+key never reaches an organisation that already exists:
+
+- `inventory:labor:read` — the board names individual people and rates their
+  work. That is not an authority that should arrive with a stock summary.
+- `inventory:kits:assemble` — building consumes components and creates a SKU that
+  did not exist a moment ago, and moves valuation with it.
+- `inventory:dock:manage` — booking vehicles in is a receiving clerk's job, not
+  the job of whoever configures the site.
+
+Each is in both catalogues and in the frontend `PermissionKey` union;
+`catalog-sync.test.ts` passes in both directions.
+
+**The backfills carry the shape 0436 established**, including its known limit: the
+`EXISTS (SELECT 1 FROM permissions ...)` guard means the insert is a no-op on a
+database where `PermissionCatalogSyncService` has not yet run. On an existing
+deployment the catalogue is already synced and the backfill lands; on a cold
+build it does not, and the key reaches new organisations through the template
+instead. That is the same trade every backfill in this repository makes.
+
+---
+
+## 5. Drops
+
+**Nothing was dropped, and that is the finding rather than an omission.**
+
+All 100 `inv_*` tables were audited against every non-test file under
+`src/modules/`. Ninety-nine have a reader. One does not:
+
+**`inv_reason_codes`** — no service, no controller, no frontend route, and no
+other table carries a foreign key to it. Adjustments record their reason as an
+enum and a free-text note instead. Its only reference anywhere is
+`inventory-rls.db.spec.ts`, which asserts RLS on it.
+
+It is kept because the work order's bar for a drop is *zero live rows or a proven
+archive*, and that is a count against a real database:
+
+```sql
+SELECT count(*) FROM inv_reason_codes;
+```
+
+If that is zero in every tenant, drop it with a migration and delete its entry
+from `inventory-schema-reachability.spec.ts`. If it is not zero, those rows are
+somebody's configuration and the honest fix is to give them a reader, not to
+delete them.
+
+No ledger, projection, document or audit table was touched. The ratchet refuses
+to let any of them be parked in the exemption list at all.
+
+---
+
+## 6. What is not proven, and what would prove it
+
+Listed rather than glossed, because a handoff that reads as uniformly green is
+the document this programme keeps being burnt by.
+
+| Gap | What would close it |
+|---|---|
+| **Cross-dock (NEO-8) has no end-to-end run.** The structural spec pins leg ordering, cost inheritance and the staging refusal, but no delivery has actually been cross-docked. | A golden-path slice: receive a line with `crossDockSoId` set, assert on-hand is zero at every storage bin, assert the reservation stands at staging, ship it. |
+| **Catch-weight (NEO-10) has no end-to-end run.** The rules and the work order's fixture are unit-tested; no catch-weight SKU has been received and sold. | Mark a SKU `CATCH_WEIGHT`, receive 2 bags at 10.35 kg, sell 1 at 5.10 kg, assert 5.25 kg remains and that the invoice priced from the weight. |
+| **Waveless (NEO-14) has never joined a wave.** The decision is a pure function with full branch coverage; the join itself is a proposal endpoint the caller acts on. | Turn the setting on, confirm a second order, assert its line appears on the open wave and that the reservation was not made twice. |
+| **The labour board has not been read against real data.** Records are written from inside two commands and the arithmetic is unit-tested. | Two operators, one shift, and a look at the board. |
+| **No platform is connected.** Blinkit, Instamart and Zepto are parsers against fixtures, and the pack is off by default. This is deliberate — see the header of `quick-commerce-inbound.ts` — but it means fill-rate and payout recon have never seen a real document. | Supplier-portal credentials, and an adapter routed through Composio in the `integrations` module. Never a per-tenant provider token in our database. |
+| **No WES exists.** `NoopWesAdapter` reports `accepted: false` and says why. | A real adapter, registered beside the noop and chosen by configuration. The picking path does not change — that is why the boundary was fixed first. |
+| **The seeded suite has not been run on Neon.** Only on a local Postgres, for the reason in §3. | Apply `0580`–`0588` to the Neon branch, deliberately, when nobody else is mid-run on it. |
+
+---
+
+## 7. Flags, and what off means
+
+Every optional behaviour is off until an organisation asks for it, and off means
+the code path is not reached rather than reached and ignored.
+
+| Flag | Default | Off means |
+|---|---|---|
+| `inv_settings.pack_quick_commerce` | false | The ingest endpoint refuses before it parses anything. |
+| `inv_settings.qc_zepto_email_po_enabled` | false | The email parser is unreachable. Its own flag, not implied by the pack: "we read a text file and believed it" is a decision to take deliberately. |
+| `inv_settings.asn_required_for_grn` | false | Receiving does not ask whether a delivery was announced. |
+| `inv_settings.waveless_picking` | false | A new order gets a new wave, exactly as before. |
+| `inv_products.measure_mode` | `PIECES` | Catch-weight columns are inert. |
+| `inv_stock_levels.ownership` | `OWNED` | Consignment is invisible; every gate is a no-op. |
+| `INV_CHANNEL_ADAPTER` | unset | No adapter is registered; a refetch reports `NO_ADAPTER` without opening a socket. |
+| WES | no adapter | `NoopWesAdapter` logs at debug and reports it did not dispatch. |
+
+---
+
+## 8. What is still missing against Manhattan
+
+Stated so nobody reads §2 and concludes otherwise. `neo_research.md` §11 defines
+world-class *for Streamline*, and this is what that definition deliberately
+leaves out:
+
+- **Engineered labour standards.** NEO-7 is a lite model with a fixed setup cost,
+  a per-scan cost and a cost per bin change. `distance_proxy` counts bin changes,
+  not metres, and the column comment says so. A surveyed building and a time
+  study are what Manhattan sells; a column called `distance_metres` here would be
+  a number somebody eventually puts in a performance review.
+- **A yard.** NEO-12 is a door, a window and a collision refusal. No trailer, no
+  parking bay, no gate move, no digital twin.
+- **Robotics and MFS.** A boundary and a no-op. Deliberately not a queue table
+  nobody drains.
+- **Order streaming at Manhattan's scale.** NEO-14 joins an unstarted wave under
+  a cap; it does not re-plan a walk somebody is on.
+- **A digital twin of the building.** Not attempted and not scoped.
+
+What Streamline now has that it did not: a ledger that still never lies with two
+more dimensions in its grain, a warehouse that can receive onto a pallet and
+move it as a pallet, a brand that can sell on Blinkit and Shopify without
+double-selling, slotting and labour a twenty-person warehouse can act on, and
+kits, catch-weight and consignment as first-class stock rather than notes.
+
+---
+
+## 9. Where things are
+
+**Backend modules added:** `handling-units/`, `slotting/`, `labor/`, `kitting/`,
+`stock-types/`, `dock/`, `wes/`, `channels/pools/`, `channels/quick-commerce/`.
+
+**Schema files added:** `channel-pools.ts`, `quick-commerce.ts`,
+`handling-units.ts`, `slotting.ts`, `labor.ts`, `kitting.ts`, `dock.ts`.
+
+**Frontend routes added:** `/inventory/quick-commerce`, `/inventory/handling-units`,
+`/inventory/rf` (+ `rf/pick/[pickListId]`, `rf/putaway/[taskId]`),
+`/inventory/slotting`, `/inventory/labor`, `/inventory/kits`,
+`/inventory/consignment`, `/inventory/dock`.
+
+**Ratchets added — run these before believing a future "done":**
+
+```
+pnpm exec jest --testPathPattern=inventory-reachability          # modules have callers
+pnpm exec jest --testPathPattern=inventory-schema-reachability   # tables have readers
+pnpm exec jest --testPathPattern=available-formula               # one ATP definition
+pnpm exec jest --testPathPattern=labor                           # labour is not payroll
+pnpm exec jest --testPathPattern=wes-adapter                     # no fake robotics
+# frontend
+pnpm exec jest --testPathPattern=rf-surface                      # the RF shell has no table
+pnpm exec jest --testPathPattern=inventory-route-states          # every route answers five states
+```
+
+The sidebar digest in `sidebar-nav-inventory.test.ts` was updated three times
+during this programme, each with a note saying which routes were added and why
+they carry the keys they do. That file is the record of every navigation change;
+keep writing the note.
