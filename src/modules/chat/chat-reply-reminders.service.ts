@@ -42,7 +42,7 @@ export class ChatReplyRemindersService {
     await this.cancelPendingForRecipientInChannel(senderId, channelId);
 
     const members = await this.db.query.chatChannelMembers.findMany({
-      where: eq(chatChannelMembers.channelId, channelId),
+      where: and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)),
       columns: { userId: true },
     });
 

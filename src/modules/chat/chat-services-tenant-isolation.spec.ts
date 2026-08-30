@@ -3,7 +3,7 @@ jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
 }));
 
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { ModuleRef } from "@nestjs/core";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -156,9 +156,6 @@ describe("ChatSearchService — tenant isolation", () => {
 
 // ---------------------------------------------------------------------------
 // ChatSummarizeService
-// NOTE: The membership check in assertMember uses channelId + userId only —
-// no orgId. A channel member in any org with this channelId passes the check.
-// This is a gap: cross-tenant channel access is possible if channelIds collide.
 // ---------------------------------------------------------------------------
 
 describe("ChatSummarizeService — tenant isolation", () => {
@@ -209,17 +206,15 @@ describe("ChatSummarizeService — tenant isolation", () => {
 
 // ---------------------------------------------------------------------------
 // ChatChannelMembersService
-// NOTE: assertMember checks (channelId, userId) only — no orgId. A user
-// from a different org can pass the gate if they happen to be in a row with
-// the same channelId (possible if numeric channelIds span orgs).
 // ---------------------------------------------------------------------------
 
 describe("ChatChannelMembersService — tenant isolation", () => {
-  function makeService(findFirstResult: unknown, findManyResult: unknown[] = []) {
+  function makeService(channelRow: unknown, memberRow: unknown, findManyResult: unknown[] = []) {
     const db = {
       query: {
+        chatChannels: { findFirst: jest.fn().mockResolvedValue(channelRow) },
         chatChannelMembers: {
-          findFirst: jest.fn().mockResolvedValue(findFirstResult),
+          findFirst: jest.fn().mockResolvedValue(memberRow),
           findMany: jest.fn().mockResolvedValue(findManyResult),
         },
       },
@@ -230,17 +225,23 @@ describe("ChatChannelMembersService — tenant isolation", () => {
     return { service, db };
   }
 
-  it("DENY: listMembers throws ForbiddenException when caller is not a channel member", async () => {
-    const { service } = makeService(null);
+  it("DENY: listMembers throws NotFoundException when channel not found in this org", async () => {
+    const { service } = makeService(null, null);
 
-    await expect(service.listMembers(7, "user-attacker")).rejects.toThrow(ForbiddenException);
+    await expect(service.listMembers(7, "user-attacker", ATTACKER_ORG)).rejects.toThrow(NotFoundException);
+  });
+
+  it("DENY: listMembers throws ForbiddenException when caller is not a channel member", async () => {
+    const { service } = makeService({ id: 7 }, null);
+
+    await expect(service.listMembers(7, "user-attacker", ATTACKER_ORG)).rejects.toThrow(ForbiddenException);
   });
 
   it("CONTROL: listMembers returns members when the caller is a valid channel member", async () => {
     const member = { id: 1, channelId: 7, userId: "u1", role: "MEMBER", user: { id: "u1", name: "Alice", image: null, email: "a@t.com" } };
-    const { service } = makeService(member, [member]);
+    const { service } = makeService({ id: 7 }, member, [member]);
 
-    const result = await service.listMembers(7, "u1");
+    const result = await service.listMembers(7, "u1", OWNER_ORG);
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ userId: "u1" });
@@ -249,10 +250,6 @@ describe("ChatChannelMembersService — tenant isolation", () => {
 
 // ---------------------------------------------------------------------------
 // ChatNotificationsService
-// NOTE: publishNewMessageNotification fetches channel members using only
-// eq(chatChannelMembers.channelId, channelId) — no orgId filter. This is a
-// gap: members of a different org's channel with the same numeric channelId
-// would receive notifications.
 // ---------------------------------------------------------------------------
 
 describe("ChatNotificationsService — orgId threading", () => {
@@ -307,10 +304,6 @@ describe("ChatNotificationsService — orgId threading", () => {
 
 // ---------------------------------------------------------------------------
 // ChatReplyRemindersService
-// NOTE: scheduleForMessage fetches channel members using only
-// eq(chatChannelMembers.channelId, channelId) — no orgId filter. This is a
-// gap: members from a different org could receive reminders if channelIds collide.
-// The inserted reminder rows DO carry orgId, so delivery is bounded.
 // ---------------------------------------------------------------------------
 
 describe("ChatReplyRemindersService — tenant isolation", () => {

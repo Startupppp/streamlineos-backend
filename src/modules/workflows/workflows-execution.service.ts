@@ -257,18 +257,30 @@ export class WorkflowsExecutionService {
     approvalId: string,
     dto: ApprovalActionDto,
   ) {
-    const approval = await this.db.query.workflowApprovals.findFirst({
-      where: and(
-        eq(workflowApprovals.id, approvalId),
-        eq(workflowApprovals.approverId, userId),
-        eq(workflowApprovals.status, "pending"),
-      ),
-      with: { execution: { columns: { orgId: true, workflowId: true } } },
-    });
-    if (!approval)
-      throw new NotFoundException("Approval not found or already actioned");
-    if (approval.execution.orgId !== orgId)
-      throw new ForbiddenException("Access denied");
+    const [approval] = await this.db
+      .select({
+        id: workflowApprovals.id,
+        executionId: workflowApprovals.executionId,
+        stepId: workflowApprovals.stepId,
+        workflowId: workflowExecutions.workflowId,
+      })
+      .from(workflowApprovals)
+      .innerJoin(
+        workflowExecutions,
+        and(
+          eq(workflowExecutions.id, workflowApprovals.executionId),
+          eq(workflowExecutions.orgId, orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(workflowApprovals.id, approvalId),
+          eq(workflowApprovals.approverId, userId),
+          eq(workflowApprovals.status, "pending"),
+        ),
+      )
+      .limit(1);
+    if (!approval) throw new NotFoundException("Approval not found or already actioned");
 
     const now = new Date();
     const [updated] = await this.db
@@ -284,7 +296,7 @@ export class WorkflowsExecutionService {
 
     await this.db.insert(workflowAuditLogs).values({
       orgId,
-      workflowId: approval.execution.workflowId,
+      workflowId: approval.workflowId,
       executionId: approval.executionId,
       actorId: userId,
       event: dto.action === "approve" ? "approved" : "rejected",
