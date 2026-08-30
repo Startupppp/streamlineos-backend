@@ -32,8 +32,19 @@ describe("TimesheetsService — approver cannot action their own entry", () => {
         set: jest.fn().mockReturnValue({ where: updateWhere }),
       }),
     } as unknown as Db;
+    /**
+     * The manage grant, expressed through the method the service actually calls.
+     *
+     * `TimesheetsService` asks `access.holds`; this described only
+     * `resolveUserPermissions`, so every call threw a `TypeError` — which the
+     * self-approval cases mistook for the `ForbiddenException` they assert,
+     * while the case that should succeed simply failed. The set below stays the
+     * one place the grant is stated.
+     */
+    const granted = new Set(["build:timesheets:manage"]);
     const access = {
-      resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:timesheets:manage"])),
+      resolveUserPermissions: jest.fn().mockResolvedValue(granted),
+      holds: jest.fn(async (_user: unknown, key: string) => granted.has(key)),
     } as unknown as AccessService;
     const cache = { del: jest.fn(), get: jest.fn(), set: jest.fn() } as unknown as CacheService;
     const periods = {} as unknown as EntriesPeriodService;

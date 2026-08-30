@@ -91,7 +91,24 @@ describe("WhiteboardSharingService", () => {
       transaction: dbTransaction,
     } as unknown as Db;
 
-    mockAccess = { resolveUserPermissions } as unknown as AccessService;
+    /**
+     * `holds` is derived from `resolveUserPermissions`, not mocked beside it.
+     *
+     * The service asks `access.holds` now; this fixture still described only the
+     * older `resolveUserPermissions`, so the call threw
+     * "this.access.holds is not a function" and the cases expecting a
+     * `ForbiddenException` got a `TypeError` that happened to also be a
+     * rejection. Deriving it keeps each case's existing permission setup as the
+     * single thing that decides the answer, and follows `scopeFor`: the org
+     * owner holds everything without the map being consulted.
+     */
+    mockAccess = {
+      resolveUserPermissions,
+      holds: async (user: { orgId: string; userId: string; isOrgOwner?: boolean }, key: string) =>
+        user.isOrgOwner === true ||
+        ((await resolveUserPermissions(user.orgId, user.userId)) as Map<string, DataScope>).get(key) !==
+          undefined,
+    } as unknown as AccessService;
     svc = new WhiteboardSharingService(mockDb, mockAccess);
   });
 
