@@ -77,7 +77,21 @@ class FakeStorage {
     return this.configured;
   }
 
-  uploadFile(buffer: Buffer, folder: string, fileName: string, mimeType: string) {
+  /**
+   * Both methods take `orgId` first, exactly as `StorageService` does.
+   *
+   * They used to omit it, so every argument arrived one place to the left: an
+   * upload keyed itself off the buffer, and a download looked the object up
+   * under the org id instead of the key. The miss was indistinguishable from a
+   * genuinely absent object, which is the behaviour this fake exists to model.
+   */
+  uploadFile(
+    _orgId: string,
+    buffer: Buffer,
+    folder: string,
+    fileName: string,
+    mimeType: string,
+  ) {
     const key = `${folder}/${crypto.randomUUID()}-${fileName.replace(/[^a-zA-Z0-9.-]/g, "-")}`;
     this.objects.set(key, Buffer.from(buffer));
     return Promise.resolve({
@@ -88,7 +102,7 @@ class FakeStorage {
     });
   }
 
-  getFileStream(key: string) {
+  getFileStream(_orgId: string, key: string) {
     const object = this.objects.get(key);
     if (!object) return Promise.reject(new NotFoundException("File not found or empty"));
     return Promise.resolve({

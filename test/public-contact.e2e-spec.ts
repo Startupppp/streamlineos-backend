@@ -7,6 +7,9 @@ import { RateLimitGuard } from "src/common/ratelimit/rate-limit.guard";
 import { RateLimitService } from "src/common/ratelimit/rate-limit.service";
 import { EmailService } from "src/modules/email/email.service";
 import { ContactService } from "src/modules/public/contact.service";
+import { APP_CONFIG } from "src/config/config.module";
+import type { AppConfig } from "src/config/env.validation";
+import { TurnstileService } from "src/common/security/turnstile.service";
 import { CrmService } from "src/modules/public/crm.service";
 import { IntakeService } from "src/modules/public/intake.service";
 import { KbService } from "src/modules/public/kb.service";
@@ -15,6 +18,8 @@ import { PublicController } from "src/modules/public/public.controller";
 import { PublicFormsService } from "src/modules/public/public-forms.service";
 import { RecruitmentService } from "src/modules/public/recruitment.service";
 import { RoadmapService } from "src/modules/public/roadmap.service";
+import { WaitlistService } from "src/modules/public/waitlist.service";
+import { PublicPricingService } from "src/modules/public/pricing.service";
 
 const validSubmission = {
   name: "Ada Lovelace",
@@ -42,6 +47,25 @@ describe("Public contact form (e2e)", () => {
         RateLimitGuard,
         { provide: RateLimitService, useValue: { check: checkRateLimit } },
         { provide: EmailService, useValue: { sendEmail } },
+        /**
+         * A live view of `process.env`, not a snapshot.
+         *
+         * `ContactService` and `TurnstileService` read `APP_CONFIG` now, where
+         * they used to read the environment directly — so this module stopped
+         * resolving at all ("APP_CONFIG at index [0]"). The cases here still set
+         * and delete `TURNSTILE_SECRET_KEY` between them, so a config object
+         * captured when the module was built would freeze the first value and
+         * quietly decide every case. The proxy keeps the reads live, which is
+         * what those cases have always assumed.
+         */
+        {
+          provide: APP_CONFIG,
+          useValue: new Proxy(
+            {},
+            { get: (_target, key: string) => process.env[key] },
+          ) as AppConfig,
+        },
+        TurnstileService,
         ContactService,
         { provide: RecruitmentService, useValue: {} },
         { provide: RoadmapService, useValue: {} },
@@ -50,6 +74,8 @@ describe("Public contact form (e2e)", () => {
         { provide: IntakeService, useValue: {} },
         { provide: OrgService, useValue: {} },
         { provide: PublicFormsService, useValue: {} },
+        { provide: WaitlistService, useValue: {} },
+        { provide: PublicPricingService, useValue: {} },
         { provide: DRIZZLE, useValue: {} },
       ],
     }).compile();

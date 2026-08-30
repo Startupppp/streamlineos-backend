@@ -69,14 +69,30 @@ class FakeStorage {
     return this.configured;
   }
 
-  uploadFile(buffer: Buffer, folder: string, fileName: string, mimeType: string) {
+  /**
+   * The signature has to match `StorageService.uploadFile` exactly.
+   *
+   * It used to omit `orgId`, so every argument arrived one place to the left:
+   * the buffer bound to `folder`, and the key this built therefore had the raw
+   * PDF inside it. That key then went into `ar_documents.pdf_storage_key`,
+   * where the NUL bytes in the PDF header made PostgreSQL reject the UPDATE —
+   * which the service catches and logs, so the only visible symptom was a
+   * stored key of `null` two assertions later.
+   */
+  uploadFile(
+    _orgId: string,
+    buffer: Buffer,
+    folder: string,
+    fileName: string,
+    mimeType: string,
+  ) {
     this.uploads += 1;
     const key = `${folder}/${crypto.randomUUID()}-${fileName.replace(/[^a-zA-Z0-9.-]/g, "-")}`;
     this.objects.set(key, Buffer.from(buffer));
     return Promise.resolve({ url: `https://files.test/${key}`, key, size: buffer.length, mimeType });
   }
 
-  getFileStream(key: string) {
+  getFileStream(_orgId: string, key: string) {
     const object = this.objects.get(key);
     if (!object) return Promise.reject(new NotFoundException("File not found or empty"));
     return Promise.resolve({

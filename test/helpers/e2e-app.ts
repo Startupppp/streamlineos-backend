@@ -10,7 +10,7 @@ import { EntitlementsService } from "src/modules/access/entitlements.service";
 import { AccessService } from "src/modules/access/access.service";
 import type { DataScope } from "src/modules/access/access.types";
 import { moduleAvailabilityResolver } from "src/common/rbac/module-availability";
-import { isCoreModuleKey } from "src/common/rbac/module-registry";
+import { moduleDefinition, moduleIdFromStored } from "src/common/rbac/module-registry";
 import { RegionRegistry, setRegionRegistry } from "src/common/region/region-registry";
 import type { RegionDefinition } from "src/common/region/region.config";
 import type { Db } from "src/db/drizzle.types";
@@ -89,14 +89,22 @@ const entitlementsStub = {
   // below keep a module's availability decided by the token's `enabledModules`,
   // which is what every existing spec was written against.
   //
-  // `isCoreModule` is the exception, and pinning it to `false` was wrong.
+  // `isCoreModule` is the exception, and pinning it to `false` was wrong:
   // `settings:` and `ownership:` are platform surfaces with no org-module toggle
-  // — `authorize` says so — so production answers `true` for them however the
-  // org is configured. A fixture answering `false` made every `settings:` and
-  // `ownership:` route 402 unless a spec happened to list a module that does not
-  // exist, which is why the rbac, roles and ownership suites asserted 403 and
-  // got 402. The real predicate is a pure function of the key.
-  isCoreModule: isCoreModuleKey,
+  // at all, so production answers `true` for them however the org is configured.
+  // A fixture answering `false` made every `settings:` and `ownership:` route
+  // 402, which is why the rbac, roles and ownership suites asserted 403 and got
+  // it.
+  //
+  // Narrower than `isCoreModuleKey`, deliberately. That predicate is also true
+  // for a *registered* module that is not plan-gated — `kb` is one — and using
+  // it here made kb unconditionally available, so the twelve kb suites asserting
+  // 402 for a disabled module got 403 instead. The line that matters to a
+  // fixture is whether the module is in the registry at all: an unregistered
+  // namespace has nothing to toggle, and everything else is decided by the
+  // token's `enabledModules`, which is what every spec was written against.
+  isCoreModule: (moduleKey: string): boolean =>
+    moduleDefinition(moduleIdFromStored(moduleKey)) === undefined,
   getPlanLockedModules: async (): Promise<readonly string[]> => [],
 };
 

@@ -103,6 +103,21 @@ function parsePoolEnv(env: NodeJS.ProcessEnv): z.infer<typeof poolEnvSchema> {
  * transaction-mode pooler multiplexes many clients onto few server connections
  * but cannot serve prepared statements.
  */
+/**
+ * Whether a connection to `url` has to negotiate TLS.
+ *
+ * This is the rule `resolvePoolConfig` already applies, exported so that the
+ * specs which build their own client can ask it rather than restate it. They
+ * used to hard-code `ssl: "require"`, which is correct for Neon and fatal
+ * against a local PostgreSQL: the server closes the socket during the
+ * handshake, and every case in the file then fails with "Client network socket
+ * disconnected before secure TLS connection was established" — a connection
+ * failure wearing the costume of a test failure.
+ */
+export function requiresTls(url: string): boolean {
+  return NEON_HOST.test(hostOf(url) || url);
+}
+
 export function resolvePoolConfig(env: NodeJS.ProcessEnv): ResolvedPoolConfig {
   const raw = env.APP_DATABASE_URL || env.DATABASE_URL;
   if (!raw)
