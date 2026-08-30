@@ -136,7 +136,7 @@ async function pageThrough(
     const result = await harness.service.list(CHANNEL_ID, ACTOR, cursor, limit);
     pages++;
     ids.push(...result.messages.map((m) => m.id));
-    if (result.nextCursor === undefined) break;
+    if (result.nextCursor == null) break;
     cursor = result.nextCursor;
     if (pages > 50) throw new Error("paging did not terminate");
   }
@@ -174,7 +174,7 @@ describe("chat message paging — every row exactly once", () => {
 
     const second = await harness.service.list(CHANNEL_ID, ACTOR, first.nextCursor, limit);
     expect(second.messages).toHaveLength(1);
-    expect(second.nextCursor).toBeUndefined();
+    expect(second.nextCursor).toBeNull();
 
     const ids = [...first.messages, ...second.messages].map((m) => m.id);
     expect(duplicates(ids)).toEqual([]);
@@ -196,7 +196,7 @@ describe("chat message paging — every row exactly once", () => {
     const result = await harness.service.list(CHANNEL_ID, ACTOR, undefined, 10);
 
     expect(result.messages).toEqual([]);
-    expect(result.nextCursor).toBeUndefined();
+    expect(result.nextCursor).toBeNull();
   });
 
   it("pages correctly when every row shares a timestamp", async () => {

@@ -1,10 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, ilike, inArray, lte, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { auditLogs } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type { ListAuditQuery } from "./dto/finance-controls.schemas";
 
 const FINANCE_RESOURCE_TYPES = [
@@ -30,29 +30,45 @@ export class AuditSurfaceService {
   ) {}
 
   async list(orgId: string, query: ListAuditQuery) {
-    const { limit, offset } = paginateOffset(query);
+    const { limit, cursor } = query;
     const conditions = this.buildConditions(orgId, query);
+    if (cursor) conditions.push(gt(auditLogs.id, cursor));
 
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select()
-        .from(auditLogs)
-        .where(and(...conditions))
-        .orderBy(desc(auditLogs.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(auditLogs)
-        .where(and(...conditions)),
-    ]);
+    const rows = await this.db
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        userId: auditLogs.userId,
+        orgId: auditLogs.orgId,
+        resourceType: auditLogs.resourceType,
+        resourceId: auditLogs.resourceId,
+        actorUserId: auditLogs.actorUserId,
+        ipAddress: auditLogs.ipAddress,
+        metadata: auditLogs.metadata,
+        createdAt: auditLogs.createdAt,
+      })
+      .from(auditLogs)
+      .where(and(...conditions))
+      .orderBy(desc(auditLogs.id))
+      .limit(limit + 1);
 
-    return buildListResponse(rows, count, query);
+    return buildIdCursorPage(rows, limit, (row) => row.id);
   }
 
   async timeline(orgId: string, resourceType: string, resourceId: string) {
     return this.db
-      .select()
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        userId: auditLogs.userId,
+        orgId: auditLogs.orgId,
+        resourceType: auditLogs.resourceType,
+        resourceId: auditLogs.resourceId,
+        actorUserId: auditLogs.actorUserId,
+        ipAddress: auditLogs.ipAddress,
+        metadata: auditLogs.metadata,
+        createdAt: auditLogs.createdAt,
+      })
       .from(auditLogs)
       .where(
         and(
@@ -69,7 +85,18 @@ export class AuditSurfaceService {
     const conditions = this.buildConditions(orgId, query);
 
     const rows = await this.db
-      .select()
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        userId: auditLogs.userId,
+        orgId: auditLogs.orgId,
+        resourceType: auditLogs.resourceType,
+        resourceId: auditLogs.resourceId,
+        actorUserId: auditLogs.actorUserId,
+        ipAddress: auditLogs.ipAddress,
+        metadata: auditLogs.metadata,
+        createdAt: auditLogs.createdAt,
+      })
       .from(auditLogs)
       .where(and(...conditions))
       .orderBy(desc(auditLogs.createdAt))

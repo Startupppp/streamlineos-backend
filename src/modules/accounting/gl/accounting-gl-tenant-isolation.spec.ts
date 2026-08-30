@@ -23,32 +23,22 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-type ChainBuilder = {
-  from: jest.Mock;
-  leftJoin: jest.Mock;
-  innerJoin: jest.Mock;
-  where: jest.Mock;
-  orderBy: jest.Mock;
-  groupBy: jest.Mock;
-  limit: jest.Mock;
-};
-
 function makeSelectDb(rows: unknown[]): { db: Db; where: jest.Mock } {
-  const where = jest.fn().mockResolvedValue(rows);
-  const builder: ChainBuilder = {
-    from: jest.fn(),
-    leftJoin: jest.fn(),
-    innerJoin: jest.fn(),
-    where,
-    orderBy: jest.fn(),
-    groupBy: jest.fn(),
+  const where = jest.fn();
+  const builder: Record<string, unknown> = {
     limit: jest.fn().mockResolvedValue(rows),
+    then: (onFulfilled: (r: unknown[]) => unknown, onRejected?: (e: unknown) => unknown) =>
+      Promise.resolve(rows).then(onFulfilled, onRejected),
   };
-  builder.from.mockReturnValue(builder);
-  builder.leftJoin.mockReturnValue(builder);
-  builder.innerJoin.mockReturnValue(builder);
-  builder.orderBy.mockReturnValue(builder);
-  builder.groupBy.mockReturnValue(builder);
+  const chain = jest.fn().mockReturnValue(builder);
+  builder.from = chain;
+  builder.leftJoin = chain;
+  builder.innerJoin = chain;
+  builder.groupBy = chain;
+  builder.orderBy = chain;
+  builder.offset = chain;
+  where.mockReturnValue(builder);
+  builder.where = where;
   const db = { select: jest.fn().mockReturnValue(builder) } as unknown as Db;
   return { db, where };
 }
@@ -102,32 +92,28 @@ describe("GL services — cross-tenant isolation", () => {
 
   describe("RecurringJournalsService", () => {
     it("deleteTemplate hides a template from a different org before deletion — DENY case", async () => {
-      const { db, where } = makeSelectDb([]);
+      const deleteWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) });
+      const db = {
+        delete: jest.fn().mockReturnValue({ where: deleteWhere }),
+      } as unknown as Db;
       const svc = new RecurringJournalsService(db, audit);
 
       await expect(svc.deleteTemplate("org-attacker", 55)).rejects.toThrow(NotFoundException);
 
-      expect(where).toHaveBeenCalled();
-      expect(sqlValues(where.mock.calls[0]?.[0])).toContain("org-attacker");
+      expect(deleteWhere).toHaveBeenCalled();
+      expect(sqlValues(deleteWhere.mock.calls[0]?.[0])).toContain("org-attacker");
     });
 
     it("deleteTemplate removes template for the correct org — CONTROL case", async () => {
-      const tmpl = { id: 55, orgId: "org-owner", name: "Monthly rent", isActive: true };
-      const updateChain = {
-        set: jest.fn().mockReturnThis(),
-        where: jest.fn().mockResolvedValue([{ ...tmpl, isActive: false }]),
-      };
+      const deleteWhere = jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue([{ id: 55 }]),
+      });
       const db = {
-        select: jest.fn().mockReturnValue({
-          from: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
-          limit: jest.fn().mockResolvedValue([tmpl]),
-        }),
-        update: jest.fn().mockReturnValue(updateChain),
+        delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       } as unknown as Db;
 
       const svc = new RecurringJournalsService(db, audit);
-      await expect(svc.deleteTemplate("org-owner", 55)).resolves.toBeDefined();
+      await expect(svc.deleteTemplate("org-owner", 55)).resolves.toMatchObject({ id: 55, deleted: true });
     });
   });
 });

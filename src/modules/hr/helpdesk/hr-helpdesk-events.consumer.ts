@@ -32,8 +32,8 @@ export class HrHelpdeskEventsConsumer implements OutboxEventConsumer, OnModuleIn
 
   onModuleInit(): void {
     this.registry.register(this);
-    this.registry.register({ eventType: "hr.helpdesk.ticket_assigned", handle: (e) => this.handle(e) });
-    this.registry.register({ eventType: "hr.helpdesk.ticket_status_changed", handle: (e) => this.handle(e) });
+    this.registry.register(new HrHelpdeskTicketAssignedConsumer(this));
+    this.registry.register(new HrHelpdeskTicketStatusChangedConsumer(this));
   }
 
   async handle(event: OutboxEventRow): Promise<void> {
@@ -139,4 +139,16 @@ export class HrHelpdeskEventsConsumer implements OutboxEventConsumer, OnModuleIn
       variables: { ticketId: String(ticketId), title, newStatus },
     });
   }
+}
+
+class HrHelpdeskTicketAssignedConsumer implements OutboxEventConsumer {
+  readonly eventType = "hr.helpdesk.ticket_assigned";
+  constructor(private readonly parent: HrHelpdeskEventsConsumer) {}
+  handle(event: OutboxEventRow): Promise<void> { return this.parent.handle(event); }
+}
+
+class HrHelpdeskTicketStatusChangedConsumer implements OutboxEventConsumer {
+  readonly eventType = "hr.helpdesk.ticket_status_changed";
+  constructor(private readonly parent: HrHelpdeskEventsConsumer) {}
+  handle(event: OutboxEventRow): Promise<void> { return this.parent.handle(event); }
 }

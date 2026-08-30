@@ -16,7 +16,9 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { z } from "zod";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { ApprovalsService } from "./approvals.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
@@ -29,6 +31,8 @@ import {
   type BulkRejectInput,
   type RejectPeriodInput,
 } from "./dto/approvals.schemas";
+
+const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("timesheets/approvals")
@@ -71,6 +75,7 @@ export class ApprovalsController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Idempotent("timesheets.approval.approve")
+  @Validate({ params: periodIdParams })
   approve(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,

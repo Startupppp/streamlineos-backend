@@ -1,10 +1,11 @@
-import { Body, Controller, HttpCode, Post, ServiceUnavailableException, BadRequestException, UseGuards } from "@nestjs/common";
+import { Body, Controller, HttpCode, Post, ServiceUnavailableException, UseGuards } from "@nestjs/common";
 import { Public } from "../../../../common/auth/public.decorator";
 import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
 import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
+import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { KbRagService } from "../services/kb-rag.service";
-import { kbAskSchema } from "../dto/request.schemas";
+import { kbAskSchema, type KbAskInput } from "../dto/request.schemas";
 
 @Public()
 @Controller("public/kb")
@@ -16,16 +17,14 @@ export class KbRagController {
   @HttpCode(200)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:public-kb-ask")
-  ask(@Body() body: unknown) {
+  ask(@Body(new ZodValidationPipe(kbAskSchema)) body: KbAskInput) {
     if (!this.kbRag.isEmbeddingConfigured()) {
       throw new ServiceUnavailableException("AI assistant is not available");
     }
-    const parsed = kbAskSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request");
 
     return this.kbRag.answerQuestion({
-      orgId: parsed.data.org,
-      question: parsed.data.question,
+      orgId: body.org,
+      question: body.question,
     });
   }
 }

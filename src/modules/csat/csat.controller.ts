@@ -19,7 +19,9 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { z } from "zod";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import {
   CsatService,
   isSubmitNotFound,
@@ -36,6 +38,8 @@ import {
   type SubmitResponseInput,
 } from "./dto/csat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+
+const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("support")
 @Controller("csat")
@@ -61,6 +65,7 @@ export class CsatController {
 
   @Get(":surveyId")
   @RequirePermission("support:csat:view")
+  @Validate({ params: surveyIdParams })
   async get(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -84,6 +89,7 @@ export class CsatController {
 
   @Delete(":surveyId")
   @RequirePermission("support:csat:manage")
+  @Validate({ params: surveyIdParams })
   async remove(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,

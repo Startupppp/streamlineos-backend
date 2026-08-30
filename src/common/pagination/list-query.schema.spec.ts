@@ -312,8 +312,8 @@ describe("migrated schemas — clamp at their ceiling and preserve their own def
       expect(listJournalQuerySchema.parse({}).limit).toBe(20);
     });
 
-    it("exposes no page, because it is cursor-paginated", () => {
-      expect(listJournalQuerySchema.parse({}).page).toBeUndefined();
+    it("exposes cursor, because it is cursor-paginated", () => {
+      expect(listJournalQuerySchema.parse({}).cursor).toBeUndefined();
     });
 
     it("still enforces the from<=to refine", () => {

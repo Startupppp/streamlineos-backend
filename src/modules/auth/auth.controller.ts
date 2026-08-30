@@ -21,7 +21,9 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { AuthService } from "./auth.service";
-import { AuthTokensService } from "./auth-tokens.service";
+import { AuthPasswordlessService } from "./auth-passwordless.service";
+import { AuthGoogleOAuthService } from "./auth-google-oauth.service";
+import { AuthAnalyticsService } from "./auth-analytics.service";
 import {
   registerSchema,
   verifyEmailSchema,
@@ -46,7 +48,9 @@ import { enrichUserAgent } from "../../common/http/parse-user-agent";
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
-    private readonly authTokensService: AuthTokensService,
+    private readonly authPasswordless: AuthPasswordlessService,
+    private readonly authGoogleOAuth: AuthGoogleOAuthService,
+    private readonly authAnalytics: AuthAnalyticsService,
     private readonly rateLimit: RateLimitService,
   ) {}
 
@@ -109,7 +113,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:verify-email", this.getIp(req));
-    return this.authTokensService.verifyEmail(body);
+    return this.authPasswordless.verifyEmail(body);
   }
 
   @Post("resend-verification")
@@ -120,14 +124,14 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:resend-verification", this.getIp(req));
-    return this.authTokensService.resendVerification(body.email).then(() => ({ message: "If an account exists, a verification email has been sent" }));
+    return this.authPasswordless.resendVerification(body.email).then(() => ({ message: "If an account exists, a verification email has been sent" }));
   }
 
   @Get("audit/analytics")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   getAuditAnalytics() {
-    return this.authTokensService.getAuditAnalytics();
+    return this.authAnalytics.getAuditAnalytics();
   }
 
   @Public()
@@ -152,7 +156,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:magic-link", this.getIp(req));
-    await this.authTokensService.requestMagicLink(body);
+    await this.authPasswordless.requestMagicLink(body);
     return { message: "We've emailed you a sign-in link. Check your inbox." };
   }
 
@@ -164,7 +168,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:magic-link-verify", this.getIp(req));
-    return this.authTokensService.verifyMagicLink(body.token, this.resolveClientContext(req));
+    return this.authPasswordless.verifyMagicLink(body.token, this.resolveClientContext(req));
   }
 
   @Post("google")
@@ -178,7 +182,7 @@ export class AuthController {
     if (!secret || req.headers["x-internal-secret"] !== secret) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }
-    return this.authTokensService.googleOAuth(body, this.resolveClientContext(req));
+    return this.authGoogleOAuth.googleOAuth(body, this.resolveClientContext(req));
   }
 
   @Post("email-otp")
@@ -189,7 +193,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:email-otp", this.getIp(req));
-    await this.authTokensService.requestEmailOtp(body.email);
+    await this.authPasswordless.requestEmailOtp(body.email);
     return { message: "We've emailed you a 6-digit sign-in code." };
   }
 
@@ -201,6 +205,6 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:email-otp-verify", this.getIp(req));
-    return this.authTokensService.verifyEmailOtp(body.email, body.code);
+    return this.authPasswordless.verifyEmailOtp(body.email, body.code);
   }
 }

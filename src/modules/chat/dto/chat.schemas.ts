@@ -182,3 +182,33 @@ export const entityActionOptionsSchema = z.object({
 });
 
 export type EntityActionOptionsInput = z.infer<typeof entityActionOptionsSchema>;
+
+export const chatMessageSearchQuerySchema = z.object({
+  q: z.string().default(""),
+  cursor: z.string().optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  sender: z.string().optional(),
+});
+export type ChatMessageSearchQuery = z.infer<typeof chatMessageSearchQuerySchema>;
+
+export const chatSimpleSearchQuerySchema = z.object({
+  q: z.string().default(""),
+});
+export type ChatSimpleSearchQuery = z.infer<typeof chatSimpleSearchQuerySchema>;
+
+export const chatSavedListQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.string().optional(),
+});
+export type ChatSavedListQuery = z.infer<typeof chatSavedListQuerySchema>;
+
+export const chatLinkPreviewQuerySchema = z.object({
+  url: z.string(),
+});
+export type ChatLinkPreviewQuery = z.infer<typeof chatLinkPreviewQuerySchema>;
+
+export const chatChannelFilesQuerySchema = z.object({
+  cursor: z.string().optional(),
+});
+export type ChatChannelFilesQuery = z.infer<typeof chatChannelFilesQuerySchema>;

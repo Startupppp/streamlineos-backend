@@ -138,6 +138,10 @@ export const placeLegalHoldSchema = z.object({
   reason: z.string().min(1).max(500),
 });
 
+export const validateInvitationTokenQuerySchema = z
+  .object({ token: z.string().min(1).max(512) })
+  .strict();
+
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 export type ListMembersInput = z.infer<typeof listMembersSchema>;
 export type UpdateOrgSettingsInput = z.infer<typeof updateOrgSettingsSchema>;
@@ -152,3 +156,5 @@ export type AddCustomDomainInput = z.infer<typeof addCustomDomainSchema>;
 export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;
 export type SchedulePurgeInput = z.infer<typeof schedulePurgeSchema>;
 export type PlaceLegalHoldInput = z.infer<typeof placeLegalHoldSchema>;
+export type ValidateInvitationTokenQuery = z.infer<typeof validateInvitationTokenQuerySchema>;
+

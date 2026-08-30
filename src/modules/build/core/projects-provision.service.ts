@@ -1,9 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { deals, projectMembers, projects, projectStatuses } from "../../../db/schema";
 import { DEFAULT_PROJECT_STATUSES } from "./lib/default-statuses";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -89,23 +87,6 @@ export class ProjectsProvisionService {
         })),
       ];
       await tx.insert(projectMembers).values(memberRows);
-
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "project",
-        aggregateId: String(created.id),
-        aggregateVersion: 1,
-        eventType: "build.project.created",
-        payload: {
-          projectId: created.id,
-          orgId,
-          name: created.name,
-          key: created.key,
-          createdBy: creatorUserId,
-        },
-        occurredAt: new Date(),
-      });
 
       return created;
     }).catch((err: unknown) => {
@@ -195,24 +176,6 @@ export class ProjectsProvisionService {
       );
 
       await tx.insert(projectMembers).values({ orgId, projectId: created.id, userId, role: "OWNER" });
-
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "project",
-        aggregateId: String(created.id),
-        aggregateVersion: 1,
-        eventType: "build.project.created",
-        payload: {
-          projectId: created.id,
-          orgId,
-          name: created.name,
-          key: created.key,
-          createdBy: userId,
-          dealId: input.dealId,
-        },
-        occurredAt: new Date(),
-      });
 
       return created;
     }).catch((err: unknown) => {

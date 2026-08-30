@@ -17,3 +17,9 @@ export const rejectReviewSchema = z.object({
   note: z.string().min(1).max(2000),
 });
 export type RejectReviewInput = z.infer<typeof rejectReviewSchema>;
+
+export const listPageReviewsQuerySchema = z.object({
+  status: z.string().optional(),
+  type: z.string().optional(),
+});
+export type ListPageReviewsQuery = z.infer<typeof listPageReviewsQuerySchema>;

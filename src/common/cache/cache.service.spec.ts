@@ -207,3 +207,119 @@ describe("tenant-aware wrappers", () => {
     expect(new Set(captured).size).toBeGreaterThan(1);
   });
 });
+
+describe("cross-instance invalidation", () => {
+  it("invalidation by one instance is visible to a second instance sharing the same Redis", async () => {
+    const values = new Map<string, unknown>();
+    function makeSharedRedis() {
+      return {
+        get: jest.fn(async (key: string) => values.get(key) ?? null),
+        set: jest.fn(async (key: string, value: unknown, options?: { nx?: boolean; ex?: number }) => {
+          if (options?.nx && values.has(key)) return null;
+          values.set(key, value);
+          return "OK";
+        }),
+        del: jest.fn(async (key: string) => {
+          const had = values.has(key) ? 1 : 0;
+          values.delete(key);
+          return had;
+        }),
+        incr: jest.fn(async (key: string) => {
+          const next = Number(values.get(key) ?? 0) + 1;
+          values.set(key, next);
+          return next;
+        }),
+        eval: jest.fn(async (_script: string, keys: string[], args: string[]) => {
+          if (values.get(keys[0] as string) !== args[0]) return 0;
+          values.delete(keys[0] as string);
+          return 1;
+        }),
+      } as unknown as import("@upstash/redis").Redis;
+    }
+
+    const instanceA = new CacheService(makeSharedRedis());
+    const instanceB = new CacheService(makeSharedRedis());
+
+    let fetchCount = 0;
+    await instanceA.cachedVersioned("cross:org-x", "key", async () => {
+      fetchCount++;
+      return "initial";
+    });
+
+    const cached = await instanceB.cachedVersioned("cross:org-x", "key", async () => {
+      fetchCount++;
+      return "would-not-be-served";
+    });
+    expect(cached).toBe("initial");
+    expect(fetchCount).toBe(1);
+
+    await instanceA.invalidateNamespace("cross:org-x");
+
+    const fresh = await instanceB.cachedVersioned("cross:org-x", "key", async () => {
+      fetchCount++;
+      return "after-invalidation";
+    });
+    expect(fresh).toBe("after-invalidation");
+    expect(fetchCount).toBe(2);
+  });
+
+  it("org-scoped invalidation by one instance does not affect another org on another instance", async () => {
+    const values = new Map<string, unknown>();
+    function makeSharedRedis() {
+      return {
+        get: jest.fn(async (key: string) => values.get(key) ?? null),
+        set: jest.fn(async (key: string, value: unknown, options?: { nx?: boolean }) => {
+          if (options?.nx && values.has(key)) return null;
+          values.set(key, value);
+          return "OK";
+        }),
+        del: jest.fn(async (key: string) => {
+          const had = values.has(key) ? 1 : 0;
+          values.delete(key);
+          return had;
+        }),
+        incr: jest.fn(async (key: string) => {
+          const next = Number(values.get(key) ?? 0) + 1;
+          values.set(key, next);
+          return next;
+        }),
+        eval: jest.fn(async (_script: string, keys: string[], args: string[]) => {
+          if (values.get(keys[0] as string) !== args[0]) return 0;
+          values.delete(keys[0] as string);
+          return 1;
+        }),
+      } as unknown as import("@upstash/redis").Redis;
+    }
+
+    const instanceA = new CacheService(makeSharedRedis());
+    const instanceB = new CacheService(makeSharedRedis());
+
+    let fetchOrgA = 0;
+    let fetchOrgB = 0;
+
+    await instanceA.cachedForOrg("org-a", "report:q1", async () => {
+      fetchOrgA++;
+      return "org-a-data";
+    });
+    await instanceB.cachedForOrg("org-b", "report:q1", async () => {
+      fetchOrgB++;
+      return "org-b-data";
+    });
+
+    await instanceA.invalidateForOrg("org-a", "report:q1");
+
+    const orgBResult = await instanceB.cachedForOrg("org-b", "report:q1", async () => {
+      fetchOrgB++;
+      return "org-b-should-not-refetch";
+    });
+    expect(orgBResult).toBe("org-b-data");
+    expect(fetchOrgB).toBe(1);
+
+    const orgAResult = await instanceA.cachedForOrg("org-a", "report:q1", async () => {
+      fetchOrgA++;
+      return "org-a-refetched";
+    });
+    expect(orgAResult).toBe("org-a-refetched");
+    expect(fetchOrgA).toBe(2);
+  });
+});

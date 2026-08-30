@@ -14,8 +14,9 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AiSummariesService } from "./ai-summaries.service";
-import { saveSnapshotSchema, isAllowedEntityType } from "./save-snapshot.dto";
+import { saveSnapshotSchema, isAllowedEntityType, type SaveSnapshotInput } from "./save-snapshot.dto";
 import type { SnapshotWithDiff } from "./ai-summaries.types";
 import type { AiSummarySnapshot } from "../../../db/schema/ai/ai-summaries";
 
@@ -44,14 +45,12 @@ export class AiSummariesController {
   async saveSnapshot(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
-    @Body() body: unknown,
+    @Body(new ZodValidationPipe(saveSnapshotSchema)) body: SaveSnapshotInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<AiSummarySnapshot> {
     if (!isAllowedEntityType(entityType)) {
       throw new BadRequestException(`Invalid entityType: ${entityType}`);
     }
-    const parsed = saveSnapshotSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.aiSummaries.saveSnapshot(u.orgId, entityType, entityId, parsed.data, u.userId);
+    return this.aiSummaries.saveSnapshot(u.orgId, entityType, entityId, body, u.userId);
   }
 }

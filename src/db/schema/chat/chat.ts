@@ -195,14 +195,21 @@ export const chatUserPresence = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
+    membershipId: integer("membership_id"),
     status: text("status").default("OFFLINE").notNull(),
     lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex("uniq_chat_presence_org_user").on(table.orgId, table.userId),
+    uniqueIndex("uniq_chat_presence_org_membership").on(table.orgId, table.membershipId),
     index("idx_chat_presence_org").on(table.orgId, table.status),
     index("idx_chat_presence_lastseen").on(table.orgId, table.lastSeenAt),
     unique("uniq_chat_user_presence_org_id").on(table.orgId, table.id),
+    foreignKey({
+      columns: [table.orgId, table.membershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_chat_user_presence_org_membership",
+    }).onDelete("set null"),
   ],
 );
 

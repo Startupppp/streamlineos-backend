@@ -61,7 +61,11 @@ export class AutonomyScoringService {
    */
   async settingsFor(organizationId: string) {
     const [row] = await this.db
-      .select()
+      .select({
+        shadowSampleRate: autonomySettings.shadowSampleRate,
+        shadowDailyCap: autonomySettings.shadowDailyCap,
+        holdWindowSeconds: autonomySettings.holdWindowSeconds,
+      })
       .from(autonomySettings)
       .where(eq(autonomySettings.organizationId, organizationId))
       .limit(1);

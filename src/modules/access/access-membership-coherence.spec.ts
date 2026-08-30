@@ -5,6 +5,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { EntitlementsService } from "./entitlements.service";
 import { makeMfaPolicyStub } from "../../../test/helpers/mfa-policy-stub";
+import { makeUserModuleAccessStub } from "../../../test/helpers/user-module-access-stub";
 
 /**
  * `canManageOrganizationMembership` reads the membership cache directly, so it
@@ -80,6 +81,7 @@ function makeInstance(
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
+    makeUserModuleAccessStub(),
   );
 }
 

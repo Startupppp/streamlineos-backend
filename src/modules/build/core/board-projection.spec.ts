@@ -59,7 +59,7 @@ describe("board list projection", () => {
 
     const audit = { log: jest.fn() } as unknown as AuditService;
 
-    const svc = new ProjectsTicketsReadService(db, access, audit);
+    const svc = new ProjectsTicketsReadService(db, access);
 
     await svc.listTickets(makeUser(), 1, {
       page: 1,

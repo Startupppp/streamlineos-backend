@@ -6,7 +6,7 @@ import {
 } from "../common/enums";
 import { organizationMembers, organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
-import { candidates } from "./hiring";
+import { candidates } from "./hiring-candidates";
 
 type OnboardingTaskOwnerRole = "NEW_HIRE" | "HR" | "MANAGER" | "IT";
 type OnboardingTaskStatus = "PENDING" | "COMPLETED";

@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -18,7 +19,10 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+
+const exportIdParams = z.object({ exportId: z.coerce.number().int().positive() }).strict();
 import { PayrollSummaryService } from "./payroll-summary.service";
 import { PayrollExportService } from "./payroll-export.service";
 import { PayrollSettingsService } from "./payroll-settings.service";
@@ -80,6 +84,7 @@ export class PayrollController {
 
   @Patch("exports/:exportId/ack")
   @RequirePermission("timesheets:payroll:export")
+  @Validate({ params: exportIdParams })
   ackExport(
     @Param("exportId", ParseIntPipe) exportId: number,
     @Body(new ZodValidationPipe(ackExportSchema)) body: AckExportInput,
@@ -90,6 +95,7 @@ export class PayrollController {
 
   @Get("exports/:exportId/rows")
   @RequirePermission("timesheets:payroll:view")
+  @Validate({ params: exportIdParams })
   getExportRows(
     @Param("exportId", ParseIntPipe) exportId: number,
     @CurrentUser() u: CurrentUserContext,

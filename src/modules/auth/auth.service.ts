@@ -31,7 +31,7 @@ import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transa
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { SessionsService } from "../sessions/sessions.service";
-import { AuthTokensService } from "./auth-tokens.service";
+import { AuthMembershipResolverService } from "./auth-membership-resolver.service";
 import { addDays } from "date-fns";
 import type { RegisterInput } from "./dto/auth.schemas";
 import {
@@ -62,7 +62,7 @@ export class AuthService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
-    private readonly authTokens: AuthTokensService,
+    private readonly membershipResolver: AuthMembershipResolverService,
     private readonly dispatch: NotificationDispatchService,
   ) {}
 
@@ -257,14 +257,14 @@ export class AuthService {
 
         const preferredOrgId = preferred?.orgId ?? user.lastActiveOrgId ?? null;
 
-        const membership = await this.authTokens.resolveActiveMembership(
+        const membership = await this.membershipResolver.resolveActiveMembership(
           userId,
           preferredOrgId,
           { honorSuspendedPreference: true },
         );
         const suspendedMembership = membership
           ? null
-          : await this.authTokens.resolveSuspendedMembership(
+          : await this.membershipResolver.resolveSuspendedMembership(
               userId,
               preferredOrgId,
             );

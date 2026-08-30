@@ -4,9 +4,15 @@ import { Universal } from "../../../common/auth/universal.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { OrgMembersService } from "./org-members.service";
 import { OrgSetupService } from "./org-setup.service";
-import { setupSchema, type SetupInput } from "./dto/org.schemas";
+import {
+  setupSchema,
+  listOrgMembersQuerySchema,
+  type SetupInput,
+  type ListOrgMembersQueryInput,
+} from "./dto/org.schemas";
 import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
 import {
   orgSetupSkipSchema,
@@ -26,18 +32,14 @@ export class OrgController {
   @Get("members")
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:people:view")
+  @Validate({ query: listOrgMembersQuerySchema })
   listMembers(
     @CurrentUser() u: CurrentUserContext,
-    @Query("search") search?: string,
-    @Query("limit") limit?: string,
+    @Query() query: ListOrgMembersQueryInput,
   ) {
-    const parsedLimit = limit ? Number.parseInt(limit, 10) : undefined;
     return this.members.listMembers(u.orgId, {
-      search: typeof search === "string" ? search : undefined,
-      limit:
-        parsedLimit !== undefined && Number.isFinite(parsedLimit)
-          ? parsedLimit
-          : undefined,
+      search: query.search,
+      limit: query.limit,
     });
   }
 

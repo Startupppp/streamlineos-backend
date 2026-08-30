@@ -1,5 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, lt, or } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { managedProducts } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -41,35 +42,33 @@ export class ManagedProductsService {
   }
 
   async listManagedProducts(orgId: string, query: ListManagedProductsQuery) {
-    const { page, limit, status } = query;
-    const offset = (page - 1) * limit;
-
-    const conditions = and(
+    const { cursor, limit, status } = query;
+    const pos = decodeCursor(cursor);
+    const afterClause = pos
+      ? or(
+          lt(managedProducts.createdAt, new Date(pos.sortValue)),
+          and(
+            eq(managedProducts.createdAt, new Date(pos.sortValue)),
+            lt(managedProducts.id, Number(pos.id)),
+          ),
+        )
+      : undefined;
+    const where = and(
       eq(managedProducts.orgId, orgId),
       isNull(managedProducts.deletedAt),
       status ? eq(managedProducts.status, status) : undefined,
+      afterClause,
     );
-
-    const [rows, [totalRow]] = await Promise.all([
-      this.db
-        .select()
-        .from(managedProducts)
-        .where(conditions)
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(managedProducts).where(conditions),
-    ]);
-
-    const total = Number(totalRow?.total ?? 0);
-    return {
-      data: rows,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    const rows = await this.db
+      .select()
+      .from(managedProducts)
+      .where(where)
+      .orderBy(managedProducts.createdAt, managedProducts.id)
+      .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async getManagedProduct(orgId: string, managedProductId: number) {

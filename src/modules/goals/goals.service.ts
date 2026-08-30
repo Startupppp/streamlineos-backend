@@ -1,27 +1,22 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, avg, count, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import { and, avg, count, desc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
 import {
   okrGoals,
   okrKeyResults,
-  okrLinks,
   okrUpdates,
-  projects,
-  tickets,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import { type Db } from "../../db/drizzle.module";
+import type { Db } from "../../db/drizzle.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
 import { resolveGoalsScope } from "./goals-scope";
+import { recomputeGoalProgress } from "./goals-progress";
 import type {
   CheckInInput,
   CreateInput,
-  CreateKeyResultInput,
-  CreateLinkInput,
   ListInput,
   UpdateInput,
-  UpdateKeyResultInput,
 } from "./dto/goal.schemas";
 
 type GoalStatus =
@@ -60,17 +55,6 @@ export interface GoalProject {
   key: string;
 }
 
-export interface GoalLinkRow {
-  id: number;
-  ticketId: number | null;
-  projectId: number | null;
-  createdAt: Date;
-  ticketTitle: string | null;
-  ticketProjectId: number | null;
-  projectName: string | null;
-  projectKey: string | null;
-}
-
 export interface GoalUpdateRow {
   id: number;
   keyResultId: number | null;
@@ -90,32 +74,7 @@ type GoalDetail = typeof okrGoals.$inferSelect & {
   project: GoalProject | null;
   keyResults: Array<typeof okrKeyResults.$inferSelect>;
   updates: GoalUpdateRow[];
-  links: GoalLinkRow[];
 };
-
-function clamp(value: number, min: number, max: number): number {
-  if (Number.isNaN(value)) return min;
-  return Math.min(Math.max(value, min), max);
-}
-
-function keyResultPercent(kr: {
-  metricType: "number" | "percentage" | "currency" | "boolean";
-  startValue: string;
-  targetValue: string;
-  currentValue: string;
-}): number {
-  if (kr.metricType === "boolean") {
-    return parseFloat(kr.currentValue) >= 1 ? 100 : 0;
-  }
-  const start = parseFloat(kr.startValue);
-  const target = parseFloat(kr.targetValue);
-  const current = parseFloat(kr.currentValue);
-  const denominator = target - start;
-  if (denominator === 0) {
-    return current >= target ? 100 : 0;
-  }
-  return clamp(((current - start) / denominator) * 100, 0, 100);
-}
 
 @Injectable()
 export class GoalsService {
@@ -124,44 +83,7 @@ export class GoalsService {
     private readonly access: AccessService,
   ) {}
 
-  private recomputeGoalProgress(
-    goalId: number,
-    orgId: string,
-  ): Promise<number | null> {
-    return this.db.transaction(async (tx) => {
-      const keyResults = await tx.query.okrKeyResults.findMany({
-        where: and(
-          eq(okrKeyResults.goalId, goalId),
-          eq(okrKeyResults.orgId, orgId),
-        ),
-        columns: {
-          metricType: true,
-          startValue: true,
-          targetValue: true,
-          currentValue: true,
-        },
-      });
-
-      if (keyResults.length === 0) {
-        return null;
-      }
-
-      const total = keyResults.reduce(
-        (sum, kr) => sum + keyResultPercent(kr),
-        0,
-      );
-      const progress = Math.round(total / keyResults.length);
-
-      await tx
-        .update(okrGoals)
-        .set({ progress, updatedAt: new Date() })
-        .where(and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)));
-
-      return progress;
-    });
-  }
-
-  async list(u: CurrentUserContext, filters: ListInput): Promise<GoalListItem[]> {
+  async list(u: CurrentUserContext, filters: ListInput) {
     const { orgId, userId } = u;
     const scope = await resolveGoalsScope(this.access, u);
 
@@ -181,21 +103,44 @@ export class GoalsService {
       conditions.push(ilike(okrGoals.title, `%${filters.search}%`));
 
     const limit = Math.min(filters.limit, 100);
-    const offset = (filters.page - 1) * limit;
+    if (filters.cursor) conditions.push(gt(okrGoals.id, filters.cursor));
 
-    const goals = await this.db.query.okrGoals.findMany({
-      where: and(...conditions),
-      orderBy: [desc(okrGoals.createdAt)],
-      with: {
-        owner: { columns: { id: true, name: true, email: true, image: true } },
-      },
-      limit,
-      offset,
-    });
+    const rows = await this.db
+      .select({
+        id: okrGoals.id,
+        orgId: okrGoals.orgId,
+        title: okrGoals.title,
+        description: okrGoals.description,
+        ownerId: okrGoals.ownerId,
+        level: okrGoals.level,
+        status: okrGoals.status,
+        progress: okrGoals.progress,
+        startDate: okrGoals.startDate,
+        dueDate: okrGoals.dueDate,
+        parentGoalId: okrGoals.parentGoalId,
+        projectId: okrGoals.projectId,
+        createdBy: okrGoals.createdBy,
+        createdAt: okrGoals.createdAt,
+        updatedAt: okrGoals.updatedAt,
+        deletedAt: okrGoals.deletedAt,
+        ownerUserId: users.id,
+        ownerName: users.name,
+        ownerEmail: users.email,
+        ownerImage: users.image,
+      })
+      .from(okrGoals)
+      .leftJoin(users, eq(users.id, okrGoals.ownerId))
+      .where(and(...conditions))
+      .orderBy(desc(okrGoals.id))
+      .limit(limit + 1);
 
-    if (goals.length === 0) return [];
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const nextCursor = hasMore ? (page[page.length - 1]?.id ?? null) : null;
 
-    const goalIds = goals.map((g) => g.id);
+    if (page.length === 0) return { data: [], hasMore: false, nextCursor: null };
+
+    const goalIds = page.map((g) => g.id);
     const counts = await this.db
       .select({ goalId: okrKeyResults.goalId, total: count() })
       .from(okrKeyResults)
@@ -204,10 +149,30 @@ export class GoalsService {
 
     const countMap = new Map(counts.map((c) => [c.goalId, c.total]));
 
-    return goals.map((goal) => ({
-      ...goal,
-      keyResultCount: countMap.get(goal.id) ?? 0,
+    const data = page.map((row) => ({
+      id: row.id,
+      orgId: row.orgId,
+      title: row.title,
+      description: row.description,
+      ownerId: row.ownerId,
+      level: row.level,
+      status: row.status,
+      progress: row.progress,
+      startDate: row.startDate,
+      dueDate: row.dueDate,
+      parentGoalId: row.parentGoalId,
+      projectId: row.projectId,
+      createdBy: row.createdBy,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      deletedAt: row.deletedAt,
+      owner: row.ownerUserId
+        ? { id: row.ownerUserId, name: row.ownerName, email: row.ownerEmail, image: row.ownerImage }
+        : null,
+      keyResultCount: countMap.get(row.id) ?? 0,
     }));
+
+    return { data, hasMore, nextCursor };
   }
 
   create(orgId: string, userId: string, input: CreateInput): Promise<typeof okrGoals.$inferSelect> {
@@ -322,9 +287,7 @@ export class GoalsService {
       .orderBy(desc(okrUpdates.createdAt))
       .limit(20);
 
-    const links = await this.getLinks(orgId, goalId);
-
-    return { ...goal, keyResults, updates, links };
+    return { ...goal, keyResults, updates };
   }
 
   async update(orgId: string, goalId: number, input: UpdateInput): Promise<typeof okrGoals.$inferSelect | null> {
@@ -396,7 +359,7 @@ export class GoalsService {
       });
     });
 
-    await this.recomputeGoalProgress(goalId, orgId);
+    await recomputeGoalProgress(this.db, goalId, orgId);
 
     const goal = await this.db.query.okrGoals.findFirst({
       where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
@@ -404,215 +367,4 @@ export class GoalsService {
 
     return goal ?? null;
   }
-
-  listKeyResults(orgId: string, goalId: number): Promise<Array<typeof okrKeyResults.$inferSelect>> {
-    return this.db.query.okrKeyResults.findMany({
-      where: and(
-        eq(okrKeyResults.goalId, goalId),
-        eq(okrKeyResults.orgId, orgId),
-      ),
-      orderBy: [okrKeyResults.id],
-    });
-  }
-
-  async createKeyResult(
-    orgId: string,
-    goalId: number,
-    input: CreateKeyResultInput,
-  ): Promise<typeof okrKeyResults.$inferSelect | null> {
-    const goal = await this.db.query.okrGoals.findFirst({
-      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
-      columns: { id: true },
-    });
-    if (!goal) return null;
-
-    const [keyResult] = await this.db
-      .insert(okrKeyResults)
-      .values({
-        orgId,
-        goalId,
-        title: input.title,
-        metricType: input.metricType,
-        startValue: input.startValue.toString(),
-        targetValue: input.targetValue.toString(),
-        currentValue: input.currentValue.toString(),
-        unit: input.unit ?? null,
-        status: input.status,
-      })
-      .returning();
-
-    await this.recomputeGoalProgress(goalId, orgId);
-
-    return keyResult ?? null;
-  }
-
-  async updateKeyResult(
-    orgId: string,
-    keyResultId: number,
-    input: UpdateKeyResultInput,
-  ): Promise<typeof okrKeyResults.$inferSelect | null> {
-    const existing = await this.db.query.okrKeyResults.findFirst({
-      where: and(
-        eq(okrKeyResults.id, keyResultId),
-        eq(okrKeyResults.orgId, orgId),
-      ),
-      columns: { id: true, goalId: true },
-    });
-    if (!existing) return null;
-
-    const patch: Partial<typeof okrKeyResults.$inferInsert> & { updatedAt: Date } = {
-      updatedAt: new Date(),
-    };
-    if (input.title !== undefined) patch.title = input.title;
-    if (input.metricType !== undefined) patch.metricType = input.metricType;
-    if (input.startValue !== undefined) patch.startValue = input.startValue.toString();
-    if (input.targetValue !== undefined) patch.targetValue = input.targetValue.toString();
-    if (input.currentValue !== undefined) patch.currentValue = input.currentValue.toString();
-    if (input.unit !== undefined) patch.unit = input.unit;
-    if (input.status !== undefined) patch.status = input.status;
-
-    const [updated] = await this.db
-      .update(okrKeyResults)
-      .set(patch)
-      .where(
-        and(eq(okrKeyResults.id, keyResultId), eq(okrKeyResults.orgId, orgId)),
-      )
-      .returning();
-
-    await this.recomputeGoalProgress(existing.goalId, orgId);
-
-    return updated ?? null;
-  }
-
-  async removeKeyResult(orgId: string, keyResultId: number): Promise<{ success: true } | null> {
-    const existing = await this.db.query.okrKeyResults.findFirst({
-      where: and(
-        eq(okrKeyResults.id, keyResultId),
-        eq(okrKeyResults.orgId, orgId),
-      ),
-      columns: { id: true, goalId: true },
-    });
-    if (!existing) return null;
-
-    await this.db
-      .delete(okrKeyResults)
-      .where(
-        and(eq(okrKeyResults.id, keyResultId), eq(okrKeyResults.orgId, orgId)),
-      );
-
-    await this.recomputeGoalProgress(existing.goalId, orgId);
-
-    return { success: true };
-  }
-
-  getLinks(orgId: string, goalId: number): Promise<GoalLinkRow[]> {
-    return this.db
-      .select({
-        id: okrLinks.id,
-        ticketId: okrLinks.ticketId,
-        projectId: okrLinks.projectId,
-        createdAt: okrLinks.createdAt,
-        ticketTitle: tickets.title,
-        ticketProjectId: tickets.projectId,
-        projectName: projects.name,
-        projectKey: projects.key,
-      })
-      .from(okrLinks)
-      .leftJoin(tickets, and(eq(okrLinks.ticketId, tickets.id), isNull(tickets.deletedAt)))
-      .leftJoin(projects, eq(okrLinks.projectId, projects.id))
-      .where(and(eq(okrLinks.goalId, goalId), eq(okrLinks.orgId, orgId)))
-      .orderBy(desc(okrLinks.createdAt))
-      .limit(100);
-  }
-
-  async createLink(orgId: string, goalId: number, input: CreateLinkInput): Promise<CreateLinkResult> {
-    const goal = await this.db.query.okrGoals.findFirst({
-      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!goal) return { error: "goal_not_found" as const };
-
-    if (input.ticketId !== undefined) {
-      const ticket = await this.db.query.tickets.findFirst({
-        where: and(eq(tickets.id, input.ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
-        columns: { id: true },
-      });
-      if (!ticket) return { error: "ticket_not_found" as const };
-    }
-
-    if (input.projectId !== undefined) {
-      const project = await this.db.query.projects.findFirst({
-        where: and(eq(projects.id, input.projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-        columns: { id: true },
-      });
-      if (!project) return { error: "project_not_found" as const };
-    }
-
-    const [link] = await this.db
-      .insert(okrLinks)
-      .values({
-        orgId,
-        goalId,
-        ticketId: input.ticketId ?? null,
-        projectId: input.projectId ?? null,
-      })
-      .returning();
-
-    return link;
-  }
-
-  async removeLink(orgId: string, goalId: number, linkId: number): Promise<{ success: true } | null> {
-    const [deleted] = await this.db
-      .delete(okrLinks)
-      .where(
-        and(
-          eq(okrLinks.id, linkId),
-          eq(okrLinks.goalId, goalId),
-          eq(okrLinks.orgId, orgId),
-        ),
-      )
-      .returning();
-
-    if (!deleted) return null;
-    return { success: true };
-  }
-}
-
-export type CreateLinkResult =
-  | typeof okrLinks.$inferSelect
-  | { error: "goal_not_found" }
-  | { error: "ticket_not_found" }
-  | { error: "project_not_found" };
-
-export function isLinkGoalNotFound(
-  result: CreateLinkResult,
-): result is { error: "goal_not_found" } {
-  return (
-    typeof result === "object" &&
-    result !== null &&
-    "error" in result &&
-    result.error === "goal_not_found"
-  );
-}
-
-export function isLinkTicketNotFound(
-  result: CreateLinkResult,
-): result is { error: "ticket_not_found" } {
-  return (
-    typeof result === "object" &&
-    result !== null &&
-    "error" in result &&
-    result.error === "ticket_not_found"
-  );
-}
-
-export function isLinkProjectNotFound(
-  result: CreateLinkResult,
-): result is { error: "project_not_found" } {
-  return (
-    typeof result === "object" &&
-    result !== null &&
-    "error" in result &&
-    result.error === "project_not_found"
-  );
 }

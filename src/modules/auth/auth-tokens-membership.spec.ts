@@ -1,4 +1,4 @@
-import { AuthTokensService } from "./auth-tokens.service";
+import { AuthMembershipResolverService } from "./auth-membership-resolver.service";
 
 function buildService(rows: Record<string, unknown>[]) {
   const chain: Record<string, jest.Mock> = {};
@@ -17,17 +17,14 @@ function buildService(rows: Record<string, unknown>[]) {
         async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx),
       ),
   };
-  const service = new AuthTokensService(
+  const service = new AuthMembershipResolverService(
     db as never,
-    {} as never,
-    {} as never,
-    {} as never,
     {} as never,
   );
   return { service, db, tx };
 }
 
-describe("AuthTokensService preferred organization access", () => {
+describe("AuthMembershipResolverService preferred organization access", () => {
   const activeSibling = {
     orgId: "org-active",
     isOwner: false,

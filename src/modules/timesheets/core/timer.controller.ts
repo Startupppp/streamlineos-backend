@@ -15,7 +15,9 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { z } from "zod";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { TimerService } from "./timer.service";
 import {
   startTimerSchema,
@@ -23,6 +25,8 @@ import {
   type StartTimerInput,
   type ConvertTimerInput,
 } from "./dto/timer.schemas";
+
+const timerIdParams = z.object({ timerId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("timesheets/timer")
@@ -49,6 +53,7 @@ export class TimerController {
   @Post(":timerId/pause")
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
+  @Validate({ params: timerIdParams })
   pause(
     @Param("timerId", ParseIntPipe) timerId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -59,6 +64,7 @@ export class TimerController {
   @Post(":timerId/resume")
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
+  @Validate({ params: timerIdParams })
   resume(
     @Param("timerId", ParseIntPipe) timerId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -69,6 +75,7 @@ export class TimerController {
   @Post(":timerId/stop")
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
+  @Validate({ params: timerIdParams })
   stop(
     @Param("timerId", ParseIntPipe) timerId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -79,6 +86,7 @@ export class TimerController {
   @Post(":timerId/discard")
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
+  @Validate({ params: timerIdParams })
   discard(
     @Param("timerId", ParseIntPipe) timerId: number,
     @CurrentUser() u: CurrentUserContext,

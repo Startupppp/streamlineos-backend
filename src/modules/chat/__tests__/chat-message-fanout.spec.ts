@@ -25,8 +25,9 @@ function makeDb() {
   chain.returning = jest.fn().mockResolvedValue([persisted]);
   chain.limit = jest.fn().mockResolvedValue([{ id: 1 }]);
   chain.query = {
+    organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 10 }) },
     chatChannelMembers: {
-      findFirst: jest.fn().mockResolvedValue({ userId: "sender" }),
+      findFirst: jest.fn().mockResolvedValue({ userId: "sender", id: 10 }),
       findMany: jest.fn().mockResolvedValue([
         { userId: "sender" },
         { userId: "user-alex" },

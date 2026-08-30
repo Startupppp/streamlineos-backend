@@ -5,13 +5,13 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, isNull, lt, lte, sql } from "drizzle-orm";
 import { ledgerAccounts, journalEntries, journalLines, finApprovalPolicies, finApprovalRequests, users } from "../../../db/schema";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
@@ -58,7 +58,7 @@ export class AccountingLedgerService {
   ) {}
 
   async listAccounts(orgId: string, query: ListAccountsQuery) {
-    const { page, pageSize, q, type, activeOnly } = query;
+    const { cursor, limit, q, type, activeOnly } = query;
 
     await this.posting.seedChartOfAccountsForOrg(orgId);
 
@@ -66,29 +66,27 @@ export class AccountingLedgerService {
     if (type) conds.push(eq(ledgerAccounts.accountType, type));
     if (activeOnly) conds.push(eq(ledgerAccounts.isActive, true));
     if (q) conds.push(ilike(ledgerAccounts.name, `%${escapeLike(q)}%`));
+    if (cursor) conds.push(gt(ledgerAccounts.id, cursor));
 
-    const where = and(...conds);
-    const { offset, limit } = paginateOffset({ page, pageSize });
     const rows = await this.db
-      .select({ ...getTableColumns(ledgerAccounts), total: sql<string>`count(*) OVER ()` })
+      .select({
+        id: ledgerAccounts.id,
+        orgId: ledgerAccounts.orgId,
+        code: ledgerAccounts.code,
+        name: ledgerAccounts.name,
+        accountType: ledgerAccounts.accountType,
+        parentAccountId: ledgerAccounts.parentAccountId,
+        isActive: ledgerAccounts.isActive,
+        description: ledgerAccounts.description,
+        createdAt: ledgerAccounts.createdAt,
+        updatedAt: ledgerAccounts.updatedAt,
+      })
       .from(ledgerAccounts)
-      .where(where)
-      .orderBy(asc(ledgerAccounts.code))
-      .offset(offset)
-      .limit(limit);
+      .where(and(...conds))
+      .orderBy(asc(ledgerAccounts.id))
+      .limit(limit + 1);
 
-    let totalCount: number;
-    if (rows[0]) {
-      totalCount = Number(rows[0].total);
-    } else if (offset === 0) {
-      totalCount = 0;
-    } else {
-      const fallback = await this.db.select({ c: count() }).from(ledgerAccounts).where(where);
-      totalCount = Number(fallback[0]?.c ?? 0);
-    }
-
-    const items = rows.map(({ total: _total, ...rest }) => rest);
-    return buildListResponse(items, totalCount, { page, pageSize });
+    return buildIdCursorPage(rows, limit, (row) => row.id);
   }
 
   async createAccount(orgId: string, input: CreateAccountInput) {
@@ -117,7 +115,7 @@ export class AccountingLedgerService {
   }
 
   async listJournal(orgId: string, query: ListJournalQuery, scope: DataScope, userId: string) {
-    const { page, pageSize, from, to, sourceType } = query;
+    const { cursor, limit, from, to, sourceType } = query;
     const fromStr = from ? from.toISOString().slice(0, 10) : undefined;
     const toStr = to ? to.toISOString().slice(0, 10) : undefined;
 
@@ -126,29 +124,37 @@ export class AccountingLedgerService {
     if (toStr) conds.push(lte(journalEntries.entryDate, toStr));
     if (sourceType) conds.push(eq(journalEntries.sourceType, sourceType));
     conds.push(applyScope(scope, orgId, userId, { ownerColumn: journalEntries.createdBy }));
+    if (cursor) conds.push(lt(journalEntries.id, cursor));
 
-    const where = and(...conds);
-    const { offset, limit } = paginateOffset({ page, pageSize });
     const rows = await this.db
-      .select({ ...getTableColumns(journalEntries), total: sql<string>`count(*) OVER ()` })
+      .select({
+        id: journalEntries.id,
+        orgId: journalEntries.orgId,
+        entryNumber: journalEntries.entryNumber,
+        entryDate: journalEntries.entryDate,
+        postingDate: journalEntries.postingDate,
+        description: journalEntries.description,
+        periodId: journalEntries.periodId,
+        currency: journalEntries.currency,
+        sourceType: journalEntries.sourceType,
+        sourceId: journalEntries.sourceId,
+        sourceEvent: journalEntries.sourceEvent,
+        status: journalEntries.status,
+        createdBy: journalEntries.createdBy,
+        approvedBy: journalEntries.approvedBy,
+        approvedAt: journalEntries.approvedAt,
+        postedBy: journalEntries.postedBy,
+        postedAt: journalEntries.postedAt,
+        reversedEntryId: journalEntries.reversedEntryId,
+        createdAt: journalEntries.createdAt,
+        updatedAt: journalEntries.updatedAt,
+      })
       .from(journalEntries)
-      .where(where)
-      .orderBy(desc(journalEntries.entryDate), asc(journalEntries.id))
-      .offset(offset)
-      .limit(limit);
+      .where(and(...conds))
+      .orderBy(desc(journalEntries.id))
+      .limit(limit + 1);
 
-    let totalCount: number;
-    if (rows[0]) {
-      totalCount = Number(rows[0].total);
-    } else if (offset === 0) {
-      totalCount = 0;
-    } else {
-      const fallback = await this.db.select({ c: count() }).from(journalEntries).where(where);
-      totalCount = Number(fallback[0]?.c ?? 0);
-    }
-
-    const items = rows.map(({ total: _total, ...rest }) => rest);
-    return buildListResponse(items, totalCount, { page, pageSize });
+    return buildIdCursorPage(rows, limit, (row) => row.id);
   }
 
   async createJournalEntry(orgId: string, userId: string, input: CreateJournalEntryInput) {

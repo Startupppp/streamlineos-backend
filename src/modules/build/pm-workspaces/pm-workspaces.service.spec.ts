@@ -228,39 +228,23 @@ describe("PmWorkspacesService", () => {
     });
   });
 
-  describe("listWorkspaces — pagination envelope", () => {
-    it("returns { data, pagination } with computed totalPages", async () => {
+  describe("listWorkspaces — cursor pagination", () => {
+    it("returns { data, nextCursor } for a page of results", async () => {
       const rows = [makeWorkspace(), makeWorkspace({ pmWorkspaceId: "pmw-2", slug: "b" })];
-      let selectCount = 0;
-      (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
-        selectCount++;
-        if (selectCount === 1) {
-          return {
-            from: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({
-                limit: jest.fn().mockReturnValue({
-                  offset: jest.fn().mockResolvedValue(rows),
-                }),
-              }),
+      (mockDb as { select: jest.Mock }).select.mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue(rows),
             }),
-          };
-        }
-        return {
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockResolvedValue([{ total: 2 }]),
           }),
-        };
+        }),
       });
 
-      const result = await svc.listWorkspaces(ORG_ID, { page: 1, limit: 20 });
+      const result = await svc.listWorkspaces(ORG_ID, { limit: 20 });
 
       expect(result.data).toHaveLength(2);
-      expect(result.pagination).toEqual({
-        page: 1,
-        limit: 20,
-        total: 2,
-        totalPages: 1,
-      });
+      expect(result.pagination.nextCursor).toBeNull();
     });
   });
 });

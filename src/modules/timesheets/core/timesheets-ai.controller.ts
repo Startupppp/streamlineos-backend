@@ -1,4 +1,5 @@
 import { Body, Controller, HttpCode, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -8,7 +9,10 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+
+const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 import { TimesheetsAiService } from "./timesheets-ai.service";
 import {
   describeEntrySchema,
@@ -30,6 +34,7 @@ export class TimesheetsAiController {
   @HttpCode(200)
   @RequirePermission("timesheets:entries:view")
   @UseRateLimit("ai:invoke")
+  @Validate({ params: periodIdParams })
   summarize(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -41,6 +46,7 @@ export class TimesheetsAiController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @UseRateLimit("ai:invoke")
+  @Validate({ params: periodIdParams })
   draftRejectionReason(
     @Param("periodId", ParseIntPipe) periodId: number,
     @Body(new ZodValidationPipe(rejectionDraftSchema)) body: RejectionDraftInput,

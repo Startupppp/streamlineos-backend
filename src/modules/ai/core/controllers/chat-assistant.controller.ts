@@ -26,6 +26,7 @@ import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { NoTenantTransaction } from "../../../../common/tenant";
 import { logger } from "../../../../common/logger/logger.service";
+import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { z } from "zod";
 import { ChatAssistantService } from "../services/chat-assistant.service";
 import { ChatHistoryService } from "../services/chat-history.service";
@@ -49,10 +50,18 @@ import type { CreateRecognitionInput } from "../../../hr/performance/dto/engagem
 import {
   chatHistoryQuerySchema,
   chatRequestSchema,
+  confirmActionBodySchema,
   conversationCreateSchema,
   conversationMessagesQuerySchema,
   conversationRenameSchema,
   conversationsListQuerySchema,
+  type ChatHistoryQuery,
+  type ChatRequest,
+  type ConfirmActionInput,
+  type ConversationCreateInput,
+  type ConversationMessagesQuery,
+  type ConversationRenameInput,
+  type ConversationsListQuery,
 } from "../dto/request.schemas";
 import { ToolAccessService } from "../tool-access.service";
 import { AI_EVENT_TIMEZONE } from "../ai-event-timezone";
@@ -98,8 +107,6 @@ function isConfirmableAction(s: string): s is ConfirmableAction {
   return (CONFIRMABLE_ACTIONS as readonly string[]).includes(s);
 }
 
-const confirmActionBodySchema = z.object({ token: z.string().min(1) });
-
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatAssistantController {
@@ -115,12 +122,13 @@ export class ChatAssistantController {
 
   @Get("history")
   @RequirePermission("ai:chat:use")
-  async getHistory(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
-    const parsed = chatHistoryQuerySchema.safeParse(query);
-    if (!parsed.success) throw new BadRequestException("Invalid query parameters");
+  async getHistory(
+    @Query(new ZodValidationPipe(chatHistoryQuerySchema)) query: ChatHistoryQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     return this.history.list(u.orgId, u.userId, {
-      cursor: parsed.data.cursor,
-      limit: parsed.data.limit,
+      cursor: query.cursor,
+      limit: query.limit,
     });
   }
 
@@ -133,36 +141,36 @@ export class ChatAssistantController {
 
   @Get("conversations")
   @RequirePermission("ai:chat:use")
-  async listConversations(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
-    const parsed = conversationsListQuerySchema.safeParse(query);
-    if (!parsed.success) throw new BadRequestException("Invalid query parameters");
+  async listConversations(
+    @Query(new ZodValidationPipe(conversationsListQuerySchema)) query: ConversationsListQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     return this.history.listConversations(u.orgId, u.userId, {
-      cursor: parsed.data.cursor,
-      limit: parsed.data.limit,
+      cursor: query.cursor,
+      limit: query.limit,
     });
   }
 
   @Post("conversations")
   @HttpCode(201)
   @RequirePermission("ai:chat:use")
-  async createConversation(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
-    const parsed = conversationCreateSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.history.createConversation(u.orgId, u.userId, parsed.data.title);
+  async createConversation(
+    @Body(new ZodValidationPipe(conversationCreateSchema)) body: ConversationCreateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.history.createConversation(u.orgId, u.userId, body.title);
   }
 
   @Patch("conversations/:conversationId")
   @RequirePermission("ai:chat:use")
   async renameConversation(
     @Param("conversationId") conversationIdParam: string,
-    @Body() body: unknown,
+    @Body(new ZodValidationPipe(conversationRenameSchema)) body: ConversationRenameInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const conversationId = parseInt(conversationIdParam, 10);
     if (isNaN(conversationId)) throw new BadRequestException("Invalid conversation ID");
-    const parsed = conversationRenameSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.history.renameConversation(u.orgId, u.userId, conversationId, parsed.data.title);
+    return this.history.renameConversation(u.orgId, u.userId, conversationId, body.title);
   }
 
   @Delete("conversations/:conversationId")
@@ -181,16 +189,14 @@ export class ChatAssistantController {
   @RequirePermission("ai:chat:use")
   async getConversationMessages(
     @Param("conversationId") conversationIdParam: string,
-    @Query() query: unknown,
+    @Query(new ZodValidationPipe(conversationMessagesQuerySchema)) query: ConversationMessagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const conversationId = parseInt(conversationIdParam, 10);
     if (isNaN(conversationId)) throw new BadRequestException("Invalid conversation ID");
-    const parsed = conversationMessagesQuerySchema.safeParse(query);
-    if (!parsed.success) throw new BadRequestException("Invalid query parameters");
     return this.history.listMessages(u.orgId, u.userId, conversationId, {
-      cursor: parsed.data.cursor,
-      limit: parsed.data.limit,
+      cursor: query.cursor,
+      limit: query.limit,
     });
   }
 
@@ -198,17 +204,12 @@ export class ChatAssistantController {
   @RequirePermission("ai:chat:use")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:chat")
-  // pipeTextStreamToResponse returns before the stream ends; the request transaction
-  // would commit under the still-running tools and onFinish. Both open their own.
   @NoTenantTransaction()
   async chatAssistant(
-    @Body() body: unknown,
+    @Body(new ZodValidationPipe(chatRequestSchema)) body: ChatRequest,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {
-    const parsed = chatRequestSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-
     const flags = await this.orgFeatures.getFlags(u.orgId);
     if (!flags.aiChat) {
       throw new ForbiddenException("AI chat is disabled for this organization.");
@@ -216,10 +217,10 @@ export class ChatAssistantController {
 
     try {
       const result = await this.chat.processChat(
-        parsed.data.messages,
+        body.messages,
         u,
-        parsed.data.conversationId,
-        parsed.data.persona,
+        body.conversationId,
+        body.persona,
       );
       result.pipeTextStreamToResponse(res);
     } catch (error) {
@@ -230,11 +231,11 @@ export class ChatAssistantController {
 
   @Post("confirm")
   @RequirePermission("ai:chat:use")
-  async confirmAction(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
-    const parsed = confirmActionBodySchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-
-    const confirmed = await this.confirmation.confirm({ token: parsed.data.token, actor: { orgId: u.orgId, userId: u.userId } });
+  async confirmAction(
+    @Body(new ZodValidationPipe(confirmActionBodySchema)) body: ConfirmActionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const confirmed = await this.confirmation.confirm({ token: body.token, actor: { orgId: u.orgId, userId: u.userId } });
     const { proposalId, action, payload } = confirmed;
 
     if (!isConfirmableAction(action)) {

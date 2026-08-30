@@ -10,6 +10,7 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -18,7 +19,10 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { RatesService } from "./rates.service";
+
+const rateIdParams = z.object({ rateId: z.coerce.number().int().positive() }).strict();
 import {
   createRateSchema,
   updateRateSchema,
@@ -50,6 +54,7 @@ export class RatesController {
 
   @Patch(":rateId")
   @RequirePermission("timesheets:rates:manage")
+  @Validate({ params: rateIdParams })
   update(
     @Param("rateId", ParseIntPipe) rateId: number,
     @Body(new ZodValidationPipe(updateRateSchema)) body: UpdateRateInput,
@@ -61,6 +66,7 @@ export class RatesController {
   @Delete(":rateId")
   @HttpCode(204)
   @RequirePermission("timesheets:rates:manage")
+  @Validate({ params: rateIdParams })
   delete(
     @Param("rateId", ParseIntPipe) rateId: number,
     @CurrentUser() u: CurrentUserContext,

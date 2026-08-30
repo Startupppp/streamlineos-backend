@@ -23,6 +23,8 @@ import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transac
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
 import { LlmService } from "../providers/llm.service";
 import { CrmScoringService } from "../services/crm-scoring.service";
 import { CrmContentService } from "../services/crm-content.service";
@@ -110,6 +112,7 @@ export class CrmAiController {
   }
 
   @Post("score-lead")
+  @Validate({ body: z.union([scoreLeadBatchSchema, scoreLeadSingleSchema]) })
   async scoreLead(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
     await this.planLimits.assertFeature(u.orgId, "ai.lead-scoring");

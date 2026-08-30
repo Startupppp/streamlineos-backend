@@ -214,4 +214,27 @@ describe("BuildReleasePublishedConsumerService", () => {
       await expect(svc.handle(makeEvent())).rejects.toThrow("downstream failure");
     });
   });
+
+  describe("tenant isolation — event organizationId scoping", () => {
+    it("emits only to recipients within the event organizationId, never cross-org", async () => {
+      const { svc, dispatch } = await buildService({
+        assignees: [{ assigneeId: ASSIGNEE_A }],
+      });
+
+      await svc.handle(makeEvent());
+
+      const emitCall = (dispatch.emit as jest.Mock).mock.calls[0]?.[0] as
+        | { orgId: string }
+        | undefined;
+      expect(emitCall?.orgId).toBe(ORG_ID);
+    });
+
+    it("skips dispatch when already processed (idempotent — no cross-tenant side effects on replay)", async () => {
+      const { svc, dispatch } = await buildService({ claimed: false });
+
+      await svc.handle(makeEvent());
+
+      expect(dispatch.emit).not.toHaveBeenCalled();
+    });
+  });
 });

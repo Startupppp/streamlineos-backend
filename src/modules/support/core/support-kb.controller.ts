@@ -40,6 +40,13 @@ import {
 } from "./dto/support.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { z } from "zod";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const categoryIdParams = z.object({ categoryId: z.coerce.number().int().positive() }).strict();
+const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
+const articleAndCommentIdParams = z.object({ articleId: z.coerce.number().int().positive(), commentId: z.coerce.number().int().positive() }).strict();
+const articleAndAttachmentIdParams = z.object({ articleId: z.coerce.number().int().positive(), attachmentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("support")
 @Controller("support/kb")
@@ -72,6 +79,7 @@ export class SupportKbController {
   @Patch("categories/:categoryId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
+  @Validate({ params: categoryIdParams })
   updateCategory(
     @Param("categoryId", ParseIntPipe) categoryId: number,
     @Body(new ZodValidationPipe(updateKbCategorySchema)) body: UpdateKbCategoryInput,
@@ -83,6 +91,7 @@ export class SupportKbController {
   @Delete("categories/:categoryId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
+  @Validate({ params: categoryIdParams })
   deleteCategory(
     @Param("categoryId", ParseIntPipe) categoryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -114,6 +123,7 @@ export class SupportKbController {
   @Get("articles/:articleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
+  @Validate({ params: articleIdParams })
   getArticle(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -124,6 +134,7 @@ export class SupportKbController {
   @Patch("articles/:articleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
+  @Validate({ params: articleIdParams })
   updateArticle(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body(new ZodValidationPipe(updateKbArticleSchema)) body: UpdateKbArticleInput,
@@ -135,6 +146,7 @@ export class SupportKbController {
   @Delete("articles/:articleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
+  @Validate({ params: articleIdParams })
   deleteArticle(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -145,6 +157,7 @@ export class SupportKbController {
   @Get("articles/:articleId/feedback")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
+  @Validate({ params: articleIdParams })
   listFeedback(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -155,6 +168,7 @@ export class SupportKbController {
   @Get("articles/:articleId/comments")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
+  @Validate({ params: articleIdParams })
   listComments(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -166,6 +180,7 @@ export class SupportKbController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @HttpCode(201)
+  @Validate({ params: articleIdParams })
   createComment(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body(new ZodValidationPipe(createKbCommentSchema)) body: CreateKbCommentInput,
@@ -177,6 +192,7 @@ export class SupportKbController {
   @Delete("articles/:articleId/comments/:commentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
+  @Validate({ params: articleAndCommentIdParams })
   deleteComment(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
@@ -188,6 +204,7 @@ export class SupportKbController {
   @Get("articles/:articleId/attachments")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
+  @Validate({ params: articleIdParams })
   listAttachments(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,

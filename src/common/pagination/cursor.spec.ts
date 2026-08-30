@@ -174,7 +174,7 @@ describe("buildIdCursorPage", () => {
     const page = buildIdCursorPage(rows([3, 2, 1]), 3, (r) => r.id);
 
     expect(page.hasMore).toBe(false);
-    expect(page.nextCursor).toBeUndefined();
+    expect(page.nextCursor).toBeNull();
   });
 
   it("handles an empty page", () => {
@@ -182,6 +182,6 @@ describe("buildIdCursorPage", () => {
 
     expect(page.data).toEqual([]);
     expect(page.hasMore).toBe(false);
-    expect(page.nextCursor).toBeUndefined();
+    expect(page.nextCursor).toBeNull();
   });
 });

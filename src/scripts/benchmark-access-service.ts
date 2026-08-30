@@ -30,6 +30,7 @@ import type { CacheService } from "../common/cache/cache.service";
 import type { EntitlementsService } from "../modules/access/entitlements.service";
 import type { MfaPolicyService } from "../modules/access/mfa-policy.service";
 import type { Db } from "../db/drizzle.module";
+import type { UserModuleAccessService } from "../modules/access/user-module-access.service";
 
 const OUT = resolve(process.cwd(), ".auth-benchmark-results.json");
 const ITERATIONS = 50_000;
@@ -113,11 +114,16 @@ async function run() {
   }
 
   console.log("Constructing AccessService with stub dependencies...");
+  const mockUserModuleAccess = new Proxy(
+    {},
+    { get: (_, p) => () => never(`userModuleAccess.${String(p)}`) },
+  ) as unknown as UserModuleAccessService;
   const svc = new AccessService(
     mockDb,
     mockCache,
     mockEntitlements,
     mockMfa,
+    mockUserModuleAccess,
   ) as AccessService & Record<string, unknown>;
 
   const orgId = "bench-org-a1b2c3d4";

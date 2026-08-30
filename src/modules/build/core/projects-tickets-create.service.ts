@@ -5,9 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
-import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import {
   projects,
   ticketActivityLog,
@@ -157,26 +155,6 @@ export class ProjectsTicketsCreateService {
         ticketId: created.id,
         userId: u.userId,
         action: "created",
-      });
-
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: u.orgId,
-        aggregateType: "ticket",
-        aggregateId: String(created.id),
-        aggregateVersion: 1,
-        eventType: "build.ticket.created",
-        payload: {
-          ticketId: created.id,
-          projectId,
-          orgId: u.orgId,
-          title: created.title,
-          type: created.type,
-          status: created.status,
-          assigneeId: created.assigneeId ?? null,
-          createdBy: u.userId,
-        },
-        occurredAt: new Date(),
       });
 
       return [created];

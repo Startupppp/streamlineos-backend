@@ -81,7 +81,7 @@ describe("board query count is bounded and independent of card count", () => {
     const audit = { log: jest.fn() } as unknown as AuditService;
 
     return {
-      svc: new ProjectsTicketsReadService(db, access, audit),
+      svc: new ProjectsTicketsReadService(db, access),
       getQueries: () => queries,
     };
   }

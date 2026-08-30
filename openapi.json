@@ -297,18 +297,17 @@
         "operationId": "AccountingLedgerController_listAccounts",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
-              "minimum": 1,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -487,18 +486,17 @@
         "operationId": "ApprovalPoliciesController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
-              "minimum": 1,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -1676,18 +1674,17 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
-              "minimum": 1,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -2897,18 +2894,17 @@
         "operationId": "AccountingPayablesReceivablesController_listCustomers",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
-              "minimum": 1,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -3940,18 +3936,17 @@
         "operationId": "AccountingLedgerController_listJournal",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
-              "minimum": 1,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -4860,18 +4855,17 @@
         "operationId": "AccountingPayablesReceivablesController_listPurchaseBills",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
-              "minimum": 1,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -6093,18 +6087,17 @@
         "operationId": "RecurringJournalsController_listTemplates",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
-              "minimum": 1,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -9646,18 +9639,17 @@
         "operationId": "AccountingPayablesReceivablesController_listVendors",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
-              "minimum": 1,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -13024,7 +13016,49 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:ai:use",
-        "description": "Exposure: permission — crm:ai:use"
+        "description": "Exposure: permission — crm:ai:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "leadIds": {
+                        "minItems": 1,
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      }
+                    },
+                    "required": [
+                      "leadIds"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "leadId": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "leadId"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/ai/sentiment-analysis": {
@@ -13167,7 +13201,96 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "ai:summaries:create",
-        "description": "Exposure: permission — ai:summaries:create"
+        "description": "Exposure: permission — ai:summaries:create",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "structured": {
+                    "type": "object",
+                    "properties": {
+                      "highlights": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "blockers": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "nextActions": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "highlights",
+                      "blockers",
+                      "nextActions"
+                    ]
+                  },
+                  "citations": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            }
+                          ]
+                        },
+                        "title": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "href": {
+                          "type": "string"
+                        },
+                        "snippet": {
+                          "type": "string"
+                        },
+                        "freshness": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title"
+                      ]
+                    }
+                  },
+                  "correlationId": {
+                    "type": "string"
+                  },
+                  "confidence": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "summary",
+                  "structured"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/ai/summarize": {
@@ -28389,14 +28512,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -28724,14 +28844,11 @@
         "operationId": "ProjectsCustomersController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -28811,14 +28928,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -29258,14 +29372,11 @@
         "operationId": "ManagedProductsController_listManagedProducts",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -29741,14 +29852,11 @@
         "operationId": "PortfoliosController_listPortfolios",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -30457,14 +30565,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -31496,14 +31601,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -31719,14 +31821,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -32054,6 +32153,13 @@
                     "default": "general",
                     "type": "string"
                   },
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "org",
+                      "private"
+                    ]
+                  },
                   "entityType": {
                     "type": "string"
                   },
@@ -32187,6 +32293,13 @@
                   },
                   "category": {
                     "type": "string"
+                  },
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "org",
+                      "private"
+                    ]
                   },
                   "entityType": {
                     "anyOf": [
@@ -32706,7 +32819,55 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "ai:chat:use",
-        "description": "Exposure: permission — ai:chat:use"
+        "description": "Exposure: permission — ai:chat:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messages": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "assistant"
+                          ]
+                        },
+                        "content": {
+                          "type": "string",
+                          "maxLength": 10000
+                        }
+                      },
+                      "required": [
+                        "role",
+                        "content"
+                      ]
+                    }
+                  },
+                  "conversationId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "persona": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "messages"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/chat/ably-token": {
@@ -33165,6 +33326,14 @@
             "in": "path",
             "schema": {
               "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -33908,7 +34077,7 @@
     },
     "/chat/channels/{channelId}/messages/{messageId}/reactions": {
       "post": {
-        "operationId": "ChatMessagesController_react",
+        "operationId": "ChatMessagesController_addReaction",
         "parameters": [
           {
             "name": "channelId",
@@ -33937,7 +34106,7 @@
             "bearer": []
           }
         ],
-        "summary": "Toggle an emoji reaction on a message",
+        "summary": "Add an emoji reaction to a message (idempotent)",
         "tags": [
           "Chat Messages"
         ],
@@ -33964,6 +34133,54 @@
             }
           }
         }
+      }
+    },
+    "/chat/channels/{channelId}/messages/{messageId}/reactions/{emoji}": {
+      "delete": {
+        "operationId": "ChatMessagesController_removeReaction",
+        "parameters": [
+          {
+            "name": "channelId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "emoji",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove an emoji reaction from a message (idempotent)",
+        "tags": [
+          "Chat Messages"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "chat:messages:write",
+        "description": "Exposure: permission — chat:messages:write"
       }
     },
     "/chat/channels/{channelId}/messages/{messageId}/thread": {
@@ -34822,13 +35039,54 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "ai:chat:use",
-        "description": "Exposure: permission — ai:chat:use"
+        "description": "Exposure: permission — ai:chat:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/chat/conversations": {
       "get": {
         "operationId": "ChatAssistantController_listConversations",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -34854,7 +35112,24 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "ai:chat:use",
-        "description": "Exposure: permission — ai:chat:use"
+        "description": "Exposure: permission — ai:chat:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/chat/conversations/{conversationId}": {
@@ -34880,7 +35155,27 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "ai:chat:use",
-        "description": "Exposure: permission — ai:chat:use"
+        "description": "Exposure: permission — ai:chat:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "title"
+                ]
+              }
+            }
+          }
+        }
       },
       "delete": {
         "operationId": "ChatAssistantController_deleteConversation",
@@ -34917,6 +35212,27 @@
             "in": "path",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -35132,7 +35448,29 @@
     "/chat/history": {
       "get": {
         "operationId": "ChatAssistantController_getHistory",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -35749,7 +36087,24 @@
     "/chat/saved": {
       "get": {
         "operationId": "ChatSavedController_list",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK"
@@ -35891,9 +36246,10 @@
         "parameters": [
           {
             "name": "q",
-            "required": true,
+            "required": false,
             "in": "query",
             "schema": {
+              "default": "",
               "type": "string"
             }
           }
@@ -35923,8 +36279,41 @@
         "parameters": [
           {
             "name": "q",
-            "required": true,
+            "required": false,
             "in": "query",
+            "schema": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sender",
+            "in": "query",
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -35955,9 +36344,10 @@
         "parameters": [
           {
             "name": "q",
-            "required": true,
+            "required": false,
             "in": "query",
             "schema": {
+              "default": "",
               "type": "string"
             }
           }
@@ -49597,7 +49987,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -49673,7 +50065,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -54952,13 +55346,12 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
-              "minimum": 1,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           },
@@ -70793,7 +71186,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -70895,7 +71290,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -70921,7 +71318,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -70952,7 +71351,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -70999,7 +71400,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -71364,7 +71767,8 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             }
           }
         ],
@@ -71390,7 +71794,8 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             }
           }
         ],
@@ -96280,7 +96685,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -96306,7 +96713,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -96332,7 +96741,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -98630,7 +99041,16 @@
     "/integrations/git/webhook": {
       "post": {
         "operationId": "IntegrationsGitController_webhook",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -108962,7 +109382,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -109095,7 +109517,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -109342,7 +109766,40 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rating": {
+                    "type": "string",
+                    "enum": [
+                      "helpful",
+                      "not_helpful",
+                      "missing_source"
+                    ]
+                  },
+                  "question": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  },
+                  "comment": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "rating",
+                  "question"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/kb/ai/improve": {
@@ -110049,7 +110506,27 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:articles:view",
-        "description": "Exposure: permission — kb:articles:view"
+        "description": "Exposure: permission — kb:articles:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "question"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/kb/articles/{articleId}/ai/improve": {
@@ -110759,13 +111236,65 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  },
+                  "spaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "conversationId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "question"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/kb/ask/conversations": {
       "get": {
         "operationId": "KbAskController_listConversations",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -110791,7 +111320,24 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/kb/ask/conversations/{conversationId}": {
@@ -110817,7 +111363,27 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "title"
+                ]
+              }
+            }
+          }
+        }
       },
       "delete": {
         "operationId": "KbAskController_deleteConversation",
@@ -110855,6 +111421,27 @@
             "schema": {
               "type": "number"
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
           }
         ],
         "responses": {
@@ -110873,7 +111460,29 @@
     "/kb/ask/history": {
       "get": {
         "operationId": "KbAskController_getHistory",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -111240,7 +111849,24 @@
     "/kb/page-reviews": {
       "get": {
         "operationId": "KbPageReviewsController_list",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -111748,7 +112374,27 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "question"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/kb/pages/{pageId}/ai/improve": {
@@ -113012,11 +113658,58 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "topic": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 300
+                  },
+                  "spaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "topic"
+                ]
+              }
+            }
+          }
+        }
       },
       "get": {
         "operationId": "KbResearchBriefController_list",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -113079,7 +113772,29 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rating": {
+                    "type": "string",
+                    "enum": [
+                      "helpful",
+                      "not_helpful"
+                    ]
+                  }
+                },
+                "required": [
+                  "rating"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/kb/search": {
@@ -120347,6 +121062,57 @@
         "x-exposure": "permissioned",
         "x-permission": "notifications:events:manage",
         "description": "Exposure: permission — notifications:events:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "channels": {
+                    "default": [
+                      "email"
+                    ],
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "email",
+                        "sms",
+                        "whatsapp"
+                      ]
+                    }
+                  },
+                  "whatsappSmsFallback": {
+                    "default": true,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "subject",
+                  "body"
+                ]
+              }
+            }
+          }
+        },
         "x-idempotency-command": "notifications.dispatch",
         "x-idempotent": true
       }
@@ -122062,7 +122828,35 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:organization:manage",
-        "description": "Exposure: permission — settings:organization:manage"
+        "description": "Exposure: permission — settings:organization:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "businessUnitId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "businessUnitId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/org-hierarchy/business-units": {
@@ -122285,7 +123079,35 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:organization:manage",
-        "description": "Exposure: permission — settings:organization:manage"
+        "description": "Exposure: permission — settings:organization:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "parentId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "parentId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/org-hierarchy/cost-centers": {
@@ -122735,7 +123557,35 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:organization:manage",
-        "description": "Exposure: permission — settings:organization:manage"
+        "description": "Exposure: permission — settings:organization:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "branchId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "branchId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/org-hierarchy/dependencies/{unitKind}/{unitId}": {
@@ -123630,18 +124480,20 @@
         "parameters": [
           {
             "name": "search",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
               "type": "string"
             }
           },
           {
             "name": "limit",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
             }
           }
         ],
@@ -123818,8 +124670,8 @@
           "Organization"
         ],
         "x-exposure": "in-service",
-        "x-authorized-in-service": "createOrganization rejects a caller who is not a structural org owner or org admin, below",
-        "description": "Exposure: authorized in service — createOrganization rejects a caller who is not a structural org owner or org admin, below",
+        "x-authorized-in-service": "any authenticated user may create a new organisation; plan limits enforced in OrgProfileService.createOrganization",
+        "description": "Exposure: authorized in service — any authenticated user may create a new organisation; plan limits enforced in OrgProfileService.createOrganization",
         "requestBody": {
           "required": true,
           "content": {
@@ -124276,10 +125128,12 @@
         "parameters": [
           {
             "name": "token",
-            "required": true,
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
             }
           }
         ],
@@ -129994,12 +130848,9 @@
                   "jobType": {
                     "type": "string",
                     "enum": [
-                      "PREVIEW",
                       "GENERATE",
                       "RECALCULATE",
                       "PDF_PUBLISH",
-                      "EXPORT",
-                      "RECONCILE",
                       "FILING_EXPORT"
                     ]
                   },
@@ -135136,7 +135987,44 @@
           "Platform"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sessionToken": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "referrer": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "sessionToken",
+                  "path"
+                ]
+              }
+            }
+          }
+        }
       },
       "get": {
         "operationId": "PlatformController_visitUsage",
@@ -135996,14 +136884,11 @@
         "operationId": "PmWorkspacesController_listWorkspaces",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -136196,14 +137081,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -137089,7 +137971,7 @@
               "default": 20,
               "type": "integer",
               "minimum": 1,
-              "maximum": 9007199254740991
+              "maximum": 100
             }
           }
         ],
@@ -137178,7 +138060,32 @@
           "KbRag"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "org": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "question": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "org",
+                  "question"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/public/kb/widget/{orgId}": {
@@ -144205,7 +145112,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -145683,7 +146592,46 @@
     "/storage/download": {
       "get": {
         "operationId": "StorageController_download",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 2048
+            }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 1024
+            }
+          },
+          {
+            "name": "expiresIn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "0",
+                "1"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -145700,7 +146648,18 @@
     "/storage/image": {
       "get": {
         "operationId": "StorageController_image",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -145941,7 +146900,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -145965,7 +146926,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146067,7 +147030,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146093,7 +147058,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146117,7 +147084,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146164,7 +147133,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146190,7 +147161,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146214,7 +147187,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146270,7 +147245,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -146278,7 +147255,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146304,7 +147283,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146328,7 +147309,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146354,7 +147337,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146378,7 +147363,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146433,7 +147420,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -146484,7 +147473,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146508,7 +147499,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -146608,7 +147601,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146634,7 +147629,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146674,7 +147671,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146700,7 +147699,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146750,7 +147751,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146776,7 +147779,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -146784,7 +147789,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146808,7 +147815,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -146816,7 +147825,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146842,7 +147853,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146868,7 +147881,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146894,7 +147909,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146920,7 +147937,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146946,7 +147965,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146972,7 +147993,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -146998,7 +148021,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -147024,7 +148049,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -147050,7 +148077,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -147076,7 +148105,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -147128,7 +148159,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -147290,7 +148323,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -148083,7 +149118,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -148267,7 +149304,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -148367,7 +149406,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -148418,7 +149459,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -148754,7 +149797,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -148826,7 +149871,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -149230,7 +150277,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -149805,7 +150854,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -149876,7 +150927,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -150759,7 +151812,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -150826,7 +151881,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -151622,7 +152679,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -151733,7 +152792,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -151924,7 +152985,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -151985,7 +153048,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -154751,13 +155816,12 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
-              "minimum": 1,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           }
@@ -155015,7 +156079,7 @@
     },
     "/tasks/analytics": {
       "get": {
-        "operationId": "TasksController_analytics",
+        "operationId": "TasksController_getAnalytics",
         "parameters": [
           {
             "name": "days",
@@ -155462,7 +156526,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -156102,7 +157168,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -156769,7 +157837,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -156823,7 +157893,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -157068,7 +158140,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -157094,7 +158168,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -157136,7 +158212,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -157162,7 +158240,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -157188,7 +158268,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -157214,7 +158296,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -157240,7 +158324,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -157271,7 +158357,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -157431,7 +158519,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -157537,7 +158627,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -158052,7 +159144,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -158078,7 +159172,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -158104,7 +159200,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -158130,7 +159228,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -160320,14 +161420,11 @@
         "operationId": "WorkflowsController_listWorkflows",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -160339,6 +161436,32 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "updatedAt",
+              "type": "string",
+              "enum": [
+                "updatedAt",
+                "createdAt"
+              ]
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
             }
           },
           {
@@ -160609,14 +161732,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -160628,6 +161748,19 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
             }
           },
           {
@@ -161195,14 +162328,11 @@
         "operationId": "WorkflowsController_listAllExecutions",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -161214,6 +162344,19 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
             }
           },
           {

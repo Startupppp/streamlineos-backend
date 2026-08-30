@@ -30,6 +30,7 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { OrganizationService } from "./organization.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
@@ -52,6 +53,7 @@ import {
   switchOrgSchema,
   updateMemberRoleSchema,
   updateOrgSettingsSchema,
+  validateInvitationTokenQuerySchema,
   type AcceptInvitationInput,
   type AddCustomDomainInput,
   type DeclineInvitationInput,
@@ -66,6 +68,7 @@ import {
   type SwitchOrgInput,
   type UpdateMemberRoleInput,
   type UpdateOrgSettingsInput,
+  type ValidateInvitationTokenQuery,
 } from "./dto/organization.schemas";
 
 @Controller("organization")
@@ -101,13 +104,13 @@ export class OrganizationController {
 
   @Public()
   @Get("invitations/validate")
+  @Validate({ query: validateInvitationTokenQuerySchema })
   async validateInvitationToken(
-    @Query("token") token: string,
+    @Query() query: ValidateInvitationTokenQuery,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
-    if (!token) throw new BadRequestException("Missing token");
     await this.enforceRateLimit("invite:validate", this.getIp(req));
-    return this.invitationsRead.validate(token);
+    return this.invitationsRead.validate(query.token);
   }
 
   @Get()

@@ -5,12 +5,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { finApprovalPolicies, organizationMembers } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type {
   CreateApprovalPolicyInput,
   UpdateApprovalPolicyInput,
@@ -23,24 +23,28 @@ export class ApprovalPoliciesService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(orgId: string, page: number, pageSize: number) {
-    const { limit, offset } = paginateOffset({ page, pageSize });
-    const condition = eq(finApprovalPolicies.orgId, orgId);
+  async list(orgId: string, cursor: number | undefined, limit: number) {
+    const conds = [eq(finApprovalPolicies.orgId, orgId)];
+    if (cursor) conds.push(gt(finApprovalPolicies.id, cursor));
 
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select()
-        .from(finApprovalPolicies)
-        .where(condition)
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(finApprovalPolicies)
-        .where(condition),
-    ]);
+    const rows = await this.db
+      .select({
+        id: finApprovalPolicies.id,
+        orgId: finApprovalPolicies.orgId,
+        recordType: finApprovalPolicies.recordType,
+        minAmount: finApprovalPolicies.minAmount,
+        approverRole: finApprovalPolicies.approverRole,
+        approverUserId: finApprovalPolicies.approverUserId,
+        isActive: finApprovalPolicies.isActive,
+        createdAt: finApprovalPolicies.createdAt,
+        updatedAt: finApprovalPolicies.updatedAt,
+      })
+      .from(finApprovalPolicies)
+      .where(and(...conds))
+      .orderBy(finApprovalPolicies.id)
+      .limit(limit + 1);
 
-    return buildListResponse(rows, count, { page, pageSize });
+    return buildIdCursorPage(rows, limit, (row) => row.id);
   }
 
   async create(orgId: string, userId: string, input: CreateApprovalPolicyInput) {
@@ -129,7 +133,7 @@ export class ApprovalPoliciesService {
 
   private async findOrFail(orgId: string, policyId: number) {
     const rows = await this.db
-      .select()
+      .select({ id: finApprovalPolicies.id, approverUserId: finApprovalPolicies.approverUserId })
       .from(finApprovalPolicies)
       .where(and(eq(finApprovalPolicies.id, policyId), eq(finApprovalPolicies.orgId, orgId)))
       .limit(1);

@@ -38,6 +38,8 @@ import {
 import { StorageService, type FileStreamResult } from "./storage.service";
 import { validateMagicBytes } from "./file-signatures";
 import { AccessService } from "../access/access.service";
+import { Validate } from "../../common/validation/validate.decorator";
+import { downloadQuerySchema, imageQuerySchema } from "./dto/storage.schemas";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 
@@ -154,6 +156,7 @@ export class StorageController {
 
   @Get("download")
   @AuthorizedInService("resolveFileOwner")
+  @Validate({ query: downloadQuerySchema })
   async download(
     @Query("url") urlParam: string | undefined,
     @Query("key") keyParam: string | undefined,
@@ -210,6 +213,7 @@ export class StorageController {
 
   @Get("image")
   @AuthorizedInService("resolveFileOwner")
+  @Validate({ query: imageQuerySchema })
   async image(
     @Query("key") keyParam: string | undefined,
     @CurrentUser() u: CurrentUserContext,

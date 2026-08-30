@@ -15,11 +15,13 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
 import {
   approveReviewSchema,
   createPageReviewSchema,
+  listPageReviewsQuerySchema,
   rejectReviewSchema,
   type ApproveReviewInput,
   type CreatePageReviewInput,
@@ -33,6 +35,7 @@ export class KbPageReviewsController {
 
   @Get("page-reviews")
   @RequirePermission("kb:reviews:view")
+  @Validate({ query: listPageReviewsQuerySchema })
   async list(
     @Query("status") status: string | undefined,
     @Query("type") type: string | undefined,

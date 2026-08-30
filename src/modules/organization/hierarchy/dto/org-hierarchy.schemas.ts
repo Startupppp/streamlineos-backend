@@ -221,3 +221,18 @@ export const dependencyPreviewQuerySchema = z
 export type DependencyPreviewQueryInput = z.infer<
   typeof dependencyPreviewQuerySchema
 >;
+
+export const moveBusinessUnitSchema = z
+  .object({ parentId: z.string().uuid().nullable() })
+  .strict();
+export type MoveBusinessUnitInput = z.infer<typeof moveBusinessUnitSchema>;
+
+export const moveBranchSchema = z
+  .object({ businessUnitId: z.string().uuid().nullable() })
+  .strict();
+export type MoveBranchInput = z.infer<typeof moveBranchSchema>;
+
+export const moveDepartmentSchema = z
+  .object({ branchId: z.string().uuid().nullable() })
+  .strict();
+export type MoveDepartmentInput = z.infer<typeof moveDepartmentSchema>;

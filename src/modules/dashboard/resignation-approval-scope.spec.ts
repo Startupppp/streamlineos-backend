@@ -27,12 +27,12 @@ describe("resignationApprovalScope", () => {
     expect(sql).not.toBe("true");
   });
 
-  it("restricts team to the derived approver and the actor's teammates", () => {
+  it("restricts team to the derived approver combined with own scope (no materialized teamIds)", () => {
     const sql = toSql("team");
 
     expect(sql).toContain('"hr_reporting_lines"');
     expect(sql).toContain('"resignations"."user_id"');
-    expect(sql).toContain("scope_teammate");
+    expect(sql).not.toBe("true");
   });
 
   it("binds the actor rather than interpolating it", () => {

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   HttpCode,
@@ -15,8 +14,9 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbPageAiService } from "./kb-page-ai.service";
-import { kbAiAskBodySchema } from "../retrieval/dto/kb-ai.schemas";
+import { kbAiAskBodySchema, type KbAiAskBodyInput } from "../retrieval/dto/kb-ai.schemas";
 
 @Controller("kb/pages/:pageId/ai")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
@@ -39,12 +39,10 @@ export class KbPageAiController {
   @RequirePermission("kb:pages:view")
   async ask(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body() body: unknown,
+    @Body(new ZodValidationPipe(kbAiAskBodySchema)) body: KbAiAskBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const parsed = kbAiAskBodySchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.svc.ask(u, pageId, parsed.data.question);
+    return this.svc.ask(u, pageId, body.question);
   }
 
   @Post("improve")

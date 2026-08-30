@@ -17,7 +17,9 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { z } from "zod";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { BudgetsService } from "./budgets.service";
 import {
   createBudgetSchema,
@@ -25,6 +27,8 @@ import {
   type CreateBudgetInput,
   type UpdateBudgetInput,
 } from "./dto/budgets.schemas";
+
+const budgetIdParams = z.object({ budgetId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("timesheets/budgets")
@@ -61,6 +65,7 @@ export class BudgetsController {
   @Delete(":budgetId")
   @HttpCode(204)
   @RequirePermission("timesheets:budgets:manage")
+  @Validate({ params: budgetIdParams })
   remove(
     @Param("budgetId", ParseIntPipe) budgetId: number,
     @CurrentUser() u: CurrentUserContext,

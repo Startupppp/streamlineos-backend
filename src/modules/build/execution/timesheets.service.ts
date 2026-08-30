@@ -6,7 +6,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import {
   projectMembers,
   projects,
@@ -64,10 +65,8 @@ export class TimesheetsService {
   }
 
   async listTimeEntries(user: CurrentUserContext, query: TimeEntriesListQuery) {
-    const page = query.page ?? 1;
-    const limit = query.limit;
-    const offset = (page - 1) * limit;
-
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
     const scope = await resolveTimesheetsScope(this.access, user);
 
     const conditions = [eq(timesheets.orgId, user.orgId)];
@@ -84,12 +83,18 @@ export class TimesheetsService {
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
     if (query.projectId)
       conditions.push(eq(timesheets.projectId, query.projectId));
+    if (pos) {
+      const afterCursor = or(
+        lt(timesheets.date, pos.sortValue),
+        and(eq(timesheets.date, pos.sortValue), lt(timesheets.id, Number(pos.id))),
+      );
+      if (afterCursor) conditions.push(afterCursor);
+    }
 
-    return this.db.query.timesheets.findMany({
+    const rows = await this.db.query.timesheets.findMany({
       where: and(...conditions),
-      orderBy: [desc(timesheets.date)],
-      limit,
-      offset,
+      orderBy: [desc(timesheets.date), desc(timesheets.id)],
+      limit: limit + 1,
       with: {
         ticket: {
           columns: { id: true, title: true, projectId: true },
@@ -97,6 +102,10 @@ export class TimesheetsService {
         },
       },
     });
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.date,
+      id: String(row.id),
+    }));
   }
 
   async updateEntry(
@@ -265,12 +274,13 @@ export class TimesheetsService {
 
   async teamTimesheets(user: CurrentUserContext, query: TeamTimesheetsQuery) {
     const scope = await resolveTimesheetsScope(this.access, user);
-    if (scope === "none") {
+    if (scope === "none")
       throw new ForbiddenException(
         "You do not have permission to view team timesheets",
       );
-    }
 
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
     const conditions = [
       eq(timesheets.orgId, user.orgId),
       applyScope(scope, user.orgId, user.userId, {
@@ -282,12 +292,18 @@ export class TimesheetsService {
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
     if (query.status) conditions.push(eq(timesheets.status, query.status));
+    if (pos) {
+      const afterCursor = or(
+        lt(timesheets.date, pos.sortValue),
+        and(eq(timesheets.date, pos.sortValue), lt(timesheets.id, Number(pos.id))),
+      );
+      if (afterCursor) conditions.push(afterCursor);
+    }
 
-    return this.db.query.timesheets.findMany({
+    const rows = await this.db.query.timesheets.findMany({
       where: and(...conditions),
-      orderBy: [desc(timesheets.date)],
-      limit: query.limit,
-      offset: (query.page - 1) * query.limit,
+      orderBy: [desc(timesheets.date), desc(timesheets.id)],
+      limit: limit + 1,
       with: {
         user: {
           columns: {
@@ -304,6 +320,10 @@ export class TimesheetsService {
         },
       },
     });
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.date,
+      id: String(row.id),
+    }));
   }
 
   async billingSummary(user: CurrentUserContext, query: BillingSummaryQuery) {

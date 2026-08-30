@@ -142,6 +142,8 @@ export const kbAskSchema = z.object({
   org: z.string().trim().min(1),
   question: z.string().trim().min(3, "Question is too short").max(1000),
 });
+export type KbAskInput = z.infer<typeof kbAskSchema>;
+
 export const chatRequestSchema = z.object({
   messages: z
     .array(
@@ -155,29 +157,38 @@ export const chatRequestSchema = z.object({
   conversationId: z.number().int().positive().optional(),
   persona: z.string().optional(),
 });
+export type ChatRequest = z.infer<typeof chatRequestSchema>;
 
 export const chatHistoryQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   limit: pageSizeField(30, 100),
 });
+export type ChatHistoryQuery = z.infer<typeof chatHistoryQuerySchema>;
 
 export const conversationCreateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
 });
+export type ConversationCreateInput = z.infer<typeof conversationCreateSchema>;
 
 export const conversationRenameSchema = z.object({
   title: z.string().trim().min(1).max(200),
 });
+export type ConversationRenameInput = z.infer<typeof conversationRenameSchema>;
 
 export const conversationsListQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   limit: pageSizeField(20, 50),
 });
+export type ConversationsListQuery = z.infer<typeof conversationsListQuerySchema>;
 
 export const conversationMessagesQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   limit: pageSizeField(30, 100),
 });
+export type ConversationMessagesQuery = z.infer<typeof conversationMessagesQuerySchema>;
+
+export const confirmActionBodySchema = z.object({ token: z.string().min(1) });
+export type ConfirmActionInput = z.infer<typeof confirmActionBodySchema>;
 
 export const policyQaSchema = z.object({
   question: z.string().trim().min(3).max(1000),

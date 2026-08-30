@@ -9,6 +9,7 @@ import {
   UNIVERSAL_MEMBER_PERMISSIONS,
 } from "../../rbac/permissions";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
+import { makeUserModuleAccessStub } from "../../../../test/helpers/user-module-access-stub";
 
 const ACTIVE_MEMBER_BASELINE_PERMISSIONS = new Set([
   ...UNIVERSAL_MEMBER_PERMISSIONS,
@@ -129,6 +130,7 @@ function buildService(
     cache,
     entitlements,
     makeMfaPolicyStub(),
+    makeUserModuleAccessStub(),
   );
 }
 
@@ -174,6 +176,7 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
       cache as unknown as CacheService,
       entitlements,
       makeMfaPolicyStub(),
+      makeUserModuleAccessStub(),
     );
 
     await svc.resolveUserPermissions("org-alpha", "user-1");
@@ -230,12 +233,14 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
       cache as unknown as CacheService,
       entitlements,
       makeMfaPolicyStub(),
+      makeUserModuleAccessStub(),
     );
     const svcB = new AccessService(
       buildDbForOrg(20) as unknown as Db,
       cache as unknown as CacheService,
       entitlements,
       makeMfaPolicyStub(),
+      makeUserModuleAccessStub(),
     );
 
     await svcA.resolveUserPermissions("org-a", "user-shared");

@@ -50,6 +50,11 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { z } from "zod";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const ticketIdParams = z.object({ supportTicketId: z.coerce.number().int().positive() }).strict();
+const ticketAndLinkIdParams = z.object({ supportTicketId: z.coerce.number().int().positive(), linkId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("support")
 @Controller("support")
@@ -91,6 +96,7 @@ export class SupportTicketsController {
 
   @Get(":supportTicketId")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: ticketIdParams })
   getTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -100,6 +106,7 @@ export class SupportTicketsController {
 
   @Patch(":supportTicketId")
   @RequirePermission("support:tickets:manage")
+  @Validate({ params: ticketIdParams })
   updateTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body(new ZodValidationPipe(updateTicketSchema)) body: UpdateTicketInput,
@@ -110,6 +117,7 @@ export class SupportTicketsController {
 
   @Get(":supportTicketId/messages")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: ticketIdParams })
   listMessages(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -121,6 +129,7 @@ export class SupportTicketsController {
   @Idempotent("support:ticket.reply")
   @RequirePermission("support:tickets:reply")
   @HttpCode(201)
+  @Validate({ params: ticketIdParams })
   async addMessage(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body(new ZodValidationPipe(replyMessageSchema)) body: ReplyMessageInput,
@@ -135,6 +144,7 @@ export class SupportTicketsController {
 
   @Get(":supportTicketId/activity")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: ticketIdParams })
   listActivity(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -144,6 +154,7 @@ export class SupportTicketsController {
 
   @Get(":supportTicketId/links")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: ticketIdParams })
   listTicketLinks(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -154,6 +165,7 @@ export class SupportTicketsController {
   @Post(":supportTicketId/links")
   @RequirePermission("support:tickets:manage")
   @HttpCode(201)
+  @Validate({ params: ticketIdParams })
   addTicketLink(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body(new ZodValidationPipe(createTicketLinkSchema)) body: CreateTicketLinkInput,
@@ -166,6 +178,7 @@ export class SupportTicketsController {
   @Idempotent("support:ticket.merge")
   @RequirePermission("support:tickets:manage")
   @HttpCode(200)
+  @Validate({ params: ticketIdParams })
   mergeTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body(new ZodValidationPipe(mergeTicketSchema)) body: MergeTicketInput,
@@ -177,6 +190,7 @@ export class SupportTicketsController {
   @Post(":supportTicketId/snooze")
   @RequirePermission("support:tickets:manage")
   @HttpCode(200)
+  @Validate({ params: ticketIdParams })
   snoozeTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body(new ZodValidationPipe(snoozeTicketSchema)) body: SnoozeTicketInput,
@@ -187,6 +201,7 @@ export class SupportTicketsController {
 
   @Delete(":supportTicketId/snooze")
   @RequirePermission("support:tickets:manage")
+  @Validate({ params: ticketIdParams })
   unsnoozeTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -197,6 +212,7 @@ export class SupportTicketsController {
   @Post(":supportTicketId/split")
   @RequirePermission("support:tickets:manage")
   @HttpCode(201)
+  @Validate({ params: ticketIdParams })
   splitTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body(new ZodValidationPipe(splitTicketSchema)) body: SplitTicketInput,
@@ -207,6 +223,7 @@ export class SupportTicketsController {
 
   @Get(":supportTicketId/draft")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: ticketIdParams })
   getDraft(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -216,6 +233,7 @@ export class SupportTicketsController {
 
   @Put(":supportTicketId/draft")
   @RequirePermission("support:tickets:reply")
+  @Validate({ params: ticketIdParams })
   upsertDraft(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body(new ZodValidationPipe(upsertDraftSchema)) body: UpsertDraftInput,
@@ -226,6 +244,7 @@ export class SupportTicketsController {
 
   @Delete(":supportTicketId/draft")
   @RequirePermission("support:tickets:reply")
+  @Validate({ params: ticketIdParams })
   deleteDraft(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -235,6 +254,7 @@ export class SupportTicketsController {
 
   @Get(":supportTicketId/external-links")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: ticketIdParams })
   listExternalLinks(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -245,6 +265,7 @@ export class SupportTicketsController {
   @Post(":supportTicketId/external-links")
   @RequirePermission("support:tickets:manage")
   @HttpCode(201)
+  @Validate({ params: ticketIdParams })
   addExternalLink(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body(new ZodValidationPipe(createExternalLinkSchema)) body: CreateExternalLinkInput,
@@ -255,6 +276,7 @@ export class SupportTicketsController {
 
   @Delete(":supportTicketId/external-links/:linkId")
   @RequirePermission("support:tickets:manage")
+  @Validate({ params: ticketAndLinkIdParams })
   removeExternalLink(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Param("linkId", ParseIntPipe) linkId: number,

@@ -1,9 +1,9 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, gt, gte, ilike, inArray, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, gt, gte, ilike, inArray, lte, or, sql, type SQL } from "drizzle-orm";
 import { clients, invoices, payments, ledgerAccounts, journalEntries, journalLines } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import { ACCOUNT_CODES } from "./posting-rules";
 import type {
   AgedReceivablesRow,
@@ -53,7 +53,7 @@ export class AccountingReceivablesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listCustomers(orgId: string, query: ListCustomersOutstandingQuery) {
-    const { page, pageSize, q, onlyOutstanding } = query;
+    const { cursor, limit, q, onlyOutstanding } = query;
 
     const paidExpr = sql<string>`COALESCE((
       SELECT SUM(${payments.amount})
@@ -71,8 +71,8 @@ export class AccountingReceivablesService {
 
     const conds = [eq(clients.orgId, orgId)];
     if (q) conds.push(ilike(clients.name, `%${escapeLike(q)}%`));
+    if (cursor) conds.push(gt(clients.id, cursor));
 
-    const { offset, limit } = paginateOffset({ page, pageSize });
     let listQuery = this.db
       .select({
         clientId: clients.id,
@@ -81,7 +81,6 @@ export class AccountingReceivablesService {
         gstin: clients.gstin,
         invoiceCount: invoiceCountExpr,
         outstanding: outstandingExpr,
-        total: sql<string>`count(*) OVER ()`,
       })
       .from(clients)
       .leftJoin(invoices, and(eq(invoices.clientId, clients.id), eq(invoices.orgId, orgId)))
@@ -91,9 +90,8 @@ export class AccountingReceivablesService {
     if (onlyOutstanding) listQuery = listQuery.having(gt(outstandingExpr, "0"));
 
     const rows = await listQuery
-      .orderBy(desc(outstandingExpr), asc(clients.name))
-      .offset(offset)
-      .limit(limit);
+      .orderBy(asc(clients.id))
+      .limit(limit + 1);
 
     const items: CustomerOutstanding[] = rows.map((r) => ({
       clientId: r.clientId,
@@ -104,29 +102,7 @@ export class AccountingReceivablesService {
       outstanding: Number(r.outstanding ?? 0).toFixed(2),
     }));
 
-    let totalCount: number;
-    if (rows[0]) {
-      totalCount = Number(rows[0].total);
-    } else if (offset === 0) {
-      totalCount = 0;
-    } else if (!onlyOutstanding) {
-      const fallback = await this.db.select({ c: count() }).from(clients).where(and(...conds));
-      totalCount = Number(fallback[0]?.c ?? 0);
-    } else {
-      const fallback = await this.db.select({ c: count() }).from(
-        this.db
-          .select({ id: clients.id })
-          .from(clients)
-          .leftJoin(invoices, and(eq(invoices.clientId, clients.id), eq(invoices.orgId, orgId)))
-          .where(and(...conds))
-          .groupBy(clients.id)
-          .having(gt(outstandingExpr, "0"))
-          .as("g"),
-      );
-      totalCount = Number(fallback[0]?.c ?? 0);
-    }
-
-    return buildListResponse(items, totalCount, { page, pageSize });
+    return buildIdCursorPage(items, limit, (item) => item.clientId);
   }
 
   async customerLedger(orgId: string, clientId: number, query: ListCustomerLedgerQuery): Promise<CustomerLedger> {

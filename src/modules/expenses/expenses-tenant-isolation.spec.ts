@@ -25,21 +25,41 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
 }
 
 function makeBuilder(rows: unknown[]) {
-  const limit = jest.fn().mockResolvedValue(rows);
-  const orderBy = jest.fn();
-  const leftJoin = jest.fn();
-  const groupBy = jest.fn();
   const where = jest.fn();
+  const builder: Record<string, unknown> = {
+    from: jest.fn(),
+    where,
+    limit: jest.fn(),
+    offset: jest.fn(),
+    orderBy: jest.fn(),
+    leftJoin: jest.fn(),
+    groupBy: jest.fn(),
+    for: jest.fn(),
+    returning: jest.fn().mockResolvedValue(rows),
+    then: jest.fn().mockImplementation(
+      (resolve: (v: unknown[]) => void) => Promise.resolve(rows).then(resolve),
+    ),
+  };
+  for (const key of ["from", "where", "limit", "offset", "orderBy", "leftJoin", "groupBy", "for"]) {
+    (builder[key] as jest.Mock).mockReturnValue(builder);
+  }
+  return { builder, where: where as jest.Mock };
+}
 
-  const builder = { from: jest.fn(), where, limit, orderBy, leftJoin, groupBy };
-  builder.from.mockReturnValue(builder);
-  where.mockReturnValue(builder);
-  orderBy.mockReturnValue(builder);
-  leftJoin.mockReturnValue(builder);
-  groupBy.mockReturnValue(builder);
-  limit.mockResolvedValue(rows);
-
-  return { builder, where };
+function makeInsertBuilder(rows: unknown[] = [{ id: 1 }]) {
+  const ib: Record<string, unknown> = {
+    values: jest.fn(),
+    onConflictDoNothing: jest.fn(),
+    onConflictDoUpdate: jest.fn(),
+    returning: jest.fn().mockResolvedValue(rows),
+    then: jest.fn().mockImplementation(
+      (resolve: (v: unknown) => void) => Promise.resolve(undefined).then(resolve),
+    ),
+  };
+  (ib.values as jest.Mock).mockReturnValue(ib);
+  (ib.onConflictDoNothing as jest.Mock).mockReturnValue(ib);
+  (ib.onConflictDoUpdate as jest.Mock).mockReturnValue(ib);
+  return ib;
 }
 
 function makeDb(rows: unknown[] = []) {
@@ -58,7 +78,7 @@ function makeDb(rows: unknown[] = []) {
         findFirst: jest.fn().mockResolvedValue(rows[0] ?? null),
       },
     },
-    insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1 }]) }) }),
+    insert: jest.fn().mockReturnValue(makeInsertBuilder()),
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1 }]) }) }) }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
     transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
@@ -103,18 +123,17 @@ describe("ExpenseLifecycleService — cross-tenant isolation", () => {
   it("checkDuplicate: WHERE contains attacker orgId (deny — different org isolation)", async () => {
     const { db, where } = makeDb([]);
     const svc = new ExpenseLifecycleService(db, mockCache as never, mockAudit as never, mockPosting as never);
-    await svc.checkDuplicate(ATTACKER_ORG, 1000, "2025-01-01", "Merchant");
+    await svc.checkDuplicate(ATTACKER_ORG, "abc123hash");
     expect(where).toHaveBeenCalled();
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
     expect(allVals).toContain(ATTACKER_ORG);
   });
 
-  it("checkDuplicate: returns false for own org with no duplicate (control — same-tenant)", async () => {
+  it("checkDuplicate: returns null for own org with no duplicate (control — same-tenant)", async () => {
     const { db } = makeDb([]);
     const svc = new ExpenseLifecycleService(db, mockCache as never, mockAudit as never, mockPosting as never);
-    const result = await svc.checkDuplicate(OWNER_ORG, 1000, "2025-01-01", "Merchant");
-    expect(typeof result).toBe("boolean");
-    expect(result).toBe(false);
+    const result = await svc.checkDuplicate(OWNER_ORG, "abc123hash");
+    expect(result).toBeNull();
   });
 });
 

@@ -4,6 +4,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { EntitlementsService } from "./entitlements.service";
 import { makeMfaPolicyStub } from "../../../test/helpers/mfa-policy-stub";
+import { makeUserModuleAccessStub } from "../../../test/helpers/user-module-access-stub";
 import { accessVersionChannel } from "../../common/rbac/access-version-channel";
 
 /**
@@ -86,6 +87,7 @@ function buildFixture(): CostFixture {
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
+      makeUserModuleAccessStub(),
     ),
   };
 }

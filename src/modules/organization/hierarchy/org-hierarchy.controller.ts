@@ -19,6 +19,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { OrgHierarchyService } from "./org-hierarchy.service";
 import {
   createBusinessUnitSchema,
@@ -37,6 +38,9 @@ import {
   listQuerySchema,
   dependencyPreviewParamsSchema,
   dependencyPreviewQuerySchema,
+  moveBusinessUnitSchema,
+  moveBranchSchema,
+  moveDepartmentSchema,
   type CreateBusinessUnitInput,
   type UpdateBusinessUnitInput,
   type CreateOrgBranchInput,
@@ -53,6 +57,9 @@ import {
   type ListQueryInput,
   type DependencyPreviewParamsInput,
   type DependencyPreviewQueryInput,
+  type MoveBusinessUnitInput,
+  type MoveBranchInput,
+  type MoveDepartmentInput,
 } from "./dto/org-hierarchy.schemas";
 
 @Controller("org-hierarchy")
@@ -364,44 +371,35 @@ export class OrgHierarchyController {
 
   @Patch("business-units/:businessUnitId/move")
   @RequirePermission("settings:organization:manage")
+  @Validate({ body: moveBusinessUnitSchema })
   moveBusinessUnit(
     @Param("businessUnitId") businessUnitId: string,
-    @Body() body: { parentId: string | null },
+    @Body() body: MoveBusinessUnitInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.moveBusinessUnit(
-      u.orgId,
-      businessUnitId,
-      body.parentId ?? null,
-    );
+    return this.service.moveBusinessUnit(u.orgId, businessUnitId, body.parentId);
   }
 
   @Patch("branches/:branchId/move")
   @RequirePermission("settings:organization:manage")
+  @Validate({ body: moveBranchSchema })
   moveBranch(
     @Param("branchId") branchId: string,
-    @Body() body: { businessUnitId: string | null },
+    @Body() body: MoveBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.moveBranch(
-      u.orgId,
-      branchId,
-      body.businessUnitId ?? null,
-    );
+    return this.service.moveBranch(u.orgId, branchId, body.businessUnitId);
   }
 
   @Patch("departments/:departmentId/move")
   @RequirePermission("settings:organization:manage")
+  @Validate({ body: moveDepartmentSchema })
   moveDepartment(
     @Param("departmentId") departmentId: string,
-    @Body() body: { branchId: string | null },
+    @Body() body: MoveDepartmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.moveDepartment(
-      u.orgId,
-      departmentId,
-      body.branchId ?? null,
-    );
+    return this.service.moveDepartment(u.orgId, departmentId, body.branchId);
   }
 
   @Patch("teams/:teamId/move")

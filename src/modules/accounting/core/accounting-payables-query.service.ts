@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, gt, ilike, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, lt, sql } from "drizzle-orm";
 import type { DataScope } from "../../access/access.types";
 import { applyScope } from "../../access/apply-scope";
 import {
@@ -13,7 +13,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type { AgedPayablesRow, VendorLedgerLine } from "./accounting.types";
 import type {
   AgedReceivablesQuery,
@@ -75,7 +75,7 @@ export class AccountingPayablesQueryService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listPurchaseBills(orgId: string, query: ListPurchaseBillsQuery, scope: DataScope, userId: string) {
-    const { page, pageSize, q, status, vendorId } = query;
+    const { cursor, limit, q, status, vendorId } = query;
     const conds = [eq(purchaseBills.orgId, orgId)];
     if (status) {
       if (Array.isArray(status)) {
@@ -87,30 +87,17 @@ export class AccountingPayablesQueryService {
     if (vendorId) conds.push(eq(purchaseBills.vendorId, vendorId));
     if (q) conds.push(ilike(purchaseBills.billNumber, `%${escapeLike(q)}%`));
     conds.push(applyScope(scope, orgId, userId, { ownerColumn: purchaseBills.createdBy }));
+    if (cursor) conds.push(lt(purchaseBills.id, cursor));
 
-    const where = and(...conds);
-    const { offset, limit } = paginateOffset({ page, pageSize });
     const rows = await this.db
-      .select({ ...BILL_COLUMNS, total: sql<string>`count(*) OVER ()` })
+      .select(BILL_COLUMNS)
       .from(purchaseBills)
       .leftJoin(clients, eq(clients.id, purchaseBills.vendorId))
-      .where(where)
-      .orderBy(desc(purchaseBills.billDate), asc(purchaseBills.id))
-      .offset(offset)
-      .limit(limit);
+      .where(and(...conds))
+      .orderBy(desc(purchaseBills.id))
+      .limit(limit + 1);
 
-    let totalCount: number;
-    if (rows[0]) {
-      totalCount = Number(rows[0].total);
-    } else if (offset === 0) {
-      totalCount = 0;
-    } else {
-      const fallback = await this.db.select({ c: count() }).from(purchaseBills).where(where);
-      totalCount = Number(fallback[0]?.c ?? 0);
-    }
-
-    const items = rows.map(({ total: _total, ...rest }) => rest);
-    return buildListResponse(items, totalCount, { page, pageSize });
+    return buildIdCursorPage(rows, limit, (row) => row.id);
   }
 
   async getPurchaseBill(orgId: string, billId: number) {
@@ -124,7 +111,17 @@ export class AccountingPayablesQueryService {
     if (!header) throw new NotFoundException("Purchase bill not found");
 
     const items = await this.db
-      .select()
+      .select({
+        id: purchaseBillItems.id,
+        billId: purchaseBillItems.billId,
+        description: purchaseBillItems.description,
+        hsnSacCode: purchaseBillItems.hsnSacCode,
+        quantity: purchaseBillItems.quantity,
+        rate: purchaseBillItems.rate,
+        gstRate: purchaseBillItems.gstRate,
+        amount: purchaseBillItems.amount,
+        lineOrder: purchaseBillItems.lineOrder,
+      })
       .from(purchaseBillItems)
       .where(eq(purchaseBillItems.billId, billId))
       .orderBy(asc(purchaseBillItems.lineOrder));
@@ -141,7 +138,18 @@ export class AccountingPayablesQueryService {
     if (!bills[0]) throw new NotFoundException("Purchase bill not found");
 
     return this.db
-      .select()
+      .select({
+        id: vendorPayments.id,
+        orgId: vendorPayments.orgId,
+        billId: vendorPayments.billId,
+        amount: vendorPayments.amount,
+        paymentDate: vendorPayments.paymentDate,
+        paymentMethod: vendorPayments.paymentMethod,
+        referenceNumber: vendorPayments.referenceNumber,
+        notes: vendorPayments.notes,
+        createdBy: vendorPayments.createdBy,
+        createdAt: vendorPayments.createdAt,
+      })
       .from(vendorPayments)
       .where(and(eq(vendorPayments.billId, billId), eq(vendorPayments.orgId, orgId)))
       .orderBy(asc(vendorPayments.paymentDate), asc(vendorPayments.id))
@@ -149,17 +157,15 @@ export class AccountingPayablesQueryService {
   }
 
   async listVendors(orgId: string, query: ListCustomersOutstandingQuery) {
-    const { page, pageSize, q, onlyOutstanding } = query;
+    const { cursor, limit, q, onlyOutstanding } = query;
     const conds = [eq(clients.orgId, orgId), eq(clients.isVendor, true)];
     if (q) conds.push(ilike(clients.name, `%${escapeLike(q)}%`));
+    if (cursor) conds.push(gt(clients.id, cursor));
 
-    const where = and(...conds);
     const billStatusIn = sql`${purchaseBills.status} IN ('POSTED','PARTIALLY_PAID','PAID')`;
     const totalBilledExpr = sql<string>`COALESCE(SUM(${purchaseBills.total}::numeric) FILTER (WHERE ${billStatusIn}), 0)::text`;
     const totalPaidExpr = sql<string>`COALESCE(SUM(${purchaseBills.amountPaid}::numeric) FILTER (WHERE ${billStatusIn}), 0)::text`;
     const outstandingExpr = sql<string>`(COALESCE(SUM(${purchaseBills.total}::numeric) FILTER (WHERE ${billStatusIn}), 0) - COALESCE(SUM(${purchaseBills.amountPaid}::numeric) FILTER (WHERE ${billStatusIn}), 0))::text`;
-
-    const { offset, limit } = paginateOffset({ page, pageSize });
 
     let listQuery = this.db
       .select({
@@ -170,16 +176,15 @@ export class AccountingPayablesQueryService {
         billCount: sql<number>`COUNT(${purchaseBills.id}) FILTER (WHERE ${billStatusIn})::int`,
         totalBilled: totalBilledExpr,
         totalPaid: totalPaidExpr,
-        total: sql<string>`count(*) OVER ()`,
       })
       .from(clients)
       .leftJoin(purchaseBills, and(eq(purchaseBills.vendorId, clients.id), eq(purchaseBills.orgId, orgId)))
-      .where(where)
+      .where(and(...conds))
       .groupBy(clients.id, clients.name, clients.state, clients.gstin)
       .$dynamic();
     if (onlyOutstanding) listQuery = listQuery.having(gt(outstandingExpr, "0"));
 
-    const rows = await listQuery.offset(offset).limit(limit);
+    const rows = await listQuery.orderBy(asc(clients.id)).limit(limit + 1);
 
     const items = rows.map((r) => ({
       vendorId: r.vendorId,
@@ -190,29 +195,7 @@ export class AccountingPayablesQueryService {
       outstanding: (Number(r.totalBilled ?? 0) - Number(r.totalPaid ?? 0)).toFixed(2),
     }));
 
-    let totalCount: number;
-    if (rows[0]) {
-      totalCount = Number(rows[0].total);
-    } else if (offset === 0) {
-      totalCount = 0;
-    } else if (!onlyOutstanding) {
-      const fallback = await this.db.select({ c: count() }).from(clients).where(where);
-      totalCount = Number(fallback[0]?.c ?? 0);
-    } else {
-      const fallback = await this.db.select({ c: count() }).from(
-        this.db
-          .select({ id: clients.id })
-          .from(clients)
-          .leftJoin(purchaseBills, and(eq(purchaseBills.vendorId, clients.id), eq(purchaseBills.orgId, orgId)))
-          .where(where)
-          .groupBy(clients.id)
-          .having(gt(outstandingExpr, "0"))
-          .as("g"),
-      );
-      totalCount = Number(fallback[0]?.c ?? 0);
-    }
-
-    return buildListResponse(items, totalCount, { page, pageSize });
+    return buildIdCursorPage(items, limit, (item) => item.vendorId);
   }
 
   async vendorLedger(orgId: string, vendorId: number) {

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -19,7 +19,7 @@ import {
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import type { ListApprovalsQuery, ApprovalDecisionInput } from "./dto/finance-controls.schemas";
 
@@ -46,25 +46,34 @@ export class ApprovalsService {
   ) {}
 
   async list(orgId: string, query: ListApprovalsQuery) {
-    const { limit, offset } = paginateOffset(query);
+    const { limit, cursor } = query;
     const conditions = [eq(finApprovalRequests.orgId, orgId)];
     if (query.status) conditions.push(eq(finApprovalRequests.status, query.status));
     if (query.recordType) conditions.push(eq(finApprovalRequests.recordType, query.recordType));
+    if (cursor) conditions.push(gt(finApprovalRequests.id, cursor));
 
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select()
-        .from(finApprovalRequests)
-        .where(and(...conditions))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(finApprovalRequests)
-        .where(and(...conditions)),
-    ]);
+    const rows = await this.db
+      .select({
+        id: finApprovalRequests.id,
+        orgId: finApprovalRequests.orgId,
+        recordType: finApprovalRequests.recordType,
+        recordId: finApprovalRequests.recordId,
+        status: finApprovalRequests.status,
+        requestedBy: finApprovalRequests.requestedBy,
+        note: finApprovalRequests.note,
+        decidedBy: finApprovalRequests.decidedBy,
+        decidedAt: finApprovalRequests.decidedAt,
+        decisionComment: finApprovalRequests.decisionComment,
+        createdAt: finApprovalRequests.createdAt,
+      })
+      .from(finApprovalRequests)
+      .where(and(...conditions))
+      .orderBy(desc(finApprovalRequests.id))
+      .limit(limit + 1);
 
-    const requesterIds = [...new Set(rows.map((r) => r.requestedBy))];
+    const { data, hasMore, nextCursor } = buildIdCursorPage(rows, limit, (r) => r.id);
+
+    const requesterIds = [...new Set(data.map((r) => r.requestedBy))];
     const requesterRows =
       requesterIds.length > 0
         ? await this.db
@@ -83,9 +92,9 @@ export class ApprovalsService {
       requesterRows.map((u) => [u.id, { name: u.name, firstName: u.firstName, lastName: u.lastName, email: u.email }]),
     );
 
-    const contextMap = await this.batchEnrichRecords(orgId, rows);
+    const contextMap = await this.batchEnrichRecords(orgId, data);
 
-    const enriched = rows.map((row) => {
+    const enriched = data.map((row) => {
       const requester = userMap.get(row.requestedBy);
       const ctx = contextMap.get(`${row.recordType}:${row.recordId}`);
       return {
@@ -96,7 +105,7 @@ export class ApprovalsService {
       };
     });
 
-    return buildListResponse(enriched, count, query);
+    return { data: enriched, hasMore, nextCursor };
   }
 
   async counts(orgId: string) {
@@ -133,7 +142,13 @@ export class ApprovalsService {
     comment: string | undefined,
   ) {
     const rows = await this.db
-      .select()
+      .select({
+        id: finApprovalRequests.id,
+        recordType: finApprovalRequests.recordType,
+        recordId: finApprovalRequests.recordId,
+        status: finApprovalRequests.status,
+        requestedBy: finApprovalRequests.requestedBy,
+      })
       .from(finApprovalRequests)
       .where(
         and(

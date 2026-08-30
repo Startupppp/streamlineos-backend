@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const updateEntrySchema = z.object({
   hours: z.number().positive().optional(),
@@ -24,7 +24,7 @@ export const timeEntriesListQuerySchema = z.object({
   ticketId: z.coerce.number().int().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(50),
 });
 
@@ -33,7 +33,7 @@ export const teamTimesheetsQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(50),
 });
 

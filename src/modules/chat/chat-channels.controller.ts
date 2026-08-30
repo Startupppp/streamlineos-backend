@@ -25,6 +25,7 @@ import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatTypingService } from "./chat-typing.service";
 import {
   addMemberSchema,
+  chatChannelFilesQuerySchema,
   createChannelSchema,
   muteChannelSchema,
   notificationPreferenceSchema,
@@ -36,6 +37,7 @@ import {
   type UpdateChannelInput,
 } from "./dto/chat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { actorOf } from "../entity-reference/entity-actor";
@@ -304,6 +306,7 @@ export class ChatChannelsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":channelId/files")
   @RequirePermission("chat:messages:read")
+  @Validate({ query: chatChannelFilesQuerySchema })
   listFiles(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Query("cursor") cursor: string | undefined,

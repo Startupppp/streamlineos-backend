@@ -8,7 +8,6 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.types";
 import { AutonomyReviewService } from "./autonomy-review.service";
-import { DealsService } from "../deals/deals.service";
 import type { ListDecisionsQuery } from "./dto/autonomy-review.schemas";
 import type { DataScope } from "../access/access.types";
 
@@ -58,14 +57,10 @@ function makeDb(rows: unknown[]) {
   return { db, where };
 }
 
-function makeDealsService() {
-  return {} as unknown as DealsService;
-}
-
 describe("AutonomyReviewService — cross-tenant isolation", () => {
   it("returns empty page for a different org (cross-tenant access denied)", async () => {
     const { db, where } = makeDb([]);
-    const svc = new AutonomyReviewService(db, makeDealsService());
+    const svc = new AutonomyReviewService(db);
 
     const result = await svc.listDecisions(ATTACKER_ORG, "user-x", QUERY, SCOPE);
 
@@ -98,7 +93,7 @@ describe("AutonomyReviewService — cross-tenant isolation", () => {
       partyName: null,
     };
     const { db } = makeDb([row, row]);
-    const svc = new AutonomyReviewService(db, makeDealsService());
+    const svc = new AutonomyReviewService(db);
 
     const result = await svc.listDecisions(OWNER_ORG, "user-1", QUERY, SCOPE);
 
@@ -113,7 +108,7 @@ describe("AutonomyReviewService — cross-tenant isolation", () => {
     const db = {
       select: jest.fn().mockReturnValue({ from }),
     } as unknown as Db;
-    const svc = new AutonomyReviewService(db, makeDealsService());
+    const svc = new AutonomyReviewService(db);
 
     await expect(svc.getDecision(ATTACKER_ORG, "dec-999")).rejects.toThrow(NotFoundException);
   });

@@ -7,6 +7,11 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatSearchService } from "./chat-search.service";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import {
+  chatMessageSearchQuerySchema,
+  chatSimpleSearchQuerySchema,
+} from "./dto/chat.schemas";
 
 @ApiTags("Chat Search")
 @ApiBearerAuth()
@@ -20,6 +25,7 @@ export class ChatSearchController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get("messages")
   @RequirePermission("chat:messages:read")
+  @Validate({ query: chatMessageSearchQuerySchema })
   searchMessages(
     @Query("q") q: string,
     @Query("cursor") cursor: string | undefined,
@@ -43,6 +49,7 @@ export class ChatSearchController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get("channels")
   @RequirePermission("chat:channels:read")
+  @Validate({ query: chatSimpleSearchQuerySchema })
   searchChannels(@Query("q") q: string, @CurrentUser() u: CurrentUserContext) {
     return this.search.searchChannels(u.orgId, u.userId, q ?? "");
   }
@@ -51,6 +58,7 @@ export class ChatSearchController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get("users")
   @RequirePermission("chat:channels:read")
+  @Validate({ query: chatSimpleSearchQuerySchema })
   searchUsers(@Query("q") q: string, @CurrentUser() u: CurrentUserContext) {
     return this.search.searchUsers(u.orgId, q ?? "");
   }

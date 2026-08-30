@@ -7,6 +7,7 @@ import { EntityReferenceService } from "../entity-reference/entity-reference.ser
 
 const mockDb = {
   query: {
+    organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 10 }) },
     chatChannelMembers: { findFirst: jest.fn(), findMany: jest.fn() },
     chatChannels: { findFirst: jest.fn(), findMany: jest.fn() },
     users: { findFirst: jest.fn() },

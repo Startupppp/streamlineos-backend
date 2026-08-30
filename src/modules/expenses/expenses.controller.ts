@@ -47,9 +47,14 @@ import {
 } from "./dto/expense.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
 import { ExpenseExportService } from "./expense-export.service";
 import { ExpenseExportWorkerService } from "./expense-export-worker.service";
 import { pipeline } from "node:stream/promises";
+import { z } from "zod";
+
+const expenseIdParams = z.object({ expenseId: z.coerce.number().int().positive() }).strict();
+const jobIdParams = z.object({ jobId: z.string().min(1) }).strict();
 
 const EXPORT_HEADERS = [
   "Date",
@@ -102,6 +107,7 @@ export class ExpensesController {
 
   @Patch(":expenseId")
   @RequirePermission("hr:expenses:approve")
+  @Validate({ params: expenseIdParams })
   async update(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @Body(new ZodValidationPipe(updateExpensePatchSchema)) body: UpdateExpensePatchInput,
@@ -203,12 +209,14 @@ export class ExpensesController {
 
   @Get("export/jobs/:jobId")
   @RequirePermission("hr:expenses:read")
+  @Validate({ params: jobIdParams })
   getExportJob(@Param("jobId") jobId: string, @CurrentUser() u: CurrentUserContext) {
     return this.exportJobs.get(u, jobId);
   }
 
   @Get("export/jobs/:jobId/download")
   @RequirePermission("hr:expenses:read")
+  @Validate({ params: jobIdParams })
   async downloadExportJob(@Param("jobId") jobId: string, @CurrentUser() u: CurrentUserContext, @Res() res: Response) {
     const { job, file } = await this.exportJobs.download(u, jobId);
     res.setHeader("Content-Type", file.contentType);
@@ -222,6 +230,7 @@ export class ExpensesController {
   @Idempotent("expenses.expense.submit")
   @HttpCode(200)
   @RequirePermission("hr:expenses:create")
+  @Validate({ params: expenseIdParams })
   async submit(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -233,6 +242,7 @@ export class ExpensesController {
   @Idempotent("expenses.expense.approve")
   @HttpCode(200)
   @RequirePermission("hr:expenses:approve")
+  @Validate({ params: expenseIdParams })
   async approve(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -244,6 +254,7 @@ export class ExpensesController {
   @Idempotent("expenses.expense.reject")
   @HttpCode(200)
   @RequirePermission("hr:expenses:approve")
+  @Validate({ params: expenseIdParams })
   async reject(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @Body(new ZodValidationPipe(rejectExpenseSchema)) body: RejectExpenseInput,
@@ -255,6 +266,7 @@ export class ExpensesController {
 
   @Delete(":expenseId")
   @RequirePermission("hr:expenses:create")
+  @Validate({ params: expenseIdParams })
   async remove(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @CurrentUser() u: CurrentUserContext,

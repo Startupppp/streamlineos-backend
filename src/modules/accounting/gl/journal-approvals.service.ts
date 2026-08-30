@@ -21,7 +21,7 @@ export class JournalApprovalsService {
 
   async submitForApproval(orgId: string, userId: string, entryId: number) {
     const entry = await this.db
-      .select()
+      .select({ status: journalEntries.status })
       .from(journalEntries)
       .where(and(eq(journalEntries.id, entryId), eq(journalEntries.orgId, orgId)))
       .limit(1);

@@ -29,3 +29,10 @@ export const setupSchema = z.object({
 });
 
 export type SetupInput = z.infer<typeof setupSchema>;
+
+export const listOrgMembersQuerySchema = z.object({
+  search: z.string().trim().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+export type ListOrgMembersQueryInput = z.infer<typeof listOrgMembersQuerySchema>;

@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -6,11 +6,15 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbResearchBriefService } from "./kb-research-brief.service";
 import {
   kbResearchBriefCreateSchema,
   kbResearchBriefListSchema,
   kbResearchBriefRateSchema,
+  type KbResearchBriefCreateInput,
+  type KbResearchBriefListInput,
+  type KbResearchBriefRateInput,
 } from "./dto/kb-ai.schemas";
 
 @Controller("kb")
@@ -23,18 +27,20 @@ export class KbResearchBriefController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @HttpCode(201)
-  async enqueue(@Body() body: unknown, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    const parsed = kbResearchBriefCreateSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.briefs.enqueue(u, parsed.data);
+  async enqueue(
+    @Body(new ZodValidationPipe(kbResearchBriefCreateSchema)) body: KbResearchBriefCreateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.briefs.enqueue(u, body);
   }
 
   @Get("research-briefs")
   @RequirePermission("kb:pages:view")
-  async list(@Query() query: unknown, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    const parsed = kbResearchBriefListSchema.safeParse(query);
-    if (!parsed.success) throw new BadRequestException("Invalid query parameters");
-    return this.briefs.list(u, parsed.data);
+  async list(
+    @Query(new ZodValidationPipe(kbResearchBriefListSchema)) query: KbResearchBriefListInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.briefs.list(u, query);
   }
 
   @Get("research-briefs/:briefId")
@@ -51,12 +57,10 @@ export class KbResearchBriefController {
   @RequirePermission("kb:pages:view")
   async rateBrief(
     @Param("briefId", ParseIntPipe) briefId: number,
-    @Body() body: unknown,
+    @Body(new ZodValidationPipe(kbResearchBriefRateSchema)) body: KbResearchBriefRateInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<{ success: boolean }> {
-    const parsed = kbResearchBriefRateSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    await this.briefs.rateBrief(u, briefId, parsed.data.rating);
+    await this.briefs.rateBrief(u, briefId, body.rating);
     return { success: true };
   }
 }

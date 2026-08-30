@@ -51,7 +51,20 @@ export class PeriodsService {
 
   private async fetchPeriods(orgId: string) {
     return this.db
-      .select()
+      .select({
+        id: accountingPeriods.id,
+        orgId: accountingPeriods.orgId,
+        name: accountingPeriods.name,
+        startDate: accountingPeriods.startDate,
+        endDate: accountingPeriods.endDate,
+        status: accountingPeriods.status,
+        closedBy: accountingPeriods.closedBy,
+        closedAt: accountingPeriods.closedAt,
+        lockedBy: accountingPeriods.lockedBy,
+        lockedAt: accountingPeriods.lockedAt,
+        createdAt: accountingPeriods.createdAt,
+        updatedAt: accountingPeriods.updatedAt,
+      })
       .from(accountingPeriods)
       .where(eq(accountingPeriods.orgId, orgId))
       .orderBy(accountingPeriods.startDate);
@@ -92,7 +105,20 @@ export class PeriodsService {
 
   async getCloseChecklist(orgId: string, periodId: number) {
     const period = await this.db
-      .select()
+      .select({
+        id: accountingPeriods.id,
+        orgId: accountingPeriods.orgId,
+        name: accountingPeriods.name,
+        startDate: accountingPeriods.startDate,
+        endDate: accountingPeriods.endDate,
+        status: accountingPeriods.status,
+        closedBy: accountingPeriods.closedBy,
+        closedAt: accountingPeriods.closedAt,
+        lockedBy: accountingPeriods.lockedBy,
+        lockedAt: accountingPeriods.lockedAt,
+        createdAt: accountingPeriods.createdAt,
+        updatedAt: accountingPeriods.updatedAt,
+      })
       .from(accountingPeriods)
       .where(and(eq(accountingPeriods.id, periodId), eq(accountingPeriods.orgId, orgId)))
       .limit(1);
@@ -180,7 +206,7 @@ export class PeriodsService {
 
   async closePeriod(orgId: string, userId: string, periodId: number) {
     const period = await this.db
-      .select()
+      .select({ status: accountingPeriods.status, name: accountingPeriods.name })
       .from(accountingPeriods)
       .where(and(eq(accountingPeriods.id, periodId), eq(accountingPeriods.orgId, orgId)))
       .limit(1);
@@ -214,7 +240,7 @@ export class PeriodsService {
 
   async lockPeriod(orgId: string, userId: string, periodId: number) {
     const period = await this.db
-      .select()
+      .select({ status: accountingPeriods.status })
       .from(accountingPeriods)
       .where(and(eq(accountingPeriods.id, periodId), eq(accountingPeriods.orgId, orgId)))
       .limit(1);
@@ -236,7 +262,7 @@ export class PeriodsService {
 
   async reopenPeriod(orgId: string, userId: string, periodId: number) {
     const period = await this.db
-      .select()
+      .select({ status: accountingPeriods.status, name: accountingPeriods.name })
       .from(accountingPeriods)
       .where(and(eq(accountingPeriods.id, periodId), eq(accountingPeriods.orgId, orgId)))
       .limit(1);

@@ -19,6 +19,7 @@ export const saveSnapshotSchema = z.object({
   correlationId: z.string().optional(),
   confidence: z.number().optional(),
 });
+export type SaveSnapshotInput = z.infer<typeof saveSnapshotSchema>;
 
 export const ALLOWED_ENTITY_TYPES = [
   "project",

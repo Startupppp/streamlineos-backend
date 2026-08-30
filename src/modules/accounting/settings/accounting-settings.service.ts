@@ -202,7 +202,7 @@ export class AccountingSettingsService {
 
   async updateSequence(u: CurrentUserContext, entityType: SequenceEntityType, input: UpdateSequenceInput) {
     const existing = await this.db
-      .select()
+      .select({ id: accNumberSequences.id })
       .from(accNumberSequences)
       .where(and(eq(accNumberSequences.orgId, u.orgId), eq(accNumberSequences.entityType, entityType)))
       .limit(1);

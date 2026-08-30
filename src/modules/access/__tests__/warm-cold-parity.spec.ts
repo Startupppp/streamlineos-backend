@@ -67,11 +67,16 @@ function buildService(roleGrants: { permissionKey: string; scope: string }[]) {
   const entitlements = { isModuleEnabled: () => Promise.resolve(true) };
   const mfaPolicy = { isSatisfied: () => Promise.resolve(true) };
 
+  const userModuleAccess = {
+    getUserDeniedModules: jest.fn().mockResolvedValue(new Set<string>()),
+    clearCacheForOrg: jest.fn(),
+  };
   return new AccessService(
     db,
     cache as never,
     entitlements as never,
     mfaPolicy as never,
+    userModuleAccess as never,
   );
 }
 

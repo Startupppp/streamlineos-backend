@@ -7,6 +7,8 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatSavedService } from "./chat-saved.service";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { chatSavedListQuerySchema } from "./dto/chat.schemas";
 
 @ApiTags("Chat Saved Messages")
 @ApiBearerAuth()
@@ -20,6 +22,7 @@ export class ChatSavedController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get()
   @RequirePermission("chat:messages:read")
+  @Validate({ query: chatSavedListQuerySchema })
   list(
     @Query("cursor") cursor: string | undefined,
     @Query("limit") limit: string | undefined,

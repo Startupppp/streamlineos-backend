@@ -53,11 +53,11 @@ describe("attendance scope predicate isolation", () => {
     expect(result).not.toBe("true");
   });
 
-  it("team scope generates a subquery over teammates", () => {
+  it("team scope without teamIds falls back to own-scope restriction", () => {
     const result = toSql(
       applyScope("team", ORG, ACTOR, { ownerColumn: attendance.userId }),
     );
-    expect(result).toContain("scope_teammate");
+    expect(result).toContain('"attendance"."user_id"');
     expect(result).not.toBe("true");
   });
 
@@ -71,7 +71,8 @@ describe("attendance scope predicate isolation", () => {
     const sqls = (["all", "own", "team", "none"] as const).map((scope) =>
       toSql(applyScope(scope, ORG, ACTOR, { ownerColumn: attendance.userId })),
     );
-    expect(new Set(sqls).size).toBe(4);
+    // team collapses to own when no materialized teamIds are supplied; 3 distinct predicates
+    expect(new Set(sqls).size).toBe(3);
   });
 });
 
@@ -202,9 +203,9 @@ describe("getLeavesToday scope application", () => {
     expect(toSql(applyScope("all", ORG, ACTOR, ownerColumn))).toBe("true");
   });
 
-  it("(e) team scope resolves teammates rather than the whole organization", () => {
+  it("(e) team scope without teamIds falls back to own scope, not the whole organization", () => {
     const result = toSql(applyScope("team", ORG, ACTOR, ownerColumn));
-    expect(result).toContain("scope_teammate");
+    expect(result).toContain('"leave_requests"."user_id"');
     expect(result).not.toBe("true");
   });
 

@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards, HttpCode } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -6,8 +7,11 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { TravelService } from "./travel.service";
+
+const travelRequestIdParams = z.object({ travelRequestId: z.coerce.number().int().positive() }).strict();
 import {
   createTravelRequestSchema,
   rejectTravelRequestSchema,
@@ -45,6 +49,7 @@ export class TravelController {
 
   @Patch(":travelRequestId/manager-approve")
   @RequirePermission("hr:travel:manage")
+  @Validate({ params: travelRequestIdParams })
   managerApprove(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,
@@ -54,6 +59,7 @@ export class TravelController {
 
   @Patch(":travelRequestId/finance-approve")
   @RequirePermission("hr:travel:manage")
+  @Validate({ params: travelRequestIdParams })
   financeApprove(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,
@@ -64,6 +70,7 @@ export class TravelController {
   @Patch(":travelRequestId/reject")
   @Idempotent("expenses.travel.reject")
   @RequirePermission("hr:travel:manage")
+  @Validate({ params: travelRequestIdParams })
   reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,

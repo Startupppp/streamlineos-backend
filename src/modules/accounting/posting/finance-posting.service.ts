@@ -33,6 +33,7 @@ import type {
   ReverseJournalResult,
 } from "../core/finance-posting.types";
 import { FinancePostingAccountsService } from "./finance-posting-accounts.service";
+import type { SystemAccountPurpose } from "../core/finance-posting.types";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type DbOrTx = Db | Tx;
@@ -433,6 +434,10 @@ export class FinancePostingService {
     if (rows[0]?.status === "POSTED") {
       throw new BadRequestException("Cannot mutate a POSTED journal entry");
     }
+  }
+
+  async resolveSystemAccount(orgId: string, purpose: SystemAccountPurpose): Promise<number> {
+    return this.accounts.resolveSystemAccount(orgId, purpose);
   }
 
   async assertApprovalGranted(orgId: string, entryId: number): Promise<void> {

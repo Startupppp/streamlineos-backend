@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, isNull, lt, or, sql } from "drizzle-orm";
 import { changelogEntries, feedbackPosts, feedbackVotes, roadmapItems } from "../../../db/schema";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type {
@@ -21,9 +22,8 @@ export class ProjectsRoadmapService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listRoadmap(orgId: string, query: RoadmapListQuery) {
-    const { page, limit } = query;
-    const effectiveLimit = Math.min(limit, 100);
-    const offset = (page - 1) * effectiveLimit;
+    const limit = Math.min(query.limit, 100);
+    const pos = decodeCursor(query.cursor);
     const conditions = [eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)];
     if (query.status) conditions.push(eq(roadmapItems.status, query.status));
     if (query.search) {
@@ -31,26 +31,24 @@ export class ProjectsRoadmapService {
       const match = or(ilike(roadmapItems.title, term), ilike(roadmapItems.description, term));
       if (match) conditions.push(match);
     }
-    const where = and(...conditions);
-    const [data, [countRow]] = await Promise.all([
-      this.db.query.roadmapItems.findMany({
-        where,
-        orderBy: [asc(roadmapItems.sortOrder), asc(roadmapItems.id)],
-        limit: effectiveLimit,
-        offset,
-      }),
-      this.db.select({ total: count() }).from(roadmapItems).where(where),
-    ]);
-    const total = Number(countRow?.total ?? 0);
-    return {
-      data,
-      pagination: {
-        page,
-        limit: effectiveLimit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / effectiveLimit)),
-      },
-    };
+    if (pos) {
+      const sortVal = Number(pos.sortValue);
+      const cursorId = Number(pos.id);
+      const after = or(
+        gt(roadmapItems.sortOrder, sortVal),
+        and(eq(roadmapItems.sortOrder, sortVal), gt(roadmapItems.id, cursorId)),
+      );
+      if (after) conditions.push(after);
+    }
+    const rows = await this.db.query.roadmapItems.findMany({
+      where: and(...conditions),
+      orderBy: [asc(roadmapItems.sortOrder), asc(roadmapItems.id)],
+      limit: limit + 1,
+    });
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: String(row.sortOrder),
+      id: String(row.id),
+    }));
   }
 
   async createRoadmap(orgId: string, userId: string, input: CreateRoadmapInput) {
@@ -102,9 +100,8 @@ export class ProjectsRoadmapService {
   }
 
   async listFeedback(orgId: string, query: FeedbackListQuery) {
-    const { page, limit } = query;
-    const effectiveLimit = Math.min(limit, 100);
-    const offset = (page - 1) * effectiveLimit;
+    const limit = Math.min(query.limit, 100);
+    const pos = decodeCursor(query.cursor);
     const conditions = [eq(feedbackPosts.orgId, orgId), isNull(feedbackPosts.deletedAt)];
     if (!query.includeMerged) conditions.push(isNull(feedbackPosts.duplicateOfId));
     if (query.status) conditions.push(eq(feedbackPosts.status, query.status));
@@ -113,26 +110,24 @@ export class ProjectsRoadmapService {
       const match = or(ilike(feedbackPosts.title, term), ilike(feedbackPosts.description, term));
       if (match) conditions.push(match);
     }
-    const where = and(...conditions);
-    const [data, [countRow]] = await Promise.all([
-      this.db.query.feedbackPosts.findMany({
-        where,
-        orderBy: [desc(feedbackPosts.votes), asc(feedbackPosts.id)],
-        limit: effectiveLimit,
-        offset,
-      }),
-      this.db.select({ total: count() }).from(feedbackPosts).where(where),
-    ]);
-    const total = Number(countRow?.total ?? 0);
-    return {
-      data,
-      pagination: {
-        page,
-        limit: effectiveLimit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / effectiveLimit)),
-      },
-    };
+    if (pos) {
+      const votes = Number(pos.sortValue);
+      const cursorId = Number(pos.id);
+      const after = or(
+        lt(feedbackPosts.votes, votes),
+        and(eq(feedbackPosts.votes, votes), gt(feedbackPosts.id, cursorId)),
+      );
+      if (after) conditions.push(after);
+    }
+    const rows = await this.db.query.feedbackPosts.findMany({
+      where: and(...conditions),
+      orderBy: [desc(feedbackPosts.votes), asc(feedbackPosts.id)],
+      limit: limit + 1,
+    });
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: String(row.votes),
+      id: String(row.id),
+    }));
   }
 
   async createFeedback(orgId: string, userId: string, input: CreateFeedbackInput) {
@@ -259,31 +254,28 @@ export class ProjectsRoadmapService {
   }
 
   async listChangelog(orgId: string, query: ChangelogListQuery) {
-    const { page, limit } = query;
-    const effectiveLimit = Math.min(limit, 100);
-    const offset = (page - 1) * effectiveLimit;
+    const limit = Math.min(query.limit, 100);
+    const pos = decodeCursor(query.cursor);
     const conditions = [eq(changelogEntries.orgId, orgId)];
     if (query.type) conditions.push(eq(changelogEntries.type, query.type));
-    const where = and(...conditions);
-    const [data, [countRow]] = await Promise.all([
-      this.db.query.changelogEntries.findMany({
-        where,
-        orderBy: [desc(changelogEntries.createdAt), desc(changelogEntries.id)],
-        limit: effectiveLimit,
-        offset,
-      }),
-      this.db.select({ total: count() }).from(changelogEntries).where(where),
-    ]);
-    const total = Number(countRow?.total ?? 0);
-    return {
-      data,
-      pagination: {
-        page,
-        limit: effectiveLimit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / effectiveLimit)),
-      },
-    };
+    if (pos) {
+      const ts = new Date(pos.sortValue);
+      const cursorId = Number(pos.id);
+      const after = or(
+        lt(changelogEntries.createdAt, ts),
+        and(eq(changelogEntries.createdAt, ts), lt(changelogEntries.id, cursorId)),
+      );
+      if (after) conditions.push(after);
+    }
+    const rows = await this.db.query.changelogEntries.findMany({
+      where: and(...conditions),
+      orderBy: [desc(changelogEntries.createdAt), desc(changelogEntries.id)],
+      limit: limit + 1,
+    });
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async createChangelog(orgId: string, userId: string, input: CreateChangelogInput) {

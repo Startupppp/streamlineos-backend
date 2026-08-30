@@ -2,90 +2,64 @@ import { RecurringJournalsService } from "./recurring-journals.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
 
-// `listTemplates` awaited the page, then awaited a bare `count(*)` after it — two round trips in series for one screen.
-
 const ORG_ID = "org-1";
 
-interface Harness {
-  readonly service: RecurringJournalsService;
-  readonly statements: () => number;
-  readonly lastOffset: () => number | undefined;
-}
-
-function buildHarness(page: { rows: number; total: number }, fallbackTotal = 0): Harness {
-  let statements = 0;
-  let lastOffset: number | undefined;
-
-  const templateRows = Array.from({ length: page.rows }, (_, i) => ({
-    id: i + 1,
-    orgId: ORG_ID,
-    name: `Template ${i + 1}`,
-    total: String(page.total),
-  }));
-
-  const chain = (result: unknown): Record<string, unknown> => {
-    const link: Record<string, unknown> = {};
-    for (const method of ["from", "where", "orderBy", "innerJoin", "leftJoin"])
-      link[method] = jest.fn(() => link);
-    link["offset"] = jest.fn((value: number) => {
-      lastOffset = value;
-      return link;
-    });
-    link["limit"] = jest.fn(() => Promise.resolve(result));
-    link["then"] = (resolve: (v: unknown) => unknown) => Promise.resolve(result).then(resolve);
-    return link;
-  };
-
-  let call = 0;
-  const db = {
-    select: jest.fn(() => {
-      statements += 1;
-      call += 1;
-      return chain(call === 1 ? templateRows : [{ c: fallbackTotal }]);
-    }),
-  } as unknown as Db;
-
+function makeTemplate(id: number) {
   return {
-    service: new RecurringJournalsService(db, {} as unknown as AuditService),
-    statements: () => statements,
-    lastOffset: () => lastOffset,
+    id,
+    orgId: ORG_ID,
+    name: `Template ${id}`,
+    description: null,
+    frequency: "MONTHLY" as const,
+    nextRunDate: null,
+    lastRunDate: null,
+    endDate: null,
+    isActive: true,
+    lines: [],
+    createdBy: "user-1",
+    createdAt: new Date(),
+    updatedAt: new Date(),
   };
 }
 
-describe("recurring journal templates — the total costs no extra round trip", () => {
-  it("reads the total out of the page query rather than a second statement", async () => {
-    const harness = buildHarness({ rows: 12, total: 88 });
+function buildService(rows: ReturnType<typeof makeTemplate>[]): RecurringJournalsService {
+  const limit = jest.fn().mockResolvedValue(rows);
+  const orderBy = jest.fn().mockReturnValue({ limit });
+  const where = jest.fn().mockReturnValue({ orderBy });
+  const db = {
+    select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
+  } as unknown as Db;
+  return new RecurringJournalsService(db, {} as unknown as AuditService);
+}
 
-    const result = await harness.service.listTemplates(ORG_ID, 1, 50);
+describe("recurring journal templates — cursor pagination", () => {
+  it("returns data with hasMore false when fewer rows than limit", async () => {
+    const svc = buildService([makeTemplate(1), makeTemplate(2)]);
 
-    expect(result.total).toBe(88);
-    expect(harness.statements()).toBe(1);
+    const result = await svc.listTemplates(ORG_ID, undefined, 50);
+
+    expect(result.data).toHaveLength(2);
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
   });
 
-  it("never returns the window column as part of a template", async () => {
-    const harness = buildHarness({ rows: 2, total: 2 });
+  it("sets hasMore and nextCursor when sentinel row is present", async () => {
+    const rows = Array.from({ length: 11 }, (_, i) => makeTemplate(i + 1));
+    const svc = buildService(rows);
 
-    const result = await harness.service.listTemplates(ORG_ID, 1, 50);
+    const result = await svc.listTemplates(ORG_ID, undefined, 10);
 
-    for (const item of result.items) expect(item).not.toHaveProperty("total");
+    expect(result.data).toHaveLength(10);
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toBe(10);
   });
 
-  it("reports zero for an empty first page without counting again", async () => {
-    const harness = buildHarness({ rows: 0, total: 0 });
+  it("returns empty data on no rows", async () => {
+    const svc = buildService([]);
 
-    const result = await harness.service.listTemplates(ORG_ID, 1, 50);
+    const result = await svc.listTemplates(ORG_ID, undefined, 50);
 
-    expect(result.total).toBe(0);
-    expect(harness.statements()).toBe(1);
-  });
-
-  it("counts once more only for an empty page past the end of the results", async () => {
-    const harness = buildHarness({ rows: 0, total: 0 }, 61);
-
-    const result = await harness.service.listTemplates(ORG_ID, 4, 20);
-
-    expect(result.total).toBe(61);
-    expect(harness.statements()).toBe(2);
-    expect(harness.lastOffset()).toBe(60);
+    expect(result.data).toHaveLength(0);
+    expect(result.hasMore).toBe(false);
   });
 });

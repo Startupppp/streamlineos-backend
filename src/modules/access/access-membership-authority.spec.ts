@@ -1,6 +1,7 @@
 import type { CacheService } from "../../common/cache/cache.service";
 import type { Db } from "../../db/drizzle.module";
 import { makeMfaPolicyStub } from "../../../test/helpers/mfa-policy-stub";
+import { makeUserModuleAccessStub } from "../../../test/helpers/user-module-access-stub";
 import type { EntitlementsService } from "./entitlements.service";
 import { AccessService } from "./access.service";
 
@@ -41,6 +42,7 @@ function buildService(membership: {
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
+    makeUserModuleAccessStub(),
   );
 }
 

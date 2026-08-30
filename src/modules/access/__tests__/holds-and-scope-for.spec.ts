@@ -9,6 +9,7 @@ import {
   personalTokenPrincipal,
 } from "../../../common/auth/principal";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
+import { makeUserModuleAccessStub } from "../../../../test/helpers/user-module-access-stub";
 
 const ORG = "org-1";
 const USER = "user-1";
@@ -57,7 +58,7 @@ function buildService(resolved: Map<string, DataScope>): {
     isCoreModule: jest.fn().mockReturnValue(false),
   } as unknown as EntitlementsService;
 
-  const service = new AccessService(db, cache, entitlements, makeMfaPolicyStub());
+  const service = new AccessService(db, cache, entitlements, makeMfaPolicyStub(), makeUserModuleAccessStub());
   const resolveSpy = jest
     .spyOn(service, "resolveUserPermissions")
     .mockResolvedValue(resolved);

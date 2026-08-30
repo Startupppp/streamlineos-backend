@@ -21,6 +21,7 @@ import { isCoreModuleKey } from "../entitlements.service";
 import { moduleAvailabilityResolver } from "../../../common/rbac/module-availability";
 import { CATALOG_MODULES } from "../access-policy";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
+import { makeUserModuleAccessStub } from "../../../../test/helpers/user-module-access-stub";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { OwnershipTransfersService } from "../../ownership/ownership-transfers.service";
@@ -140,6 +141,7 @@ function buildService(db: unknown): AccessService {
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
+    makeUserModuleAccessStub(),
   );
 }
 

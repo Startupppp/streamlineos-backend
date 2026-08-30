@@ -1,15 +1,10 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq, getTableColumns, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { journalEntries, journalLines, finRecurringJournalTemplates, accNumberSequences } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
-import {
-  resolveWindowedTotal,
-  totalOverWindow,
-  withoutTotal,
-} from "../../../common/pagination/window-count";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import {
   type CreateRecurringJournalInput,
   type UpdateRecurringJournalInput,
@@ -48,26 +43,32 @@ export class RecurringJournalsService {
     private readonly audit: AuditService,
   ) {}
 
-  async listTemplates(orgId: string, page = 1, pageSize = 50) {
-    const { offset, limit } = paginateOffset({ page, pageSize });
-    const where = eq(finRecurringJournalTemplates.orgId, orgId);
+  async listTemplates(orgId: string, cursor: number | undefined, limit: number) {
+    const conds = [eq(finRecurringJournalTemplates.orgId, orgId)];
+    if (cursor) conds.push(gt(finRecurringJournalTemplates.id, cursor));
+
     const rows = await this.db
-      .select({ ...getTableColumns(finRecurringJournalTemplates), total: totalOverWindow })
+      .select({
+        id: finRecurringJournalTemplates.id,
+        orgId: finRecurringJournalTemplates.orgId,
+        name: finRecurringJournalTemplates.name,
+        description: finRecurringJournalTemplates.description,
+        frequency: finRecurringJournalTemplates.frequency,
+        nextRunDate: finRecurringJournalTemplates.nextRunDate,
+        lastRunDate: finRecurringJournalTemplates.lastRunDate,
+        endDate: finRecurringJournalTemplates.endDate,
+        isActive: finRecurringJournalTemplates.isActive,
+        lines: finRecurringJournalTemplates.lines,
+        createdBy: finRecurringJournalTemplates.createdBy,
+        createdAt: finRecurringJournalTemplates.createdAt,
+        updatedAt: finRecurringJournalTemplates.updatedAt,
+      })
       .from(finRecurringJournalTemplates)
-      .where(where)
-      .orderBy(finRecurringJournalTemplates.name)
-      .offset(offset)
-      .limit(limit);
+      .where(and(...conds))
+      .orderBy(asc(finRecurringJournalTemplates.id))
+      .limit(limit + 1);
 
-    const total = await resolveWindowedTotal(rows, offset, async () => {
-      const fallback = await this.db
-        .select({ c: sql<number>`count(*)` })
-        .from(finRecurringJournalTemplates)
-        .where(where);
-      return Number(fallback[0]?.c ?? 0);
-    });
-
-    return buildListResponse(withoutTotal(rows), total, { page, pageSize });
+    return buildIdCursorPage(rows, limit, (row) => row.id);
   }
 
   async createTemplate(orgId: string, userId: string, input: CreateRecurringJournalInput) {
@@ -146,7 +147,18 @@ export class RecurringJournalsService {
 
   async runNow(orgId: string, userId: string, templateId: number) {
     const tmpl = await this.db
-      .select()
+      .select({
+        id: finRecurringJournalTemplates.id,
+        orgId: finRecurringJournalTemplates.orgId,
+        name: finRecurringJournalTemplates.name,
+        frequency: finRecurringJournalTemplates.frequency,
+        nextRunDate: finRecurringJournalTemplates.nextRunDate,
+        lastRunDate: finRecurringJournalTemplates.lastRunDate,
+        endDate: finRecurringJournalTemplates.endDate,
+        isActive: finRecurringJournalTemplates.isActive,
+        lines: finRecurringJournalTemplates.lines,
+        createdBy: finRecurringJournalTemplates.createdBy,
+      })
       .from(finRecurringJournalTemplates)
       .where(and(eq(finRecurringJournalTemplates.id, templateId), eq(finRecurringJournalTemplates.orgId, orgId)))
       .limit(1);
@@ -178,7 +190,18 @@ export class RecurringJournalsService {
     if (orgId !== undefined) conds.push(eq(finRecurringJournalTemplates.orgId, orgId));
 
     const templates = await this.db
-      .select()
+      .select({
+        id: finRecurringJournalTemplates.id,
+        orgId: finRecurringJournalTemplates.orgId,
+        name: finRecurringJournalTemplates.name,
+        frequency: finRecurringJournalTemplates.frequency,
+        nextRunDate: finRecurringJournalTemplates.nextRunDate,
+        lastRunDate: finRecurringJournalTemplates.lastRunDate,
+        endDate: finRecurringJournalTemplates.endDate,
+        isActive: finRecurringJournalTemplates.isActive,
+        lines: finRecurringJournalTemplates.lines,
+        createdBy: finRecurringJournalTemplates.createdBy,
+      })
       .from(finRecurringJournalTemplates)
       .where(and(...conds));
 
@@ -205,7 +228,7 @@ export class RecurringJournalsService {
   }
 
   private async materializeEntry(
-    tmpl: typeof finRecurringJournalTemplates.$inferSelect,
+    tmpl: Pick<typeof finRecurringJournalTemplates.$inferSelect, "id" | "orgId" | "name" | "lines" | "frequency">,
     entryDate: string,
     userId: string,
   ) {

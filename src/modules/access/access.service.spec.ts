@@ -25,6 +25,7 @@ import {
 } from "../rbac/permissions";
 import { logger } from "../../common/logger/logger.service";
 import { makeMfaPolicyStub } from "../../../test/helpers/mfa-policy-stub";
+import { makeUserModuleAccessStub } from "../../../test/helpers/user-module-access-stub";
 
 const ACTIVE_MEMBER_BASELINE_PERMISSIONS = new Set([
   ...UNIVERSAL_MEMBER_PERMISSIONS,
@@ -275,7 +276,7 @@ function withTenantTxMock<T extends object>(db: T): T {
   return db;
 }
 
-function buildService(db: unknown): AccessService {
+function buildService(db: unknown, deniedModules?: Set<string>): AccessService {
   const cache = {
     cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
     invalidate: jest.fn().mockResolvedValue(undefined),
@@ -292,11 +293,15 @@ function buildService(db: unknown): AccessService {
     getModuleMap: jest.fn().mockResolvedValue({}),
     getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
   };
+  const userModuleAccess = deniedModules
+    ? { ...makeUserModuleAccessStub(), getUserDeniedModules: jest.fn().mockResolvedValue(deniedModules) }
+    : makeUserModuleAccessStub();
   return new AccessService(
     withTenantTxMock(db as object) as unknown as Db,
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
+    userModuleAccess,
   );
 }
 
@@ -515,10 +520,10 @@ describe("AccessService.resolveUserPermissions — module ownership grants", () 
         .mockReturnValueOnce(makeSelectChain([{ moduleKey: "hr" }]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
-        .mockReturnValueOnce(makeSelectChain([{ moduleKey: "hr" }])),
+        .mockReturnValueOnce(makeSelectChain([])),
     };
 
-    const result = await buildService(db).resolveUserPermissions("org-owner", "user-owner");
+    const result = await buildService(db, new Set(["hr"])).resolveUserPermissions("org-owner", "user-owner");
 
     for (const permissionKey of ACTIVE_MEMBER_BASELINE_PERMISSIONS) {
       if (moduleOf(permissionKey) === "hr") {
@@ -579,6 +584,7 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
+      makeUserModuleAccessStub(),
     );
     svc.onModuleInit();
 
@@ -745,6 +751,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
+      makeUserModuleAccessStub(),
     );
 
     await svc.resolveUserPermissions("org-dedup", "user-dedup");
@@ -835,6 +842,7 @@ describe("AccessService.membersWithPermission", () => {
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
+      makeUserModuleAccessStub(),
     );
   }
 
@@ -1036,6 +1044,7 @@ describe("AccessService.membersWithPermission — pagination", () => {
         cache as unknown as CacheService,
         entitlements as unknown as EntitlementsService,
         makeMfaPolicyStub(),
+        makeUserModuleAccessStub(),
       ),
       cachedMock,
     };
