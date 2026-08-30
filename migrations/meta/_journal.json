@@ -2395,6 +2395,34 @@
       "when": 1788134409018,
       "tag": "0575_inventory_composite_tenant_fks",
       "breakpoints": true
+    },
+    {
+      "idx": 343,
+      "version": "7",
+      "when": 1788134409019,
+      "tag": "0576_tenant_fks_public_a",
+      "breakpoints": true
+    },
+    {
+      "idx": 344,
+      "version": "7",
+      "when": 1788134409020,
+      "tag": "0577_tenant_fks_public_b",
+      "breakpoints": true
+    },
+    {
+      "idx": 345,
+      "version": "7",
+      "when": 1788134409021,
+      "tag": "0578_tenant_fks_public_c",
+      "breakpoints": true
+    },
+    {
+      "idx": 346,
+      "version": "7",
+      "when": 1788134409022,
+      "tag": "0579_tenant_fks_build_schemas",
+      "breakpoints": true
     }
   ]
 }
