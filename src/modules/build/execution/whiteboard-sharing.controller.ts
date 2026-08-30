@@ -36,7 +36,8 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const targetUserIdParams = z.object({ targetUserId: z.string().min(1) }).strict();
+const projectAndWhiteboardIdParams = z.object({ projectId: z.coerce.number().int().positive(), whiteboardId: z.coerce.number().int().positive() }).strict();
+const projectWhiteboardAndTargetUserParams = z.object({ projectId: z.coerce.number().int().positive(), whiteboardId: z.coerce.number().int().positive(), targetUserId: z.string().min(1) }).strict();
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
 function clientIp(req: Request): string {
@@ -53,6 +54,7 @@ export class WhiteboardSharingController {
 
   @Patch("sharing")
   @RequirePermission("build:whiteboards:manage")
+  @Validate({ params: projectAndWhiteboardIdParams })
   updateSharing(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
@@ -65,6 +67,7 @@ export class WhiteboardSharingController {
   @Post("sharing/rotate-token")
   @RequirePermission("build:whiteboards:manage")
   @HttpCode(200)
+  @Validate({ params: projectAndWhiteboardIdParams })
   rotateShareToken(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
@@ -75,6 +78,7 @@ export class WhiteboardSharingController {
 
   @Put("shares")
   @RequirePermission("build:whiteboards:manage")
+  @Validate({ params: projectAndWhiteboardIdParams })
   setShares(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,

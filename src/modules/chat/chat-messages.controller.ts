@@ -42,8 +42,9 @@ import { actorOf } from "../entity-reference/entity-actor";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const messageIdParams = z.object({ messageId: z.coerce.number().int().positive() }).strict();
-const messageIdemojiParams = z.object({ messageId: z.coerce.number().int().positive(), emoji: z.string().min(1) }).strict();
+const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
+const channelAndMessageIdParams = z.object({ channelId: z.coerce.number().int().positive(), messageId: z.coerce.number().int().positive() }).strict();
+const channelMessageAndEmojiParams = z.object({ channelId: z.coerce.number().int().positive(), messageId: z.coerce.number().int().positive(), emoji: z.string().min(1) }).strict();
 
 @ApiTags("Chat Messages")
 @ApiBearerAuth()
@@ -62,6 +63,7 @@ export class ChatMessagesController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get()
   @RequirePermission("chat:messages:read")
+  @Validate({ params: channelIdParams })
   list(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
@@ -76,6 +78,7 @@ export class ChatMessagesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("chat:messages:write")
+  @Validate({ params: channelIdParams })
   async send(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body(new ZodValidationPipe(sendMessageSchema)) body: SendMessageInput,
@@ -94,6 +97,7 @@ export class ChatMessagesController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get("poll")
   @RequirePermission("chat:messages:read")
+  @Validate({ params: channelIdParams })
   poll(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Query(new ZodValidationPipe(pollQuerySchema)) query: PollQuery,
@@ -109,7 +113,7 @@ export class ChatMessagesController {
   @ApiResponse({ status: 200, description: "OK" })
   @Patch(":messageId")
   @RequirePermission("chat:messages:write")
-  @Validate({ params: messageIdParams })
+  @Validate({ params: channelAndMessageIdParams })
   edit(
     @Param("messageId", ParseIntPipe) messageId: number,
     @Body(new ZodValidationPipe(editMessageSchema)) body: EditMessageInput,
@@ -122,7 +126,7 @@ export class ChatMessagesController {
   @ApiResponse({ status: 200, description: "OK" })
   @Delete(":messageId")
   @RequirePermission("chat:messages:write")
-  @Validate({ params: messageIdParams })
+  @Validate({ params: channelAndMessageIdParams })
   remove(
     @Param("messageId", ParseIntPipe) messageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -135,7 +139,7 @@ export class ChatMessagesController {
   @Post(":messageId/reactions")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
-  @Validate({ params: messageIdParams })
+  @Validate({ params: channelAndMessageIdParams })
   addReaction(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,
@@ -150,7 +154,7 @@ export class ChatMessagesController {
   @Delete(":messageId/reactions/:emoji")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
-  @Validate({ params: messageIdemojiParams })
+  @Validate({ params: channelMessageAndEmojiParams })
   removeReaction(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,
@@ -164,7 +168,7 @@ export class ChatMessagesController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":messageId/thread")
   @RequirePermission("chat:messages:read")
-  @Validate({ params: messageIdParams })
+  @Validate({ params: channelAndMessageIdParams })
   listThread(
     @Param("messageId", ParseIntPipe) messageId: number,
     @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
@@ -178,7 +182,7 @@ export class ChatMessagesController {
   @Post(":messageId/thread")
   @HttpCode(201)
   @RequirePermission("chat:messages:write")
-  @Validate({ params: messageIdParams })
+  @Validate({ params: channelAndMessageIdParams })
   sendThreadReply(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,

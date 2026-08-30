@@ -22,7 +22,7 @@ import { StorageService } from "./storage.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const documentIdParams = z.object({ documentId: z.coerce.number().int().positive() }).strict();
+const candidateAndDocumentIdParams = z.object({ candidateId: z.coerce.number().int().positive(), documentId: z.coerce.number().int().positive() }).strict();
 
 const SIGNED_URL_EXPIRY_SECONDS = 900;
 
@@ -38,7 +38,7 @@ export class StorageVaultController {
   @Post(":documentId/url")
   @AuthorizedInService("resolveUserPermissions(hr:documents:manage) + org-scoped lookup")
   @HttpCode(200)
-  @Validate({ params: documentIdParams })
+  @Validate({ params: candidateAndDocumentIdParams })
   async download(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,

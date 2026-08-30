@@ -43,10 +43,11 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const sprintIdParams = z.object({ sprintId: z.coerce.number().int().positive() }).strict();
-const cycleIdParams = z.object({ cycleId: z.coerce.number().int().positive() }).strict();
-const moduleIdParams = z.object({ moduleId: z.coerce.number().int().positive() }).strict();
-const epicIdParams = z.object({ epicId: z.coerce.number().int().positive() }).strict();
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const projectAndSprintIdParams = z.object({ projectId: z.coerce.number().int().positive(), sprintId: z.coerce.number().int().positive() }).strict();
+const projectAndCycleIdParams = z.object({ projectId: z.coerce.number().int().positive(), cycleId: z.coerce.number().int().positive() }).strict();
+const projectAndModuleIdParams = z.object({ projectId: z.coerce.number().int().positive(), moduleId: z.coerce.number().int().positive() }).strict();
+const projectAndEpicIdParams = z.object({ projectId: z.coerce.number().int().positive(), epicId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/sprints")
@@ -56,6 +57,7 @@ export class SprintsController {
 
   @Get()
   @RequirePermission("build:sprints:view")
+  @Validate({ params: projectIdParams })
   listSprints(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -67,6 +69,7 @@ export class SprintsController {
   @HttpCode(201)
   @RequirePermission("build:sprints:manage")
   @Idempotent("build.sprint.create")
+  @Validate({ params: projectIdParams })
   createSprint(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createSprintSchema)) body: CreateSprintInput,
@@ -77,7 +80,7 @@ export class SprintsController {
 
   @Get(":sprintId")
   @RequirePermission("build:sprints:view")
-  @Validate({ params: sprintIdParams })
+  @Validate({ params: projectAndSprintIdParams })
   getSprint(
     @Param("sprintId", ParseIntPipe) sprintId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,7 +90,7 @@ export class SprintsController {
 
   @Patch(":sprintId")
   @RequirePermission("build:sprints:manage")
-  @Validate({ params: sprintIdParams })
+  @Validate({ params: projectAndSprintIdParams })
   updateSprint(
     @Param("sprintId", ParseIntPipe) sprintId: number,
     @Body(new ZodValidationPipe(updateSprintSchema)) body: UpdateSprintInput,
@@ -99,7 +102,7 @@ export class SprintsController {
   @Delete(":sprintId")
   @RequirePermission("build:sprints:manage")
   @HttpCode(204)
-  @Validate({ params: sprintIdParams })
+  @Validate({ params: projectAndSprintIdParams })
   deleteSprint(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("sprintId", ParseIntPipe) sprintId: number,
@@ -117,6 +120,7 @@ export class CyclesController {
 
   @Get()
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   listCycles(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(cycleListQuerySchema)) query: CycleListQuery,
@@ -129,6 +133,7 @@ export class CyclesController {
   @HttpCode(201)
   @RequirePermission("build:workspace:manage")
   @Idempotent("build.cycle.create")
+  @Validate({ params: projectIdParams })
   createCycle(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createCycleSchema)) body: CreateCycleInput,
@@ -139,7 +144,7 @@ export class CyclesController {
 
   @Patch(":cycleId")
   @RequirePermission("build:workspace:manage")
-  @Validate({ params: cycleIdParams })
+  @Validate({ params: projectAndCycleIdParams })
   updateCycle(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("cycleId", ParseIntPipe) cycleId: number,
@@ -152,7 +157,7 @@ export class CyclesController {
   @Delete(":cycleId")
   @RequirePermission("build:workspace:manage")
   @HttpCode(204)
-  @Validate({ params: cycleIdParams })
+  @Validate({ params: projectAndCycleIdParams })
   deleteCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -169,6 +174,7 @@ export class ModulesController {
 
   @Get()
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   listModules(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -179,6 +185,7 @@ export class ModulesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:workspace:manage")
+  @Validate({ params: projectIdParams })
   createModule(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createModuleSchema)) body: CreateModuleInput,
@@ -189,7 +196,7 @@ export class ModulesController {
 
   @Patch(":moduleId")
   @RequirePermission("build:workspace:manage")
-  @Validate({ params: moduleIdParams })
+  @Validate({ params: projectAndModuleIdParams })
   updateModule(
     @Param("moduleId", ParseIntPipe) moduleId: number,
     @Body(new ZodValidationPipe(updateModuleSchema)) body: UpdateModuleInput,
@@ -201,7 +208,7 @@ export class ModulesController {
   @Delete(":moduleId")
   @RequirePermission("build:workspace:manage")
   @HttpCode(204)
-  @Validate({ params: moduleIdParams })
+  @Validate({ params: projectAndModuleIdParams })
   deleteModule(
     @Param("moduleId", ParseIntPipe) moduleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -218,6 +225,7 @@ export class EpicsController {
 
   @Get()
   @RequirePermission("build:tickets:view")
+  @Validate({ params: projectIdParams })
   listEpics(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -228,6 +236,7 @@ export class EpicsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:tickets:create")
+  @Validate({ params: projectIdParams })
   createEpic(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createEpicSchema)) body: CreateEpicInput,
@@ -238,7 +247,7 @@ export class EpicsController {
 
   @Patch(":epicId")
   @RequirePermission("build:tickets:update")
-  @Validate({ params: epicIdParams })
+  @Validate({ params: projectAndEpicIdParams })
   updateEpic(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("epicId", ParseIntPipe) epicId: number,
@@ -251,7 +260,7 @@ export class EpicsController {
   @Delete(":epicId")
   @RequirePermission("build:tickets:delete")
   @HttpCode(204)
-  @Validate({ params: epicIdParams })
+  @Validate({ params: projectAndEpicIdParams })
   deleteEpic(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("epicId", ParseIntPipe) epicId: number,

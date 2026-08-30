@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   HttpCode,
@@ -8,6 +7,7 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -15,8 +15,11 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { KbArticleAiService } from "./kb-article-ai.service";
 import { kbAiAskBodySchema } from "../retrieval/dto/kb-ai.schemas";
+
+const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb/articles/:articleId/ai")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
@@ -27,6 +30,7 @@ export class KbArticleAiController {
   @Post("summarize")
   @HttpCode(200)
   @RequirePermission("kb:articles:view")
+  @Validate({ params: articleIdParams })
   async summarize(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -37,19 +41,19 @@ export class KbArticleAiController {
   @Post("ask")
   @HttpCode(200)
   @RequirePermission("kb:articles:view")
+  @Validate({ params: articleIdParams, body: kbAiAskBodySchema })
   async ask(
     @Param("articleId", ParseIntPipe) articleId: number,
-    @Body() body: unknown,
+    @Body() body: { question: string },
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const parsed = kbAiAskBodySchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.svc.ask(u, articleId, parsed.data.question);
+    return this.svc.ask(u, articleId, body.question);
   }
 
   @Post("improve")
   @HttpCode(200)
   @RequirePermission("kb:articles:view")
+  @Validate({ params: articleIdParams })
   async improve(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -60,6 +64,7 @@ export class KbArticleAiController {
   @Post("suggest-related")
   @HttpCode(200)
   @RequirePermission("kb:articles:view")
+  @Validate({ params: articleIdParams })
   async suggestRelated(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,

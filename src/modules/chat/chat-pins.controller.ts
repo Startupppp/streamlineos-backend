@@ -12,7 +12,8 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const messageIdParams = z.object({ messageId: z.coerce.number().int().positive() }).strict();
+const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
+const channelAndMessageIdParams = z.object({ channelId: z.coerce.number().int().positive(), messageId: z.coerce.number().int().positive() }).strict();
 
 @ApiTags("Chat Pins")
 @ApiBearerAuth()
@@ -26,6 +27,7 @@ export class ChatPinsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get()
   @RequirePermission("chat:messages:read")
+  @Validate({ params: channelIdParams })
   list(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
     return this.pins.listPins(channelId, {
       orgId: u.orgId,
@@ -39,6 +41,7 @@ export class ChatPinsController {
   @Post()
   @HttpCode(200)
   @RequirePermission("chat:messages:pin")
+  @Validate({ params: channelIdParams })
   pin(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body(new ZodValidationPipe(pinMessageSchema)) body: PinMessageInput,
@@ -56,7 +59,7 @@ export class ChatPinsController {
   @Delete(":messageId")
   @HttpCode(200)
   @RequirePermission("chat:messages:pin")
-  @Validate({ params: messageIdParams })
+  @Validate({ params: channelAndMessageIdParams })
   unpin(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,

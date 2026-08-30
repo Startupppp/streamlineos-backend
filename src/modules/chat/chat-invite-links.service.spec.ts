@@ -24,7 +24,12 @@ describe("ChatInviteLinksService", () => {
   let service: ChatInviteLinksService;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    mockDb.insert.mockReturnThis();
+    mockDb.values.mockResolvedValue(undefined);
+    mockDb.update.mockReturnThis();
+    mockDb.set.mockReturnThis();
+    mockDb.where.mockResolvedValue(undefined);
     const module: TestingModule = await Test.createTestingModule({
       providers: [ChatInviteLinksService, { provide: DRIZZLE, useValue: mockDb }],
     }).compile();
@@ -32,25 +37,17 @@ describe("ChatInviteLinksService", () => {
   });
 
   describe("getOrCreateInviteLink", () => {
-    it("throws NotFoundException when channel is not found in this org", async () => {
-      mockDb.query.chatChannels.findFirst.mockResolvedValueOnce(null);
+    it("throws NotFoundException when caller is not a member of this org's channel", async () => {
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce(null);
       await expect(service.getOrCreateInviteLink(CHANNEL_ID, USER_ID, ORG_ID)).rejects.toThrow(NotFoundException);
     });
 
-    it("throws ForbiddenException if requester is not a channel member", async () => {
-      mockDb.query.chatChannels.findFirst.mockResolvedValueOnce({ id: CHANNEL_ID });
-      mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce(null);
-      await expect(service.getOrCreateInviteLink(CHANNEL_ID, USER_ID, ORG_ID)).rejects.toThrow(ForbiddenException);
-    });
-
     it("throws ForbiddenException if requester is not an admin", async () => {
-      mockDb.query.chatChannels.findFirst.mockResolvedValueOnce({ id: CHANNEL_ID });
-      mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce({ userId: USER_ID, role: "MEMBER", orgId: ORG_ID });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce({ userId: USER_ID, role: "MEMBER" });
       await expect(service.getOrCreateInviteLink(CHANNEL_ID, USER_ID, ORG_ID)).rejects.toThrow(ForbiddenException);
     });
 
     it("returns the existing active token without creating a new one", async () => {
-      mockDb.query.chatChannels.findFirst.mockResolvedValueOnce({ id: CHANNEL_ID });
       mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce({ userId: USER_ID, role: "ADMIN", orgId: ORG_ID, membershipId: null });
       mockDb.query.chatChannelInviteLinks.findFirst.mockResolvedValueOnce({ token: "existing-token", tokenEncrypted: null });
       const result = await service.getOrCreateInviteLink(CHANNEL_ID, USER_ID, ORG_ID);
@@ -59,7 +56,6 @@ describe("ChatInviteLinksService", () => {
     });
 
     it("creates a new token when none exists", async () => {
-      mockDb.query.chatChannels.findFirst.mockResolvedValueOnce({ id: CHANNEL_ID });
       mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce({ userId: USER_ID, role: "ADMIN", orgId: ORG_ID, membershipId: null });
       mockDb.query.chatChannelInviteLinks.findFirst.mockResolvedValueOnce(undefined);
       const result = await service.getOrCreateInviteLink(CHANNEL_ID, USER_ID, ORG_ID);
@@ -71,7 +67,6 @@ describe("ChatInviteLinksService", () => {
 
   describe("regenerateInviteLink", () => {
     it("revokes the old link and issues a new token", async () => {
-      mockDb.query.chatChannels.findFirst.mockResolvedValueOnce({ id: CHANNEL_ID });
       mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce({ userId: USER_ID, role: "ADMIN", orgId: ORG_ID, membershipId: null });
       const result = await service.regenerateInviteLink(CHANNEL_ID, USER_ID, ORG_ID);
       expect(mockDb.update).toHaveBeenCalled();

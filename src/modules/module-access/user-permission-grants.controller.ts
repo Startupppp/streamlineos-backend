@@ -21,7 +21,8 @@ import {
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const permissionKeyParams = z.object({ permissionKey: z.string().min(1) }).strict();
+const grantBaseParams = z.object({ moduleKey: z.string().min(1), membershipId: z.coerce.number().int().positive() }).strict();
+const grantAndPermissionKeyParams = z.object({ moduleKey: z.string().min(1), membershipId: z.coerce.number().int().positive(), permissionKey: z.string().min(1) }).strict();
 
 @Controller("module-access/:moduleKey/members/:membershipId/grants")
 @UseGuards(JwtAuthGuard)
@@ -30,6 +31,7 @@ export class UserPermissionGrantsController {
   constructor(private readonly grants: UserPermissionGrantsService) {}
 
   @Get()
+  @Validate({ params: grantBaseParams })
   async list(
     @Param("moduleKey") moduleKey: string,
     @Param("membershipId", ParseIntPipe) membershipId: number,
@@ -39,6 +41,7 @@ export class UserPermissionGrantsController {
   }
 
   @Put()
+  @Validate({ params: grantBaseParams })
   async set(
     @Param("moduleKey") moduleKey: string,
     @Param("membershipId", ParseIntPipe) membershipId: number,
@@ -50,7 +53,7 @@ export class UserPermissionGrantsController {
   }
 
   @Delete(":permissionKey")
-  @Validate({ params: permissionKeyParams })
+  @Validate({ params: grantAndPermissionKeyParams })
   async remove(
     @Param("moduleKey") moduleKey: string,
     @Param("membershipId", ParseIntPipe) membershipId: number,

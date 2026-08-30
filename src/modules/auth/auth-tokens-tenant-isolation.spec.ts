@@ -4,32 +4,18 @@ jest.mock("../../common/tenant", () => ({
   getTenantContext: jest.fn().mockReturnValue(null),
 }));
 
-import { AuthTokensService } from "./auth-tokens.service";
+jest.mock("../../common/tenant/with-identity", () => ({
+  withIdentity: jest.fn(),
+}));
+
+import { AuthMembershipResolverService } from "./auth-membership-resolver.service";
+import { AuthAnalyticsService } from "./auth-analytics.service";
 import type { Db } from "../../db/drizzle.module";
 
 const ATTACKER_ORG = "org-attacker";
 const OWNER_ORG = "org-owner";
 
 beforeEach(() => jest.resetAllMocks());
-
-function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
-  if (
-    value === null ||
-    value === undefined ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  )
-    return [value];
-  if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
-  if (typeof value !== "object" || seen.has(value)) return [];
-  seen.add(value);
-  const record = value as { queryChunks?: unknown[]; value?: unknown };
-  return [
-    ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
-    ...(Object.prototype.hasOwnProperty.call(record, "value") ? sqlValues(record.value, seen) : []),
-  ];
-}
 
 interface FluentChain extends PromiseLike<unknown[]> {
   from: jest.Mock;
@@ -56,32 +42,34 @@ function makeFluentChain(finalResult: unknown[]): FluentChain {
 }
 
 function getTenantMocks() {
-  return jest.requireMock<{
+  const barrel = jest.requireMock<{
     withTenant: jest.Mock;
-    withIdentity: jest.Mock;
     getTenantContext: jest.Mock;
   }>("../../common/tenant");
+  const withIdentityMod = jest.requireMock<{ withIdentity: jest.Mock }>(
+    "../../common/tenant/with-identity",
+  );
+  return { ...barrel, withIdentity: withIdentityMod.withIdentity };
 }
 
-function buildService(overrideDb?: Partial<Db>): AuthTokensService {
+function buildMembershipService(): AuthMembershipResolverService {
   const mockDb: Partial<Db> = {
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
-    ...overrideDb,
   };
-  return new AuthTokensService(
+  return new AuthMembershipResolverService(
     mockDb as unknown as Db,
-    {} as unknown as ConstructorParameters<typeof AuthTokensService>[1],
-    {} as unknown as ConstructorParameters<typeof AuthTokensService>[2],
-    {} as unknown as ConstructorParameters<typeof AuthTokensService>[3],
-    {} as unknown as ConstructorParameters<typeof AuthTokensService>[4],
+    {} as never,
   );
 }
 
-// ---------------------------------------------------------------------------
-// resolveActiveMembership
-// ---------------------------------------------------------------------------
+function buildAnalyticsService(): AuthAnalyticsService {
+  const mockDb: Partial<Db> = {
+    insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
+  };
+  return new AuthAnalyticsService(mockDb as unknown as Db);
+}
 
-describe("AuthTokensService.resolveActiveMembership tenant isolation", () => {
+describe("AuthMembershipResolverService.resolveActiveMembership tenant isolation", () => {
   it("DENY: returns null when the user has no active membership in any org", async () => {
     const { withIdentity, getTenantContext } = getTenantMocks();
     getTenantContext.mockReturnValue(null);
@@ -94,7 +82,7 @@ describe("AuthTokensService.resolveActiveMembership tenant isolation", () => {
       },
     );
 
-    const svc = buildService();
+    const svc = buildMembershipService();
     const result = await svc.resolveActiveMembership("user-no-membership", null);
 
     expect(result).toBeNull();
@@ -104,7 +92,6 @@ describe("AuthTokensService.resolveActiveMembership tenant isolation", () => {
     const { withIdentity, getTenantContext } = getTenantMocks();
     getTenantContext.mockReturnValue(null);
 
-    // The user has a membership in ATTACKER_ORG, but we ask for OWNER_ORG.
     const attackerMemberRow = {
       orgId: ATTACKER_ORG,
       isOwner: false,
@@ -121,13 +108,9 @@ describe("AuthTokensService.resolveActiveMembership tenant isolation", () => {
       },
     );
 
-    const svc = buildService();
-    // Asking for OWNER_ORG, but the user only belongs to ATTACKER_ORG.
-    // The preferred row is not found; however, the fallback returns the first ACTIVE row.
-    // This covers the case where the attacker's userId can't reach OWNER_ORG data.
+    const svc = buildMembershipService();
     const result = await svc.resolveActiveMembership("user-attacker", OWNER_ORG);
 
-    // No OWNER_ORG row exists — preferred is not found; fallback returns ATTACKER_ORG row (not OWNER_ORG).
     expect(result?.orgId).toBe(ATTACKER_ORG);
     expect(result?.orgId).not.toBe(OWNER_ORG);
   });
@@ -152,7 +135,7 @@ describe("AuthTokensService.resolveActiveMembership tenant isolation", () => {
       },
     );
 
-    const svc = buildService();
+    const svc = buildMembershipService();
     const result = await svc.resolveActiveMembership("user-owner", OWNER_ORG);
 
     expect(result?.orgId).toBe(OWNER_ORG);
@@ -160,11 +143,7 @@ describe("AuthTokensService.resolveActiveMembership tenant isolation", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// logLoginEvent — tenant context routing
-// ---------------------------------------------------------------------------
-
-describe("AuthTokensService.logLoginEvent tenant isolation", () => {
+describe("AuthAnalyticsService.logLoginEvent tenant isolation", () => {
   it("DENY: routes login event to ATTACKER_ORG context — OWNER_ORG context never opened", async () => {
     const { withTenant, getTenantContext } = getTenantMocks();
     getTenantContext.mockReturnValue(null);
@@ -178,7 +157,7 @@ describe("AuthTokensService.logLoginEvent tenant isolation", () => {
       },
     );
 
-    const svc = buildService();
+    const svc = buildAnalyticsService();
     await svc.logLoginEvent("user-attacker", ATTACKER_ORG, "magic_link.verify", true, null, {});
 
     expect(withTenant).toHaveBeenCalledWith(
@@ -206,7 +185,7 @@ describe("AuthTokensService.logLoginEvent tenant isolation", () => {
       },
     );
 
-    const svc = buildService();
+    const svc = buildAnalyticsService();
     await svc.logLoginEvent("user-owner", OWNER_ORG, "magic_link.verify", true, null, {});
 
     expect(withTenant).toHaveBeenCalledWith(
@@ -220,7 +199,7 @@ describe("AuthTokensService.logLoginEvent tenant isolation", () => {
     const { withTenant, getTenantContext } = getTenantMocks();
     getTenantContext.mockReturnValue(null);
 
-    const svc = buildService();
+    const svc = buildAnalyticsService();
     await svc.logLoginEvent(null, OWNER_ORG, "magic_link.verify", false, "no_user", {});
 
     expect(withTenant).not.toHaveBeenCalled();

@@ -1,9 +1,8 @@
 import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import { APP_CONFIG } from "../../config/config.module";
 import { EmailService } from "../email/email.service";
-import { PlatformService } from "./platform.service";
+import { PlatformAdminService } from "./platform-admin.service";
 
 type Terminal = "limit" | "groupBy" | "orderBy";
 
@@ -104,19 +103,18 @@ function makeGetCustomerDb(opts: {
   };
 }
 
-async function buildService(db: unknown): Promise<PlatformService> {
+async function buildService(db: unknown): Promise<PlatformAdminService> {
   const module = await Test.createTestingModule({
     providers: [
-      PlatformService,
+      PlatformAdminService,
       { provide: DRIZZLE, useValue: db },
-      { provide: APP_CONFIG, useValue: { APP_URL: "https://example.com", CONTACT_NOTIFICATION_EMAIL: null } },
       { provide: EmailService, useValue: { sendEmail: jest.fn() } },
     ],
   }).compile();
-  return module.get(PlatformService);
+  return module.get(PlatformAdminService);
 }
 
-describe("PlatformService.listCustomers — subscription state contract", () => {
+describe("PlatformAdminService.listCustomers — subscription state contract", () => {
   it("paid subscription (ACTIVE) — returns correct plan and status", async () => {
     const db = makeListCustomersDb({
       subRows: [{ orgId: "org-001", plan: "STARTER", status: "ACTIVE", subId: 1 }],
@@ -212,7 +210,7 @@ describe("PlatformService.listCustomers — subscription state contract", () => 
   });
 });
 
-describe("PlatformService.listCustomers — cursor contract", () => {
+describe("PlatformAdminService.listCustomers — cursor contract", () => {
   it("empty result — nextCursor is null", async () => {
     const emptyChain = makeChain([], "limit");
     const db = { select: jest.fn().mockReturnValue(emptyChain) };
@@ -286,7 +284,7 @@ describe("PlatformService.listCustomers — cursor contract", () => {
   });
 });
 
-describe("PlatformService.getCustomerBySlug — subscription state contract", () => {
+describe("PlatformAdminService.getCustomerBySlug — subscription state contract", () => {
   it("org found with paid subscription — returns subscription details", async () => {
     const sub = {
       id: 5,

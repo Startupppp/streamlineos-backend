@@ -198,7 +198,7 @@ export class PaymentRunExecutorService {
         });
 
         if (fxCapture !== null) {
-          void this.postRunItemFxGainLoss(orgId, baseCurrency, fxCapture, today);
+          await this.postRunItemFxGainLoss(orgId, baseCurrency, fxCapture, today);
         }
       } catch (err: unknown) {
         logSideEffectFailure("payment run item execution", { orgId, runId, itemId: item.id })(err);
@@ -251,22 +251,16 @@ export class PaymentRunExecutorService {
       const baseAmountSettled = (capture.amount * settledRate).toFixed(4);
       const user = systemActor("finance.payment-run.fx-posting", orgId, capture.userId);
 
-      this.fx
-        .postRealizedGainLoss(user, {
-          sourceType: "purchase_bill",
-          sourceId: String(capture.billId),
-          baseAmountBooked,
-          baseAmountSettled,
-          counterPurpose: "AP",
-        })
-        .catch((err: unknown) => {
-          this.logger.warn(
-            `FX gain/loss post failed for purchase_bill ${capture.billId}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        });
-    } catch (err) {
+      await this.fx.postRealizedGainLoss(user, {
+        sourceType: "purchase_bill",
+        sourceId: String(capture.billId),
+        baseAmountBooked,
+        baseAmountSettled,
+        counterPurpose: "AP",
+      });
+    } catch (err: unknown) {
       this.logger.warn(
-        `No exchange rate for FX on purchase_bill ${capture.billId}: ${err instanceof Error ? err.message : String(err)}`,
+        `FX gain/loss post failed for purchase_bill ${capture.billId}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }

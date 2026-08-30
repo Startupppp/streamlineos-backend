@@ -98,3 +98,51 @@ describe("VersionedCatalogService — the entitlement snapshot is busted after c
     expect(cache.invalidate).toHaveBeenCalledWith("billing:ent-overrides:org1");
   });
 });
+
+describe("VersionedCatalogService — Redis outage: fails closed, not open", () => {
+  it("propagates a cache error rather than returning empty entitlements (which would grant unlimited access)", async () => {
+    const brokenCache = {
+      cached: jest.fn().mockRejectedValue(new Error("Redis connection refused")),
+      set: jest.fn(),
+      invalidate: jest.fn(),
+    } as unknown as CacheService;
+
+    const db = { select: jest.fn(), execute: jest.fn() };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        VersionedCatalogService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: CacheService, useValue: brokenCache },
+      ],
+    }).compile();
+
+    const svc = moduleRef.get(VersionedCatalogService);
+    await expect(svc.resolveOrgEntitlements("org1")).rejects.toThrow("Redis connection refused");
+  });
+
+  it("calls the cache with the per-org key so a Redis fallthrough fetches the right org's data", async () => {
+    const capturedArgs: unknown[] = [];
+    const fallthroughCache = {
+      cached: jest.fn().mockImplementation(async (key: string, fn: () => Promise<unknown>) => {
+        capturedArgs.push(key);
+        return fn();
+      }),
+      set: jest.fn(),
+      invalidate: jest.fn(),
+    } as unknown as CacheService;
+
+    const db = { select: jest.fn(), execute: jest.fn() };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        VersionedCatalogService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: CacheService, useValue: fallthroughCache },
+      ],
+    }).compile();
+
+    const svc = moduleRef.get(VersionedCatalogService);
+    await svc.resolveOrgEntitlements("org1").catch(() => undefined);
+
+    expect(capturedArgs[0]).toBe("billing:ent-overrides:org1");
+  });
+});

@@ -26,7 +26,8 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const itemIdParams = z.object({ itemId: z.coerce.number().int().positive() }).strict();
+const projectAndMeetingIdParams = z.object({ projectId: z.coerce.number().int().positive(), meetingId: z.coerce.number().int().positive() }).strict();
+const projectMeetingAndItemIdParams = z.object({ projectId: z.coerce.number().int().positive(), meetingId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/meetings/:meetingId/action-items")
@@ -37,6 +38,7 @@ export class ActionItemsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:meetings:manage")
+  @Validate({ params: projectAndMeetingIdParams })
   createItem(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
@@ -48,7 +50,7 @@ export class ActionItemsController {
 
   @Patch(":itemId")
   @RequirePermission("build:meetings:manage")
-  @Validate({ params: itemIdParams })
+  @Validate({ params: projectMeetingAndItemIdParams })
   updateItem(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
@@ -62,7 +64,7 @@ export class ActionItemsController {
   @Delete(":itemId")
   @RequirePermission("build:meetings:manage")
   @HttpCode(204)
-  @Validate({ params: itemIdParams })
+  @Validate({ params: projectMeetingAndItemIdParams })
   deleteItem(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
@@ -75,7 +77,7 @@ export class ActionItemsController {
   @Post(":itemId/convert-to-task")
   @HttpCode(201)
   @RequirePermission("build:meetings:manage")
-  @Validate({ params: itemIdParams })
+  @Validate({ params: projectMeetingAndItemIdParams })
   convertToTask(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,

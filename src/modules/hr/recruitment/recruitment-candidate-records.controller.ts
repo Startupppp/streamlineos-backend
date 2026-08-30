@@ -48,8 +48,9 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const checkIdParams = z.object({ checkId: z.coerce.number().int().positive() }).strict();
-const documentIdParams = z.object({ documentId: z.coerce.number().int().positive() }).strict();
+const candidateIdParams = z.object({ candidateId: z.coerce.number().int().positive() }).strict();
+const candidateAndCheckIdParams = z.object({ candidateId: z.coerce.number().int().positive(), checkId: z.coerce.number().int().positive() }).strict();
+const candidateAndDocumentIdParams = z.object({ candidateId: z.coerce.number().int().positive(), documentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/candidates/:candidateId")

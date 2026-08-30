@@ -31,7 +31,7 @@ export class ChatInviteLinksController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.inviteLinks.getOrCreateInviteLink(channelId, u.userId);
+    return this.inviteLinks.getOrCreateInviteLink(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Revoke the current invite link and issue a new one" })
@@ -44,7 +44,7 @@ export class ChatInviteLinksController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.inviteLinks.regenerateInviteLink(channelId, u.userId);
+    return this.inviteLinks.regenerateInviteLink(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Join a channel using an invite link token" })

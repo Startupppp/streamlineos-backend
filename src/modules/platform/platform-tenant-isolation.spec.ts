@@ -1,5 +1,5 @@
 import type { Db } from "../../db/drizzle.module";
-import { PlatformService } from "./platform.service";
+import { PlatformAdminService } from "./platform-admin.service";
 
 function makeThenable(rows: unknown[]): Record<string, unknown> {
   const obj: Record<string, unknown> = {};
@@ -16,16 +16,15 @@ function makeDb(orgRows: unknown[]): Db {
   return db;
 }
 
-describe("PlatformService — cross-tenant isolation", () => {
+describe("PlatformAdminService — cross-tenant isolation", () => {
   const ORG_A = "org-aaa";
   const ORG_B = "org-bbb";
 
   it("listCustomers does not include a different org's data (cross-tenant isolation)", async () => {
     const orgRow = { id: ORG_A, slug: "org-a", name: "Org A", createdAt: new Date() };
     const db = makeDb([orgRow]);
-    const mockConfig = { APP_URL: "https://app.test", CONTACT_NOTIFICATION_EMAIL: undefined } as any;
     const mockEmail = {} as any;
-    const svc = new PlatformService(db, mockConfig, mockEmail);
+    const svc = new PlatformAdminService(db, mockEmail);
     const result = await svc.listCustomers();
     const seenIds = result.items.map((i: { id: string }) => i.id);
     expect(seenIds).not.toContain(ORG_B);
@@ -34,9 +33,8 @@ describe("PlatformService — cross-tenant isolation", () => {
   it("listCustomers returns items for the org that exists (control — same-platform)", async () => {
     const orgRow = { id: ORG_A, slug: "org-a", name: "Org A", createdAt: new Date() };
     const db = makeDb([orgRow]);
-    const mockConfig = { APP_URL: "https://app.test", CONTACT_NOTIFICATION_EMAIL: undefined } as any;
     const mockEmail = {} as any;
-    const svc = new PlatformService(db, mockConfig, mockEmail);
+    const svc = new PlatformAdminService(db, mockEmail);
     const result = await svc.listCustomers();
     expect(result.items.length).toBeGreaterThanOrEqual(0);
     expect(result).toHaveProperty("nextCursor");

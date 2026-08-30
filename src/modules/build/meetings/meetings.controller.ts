@@ -35,8 +35,9 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const meetingIdParams = z.object({ meetingId: z.coerce.number().int().positive() }).strict();
-const meetingIdattendeeUserIdParams = z.object({ meetingId: z.coerce.number().int().positive(), attendeeUserId: z.string().min(1) }).strict();
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const projectAndMeetingIdParams = z.object({ projectId: z.coerce.number().int().positive(), meetingId: z.coerce.number().int().positive() }).strict();
+const projectMeetingAndAttendeeParams = z.object({ projectId: z.coerce.number().int().positive(), meetingId: z.coerce.number().int().positive(), attendeeUserId: z.string().min(1) }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/meetings")
@@ -46,6 +47,7 @@ export class MeetingsController {
 
   @Get()
   @RequirePermission("build:meetings:view")
+  @Validate({ params: projectIdParams })
   listMeetings(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(listMeetingsQuerySchema)) query: ListMeetingsQuery,
@@ -56,7 +58,7 @@ export class MeetingsController {
 
   @Get(":meetingId")
   @RequirePermission("build:meetings:view")
-  @Validate({ params: meetingIdParams })
+  @Validate({ params: projectAndMeetingIdParams })
   getMeeting(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
@@ -68,6 +70,7 @@ export class MeetingsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:meetings:manage")
+  @Validate({ params: projectIdParams })
   createMeeting(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createMeetingSchema)) body: CreateMeetingInput,
@@ -78,7 +81,7 @@ export class MeetingsController {
 
   @Patch(":meetingId")
   @RequirePermission("build:meetings:manage")
-  @Validate({ params: meetingIdParams })
+  @Validate({ params: projectAndMeetingIdParams })
   updateMeeting(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
@@ -91,7 +94,7 @@ export class MeetingsController {
   @Delete(":meetingId")
   @RequirePermission("build:meetings:manage")
   @HttpCode(204)
-  @Validate({ params: meetingIdParams })
+  @Validate({ params: projectAndMeetingIdParams })
   deleteMeeting(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
@@ -103,7 +106,7 @@ export class MeetingsController {
   @Post(":meetingId/attendees")
   @HttpCode(201)
   @RequirePermission("build:meetings:manage")
-  @Validate({ params: meetingIdParams })
+  @Validate({ params: projectAndMeetingIdParams })
   addAttendee(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
@@ -116,7 +119,7 @@ export class MeetingsController {
   @Delete(":meetingId/attendees/:attendeeUserId")
   @RequirePermission("build:meetings:manage")
   @HttpCode(204)
-  @Validate({ params: meetingIdattendeeUserIdParams })
+  @Validate({ params: projectMeetingAndAttendeeParams })
   removeAttendee(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
@@ -128,7 +131,7 @@ export class MeetingsController {
 
   @Put(":meetingId/standup")
   @RequirePermission("build:meetings:manage")
-  @Validate({ params: meetingIdParams })
+  @Validate({ params: projectAndMeetingIdParams })
   upsertStandup(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,

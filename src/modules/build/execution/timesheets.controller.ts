@@ -38,6 +38,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
 const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
+const projectAndTicketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/time-entries")
@@ -133,6 +134,7 @@ export class TicketTimeEntriesController {
 
   @Get()
   @RequirePermission("build:timesheets:view")
+  @Validate({ params: projectAndTicketIdParams })
   listTicketTimeEntries(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -143,6 +145,7 @@ export class TicketTimeEntriesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:timesheets:create")
+  @Validate({ params: projectAndTicketIdParams })
   logTicketTime(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(logTimeSchema)) body: LogTimeInput,

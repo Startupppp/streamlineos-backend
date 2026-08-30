@@ -15,7 +15,8 @@ import {
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const collectorIdParams = z.object({ collectorId: z.coerce.number().int().positive() }).strict();
+const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
+const surveyAndCollectorIdParams = z.object({ surveyId: z.coerce.number().int().positive(), collectorId: z.coerce.number().int().positive() }).strict();
 
 @Controller("surveys/:surveyId/collectors")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -24,6 +25,7 @@ export class SurveyCollectorsController {
 
   @Get()
   @RequirePermission("surveys:participants:view")
+  @Validate({ params: surveyIdParams })
   list(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.collectors.list(u.orgId, surveyId);
   }
@@ -31,6 +33,7 @@ export class SurveyCollectorsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("surveys:participants:manage")
+  @Validate({ params: surveyIdParams })
   create(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(createCollectorSchema)) body: CreateCollectorInput,
@@ -41,7 +44,7 @@ export class SurveyCollectorsController {
 
   @Patch(":collectorId")
   @RequirePermission("surveys:participants:manage")
-  @Validate({ params: collectorIdParams })
+  @Validate({ params: surveyAndCollectorIdParams })
   patch(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("collectorId", ParseIntPipe) collectorId: number,

@@ -34,7 +34,8 @@ import { z } from "zod";
 import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 import { Validate } from "../../../common/validation/validate.decorator";
 
-const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
+const bankAccountIdParams = z.object({ bankAccountId: z.coerce.number().int().positive() }).strict();
+const bankAccountAndRuleIdParams = z.object({ bankAccountId: z.coerce.number().int().positive(), ruleId: z.coerce.number().int().positive() }).strict();
 
 const rulesQuerySchema = z.object({
   page: pageNumberField,
@@ -53,6 +54,7 @@ export class ReconciliationController {
 
   @Get()
   @RequirePermission("accounting:banking:reconcile")
+  @Validate({ params: bankAccountIdParams })
   getWorkspace(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -63,6 +65,7 @@ export class ReconciliationController {
   @Post("match")
   @HttpCode(200)
   @RequirePermission("accounting:banking:reconcile")
+  @Validate({ params: bankAccountIdParams })
   confirmMatch(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
     @Body(new ZodValidationPipe(confirmMatchSchema)) body: ConfirmMatchInput,
@@ -74,6 +77,7 @@ export class ReconciliationController {
   @Post("unmatch")
   @HttpCode(200)
   @RequirePermission("accounting:banking:reconcile")
+  @Validate({ params: bankAccountIdParams })
   unmatch(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
     @Body(new ZodValidationPipe(unmatchSchema)) body: UnmatchInput,
@@ -85,6 +89,7 @@ export class ReconciliationController {
   @Post("ignore")
   @HttpCode(200)
   @RequirePermission("accounting:banking:reconcile")
+  @Validate({ params: bankAccountIdParams })
   ignore(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
     @Body(new ZodValidationPipe(ignoreTransactionSchema)) body: IgnoreTransactionInput,
@@ -95,6 +100,7 @@ export class ReconciliationController {
 
   @Get("rules")
   @RequirePermission("accounting:banking:reconcile")
+  @Validate({ params: bankAccountIdParams })
   listRules(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
     @Query(new ZodValidationPipe(rulesQuerySchema)) query: { page: number; pageSize: number },
@@ -106,6 +112,7 @@ export class ReconciliationController {
   @Post("rules")
   @HttpCode(201)
   @RequirePermission("accounting:banking:reconcile")
+  @Validate({ params: bankAccountIdParams })
   createRule(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
     @Body(new ZodValidationPipe(createReconciliationRuleSchema)) body: CreateReconciliationRuleInput,
@@ -116,7 +123,7 @@ export class ReconciliationController {
 
   @Delete("rules/:ruleId")
   @RequirePermission("accounting:banking:reconcile")
-  @Validate({ params: ruleIdParams })
+  @Validate({ params: bankAccountAndRuleIdParams })
   deleteRule(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
     @Param("ruleId", ParseIntPipe) ruleId: number,

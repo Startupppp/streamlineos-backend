@@ -421,4 +421,47 @@ describe("PlanLimitsService", () => {
       await expect(service.getEntitlements("org1")).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
   });
+
+  describe("getEntitlements — Redis outage: fails closed, never open", () => {
+    async function buildWithCache(db: ReturnType<typeof makeDb>, cacheOverride: Partial<CacheService>) {
+      const module = await Test.createTestingModule({
+        providers: [
+          PlanLimitsService,
+          { provide: DRIZZLE, useValue: db },
+          { provide: CacheService, useValue: { ...makeCache(), ...cacheOverride } },
+        ],
+      }).compile();
+      return module.get(PlanLimitsService);
+    }
+
+    it("propagates a cache-layer failure rather than returning empty entitlements", async () => {
+      const db = makeDb({
+        execute: jest.fn().mockResolvedValue([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }]),
+      });
+      const svc = await buildWithCache(db, {
+        cached: jest.fn().mockRejectedValue(new Error("Redis ECONNREFUSED")),
+      });
+      await expect(svc.getEntitlements("org1")).rejects.toThrow("Redis ECONNREFUSED");
+    });
+
+    it("still enforces limits when Redis is unavailable and the cache falls through to DB", async () => {
+      const USAGE_ROW = {
+        members: 5, projects: 2, kbPages: 10, chatChannels: 0, crmLeads: 0, crmContacts: 0,
+        crmDeals: 0, supportTickets: 0, automations: 0, signEnvelopes: 0, surveys: 0,
+        acctInvoices: 0, hrCandidates: 0, hrJobPostings: 0,
+      };
+      const db = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([USAGE_ROW]),
+      });
+      const svc = await buildWithCache(db, {
+        cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
+      });
+      const entitlements = await svc.getEntitlements("org1");
+      expect(entitlements.limits.members).toEqual({ limit: 5, used: 5 });
+      expect(entitlements.plan).toBe("FREE");
+    });
+  });
 });
