@@ -15,7 +15,7 @@ try {
 } catch {}
 DATABASE_URL = DATABASE_URL || process.env.DATABASE_URL;
 
-const JOURNAL_MAX = 1787941388254n;
+const JOURNAL_MAX = 1787941689254n;
 
 let passed = 0;
 let failed = 0;

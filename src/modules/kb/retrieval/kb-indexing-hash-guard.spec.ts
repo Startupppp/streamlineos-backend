@@ -32,6 +32,7 @@ interface StoredAcl {
   pageVisibility: string | null;
   pageProjectId: number | null;
   pageCreatedById: string | null;
+  pageCreatedByMembershipId?: number | null;
 }
 
 const makeDb = (storedHash: string | null, tx?: MockTx, storedAcl?: StoredAcl) => {
@@ -45,6 +46,7 @@ const makeDb = (storedHash: string | null, tx?: MockTx, storedAcl?: StoredAcl) =
             pageVisibility: storedAcl?.pageVisibility ?? null,
             pageProjectId: storedAcl?.pageProjectId ?? null,
             pageCreatedById: storedAcl?.pageCreatedById ?? null,
+            pageCreatedByMembershipId: storedAcl?.pageCreatedByMembershipId ?? null,
           },
         ];
 
@@ -88,6 +90,7 @@ describe("KbIndexingService — content-hash guard", () => {
         contentText: "content that must not be embedded",
         projectId: null,
         createdById: "user-7",
+        createdByMembershipId: null,
       });
       const embeddings = makeEmbeddings();
       const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
@@ -105,6 +108,7 @@ describe("KbIndexingService — content-hash guard", () => {
       contentText: "content with embeddings disabled",
       projectId: null,
       createdById: "user-7",
+      createdByMembershipId: null,
     });
     const embeddings = makeEmbeddings(false);
     const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
@@ -176,6 +180,7 @@ describe("KbIndexingService — content-hash guard", () => {
       pageVisibility: "org",
       pageProjectId: null,
       pageCreatedById: null,
+      pageCreatedByMembershipId: null,
     });
     (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue({
       status: "published",
@@ -184,6 +189,7 @@ describe("KbIndexingService — content-hash guard", () => {
       contentText: text,
       projectId: null,
       createdById: null,
+      createdByMembershipId: null,
     });
 
     const embeddings = makeEmbeddings();
@@ -200,6 +206,7 @@ describe("KbIndexingService — content-hash guard", () => {
       pageVisibility: "org",
       pageProjectId: 1,
       pageCreatedById: "user-7",
+      pageCreatedByMembershipId: null,
     });
 
     (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue({
@@ -209,6 +216,7 @@ describe("KbIndexingService — content-hash guard", () => {
       contentText: text,
       projectId: 2,
       createdById: "user-7",
+      createdByMembershipId: null,
     });
 
     const embeddings = makeEmbeddings();
@@ -220,7 +228,7 @@ describe("KbIndexingService — content-hash guard", () => {
     expect(db.update as jest.Mock).toHaveBeenCalled();
     const setMock = ((db.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock }).set;
     expect(setMock).toHaveBeenCalledWith(
-      expect.objectContaining({ pageProjectId: 2, pageVisibility: "org", pageCreatedById: "user-7" }),
+      expect.objectContaining({ pageProjectId: 2, pageVisibility: "org", pageCreatedById: "user-7", pageCreatedByMembershipId: null }),
     );
   });
 });
@@ -240,6 +248,7 @@ describe("KbIndexingService — a chunk carries the ACL it is filtered by", () =
       contentText: "a page with enough words to make one chunk",
       projectId,
       createdById: "user-7",
+      createdByMembershipId: null,
     });
 
     const svc = new KbIndexingService(db as never, makeEmbeddings() as never, makeStorage() as never);
@@ -253,6 +262,7 @@ describe("KbIndexingService — a chunk carries the ACL it is filtered by", () =
       pageVisibility: string;
       pageProjectId: number | null;
       pageCreatedById: string;
+      pageCreatedByMembershipId: number | null;
     }[];
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
@@ -260,6 +270,7 @@ describe("KbIndexingService — a chunk carries the ACL it is filtered by", () =
         pageVisibility: "org",
         pageProjectId: 1,
         pageCreatedById: "user-7",
+        pageCreatedByMembershipId: null,
       });
     }
   });

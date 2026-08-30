@@ -50,6 +50,7 @@ export const kbArticleChunks = pgTable(
     pageVisibility: text("page_visibility"),
     pageProjectId: integer("page_project_id"),
     pageCreatedById: text("page_created_by_id"),
+    pageCreatedByMembershipId: integer("page_created_by_membership_id"),
     aclRevision: integer("acl_revision"),
     contentRevision: integer("content_revision"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -65,6 +66,7 @@ export const kbArticleChunks = pgTable(
         table.pageVisibility,
         table.pageProjectId,
         table.pageCreatedById,
+        table.pageCreatedByMembershipId,
       )
       .where(sql`page_id IS NOT NULL`),
     index("idx_kb_chunks_embedding_hnsw").using(

@@ -13,6 +13,7 @@ export function chunkVisibleTo(
       visibility: kbArticleChunks.pageVisibility,
       projectId: kbArticleChunks.pageProjectId,
       createdById: kbArticleChunks.pageCreatedById,
+      createdByMembershipId: kbArticleChunks.pageCreatedByMembershipId,
     },
     user,
     accessibleProjectIds,

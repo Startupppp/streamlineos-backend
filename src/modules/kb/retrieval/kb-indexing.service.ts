@@ -76,6 +76,7 @@ export class KbIndexingService {
     pageVisibility: string | null;
     pageProjectId: number | null;
     pageCreatedById: string | null;
+    pageCreatedByMembershipId: number | null;
     aclRevision: number | null;
   } | null> {
     const [existing] = await this.db
@@ -84,6 +85,7 @@ export class KbIndexingService {
         pageVisibility: kbArticleChunks.pageVisibility,
         pageProjectId: kbArticleChunks.pageProjectId,
         pageCreatedById: kbArticleChunks.pageCreatedById,
+        pageCreatedByMembershipId: kbArticleChunks.pageCreatedByMembershipId,
         aclRevision: kbArticleChunks.aclRevision,
       })
       .from(kbArticleChunks)
@@ -216,6 +218,7 @@ export class KbIndexingService {
         contentText: true,
         projectId: true,
         createdById: true,
+        createdByMembershipId: true,
         aclRevision: true,
         contentRevision: true,
       },
@@ -241,6 +244,7 @@ export class KbIndexingService {
         stored.pageVisibility !== page.visibility ||
         stored.pageProjectId !== page.projectId ||
         stored.pageCreatedById !== page.createdById ||
+        stored.pageCreatedByMembershipId !== page.createdByMembershipId ||
         stored.aclRevision !== aclRevision;
 
       if (!aclChanged) return 0;
@@ -251,6 +255,7 @@ export class KbIndexingService {
           pageVisibility: page.visibility,
           pageProjectId: page.projectId,
           pageCreatedById: page.createdById,
+          pageCreatedByMembershipId: page.createdByMembershipId,
           aclRevision,
         })
         .where(
@@ -300,6 +305,7 @@ export class KbIndexingService {
         pageVisibility: page.visibility,
         pageProjectId: page.projectId,
         pageCreatedById: page.createdById,
+        pageCreatedByMembershipId: page.createdByMembershipId,
         aclRevision,
         contentRevision,
       }));

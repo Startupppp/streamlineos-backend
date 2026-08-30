@@ -2455,6 +2455,13 @@
     {
       "idx": 349,
       "version": "7",
+      "when": 1787895935277,
+      "tag": "0629_calendar_events_org_id_composite_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 350,
+      "version": "7",
       "when": 1787895965277,
       "tag": "0628_communication_actor_normalization",
       "breakpoints": true
@@ -2495,171 +2502,227 @@
       "breakpoints": true
     },
     {
-      "idx": 357,
+      "idx": 356,
       "version": "7",
       "when": 1787940128254,
       "tag": "0637_finance_cursor_retention",
       "breakpoints": true
     },
     {
-      "idx": 358,
+      "idx": 357,
       "version": "7",
       "when": 1787940188254,
       "tag": "0638_accounting_child_tenant_indexes",
       "breakpoints": true
     },
     {
-      "idx": 359,
+      "idx": 358,
       "version": "7",
       "when": 1787940248254,
       "tag": "0639_perf_reviews_cursor_indexes",
       "breakpoints": true
     },
     {
-      "idx": 360,
+      "idx": 359,
       "version": "7",
       "when": 1787940308254,
       "tag": "0640_helpdesk_search_and_cursor_indexes",
       "breakpoints": true
     },
     {
-      "idx": 361,
+      "idx": 360,
       "version": "7",
       "when": 1787940368254,
       "tag": "0641_financial_actor_audit_identity",
       "breakpoints": true
     },
     {
-      "idx": 362,
+      "idx": 361,
       "version": "7",
       "when": 1787940428254,
       "tag": "0645_account_org_index_last_activated",
       "breakpoints": true
     },
     {
-      "idx": 363,
+      "idx": 362,
       "version": "7",
       "when": 1787940488254,
       "tag": "0646_hr_actor_membership_expand",
       "breakpoints": true
     },
     {
-      "idx": 364,
+      "idx": 363,
       "version": "7",
       "when": 1787940548254,
       "tag": "0647_pay_time_actor_membership_expand",
       "breakpoints": true
     },
     {
-      "idx": 365,
+      "idx": 364,
       "version": "7",
       "when": 1787940608254,
       "tag": "0648_build_actor_membership_expand",
       "breakpoints": true
     },
     {
-      "idx": 356,
+      "idx": 365,
       "version": "7",
       "when": 1787940668254,
       "tag": "0636_kb_source_review_tenant_constraints",
       "breakpoints": true
     },
     {
-      "idx": 371,
+      "idx": 366,
       "version": "7",
       "when": 1787940668255,
       "tag": "0655_chain_creates_remaining_catalog_objects",
       "breakpoints": true
     },
     {
-      "idx": 357,
+      "idx": 367,
       "version": "7",
       "when": 1787940728254,
       "tag": "0650_tenant_isolation_for_three_unprotected_tables",
       "breakpoints": true
     },
     {
-      "idx": 366,
+      "idx": 368,
       "version": "7",
       "when": 1787940788254,
       "tag": "0651_drop_calendar_attendee_json",
       "breakpoints": true
     },
     {
-      "idx": 367,
+      "idx": 369,
       "version": "7",
       "when": 1787940848254,
       "tag": "0652_repair_chat_reaction_backfill",
       "breakpoints": true
     },
     {
-      "idx": 368,
+      "idx": 370,
       "version": "7",
       "when": 1787940908254,
       "tag": "0653_kb_remaining_composite_tenant_constraints",
       "breakpoints": true
     },
     {
-      "idx": 369,
+      "idx": 371,
       "version": "7",
       "when": 1787940968254,
       "tag": "0654_calendar_exception_tenant_fk",
       "breakpoints": true
     },
     {
-      "idx": 373,
+      "idx": 372,
       "version": "7",
       "when": 1787941028254,
       "tag": "0656_communication_tenant_rls",
       "breakpoints": true
     },
     {
-      "idx": 374,
+      "idx": 373,
       "version": "7",
       "when": 1787941088254,
       "tag": "0657_kb_article_tags_tenant_integrity",
       "breakpoints": true
     },
     {
-      "idx": 375,
+      "idx": 374,
       "version": "7",
       "when": 1787941148254,
       "tag": "0658_calendar_membership_actors",
       "breakpoints": true
     },
     {
-      "idx": 376,
+      "idx": 375,
       "version": "7",
       "when": 1787941208254,
       "tag": "0659_expense_export_jobs",
       "breakpoints": true
     },
     {
-      "idx": 377,
+      "idx": 376,
       "version": "7",
       "when": 1787941268254,
       "tag": "0660_communication_actor_contraction_expand",
       "breakpoints": true
     },
     {
-      "idx": 378,
+      "idx": 377,
       "version": "7",
       "when": 1787941328254,
       "tag": "0661_kb_page_membership_actors",
       "breakpoints": true
     },
     {
-      "idx": 379,
+      "idx": 378,
       "version": "7",
       "when": 1787941388254,
       "tag": "0662_kb_page_review_membership_actors",
       "breakpoints": true
     },
     {
-      "idx": 380,
+      "idx": 379,
       "version": "7",
       "when": 1787941389254,
       "tag": "0663_invoice_reminder_due_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 380,
+      "version": "7",
+      "when": 1787941449254,
+      "tag": "0664_calendar_events_visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 381,
+      "version": "7",
+      "when": 1787941509254,
+      "tag": "0665_kb_article_chunks_acl_revision_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 382,
+      "version": "7",
+      "when": 1787941549254,
+      "tag": "0669_chain_creates_inv_compliance_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 383,
+      "version": "7",
+      "when": 1787941589254,
+      "tag": "0666_rls_missing_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 384,
+      "version": "7",
+      "when": 1787941649254,
+      "tag": "0667_fix_invitations_pending_predicate",
+      "breakpoints": true
+    },
+    {
+      "idx": 385,
+      "version": "7",
+      "when": 1787941689254,
+      "tag": "0668_fix_membership_fk_on_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 386,
+      "version": "7",
+      "when": 1787941749254,
+      "tag": "0670_kb_chunks_page_created_by_membership",
+      "breakpoints": true
+    },
+    {
+      "idx": 387,
+      "version": "7",
+      "when": 1787941809254,
+      "tag": "0671_kb_chunks_acl_index_membership",
       "breakpoints": true
     }
   ]
