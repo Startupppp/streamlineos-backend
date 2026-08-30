@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { StorageController } from "./storage.controller";
 import { StorageService } from "./storage.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -78,7 +78,7 @@ describe("StorageController.download — cross-org file isolation", () => {
   const audit = { log: jest.fn() };
   const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) };
 
-  it("403s a cross-org download of an onboarding document not tracked in the generic documents table", async () => {
+  it("404s a cross-org download of an onboarding document (existence oracle prevention)", async () => {
     const db = buildDb({ onboardingDocuments: { orgId: "org-B" } });
     const controller = new StorageController(
       db as never,
@@ -89,10 +89,10 @@ describe("StorageController.download — cross-org file isolation", () => {
 
     await expect(
       controller.download(undefined, "key123", undefined, undefined, ctx("org-A"), mockRes()),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it("403s a cross-org download of an expense receipt", async () => {
+  it("404s a cross-org download of an expense receipt (existence oracle prevention)", async () => {
     const db = buildDb({ expenses: { orgId: "org-B" } });
     const controller = new StorageController(
       db as never,
@@ -103,7 +103,7 @@ describe("StorageController.download — cross-org file isolation", () => {
 
     await expect(
       controller.download(undefined, "key123", undefined, undefined, ctx("org-A"), mockRes()),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("requires the dedicated scoped endpoint for a same-org onboarding document", async () => {
@@ -135,7 +135,7 @@ describe("StorageController.download — cross-org file isolation", () => {
     expect(res.json).toHaveBeenCalledWith({ url: "https://signed.example.com/file" });
   });
 
-  it("403s a cross-org payslip download", async () => {
+  it("404s a cross-org payslip download (existence oracle prevention)", async () => {
     const db = buildDb({ payslipPublications: { orgId: "org-B" } });
     const controller = new StorageController(
       db as never,
@@ -146,10 +146,10 @@ describe("StorageController.download — cross-org file isolation", () => {
 
     await expect(
       controller.download(undefined, "payroll/run-9/payslip.pdf", undefined, undefined, ctx("org-A"), mockRes()),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it("403s a cross-org candidate-vault download", async () => {
+  it("404s a cross-org candidate-vault download (existence oracle prevention)", async () => {
     const db = buildDb({ candidateDocumentsVault: { orgId: "org-B" } });
     const controller = new StorageController(
       db as never,
@@ -160,10 +160,10 @@ describe("StorageController.download — cross-org file isolation", () => {
 
     await expect(
       controller.download(undefined, "candidates/cv.pdf", undefined, undefined, ctx("org-A"), mockRes()),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it("403s an UNTRACKED sensitive key instead of failing open", async () => {
+  it("404s an UNTRACKED sensitive key (fails closed, prevents existence oracle)", async () => {
     const db = buildDb({});
     const controller = new StorageController(
       db as never,
@@ -174,7 +174,7 @@ describe("StorageController.download — cross-org file isolation", () => {
 
     await expect(
       controller.download(undefined, "payroll/unregistered.pdf", undefined, undefined, ctx("org-A"), mockRes()),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("requires the dedicated scoped endpoint for a same-org payslip", async () => {

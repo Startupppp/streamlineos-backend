@@ -17,6 +17,7 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { readRequestScope } from "../organization/core/read-request-scope";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { FeedbucketWidgetsService } from "./feedbucket-widgets.service";
@@ -36,6 +37,7 @@ import {
 } from "./feedbucket.schemas";
 import { analyzeBodySchema, type AnalyzeBodyInput } from "./feedbucket-ai.schemas";
 
+@RequireModule("feedbucket")
 @Controller("feedbucket")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class FeedbucketController {

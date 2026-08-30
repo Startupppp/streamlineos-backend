@@ -19,7 +19,6 @@ import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportRealtimeService } from "./support-realtime.service";
 import { SupportSlaService } from "./support-sla.service";
-import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { AutomationService } from "../../automation/automation.service";
@@ -59,7 +58,6 @@ export class SupportTicketsService {
     private readonly realtime: SupportRealtimeService,
     private readonly sla: SupportSlaService,
     private readonly automations: AutomationService,
-    private readonly csat: SupportCsatService,
     private readonly ai: SupportAiService,
     private readonly customFields: SupportCustomFieldsService,
     private readonly activity: SupportTicketActivityService,
@@ -207,23 +205,6 @@ export class SupportTicketsService {
           requesterName: source?.requesterName ?? null,
         })
         .returning();
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "support_ticket",
-        aggregateId: String(row.id),
-        aggregateVersion: 1,
-        eventType: "support.ticket.created",
-        payload: {
-          ticketId: row.id,
-          orgId,
-          title: row.title,
-          priority: row.priority,
-          assigneeId: row.assigneeId ?? null,
-          actorUserId: userId,
-        },
-        occurredAt: new Date(),
-      });
       return row;
     });
 
@@ -358,10 +339,6 @@ export class SupportTicketsService {
       void this.automations
         .runAutomationsForEvent(orgId, "ticket.priority_changed", this.buildAutomationPayload(updatedTicketForPayload))
         .catch(logSideEffectFailure("support status-change notification", { orgId, ticketId }));
-    }
-
-    if (input.status === "RESOLVED" && ticket.status !== "RESOLVED") {
-      void this.csat.createRequestForTicket(orgId, ticketId).catch(logSideEffectFailure("support CSAT request", { orgId, ticketId }));
     }
 
     if (input.status) {

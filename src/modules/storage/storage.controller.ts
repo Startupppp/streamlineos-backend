@@ -184,11 +184,10 @@ export class StorageController {
 
     const fileOwner = await this.resolveFileOwner(fileKey);
     if (fileOwner !== null) {
-      if (fileOwner.orgId !== orgId || requiresDedicatedAccess(fileOwner)) {
-        throw new ForbiddenException("Access denied");
-      }
+      if (fileOwner.orgId !== orgId) throw new NotFoundException("File not found");
+      if (requiresDedicatedAccess(fileOwner)) throw new ForbiddenException("Access denied");
     } else if (isSensitiveKey(fileKey)) {
-      throw new ForbiddenException("Access denied");
+      throw new NotFoundException("File not found");
     }
 
     this.audit.log({ action: "file.download", userId: u.userId, orgId, metadata: { fileKey } });
@@ -230,13 +229,10 @@ export class StorageController {
 
     if (isSensitiveKey(keyParam)) {
       const fileOwner = await this.resolveFileOwner(keyParam);
-      if (
-        fileOwner === null ||
-        fileOwner.orgId !== (member.orgId ?? u.orgId) ||
-        requiresDedicatedAccess(fileOwner)
-      ) {
-        throw new ForbiddenException("Access denied");
+      if (fileOwner === null || fileOwner.orgId !== (member.orgId ?? u.orgId)) {
+        throw new NotFoundException("Not found");
       }
+      if (requiresDedicatedAccess(fileOwner)) throw new ForbiddenException("Access denied");
     }
 
     const stream = await this.openStream(member.orgId ?? u.orgId, keyParam, "Not found");

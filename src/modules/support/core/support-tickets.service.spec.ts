@@ -9,7 +9,6 @@ import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportRealtimeService } from "./support-realtime.service";
 import { SupportSlaService } from "./support-sla.service";
 import { AutomationService } from "../../automation/automation.service";
-import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { SupportMentionsService } from "./support-mentions.service";
@@ -84,10 +83,6 @@ const mockAutomations = {
   runAutomationsForEvent: jest.fn().mockResolvedValue(undefined),
 };
 
-const mockCsat = {
-  createRequestForTicket: jest.fn().mockResolvedValue(undefined),
-};
-
 const mockAi = {
   runFullAnalysis: jest.fn().mockResolvedValue(undefined),
 };
@@ -130,7 +125,6 @@ describe("SupportTicketsService", () => {
         { provide: SupportRealtimeService, useValue: mockRealtime },
         { provide: SupportSlaService, useValue: mockSla },
         { provide: AutomationService, useValue: mockAutomations },
-        { provide: SupportCsatService, useValue: mockCsat },
         { provide: SupportAiService, useValue: mockAi },
         { provide: SupportCustomFieldsService, useValue: mockCustomFields },
         { provide: SupportMentionsService, useValue: mockMentions },
@@ -193,16 +187,16 @@ describe("SupportTicketsService", () => {
 
     it("does not fail ticket creation if the activity insert throws", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
-      mockDb.values
-        .mockImplementationOnce(() => mockDb)
-        .mockImplementationOnce(() => mockDb)
-        .mockImplementationOnce(() => {
-          throw new Error("activity insert failed");
-        });
+      mockDb.values.mockImplementation((payload?: { action?: string }) => {
+        if (payload?.action === "created") throw new Error("activity insert failed");
+        return mockDb;
+      });
 
       await expect(
         service.createTicket("org1", "user1", { title: "Another title", description: "d" } as never),
       ).resolves.toBeDefined();
+
+      mockDb.values.mockImplementation(() => mockDb);
     });
   });
 

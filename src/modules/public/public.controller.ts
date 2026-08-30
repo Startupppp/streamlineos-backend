@@ -21,7 +21,9 @@ import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transa
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
-import { RecruitmentService } from "./recruitment.service";
+import { PublicCareersService } from "./public-careers.service";
+import { PublicOffersService } from "./public-offers.service";
+import { PublicReferrersService } from "./public-referrers.service";
 import { RoadmapService } from "./roadmap.service";
 import { KbService } from "./kb.service";
 import { CrmService } from "./crm.service";
@@ -82,7 +84,9 @@ function header(req: Request, name: string): string | undefined {
 @Controller("public")
 export class PublicController {
   constructor(
-    private readonly recruitment: RecruitmentService,
+    private readonly careers: PublicCareersService,
+    private readonly offers: PublicOffersService,
+    private readonly referrers: PublicReferrersService,
     private readonly roadmap: RoadmapService,
     private readonly kb: KbService,
     private readonly crm: CrmService,
@@ -124,7 +128,7 @@ export class PublicController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:application-status")
   applicationStatus(@Param("token") token: string) {
-    return this.recruitment.getApplicationStatus(token);
+    return this.careers.getApplicationStatus(token);
   }
 
   @Get("careers/:orgSlug/jobs")
@@ -133,7 +137,7 @@ export class PublicController {
     "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
   )
   listOrgJobs(@Param("orgSlug") orgSlug: string) {
-    return this.recruitment.listOrgJobs(orgSlug);
+    return this.careers.listOrgJobs(orgSlug);
   }
 
   @Get("careers/:orgSlug/jobs/:jobId")
@@ -141,7 +145,7 @@ export class PublicController {
     @Param("orgSlug") orgSlug: string,
     @Param("jobId", ParseIntPipe) jobId: number,
   ) {
-    return this.recruitment.getOrgJob(orgSlug, jobId);
+    return this.careers.getOrgJob(orgSlug, jobId);
   }
 
   @Post("careers/:orgSlug/jobs/:jobId/apply")
@@ -151,14 +155,14 @@ export class PublicController {
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body(new ZodValidationPipe(applySchema)) body: ApplyInput,
   ) {
-    return this.recruitment.applyToOrgJob(orgSlug, jobId, body);
+    return this.careers.applyToOrgJob(orgSlug, jobId, body);
   }
 
   @Get("offer/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:offer")
   getOffer(@Param("token") token: string) {
-    return this.recruitment.getOffer(token);
+    return this.offers.getOffer(token);
   }
 
   @Patch("offer/:token/respond")
@@ -168,12 +172,12 @@ export class PublicController {
     @Param("token") token: string,
     @Body(new ZodValidationPipe(offerRespondSchema)) body: OfferRespondInput,
   ) {
-    return this.recruitment.respondToOffer(token, body);
+    return this.offers.respondToOffer(token, body);
   }
 
   @Get("interview-booking/:token")
   getBookingLink(@Param("token") token: string) {
-    return this.recruitment.getBookingLink(token);
+    return this.offers.getBookingLink(token);
   }
 
   @Post("referrals/register")
@@ -181,14 +185,14 @@ export class PublicController {
   registerExternalReferrer(
     @Body(new ZodValidationPipe(externalReferrerRegisterSchema)) body: ExternalReferrerRegisterInput,
   ) {
-    return this.recruitment.registerExternalReferrer(body);
+    return this.referrers.registerExternalReferrer(body);
   }
 
   @Get("referrals/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:referrer-portal")
   getExternalReferrerPortal(@Param("token") token: string) {
-    return this.recruitment.getExternalReferrerPortal(token);
+    return this.referrers.getExternalReferrerPortal(token);
   }
 
   @Post("referrals/:token/submit")
@@ -200,14 +204,14 @@ export class PublicController {
     @Body(new ZodValidationPipe(externalReferralSubmitSchema)) body: ExternalReferralSubmitInput,
     @Req() req: Request,
   ) {
-    return this.recruitment.submitExternalReferral(token, body, clientIp(req));
+    return this.referrers.submitExternalReferral(token, body, clientIp(req));
   }
 
   @Get("vendor-portal/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:vendor-portal")
   getVendorPortal(@Param("token") token: string) {
-    return this.recruitment.getVendorPortal(token);
+    return this.referrers.getVendorPortal(token);
   }
 
   @Post("intake/:projectId")
