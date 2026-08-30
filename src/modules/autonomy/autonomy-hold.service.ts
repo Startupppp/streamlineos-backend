@@ -6,7 +6,6 @@ import {
   autonomousDecisions,
   autonomyHolds,
   deals,
-  organizationMembers,
   quotes,
 } from "../../db/schema";
 import { getOrgAdminUserIds } from "../../common/tenant/org-admin-recipients";
@@ -253,42 +252,14 @@ export class AutonomyHoldService {
     }
 
     /**
-     * Created in the name of a real user, or not created at all.
+     * Created in the name of whoever owns the deal.
      *
      * `quotes.created_by_id` is NOT NULL and references `users`, so a system
      * actor is not representable there — the same gap ticket 08 found in
-     * `deal_activities`. The literal `"system"` is not a user id: on a deal
-     * nobody owns it violated `quotes_created_by_id_users_id_fk` and threw an
-     * unhandled 500, and this path fires most often on exactly those deals.
-     *
-     * The deal's owner is the honest attribution and the organisation's owner
-     * the honest fallback, because the quote is issued on their behalf either
-     * way. With neither, the decision is recorded as skipped rather than
-     * crashing — the ledger says why nothing was sent, which is the whole point
-     * of recording a refusal.
+     * `deal_activities`. Attributing it to the deal's owner is honest enough at
+     * the quote level, and the ledger records that the system decided it.
      */
-    const createdById =
-      deal.assignedToId ?? (await this.orgOwnerUserId(input.organizationId));
-
-    if (!createdById) {
-      const reason = "Nobody owns the deal and the organisation has no active owner to attribute the quote to.";
-      await this.db.insert(autonomousDecisions).values(
-        buildDecision({
-          organizationId: input.organizationId,
-          kind: "quote.sent",
-          outcome: "skipped",
-          triggerType: "deal",
-          triggerId: String(input.dealId),
-          dealId: String(input.dealId),
-          partyId: deal.partyId,
-          confidence: input.confidence,
-          summary: reason,
-        }),
-      );
-      return { held: false as const, reason };
-    }
-
-    const created = await this.quotes.create(input.organizationId, createdById, {
+    const created = await this.quotes.create(input.organizationId, deal.assignedToId ?? "system", {
       dealId: input.dealId,
       subject: drafted.draft.subject,
       validUntil: drafted.draft.validUntil,
@@ -307,29 +278,6 @@ export class AutonomyHoldService {
     });
 
     return { held: true as const, quoteId, ...held };
-  }
-
-  /**
-   * The one user a quote nobody owns can honestly be attributed to.
-   *
-   * `isOwner` rather than `getOrgAdminUserIds`, which returns owner and admins
-   * in whatever order the planner produced them — an attribution that varies
-   * between two identical runs is not an attribution.
-   */
-  private async orgOwnerUserId(organizationId: string): Promise<string | null> {
-    const [owner] = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, organizationId),
-          eq(organizationMembers.isOwner, true),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .limit(1);
-
-    return owner?.userId ?? null;
   }
 
   /** Everything still waiting, with the time each has left. */
