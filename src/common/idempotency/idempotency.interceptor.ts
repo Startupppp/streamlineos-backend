@@ -8,6 +8,7 @@ import {
   NestInterceptor,
   UnprocessableEntityException,
 } from "@nestjs/common";
+import { runInNewTenantTransaction } from "../tenant/run-in-tenant-transaction";
 import { Reflector } from "@nestjs/core";
 import { and, eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
@@ -123,13 +124,24 @@ export class IdempotencyInterceptor implements NestInterceptor {
           const res = context
             .switchToHttp()
             .getResponse<{ statusCode?: number }>();
-          void this.complete(fenceId, res?.statusCode ?? 200, data);
+          void this.complete(user.orgId, fenceId, res?.statusCode ?? 200, data);
         },
         error: () => {
-          void this.fail(fenceId);
+          void this.fail(user.orgId, fenceId);
         },
       }),
     );
+  }
+
+  /**
+   * Every fence write runs in the caller's own tenant transaction.
+   *
+   * `command_fences` is tenant-scoped and under row-level security, so a write
+   * that names no organisation is refused — and the refusal lands on the fence,
+   * not the command, so an idempotent route 500s before its handler ever runs.
+   */
+  private inTenant<T>(orgId: string, fn: (tx: Db) => Promise<T>): Promise<T> {
+    return runInNewTenantTransaction(this.db, orgId, (tx) => fn(tx as unknown as Db));
   }
 
   private async claim(params: ClaimParams): Promise<ClaimResult> {
@@ -137,7 +149,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const leaseExpiresAt = new Date(now + IDEMPOTENCY_LEASE_MS);
     const expiresAt = new Date(now + IDEMPOTENCY_TTL_MS);
 
-    const inserted = await this.db
+    const inserted = await this.inTenant(params.orgId, (tx) => tx
       .insert(commandFences)
       .values({
         organizationId: params.orgId,
@@ -157,11 +169,11 @@ export class IdempotencyInterceptor implements NestInterceptor {
           commandFences.idempotencyKey,
         ],
       })
-      .returning({ fenceId: commandFences.commandFenceId });
+      .returning({ fenceId: commandFences.commandFenceId }));
 
     if (inserted.length > 0) return { kind: "proceed", fenceId: inserted[0].fenceId };
 
-    const [existing] = await this.db
+    const [existing] = await this.inTenant(params.orgId, (tx) => tx
       .select()
       .from(commandFences)
       .where(
@@ -171,7 +183,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
           eq(commandFences.idempotencyKey, params.idempotencyKey),
         ),
       )
-      .limit(1);
+      .limit(1));
 
     // Conflicting row vanished between insert and read (e.g. expiry sweep) — treat as in-flight; client retries.
     if (!existing) return { kind: "inflight" };
@@ -195,7 +207,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     // Expired in-flight lease or a prior FAILED attempt — reclaim under an optimistic lock on the
     // observed lease timestamp, so exactly one concurrent reclaimer wins.
-    const reclaimed = await this.db
+    const reclaimed = await this.inTenant(params.orgId, (tx) => tx
       .update(commandFences)
       .set({
         status: "IN_FLIGHT",
@@ -212,33 +224,38 @@ export class IdempotencyInterceptor implements NestInterceptor {
           eq(commandFences.leaseExpiresAt, existing.leaseExpiresAt),
         ),
       )
-      .returning({ fenceId: commandFences.commandFenceId });
+      .returning({ fenceId: commandFences.commandFenceId }));
 
     if (reclaimed.length > 0) return { kind: "proceed", fenceId: reclaimed[0].fenceId };
     return { kind: "inflight" };
   }
 
   private async complete(
+    orgId: string,
     fenceId: number,
     responseStatus: number,
     data: unknown,
   ): Promise<void> {
     try {
-      await this.db
-        .update(commandFences)
-        .set({ status: "COMPLETED", responseBody: data ?? null, responseStatus })
-        .where(eq(commandFences.commandFenceId, fenceId));
+      await this.inTenant(orgId, (tx) =>
+        tx
+          .update(commandFences)
+          .set({ status: "COMPLETED", responseBody: data ?? null, responseStatus })
+          .where(eq(commandFences.commandFenceId, fenceId)),
+      );
     } catch {
       // best-effort: a lost completion write just means the next retry re-executes after the lease.
     }
   }
 
-  private async fail(fenceId: number): Promise<void> {
+  private async fail(orgId: string, fenceId: number): Promise<void> {
     try {
-      await this.db
-        .update(commandFences)
-        .set({ status: "FAILED" })
-        .where(eq(commandFences.commandFenceId, fenceId));
+      await this.inTenant(orgId, (tx) =>
+        tx
+          .update(commandFences)
+          .set({ status: "FAILED" })
+          .where(eq(commandFences.commandFenceId, fenceId)),
+      );
     } catch {
       // best-effort
     }

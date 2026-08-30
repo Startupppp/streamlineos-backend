@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { seedOrg } from "./e2e-seed";
 import type { INestApplication } from "@nestjs/common";
 import { VERSION_NEUTRAL, VersioningType } from "@nestjs/common";
 import { Test, type TestingModuleBuilder } from "@nestjs/testing";
@@ -285,6 +286,9 @@ export interface E2eAppOptions {
  * mock, at a distance, in a suite nobody was editing. Merging means the spec's
  * own answers win and everything it did not mention still works.
  */
+/** The organisation `signToken` mints for by default. */
+const FIXTURE_ORG_ID = "org_1";
+
 const HARNESS_STUBS = new Map<unknown, object>([
   [MembershipStateService, membershipStub],
   [EntitlementsService, entitlementsStub],
@@ -390,6 +394,18 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
 
   const ref = await builder.compile();
   installFixtureRegionRegistry(ref.get<Db>(DRIZZLE));
+
+  /*
+    The fixture organisation exists as a row, not only as a claim in a token.
+
+    `signToken` mints tokens for `org_1`, and tenant tables carry foreign keys to
+    `organizations` — `command_fences` among them. The idempotency interceptor
+    writes a fence before the handler runs, so an *auth* test asserting 403 on an
+    idempotent route got a 500 from a foreign key instead, and the thing it was
+    checking never happened. Seeding is idempotent, so suites that seed their own
+    organisations are unaffected.
+  */
+  await seedOrg(ref.get<Db>(DRIZZLE), FIXTURE_ORG_ID, FIXTURE_ORG_ID);
   const app = ref.createNestApplication();
   app.enableVersioning({
     type: VersioningType.URI,
