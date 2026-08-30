@@ -37,3 +37,45 @@ describe("ProjectsTicketsReadService — cross-tenant isolation", () => {
     expect(result.hasAccess).toBe(true);
   });
 });
+
+describe("checkProjectAccess — direct-member org-status gate", () => {
+  const ORG = "org-a";
+  const USER_ID = "user-1";
+  const PROJECT_ID = 5;
+
+  function makeDbForMemberPath(memberRows: unknown[], teamRows: unknown[] = []) {
+    const memberLimit = jest.fn().mockResolvedValue(memberRows);
+    const memberWhere = jest.fn().mockReturnValue({ limit: memberLimit });
+    const memberInnerJoin = jest.fn().mockReturnValue({ where: memberWhere });
+    const teamLimit = jest.fn().mockResolvedValue(teamRows);
+    const teamWhere = jest.fn().mockReturnValue({ limit: teamLimit });
+    const teamInnerJoin = jest.fn().mockReturnValue({ where: teamWhere });
+    const from = jest.fn()
+      .mockReturnValueOnce({ innerJoin: memberInnerJoin })
+      .mockReturnValue({ innerJoin: teamInnerJoin });
+    return {
+      access: { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } as never,
+      db: {
+        query: {
+          projects: { findFirst: jest.fn().mockResolvedValue({ managerId: "other-manager" }) },
+        },
+        select: jest.fn().mockReturnValue({ from }),
+      } as unknown as Db,
+    };
+  }
+
+  it("denies a suspended org member even when present in projectMembers (DENY)", async () => {
+    const { db, access } = makeDbForMemberPath([]);
+    const svc = new ProjectsTicketsReadService(db, access);
+    const result = await svc.checkProjectAccess(ORG, USER_ID, PROJECT_ID);
+    expect(result.hasAccess).toBe(false);
+  });
+
+  it("grants access to an active org member present in projectMembers (CONTROL)", async () => {
+    const { db, access } = makeDbForMemberPath([{ id: 1, role: "CONTRIBUTOR" }]);
+    const svc = new ProjectsTicketsReadService(db, access);
+    const result = await svc.checkProjectAccess(ORG, USER_ID, PROJECT_ID);
+    expect(result.hasAccess).toBe(true);
+    expect(result.role).toBe("CONTRIBUTOR");
+  });
+});

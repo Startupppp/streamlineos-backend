@@ -145,7 +145,13 @@ export class TaxPaymentsService {
     const today = todayIso();
 
     const [payment] = await this.db
-      .select()
+      .select({
+        id: accTaxPayments.id,
+        paidDate: accTaxPayments.paidDate,
+        journalEntryId: accTaxPayments.journalEntryId,
+        reference: accTaxPayments.reference,
+        amount: accTaxPayments.amount,
+      })
       .from(accTaxPayments)
       .where(and(eq(accTaxPayments.id, paymentId), eq(accTaxPayments.orgId, orgId)))
       .limit(1);

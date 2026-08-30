@@ -14,6 +14,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import {
+  organizationMembers,
   projectMembers,
   projects,
   projectTeamAssignments,
@@ -145,6 +146,14 @@ export class ProjectsTicketsReadService {
     const membership = await this.db
       .select({ id: projectMembers.id, role: projectMembers.role })
       .from(projectMembers)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
       .where(
         and(
           eq(projectMembers.projectId, projectId),

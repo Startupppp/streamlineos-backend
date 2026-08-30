@@ -63,7 +63,14 @@ export class EnterpriseQuotesService {
 
   async findOne(orgId: string, id: number) {
     const [row] = await this.db
-      .select()
+      .select({
+        quote: enterpriseQuotes,
+        dealId: deals.id,
+        dealName: deals.name,
+        clientId: clientAccounts.id,
+        clientName: clientAccounts.clientName,
+        approverName: users.name,
+      })
       .from(enterpriseQuotes)
       .leftJoin(deals, eq(enterpriseQuotes.dealId, deals.id))
       .leftJoin(clientAccounts, eq(enterpriseQuotes.clientId, clientAccounts.id))
@@ -73,15 +80,15 @@ export class EnterpriseQuotesService {
 
     if (!row) throw new NotFoundException("Enterprise quote not found");
 
-    const q = row.enterprise_quotes;
+    const q = row.quote;
     const totalValueInPaise = q.negotiatedSeats * q.pricePerSeatInPaise * q.contractTermMonths;
 
     return {
       ...q,
       totalValueInPaise,
-      deal: row.deals ? { id: row.deals.id, name: row.deals.name } : null,
-      client: row.client_accounts ? { id: row.client_accounts.id, name: row.client_accounts.clientName } : null,
-      approver: q.approverId ? { id: q.approverId, name: row.users?.name ?? null } : null,
+      deal: row.dealId ? { id: row.dealId, name: row.dealName } : null,
+      client: row.clientId ? { id: row.clientId, name: row.clientName } : null,
+      approver: q.approverId ? { id: q.approverId, name: row.approverName ?? null } : null,
     };
   }
 

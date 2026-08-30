@@ -33,7 +33,8 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const approvalIdParams = z.object({ approvalId: z.coerce.number().int().positive() }).strict();
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const projectAndApprovalIdParams = z.object({ projectId: z.coerce.number().int().positive(), approvalId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/approvals")
@@ -56,6 +57,7 @@ export class ApprovalsController {
 
   @Get()
   @RequirePermission("build:approvals:view")
+  @Validate({ params: projectIdParams })
   listApprovals(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(listApprovalsQuerySchema)) query: ListApprovalsQuery,
@@ -66,7 +68,7 @@ export class ApprovalsController {
 
   @Get(":approvalId")
   @RequirePermission("build:approvals:view")
-  @Validate({ params: approvalIdParams })
+  @Validate({ params: projectAndApprovalIdParams })
   getApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
@@ -79,6 +81,7 @@ export class ApprovalsController {
   @HttpCode(201)
   @RequirePermission("build:approvals:request")
   @Idempotent("build.approval.create")
+  @Validate({ params: projectIdParams })
   createApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createApprovalSchema)) body: CreateApprovalInput,
@@ -90,7 +93,7 @@ export class ApprovalsController {
   @Patch(":approvalId/decide")
   @RequirePermission("build:approvals:decide")
   @Idempotent("build.approval.decide")
-  @Validate({ params: approvalIdParams })
+  @Validate({ params: projectAndApprovalIdParams })
   decideApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
@@ -102,7 +105,7 @@ export class ApprovalsController {
 
   @Patch(":approvalId")
   @RequirePermission("build:approvals:manage")
-  @Validate({ params: approvalIdParams })
+  @Validate({ params: projectAndApprovalIdParams })
   updateApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
@@ -115,7 +118,7 @@ export class ApprovalsController {
   @Delete(":approvalId")
   @RequirePermission("build:approvals:manage")
   @HttpCode(204)
-  @Validate({ params: approvalIdParams })
+  @Validate({ params: projectAndApprovalIdParams })
   softDeleteApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,

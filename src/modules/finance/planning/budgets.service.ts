@@ -40,7 +40,20 @@ export class BudgetsService {
     const { offset, limit } = paginateOffset({ page, pageSize });
     const [items, totalRows] = await Promise.all([
       this.db
-        .select()
+        .select({
+          id: finBudgets.id,
+          name: finBudgets.name,
+          fiscalYear: finBudgets.fiscalYear,
+          periodType: finBudgets.periodType,
+          dimensionType: finBudgets.dimensionType,
+          status: finBudgets.status,
+          totalAmount: finBudgets.totalAmount,
+          createdBy: finBudgets.createdBy,
+          approvedBy: finBudgets.approvedBy,
+          approvedAt: finBudgets.approvedAt,
+          createdAt: finBudgets.createdAt,
+          updatedAt: finBudgets.updatedAt,
+        })
         .from(finBudgets)
         .where(where)
         .orderBy(desc(finBudgets.createdAt))

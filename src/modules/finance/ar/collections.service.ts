@@ -99,8 +99,18 @@ export class CollectionsService {
     const { limit, offset } = paginateOffset(query);
     const conditions = [eq(finCollectionActivities.orgId, orgId)];
     if (query.clientId) conditions.push(eq(finCollectionActivities.clientId, query.clientId));
+    const projection = {
+      id: finCollectionActivities.id,
+      clientId: finCollectionActivities.clientId,
+      invoiceId: finCollectionActivities.invoiceId,
+      type: finCollectionActivities.type,
+      note: finCollectionActivities.note,
+      promisedDate: finCollectionActivities.promisedDate,
+      createdBy: finCollectionActivities.createdBy,
+      createdAt: finCollectionActivities.createdAt,
+    };
     const [rows, [{ count }]] = await Promise.all([
-      this.db.select().from(finCollectionActivities).where(and(...conditions)).orderBy(desc(finCollectionActivities.createdAt)).limit(limit).offset(offset),
+      this.db.select(projection).from(finCollectionActivities).where(and(...conditions)).orderBy(desc(finCollectionActivities.createdAt)).limit(limit).offset(offset),
       this.db.select({ count: sql<number>`count(*)::int` }).from(finCollectionActivities).where(and(...conditions)),
     ]);
     return buildListResponse(rows, count, query);

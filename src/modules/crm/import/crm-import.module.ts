@@ -7,6 +7,8 @@ import { CrmExportService } from "./crm-export.service";
 import { CrmImportWorkflow } from "./crm-import.workflow";
 import { ImportPump } from "./import-pump";
 import { CrmConnectorService } from "./crm-connector.service";
+import { CrmConnectorWalkService } from "./crm-connector-walk.service";
+import { CrmConnectorLifecycleService } from "./crm-connector-lifecycle.service";
 import { CrmConnectorWorkflow } from "./crm-connector.workflow";
 
 /**
@@ -27,6 +29,8 @@ import { CrmConnectorWorkflow } from "./crm-connector.workflow";
     CrmExportService,
     CrmImportWorkflow,
     CrmConnectorService,
+    CrmConnectorWalkService,
+    CrmConnectorLifecycleService,
     CrmConnectorWorkflow,
     ImportPump,
   ],

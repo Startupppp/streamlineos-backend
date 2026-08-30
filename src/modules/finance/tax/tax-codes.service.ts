@@ -43,8 +43,21 @@ export class TaxCodesService {
       if (query.taxType) conditions.push(eq(accTaxCodes.taxType, query.taxType));
       if (query.isActive !== undefined) conditions.push(eq(accTaxCodes.isActive, query.isActive));
       const where = and(...conditions);
+      const projection = {
+        id: accTaxCodes.id,
+        name: accTaxCodes.name,
+        code: accTaxCodes.code,
+        rate: accTaxCodes.rate,
+        taxType: accTaxCodes.taxType,
+        isReverseCharge: accTaxCodes.isReverseCharge,
+        collectedAccountId: accTaxCodes.collectedAccountId,
+        paidAccountId: accTaxCodes.paidAccountId,
+        isActive: accTaxCodes.isActive,
+        createdAt: accTaxCodes.createdAt,
+        updatedAt: accTaxCodes.updatedAt,
+      };
       const [items, totals] = await Promise.all([
-        this.db.select().from(accTaxCodes).where(where).limit(limit).offset(offset),
+        this.db.select(projection).from(accTaxCodes).where(where).limit(limit).offset(offset),
         this.db.select({ c: count() }).from(accTaxCodes).where(where),
       ]);
       return buildListResponse(items, Number(totals[0]?.c ?? 0), query);
@@ -53,7 +66,19 @@ export class TaxCodesService {
 
   async get(orgId: string, taxCodeId: number) {
     const [row] = await this.db
-      .select()
+      .select({
+        id: accTaxCodes.id,
+        name: accTaxCodes.name,
+        code: accTaxCodes.code,
+        rate: accTaxCodes.rate,
+        taxType: accTaxCodes.taxType,
+        isReverseCharge: accTaxCodes.isReverseCharge,
+        collectedAccountId: accTaxCodes.collectedAccountId,
+        paidAccountId: accTaxCodes.paidAccountId,
+        isActive: accTaxCodes.isActive,
+        createdAt: accTaxCodes.createdAt,
+        updatedAt: accTaxCodes.updatedAt,
+      })
       .from(accTaxCodes)
       .where(and(eq(accTaxCodes.id, taxCodeId), eq(accTaxCodes.orgId, orgId)))
       .limit(1);

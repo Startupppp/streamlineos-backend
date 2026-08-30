@@ -795,20 +795,19 @@ export const BUDGETS = [
     sql: `
       SELECT c.id, c.name, c.state, c.gstin,
              count(DISTINCT i.id) AS invoice_count,
-             (COALESCE(SUM(i.total), 0) - COALESCE((
-               SELECT SUM(p.amount)
-               FROM payments p
-               WHERE p.org_id = $1
-                 AND p.invoice_id IN (
-                   SELECT i2.id FROM invoices i2
-                   WHERE i2.org_id = $1 AND i2.client_id = c.id
-                 )
-             ), 0)) AS outstanding,
+             (COALESCE(SUM(i.total), 0) - COALESCE(paid_sq.paid, 0)) AS outstanding,
              count(*) OVER () AS total
       FROM clients c
       LEFT JOIN invoices i ON i.client_id = c.id AND i.org_id = $1
+      LEFT JOIN (
+        SELECT i2.client_id, COALESCE(SUM(p.amount), 0) AS paid
+        FROM payments p
+        INNER JOIN invoices i2 ON p.invoice_id = i2.id AND i2.org_id = $1
+        WHERE p.org_id = $1
+        GROUP BY i2.client_id
+      ) paid_sq ON paid_sq.client_id = c.id
       WHERE c.org_id = $1
-      GROUP BY c.id, c.name, c.state, c.gstin
+      GROUP BY c.id, c.name, c.state, c.gstin, paid_sq.paid
       ORDER BY outstanding DESC, c.name ASC
       LIMIT 50 OFFSET 0`,
     planAssertions: [

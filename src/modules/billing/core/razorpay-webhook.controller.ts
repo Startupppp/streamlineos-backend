@@ -1,7 +1,11 @@
 import { Controller, Headers, Param, Post, RawBodyRequest, Req, Res } from "@nestjs/common";
 import type { Request, Response } from "express";
+import { z } from "zod";
 import { Public } from "../../../common/auth/public.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { BillingService } from "./billing.service";
+
+const orgIdParams = z.object({ orgId: z.string().min(1) }).strict();
 
 @Public()
 @Controller("webhooks/razorpay/:orgId")
@@ -9,6 +13,7 @@ export class RazorpayWebhookController {
   constructor(private readonly billing: BillingService) {}
 
   @Post()
+  @Validate({ params: orgIdParams })
   async handle(
     @Param("orgId") orgId: string,
     @Req() req: RawBodyRequest<Request>,
