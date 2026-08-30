@@ -119,14 +119,35 @@ function applyPathParams(
   operation: MutableOperation,
   params: JsonSchema,
 ): void {
-  if (!Array.isArray(operation.parameters)) return;
+  const parameters = Array.isArray(operation.parameters) ? operation.parameters : [];
   const properties = propertiesOf(params);
-  for (const parameter of operation.parameters) {
+
+  for (const parameter of parameters) {
     if (!isParameter(parameter)) continue;
     if (parameter.in !== "path" || typeof parameter.name !== "string") continue;
     const schema = properties[parameter.name];
-    if (schema) parameter.schema = schema;
+    if (schema) {
+      parameter.schema = schema;
+      parameter.required = true;
+    }
   }
+
+  const existing = new Set<string>();
+  for (const parameter of parameters) {
+    if (
+      isParameter(parameter) &&
+      parameter.in === "path" &&
+      typeof parameter.name === "string"
+    )
+      existing.add(parameter.name);
+  }
+
+  const added: unknown[] = [];
+  for (const [name, schema] of Object.entries(properties)) {
+    if (existing.has(name)) continue;
+    added.push({ name, in: "path", required: true, schema });
+  }
+  if (added.length > 0) operation.parameters = [...parameters, ...added];
 }
 
 function applyIdempotency(operation: MutableOperation, command: string): void {
