@@ -73,7 +73,7 @@ export class PayrollRunExportWorkerService implements OnModuleInit, OnModuleDest
           afterId = row.id;
           count++;
         }
-        await this.jobs.progress(job.id, count);
+        await this.jobs.progress(job.id, count, job.orgId);
         if (rows.length < 500) break;
       }
       const result = await this.storage.uploadFile(
@@ -89,6 +89,7 @@ export class PayrollRunExportWorkerService implements OnModuleInit, OnModuleDest
         `payroll-runs-${job.createdAt.toISOString().slice(0, 10)}.csv`,
         result.size,
         count,
+        job.orgId,
       );
     } catch (error) {
       await this.jobs.fail(job, error);

@@ -15,18 +15,20 @@ export class MailSyncCheckpointService {
     accountId: number,
     folder: string,
   ): Promise<string | null> {
-    const [row] = await this.db
-      .select({ cursorValue: mailSyncCheckpoints.cursorValue })
-      .from(mailSyncCheckpoints)
-      .where(
-        and(
-          eq(mailSyncCheckpoints.orgId, orgId),
-          eq(mailSyncCheckpoints.accountId, accountId),
-          eq(mailSyncCheckpoints.folder, folder),
-        ),
-      )
-      .limit(1);
-    return row?.cursorValue ?? null;
+    return runInNewTenantTransaction(this.db, orgId, async (tx) => {
+      const [row] = await tx
+        .select({ cursorValue: mailSyncCheckpoints.cursorValue })
+        .from(mailSyncCheckpoints)
+        .where(
+          and(
+            eq(mailSyncCheckpoints.orgId, orgId),
+            eq(mailSyncCheckpoints.accountId, accountId),
+            eq(mailSyncCheckpoints.folder, folder),
+          ),
+        )
+        .limit(1);
+      return row?.cursorValue ?? null;
+    });
   }
 
   async savePosition(

@@ -1,3 +1,8 @@
+jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<unknown>, _explicit?: unknown) => fn(_db),
+  runInNewTenantTransaction: (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+}));
+
 import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { PayrollRunExportService } from "../payroll-export.service";
