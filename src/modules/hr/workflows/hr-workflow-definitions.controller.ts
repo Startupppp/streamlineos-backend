@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { HrWorkflowDefinitionsService } from "./hr-workflow-definitions.service";
 import {
   CreateWorkflowDefinitionSchema,
@@ -37,9 +36,10 @@ export class HrWorkflowDefinitionsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
+  @Validate({ query: WorkflowDefinitionQuerySchema })
   list(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(WorkflowDefinitionQuerySchema)) query: WorkflowDefinitionQueryDto,
+    @Query() query: WorkflowDefinitionQueryDto,
   ) {
     return this.definitionsService.list(u.orgId, query);
   }
@@ -47,9 +47,10 @@ export class HrWorkflowDefinitionsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
+  @Validate({ body: CreateWorkflowDefinitionSchema })
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(CreateWorkflowDefinitionSchema)) body: CreateWorkflowDefinitionDto,
+    @Body() body: CreateWorkflowDefinitionDto,
   ) {
     return this.definitionsService.create(u.orgId, body);
   }
@@ -68,11 +69,11 @@ export class HrWorkflowDefinitionsController {
   @Patch(":workflowId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
-  @Validate({ params: workflowIdParams })
+  @Validate({ params: workflowIdParams, body: UpdateWorkflowDefinitionSchema })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("workflowId", ParseIntPipe) workflowId: number,
-    @Body(new ZodValidationPipe(UpdateWorkflowDefinitionSchema)) body: UpdateWorkflowDefinitionDto,
+    @Body() body: UpdateWorkflowDefinitionDto,
   ) {
     return this.definitionsService.update(u.orgId, workflowId, body);
   }
@@ -128,11 +129,11 @@ export class HrWorkflowDefinitionsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @HttpCode(200)
-  @Validate({ params: workflowIdParams })
+  @Validate({ params: workflowIdParams, body: SimulateWorkflowSchema })
   simulate(
     @CurrentUser() u: CurrentUserContext,
     @Param("workflowId", ParseIntPipe) workflowId: number,
-    @Body(new ZodValidationPipe(SimulateWorkflowSchema)) body: SimulateWorkflowDto,
+    @Body() body: SimulateWorkflowDto,
   ) {
     return this.definitionsService.simulate(u.orgId, workflowId, body);
   }
@@ -140,11 +141,11 @@ export class HrWorkflowDefinitionsController {
   @Get(":workflowId/instances")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
-  @Validate({ params: workflowIdParams })
+  @Validate({ params: workflowIdParams, query: WorkflowInstanceQuerySchema })
   listInstances(
     @CurrentUser() u: CurrentUserContext,
     @Param("workflowId", ParseIntPipe) workflowId: number,
-    @Query(new ZodValidationPipe(WorkflowInstanceQuerySchema)) query: WorkflowInstanceQueryDto,
+    @Query() query: WorkflowInstanceQueryDto,
   ) {
     return this.instancesService.listForDefinition(u.orgId, workflowId, query);
   }

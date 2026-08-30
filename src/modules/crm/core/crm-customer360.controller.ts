@@ -14,7 +14,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CrmCustomer360Service } from "./crm-customer360.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 
@@ -58,10 +57,10 @@ export class CrmCustomer360Controller {
 
   @Get("company/:companyId/timeline")
   @RequirePermission("crm:customer360:view")
-  @Validate({ params: companyIdParams })
+  @Validate({ params: companyIdParams, query: timelineQuerySchema })
   async getCompanyTimeline(
     @Param("companyId", ParseIntPipe) companyId: number,
-    @Query(new ZodValidationPipe(timelineQuerySchema)) query: TimelineQuery,
+    @Query() query: TimelineQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.getCompanyTimeline(u.orgId, companyId, query.cursor);

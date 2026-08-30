@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { HrBenefitsPlansService } from "./hr-benefits-plans.service";
 import { HrBenefitsEnrollmentService } from "./hr-benefits-enrollment.service";
 import { HrBenefitsClaimsService } from "./hr-benefits-claims.service";
@@ -55,6 +54,7 @@ const planIdParams = z.object({ planId: z.coerce.number().int().positive() }).st
 const windowIdParams = z.object({ windowId: z.coerce.number().int().positive() }).strict();
 const depIdParams = z.object({ depId: z.coerce.number().int().positive() }).strict();
 const claimIdParams = z.object({ claimId: z.coerce.number().int().positive() }).strict();
+const updateWindowSchema = createEnrollmentWindowSchema.partial();
 
 @RequireModule("hr")
 @Controller("hr/benefits")
@@ -83,9 +83,10 @@ export class HrBenefitsController {
   @Get("plans")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
+  @Validate({ query: benefitPlansQuerySchema })
   listPlans(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(benefitPlansQuerySchema)) query: BenefitPlansQuery,
+    @Query() query: BenefitPlansQuery,
   ) {
     return this.plans.listPlans(u.orgId, query);
   }
@@ -118,9 +119,10 @@ export class HrBenefitsController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
+  @Validate({ body: createBenefitPlanSchema })
   createPlan(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createBenefitPlanSchema)) body: CreateBenefitPlanInput,
+    @Body() body: CreateBenefitPlanInput,
   ) {
     return this.plans.createPlan(u.orgId, body);
   }
@@ -128,11 +130,11 @@ export class HrBenefitsController {
   @Patch("plans/:planId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
-  @Validate({ params: planIdParams })
+  @Validate({ params: planIdParams, body: patchBenefitPlanSchema })
   updatePlan(
     @CurrentUser() u: CurrentUserContext,
     @Param("planId", ParseIntPipe) planId: number,
-    @Body(new ZodValidationPipe(patchBenefitPlanSchema)) body: PatchBenefitPlanInput,
+    @Body() body: PatchBenefitPlanInput,
   ) {
     return this.plans.updatePlan(u.orgId, planId, body);
   }
@@ -159,9 +161,10 @@ export class HrBenefitsController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
+  @Validate({ body: createEnrollmentWindowSchema })
   createWindow(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createEnrollmentWindowSchema)) body: CreateEnrollmentWindowInput,
+    @Body() body: CreateEnrollmentWindowInput,
   ) {
     return this.plans.createWindow(u.orgId, body);
   }
@@ -169,11 +172,11 @@ export class HrBenefitsController {
   @Patch("windows/:windowId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
-  @Validate({ params: windowIdParams })
+  @Validate({ params: windowIdParams, body: updateWindowSchema })
   updateWindow(
     @CurrentUser() u: CurrentUserContext,
     @Param("windowId", ParseIntPipe) windowId: number,
-    @Body(new ZodValidationPipe(createEnrollmentWindowSchema.partial())) body: Partial<CreateEnrollmentWindowInput>,
+    @Body() body: Partial<CreateEnrollmentWindowInput>,
   ) {
     return this.plans.updateWindow(u.orgId, windowId, body);
   }
@@ -189,9 +192,10 @@ export class HrBenefitsController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
+  @Validate({ body: enrollSchema })
   enroll(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(enrollSchema)) body: EnrollInput,
+    @Body() body: EnrollInput,
   ) {
     return this.enrollment.enroll(u.orgId, u.userId, body);
   }
@@ -200,9 +204,10 @@ export class HrBenefitsController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
+  @Validate({ body: waiveSchema })
   waive(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(waiveSchema)) body: WaiveInput,
+    @Body() body: WaiveInput,
   ) {
     return this.enrollment.waive(u.orgId, u.userId, body);
   }
@@ -218,9 +223,10 @@ export class HrBenefitsController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
+  @Validate({ body: createDependentSchema })
   addDependent(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createDependentSchema)) body: CreateDependentInput,
+    @Body() body: CreateDependentInput,
   ) {
     return this.enrollment.addDependent(u.orgId, u.userId, body);
   }
@@ -228,11 +234,11 @@ export class HrBenefitsController {
   @Patch("dependents/:depId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
-  @Validate({ params: depIdParams })
+  @Validate({ params: depIdParams, body: patchDependentSchema })
   updateDependent(
     @CurrentUser() u: CurrentUserContext,
     @Param("depId", ParseIntPipe) depId: number,
-    @Body(new ZodValidationPipe(patchDependentSchema)) body: PatchDependentInput,
+    @Body() body: PatchDependentInput,
   ) {
     return this.enrollment.updateDependent(u.orgId, u.userId, depId, body);
   }
@@ -251,9 +257,10 @@ export class HrBenefitsController {
   @Get("claims")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
+  @Validate({ query: claimsQuerySchema })
   async listClaims(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(claimsQuerySchema)) query: ClaimsQuery,
+    @Query() query: ClaimsQuery,
   ) {
     const isAdmin = await this.isAdmin(u);
     return this.claims.listClaims(u.orgId, query, u.userId, isAdmin);
@@ -263,9 +270,10 @@ export class HrBenefitsController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
+  @Validate({ body: submitClaimSchema })
   submitClaim(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(submitClaimSchema)) body: SubmitClaimInput,
+    @Body() body: SubmitClaimInput,
   ) {
     return this.claims.submitClaim(u.orgId, u.userId, body);
   }
@@ -273,11 +281,11 @@ export class HrBenefitsController {
   @Patch("claims/:claimId/review")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
-  @Validate({ params: claimIdParams })
+  @Validate({ params: claimIdParams, body: reviewClaimSchema })
   reviewClaim(
     @CurrentUser() u: CurrentUserContext,
     @Param("claimId", ParseIntPipe) claimId: number,
-    @Body(new ZodValidationPipe(reviewClaimSchema)) body: ReviewClaimInput,
+    @Body() body: ReviewClaimInput,
   ) {
     return this.claims.reviewClaim(u.orgId, claimId, u.userId, body);
   }
@@ -285,11 +293,11 @@ export class HrBenefitsController {
   @Patch("claims/:claimId/payout-route")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
-  @Validate({ params: claimIdParams })
+  @Validate({ params: claimIdParams, body: setPayoutRouteSchema })
   setPayoutRoute(
     @CurrentUser() u: CurrentUserContext,
     @Param("claimId", ParseIntPipe) claimId: number,
-    @Body(new ZodValidationPipe(setPayoutRouteSchema)) body: SetPayoutRouteInput,
+    @Body() body: SetPayoutRouteInput,
   ) {
     return this.claims.setPayoutRoute(u.orgId, claimId, body.payoutRoute);
   }

@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportSettingsAuditService } from "./support-settings-audit.service";
 import {
@@ -62,8 +61,9 @@ export class SupportMacrosController {
   @Get("macros")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:view")
+  @Validate({ query: listMacrosSchema })
   listMacros(
-    @Query(new ZodValidationPipe(listMacrosSchema)) query: ListMacrosInput,
+    @Query() query: ListMacrosInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.macros.listMacros(u.orgId, u.userId, query);
@@ -80,8 +80,9 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
   @HttpCode(201)
+  @Validate({ body: createMacroSchema })
   createMacro(
-    @Body(new ZodValidationPipe(createMacroSchema)) body: CreateMacroInput,
+    @Body() body: CreateMacroInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.macros.createMacro(u.orgId, u.userId, body);
@@ -90,10 +91,10 @@ export class SupportMacrosController {
   @Patch("macros/:macroId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
-  @Validate({ params: macroIdParams })
+  @Validate({ params: macroIdParams, body: updateMacroSchema })
   updateMacro(
     @Param("macroId", ParseIntPipe) macroId: number,
-    @Body(new ZodValidationPipe(updateMacroSchema)) body: UpdateMacroInput,
+    @Body() body: UpdateMacroInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.macros.updateMacro(u.orgId, macroId, body);
@@ -114,10 +115,10 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:view")
   @HttpCode(200)
-  @Validate({ params: macroIdParams })
+  @Validate({ params: macroIdParams, body: applyMacroSchema })
   previewMacro(
     @Param("macroId", ParseIntPipe) macroId: number,
-    @Body(new ZodValidationPipe(applyMacroSchema)) body: ApplyMacroInput,
+    @Body() body: ApplyMacroInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.macros.previewMacro(u.orgId, macroId, u.userId, body.ticketId);
@@ -127,10 +128,10 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:tickets:reply")
   @HttpCode(200)
-  @Validate({ params: macroIdParams })
+  @Validate({ params: macroIdParams, body: applyMacroSchema })
   applyMacro(
     @Param("macroId", ParseIntPipe) macroId: number,
-    @Body(new ZodValidationPipe(applyMacroSchema)) body: ApplyMacroInput,
+    @Body() body: ApplyMacroInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.macros.applyMacro(u.orgId, macroId, u.userId, body);
@@ -147,8 +148,9 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
   @HttpCode(201)
+  @Validate({ body: createRoutingRuleSchema })
   async createRoutingRule(
-    @Body(new ZodValidationPipe(createRoutingRuleSchema)) body: CreateRoutingRuleInput,
+    @Body() body: CreateRoutingRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.macros.createRoutingRule(u.orgId, u.userId, body);
@@ -159,10 +161,10 @@ export class SupportMacrosController {
   @Patch("routing-rules/:ruleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
-  @Validate({ params: ruleIdParams })
+  @Validate({ params: ruleIdParams, body: updateRoutingRuleSchema })
   async updateRoutingRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Body(new ZodValidationPipe(updateRoutingRuleSchema)) body: UpdateRoutingRuleInput,
+    @Body() body: UpdateRoutingRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.macros.updateRoutingRule(u.orgId, ruleId, body);
@@ -193,10 +195,10 @@ export class SupportMacrosController {
   @Put("agent-skills/:userId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
-  @Validate({ params: userIdStringParams })
+  @Validate({ params: userIdStringParams, body: setAgentSkillsSchema })
   async setAgentSkills(
     @Param("userId") userId: string,
-    @Body(new ZodValidationPipe(setAgentSkillsSchema)) body: SetAgentSkillsInput,
+    @Body() body: SetAgentSkillsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.macros.setAgentSkills(u.orgId, userId, body.skills);
@@ -214,8 +216,9 @@ export class SupportMacrosController {
   @Put("agent-availability/me")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:tickets:reply")
+  @Validate({ body: setAgentAvailabilitySchema })
   setMyAvailability(
-    @Body(new ZodValidationPipe(setAgentAvailabilitySchema)) body: SetAgentAvailabilityInput,
+    @Body() body: SetAgentAvailabilityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.macros.setAgentAvailability(u.orgId, u.userId, body.isAvailable);
@@ -232,8 +235,9 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
   @HttpCode(201)
+  @Validate({ body: addVipClientSchema })
   async addVipClient(
-    @Body(new ZodValidationPipe(addVipClientSchema)) body: AddVipClientInput,
+    @Body() body: AddVipClientInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.macros.addVipClient(u.orgId, body.clientId);

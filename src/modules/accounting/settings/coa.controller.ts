@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CoaService } from "./coa.service";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -36,8 +35,9 @@ export class CoaController {
   @Post("templates/apply")
   @RequirePermission("accounting:accounts:manage")
   @HttpCode(200)
+  @Validate({ body: applyTemplateSchema })
   applyTemplate(
-    @Body(new ZodValidationPipe(applyTemplateSchema)) body: ApplyTemplateInput,
+    @Body() body: ApplyTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.coa.applyTemplate(u, body.templateKey);

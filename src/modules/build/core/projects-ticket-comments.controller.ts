@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import {
   addReactionSchema,
@@ -43,10 +42,10 @@ export class ProjectsTicketCommentsController {
   @Post(":projectId/tickets/:ticketId/comments")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectIdticketIdParams, body: commentSchema })
   addComment(
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(commentSchema)) body: CommentInput,
+    @Body() body: CommentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.addComment(u, ticketId, body);
@@ -66,12 +65,12 @@ export class ProjectsTicketCommentsController {
 
   @Patch(":projectId/tickets/:ticketId/comments/:commentId")
   @RequirePermission("build:tickets:update")
-  @Validate({ params: projectIdticketIdcommentIdParams })
+  @Validate({ params: projectIdticketIdcommentIdParams, body: updateCommentSchema })
   editComment(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
-    @Body(new ZodValidationPipe(updateCommentSchema)) body: UpdateCommentInput,
+    @Body() body: UpdateCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.editComment(u, projectId, ticketId, commentId, body.content);
@@ -93,10 +92,10 @@ export class ProjectsTicketCommentsController {
   @Post(":projectId/tickets/:ticketId/comments/:commentId/reactions")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
-  @Validate({ params: projectIdticketIdcommentIdParams_ })
+  @Validate({ params: projectIdticketIdcommentIdParams_, body: addReactionSchema })
   addReaction(
     @Param("commentId", ParseIntPipe) commentId: number,
-    @Body(new ZodValidationPipe(addReactionSchema)) body: AddReactionInput,
+    @Body() body: AddReactionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.addReaction(commentId, u.userId, u.orgId, body.emoji);

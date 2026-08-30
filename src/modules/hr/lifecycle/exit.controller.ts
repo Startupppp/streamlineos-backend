@@ -64,8 +64,9 @@ export class ExitController {
 
   @Get()
   @RequirePermission("hr:exit:view")
+  @Validate({ query: listResignationsQuerySchema })
   async list(
-    @Query(new ZodValidationPipe(listResignationsQuerySchema)) query: ListResignationsQueryInput,
+    @Query() query: ListResignationsQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.exit.list(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), query);
@@ -74,8 +75,9 @@ export class ExitController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:exit:create")
+  @Validate({ body: resignationCreateSchema })
   create(
-    @Body(new ZodValidationPipe(resignationCreateSchema)) body: ResignationCreateInput,
+    @Body() body: ResignationCreateInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     if (currentUser.isOrgOwner) {
@@ -88,10 +90,10 @@ export class ExitController {
 
   @Patch(":resignationId/hr-review")
   @RequirePermission("hr:exit:manage")
-  @Validate({ params: resignationIdParams })
+  @Validate({ params: resignationIdParams, body: resignationHrReviewSchema })
   hrReview(
     @Param("resignationId", ParseIntPipe) resignationId: number,
-    @Body(new ZodValidationPipe(resignationHrReviewSchema)) body: ResignationHrReviewInput,
+    @Body() body: ResignationHrReviewInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.exitWrite.hrReview(currentUser.orgId, currentUser.userId, resignationId, body);
@@ -99,10 +101,10 @@ export class ExitController {
 
   @Patch(":resignationId/final-review")
   @RequirePermission("hr:exit:approve")
-  @Validate({ params: resignationIdParams })
+  @Validate({ params: resignationIdParams, body: resignationFinalReviewSchema })
   finalReview(
     @Param("resignationId", ParseIntPipe) resignationId: number,
-    @Body(new ZodValidationPipe(resignationFinalReviewSchema)) body: ResignationFinalReviewInput,
+    @Body() body: ResignationFinalReviewInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.exitWrite.finalReview(currentUser.orgId, currentUser.userId, resignationId, body);
@@ -110,10 +112,10 @@ export class ExitController {
 
   @Patch(":resignationId")
   @RequirePermission("hr:exit:view")
-  @Validate({ params: resignationIdParams })
+  @Validate({ params: resignationIdParams, body: resignationUpdateSchema })
   async update(
     @Param("resignationId", ParseIntPipe) resignationId: number,
-    @Body(new ZodValidationPipe(resignationUpdateSchema)) body: ResignationUpdateInput,
+    @Body() body: ResignationUpdateInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.exitWrite.update(
@@ -133,8 +135,9 @@ export class ExitController {
   @Post("experience-letter")
   @HttpCode(201)
   @RequirePermission("hr:exit:manage")
+  @Validate({ body: experienceLetterSchema })
   createExperienceLetter(
-    @Body(new ZodValidationPipe(experienceLetterSchema)) body: ExperienceLetterInput,
+    @Body() body: ExperienceLetterInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.experienceLetters.create(currentUser.orgId, currentUser.userId, body);

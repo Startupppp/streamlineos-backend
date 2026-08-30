@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { HrWorkflowDelegationsService } from "./hr-workflow-delegations.service";
 import {
   CreateDelegationSchema,
@@ -41,9 +40,10 @@ export class HrWorkflowDelegationsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
+  @Validate({ body: CreateDelegationSchema })
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(CreateDelegationSchema)) body: CreateDelegationDto,
+    @Body() body: CreateDelegationDto,
   ) {
     return this.delegationsService.create(u.orgId, u.userId, body);
   }
@@ -51,11 +51,11 @@ export class HrWorkflowDelegationsController {
   @Patch(":delegationId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
-  @Validate({ params: delegationIdParams })
+  @Validate({ params: delegationIdParams, body: UpdateDelegationSchema })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("delegationId", ParseIntPipe) delegationId: number,
-    @Body(new ZodValidationPipe(UpdateDelegationSchema)) body: UpdateDelegationDto,
+    @Body() body: UpdateDelegationDto,
   ) {
     return this.delegationsService.update(u.orgId, u.userId, delegationId, body);
   }

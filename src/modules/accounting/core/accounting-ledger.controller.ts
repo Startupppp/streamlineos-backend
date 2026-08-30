@@ -18,7 +18,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccountingLedgerService } from "./accounting-ledger.service";
 import { resolveAccountingJournalViewScope } from "./accounting-scope";
 import {
@@ -52,8 +51,9 @@ export class AccountingLedgerController {
   @Get("accounts")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:read")
+  @Validate({ query: listAccountsQuerySchema })
   listAccounts(
-    @Query(new ZodValidationPipe(listAccountsQuerySchema)) query: ListAccountsQuery,
+    @Query() query: ListAccountsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ledger.listAccounts(u.orgId, query);
@@ -63,8 +63,9 @@ export class AccountingLedgerController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:create")
   @HttpCode(201)
+  @Validate({ body: createAccountSchema })
   createAccount(
-    @Body(new ZodValidationPipe(createAccountSchema)) body: CreateAccountInput,
+    @Body() body: CreateAccountInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ledger.createAccount(u.orgId, body);
@@ -73,10 +74,10 @@ export class AccountingLedgerController {
   @Patch("accounts/:accountId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:update")
-  @Validate({ params: accountIdParams })
+  @Validate({ params: accountIdParams, body: updateAccountSchema })
   updateAccount(
     @Param("accountId", ParseIntPipe) accountId: number,
-    @Body(new ZodValidationPipe(updateAccountSchema)) body: UpdateAccountInput,
+    @Body() body: UpdateAccountInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ledger.updateAccount(u.orgId, accountId, body);
@@ -85,8 +86,9 @@ export class AccountingLedgerController {
   @Get("journal")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:read")
+  @Validate({ query: listJournalQuerySchema })
   async listJournal(
-    @Query(new ZodValidationPipe(listJournalQuerySchema)) query: ListJournalQuery,
+    @Query() query: ListJournalQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveAccountingJournalViewScope(this.access, u);
@@ -97,8 +99,9 @@ export class AccountingLedgerController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:manage")
   @HttpCode(201)
+  @Validate({ body: createJournalEntrySchema })
   createJournalEntry(
-    @Body(new ZodValidationPipe(createJournalEntrySchema)) body: CreateJournalEntryInput,
+    @Body() body: CreateJournalEntryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ledger.createJournalEntry(u.orgId, u.userId, body);

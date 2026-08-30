@@ -37,9 +37,10 @@ export class FeedbackController {
   @Post("cycles")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: createFeedbackCycleSchema })
   createCycle(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createFeedbackCycleSchema)) body: CreateFeedbackCycleInput,
+    @Body() body: CreateFeedbackCycleInput,
   ) {
     return this.service.createCycle(u.orgId, u.userId, body);
   }
@@ -53,11 +54,11 @@ export class FeedbackController {
 
   @Patch("cycles/:cycleId")
   @RequirePermission("hr:performance:manage")
-  @Validate({ params: cycleIdParams })
+  @Validate({ params: cycleIdParams, body: updateCycleStatusSchema })
   updateCycleStatus(
     @CurrentUser() u: CurrentUserContext,
     @Param("cycleId", ParseIntPipe) cycleId: number,
-    @Body(new ZodValidationPipe(updateCycleStatusSchema)) body: UpdateCycleStatusInput,
+    @Body() body: UpdateCycleStatusInput,
   ) {
     return this.service.updateCycleStatus(u.orgId, cycleId, body.status);
   }
@@ -71,11 +72,11 @@ export class FeedbackController {
   @Post("requests/:requestId/respond")
   @HttpCode(200)
   @RequirePermission("hr:performance:view")
-  @Validate({ params: requestIdParams })
+  @Validate({ params: requestIdParams, body: submitFeedbackResponseSchema })
   submitResponse(
     @CurrentUser() u: CurrentUserContext,
     @Param("requestId", ParseIntPipe) requestId: number,
-    @Body(new ZodValidationPipe(submitFeedbackResponseSchema)) body: SubmitFeedbackResponseInput,
+    @Body() body: SubmitFeedbackResponseInput,
   ) {
     return this.service.submitResponse(u.orgId, u.userId, requestId, body);
   }

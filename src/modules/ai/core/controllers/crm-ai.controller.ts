@@ -23,7 +23,6 @@ import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { LlmService } from "../providers/llm.service";
 import { CrmScoringService } from "../services/crm-scoring.service";
@@ -134,8 +133,9 @@ export class CrmAiController {
   }
 
   @Post("predict-deal")
+  @Validate({ body: predictDealSchema })
   async predictDeal(
-    @Body(new ZodValidationPipe(predictDealSchema)) body: PredictDealInput,
+    @Body() body: PredictDealInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
@@ -148,8 +148,9 @@ export class CrmAiController {
   }
 
   @Post("churn-risk")
+  @Validate({ body: churnRiskSchema })
   async churnRisk(
-    @Body(new ZodValidationPipe(churnRiskSchema)) body: ChurnRiskInput,
+    @Body() body: ChurnRiskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
@@ -165,8 +166,9 @@ export class CrmAiController {
   }
 
   @Post("next-action")
+  @Validate({ body: nextActionSchema })
   async nextAction(
-    @Body(new ZodValidationPipe(nextActionSchema)) body: NextActionInput,
+    @Body() body: NextActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
@@ -178,8 +180,9 @@ export class CrmAiController {
   }
 
   @Post("account-summary")
+  @Validate({ body: accountSummarySchema })
   async accountSummary(
-    @Body(new ZodValidationPipe(accountSummarySchema)) body: AccountSummaryInput,
+    @Body() body: AccountSummaryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
@@ -189,8 +192,9 @@ export class CrmAiController {
   }
 
   @Post("meeting-prep")
+  @Validate({ body: meetingPrepSchema })
   async meetingPrep(
-    @Body(new ZodValidationPipe(meetingPrepSchema)) body: MeetingPrepInput,
+    @Body() body: MeetingPrepInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
@@ -200,8 +204,9 @@ export class CrmAiController {
   }
 
   @Post("nl-search")
+  @Validate({ body: nlSearchSchema })
   async nlSearch(
-    @Body(new ZodValidationPipe(nlSearchSchema)) body: NlSearchInput,
+    @Body() body: NlSearchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
@@ -211,8 +216,9 @@ export class CrmAiController {
   }
 
   @Post("enrich-lead")
+  @Validate({ body: enrichLeadSchema })
   async enrichLead(
-    @Body(new ZodValidationPipe(enrichLeadSchema)) body: EnrichLeadInput,
+    @Body() body: EnrichLeadInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
@@ -221,8 +227,9 @@ export class CrmAiController {
   }
 
   @Post("generate-email")
+  @Validate({ body: generateEmailSchema })
   async generateEmail(
-    @Body(new ZodValidationPipe(generateEmailSchema)) body: GenerateEmailInput,
+    @Body() body: GenerateEmailInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiEmailDraft");
@@ -232,8 +239,9 @@ export class CrmAiController {
   }
 
   @Post("objection-handler")
+  @Validate({ body: objectionHandlerSchema })
   async objectionHandler(
-    @Body(new ZodValidationPipe(objectionHandlerSchema)) body: ObjectionHandlerInput,
+    @Body() body: ObjectionHandlerInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiEmailDraft");
@@ -242,8 +250,9 @@ export class CrmAiController {
   }
 
   @Post("sentiment-analysis")
+  @Validate({ body: sentimentAnalysisSchema })
   async sentimentAnalysis(
-    @Body(new ZodValidationPipe(sentimentAnalysisSchema)) body: SentimentAnalysisInput,
+    @Body() body: SentimentAnalysisInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiChat");
@@ -252,8 +261,9 @@ export class CrmAiController {
   }
 
   @Post("summarize")
+  @Validate({ body: summarizeSchema })
   async summarize(
-    @Body(new ZodValidationPipe(summarizeSchema)) body: SummarizeInput,
+    @Body() body: SummarizeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiChat");
@@ -262,8 +272,9 @@ export class CrmAiController {
   }
 
   @Post("report-narrator")
+  @Validate({ body: reportNarratorSchema })
   async reportNarrator(
-    @Body(new ZodValidationPipe(reportNarratorSchema)) body: ReportNarratorInput,
+    @Body() body: ReportNarratorInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiChat");
@@ -279,8 +290,9 @@ export class CrmAiController {
   }
 
   @Get("suggestions")
+  @Validate({ query: suggestionsQuerySchema })
   async suggestions(
-    @Query(new ZodValidationPipe(suggestionsQuerySchema)) query: SuggestionsQueryInput,
+    @Query() query: SuggestionsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiChat");

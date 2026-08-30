@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PeriodsService } from "./periods.service";
 import { generatePeriodsSchema, type GeneratePeriodsInput } from "./dto/periods.schemas";
@@ -31,8 +30,9 @@ export class PeriodsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:manage")
   @HttpCode(201)
+  @Validate({ body: generatePeriodsSchema })
   generatePeriods(
-    @Body(new ZodValidationPipe(generatePeriodsSchema)) body: GeneratePeriodsInput,
+    @Body() body: GeneratePeriodsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.periods.generatePeriods(u.orgId, u.userId, body);

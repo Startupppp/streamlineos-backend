@@ -6,7 +6,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SurveyAnalyticsService } from "./survey-analytics.service";
 import { SurveyResponseService } from "./survey-response.service";
 import { SurveyExportService } from "./survey-export.service";
@@ -51,10 +50,10 @@ export class SurveyAnalyticsController {
 
   @Get("responses")
   @RequirePermission("surveys:responses:view")
-  @Validate({ params: surveyIdParams })
+  @Validate({ params: surveyIdParams, query: listResponsesSchema })
   listResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Query(new ZodValidationPipe(listResponsesSchema)) query: ListResponsesInput,
+    @Query() query: ListResponsesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.responses.listResponses(u.orgId, surveyId, query);
@@ -75,10 +74,10 @@ export class SurveyAnalyticsController {
   @RequirePermission("surveys:responses:export")
   @Header("Content-Type", "text/csv")
   @Header("Content-Disposition", "attachment; filename=responses.csv")
-  @Validate({ params: surveyIdParams })
+  @Validate({ params: surveyIdParams, body: exportResponsesSchema })
   exportResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Body(new ZodValidationPipe(exportResponsesSchema)) body: ExportResponsesInput,
+    @Body() body: ExportResponsesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.exports.exportResponsesCsv(u.orgId, surveyId, body);

@@ -18,12 +18,9 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { z } from "zod";
 import { Validate } from "../../common/validation/validate.decorator";
 import { OfferFulfillmentService } from "./offer-fulfillment.service";
-
-const offerFulfillmentComponentIdParams = z.object({ offerFulfillmentComponentId: z.coerce.number().int().positive() }).strict();
 import {
   createOfferFulfillmentSchema,
   listOfferFulfillmentQuerySchema,
@@ -33,6 +30,8 @@ import {
   type UpdateOfferFulfillmentInput,
 } from "./dto/offer-fulfillment.schemas";
 
+const offerFulfillmentComponentIdParams = z.object({ offerFulfillmentComponentId: z.coerce.number().int().positive() }).strict();
+
 @RequireModule(["crm", "inventory"])
 @Controller("offer-fulfillment")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
@@ -41,9 +40,9 @@ export class OfferFulfillmentController {
 
   @Get()
   @RequirePermission("crm:offer-fulfillment:view")
+  @Validate({ query: listOfferFulfillmentQuerySchema })
   listComponents(
-    @Query(new ZodValidationPipe(listOfferFulfillmentQuerySchema))
-    query: ListOfferFulfillmentQuery,
+    @Query() query: ListOfferFulfillmentQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listComponents(u.orgId, query);
@@ -62,9 +61,9 @@ export class OfferFulfillmentController {
   @Post()
   @HttpCode(201)
   @RequirePermission("crm:offer-fulfillment:create")
+  @Validate({ body: createOfferFulfillmentSchema })
   createComponent(
-    @Body(new ZodValidationPipe(createOfferFulfillmentSchema))
-    body: CreateOfferFulfillmentInput,
+    @Body() body: CreateOfferFulfillmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createComponent(u.orgId, u.userId, body);
@@ -72,11 +71,10 @@ export class OfferFulfillmentController {
 
   @Patch(":offerFulfillmentComponentId")
   @RequirePermission("crm:offer-fulfillment:update")
-  @Validate({ params: offerFulfillmentComponentIdParams })
+  @Validate({ params: offerFulfillmentComponentIdParams, body: updateOfferFulfillmentSchema })
   updateComponent(
     @Param("offerFulfillmentComponentId", ParseIntPipe) offerFulfillmentComponentId: number,
-    @Body(new ZodValidationPipe(updateOfferFulfillmentSchema))
-    body: UpdateOfferFulfillmentInput,
+    @Body() body: UpdateOfferFulfillmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateComponent(u.orgId, u.userId, offerFulfillmentComponentId, body);

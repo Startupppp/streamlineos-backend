@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RisksService } from "./risks.service";
 import {
   createRiskSchema,
@@ -40,9 +39,10 @@ export class RisksController {
 
   @Get()
   @RequirePermission("build:risks:view")
+  @Validate({ query: listRisksQuerySchema })
   listRisks(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(listRisksQuerySchema)) query: ListRisksQuery,
+    @Query() query: ListRisksQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listRisks(u.orgId, projectId, query);
@@ -62,9 +62,10 @@ export class RisksController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:risks:manage")
+  @Validate({ body: createRiskSchema })
   createRisk(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createRiskSchema)) body: CreateRiskInput,
+    @Body() body: CreateRiskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createRisk(u.orgId, u.userId, projectId, body);
@@ -72,11 +73,11 @@ export class RisksController {
 
   @Patch(":riskId")
   @RequirePermission("build:risks:manage")
-  @Validate({ params: riskIdParams })
+  @Validate({ params: riskIdParams, body: updateRiskSchema })
   updateRisk(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("riskId", ParseIntPipe) riskId: number,
-    @Body(new ZodValidationPipe(updateRiskSchema)) body: UpdateRiskInput,
+    @Body() body: UpdateRiskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateRisk(u.orgId, u.userId, projectId, riskId, body);

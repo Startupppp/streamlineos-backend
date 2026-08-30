@@ -22,7 +22,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../access/access.service";
 import { ExpensesService } from "./expenses.service";
 import { ExpensesWriteService } from "./expenses-write.service";
@@ -88,8 +87,9 @@ export class ExpensesController {
 
   @Get()
   @RequirePermission("hr:expenses:view")
+  @Validate({ query: listSchema })
   async list(
-    @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
+    @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.expenses.list(u.orgId, u.userId, await this.canApprove(u), filters);
@@ -98,8 +98,9 @@ export class ExpensesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:expenses:create")
+  @Validate({ body: createExpenseSchema })
   async create(
-    @Body(new ZodValidationPipe(createExpenseSchema)) body: CreateExpenseInput,
+    @Body() body: CreateExpenseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.expensesWrite.create(u.orgId, u.userId, body);
@@ -107,10 +108,10 @@ export class ExpensesController {
 
   @Patch(":expenseId")
   @RequirePermission("hr:expenses:approve")
-  @Validate({ params: expenseIdParams })
+  @Validate({ params: expenseIdParams, body: updateExpensePatchSchema })
   async update(
     @Param("expenseId", ParseIntPipe) expenseId: number,
-    @Body(new ZodValidationPipe(updateExpensePatchSchema)) body: UpdateExpensePatchInput,
+    @Body() body: UpdateExpensePatchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.expensesWrite.update(u, await this.canApprove(u), expenseId, body);
@@ -119,8 +120,9 @@ export class ExpensesController {
   @Post("email-report")
   @HttpCode(200)
   @RequirePermission("hr:expenses:approve")
+  @Validate({ body: emailReportSchema })
   async emailReport(
-    @Body(new ZodValidationPipe(emailReportSchema)) body: EmailReportInput,
+    @Body() body: EmailReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.expensesWrite.emailReport(u.orgId, u.userId, true, body);
@@ -128,8 +130,9 @@ export class ExpensesController {
 
   @Get("page-data")
   @RequirePermission("hr:expenses:view")
+  @Validate({ query: pageDataSchema })
   async pageData(
-    @Query(new ZodValidationPipe(pageDataSchema)) filters: PageDataInput,
+    @Query() filters: PageDataInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.expenses.getPageData(u.orgId, u.userId, await this.canApprove(u), filters);
@@ -137,8 +140,9 @@ export class ExpensesController {
 
   @Get("report")
   @RequirePermission("hr:expenses:read")
+  @Validate({ query: reportSchema })
   async report(
-    @Query(new ZodValidationPipe(reportSchema)) filters: ReportInput,
+    @Query() filters: ReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.expenses.getReport(u.orgId, u.userId, await this.canApprove(u), filters);
@@ -146,8 +150,9 @@ export class ExpensesController {
 
   @Get("export-data")
   @RequirePermission("hr:expenses:read")
+  @Validate({ query: exportSchema })
   async exportData(
-    @Query(new ZodValidationPipe(exportSchema)) filters: ExportInput,
+    @Query() filters: ExportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.expenses.getExportRows(
@@ -159,8 +164,9 @@ export class ExpensesController {
 
   @Get("export")
   @RequirePermission("hr:expenses:read")
+  @Validate({ query: exportSchema })
   async export(
-    @Query(new ZodValidationPipe(exportSchema)) filters: ExportInput,
+    @Query() filters: ExportInput,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
@@ -197,8 +203,9 @@ export class ExpensesController {
   @HttpCode(202)
   @Idempotent("expenses.export.create")
   @RequirePermission("hr:expenses:read")
+  @Validate({ body: exportSchema })
   async createExportJob(
-    @Body(new ZodValidationPipe(exportSchema)) filters: ExportInput,
+    @Body() filters: ExportInput,
     @Headers("idempotency-key") idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -254,10 +261,10 @@ export class ExpensesController {
   @Idempotent("expenses.expense.reject")
   @HttpCode(200)
   @RequirePermission("hr:expenses:approve")
-  @Validate({ params: expenseIdParams })
+  @Validate({ params: expenseIdParams, body: rejectExpenseSchema })
   async reject(
     @Param("expenseId", ParseIntPipe) expenseId: number,
-    @Body(new ZodValidationPipe(rejectExpenseSchema)) body: RejectExpenseInput,
+    @Body() body: RejectExpenseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const reason = body.rejectionReason?.trim() || "No reason provided";

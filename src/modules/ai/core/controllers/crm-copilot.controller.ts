@@ -19,7 +19,6 @@ import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decora
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { LlmService } from "../providers/llm.service";
 import { CrmCopilotService } from "../services/crm-copilot.service";
 import { CrmBriefService } from "../services/crm-brief.service";
@@ -111,8 +110,9 @@ export class CrmCopilotController {
   }
 
   @Post("next-best-actions")
+  @Validate({ body: nextBestActionsSchema })
   nextBestActions(
-    @Body(new ZodValidationPipe(nextBestActionsSchema)) body: z.infer<typeof nextBestActionsSchema>,
+    @Body() body: z.infer<typeof nextBestActionsSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm();
@@ -120,8 +120,9 @@ export class CrmCopilotController {
   }
 
   @Post("email-draft")
+  @Validate({ body: emailDraftSchema })
   emailDraft(
-    @Body(new ZodValidationPipe(emailDraftSchema)) body: z.infer<typeof emailDraftSchema>,
+    @Body() body: z.infer<typeof emailDraftSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm();
@@ -129,8 +130,9 @@ export class CrmCopilotController {
   }
 
   @Post("summarize-notes")
+  @Validate({ body: summarizeNotesSchema })
   summarizeNotes(
-    @Body(new ZodValidationPipe(summarizeNotesSchema)) body: z.infer<typeof summarizeNotesSchema>,
+    @Body() body: z.infer<typeof summarizeNotesSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm();
@@ -138,8 +140,9 @@ export class CrmCopilotController {
   }
 
   @Post("objection-help")
+  @Validate({ body: objectionHelpSchema })
   objectionHelp(
-    @Body(new ZodValidationPipe(objectionHelpSchema)) body: z.infer<typeof objectionHelpSchema>,
+    @Body() body: z.infer<typeof objectionHelpSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm();
@@ -157,8 +160,9 @@ export class CrmCopilotController {
   }
 
   @Post("meeting-follow-up")
+  @Validate({ body: meetingFollowUpSchema })
   async meetingFollowUp(
-    @Body(new ZodValidationPipe(meetingFollowUpSchema)) body: MeetingFollowUpBodyInput,
+    @Body() body: MeetingFollowUpBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm();
@@ -166,8 +170,9 @@ export class CrmCopilotController {
   }
 
   @Get("stale-pipeline")
+  @Validate({ query: stalePipelineQuerySchema })
   async stalePipeline(
-    @Query(new ZodValidationPipe(stalePipelineQuerySchema)) query: StalePipelineQuery,
+    @Query() query: StalePipelineQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm();
@@ -203,8 +208,9 @@ export class CrmCopilotController {
   }
 
   @Post("account-summary-with-citations")
+  @Validate({ body: accountSummaryWithCitationsSchema })
   async accountSummaryWithCitations(
-    @Body(new ZodValidationPipe(accountSummaryWithCitationsSchema)) body: AccountSummaryWithCitationsInput,
+    @Body() body: AccountSummaryWithCitationsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm();

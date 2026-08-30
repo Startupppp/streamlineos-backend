@@ -45,8 +45,9 @@ export class HrHiringFlowsController {
 
   @Get()
   @RequirePermission("hr:interviews:view")
+  @Validate({ query: hiringFlowListSchema })
   list(
-    @Query(new ZodValidationPipe(hiringFlowListSchema)) query: HiringFlowListInput,
+    @Query() query: HiringFlowListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.flows.listFlows(u.orgId, query.limit, query.offset);
@@ -55,8 +56,9 @@ export class HrHiringFlowsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: createHiringFlowSchema })
   create(
-    @Body(new ZodValidationPipe(createHiringFlowSchema)) body: CreateHiringFlowInput,
+    @Body() body: CreateHiringFlowInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.flows.createFlow(u.orgId, u.userId, body);
@@ -74,10 +76,10 @@ export class HrHiringFlowsController {
 
   @Patch(":flowId")
   @RequirePermission("hr:interviews:manage")
-  @Validate({ params: flowIdParams })
+  @Validate({ params: flowIdParams, body: updateHiringFlowSchema })
   update(
     @Param("flowId", ParseIntPipe) flowId: number,
-    @Body(new ZodValidationPipe(updateHiringFlowSchema)) body: UpdateHiringFlowInput,
+    @Body() body: UpdateHiringFlowInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.flows.updateFlow(u.orgId, flowId, body);
@@ -106,10 +108,10 @@ export class HrHiringFlowsController {
   @Post(":flowId/rounds")
   @HttpCode(201)
   @RequirePermission("hr:interviews:manage")
-  @Validate({ params: flowIdParams })
+  @Validate({ params: flowIdParams, body: createRoundSchema })
   createRound(
     @Param("flowId", ParseIntPipe) flowId: number,
-    @Body(new ZodValidationPipe(createRoundSchema)) body: CreateRoundInput,
+    @Body() body: CreateRoundInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.flows.createRound(u.orgId, flowId, body);
@@ -117,11 +119,11 @@ export class HrHiringFlowsController {
 
   @Patch(":flowId/rounds/:roundId")
   @RequirePermission("hr:interviews:manage")
-  @Validate({ params: flowIdroundIdParams })
+  @Validate({ params: flowIdroundIdParams, body: updateRoundSchema })
   updateRound(
     @Param("flowId", ParseIntPipe) flowId: number,
     @Param("roundId", ParseIntPipe) roundId: number,
-    @Body(new ZodValidationPipe(updateRoundSchema)) body: UpdateRoundInput,
+    @Body() body: UpdateRoundInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.flows.updateRound(u.orgId, flowId, roundId, body);

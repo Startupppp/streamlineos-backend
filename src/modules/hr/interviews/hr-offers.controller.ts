@@ -48,8 +48,9 @@ export class HrOffersController {
   @Post("offer-templates")
   @HttpCode(201)
   @RequirePermission("hr:offers:manage")
+  @Validate({ body: createOfferTemplateSchema })
   createTemplate(
-    @Body(new ZodValidationPipe(createOfferTemplateSchema)) body: CreateOfferTemplateInput,
+    @Body() body: CreateOfferTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.offers.createTemplate(u.orgId, u.userId, body);
@@ -57,10 +58,10 @@ export class HrOffersController {
 
   @Patch("offer-templates/:templateId")
   @RequirePermission("hr:offers:manage")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: updateOfferTemplateSchema })
   updateTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(updateOfferTemplateSchema)) body: UpdateOfferTemplateInput,
+    @Body() body: UpdateOfferTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.offers.updateTemplate(u.orgId, templateId, body);
@@ -79,10 +80,10 @@ export class HrOffersController {
   @Post("offer-templates/:templateId/generate-pdf")
   @HttpCode(200)
   @RequirePermission("hr:offers:manage")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: generateOfferPdfSchema })
   generatePdf(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(generateOfferPdfSchema)) body: GenerateOfferPdfInput,
+    @Body() body: GenerateOfferPdfInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.offers.generatePdf(u.orgId, templateId, body);
@@ -91,8 +92,9 @@ export class HrOffersController {
   @Post("offer-letter")
   @HttpCode(201)
   @RequirePermission("hr:offers:manage")
+  @Validate({ body: offerLetterSchema })
   generateOfferLetter(
-    @Body(new ZodValidationPipe(offerLetterSchema)) body: OfferLetterInput,
+    @Body() body: OfferLetterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.offers.generateOfferLetter(u.orgId, u.userId, body);

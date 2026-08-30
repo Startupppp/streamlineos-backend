@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { EquityService } from "./equity.service";
 import {
   createEquityGrantSchema,
@@ -33,8 +32,9 @@ export class EquityController {
   @Get("grants")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:view")
+  @Validate({ query: listEquityGrantsSchema })
   listGrants(
-    @Query(new ZodValidationPipe(listEquityGrantsSchema)) query: ListEquityGrantsInput,
+    @Query() query: ListEquityGrantsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listGrants(u.orgId, query);
@@ -44,8 +44,9 @@ export class EquityController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:manage")
   @HttpCode(201)
+  @Validate({ body: createEquityGrantSchema })
   createGrant(
-    @Body(new ZodValidationPipe(createEquityGrantSchema)) body: CreateEquityGrantInput,
+    @Body() body: CreateEquityGrantInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createGrant(u.orgId, u.userId, body);
@@ -65,10 +66,10 @@ export class EquityController {
   @Patch("grants/:grantId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:manage")
-  @Validate({ params: grantIdParams })
+  @Validate({ params: grantIdParams, body: updateEquityGrantSchema })
   updateGrant(
     @Param("grantId", ParseIntPipe) grantId: number,
-    @Body(new ZodValidationPipe(updateEquityGrantSchema)) body: UpdateEquityGrantInput,
+    @Body() body: UpdateEquityGrantInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateGrant(u.orgId, grantId, u.userId, body);
@@ -88,10 +89,10 @@ export class EquityController {
   @Get("grants/:grantId/exit-treatment")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:view")
-  @Validate({ params: grantIdParams })
+  @Validate({ params: grantIdParams, query: exitTreatmentQuerySchema })
   exitTreatment(
     @Param("grantId", ParseIntPipe) grantId: number,
-    @Query(new ZodValidationPipe(exitTreatmentQuerySchema)) query: ExitTreatmentQuery,
+    @Query() query: ExitTreatmentQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.getExitTreatment(u.orgId, grantId, query.exitDate);
@@ -101,8 +102,9 @@ export class EquityController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:manage")
   @HttpCode(201)
+  @Validate({ body: createExerciseSchema })
   recordExercise(
-    @Body(new ZodValidationPipe(createExerciseSchema)) body: CreateExerciseInput,
+    @Body() body: CreateExerciseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.recordExercise(u.orgId, u.userId, body);

@@ -5,7 +5,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { TravelService } from "./travel.service";
 import {
@@ -34,9 +33,10 @@ export class TravelController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:travel:create")
+  @Validate({ body: createTravelRequestSchema })
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createTravelRequestSchema)) body: CreateTravelRequestInput,
+    @Body() body: CreateTravelRequestInput,
   ) {
     return this.service.create(u.orgId, u.userId, body);
   }
@@ -70,11 +70,11 @@ export class TravelController {
   @Patch(":travelRequestId/reject")
   @Idempotent("expenses.travel.reject")
   @RequirePermission("hr:travel:manage")
-  @Validate({ params: travelRequestIdParams })
+  @Validate({ params: travelRequestIdParams, body: rejectTravelRequestSchema })
   reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,
-    @Body(new ZodValidationPipe(rejectTravelRequestSchema)) body: RejectTravelRequestInput,
+    @Body() body: RejectTravelRequestInput,
   ) {
     return this.service.reject(u.orgId, travelRequestId, body.reason);
   }

@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { toCsv } from "../../inventory/import-export/csv.util";
 import { HrImportService } from "./hr-import.service";
 import {
@@ -47,8 +46,9 @@ export class HrImportController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
+  @Validate({ body: createImportJobSchema })
   createJob(
-    @Body(new ZodValidationPipe(createImportJobSchema)) body: CreateImportJobInput,
+    @Body() body: CreateImportJobInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.importService.createJob(u.orgId, u.userId, body);
@@ -57,8 +57,9 @@ export class HrImportController {
   @Get("hr/import/jobs")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
+  @Validate({ query: listImportJobsSchema })
   listJobs(
-    @Query(new ZodValidationPipe(listImportJobsSchema)) query: ListImportJobsInput,
+    @Query() query: ListImportJobsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.importService.listJobs(u.orgId, query);
@@ -100,10 +101,10 @@ export class HrImportController {
   @Get("hr/export/:entity")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:export:manage")
-  @Validate({ params: entityParams })
+  @Validate({ params: entityParams, query: exportQuerySchema })
   async exportEntity(
     @Param("entity") entity: string,
-    @Query(new ZodValidationPipe(exportQuerySchema)) query: ExportQueryInput,
+    @Query() query: ExportQueryInput,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {

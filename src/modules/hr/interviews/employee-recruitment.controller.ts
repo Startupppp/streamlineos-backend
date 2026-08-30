@@ -44,9 +44,9 @@ export class EmployeeRecruitmentController {
   ) {}
 
   @Get()
+  @Validate({ query: selfInterviewListSchema })
   list(
-    @Query(new ZodValidationPipe(selfInterviewListSchema))
-    query: SelfInterviewListInput,
+    @Query() query: SelfInterviewListInput,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<AssignedInterviewsPage> {
     return this.interviews.listMine(user.orgId, user.userId, query);
@@ -54,11 +54,10 @@ export class EmployeeRecruitmentController {
 
   @Post(":interviewId/scorecard")
   @HttpCode(201)
-  @Validate({ params: interviewIdParams })
+  @Validate({ params: interviewIdParams, body: submitScorecardSchema })
   async submitScorecard(
     @Param("interviewId", ParseIntPipe) interviewId: number,
-    @Body(new ZodValidationPipe(submitScorecardSchema))
-    body: SubmitScorecardInput,
+    @Body() body: SubmitScorecardInput,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<unknown> {
     const assigned = await this.interviews.isAssignedTo(

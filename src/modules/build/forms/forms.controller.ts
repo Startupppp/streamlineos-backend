@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { FormsService } from "./forms.service";
 import {
   createFormSchema,
@@ -40,9 +39,10 @@ export class FormsController {
 
   @Get()
   @RequirePermission("build:forms:view")
+  @Validate({ query: listFormsQuerySchema })
   listForms(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(listFormsQuerySchema)) query: ListFormsQuery,
+    @Query() query: ListFormsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listForms(u.orgId, projectId, query);
@@ -62,9 +62,10 @@ export class FormsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:forms:manage")
+  @Validate({ body: createFormSchema })
   createForm(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createFormSchema)) body: CreateFormInput,
+    @Body() body: CreateFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createForm(u.orgId, u.userId, projectId, body);
@@ -72,11 +73,11 @@ export class FormsController {
 
   @Patch(":formId")
   @RequirePermission("build:forms:manage")
-  @Validate({ params: formIdParams })
+  @Validate({ params: formIdParams, body: updateFormSchema })
   updateForm(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("formId", ParseIntPipe) formId: number,
-    @Body(new ZodValidationPipe(updateFormSchema)) body: UpdateFormInput,
+    @Body() body: UpdateFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateForm(u.orgId, u.userId, projectId, formId, body);

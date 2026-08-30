@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import {
   addLabelSchema,
@@ -73,11 +72,11 @@ export class ProjectsTicketAssociationsController {
   @Post(":projectId/tickets/:ticketId/relations")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
-  @Validate({ params: projectIdticketIdParams_ })
+  @Validate({ params: projectIdticketIdParams_, body: addRelationSchema })
   addRelation(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(addRelationSchema)) body: AddRelationInput,
+    @Body() body: AddRelationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.addRelation(u, projectId, ticketId, body);
@@ -86,11 +85,11 @@ export class ProjectsTicketAssociationsController {
   @Delete(":projectId/tickets/:ticketId/relations")
   @RequirePermission("build:tickets:update")
   @HttpCode(204)
-  @Validate({ params: projectIdticketIdParams_ })
+  @Validate({ params: projectIdticketIdParams_, query: removeRelationQuerySchema })
   removeRelation(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Query(new ZodValidationPipe(removeRelationQuerySchema)) query: RemoveRelationQuery,
+    @Query() query: RemoveRelationQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.removeRelation(u, projectId, ticketId, query.relatedId);
@@ -109,10 +108,10 @@ export class ProjectsTicketAssociationsController {
   @Post(":projectId/tickets/:ticketId/watchers")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectIdticketIdParams, body: addWatcherSchema })
   addWatcher(
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(addWatcherSchema)) body: AddWatcherInput,
+    @Body() body: AddWatcherInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.addWatcher(u, ticketId, body);
@@ -132,10 +131,10 @@ export class ProjectsTicketAssociationsController {
   @Post(":projectId/tickets/:ticketId/labels")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectIdticketIdParams, body: addLabelSchema })
   addLabel(
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(addLabelSchema)) body: AddLabelInput,
+    @Body() body: AddLabelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.addLabel(u.orgId, u.userId, ticketId, body);
@@ -156,10 +155,10 @@ export class ProjectsTicketAssociationsController {
   @Post(":projectId/tickets/:ticketId/attachments")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectIdticketIdParams, body: attachmentSchema })
   addAttachment(
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(attachmentSchema)) body: AttachmentInput,
+    @Body() body: AttachmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.addAttachment(u, ticketId, body);
@@ -190,11 +189,11 @@ export class ProjectsTicketAssociationsController {
   @Post(":projectId/tickets/:ticketId/related-links")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
-  @Validate({ params: projectIdticketIdParams_ })
+  @Validate({ params: projectIdticketIdParams_, body: addRelatedLinkSchema })
   addRelatedLink(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(addRelatedLinkSchema)) body: AddRelatedLinkInput,
+    @Body() body: AddRelatedLinkInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.addRelatedLink(u, projectId, ticketId, body);
@@ -202,12 +201,12 @@ export class ProjectsTicketAssociationsController {
 
   @Patch(":projectId/tickets/:ticketId/related-links/:linkId")
   @RequirePermission("build:tickets:update")
-  @Validate({ params: projectIdticketIdlinkIdParams })
+  @Validate({ params: projectIdticketIdlinkIdParams, body: updateRelatedLinkSchema })
   updateRelatedLink(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Param("linkId", ParseIntPipe) linkId: number,
-    @Body(new ZodValidationPipe(updateRelatedLinkSchema)) body: UpdateRelatedLinkInput,
+    @Body() body: UpdateRelatedLinkInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.updateRelatedLink(u, projectId, ticketId, linkId, body);

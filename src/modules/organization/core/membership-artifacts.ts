@@ -426,6 +426,46 @@ export const MEMBERSHIP_ARTIFACTS = [
     reason:
       "The foreign key is RESTRICT: a member who has approved or been assigned to approve any expense cannot be removed. The FK must change to SET NULL to preserve the expense record while unblocking the operation.",
   },
+  {
+    id: "ticket_activity_log",
+    mechanism: "database-write",
+    table: "ticket_activity_log",
+    keyedBy: "user_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on (org_id, user_membership_id) is RESTRICT: any activity log entry authored by this member blocks removal. The FK must change to SET NULL so historical attribution is preserved while the operation is unblocked.",
+  },
+  {
+    id: "ticket_comment_mentions",
+    mechanism: "database-write",
+    table: "ticket_comment_mentions",
+    keyedBy: "mentioned_user_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on (org_id, mentioned_user_membership_id) is RESTRICT: any mention row blocks removal of the mentioned member. The FK must change to SET NULL or CASCADE so historical mention records are preserved while the operation is unblocked.",
+  },
+  {
+    id: "kb_article_versions",
+    mechanism: "database-write",
+    table: "kb_article_versions",
+    keyedBy: "author_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The author_membership_id column is an attribution field with no FK enforcement. On removal it must be explicitly set to NULL so the version record is preserved but the membership reference is cleared.",
+  },
+  {
+    id: "kb_page_versions",
+    mechanism: "database-write",
+    table: "kb_page_versions",
+    keyedBy: "author_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The author_membership_id column is an attribution field with no FK enforcement. On removal it must be explicitly set to NULL so the version record is preserved but the membership reference is cleared.",
+  },
 ] as const satisfies readonly MembershipArtifact[];
 
 export const MEMBERSHIP_ARTIFACT_IDS = MEMBERSHIP_ARTIFACTS.map(

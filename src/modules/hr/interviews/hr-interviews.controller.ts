@@ -38,8 +38,9 @@ export class HrInterviewsController {
 
   @Get()
   @RequirePermission("hr:interviews:view")
+  @Validate({ query: interviewListSchema })
   list(
-    @Query(new ZodValidationPipe(interviewListSchema)) query: InterviewListInput,
+    @Query() query: InterviewListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.interviews.list(u.orgId, query);
@@ -59,7 +60,8 @@ export class HrInterviewsController {
 
   @Put("slas")
   @RequirePermission("hr:interviews:manage")
-  upsertSla(@Body(new ZodValidationPipe(upsertSlaSchema)) body: UpsertSlaInput, @CurrentUser() u: CurrentUserContext) {
+  @Validate({ body: upsertSlaSchema })
+  upsertSla(@Body() body: UpsertSlaInput, @CurrentUser() u: CurrentUserContext) {
     return this.interviews.upsertSla(u.orgId, body);
   }
 

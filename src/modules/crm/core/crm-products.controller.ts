@@ -18,7 +18,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CrmProductsService } from "./crm-products.service";
 import {
   createProductSchema,
@@ -49,8 +48,9 @@ export class CrmProductsController {
   @Post("products")
   @RequirePermission("crm:products:manage")
   @HttpCode(201)
+  @Validate({ body: createProductSchema })
   create(
-    @Body(new ZodValidationPipe(createProductSchema)) body: CreateProductInput,
+    @Body() body: CreateProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.products.create(u.orgId, body);
@@ -58,10 +58,10 @@ export class CrmProductsController {
 
   @Patch("products/:productId")
   @RequirePermission("crm:products:manage")
-  @Validate({ params: productIdParams })
+  @Validate({ params: productIdParams, body: updateProductSchema })
   async update(
     @Param("productId", ParseIntPipe) productId: number,
-    @Body(new ZodValidationPipe(updateProductSchema)) body: UpdateProductInput,
+    @Body() body: UpdateProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const product = await this.products.update(u.orgId, productId, body);

@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CrmRulesService } from "./crm-rules.service";
 import {
   assignmentPreviewSchema,
@@ -57,8 +56,9 @@ export class CrmRulesController {
 
   @Post("assignment-rules/preview")
   @RequirePermission("crm:assignment-rules:manage")
+  @Validate({ body: assignmentPreviewSchema })
   previewAssignment(
-    @Body(new ZodValidationPipe(assignmentPreviewSchema)) body: AssignmentPreviewInput,
+    @Body() body: AssignmentPreviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rules.preview(u.orgId, body.sampleLead);
@@ -67,8 +67,9 @@ export class CrmRulesController {
   @Post("assignment-rules")
   @RequirePermission("crm:assignment-rules:manage")
   @HttpCode(201)
+  @Validate({ body: assignmentRuleCreateSchema })
   createAssignmentRule(
-    @Body(new ZodValidationPipe(assignmentRuleCreateSchema)) body: AssignmentRuleCreateInput,
+    @Body() body: AssignmentRuleCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rules.createAssignmentRule(u.orgId, body);
@@ -76,8 +77,9 @@ export class CrmRulesController {
 
   @Patch("assignment-rules/reorder")
   @RequirePermission("crm:assignment-rules:manage")
+  @Validate({ body: assignmentReorderSchema })
   reorderAssignmentRules(
-    @Body(new ZodValidationPipe(assignmentReorderSchema)) body: AssignmentReorderInput,
+    @Body() body: AssignmentReorderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rules.reorderAssignmentRules(u.orgId, body.ruleIds);
@@ -85,10 +87,10 @@ export class CrmRulesController {
 
   @Patch("assignment-rules/:ruleId")
   @RequirePermission("crm:assignment-rules:manage")
-  @Validate({ params: ruleIdParams })
+  @Validate({ params: ruleIdParams, body: assignmentRuleUpdateSchema })
   async updateAssignmentRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Body(new ZodValidationPipe(assignmentRuleUpdateSchema)) body: AssignmentRuleUpdateInput,
+    @Body() body: AssignmentRuleUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.rules.updateAssignmentRule(u.orgId, ruleId, body);
@@ -116,8 +118,9 @@ export class CrmRulesController {
   @Post("scoring-rules")
   @RequirePermission("crm:scoring-rules:manage")
   @HttpCode(201)
+  @Validate({ body: scoringRuleCreateSchema })
   createScoringRule(
-    @Body(new ZodValidationPipe(scoringRuleCreateSchema)) body: ScoringRuleCreateInput,
+    @Body() body: ScoringRuleCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rules.createScoringRule(u.orgId, body);
@@ -125,10 +128,10 @@ export class CrmRulesController {
 
   @Patch("scoring-rules/:ruleId")
   @RequirePermission("crm:scoring-rules:manage")
-  @Validate({ params: ruleIdParams })
+  @Validate({ params: ruleIdParams, body: scoringRuleUpdateSchema })
   async updateScoringRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Body(new ZodValidationPipe(scoringRuleUpdateSchema)) body: ScoringRuleUpdateInput,
+    @Body() body: ScoringRuleUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.rules.updateScoringRule(u.orgId, ruleId, body);
@@ -156,8 +159,9 @@ export class CrmRulesController {
   @Post("email-templates")
   @RequirePermission("crm:email-templates:manage")
   @HttpCode(201)
+  @Validate({ body: emailTemplateCreateSchema })
   createEmailTemplate(
-    @Body(new ZodValidationPipe(emailTemplateCreateSchema)) body: EmailTemplateCreateInput,
+    @Body() body: EmailTemplateCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rules.createEmailTemplate(u.orgId, u.userId, body);
@@ -165,10 +169,10 @@ export class CrmRulesController {
 
   @Patch("email-templates/:templateId")
   @RequirePermission("crm:email-templates:manage")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: emailTemplateUpdateSchema })
   async updateEmailTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(emailTemplateUpdateSchema)) body: EmailTemplateUpdateInput,
+    @Body() body: EmailTemplateUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.rules.updateEmailTemplate(u.orgId, templateId, body);

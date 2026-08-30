@@ -6,7 +6,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RecurringJournalsService } from "./recurring-journals.service";
 import {
   createRecurringJournalSchema,
@@ -30,8 +29,9 @@ export class RecurringJournalsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:read")
+  @Validate({ query: listRecurringJournalsQuerySchema })
   listTemplates(
-    @Query(new ZodValidationPipe(listRecurringJournalsQuerySchema)) query: ListRecurringJournalsQuery,
+    @Query() query: ListRecurringJournalsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.recurring.listTemplates(u.orgId, query.page, query.pageSize);
@@ -41,8 +41,9 @@ export class RecurringJournalsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
   @HttpCode(201)
+  @Validate({ body: createRecurringJournalSchema })
   createTemplate(
-    @Body(new ZodValidationPipe(createRecurringJournalSchema)) body: CreateRecurringJournalInput,
+    @Body() body: CreateRecurringJournalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.recurring.createTemplate(u.orgId, u.userId, body);
@@ -51,10 +52,10 @@ export class RecurringJournalsController {
   @Patch(":templateId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: updateRecurringJournalSchema })
   updateTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(updateRecurringJournalSchema)) body: UpdateRecurringJournalInput,
+    @Body() body: UpdateRecurringJournalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.recurring.updateTemplate(u.orgId, templateId, body);

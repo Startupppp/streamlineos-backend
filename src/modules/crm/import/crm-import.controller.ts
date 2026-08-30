@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { CrmImportService, type ImportProgress } from "./crm-import.service";
 import type { ImportEntity } from "./import-entities";
@@ -72,8 +71,9 @@ export class CrmImportController {
   /** What this file would do. Writes nothing to the CRM. */
   @Post("imports/preview")
   @RequirePermission("crm:imports:manage")
+  @Validate({ body: previewImportSchema })
   async preview(
-    @Body(new ZodValidationPipe(previewImportSchema)) body: PreviewImportInput,
+    @Body() body: PreviewImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const entity = body.entity as ImportEntity;
@@ -193,8 +193,9 @@ export class CrmImportController {
   @Post("connectors/sync")
   @Idempotent("crm.connector.sync")
   @RequirePermission("crm:imports:manage")
+  @Validate({ body: connectorSyncSchema })
   async sync(
-    @Body(new ZodValidationPipe(connectorSyncSchema)) body: ConnectorSyncInput,
+    @Body() body: ConnectorSyncInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.assertMayWrite(
@@ -245,8 +246,9 @@ export class CrmImportController {
    */
   @Get("export")
   @RequirePermission("party:parties:view")
+  @Validate({ query: exportQuerySchema })
   async exportEntity(
-    @Query(new ZodValidationPipe(exportQuerySchema)) query: ExportQuery,
+    @Query() query: ExportQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {

@@ -17,7 +17,6 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { EmergencyService } from "./emergency.service";
 import {
   createEmergencyEventSchema,
@@ -45,9 +44,10 @@ export class EmergencyController {
   @Get("events")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
+  @Validate({ query: listEmergencyEventsSchema })
   listEvents(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listEmergencyEventsSchema)) query: ListEmergencyEventsInput,
+    @Query() query: ListEmergencyEventsInput,
   ) {
     return this.svc.listEvents(user.orgId, query);
   }
@@ -67,9 +67,10 @@ export class EmergencyController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
+  @Validate({ body: createEmergencyEventSchema })
   createEvent(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createEmergencyEventSchema)) body: CreateEmergencyEventInput,
+    @Body() body: CreateEmergencyEventInput,
   ) {
     return this.svc.createEvent(user.orgId, user.userId, body);
   }
@@ -77,11 +78,11 @@ export class EmergencyController {
   @Patch("events/:eventId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
-  @Validate({ params: eventIdParams })
+  @Validate({ params: eventIdParams, body: updateEmergencyEventSchema })
   updateEvent(
     @CurrentUser() user: CurrentUserContext,
     @Param("eventId") eventId: string,
-    @Body(new ZodValidationPipe(updateEmergencyEventSchema)) body: UpdateEmergencyEventInput,
+    @Body() body: UpdateEmergencyEventInput,
   ) {
     return this.svc.updateEvent(user.orgId, eventId, body);
   }
@@ -101,22 +102,22 @@ export class EmergencyController {
   @Post("events/:eventId/broadcast")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
-  @Validate({ params: eventIdParams })
+  @Validate({ params: eventIdParams, body: broadcastSchema })
   broadcast(
     @CurrentUser() user: CurrentUserContext,
     @Param("eventId") eventId: string,
-    @Body(new ZodValidationPipe(broadcastSchema)) body: BroadcastInput,
+    @Body() body: BroadcastInput,
   ) {
     return this.svc.broadcast(user.orgId, eventId, body);
   }
 
   @Post("events/:eventId/respond")
   @Universal()
-  @Validate({ params: eventIdParams })
+  @Validate({ params: eventIdParams, body: respondSchema })
   respond(
     @CurrentUser() user: CurrentUserContext,
     @Param("eventId") eventId: string,
-    @Body(new ZodValidationPipe(respondSchema)) body: RespondInput,
+    @Body() body: RespondInput,
   ) {
     return this.svc.respond(user.orgId, eventId, user.userId, body);
   }

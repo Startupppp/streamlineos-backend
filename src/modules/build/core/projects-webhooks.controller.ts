@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
@@ -40,10 +39,10 @@ export class ProjectsWebhooksController {
   @RequirePermission("build:manage")
   @HttpCode(201)
   @Idempotent("build.webhook.register")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createWebhookSchema })
   createWebhook(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createWebhookSchema)) body: CreateWebhookInput,
+    @Body() body: CreateWebhookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.webhooks.createWebhook(u.orgId, projectId, u.userId, body);

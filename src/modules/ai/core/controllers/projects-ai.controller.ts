@@ -15,7 +15,6 @@ import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decora
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { LlmService } from "../providers/llm.service";
 import { ProjectsAiService } from "../services/projects-ai.service";
 import { TicketInsightsAiService } from "../services/ticket-insights-ai.service";
@@ -99,10 +98,10 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/plan")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: planBodySchema })
   async plan(
     @Param("projectId") rawId: string,
-    @Body(new ZodValidationPipe(planBodySchema)) body: PlanBodyInput,
+    @Body() body: PlanBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
@@ -111,10 +110,10 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/extract-tasks")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: extractBodySchema })
   async extractTasks(
     @Param("projectId") rawId: string,
-    @Body(new ZodValidationPipe(extractBodySchema)) body: ExtractBodyInput,
+    @Body() body: ExtractBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
@@ -123,10 +122,10 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/ask")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: askBodySchema })
   async ask(
     @Param("projectId") rawId: string,
-    @Body(new ZodValidationPipe(askBodySchema)) body: AskBodyInput,
+    @Body() body: AskBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
@@ -135,10 +134,10 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/tickets/draft/suggest-title")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: draftTicketBodySchema })
   async suggestDraftTitle(
     @Param("projectId") rawPid: string,
-    @Body(new ZodValidationPipe(draftTicketBodySchema)) body: DraftTicketBodyInput,
+    @Body() body: DraftTicketBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
@@ -152,10 +151,10 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/tickets/draft/improve-description")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: draftTicketBodySchema })
   async improveDraftDescription(
     @Param("projectId") rawPid: string,
-    @Body(new ZodValidationPipe(draftTicketBodySchema)) body: DraftTicketBodyInput,
+    @Body() body: DraftTicketBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
@@ -169,10 +168,10 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/tickets/draft/suggest-fields")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: draftTicketBodySchema })
   async suggestDraftFields(
     @Param("projectId") rawPid: string,
-    @Body(new ZodValidationPipe(draftTicketBodySchema)) body: DraftTicketBodyInput,
+    @Body() body: DraftTicketBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
@@ -215,11 +214,11 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/improve-description")
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectIdticketIdParams, body: improveDescriptionBodySchema })
   async improveTicketDescription(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
-    @Body(new ZodValidationPipe(improveDescriptionBodySchema)) body: ImproveDescriptionBodyInput,
+    @Body() body: ImproveDescriptionBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
@@ -257,10 +256,10 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/weekly-update")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: weeklyUpdateBodySchema })
   async weeklyUpdate(
     @Param("projectId") rawId: string,
-    @Body(new ZodValidationPipe(weeklyUpdateBodySchema)) body: WeeklyUpdateBodyInput,
+    @Body() body: WeeklyUpdateBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");

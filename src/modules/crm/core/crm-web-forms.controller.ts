@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CrmWebFormsService } from "./crm-web-forms.service";
 import {
   webFormCreateSchema,
@@ -45,8 +44,9 @@ export class CrmWebFormsController {
   @Post()
   @RequirePermission("crm:web-forms:manage")
   @HttpCode(201)
+  @Validate({ body: webFormCreateSchema })
   create(
-    @Body(new ZodValidationPipe(webFormCreateSchema)) body: WebFormCreateInput,
+    @Body() body: WebFormCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.forms.create(u.orgId, u.userId, body);
@@ -54,10 +54,10 @@ export class CrmWebFormsController {
 
   @Patch(":formId")
   @RequirePermission("crm:web-forms:manage")
-  @Validate({ params: formIdParams })
+  @Validate({ params: formIdParams, body: webFormUpdateSchema })
   async update(
     @Param("formId", ParseIntPipe) formId: number,
-    @Body(new ZodValidationPipe(webFormUpdateSchema)) body: WebFormUpdateInput,
+    @Body() body: WebFormUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const exists = await this.forms.exists(u.orgId, formId);

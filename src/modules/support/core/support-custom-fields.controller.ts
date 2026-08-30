@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { z } from "zod";
@@ -51,8 +50,9 @@ export class SupportCustomFieldsController {
   @Post("custom-fields")
   @RequirePermission("support:settings:manage")
   @HttpCode(201)
+  @Validate({ body: createCustomFieldSchema })
   async createField(
-    @Body(new ZodValidationPipe(createCustomFieldSchema)) body: CreateCustomFieldInput,
+    @Body() body: CreateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.customFields.createField(u.orgId, body);
@@ -62,10 +62,10 @@ export class SupportCustomFieldsController {
 
   @Patch("custom-fields/:fieldId")
   @RequirePermission("support:settings:manage")
-  @Validate({ params: fieldIdParams })
+  @Validate({ params: fieldIdParams, body: updateCustomFieldSchema })
   async updateField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
-    @Body(new ZodValidationPipe(updateCustomFieldSchema)) body: UpdateCustomFieldInput,
+    @Body() body: UpdateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.customFields.updateField(u.orgId, fieldId, body);

@@ -13,7 +13,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsReportsService } from "./projects-reports.service";
 import { ProjectsAnalyticsService } from "./projects-analytics.service";
 import {
@@ -55,10 +54,10 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/burnup")
   @RequirePermission("build:view")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, query: burnupQuerySchema })
   burnup(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(burnupQuerySchema)) query: BurnupQuery,
+    @Query() query: BurnupQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.burnup(u.orgId, projectId, query);
@@ -66,10 +65,10 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/cfd")
   @RequirePermission("build:view")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, query: cfdQuerySchema })
   cfd(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(cfdQuerySchema)) query: CfdQuery,
+    @Query() query: CfdQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.cfd(u.orgId, projectId, query);

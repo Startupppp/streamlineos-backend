@@ -1,13 +1,13 @@
 import { z } from "zod";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const roadmapListQuerySchema = z.object({
   status: z
     .enum(["planned", "in_progress", "completed", "cancelled"])
     .optional(),
   search: z.string().trim().min(1).optional(),
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(50),
 });
 
@@ -45,7 +45,7 @@ export const feedbackListQuerySchema = z.object({
     .optional(),
   search: z.string().trim().min(1).optional(),
   includeMerged: queryBoolean.default(false),
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(50),
 });
 
@@ -77,7 +77,7 @@ export const updateFeedbackSchema = z.object({
 
 export const changelogListQuerySchema = z.object({
   type: z.enum(["feature", "improvement", "fix"]).optional(),
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(50),
 });
 

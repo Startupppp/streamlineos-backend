@@ -176,10 +176,10 @@ export class PerformanceController {
 
   @Patch("one-on-ones/:meetingId")
   @RequirePermission("hr:performance:view")
-  @Validate({ params: meetingIdParams })
+  @Validate({ params: meetingIdParams, body: updateOneOnOneSchema })
   async updateOneOnOne(
     @Param("meetingId", ParseIntPipe) meetingId: number,
-    @Body(new ZodValidationPipe(updateOneOnOneSchema)) body: UpdateOneOnOneInput,
+    @Body() body: UpdateOneOnOneInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.updateOneOnOne(u.orgId, u.userId, await this.canManagePerformance(u), meetingId, body);
@@ -206,8 +206,9 @@ export class PerformanceController {
   @Post("pip")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: createPipSchema })
   createPip(
-    @Body(new ZodValidationPipe(createPipSchema)) body: CreatePipInput,
+    @Body() body: CreatePipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.createPip(u.orgId, u.userId, body);
@@ -215,10 +216,10 @@ export class PerformanceController {
 
   @Patch("pip/:pipId")
   @RequirePermission("hr:performance:manage")
-  @Validate({ params: pipIdParams })
+  @Validate({ params: pipIdParams, body: updatePipSchema })
   updatePip(
     @Param("pipId", ParseIntPipe) pipId: number,
-    @Body(new ZodValidationPipe(updatePipSchema)) body: UpdatePipInput,
+    @Body() body: UpdatePipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.updatePip(u.orgId, pipId, body);
@@ -226,8 +227,9 @@ export class PerformanceController {
 
   @Get("reviews")
   @RequirePermission("hr:performance:view")
+  @Validate({ query: listPerformanceReviewsSchema })
   async listReviews(
-    @Query(new ZodValidationPipe(listPerformanceReviewsSchema)) query: ListPerformanceReviewsInput,
+    @Query() query: ListPerformanceReviewsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolvePerformanceScope(this.access, u);
@@ -237,8 +239,9 @@ export class PerformanceController {
   @Post("reviews")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: createPerformanceReviewSchema })
   createReview(
-    @Body(new ZodValidationPipe(createPerformanceReviewSchema)) body: CreatePerformanceReviewInput,
+    @Body() body: CreatePerformanceReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.createReview(u.orgId, u.userId, body);
@@ -267,10 +270,10 @@ export class PerformanceController {
 
   @Patch("reviews/:reviewId")
   @RequirePermission("hr:performance:view")
-  @Validate({ params: reviewIdParams })
+  @Validate({ params: reviewIdParams, body: updatePerformanceReviewSchema })
   async updateReview(
     @Param("reviewId", ParseIntPipe) reviewId: number,
-    @Body(new ZodValidationPipe(updatePerformanceReviewSchema)) body: UpdatePerformanceReviewInput,
+    @Body() body: UpdatePerformanceReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.updateReview(u.orgId, u.userId, await this.canManagePerformance(u), reviewId, body);
@@ -285,8 +288,9 @@ export class PerformanceController {
   @Post("cycles")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: createReviewCycleSchema })
   createCycle(
-    @Body(new ZodValidationPipe(createReviewCycleSchema)) body: CreateReviewCycleInput,
+    @Body() body: CreateReviewCycleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.createCycle(u.orgId, u.userId, body);
@@ -304,10 +308,10 @@ export class PerformanceController {
 
   @Patch("cycles/:cycleId")
   @RequirePermission("hr:performance:manage")
-  @Validate({ params: cycleIdParams })
+  @Validate({ params: cycleIdParams, body: updateReviewCycleSchema })
   updateCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
-    @Body(new ZodValidationPipe(updateReviewCycleSchema)) body: UpdateReviewCycleInput,
+    @Body() body: UpdateReviewCycleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.updateCycle(u.orgId, cycleId, body);

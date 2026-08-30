@@ -77,6 +77,16 @@ export class ProjectsTicketsController {
     return this.tickets.searchOrgTickets(u.orgId, u.userId, query.q, query.limit);
   }
 
+  @Get(":projectId/tickets/column-counts")
+  @RequirePermission("build:tickets:view")
+  @Validate({ params: projectIdParams })
+  getColumnCounts(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tickets.getColumnCounts(u.orgId, projectId);
+  }
+
   @Get(":projectId/tickets/export")
   @RequirePermission("build:tickets:view")
   @Validate({ params: projectIdParams })

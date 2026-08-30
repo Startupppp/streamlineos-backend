@@ -16,7 +16,6 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -55,9 +54,9 @@ export class HrExportController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("hr:employee-export")
   @Idempotent("hr.employee-export.create")
+  @Validate({ body: createEmployeeExportJobSchema })
   async create(
-    @Body(new ZodValidationPipe(createEmployeeExportJobSchema))
-    body: CreateEmployeeExportJobInput,
+    @Body() body: CreateEmployeeExportJobInput,
     @Headers("idempotency-key") idempotencyKey: string,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<HrExportJobView> {
@@ -70,7 +69,7 @@ export class HrExportController {
   @Get(":exportJobId")
   @Validate({ params: exportJobIdParams })
   get(
-    @Param("exportJobId", new ZodValidationPipe(exportJobIdSchema)) exportJobId: string,
+    @Param("exportJobId") exportJobId: string,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<HrExportJobView> {
     return this.jobs.getForRequester(user.orgId, user.userId, exportJobId);
@@ -81,7 +80,7 @@ export class HrExportController {
   @UseRateLimit("hr:employee-export")
   @Validate({ params: exportJobIdParams })
   async download(
-    @Param("exportJobId", new ZodValidationPipe(exportJobIdSchema)) exportJobId: string,
+    @Param("exportJobId") exportJobId: string,
     @CurrentUser() user: CurrentUserContext,
     @Res() response: Response,
   ): Promise<void> {

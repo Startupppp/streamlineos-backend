@@ -4,7 +4,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { EssService } from "./ess.service";
 import { EssSelfServiceService } from "./ess-self-service.service";
 import {
@@ -55,9 +55,10 @@ export class EssController {
   @Post("reimbursements")
   @HttpCode(201)
   @RequirePermission("self:payroll")
+  @Validate({ body: essCreateReimbursementSchema })
   createReimbursement(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(essCreateReimbursementSchema)) body: EssCreateReimbursement,
+    @Body() body: EssCreateReimbursement,
   ) {
     return this.essSelfService.createReimbursement(u.orgId, u.userId, body);
   }
@@ -71,9 +72,10 @@ export class EssController {
   @Post("loans")
   @HttpCode(201)
   @RequirePermission("self:payroll")
+  @Validate({ body: essCreateLoanSchema })
   createLoan(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(essCreateLoanSchema)) body: EssCreateLoan,
+    @Body() body: EssCreateLoan,
   ) {
     return this.essSelfService.createLoan(u.orgId, u.userId, body);
   }
@@ -87,9 +89,10 @@ export class EssController {
   @Post("tax-declaration")
   @HttpCode(201)
   @RequirePermission("self:payroll")
+  @Validate({ body: essSubmitTaxDeclarationSchema })
   submitTaxDeclaration(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(essSubmitTaxDeclarationSchema)) body: EssSubmitTaxDeclaration,
+    @Body() body: EssSubmitTaxDeclaration,
   ) {
     return this.essSelfService.submitTaxDeclaration(u.orgId, u.userId, body);
   }
@@ -97,9 +100,10 @@ export class EssController {
   @Post("tax-declaration/proofs")
   @HttpCode(201)
   @RequirePermission("self:payroll")
+  @Validate({ body: essAddTaxProofSchema })
   addTaxProof(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(essAddTaxProofSchema)) body: EssAddTaxProof,
+    @Body() body: EssAddTaxProof,
   ) {
     return this.essSelfService.addTaxProof(u.orgId, u.userId, body);
   }
@@ -112,9 +116,10 @@ export class EssController {
 
   @Patch("bank")
   @RequirePermission("self:payroll")
+  @Validate({ body: essBankSchema })
   updateBankDetails(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(essBankSchema)) body: EssBank,
+    @Body() body: EssBank,
   ) {
     return this.essSelfService.updateBankDetails(u.orgId, u.userId, body);
   }

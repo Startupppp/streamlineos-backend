@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TeamsService } from "./teams.service";
 import {
   addTeamMemberSchema,
@@ -51,8 +50,9 @@ export class TeamsController {
 
   @Get()
   @RequirePermission("build:teams:view")
+  @Validate({ query: listTeamsQuerySchema })
   listTeams(
-    @Query(new ZodValidationPipe(listTeamsQuerySchema)) query: ListTeamsQuery,
+    @Query() query: ListTeamsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listTeams(u.orgId, query);
@@ -71,8 +71,9 @@ export class TeamsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:teams:create")
+  @Validate({ body: createTeamSchema })
   createTeam(
-    @Body(new ZodValidationPipe(createTeamSchema)) body: CreateTeamInput,
+    @Body() body: CreateTeamInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createTeam(u.orgId, u.userId, body);
@@ -80,10 +81,10 @@ export class TeamsController {
 
   @Patch(":teamId")
   @RequirePermission("build:teams:update")
-  @Validate({ params: teamIdParams })
+  @Validate({ params: teamIdParams, body: updateTeamSchema })
   updateTeam(
     @Param("teamId", ParseIntPipe) teamId: number,
-    @Body(new ZodValidationPipe(updateTeamSchema)) body: UpdateTeamInput,
+    @Body() body: UpdateTeamInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateTeam(u.orgId, u.userId, teamId, body);
@@ -102,11 +103,10 @@ export class TeamsController {
 
   @Get(":teamId/members")
   @RequirePermission("build:teams:view")
-  @Validate({ params: teamIdParams })
+  @Validate({ params: teamIdParams, query: listTeamMembersQuerySchema })
   listTeamMembers(
     @Param("teamId", ParseIntPipe) teamId: number,
-    @Query(new ZodValidationPipe(listTeamMembersQuerySchema))
-    query: ListTeamMembersQuery,
+    @Query() query: ListTeamMembersQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listTeamMembers(u.orgId, teamId, query);
@@ -115,10 +115,10 @@ export class TeamsController {
   @Post(":teamId/members")
   @HttpCode(201)
   @RequirePermission("build:teams:manage")
-  @Validate({ params: teamIdParams })
+  @Validate({ params: teamIdParams, body: addTeamMemberSchema })
   addMember(
     @Param("teamId", ParseIntPipe) teamId: number,
-    @Body(new ZodValidationPipe(addTeamMemberSchema)) body: AddTeamMemberInput,
+    @Body() body: AddTeamMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.addMember(u.orgId, u.userId, teamId, body);
@@ -126,12 +126,11 @@ export class TeamsController {
 
   @Patch(":teamId/members/:memberUserId")
   @RequirePermission("build:teams:manage")
-  @Validate({ params: teamIdmemberUserIdParams })
+  @Validate({ params: teamIdmemberUserIdParams, body: updateTeamMemberRoleSchema })
   updateMemberRole(
     @Param("teamId", ParseIntPipe) teamId: number,
     @Param("memberUserId") memberUserId: string,
-    @Body(new ZodValidationPipe(updateTeamMemberRoleSchema))
-    body: UpdateTeamMemberRoleInput,
+    @Body() body: UpdateTeamMemberRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateMemberRole(
@@ -168,10 +167,10 @@ export class TeamsController {
   @Post(":teamId/projects")
   @HttpCode(201)
   @RequirePermission("build:teams:manage")
-  @Validate({ params: teamIdParams })
+  @Validate({ params: teamIdParams, body: addTeamProjectSchema })
   addProject(
     @Param("teamId", ParseIntPipe) teamId: number,
-    @Body(new ZodValidationPipe(addTeamProjectSchema)) body: AddTeamProjectInput,
+    @Body() body: AddTeamProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.addProject(u.orgId, u.userId, teamId, body.projectId);

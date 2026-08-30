@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PayrollSummaryService } from "./payroll-summary.service";
 import { PayrollExportService } from "./payroll-export.service";
@@ -54,8 +53,9 @@ export class PayrollController {
 
   @Get("period-summary")
   @RequirePermission("timesheets:payroll:view")
+  @Validate({ query: periodSummaryQuerySchema })
   async getPeriodSummary(
-    @Query(new ZodValidationPipe(periodSummaryQuerySchema)) query: PeriodSummaryQuery,
+    @Query() query: PeriodSummaryQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolvePayrollScope(this.access, u);
@@ -66,8 +66,9 @@ export class PayrollController {
   @HttpCode(201)
   @RequirePermission("timesheets:payroll:export")
   @Idempotent("timesheets.payroll.export")
+  @Validate({ body: exportPayrollSchema })
   runExport(
-    @Body(new ZodValidationPipe(exportPayrollSchema)) body: ExportPayrollInput,
+    @Body() body: ExportPayrollInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.exportSvc.runExport(u.orgId, u.userId, body);
@@ -75,8 +76,9 @@ export class PayrollController {
 
   @Get("exports")
   @RequirePermission("timesheets:payroll:view")
+  @Validate({ query: exportsListQuerySchema })
   listExports(
-    @Query(new ZodValidationPipe(exportsListQuerySchema)) query: ExportsListQuery,
+    @Query() query: ExportsListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.exportSvc.listExports(u.orgId, query);
@@ -84,10 +86,10 @@ export class PayrollController {
 
   @Patch("exports/:exportId/ack")
   @RequirePermission("timesheets:payroll:export")
-  @Validate({ params: exportIdParams })
+  @Validate({ params: exportIdParams, body: ackExportSchema })
   ackExport(
     @Param("exportId", ParseIntPipe) exportId: number,
-    @Body(new ZodValidationPipe(ackExportSchema)) body: AckExportInput,
+    @Body() body: AckExportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.exportSvc.ackExport(u.orgId, u.userId, exportId, body);
@@ -111,8 +113,9 @@ export class PayrollController {
 
   @Patch("settings")
   @RequirePermission("timesheets:payroll:export")
+  @Validate({ body: updateSettingsSchema })
   updateSettings(
-    @Body(new ZodValidationPipe(updateSettingsSchema)) body: UpdateSettingsInput,
+    @Body() body: UpdateSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.updateSettings(u.orgId, u.userId, body);

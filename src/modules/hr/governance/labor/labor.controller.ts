@@ -19,7 +19,6 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { LaborService } from "./labor.service";
 import {
   createUnionMembershipSchema, updateUnionMembershipSchema, listUnionMembershipsSchema,
@@ -44,18 +43,20 @@ export class LaborController {
 
   @Get("memberships")
   @RequirePermission("hr:labor:view")
+  @Validate({ query: listUnionMembershipsSchema })
   async listMemberships(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listUnionMembershipsSchema)) query: ListUnionMembershipsInput,
+    @Query() query: ListUnionMembershipsInput,
   ) {
     return this.service.listMemberships(user.orgId, query);
   }
 
   @Post("memberships")
   @RequirePermission("hr:labor:manage")
+  @Validate({ body: createUnionMembershipSchema })
   async createMembership(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createUnionMembershipSchema)) body: CreateUnionMembershipInput,
+    @Body() body: CreateUnionMembershipInput,
     @Req() req: Request,
   ) {
     return this.service.createMembership(user.orgId, user.userId, body, req.ip);
@@ -63,11 +64,11 @@ export class LaborController {
 
   @Patch("memberships/:membershipId")
   @RequirePermission("hr:labor:manage")
-  @Validate({ params: membershipIdParams })
+  @Validate({ params: membershipIdParams, body: updateUnionMembershipSchema })
   async updateMembership(
     @CurrentUser() user: CurrentUserContext,
     @Param("membershipId", ParseIntPipe) membershipId: number,
-    @Body(new ZodValidationPipe(updateUnionMembershipSchema)) body: UpdateUnionMembershipInput,
+    @Body() body: UpdateUnionMembershipInput,
     @Req() req: Request,
   ) {
     return this.service.updateMembership(user.orgId, membershipId, user.userId, body, req.ip);
@@ -87,27 +88,30 @@ export class LaborController {
 
   @Get("agreements/expiring")
   @RequirePermission("hr:labor:view")
+  @Validate({ query: expiringAgreementsSchema })
   async listExpiringAgreements(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(expiringAgreementsSchema)) query: ExpiringAgreementsInput,
+    @Query() query: ExpiringAgreementsInput,
   ) {
     return this.service.listExpiringAgreements(user.orgId, query);
   }
 
   @Get("agreements")
   @RequirePermission("hr:labor:view")
+  @Validate({ query: listAgreementsSchema })
   async listAgreements(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listAgreementsSchema)) query: ListAgreementsInput,
+    @Query() query: ListAgreementsInput,
   ) {
     return this.service.listAgreements(user.orgId, query);
   }
 
   @Post("agreements")
   @RequirePermission("hr:labor:manage")
+  @Validate({ body: createCollectiveAgreementSchema })
   async createAgreement(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createCollectiveAgreementSchema)) body: CreateCollectiveAgreementInput,
+    @Body() body: CreateCollectiveAgreementInput,
     @Req() req: Request,
   ) {
     return this.service.createAgreement(user.orgId, user.userId, body, req.ip);
@@ -115,11 +119,11 @@ export class LaborController {
 
   @Patch("agreements/:agreementId")
   @RequirePermission("hr:labor:manage")
-  @Validate({ params: agreementIdParams })
+  @Validate({ params: agreementIdParams, body: updateCollectiveAgreementSchema })
   async updateAgreement(
     @CurrentUser() user: CurrentUserContext,
     @Param("agreementId", ParseIntPipe) agreementId: number,
-    @Body(new ZodValidationPipe(updateCollectiveAgreementSchema)) body: UpdateCollectiveAgreementInput,
+    @Body() body: UpdateCollectiveAgreementInput,
     @Req() req: Request,
   ) {
     return this.service.updateAgreement(user.orgId, agreementId, user.userId, body, req.ip);
@@ -139,18 +143,20 @@ export class LaborController {
 
   @Get("cases")
   @RequirePermission("hr:labor:view")
+  @Validate({ query: listLaborCasesSchema })
   async listLaborCases(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listLaborCasesSchema)) query: ListLaborCasesInput,
+    @Query() query: ListLaborCasesInput,
   ) {
     return this.service.listLaborCases(user.orgId, query);
   }
 
   @Post("cases")
   @RequirePermission("hr:labor:manage")
+  @Validate({ body: createLaborCaseSchema })
   async createLaborCase(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createLaborCaseSchema)) body: CreateLaborCaseInput,
+    @Body() body: CreateLaborCaseInput,
     @Req() req: Request,
   ) {
     return this.service.createLaborCase(user.orgId, user.userId, body, req.ip);
@@ -158,11 +164,11 @@ export class LaborController {
 
   @Patch("cases/:caseId")
   @RequirePermission("hr:labor:manage")
-  @Validate({ params: caseIdParams })
+  @Validate({ params: caseIdParams, body: updateLaborCaseSchema })
   async updateLaborCase(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
-    @Body(new ZodValidationPipe(updateLaborCaseSchema)) body: UpdateLaborCaseInput,
+    @Body() body: UpdateLaborCaseInput,
     @Req() req: Request,
   ) {
     return this.service.updateLaborCase(user.orgId, caseId, user.userId, body, req.ip);

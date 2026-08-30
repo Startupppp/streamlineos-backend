@@ -1,8 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
   and,
-  count,
-  desc,
   eq,
   gte,
   inArray,
@@ -29,10 +27,20 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AllWorkQuery } from "./dto/projects.schemas";
 import {
   assignedOrParticipatingIds,
-  readIdsAndTotal,
+  mineCountSql,
+  readIds,
   resolveWorkSort,
   type WorkSort,
+  type WorkSortKey,
+  type SortDirection,
 } from "./work-scope-union";
+import {
+  buildCursorPage,
+  decodeCursor,
+  encodeCursor,
+  type CursorPosition,
+} from "../../../common/pagination/cursor";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 const WORK_ROW_SELECTION = {
   id: tickets.id,
@@ -61,6 +69,54 @@ const WORK_ROW_SELECTION = {
   assigneeEmail: users.email,
   assigneeImage: users.image,
 } as const;
+
+function serializeSortValue(
+  row: { rank: string | null; createdAt: Date | null; updatedAt: Date | null; priority: string | null; dueDate: string | null },
+  sortKey: WorkSortKey,
+): string {
+  switch (sortKey) {
+    case "rank": return row.rank ?? "";
+    case "created": return row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? "");
+    case "updated": return row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt ?? "");
+    case "priority": return row.priority ?? "";
+    case "dueDate": return row.dueDate ?? "";
+  }
+}
+
+function buildCursorPredicate(
+  sortKey: WorkSortKey,
+  dir: SortDirection,
+  position: CursorPosition,
+): SQL<unknown> {
+  const col = { created: tickets.createdAt, updated: tickets.updatedAt, priority: tickets.priority, dueDate: tickets.dueDate, rank: tickets.rank }[sortKey];
+  const id = Number(position.id);
+  if (sortKey === "created" || sortKey === "updated") {
+    const d = new Date(position.sortValue);
+    return dir === "asc"
+      ? sql`(${col}, ${tickets.id}) > (${d}, ${id})`
+      : sql`(${col}, ${tickets.id}) < (${d}, ${id})`;
+  }
+  return dir === "asc"
+    ? sql`(${col}, ${tickets.id}) > (${position.sortValue}, ${id})`
+    : sql`(${col}, ${tickets.id}) < (${position.sortValue}, ${id})`;
+}
+
+function buildMineCursorPredicate(
+  sortKey: WorkSortKey,
+  dir: SortDirection,
+  position: CursorPosition,
+): SQL<unknown> {
+  const id = Number(position.id);
+  if (sortKey === "created" || sortKey === "updated") {
+    const d = new Date(position.sortValue);
+    return dir === "asc"
+      ? sql`(u.sort_col, u.id) > (${d}, ${id})`
+      : sql`(u.sort_col, u.id) < (${d}, ${id})`;
+  }
+  return dir === "asc"
+    ? sql`(u.sort_col, u.id) > (${position.sortValue}, ${id})`
+    : sql`(u.sort_col, u.id) < (${position.sortValue}, ${id})`;
+}
 
 @Injectable()
 export class ProjectsWorkQueryService {
@@ -113,7 +169,7 @@ export class ProjectsWorkQueryService {
             : undefined,
         ),
       )
-      .orderBy(desc(tickets.updatedAt))
+      .orderBy(sql`${tickets.updatedAt} DESC`)
       .limit(limit);
 
     return rows;
@@ -121,8 +177,8 @@ export class ProjectsWorkQueryService {
 
   async getAllWork(u: CurrentUserContext, query: AllWorkQuery) {
     const {
-      page,
-      limit,
+      cursor,
+      limit: rawLimit,
       search,
       status,
       priority,
@@ -141,7 +197,7 @@ export class ProjectsWorkQueryService {
       scope,
       pmWorkspaceId,
     } = query;
-    const offset = (page - 1) * limit;
+    const limit = Math.min(rawLimit, PAGE_SIZE_CAP);
 
     const memberRows = await this.db
       .select({ projectId: projectMembers.projectId })
@@ -155,7 +211,7 @@ export class ProjectsWorkQueryService {
 
     const memberProjectIds = memberRows.map((r) => r.projectId);
     if (memberProjectIds.length === 0) {
-      return { data: [], total: 0, page, limit, totalPages: 0 };
+      return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
     }
 
     const allowedProjectIds =
@@ -164,7 +220,7 @@ export class ProjectsWorkQueryService {
         : memberProjectIds;
 
     if (allowedProjectIds.length === 0) {
-      return { data: [], total: 0, page, limit, totalPages: 0 };
+      return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
     }
 
     const conditions: SQL<unknown>[] = [
@@ -196,25 +252,15 @@ export class ProjectsWorkQueryService {
           sql`${tickets.title} ILIKE ${"%" + term + "%"}`,
           isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num),
         );
-        if (searchCondition) {
-          conditions.push(searchCondition);
-        }
+        if (searchCondition) conditions.push(searchCondition);
       } else {
         conditions.push(sql`${tickets.title} ILIKE ${"%" + term + "%"}`);
       }
     }
 
-    if (status && status.length > 0) {
-      conditions.push(inArray(tickets.status, status));
-    }
-
-    if (excludeStatus && excludeStatus.length > 0) {
-      conditions.push(notInArray(tickets.status, excludeStatus));
-    }
-
-    if (priority && priority.length > 0) {
-      conditions.push(inArray(tickets.priority, priority));
-    }
+    if (status && status.length > 0) conditions.push(inArray(tickets.status, status));
+    if (excludeStatus && excludeStatus.length > 0) conditions.push(notInArray(tickets.status, excludeStatus));
+    if (priority && priority.length > 0) conditions.push(inArray(tickets.priority, priority));
 
     if (type && type.length > 0) {
       conditions.push(
@@ -230,13 +276,8 @@ export class ProjectsWorkQueryService {
       const unassigned = resolved.includes("__unassigned__");
       const realIds = resolved.filter((id) => id !== "__unassigned__");
       if (unassigned && realIds.length > 0) {
-        const assigneeCondition = or(
-          isNull(tickets.assigneeId),
-          inArray(tickets.assigneeId, realIds),
-        );
-        if (assigneeCondition) {
-          conditions.push(assigneeCondition);
-        }
+        const assigneeCondition = or(isNull(tickets.assigneeId), inArray(tickets.assigneeId, realIds));
+        if (assigneeCondition) conditions.push(assigneeCondition);
       } else if (unassigned) {
         conditions.push(isNull(tickets.assigneeId));
       } else {
@@ -257,34 +298,20 @@ export class ProjectsWorkQueryService {
       );
     }
 
-    if (sprintId !== undefined) {
-      conditions.push(eq(tickets.sprintId, sprintId));
-    }
-
-    if (cycleId && cycleId.length > 0) {
-      conditions.push(inArray(tickets.cycleId, cycleId));
-    }
-
-    if (epicId !== undefined) {
-      conditions.push(eq(tickets.epicId, epicId));
-    }
-
-    if (dueDateFrom) {
-      conditions.push(gte(tickets.dueDate, dueDateFrom));
-    }
-
-    if (dueDateTo) {
-      conditions.push(lte(tickets.dueDate, dueDateTo));
-    }
+    if (sprintId !== undefined) conditions.push(eq(tickets.sprintId, sprintId));
+    if (cycleId && cycleId.length > 0) conditions.push(inArray(tickets.cycleId, cycleId));
+    if (epicId !== undefined) conditions.push(eq(tickets.epicId, epicId));
+    if (dueDateFrom) conditions.push(gte(tickets.dueDate, dueDateFrom));
+    if (dueDateTo) conditions.push(lte(tickets.dueDate, dueDateTo));
 
     const where = and(...conditions);
-
     const sort = resolveWorkSort(orderBy, orderDir);
+    const isFirstPage = !cursor;
 
-    const { rows, total } =
+    const { rows, nextCursor, hasMore, total } =
       scope === "mine"
-        ? await this.pageMineWork(u, where, sort, limit, offset)
-        : await this.pageFilteredWork(where, sort.rows, limit, offset);
+        ? await this.pageMineWork(u, where, sort, limit, cursor, isFirstPage)
+        : await this.pageFilteredWork(where, sort, limit, cursor, isFirstPage);
 
     const ticketIds = rows.map((r) => r.id);
 
@@ -305,17 +332,10 @@ export class ProjectsWorkQueryService {
             .where(inArray(ticketLabelMappings.ticketId, ticketIds))
         : [];
 
-    const labelsByTicket = new Map<
-      number,
-      { id: number; name: string; color: string }[]
-    >();
+    const labelsByTicket = new Map<number, { id: number; name: string; color: string }[]>();
     for (const row of labelRows) {
       const existing = labelsByTicket.get(row.ticketId) ?? [];
-      existing.push({
-        id: row.labelId,
-        name: row.labelName,
-        color: row.labelColor,
-      });
+      existing.push({ id: row.labelId, name: row.labelName, color: row.labelColor });
       labelsByTicket.set(row.ticketId, existing);
     }
 
@@ -353,32 +373,50 @@ export class ProjectsWorkQueryService {
       labels: labelsByTicket.get(r.id) ?? [],
     }));
 
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    return { data, limit, nextCursor, hasMore, ...(total !== undefined ? { total } : {}) };
   }
 
   private async pageFilteredWork(
     where: SQL<unknown> | undefined,
-    sortExpr: SQL<unknown>[],
+    sort: WorkSort,
     limit: number,
-    offset: number,
+    cursor: string | undefined,
+    includeTotal: boolean,
   ) {
-    const [rows, countRows] = await Promise.all([
+    const position = decodeCursor(cursor);
+    const cursorCond = position ? buildCursorPredicate(sort.sortKey, sort.dir, position) : undefined;
+    const finalWhere = cursorCond ? and(where, cursorCond) : where;
+
+    const [rawRows, countRows] = await Promise.all([
       this.db
         .select(WORK_ROW_SELECTION)
         .from(tickets)
         .innerJoin(projects, eq(tickets.projectId, projects.id))
         .leftJoin(users, eq(tickets.assigneeId, users.id))
-        .where(where)
-        .orderBy(...sortExpr)
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(tickets)
-        .innerJoin(projects, eq(tickets.projectId, projects.id))
-        .where(where),
+        .where(finalWhere)
+        .orderBy(...sort.rows)
+        .limit(limit + 1),
+      includeTotal
+        ? this.db
+            .select({ total: sql<string>`count(*)` })
+            .from(tickets)
+            .innerJoin(projects, eq(tickets.projectId, projects.id))
+            .where(where)
+        : Promise.resolve(null),
     ]);
-    return { rows, total: Number(countRows[0]?.total ?? 0) };
+
+    const page = buildCursorPage(rawRows, limit, (row) => ({
+      sortValue: serializeSortValue(row, sort.sortKey),
+      id: String(row.id),
+    }));
+
+    const total = countRows ? Number(countRows[0]?.total ?? 0) : undefined;
+    return {
+      rows: page.data,
+      nextCursor: page.pagination.nextCursor,
+      hasMore: page.pagination.hasMore,
+      total,
+    };
   }
 
   private async pageMineWork(
@@ -386,35 +424,55 @@ export class ProjectsWorkQueryService {
     where: SQL<unknown> | undefined,
     sort: WorkSort,
     limit: number,
-    offset: number,
+    cursor: string | undefined,
+    includeTotal: boolean,
   ) {
-    const idQuery = (pageLimit: number, pageOffset: number) =>
-      assignedOrParticipatingIds({
-        orgId: u.orgId,
-        userId: u.userId,
-        baseWhere: where,
-        carry: sort.carry,
-        orderBy: sort.unionOrderBy,
-        limit: pageLimit,
-        offset: pageOffset,
-      });
+    const position = decodeCursor(cursor);
+    const cursorPredicate = position
+      ? buildMineCursorPredicate(sort.sortKey, sort.dir, position)
+      : undefined;
 
-    const { ids, total } = readIdsAndTotal(
-      await this.db.execute(idQuery(limit, offset)),
-    );
-    if (ids.length > 0) {
-      const rows = await this.db
-        .select(WORK_ROW_SELECTION)
-        .from(tickets)
-        .innerJoin(projects, eq(tickets.projectId, projects.id))
-        .leftJoin(users, eq(tickets.assigneeId, users.id))
-        .where(and(eq(tickets.orgId, u.orgId), inArray(tickets.id, ids)))
-        .orderBy(...sort.rows);
-      return { rows, total };
+    const idSql = assignedOrParticipatingIds({
+      orgId: u.orgId,
+      userId: u.userId,
+      baseWhere: where,
+      carry: sort.carry,
+      orderBy: sort.unionOrderBy,
+      limit: limit + 1,
+      cursorPredicate,
+    });
+
+    const [rawIds, countRows] = await Promise.all([
+      this.db.execute(idSql),
+      includeTotal
+        ? this.db.execute(mineCountSql(where, u.orgId, u.userId))
+        : Promise.resolve(null),
+    ]);
+
+    const ids = readIds(rawIds);
+    const hasMore = ids.length > limit;
+    const pageIds = hasMore ? ids.slice(0, limit) : ids;
+
+    if (pageIds.length === 0) {
+      const total = countRows ? Number(countRows[0]?.["total"] ?? 0) : undefined;
+      return { rows: [], nextCursor: null, hasMore: false, total };
     }
 
-    if (offset === 0) return { rows: [], total };
-    const overshoot = readIdsAndTotal(await this.db.execute(idQuery(1, 0)));
-    return { rows: [], total: overshoot.total };
+    const rows = await this.db
+      .select(WORK_ROW_SELECTION)
+      .from(tickets)
+      .innerJoin(projects, eq(tickets.projectId, projects.id))
+      .leftJoin(users, eq(tickets.assigneeId, users.id))
+      .where(and(eq(tickets.orgId, u.orgId), inArray(tickets.id, pageIds)))
+      .orderBy(...sort.rows);
+
+    const lastRow = rows[rows.length - 1];
+    const nextCursor =
+      hasMore && lastRow
+        ? encodeCursor({ sortValue: serializeSortValue(lastRow, sort.sortKey), id: String(lastRow.id) })
+        : null;
+
+    const total = countRows ? Number(countRows[0]?.["total"] ?? 0) : undefined;
+    return { rows, nextCursor, hasMore, total };
   }
 }

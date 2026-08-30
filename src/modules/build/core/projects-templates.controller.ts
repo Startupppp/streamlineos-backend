@@ -14,7 +14,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsTemplatesService } from "./projects-templates.service";
 import {
   applyTemplateSchema,
@@ -44,8 +43,9 @@ export class ProjectsTemplatesController {
   @Post("templates")
   @HttpCode(201)
   @RequirePermission("build:manage")
+  @Validate({ body: createTemplateSchema })
   createTemplate(
-    @Body(new ZodValidationPipe(createTemplateSchema)) body: CreateTemplateInput,
+    @Body() body: CreateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.createTemplate(u.orgId, u.userId, body);
@@ -66,10 +66,10 @@ export class ProjectsTemplatesController {
   @HttpCode(201)
   @RequirePermission("build:manage")
   @Idempotent("build.template.apply")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: applyTemplateSchema })
   applyTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(applyTemplateSchema)) body: ApplyTemplateInput,
+    @Body() body: ApplyTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.applyTemplate(u.orgId, u.userId, templateId, body);

@@ -15,7 +15,7 @@ import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decora
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../../common/validation/validate.decorator";
 import { LlmService } from "../providers/llm.service";
 import { HrPerformanceAiService } from "../services/hr-performance-ai.service";
 import { HrRecruitmentAiService } from "../services/hr-recruitment-ai.service";
@@ -68,8 +68,9 @@ export class HrAiController {
 
   @Post("attrition-risk")
   @RequirePermission("hr:employees:manage")
+  @Validate({ body: attritionRiskSchema })
   async attritionRisk(
-    @Body(new ZodValidationPipe(attritionRiskSchema)) body: AttritionRiskInput,
+    @Body() body: AttritionRiskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
@@ -80,8 +81,9 @@ export class HrAiController {
 
   @Post("generate-review")
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: generateReviewSchema })
   async generateReview(
-    @Body(new ZodValidationPipe(generateReviewSchema)) body: GenerateReviewInput,
+    @Body() body: GenerateReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
@@ -92,8 +94,9 @@ export class HrAiController {
 
   @Post("generate-jd")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: generateJdSchema })
   generateJd(
-    @Body(new ZodValidationPipe(generateJdSchema)) body: GenerateJdInput,
+    @Body() body: GenerateJdInput,
   ) {
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
     return this.hrRecruitment.generateJd(body);
@@ -101,8 +104,9 @@ export class HrAiController {
 
   @Post("score-candidate")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: scoreCandidateSchema })
   async scoreCandidate(
-    @Body(new ZodValidationPipe(scoreCandidateSchema)) body: ScoreCandidateInput,
+    @Body() body: ScoreCandidateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.candidate-scoring");
@@ -118,8 +122,9 @@ export class HrAiController {
 
   @Post("helpdesk-reply")
   @RequirePermission("hr:helpdesk:manage")
+  @Validate({ body: helpdeskReplySchema })
   async helpdeskReply(
-    @Body(new ZodValidationPipe(helpdeskReplySchema)) body: HelpdeskReplyInput,
+    @Body() body: HelpdeskReplyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
@@ -143,8 +148,9 @@ export class HrAiController {
 
   @Post("hr/policy-qa")
   @RequirePermission("hr:policies:view")
+  @Validate({ body: policyQaSchema })
   async policyQa(
-    @Body(new ZodValidationPipe(policyQaSchema)) body: PolicyQaInput,
+    @Body() body: PolicyQaInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm("AI policy Q&A is not configured.");
@@ -153,8 +159,9 @@ export class HrAiController {
 
   @Post("hr/interview-kit")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: interviewKitSchema })
   async interviewKit(
-    @Body(new ZodValidationPipe(interviewKitSchema)) body: InterviewKitInput,
+    @Body() body: InterviewKitInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.review-generation");
@@ -166,8 +173,9 @@ export class HrAiController {
 
   @Post("hr/letter-draft")
   @RequirePermission("hr:employees:manage")
+  @Validate({ body: letterDraftSchema })
   async letterDraft(
-    @Body(new ZodValidationPipe(letterDraftSchema)) body: LetterDraftInput,
+    @Body() body: LetterDraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.review-generation");
@@ -183,8 +191,9 @@ export class HrAiController {
 
   @Post("hr/interview-notes-summary")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: interviewNotesSummarySchema })
   async interviewNotesSummary(
-    @Body(new ZodValidationPipe(interviewNotesSummarySchema)) body: InterviewNotesSummaryInput,
+    @Body() body: InterviewNotesSummaryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm("AI interview summary is not configured.");
@@ -199,8 +208,9 @@ export class HrAiController {
 
   @Post("hr/accept-candidate-score")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: acceptCandidateScoreSchema })
   async acceptCandidateScore(
-    @Body(new ZodValidationPipe(acceptCandidateScoreSchema)) body: AcceptCandidateScoreInput,
+    @Body() body: AcceptCandidateScoreInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.candidate-scoring");

@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import {
   createChecklistItemSchema,
@@ -55,11 +54,11 @@ export class ProjectsTicketChecklistsController {
   @Post(":projectId/tickets/:ticketId/checklists")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectIdticketIdParams, body: createChecklistSchema })
   createChecklist(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(createChecklistSchema)) body: CreateChecklistInput,
+    @Body() body: CreateChecklistInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.createChecklist(u.orgId, projectId, ticketId, body);
@@ -67,10 +66,10 @@ export class ProjectsTicketChecklistsController {
 
   @Patch(":projectId/tickets/:ticketId/checklists/:checklistId")
   @RequirePermission("build:tickets:update")
-  @Validate({ params: projectIdticketIdchecklistIdParams })
+  @Validate({ params: projectIdticketIdchecklistIdParams, body: updateChecklistSchema })
   updateChecklist(
     @Param("checklistId", ParseIntPipe) checklistId: number,
-    @Body(new ZodValidationPipe(updateChecklistSchema)) body: UpdateChecklistInput,
+    @Body() body: UpdateChecklistInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.updateChecklist(u.orgId, checklistId, body);
@@ -90,10 +89,10 @@ export class ProjectsTicketChecklistsController {
   @Post(":projectId/tickets/:ticketId/checklists/:checklistId/items")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
-  @Validate({ params: projectIdticketIdchecklistIdParams })
+  @Validate({ params: projectIdticketIdchecklistIdParams, body: createChecklistItemSchema })
   createChecklistItem(
     @Param("checklistId", ParseIntPipe) checklistId: number,
-    @Body(new ZodValidationPipe(createChecklistItemSchema)) body: CreateChecklistItemInput,
+    @Body() body: CreateChecklistItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.createChecklistItem(u.orgId, checklistId, body);
@@ -101,10 +100,10 @@ export class ProjectsTicketChecklistsController {
 
   @Patch(":projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId")
   @RequirePermission("build:tickets:update")
-  @Validate({ params: projectIdticketIdchecklistIditemIdParams })
+  @Validate({ params: projectIdticketIdchecklistIditemIdParams, body: updateChecklistItemSchema })
   updateChecklistItem(
     @Param("itemId", ParseIntPipe) itemId: number,
-    @Body(new ZodValidationPipe(updateChecklistItemSchema)) body: UpdateChecklistItemInput,
+    @Body() body: UpdateChecklistItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.updateChecklistItem(u.orgId, itemId, body);

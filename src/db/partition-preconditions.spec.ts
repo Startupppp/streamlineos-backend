@@ -32,13 +32,25 @@ describe("c21-04 partition preconditions", () => {
     for (const name of PARTITION_CANDIDATES) expect(tableByName(name)).toBeDefined();
   });
 
-  it("pins the five inbound foreign keys a chat_messages cutover would have to resolve", () => {
+  it("pins the inbound foreign keys a chat_messages cutover would have to resolve", () => {
     expect(inboundForeignKeys("chat_messages")).toEqual([
       "chat_attachments.message_id",
+      "chat_attachments.message_id",
+      "chat_attachments.org_id",
+      "chat_message_reactions.message_id",
+      "chat_message_reactions.org_id",
+      "chat_messages.org_id",
+      "chat_messages.reply_to_id",
       "chat_messages.reply_to_id",
       "chat_pinned_messages.message_id",
+      "chat_pinned_messages.message_id",
+      "chat_pinned_messages.org_id",
       "chat_reply_reminders.message_id",
+      "chat_reply_reminders.message_id",
+      "chat_reply_reminders.org_id",
       "chat_saved_messages.message_id",
+      "chat_saved_messages.message_id",
+      "chat_saved_messages.org_id",
     ]);
   });
 

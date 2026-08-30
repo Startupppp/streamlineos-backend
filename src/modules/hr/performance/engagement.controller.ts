@@ -61,8 +61,9 @@ export class EngagementController {
   @Post("feedback")
   @RequirePermission("hr:feedback:manage")
   @HttpCode(201)
+  @Validate({ body: createFeedbackSchema })
   createFeedback(
-    @Body(new ZodValidationPipe(createFeedbackSchema)) body: CreateFeedbackInput,
+    @Body() body: CreateFeedbackInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.engagement.createFeedback(u.orgId, body);
@@ -70,10 +71,10 @@ export class EngagementController {
 
   @Patch("feedback/:feedbackId")
   @RequirePermission("hr:feedback:view")
-  @Validate({ params: feedbackIdParams })
+  @Validate({ params: feedbackIdParams, body: submitFeedbackSchema })
   submitFeedback(
     @Param("feedbackId", ParseIntPipe) feedbackId: number,
-    @Body(new ZodValidationPipe(submitFeedbackSchema)) body: SubmitFeedbackInput,
+    @Body() body: SubmitFeedbackInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.engagement.submitFeedback(u.orgId, u.userId, feedbackId, body);
@@ -112,8 +113,9 @@ export class EngagementController {
   @Post("recognition")
   @HttpCode(201)
   @RequirePermission("hr:engagement:view")
+  @Validate({ body: createRecognitionSchema })
   createRecognition(
-    @Body(new ZodValidationPipe(createRecognitionSchema)) body: CreateRecognitionInput,
+    @Body() body: CreateRecognitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.engagement.createRecognition(u.orgId, u.userId, body);
@@ -128,8 +130,9 @@ export class EngagementController {
   @Post("enps")
   @HttpCode(201)
   @RequirePermission("hr:engagement:view")
+  @Validate({ body: createEnpsSchema })
   createEnps(
-    @Body(new ZodValidationPipe(createEnpsSchema)) body: CreateEnpsInput,
+    @Body() body: CreateEnpsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.engagement.createEnps(u.orgId, u.userId, body);
@@ -161,10 +164,10 @@ export class EngagementController {
 
   @Patch("surveys/:surveyId")
   @RequirePermission("hr:engagement:manage")
-  @Validate({ params: surveyIdParams })
+  @Validate({ params: surveyIdParams, body: updateSurveySchema })
   updateSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Body(new ZodValidationPipe(updateSurveySchema)) body: UpdateSurveyInput,
+    @Body() body: UpdateSurveyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.engagement.updateSurvey(u.orgId, surveyId, body);

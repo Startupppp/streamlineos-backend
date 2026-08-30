@@ -7,7 +7,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { TimesheetsAiService } from "./timesheets-ai.service";
 import {
@@ -46,10 +45,10 @@ export class TimesheetsAiController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @UseRateLimit("ai:invoke")
-  @Validate({ params: periodIdParams })
+  @Validate({ params: periodIdParams, body: rejectionDraftSchema })
   draftRejectionReason(
     @Param("periodId", ParseIntPipe) periodId: number,
-    @Body(new ZodValidationPipe(rejectionDraftSchema)) body: RejectionDraftInput,
+    @Body() body: RejectionDraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ai.draftRejectionReason(u, periodId, body);
@@ -59,8 +58,9 @@ export class TimesheetsAiController {
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @UseRateLimit("ai:invoke")
+  @Validate({ body: describeEntrySchema })
   describeEntry(
-    @Body(new ZodValidationPipe(describeEntrySchema)) body: DescribeEntryInput,
+    @Body() body: DescribeEntryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ai.describeEntry(u, body);
@@ -70,8 +70,9 @@ export class TimesheetsAiController {
   @HttpCode(200)
   @RequirePermission("timesheets:billing:view")
   @UseRateLimit("ai:invoke")
+  @Validate({ body: billingNarrativeSchema })
   billingNarrative(
-    @Body(new ZodValidationPipe(billingNarrativeSchema)) body: BillingNarrativeInput,
+    @Body() body: BillingNarrativeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ai.billingNarrative(u, body);
@@ -81,8 +82,9 @@ export class TimesheetsAiController {
   @HttpCode(200)
   @RequirePermission("timesheets:reports:view")
   @UseRateLimit("ai:invoke")
+  @Validate({ body: overviewQuerySchema })
   reportsNarrative(
-    @Body(new ZodValidationPipe(overviewQuerySchema)) body: OverviewQuery,
+    @Body() body: OverviewQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ai.reportsNarrative(u, body);

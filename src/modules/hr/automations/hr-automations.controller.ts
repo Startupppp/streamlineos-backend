@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { HrAutomationEngineService } from "./hr-automation-engine.service";
 import {
   createHrAutomationRuleSchema,
@@ -78,9 +77,10 @@ export class HrAutomationsController {
 
   @Get("runs")
   @RequirePermission("hr:automations:view")
+  @Validate({ query: listRunsSchema })
   listAllRuns(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listRunsSchema)) query: ListRunsInput,
+    @Query() query: ListRunsInput,
   ) {
     return this.engine.listRuns(u.orgId, { page: query.page, limit: query.limit });
   }
@@ -98,8 +98,9 @@ export class HrAutomationsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:automations:manage")
+  @Validate({ body: createHrAutomationRuleSchema })
   create(
-    @Body(new ZodValidationPipe(createHrAutomationRuleSchema)) body: CreateHrAutomationRuleInput,
+    @Body() body: CreateHrAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.engine.createRule(u.orgId, u.userId, body);
@@ -107,10 +108,10 @@ export class HrAutomationsController {
 
   @Patch(":ruleId")
   @RequirePermission("hr:automations:manage")
-  @Validate({ params: ruleIdParams })
+  @Validate({ params: ruleIdParams, body: updateHrAutomationRuleSchema })
   update(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Body(new ZodValidationPipe(updateHrAutomationRuleSchema)) body: UpdateHrAutomationRuleInput,
+    @Body() body: UpdateHrAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.engine.updateRule(u.orgId, ruleId, body);
@@ -142,10 +143,10 @@ export class HrAutomationsController {
   @Post(":ruleId/test")
   @HttpCode(200)
   @RequirePermission("hr:automations:manage")
-  @Validate({ params: ruleIdParams })
+  @Validate({ params: ruleIdParams, body: testHrAutomationSchema })
   test(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Body(new ZodValidationPipe(testHrAutomationSchema)) body: TestHrAutomationInput,
+    @Body() body: TestHrAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.engine.testRule(u.orgId, ruleId, body.payload);
@@ -153,11 +154,11 @@ export class HrAutomationsController {
 
   @Get(":ruleId/runs")
   @RequirePermission("hr:automations:view")
-  @Validate({ params: ruleIdParams })
+  @Validate({ params: ruleIdParams, query: listRunsSchema })
   listRuns(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listRunsSchema)) query: ListRunsInput,
+    @Query() query: ListRunsInput,
   ) {
     return this.engine.listRuns(u.orgId, { ruleId, page: query.page, limit: query.limit });
   }

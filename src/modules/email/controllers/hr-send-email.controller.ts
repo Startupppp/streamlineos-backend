@@ -14,7 +14,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { candidates, emailTemplates } from "../../../db/schema";
@@ -52,8 +52,9 @@ export class HrSendEmailController {
   @Post()
   @HttpCode(200)
   @RequirePermission("hr:communications:send")
+  @Validate({ body: sendEmailSchema })
   async send(
-    @Body(new ZodValidationPipe(sendEmailSchema)) body: SendEmailInput,
+    @Body() body: SendEmailInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (this.emailProvider.getEmailProvider() === "none")

@@ -1,7 +1,6 @@
 import { Controller, Get, Inject, NotFoundException, Param, Query } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import { Public } from "../../common/auth/public.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { kbArticleAttachments, kbArticles } from "../../db/schema";
@@ -28,10 +27,10 @@ export class StorageKbController {
   ) {}
 
   @Get(":slug/attachments")
-  @Validate({ params: slugParams })
+  @Validate({ params: slugParams, query: kbAttachmentsQuerySchema })
   async listAttachments(
     @Param("slug") slug: string,
-    @Query(new ZodValidationPipe(kbAttachmentsQuerySchema)) query: KbAttachmentsQueryInput,
+    @Query() query: KbAttachmentsQueryInput,
   ): Promise<AttachmentResponse[]> {
     const { org, page, limit } = query;
     const offset = (page - 1) * limit;

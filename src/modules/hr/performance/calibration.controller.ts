@@ -35,11 +35,11 @@ export class CalibrationController {
   @Post("cycles/:cycleId/entries")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
-  @Validate({ params: cycleIdParams })
+  @Validate({ params: cycleIdParams, body: upsertCalibrationEntrySchema })
   upsertEntry(
     @CurrentUser() user: CurrentUserContext,
     @Param("cycleId", ParseIntPipe) cycleId: number,
-    @Body(new ZodValidationPipe(upsertCalibrationEntrySchema)) body: UpsertCalibrationEntryInput,
+    @Body() body: UpsertCalibrationEntryInput,
   ) {
     return this.calibrationService.upsertEntry(
       user.orgId,

@@ -20,7 +20,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { QuotesService, isSendNotDraft } from "./quotes.service";
 import {
@@ -51,8 +50,9 @@ export class QuotesController {
 
   @Get()
   @RequirePermission("crm:quotes:read")
+  @Validate({ query: listSchema })
   list(
-    @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
+    @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.quotes.list(u.orgId, filters);
@@ -62,8 +62,9 @@ export class QuotesController {
   @HttpCode(201)
   @RequirePermission("crm:quotes:create")
   @Idempotent("crm.quote.create")
+  @Validate({ body: createSchema })
   create(
-    @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
+    @Body() body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.quotes.create(u.orgId, u.userId, body);
@@ -71,8 +72,9 @@ export class QuotesController {
 
   @Get("export")
   @RequirePermission("crm:quotes:read")
+  @Validate({ query: exportSchema })
   async exportCsv(
-    @Query(new ZodValidationPipe(exportSchema)) query: ExportInput,
+    @Query() query: ExportInput,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
@@ -99,10 +101,10 @@ export class QuotesController {
 
   @Patch(":quoteId")
   @RequirePermission("crm:quotes:update")
-  @Validate({ params: quoteIdParams })
+  @Validate({ params: quoteIdParams, body: updateSchema })
   async update(
     @Param("quoteId", ParseIntPipe) quoteId: number,
-    @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
+    @Body() body: UpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.quotes.update(u.orgId, u.userId, quoteId, body);
@@ -150,10 +152,10 @@ export class QuotesController {
   @Post(":quoteId/reject")
   @Idempotent("quotes.quote.reject")
   @RequirePermission("crm:quotes:approve")
-  @Validate({ params: quoteIdParams })
+  @Validate({ params: quoteIdParams, body: approveRejectSchema })
   async reject(
     @Param("quoteId", ParseIntPipe) quoteId: number,
-    @Body(new ZodValidationPipe(approveRejectSchema)) body: ApproveRejectInput,
+    @Body() body: ApproveRejectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.quotes.reject(u.orgId, u.userId, quoteId, body.reason);
@@ -172,10 +174,10 @@ export class QuotesController {
 
   @Post(":quoteId/mark-signed")
   @RequirePermission("crm:quotes:update")
-  @Validate({ params: quoteIdParams })
+  @Validate({ params: quoteIdParams, body: markSignedSchema })
   async markSigned(
     @Param("quoteId", ParseIntPipe) quoteId: number,
-    @Body(new ZodValidationPipe(markSignedSchema)) body: MarkSignedInput,
+    @Body() body: MarkSignedInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.quotes.markSigned(u.orgId, u.userId, quoteId, body.documentRef);

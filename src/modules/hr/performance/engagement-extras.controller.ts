@@ -68,8 +68,9 @@ export class EngagementExtrasController {
   @Post("mood")
   @RequirePermission("hr:engagement:view")
   @HttpCode(200)
+  @Validate({ body: moodCheckinSchema })
   moodCheckin(
-    @Body(new ZodValidationPipe(moodCheckinSchema)) body: MoodCheckinInput,
+    @Body() body: MoodCheckinInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.moodCheckin(u.orgId, u.userId, body);
@@ -96,8 +97,9 @@ export class EngagementExtrasController {
   @Post("badges")
   @RequirePermission("hr:engagement:manage")
   @HttpCode(201)
+  @Validate({ body: createBadgeSchema })
   createBadge(
-    @Body(new ZodValidationPipe(createBadgeSchema)) body: CreateBadgeInput,
+    @Body() body: CreateBadgeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createBadge(u.orgId, body);
@@ -117,10 +119,10 @@ export class EngagementExtrasController {
   @Post("badges/:badgeId/award")
   @RequirePermission("hr:engagement:manage")
   @HttpCode(201)
-  @Validate({ params: badgeIdParams })
+  @Validate({ params: badgeIdParams, body: awardBadgeSchema })
   awardBadge(
     @Param("badgeId", ParseIntPipe) badgeId: number,
-    @Body(new ZodValidationPipe(awardBadgeSchema)) body: AwardBadgeInput,
+    @Body() body: AwardBadgeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.awardBadge(u.orgId, u.userId, badgeId, body);
@@ -157,8 +159,9 @@ export class EngagementExtrasController {
   @Post("polls")
   @RequirePermission("hr:engagement:manage")
   @HttpCode(201)
+  @Validate({ body: createPollSchema })
   createPoll(
-    @Body(new ZodValidationPipe(createPollSchema)) body: CreatePollInput,
+    @Body() body: CreatePollInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createPoll(u.orgId, u.userId, body);
@@ -166,10 +169,10 @@ export class EngagementExtrasController {
 
   @Patch("polls/:pollId")
   @RequirePermission("hr:engagement:manage")
-  @Validate({ params: pollIdParams })
+  @Validate({ params: pollIdParams, body: updatePollSchema })
   updatePoll(
     @Param("pollId", ParseIntPipe) pollId: number,
-    @Body(new ZodValidationPipe(updatePollSchema)) body: UpdatePollInput,
+    @Body() body: UpdatePollInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updatePoll(u.orgId, pollId, body);
@@ -178,10 +181,10 @@ export class EngagementExtrasController {
   @Post("polls/:pollId/vote")
   @RequirePermission("hr:engagement:view")
   @HttpCode(200)
-  @Validate({ params: pollIdParams })
+  @Validate({ params: pollIdParams, body: votePollSchema })
   votePoll(
     @Param("pollId", ParseIntPipe) pollId: number,
-    @Body(new ZodValidationPipe(votePollSchema)) body: VotePollInput,
+    @Body() body: VotePollInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.votePoll(u.orgId, u.userId, pollId, body);
@@ -199,9 +202,10 @@ export class EngagementExtrasController {
 
   @Get("communities")
   @RequirePermission("hr:engagement:view")
+  @Validate({ query: communityListSchema })
   listCommunities(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(communityListSchema)) query: CommunityListInput,
+    @Query() query: CommunityListInput,
   ) {
     return this.svc.listCommunities(u.orgId, query);
   }
@@ -209,8 +213,9 @@ export class EngagementExtrasController {
   @Post("communities")
   @RequirePermission("hr:engagement:view")
   @HttpCode(201)
+  @Validate({ body: createCommunitySchema })
   createCommunity(
-    @Body(new ZodValidationPipe(createCommunitySchema)) body: CreateCommunityInput,
+    @Body() body: CreateCommunityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createCommunity(u.orgId, u.userId, body);
@@ -257,8 +262,9 @@ export class EngagementExtrasController {
   @Post("campaigns")
   @RequirePermission("hr:engagement:manage")
   @HttpCode(201)
+  @Validate({ body: createCampaignSchema })
   createCampaign(
-    @Body(new ZodValidationPipe(createCampaignSchema)) body: CreateCampaignInput,
+    @Body() body: CreateCampaignInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createCampaign(u.orgId, u.userId, body);
@@ -266,10 +272,10 @@ export class EngagementExtrasController {
 
   @Patch("campaigns/:campaignId")
   @RequirePermission("hr:engagement:manage")
-  @Validate({ params: campaignIdParams })
+  @Validate({ params: campaignIdParams, body: updateCampaignSchema })
   updateCampaign(
     @Param("campaignId", ParseIntPipe) campaignId: number,
-    @Body(new ZodValidationPipe(updateCampaignSchema)) body: UpdateCampaignInput,
+    @Body() body: UpdateCampaignInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateCampaign(u.orgId, campaignId, body);

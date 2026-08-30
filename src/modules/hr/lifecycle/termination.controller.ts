@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TerminationService } from "./termination.service";
 import {
   terminationCreateSchema,
@@ -40,8 +39,9 @@ export class TerminationController {
 
   @Get()
   @RequirePermission("hr:exit:manage")
+  @Validate({ query: listTerminationsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listTerminationsQuerySchema)) query: ListTerminationsQueryInput,
+    @Query() query: ListTerminationsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.termination.list(u.orgId, query);
@@ -50,8 +50,9 @@ export class TerminationController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:exit:manage")
+  @Validate({ body: terminationCreateSchema })
   create(
-    @Body(new ZodValidationPipe(terminationCreateSchema)) body: TerminationCreateInput,
+    @Body() body: TerminationCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.termination.create(
@@ -106,10 +107,10 @@ export class TerminationController {
 
   @Patch(":terminationId/final-review")
   @RequirePermission("hr:exit:approve")
-  @Validate({ params: terminationIdParams })
+  @Validate({ params: terminationIdParams, body: terminationReviewSchema })
   finalReview(
     @Param("terminationId", ParseIntPipe) terminationId: number,
-    @Body(new ZodValidationPipe(terminationReviewSchema)) body: TerminationReviewInput,
+    @Body() body: TerminationReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.termination.finalReview(u.orgId, u.userId, terminationId, body);

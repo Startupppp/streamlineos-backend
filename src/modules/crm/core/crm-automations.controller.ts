@@ -18,7 +18,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CrmAutomationsService } from "./crm-automations.service";
 import {
   createAutomationRuleSchema,
@@ -50,8 +49,9 @@ export class CrmAutomationsController {
   @Post("automations")
   @RequirePermission("crm:automations:manage")
   @HttpCode(201)
+  @Validate({ body: createAutomationRuleSchema })
   create(
-    @Body(new ZodValidationPipe(createAutomationRuleSchema)) body: CreateAutomationRuleInput,
+    @Body() body: CreateAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.create(u.orgId, body);
@@ -59,10 +59,10 @@ export class CrmAutomationsController {
 
   @Patch("automations/:ruleId")
   @RequirePermission("crm:automations:manage")
-  @Validate({ params: ruleIdParams })
+  @Validate({ params: ruleIdParams, body: updateAutomationRuleSchema })
   async update(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Body(new ZodValidationPipe(updateAutomationRuleSchema)) body: UpdateAutomationRuleInput,
+    @Body() body: UpdateAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.automations.update(u.orgId, ruleId, body);
@@ -116,10 +116,10 @@ export class CrmAutomationsController {
   @Post("automations/:ruleId/test")
   @RequirePermission("crm:automations:manage")
   @HttpCode(200)
-  @Validate({ params: ruleIdParams })
+  @Validate({ params: ruleIdParams, body: testAutomationRuleSchema })
   testRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Body(new ZodValidationPipe(testAutomationRuleSchema)) body: TestAutomationRuleInput,
+    @Body() body: TestAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.testRule(u.orgId, ruleId, body);

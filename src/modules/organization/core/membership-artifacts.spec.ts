@@ -59,6 +59,7 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "outbox_events.actor_membership_id",
   "ownership_transfers.initiated_by_membership_id",
   "payroll_approvals.acted_by_membership_id",
+  "payroll_run_export_jobs.requested_by_membership_id",
   "payroll_runs.approved_by_membership_id",
   "portal_invitations.accepted_portal_membership_id",
   "portal_invitations.inviter_membership_id",
@@ -66,8 +67,16 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "project_client_grants.portal_membership_id",
   "reimbursements.approved_by_membership_id",
   "role_assignments.assigned_by_membership_id",
+  "sprint_scope_events.actor_membership_id",
+  "ticket_related_links.created_by_membership_id",
+  "timesheet_audit_events.actor_membership_id",
+  "timesheet_exceptions.resolved_by_membership_id",
+  "timesheet_exports.ack_by_membership_id",
+  "timesheet_exports.created_by_membership_id",
   "timesheet_periods.approved_by_membership_id",
+  "timesheet_settings_history.changed_by_membership_id",
   "timesheets.approved_by_membership_id",
+  "timesheets.locked_by_membership_id",
   "user_permission_grants.granted_by_membership_id",
   "worker_engagements.archived_by_membership_id",
   "worker_engagements.created_by_membership_id",
@@ -75,6 +84,7 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "workers.archived_by_membership_id",
   "workers.created_by_membership_id",
   "workers.updated_by_membership_id",
+  "workflow_transitions.created_by_membership_id",
 ];
 
 interface DiscoveredTable {

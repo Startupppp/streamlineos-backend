@@ -6,7 +6,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { JournalApprovalsService } from "./journal-approvals.service";
 import { approvalDecisionSchema, type ApprovalDecisionInput } from "./dto/journal-approvals.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -38,10 +37,10 @@ export class JournalApprovalsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:approve")
   @HttpCode(200)
-  @Validate({ params: entryIdParams })
+  @Validate({ params: entryIdParams, body: approvalDecisionSchema })
   approveJournal(
     @Param("entryId", ParseIntPipe) entryId: number,
-    @Body(new ZodValidationPipe(approvalDecisionSchema)) body: ApprovalDecisionInput,
+    @Body() body: ApprovalDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.approvals.approveJournal(u.orgId, u.userId, entryId, body);
@@ -52,10 +51,10 @@ export class JournalApprovalsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:approve")
   @HttpCode(200)
-  @Validate({ params: entryIdParams })
+  @Validate({ params: entryIdParams, body: approvalDecisionSchema })
   rejectJournal(
     @Param("entryId", ParseIntPipe) entryId: number,
-    @Body(new ZodValidationPipe(approvalDecisionSchema)) body: ApprovalDecisionInput,
+    @Body() body: ApprovalDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.approvals.rejectJournal(u.orgId, u.userId, entryId, body);

@@ -20,7 +20,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { subMonths } from "../../common/date";
 import { AccessService } from "../access/access.service";
 import { SalesService, isForbidden, isNotFound, isConflict } from "./sales.service";
@@ -101,8 +100,9 @@ export class SalesController {
   @Post("commission-rules")
   @HttpCode(201)
   @RequirePermission("settings:manage")
+  @Validate({ body: commissionRuleCreateSchema })
   createCommissionRule(
-    @Body(new ZodValidationPipe(commissionRuleCreateSchema)) body: CommissionRuleCreateInput,
+    @Body() body: CommissionRuleCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.sales.createCommissionRule(u.orgId, body);
@@ -110,8 +110,9 @@ export class SalesController {
 
   @Get("commissions")
   @RequirePermission("crm:incentives:read")
+  @Validate({ query: commissionListSchema })
   async listCommissions(
-    @Query(new ZodValidationPipe(commissionListSchema)) query: CommissionListInput,
+    @Query() query: CommissionListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const userId = await this.scopeToSelfUnlessManager(u, query.userId);
@@ -121,10 +122,10 @@ export class SalesController {
   @Patch("commissions/:commissionId")
   @UseGuards(PermissionGuard)
   @RequirePermission("sales:manage")
-  @Validate({ params: commissionIdParams })
+  @Validate({ params: commissionIdParams, body: commissionUpdateSchema })
   async updateCommission(
     @Param("commissionId", ParseIntPipe) commissionId: number,
-    @Body(new ZodValidationPipe(commissionUpdateSchema)) body: CommissionUpdateInput,
+    @Body() body: CommissionUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.sales.updateCommission(u.orgId, commissionId, body.status);
@@ -135,8 +136,9 @@ export class SalesController {
 
   @Get("quotas")
   @RequirePermission("crm:targets:view")
+  @Validate({ query: quotaListSchema })
   async listQuotas(
-    @Query(new ZodValidationPipe(quotaListSchema)) query: QuotaListInput,
+    @Query() query: QuotaListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const userId = await this.scopeToSelfUnlessManager(u, query.userId);
@@ -146,8 +148,9 @@ export class SalesController {
   @Post("quotas")
   @HttpCode(201)
   @RequirePermission("crm:targets:manage")
+  @Validate({ body: quotaCreateSchema })
   async createQuota(
-    @Body(new ZodValidationPipe(quotaCreateSchema)) body: QuotaCreateInput,
+    @Body() body: QuotaCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.sales.createQuota(u.orgId, u, u.userId, body);
@@ -166,8 +169,9 @@ export class SalesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("sales:manage")
   @HttpCode(201)
+  @Validate({ body: playbookCreateSchema })
   createPlaybookEntry(
-    @Body(new ZodValidationPipe(playbookCreateSchema)) body: PlaybookCreateInput,
+    @Body() body: PlaybookCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.sales.createPlaybookEntry(u.orgId, u.userId, body);
@@ -176,10 +180,10 @@ export class SalesController {
   @Patch("playbook/:entryId")
   @UseGuards(PermissionGuard)
   @RequirePermission("sales:manage")
-  @Validate({ params: entryIdParams })
+  @Validate({ params: entryIdParams, body: playbookUpdateSchema })
   async updatePlaybookEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
-    @Body(new ZodValidationPipe(playbookUpdateSchema)) body: PlaybookUpdateInput,
+    @Body() body: PlaybookUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.sales.updatePlaybookEntry(u.orgId, entryId, body);
@@ -202,8 +206,9 @@ export class SalesController {
 
   @Get("dashboard/kpis")
   @RequirePermission("sales:view")
+  @Validate({ query: dashboardRangeSchema })
   dashboardKpis(
-    @Query(new ZodValidationPipe(dashboardRangeSchema)) query: DashboardRangeInput,
+    @Query() query: DashboardRangeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const repId = query.repId ? Number(query.repId) : undefined;
@@ -212,8 +217,9 @@ export class SalesController {
 
   @Get("dashboard/funnel")
   @RequirePermission("sales:view")
+  @Validate({ query: dashboardRangeSchema })
   dashboardFunnel(
-    @Query(new ZodValidationPipe(dashboardRangeSchema)) query: DashboardRangeInput,
+    @Query() query: DashboardRangeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const repId = query.repId ? Number(query.repId) : undefined;
@@ -222,8 +228,9 @@ export class SalesController {
 
   @Get("dashboard/leaderboard")
   @RequirePermission("sales:view")
+  @Validate({ query: leaderboardSchema })
   dashboardLeaderboard(
-    @Query(new ZodValidationPipe(leaderboardSchema)) query: LeaderboardInput,
+    @Query() query: LeaderboardInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.dashboard.getLeaderboard(u.orgId, toRange(query));
@@ -231,8 +238,9 @@ export class SalesController {
 
   @Get("dashboard/revenue-vs-goal")
   @RequirePermission("sales:view")
+  @Validate({ query: revenueVsGoalSchema })
   dashboardRevenueVsGoal(
-    @Query(new ZodValidationPipe(revenueVsGoalSchema)) query: RevenueVsGoalInput,
+    @Query() query: RevenueVsGoalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const yearNum = query.year ?? new Date().getFullYear();
@@ -241,8 +249,9 @@ export class SalesController {
 
   @Get("dashboard/velocity")
   @RequirePermission("sales:view")
+  @Validate({ query: leaderboardSchema })
   dashboardVelocity(
-    @Query(new ZodValidationPipe(leaderboardSchema)) query: LeaderboardInput,
+    @Query() query: LeaderboardInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.dashboard.getVelocity(u.orgId, toRange(query));
@@ -250,8 +259,9 @@ export class SalesController {
 
   @Get("dashboard/aging")
   @RequirePermission("sales:view")
+  @Validate({ query: agingSchema })
   dashboardAging(
-    @Query(new ZodValidationPipe(agingSchema)) query: AgingInput,
+    @Query() query: AgingInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.dashboard.getAging(u.orgId, query.threshold ?? 14);
@@ -259,8 +269,9 @@ export class SalesController {
 
   @Get("dashboard/cohort")
   @RequirePermission("sales:view")
+  @Validate({ query: cohortSchema })
   dashboardCohort(
-    @Query(new ZodValidationPipe(cohortSchema)) query: CohortInput,
+    @Query() query: CohortInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.getCohort(u.orgId, query.months);
@@ -269,8 +280,9 @@ export class SalesController {
   @Get("dashboard/cycle-length")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @Validate({ query: repFilterSchema })
   dashboardCycleLength(
-    @Query(new ZodValidationPipe(repFilterSchema)) query: RepFilterInput,
+    @Query() query: RepFilterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.getCycleLength(u.orgId, query.repId);
@@ -279,8 +291,9 @@ export class SalesController {
   @Get("dashboard/lost-analysis")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @Validate({ query: repFilterSchema })
   dashboardLostAnalysis(
-    @Query(new ZodValidationPipe(repFilterSchema)) query: RepFilterInput,
+    @Query() query: RepFilterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.getLostAnalysis(u.orgId, query.repId);
@@ -288,8 +301,9 @@ export class SalesController {
 
   @Get("dashboard/rep-comparison")
   @RequirePermission("sales:view")
+  @Validate({ query: repComparisonSchema })
   async dashboardRepComparison(
-    @Query(new ZodValidationPipe(repComparisonSchema)) query: RepComparisonInput,
+    @Query() query: RepComparisonInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const rep1Id = Number(query.rep1);

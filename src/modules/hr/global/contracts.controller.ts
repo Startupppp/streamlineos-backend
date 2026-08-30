@@ -18,7 +18,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ContractsService } from "./contracts.service";
 import {
   createContractSchema,
@@ -47,8 +46,9 @@ export class ContractsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:view")
+  @Validate({ query: listContractsSchema })
   list(
-    @Query(new ZodValidationPipe(listContractsSchema)) query: ListContractsInput,
+    @Query() query: ListContractsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.list(u.orgId, query);
@@ -57,8 +57,9 @@ export class ContractsController {
   @Get("renewal-due")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
+  @Validate({ query: daysQuerySchema })
   renewalDue(
-    @Query(new ZodValidationPipe(daysQuerySchema)) { days }: z.infer<typeof daysQuerySchema>,
+    @Query() { days }: z.infer<typeof daysQuerySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.list(u.orgId, { page: 1, limit: 100, days, status: "active" });
@@ -79,8 +80,9 @@ export class ContractsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
   @HttpCode(201)
+  @Validate({ body: createContractSchema })
   create(
-    @Body(new ZodValidationPipe(createContractSchema)) body: CreateContractInput,
+    @Body() body: CreateContractInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.create(u.orgId, u.userId, body);
@@ -89,10 +91,10 @@ export class ContractsController {
   @Patch(":contractId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
-  @Validate({ params: contractIdParams })
+  @Validate({ params: contractIdParams, body: updateContractSchema })
   update(
     @Param("contractId", ParseIntPipe) contractId: number,
-    @Body(new ZodValidationPipe(updateContractSchema)) body: UpdateContractInput,
+    @Body() body: UpdateContractInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.update(u.orgId, contractId, u.userId, body);
@@ -102,10 +104,10 @@ export class ContractsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
   @HttpCode(200)
-  @Validate({ params: contractIdParams })
+  @Validate({ params: contractIdParams, body: endContractSchema })
   endContract(
     @Param("contractId", ParseIntPipe) contractId: number,
-    @Body(new ZodValidationPipe(endContractSchema)) body: EndContractInput,
+    @Body() body: EndContractInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.endContract(u.orgId, contractId, u.userId, body);
@@ -115,10 +117,10 @@ export class ContractsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
   @HttpCode(200)
-  @Validate({ params: contractIdParams })
+  @Validate({ params: contractIdParams, body: convertToEmployeeSchema })
   convertToEmployee(
     @Param("contractId", ParseIntPipe) contractId: number,
-    @Body(new ZodValidationPipe(convertToEmployeeSchema)) body: ConvertToEmployeeInput,
+    @Body() body: ConvertToEmployeeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.convertToEmployee(u.orgId, contractId, u.userId, body);

@@ -12,7 +12,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvoicesService } from "./invoices.service";
 import { listInvoicesSchema, type ListInvoicesInput } from "./dto/invoice.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -34,8 +33,9 @@ export class InvoicesController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
+  @Validate({ query: listInvoicesSchema })
   list(
-    @Query(new ZodValidationPipe(listInvoicesSchema)) filters: ListInvoicesInput,
+    @Query() filters: ListInvoicesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.invoices.list(u.orgId, filters);

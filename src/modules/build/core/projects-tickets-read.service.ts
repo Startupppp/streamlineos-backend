@@ -435,4 +435,23 @@ export class ProjectsTicketsReadService {
     return { ids: [], total: Number(countResult[0]?.total ?? 0) };
   }
 
+  async getColumnCounts(orgId: string, projectId: number): Promise<Record<string, number>> {
+    const rows = await this.db
+      .select({ status: tickets.status, cnt: sql<string>`count(*)` })
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          eq(tickets.projectId, projectId),
+          isNull(tickets.deletedAt),
+        ),
+      )
+      .groupBy(tickets.status);
+    const result: Record<string, number> = {};
+    for (const row of rows) {
+      if (row.status) result[row.status] = Number(row.cnt);
+    }
+    return result;
+  }
+
 }

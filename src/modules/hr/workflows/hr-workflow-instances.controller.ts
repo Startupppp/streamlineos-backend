@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { z } from "zod";
 import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 import {
@@ -40,9 +39,10 @@ export class HrWorkflowInstancesController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
+  @Validate({ query: WorkflowInstanceQuerySchema })
   listAll(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(WorkflowInstanceQuerySchema)) query: WorkflowInstanceQueryDto,
+    @Query() query: WorkflowInstanceQueryDto,
   ) {
     return this.instancesService.listAll(u.orgId, query);
   }
@@ -50,9 +50,10 @@ export class HrWorkflowInstancesController {
   @Get("inbox")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
+  @Validate({ query: PaginationSchema })
   inbox(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(PaginationSchema)) query: { page: number; limit: number },
+    @Query() query: { page: number; limit: number },
   ) {
     return this.instancesService.getInbox(u.orgId, u.userId, query.page, query.limit);
   }
@@ -60,9 +61,10 @@ export class HrWorkflowInstancesController {
   @Get("acted")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
+  @Validate({ query: PaginationSchema })
   acted(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(PaginationSchema)) query: { page: number; limit: number },
+    @Query() query: { page: number; limit: number },
   ) {
     return this.instancesService.getMyActed(u.orgId, u.userId, query.page, query.limit);
   }
@@ -83,11 +85,11 @@ export class HrWorkflowInstancesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @HttpCode(200)
-  @Validate({ params: instanceIdParams })
+  @Validate({ params: instanceIdParams, body: ActOnInstanceSchema })
   approve(
     @CurrentUser() u: CurrentUserContext,
     @Param("instanceId", ParseIntPipe) instanceId: number,
-    @Body(new ZodValidationPipe(ActOnInstanceSchema)) body: ActOnInstanceDto,
+    @Body() body: ActOnInstanceDto,
   ) {
     return this.engine.act({
       orgId: u.orgId,
@@ -104,11 +106,11 @@ export class HrWorkflowInstancesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @HttpCode(200)
-  @Validate({ params: instanceIdParams })
+  @Validate({ params: instanceIdParams, body: RejectInstanceSchema })
   reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("instanceId", ParseIntPipe) instanceId: number,
-    @Body(new ZodValidationPipe(RejectInstanceSchema)) body: RejectInstanceDto,
+    @Body() body: RejectInstanceDto,
   ) {
     return this.engine.act({
       orgId: u.orgId,
@@ -124,11 +126,11 @@ export class HrWorkflowInstancesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(200)
-  @Validate({ params: instanceIdParams })
+  @Validate({ params: instanceIdParams, body: ActOnInstanceSchema })
   cancel(
     @CurrentUser() u: CurrentUserContext,
     @Param("instanceId", ParseIntPipe) instanceId: number,
-    @Body(new ZodValidationPipe(ActOnInstanceSchema)) body: ActOnInstanceDto,
+    @Body() body: ActOnInstanceDto,
   ) {
     return this.engine.act({
       orgId: u.orgId,
@@ -143,11 +145,11 @@ export class HrWorkflowInstancesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(200)
-  @Validate({ params: instanceIdParams })
+  @Validate({ params: instanceIdParams, body: ActOnInstanceSchema })
   reopen(
     @CurrentUser() u: CurrentUserContext,
     @Param("instanceId", ParseIntPipe) instanceId: number,
-    @Body(new ZodValidationPipe(ActOnInstanceSchema)) body: ActOnInstanceDto,
+    @Body() body: ActOnInstanceDto,
   ) {
     return this.engine.act({
       orgId: u.orgId,
@@ -162,11 +164,11 @@ export class HrWorkflowInstancesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @HttpCode(200)
-  @Validate({ params: instanceIdParams })
+  @Validate({ params: instanceIdParams, body: ActOnInstanceSchema })
   comment(
     @CurrentUser() u: CurrentUserContext,
     @Param("instanceId", ParseIntPipe) instanceId: number,
-    @Body(new ZodValidationPipe(ActOnInstanceSchema)) body: ActOnInstanceDto,
+    @Body() body: ActOnInstanceDto,
   ) {
     return this.engine.act({
       orgId: u.orgId,

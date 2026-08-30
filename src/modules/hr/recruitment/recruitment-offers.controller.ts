@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RecruitmentOffersService } from "./recruitment-offers.service";
 import {
   approvalRemarksSchema,
@@ -51,10 +50,10 @@ export class RecruitmentOffersController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:offers:manage")
-  @Validate({ params: candidateIdParams })
+  @Validate({ params: candidateIdParams, body: createOfferSchema })
   create(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(createOfferSchema)) body: CreateOfferInput,
+    @Body() body: CreateOfferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.offers.createOffer(u.orgId, u.userId, candidateId, body);
@@ -71,10 +70,10 @@ export class RecruitmentOffersController {
   @Post(":offerId/approve")
   @Idempotent("hr.offer.approve")
   @RequirePermission("hr:offers:approve")
-  @Validate({ params: candidateAndOfferIdParams })
+  @Validate({ params: candidateAndOfferIdParams, body: approvalRemarksSchema })
   approve(
     @Param("offerId", ParseIntPipe) offerId: number,
-    @Body(new ZodValidationPipe(approvalRemarksSchema)) body: ApprovalRemarksInput,
+    @Body() body: ApprovalRemarksInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.offers.approveOffer(u.orgId, u.userId, offerId, body.remarks);
@@ -82,10 +81,10 @@ export class RecruitmentOffersController {
 
   @Post(":offerId/reject-approval")
   @RequirePermission("hr:offers:approve")
-  @Validate({ params: candidateAndOfferIdParams })
+  @Validate({ params: candidateAndOfferIdParams, body: approvalRemarksSchema })
   rejectApproval(
     @Param("offerId", ParseIntPipe) offerId: number,
-    @Body(new ZodValidationPipe(approvalRemarksSchema)) body: ApprovalRemarksInput,
+    @Body() body: ApprovalRemarksInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.offers.rejectApproval(u.orgId, offerId, body.remarks, u.userId);
@@ -108,10 +107,10 @@ export class RecruitmentOffersController {
   @Post(":offerId/negotiations")
   @HttpCode(201)
   @RequirePermission("hr:offers:manage")
-  @Validate({ params: candidateAndOfferIdParams })
+  @Validate({ params: candidateAndOfferIdParams, body: createOfferNegotiationSchema })
   respondToNegotiation(
     @Param("offerId", ParseIntPipe) offerId: number,
-    @Body(new ZodValidationPipe(createOfferNegotiationSchema)) body: CreateOfferNegotiationInput,
+    @Body() body: CreateOfferNegotiationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.offers.addNegotiationEntry(u.orgId, offerId, "INTERNAL_RESPONSE", body, u.userId);
@@ -119,11 +118,11 @@ export class RecruitmentOffersController {
 
   @Patch(":offerId")
   @RequirePermission("hr:offers:manage")
-  @Validate({ params: candidateAndOfferIdParams })
+  @Validate({ params: candidateAndOfferIdParams, body: updateOfferSchema })
   update(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("offerId", ParseIntPipe) offerId: number,
-    @Body(new ZodValidationPipe(updateOfferSchema)) body: UpdateOfferInput,
+    @Body() body: UpdateOfferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.offers.updateOffer(u.orgId, u.userId, candidateId, offerId, body);

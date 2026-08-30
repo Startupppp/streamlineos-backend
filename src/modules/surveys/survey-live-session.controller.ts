@@ -6,7 +6,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SurveyLiveSessionService } from "./survey-live-session.service";
 import { SurveyLiveParticipantService } from "./survey-live-participant.service";
 import { createLiveSessionSchema, type CreateLiveSessionInput } from "./dto/survey-live-session.schemas";
@@ -25,10 +24,10 @@ export class SurveyLiveSessionController {
   @Post(":surveyId/live-sessions")
   @HttpCode(201)
   @RequirePermission("surveys:live:host")
-  @Validate({ params: surveyIdParams })
+  @Validate({ params: surveyIdParams, body: createLiveSessionSchema })
   create(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Body(new ZodValidationPipe(createLiveSessionSchema)) body: CreateLiveSessionInput,
+    @Body() body: CreateLiveSessionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.liveSessions.create(u.orgId, surveyId, u.userId, body);

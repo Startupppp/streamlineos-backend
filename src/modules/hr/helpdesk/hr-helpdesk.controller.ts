@@ -57,8 +57,9 @@ export class HrHelpdeskController {
 
   @Get()
   @RequirePermission("hr:helpdesk:view")
+  @Validate({ query: listSchema })
   async list(
-    @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
+    @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.helpdesk.list(u.orgId, u.userId, await this.resolveIsAdmin(u), filters);
@@ -66,8 +67,9 @@ export class HrHelpdeskController {
 
   @Get("suggest")
   @RequirePermission("hr:helpdesk:view")
+  @Validate({ query: suggestSchema })
   suggest(
-    @Query(new ZodValidationPipe(suggestSchema)) input: SuggestInput,
+    @Query() input: SuggestInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.helpdesk.suggest(u.orgId, input);
@@ -92,8 +94,9 @@ export class HrHelpdeskController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:helpdesk:create")
+  @Validate({ body: createSchema })
   create(
-    @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
+    @Body() body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.helpdesk.create(u.orgId, u.userId, body);
@@ -101,10 +104,10 @@ export class HrHelpdeskController {
 
   @Patch(":ticketId")
   @RequirePermission("hr:helpdesk:manage")
-  @Validate({ params: ticketIdParams })
+  @Validate({ params: ticketIdParams, body: updateTicketSchema })
   async update(
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(updateTicketSchema)) body: UpdateTicketInput,
+    @Body() body: UpdateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.helpdesk.updateTicket(u.orgId, u.userId, await this.resolveIsAdmin(u), ticketId, body);
@@ -113,10 +116,10 @@ export class HrHelpdeskController {
   @Post(":ticketId/comments")
   @HttpCode(201)
   @RequirePermission("hr:helpdesk:view")
-  @Validate({ params: ticketIdParams })
+  @Validate({ params: ticketIdParams, body: addCommentSchema })
   async addComment(
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(addCommentSchema)) body: AddCommentInput,
+    @Body() body: AddCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.helpdesk.addComment(u.orgId, u.userId, await this.resolveIsAdmin(u), ticketId, body);
@@ -125,8 +128,9 @@ export class HrHelpdeskController {
   @Post("routing")
   @HttpCode(201)
   @RequirePermission("hr:helpdesk:manage")
+  @Validate({ body: routingRuleSchema })
   upsertRouting(
-    @Body(new ZodValidationPipe(routingRuleSchema)) body: RoutingRuleInput,
+    @Body() body: RoutingRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.helpdesk.upsertRoutingRule(u.orgId, body);

@@ -80,7 +80,7 @@ export const ticketsListQuerySchema = baseListQuerySchema
   });
 
 export const allWorkQuerySchema = baseListQuerySchema
-  .omit({ cursor: true, sortDir: true })
+  .omit({ page: true, sortDir: true })
   .extend({
     search: z.string().optional(),
     status: csvToStringArray,

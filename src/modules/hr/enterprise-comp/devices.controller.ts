@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { DevicesService } from "./devices.service";
 import {
   createTimeDeviceSchema,
@@ -37,8 +36,9 @@ export class DevicesController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
+  @Validate({ query: listTimeDevicesSchema })
   list(
-    @Query(new ZodValidationPipe(listTimeDevicesSchema)) query: ListTimeDevicesInput,
+    @Query() query: ListTimeDevicesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listDevices(u.orgId, query);
@@ -48,8 +48,9 @@ export class DevicesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
   @HttpCode(201)
+  @Validate({ body: createTimeDeviceSchema })
   create(
-    @Body(new ZodValidationPipe(createTimeDeviceSchema)) body: CreateTimeDeviceInput,
+    @Body() body: CreateTimeDeviceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createDevice(u.orgId, u.userId, body);
@@ -58,10 +59,10 @@ export class DevicesController {
   @Patch(":deviceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
-  @Validate({ params: deviceIdParams })
+  @Validate({ params: deviceIdParams, body: updateTimeDeviceSchema })
   update(
     @Param("deviceId", ParseIntPipe) deviceId: number,
-    @Body(new ZodValidationPipe(updateTimeDeviceSchema)) body: UpdateTimeDeviceInput,
+    @Body() body: UpdateTimeDeviceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateDevice(u.orgId, deviceId, u.userId, body);
@@ -82,8 +83,9 @@ export class DevicesController {
   @Get("sync-logs")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
+  @Validate({ query: listSyncLogsSchema })
   listSyncLogs(
-    @Query(new ZodValidationPipe(listSyncLogsSchema)) query: ListSyncLogsInput,
+    @Query() query: ListSyncLogsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listSyncLogs(u.orgId, query);
@@ -93,8 +95,9 @@ export class DevicesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
   @HttpCode(201)
+  @Validate({ body: createSyncLogSchema })
   ingestSyncLog(
-    @Body(new ZodValidationPipe(createSyncLogSchema)) body: CreateSyncLogInput,
+    @Body() body: CreateSyncLogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.ingestSyncLog(u.orgId, body);
@@ -121,8 +124,9 @@ export class DevicesController {
   @Get("mappings")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
+  @Validate({ query: listDeviceMappingsSchema })
   listMappings(
-    @Query(new ZodValidationPipe(listDeviceMappingsSchema)) query: ListDeviceMappingsInput,
+    @Query() query: ListDeviceMappingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listMappings(u.orgId, query);
@@ -132,8 +136,9 @@ export class DevicesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
   @HttpCode(201)
+  @Validate({ body: createDeviceMappingSchema })
   createMapping(
-    @Body(new ZodValidationPipe(createDeviceMappingSchema)) body: CreateDeviceMappingInput,
+    @Body() body: CreateDeviceMappingInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createMapping(u.orgId, u.userId, body);

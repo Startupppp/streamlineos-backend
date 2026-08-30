@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { SupportWorkspaceService } from "./support-workspace.service";
 import {
   createQueueSchema,
@@ -54,8 +53,9 @@ export class SupportWorkspaceController {
   @Post("queues")
   @RequirePermission("support:queues:manage")
   @HttpCode(201)
+  @Validate({ body: createQueueSchema })
   createQueue(
-    @Body(new ZodValidationPipe(createQueueSchema)) body: CreateQueueInput,
+    @Body() body: CreateQueueInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workspace.createQueue(u.orgId, u.userId, body);
@@ -63,10 +63,10 @@ export class SupportWorkspaceController {
 
   @Patch("queues/:queueId")
   @RequirePermission("support:queues:manage")
-  @Validate({ params: queueIdParams })
+  @Validate({ params: queueIdParams, body: updateQueueSchema })
   updateQueue(
     @Param("queueId", ParseIntPipe) queueId: number,
-    @Body(new ZodValidationPipe(updateQueueSchema)) body: UpdateQueueInput,
+    @Body() body: UpdateQueueInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workspace.updateQueue(u.orgId, queueId, body);
@@ -88,8 +88,9 @@ export class SupportWorkspaceController {
   @Post("views")
   @RequirePermission("support:tickets:view")
   @HttpCode(201)
+  @Validate({ body: createSavedViewSchema })
   createSavedView(
-    @Body(new ZodValidationPipe(createSavedViewSchema)) body: CreateSavedViewInput,
+    @Body() body: CreateSavedViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workspace.createSavedView(u.orgId, u.userId, body);
@@ -97,10 +98,10 @@ export class SupportWorkspaceController {
 
   @Patch("views/:viewId")
   @RequirePermission("support:tickets:view")
-  @Validate({ params: viewIdParams })
+  @Validate({ params: viewIdParams, body: updateSavedViewSchema })
   updateSavedView(
     @Param("viewId", ParseIntPipe) viewId: number,
-    @Body(new ZodValidationPipe(updateSavedViewSchema)) body: UpdateSavedViewInput,
+    @Body() body: UpdateSavedViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workspace.updateSavedView(u.orgId, u.userId, viewId, body);
@@ -122,8 +123,9 @@ export class SupportWorkspaceController {
   @Post("tags")
   @RequirePermission("support:tags:manage")
   @HttpCode(201)
+  @Validate({ body: createTagSchema })
   createTag(
-    @Body(new ZodValidationPipe(createTagSchema)) body: CreateTagInput,
+    @Body() body: CreateTagInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workspace.createTag(u.orgId, body);

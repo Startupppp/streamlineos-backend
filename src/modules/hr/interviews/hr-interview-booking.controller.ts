@@ -15,10 +15,10 @@ export class HrInterviewBookingController {
 
   @Post(":token")
   @HttpCode(200)
-  @Validate({ params: tokenParams })
+  @Validate({ params: tokenParams, body: bookInterviewSchema })
   book(
     @Param("token") token: string,
-    @Body(new ZodValidationPipe(bookInterviewSchema)) body: BookInterviewInput,
+    @Body() body: BookInterviewInput,
   ) {
     return this.booking.book(token, body);
   }

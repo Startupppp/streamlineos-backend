@@ -6,7 +6,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { GeneralLedgerService } from "./general-ledger.service";
 import {
   glQuerySchema,
@@ -14,6 +13,7 @@ import {
   type GlQuery,
   type GlAccountsQuery,
 } from "./dto/general-ledger.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("accounting")
 @Controller("accounting/general-ledger")
@@ -24,8 +24,9 @@ export class GeneralLedgerController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:general-ledger:read")
+  @Validate({ query: glQuerySchema })
   async getGeneralLedger(
-    @Query(new ZodValidationPipe(glQuerySchema)) query: GlQuery,
+    @Query() query: GlQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -42,8 +43,9 @@ export class GeneralLedgerController {
   @Get("accounts")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:general-ledger:read")
+  @Validate({ query: glAccountsQuerySchema })
   getAccountsWithActivity(
-    @Query(new ZodValidationPipe(glAccountsQuerySchema)) query: GlAccountsQuery,
+    @Query() query: GlAccountsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.gl.getAccountsWithActivity(u.orgId, query);

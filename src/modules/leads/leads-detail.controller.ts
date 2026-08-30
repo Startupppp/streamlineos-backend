@@ -18,7 +18,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { LeadsDetailService } from "./leads-detail.service";
 import { LeadStatusService } from "./lead-status.service";
 import {
@@ -73,10 +72,10 @@ export class LeadsDetailController {
   @Post(":leadId/activities")
   @RequirePermission("crm:leads:update")
   @HttpCode(201)
-  @Validate({ params: leadIdParams })
+  @Validate({ params: leadIdParams, body: logActivitySchema })
   addActivity(
     @Param("leadId", ParseIntPipe) leadId: number,
-    @Body(new ZodValidationPipe(logActivitySchema)) body: LogActivityInput,
+    @Body() body: LogActivityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.detail.addActivity(u.orgId, u.userId, leadId, body);
@@ -107,10 +106,10 @@ export class LeadsDetailController {
 
   @Patch(":leadId/custom-data")
   @RequirePermission("crm:leads:update")
-  @Validate({ params: leadIdParams })
+  @Validate({ params: leadIdParams, body: customDataSchema })
   async updateCustomData(
     @Param("leadId", ParseIntPipe) leadId: number,
-    @Body(new ZodValidationPipe(customDataSchema)) body: CustomDataInput,
+    @Body() body: CustomDataInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.detail.updateCustomData(u.orgId, leadId, body);
@@ -120,10 +119,10 @@ export class LeadsDetailController {
 
   @Patch(":leadId/status")
   @RequirePermission("crm:leads:update")
-  @Validate({ params: leadIdParams })
+  @Validate({ params: leadIdParams, body: transitionLeadStatusSchema })
   async changeStatus(
     @Param("leadId", ParseIntPipe) leadId: number,
-    @Body(new ZodValidationPipe(transitionLeadStatusSchema)) body: TransitionLeadStatusInput,
+    @Body() body: TransitionLeadStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.status.changeStatus(u.orgId, u.userId, leadId, body);
@@ -140,10 +139,10 @@ export class LeadsDetailController {
 
   @Patch(":leadId/verify")
   @RequirePermission("crm:leads:update")
-  @Validate({ params: leadIdParams })
+  @Validate({ params: leadIdParams, body: verifySchema })
   async verify(
     @Param("leadId", ParseIntPipe) leadId: number,
-    @Body(new ZodValidationPipe(verifySchema)) body: VerifyInput,
+    @Body() body: VerifyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.detail.verify(u.orgId, u.userId, leadId, body);
@@ -154,10 +153,10 @@ export class LeadsDetailController {
   @Patch(":leadId/reject")
   @Idempotent("leads.lead.reject")
   @RequirePermission("crm:leads:update")
-  @Validate({ params: leadIdParams })
+  @Validate({ params: leadIdParams, body: rejectSchema })
   async reject(
     @Param("leadId", ParseIntPipe) leadId: number,
-    @Body(new ZodValidationPipe(rejectSchema)) body: RejectInput,
+    @Body() body: RejectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.detail.reject(u.orgId, u.userId, leadId, body);
@@ -179,10 +178,10 @@ export class LeadsDetailController {
 
   @Patch(":leadId/assign")
   @RequirePermission("crm:leads:assign")
-  @Validate({ params: leadIdParams })
+  @Validate({ params: leadIdParams, body: assignSchema })
   async assign(
     @Param("leadId", ParseIntPipe) leadId: number,
-    @Body(new ZodValidationPipe(assignSchema)) body: AssignInput,
+    @Body() body: AssignInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.detail.assign(u.orgId, u.userId, leadId, body);
@@ -193,10 +192,10 @@ export class LeadsDetailController {
   @Post(":leadId/merge")
   @RequirePermission("crm:leads:update")
   @HttpCode(200)
-  @Validate({ params: leadIdParams })
+  @Validate({ params: leadIdParams, body: leadMergeSchema })
   async mergeLoser(
     @Param("leadId", ParseIntPipe) leadId: number,
-    @Body(new ZodValidationPipe(leadMergeSchema)) body: LeadMergeInput,
+    @Body() body: LeadMergeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.detail.mergeLoser(u.orgId, leadId, body.mergeLeadId);

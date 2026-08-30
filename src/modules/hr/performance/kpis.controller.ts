@@ -86,11 +86,11 @@ export class KpisController {
 
   @Patch("frameworks/:frameworkId")
   @RequirePermission("hr:performance:manage")
-  @Validate({ params: frameworkIdParams })
+  @Validate({ params: frameworkIdParams, body: updateFrameworkSchema })
   updateFramework(
     @CurrentUser() u: CurrentUserContext,
     @Param("frameworkId", ParseIntPipe) frameworkId: number,
-    @Body(new ZodValidationPipe(updateFrameworkSchema)) body: UpdateFrameworkInput,
+    @Body() body: UpdateFrameworkInput,
   ) {
     return this.service.updateFramework(u.orgId, frameworkId, body);
   }
@@ -105,10 +105,10 @@ export class KpisController {
   @Post("frameworks/:frameworkId/competencies")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
-  @Validate({ params: frameworkIdParams })
+  @Validate({ params: frameworkIdParams, body: createCompetencySchema })
   createCompetency(
     @Param("frameworkId", ParseIntPipe) frameworkId: number,
-    @Body(new ZodValidationPipe(createCompetencySchema)) body: CreateCompetencyInput,
+    @Body() body: CreateCompetencyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createCompetency(u.orgId, frameworkId, body);

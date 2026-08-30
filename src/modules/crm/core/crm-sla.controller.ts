@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CrmSlaService } from "./crm-sla.service";
 import {
   slaPolicyCreateSchema,
@@ -45,8 +44,9 @@ export class CrmSlaController {
   @Post("policies")
   @RequirePermission("crm:sla:manage")
   @HttpCode(201)
+  @Validate({ body: slaPolicyCreateSchema })
   createPolicy(
-    @Body(new ZodValidationPipe(slaPolicyCreateSchema)) body: SlaPolicyCreateInput,
+    @Body() body: SlaPolicyCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.sla.createPolicy(u.orgId, body);
@@ -54,10 +54,10 @@ export class CrmSlaController {
 
   @Patch("policies/:policyId")
   @RequirePermission("crm:sla:manage")
-  @Validate({ params: policyIdParams })
+  @Validate({ params: policyIdParams, body: slaPolicyUpdateSchema })
   async updatePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
-    @Body(new ZodValidationPipe(slaPolicyUpdateSchema)) body: SlaPolicyUpdateInput,
+    @Body() body: SlaPolicyUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.sla.updatePolicy(u.orgId, policyId, body);

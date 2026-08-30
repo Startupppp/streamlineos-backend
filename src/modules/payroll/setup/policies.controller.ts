@@ -116,10 +116,10 @@ export class PayrollPoliciesController {
   @Post(":policyId/versions")
   @HttpCode(201)
   @RequirePermission("payroll:policies:manage")
-  @Validate({ params: policyIdParams })
+  @Validate({ params: policyIdParams, body: createPolicyVersionSchema })
   async createVersion(
     @Param("policyId", ParseIntPipe) policyId: number,
-    @Body(new ZodValidationPipe(createPolicyVersionSchema)) body: CreatePolicyVersionInput,
+    @Body() body: CreatePolicyVersionInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.createVersion(u, policyId, body);

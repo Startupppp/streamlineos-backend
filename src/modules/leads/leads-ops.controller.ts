@@ -17,7 +17,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { LeadsImportService } from "./leads-import.service";
 import { LeadsOpsService } from "./leads-ops.service";
@@ -62,8 +61,9 @@ export class LeadsOpsController {
 
   @Patch("bulk")
   @RequirePermission("crm:leads:update")
+  @Validate({ body: bulkUpdateSchema })
   bulkUpdate(
-    @Body(new ZodValidationPipe(bulkUpdateSchema)) body: BulkUpdateInput,
+    @Body() body: BulkUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ops.bulkUpdate(u.orgId, u.userId, body);
@@ -71,8 +71,9 @@ export class LeadsOpsController {
 
   @Delete("bulk")
   @RequirePermission("crm:leads:delete")
+  @Validate({ body: bulkDeleteSchema })
   bulkDelete(
-    @Body(new ZodValidationPipe(bulkDeleteSchema)) body: BulkDeleteInput,
+    @Body() body: BulkDeleteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ops.bulkDelete(u.orgId, body);
@@ -81,8 +82,9 @@ export class LeadsOpsController {
   @Post("merge")
   @HttpCode(200)
   @RequirePermission("crm:leads:assign")
+  @Validate({ body: topMergeSchema })
   async mergeLeads(
-    @Body(new ZodValidationPipe(topMergeSchema)) body: TopMergeInput,
+    @Body() body: TopMergeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.ops.mergeLeads(u.orgId, u.userId, body);
@@ -102,8 +104,9 @@ export class LeadsOpsController {
   @RequirePermission("crm:leads:create")
   @HttpCode(201)
   @Idempotent("crm.leads.import")
+  @Validate({ body: importSchema })
   importLeads(
-    @Body(new ZodValidationPipe(importSchema)) body: ImportInput,
+    @Body() body: ImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.imports.importLeads(u.orgId, u.userId, body);
@@ -112,8 +115,9 @@ export class LeadsOpsController {
   @Post("distribute")
   @HttpCode(200)
   @RequirePermission("crm:leads:assign")
+  @Validate({ body: distributeSchema })
   async distribute(
-    @Body(new ZodValidationPipe(distributeSchema)) body: DistributeInput,
+    @Body() body: DistributeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.ops.distribute(u.orgId, u.userId, body);

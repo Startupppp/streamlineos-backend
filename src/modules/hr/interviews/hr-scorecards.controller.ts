@@ -47,8 +47,9 @@ export class HrScorecardsController {
   @Post("scorecard-templates")
   @HttpCode(201)
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: createScorecardTemplateSchema })
   createTemplate(
-    @Body(new ZodValidationPipe(createScorecardTemplateSchema)) body: CreateScorecardTemplateInput,
+    @Body() body: CreateScorecardTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.scorecards.createTemplate(u.orgId, u.userId, body);
@@ -56,10 +57,10 @@ export class HrScorecardsController {
 
   @Patch("scorecard-templates/:templateId")
   @RequirePermission("hr:interviews:manage")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, body: updateScorecardTemplateSchema })
   updateTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(updateScorecardTemplateSchema)) body: UpdateScorecardTemplateInput,
+    @Body() body: UpdateScorecardTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.scorecards.updateTemplate(u.orgId, templateId, body);
@@ -77,8 +78,9 @@ export class HrScorecardsController {
 
   @Get("scorecard-analytics")
   @RequirePermission("hr:interviews:view")
+  @Validate({ query: scorecardAnalyticsQuerySchema })
   analytics(
-    @Query(new ZodValidationPipe(scorecardAnalyticsQuerySchema)) query: ScorecardAnalyticsQueryInput,
+    @Query() query: ScorecardAnalyticsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.scorecards.analytics(u.orgId, query);

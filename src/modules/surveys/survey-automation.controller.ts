@@ -6,7 +6,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SurveyAutomationService } from "./survey-automation.service";
 import {
   createAutomationSchema,
@@ -33,10 +32,10 @@ export class SurveyAutomationController {
   @Post()
   @HttpCode(201)
   @RequirePermission("surveys:automations:manage")
-  @Validate({ params: surveyIdParams })
+  @Validate({ params: surveyIdParams, body: createAutomationSchema })
   create(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Body(new ZodValidationPipe(createAutomationSchema)) body: CreateAutomationInput,
+    @Body() body: CreateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.create(u.orgId, surveyId, body);
@@ -44,11 +43,11 @@ export class SurveyAutomationController {
 
   @Patch(":automationId")
   @RequirePermission("surveys:automations:manage")
-  @Validate({ params: surveyAndAutomationIdParams })
+  @Validate({ params: surveyAndAutomationIdParams, body: patchAutomationSchema })
   patch(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("automationId") automationId: string,
-    @Body(new ZodValidationPipe(patchAutomationSchema)) body: PatchAutomationInput,
+    @Body() body: PatchAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.patch(u.orgId, surveyId, automationId, body);

@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
 import {
   createCustomFieldSchema,
@@ -41,10 +40,10 @@ export class ProjectsCustomFieldsController {
   @Post(":projectId/custom-fields")
   @RequirePermission("build:manage")
   @HttpCode(201)
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createCustomFieldSchema })
   createField(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createCustomFieldSchema)) body: CreateCustomFieldInput,
+    @Body() body: CreateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.customFields.createField(u.orgId, projectId, body);
@@ -52,10 +51,10 @@ export class ProjectsCustomFieldsController {
 
   @Patch(":projectId/custom-fields/:fieldId")
   @RequirePermission("build:manage")
-  @Validate({ params: projectIdfieldIdParams })
+  @Validate({ params: projectIdfieldIdParams, body: updateCustomFieldSchema })
   updateField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
-    @Body(new ZodValidationPipe(updateCustomFieldSchema)) body: UpdateCustomFieldInput,
+    @Body() body: UpdateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.customFields.updateField(u.orgId, fieldId, body);
@@ -86,11 +85,11 @@ export class ProjectsCustomFieldsController {
   @Post(":projectId/tickets/:ticketId/custom-field-values")
   @RequirePermission("build:tickets:update")
   @HttpCode(200)
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectIdticketIdParams, body: upsertCustomFieldValuesSchema })
   upsertTicketValues(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(upsertCustomFieldValuesSchema)) body: UpsertCustomFieldValuesInput,
+    @Body() body: UpsertCustomFieldValuesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.customFields.upsertTicketValues(u.orgId, projectId, ticketId, body);

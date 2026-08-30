@@ -83,11 +83,11 @@ export class HrSafetyController {
 
   @Patch("incidents/:incidentId")
   @RequirePermission("hr:safety:manage")
-  @Validate({ params: incidentIdParams })
+  @Validate({ params: incidentIdParams, body: updateIncidentSchema })
   async updateIncident(
     @CurrentUser() user: CurrentUserContext,
     @Param("incidentId", ParseIntPipe) incidentId: number,
-    @Body(new ZodValidationPipe(updateIncidentSchema)) body: UpdateIncidentInput,
+    @Body() body: UpdateIncidentInput,
     @Req() req: Request,
   ) {
     const hasSensitive = await this.canSensitive(user);
@@ -107,9 +107,10 @@ export class HrSafetyController {
 
   @Post("wellness/checkin")
   @RequirePermission("hr:safety:view")
+  @Validate({ body: checkinSchema })
   checkin(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(checkinSchema)) body: CheckinInput,
+    @Body() body: CheckinInput,
   ) {
     return this.safety.upsertCheckin(user.orgId, user.userId, body);
   }
@@ -126,9 +127,10 @@ export class HrSafetyController {
 
   @Get("wellness/trend")
   @RequirePermission("hr:safety:manage")
+  @Validate({ query: wellnessTrendSchema })
   orgTrend(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(wellnessTrendSchema)) query: WellnessTrendInput,
+    @Query() query: WellnessTrendInput,
   ) {
     return this.safety.orgWellnessTrend(user.orgId, query);
   }

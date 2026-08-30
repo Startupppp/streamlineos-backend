@@ -12,7 +12,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsBudgetService } from "./projects-budget.service";
 import { updateBudgetSchema, type UpdateBudgetInput } from "./dto/projects.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -39,10 +38,10 @@ export class ProjectsBudgetController {
 
   @Patch(":projectId/budget")
   @RequirePermission("build:manage")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: updateBudgetSchema })
   updateBudget(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(updateBudgetSchema)) body: UpdateBudgetInput,
+    @Body() body: UpdateBudgetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.budget.updateBudget(u, projectId, body);

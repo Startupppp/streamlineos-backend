@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsReleasesService } from "./projects-releases.service";
 import {
   createReleaseSchema,
@@ -43,10 +42,10 @@ export class ProjectsReleasesController {
   @RequirePermission("build:manage")
   @HttpCode(201)
   @Idempotent("build.release.create")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createReleaseSchema })
   createRelease(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createReleaseSchema)) body: CreateReleaseInput,
+    @Body() body: CreateReleaseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.releases.createRelease(u.orgId, projectId, u.userId, body);
@@ -54,10 +53,10 @@ export class ProjectsReleasesController {
 
   @Patch(":projectId/releases/:releaseId")
   @RequirePermission("build:manage")
-  @Validate({ params: projectIdreleaseIdParams })
+  @Validate({ params: projectIdreleaseIdParams, body: updateReleaseSchema })
   updateRelease(
     @Param("releaseId", ParseIntPipe) releaseId: number,
-    @Body(new ZodValidationPipe(updateReleaseSchema)) body: UpdateReleaseInput,
+    @Body() body: UpdateReleaseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.releases.updateRelease(u.orgId, releaseId, body);
@@ -77,10 +76,10 @@ export class ProjectsReleasesController {
   @Post(":projectId/releases/:releaseId/tickets")
   @RequirePermission("build:tickets:update")
   @HttpCode(200)
-  @Validate({ params: projectIdreleaseIdParams })
+  @Validate({ params: projectIdreleaseIdParams, body: addReleaseTicketSchema })
   addTicket(
     @Param("releaseId", ParseIntPipe) releaseId: number,
-    @Body(new ZodValidationPipe(addReleaseTicketSchema)) body: AddReleaseTicketInput,
+    @Body() body: AddReleaseTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.releases.addTicketToRelease(u.orgId, releaseId, body.ticketId);

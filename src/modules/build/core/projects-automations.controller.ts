@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ProjectsAutomationsService } from "./projects-automations.service";
 import {
@@ -38,10 +37,10 @@ export class ProjectsAutomationsController {
   @Post(":projectId/automations")
   @RequirePermission("build:manage")
   @HttpCode(201)
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, body: createAutomationSchema })
   create(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createAutomationSchema)) body: CreateAutomationInput,
+    @Body() body: CreateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.createAutomation(u, projectId, body);
@@ -49,11 +48,11 @@ export class ProjectsAutomationsController {
 
   @Patch(":projectId/automations/:automationId")
   @RequirePermission("build:manage")
-  @Validate({ params: projectIdautomationIdParams })
+  @Validate({ params: projectIdautomationIdParams, body: updateAutomationSchema })
   update(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("automationId", ParseIntPipe) automationId: number,
-    @Body(new ZodValidationPipe(updateAutomationSchema)) body: UpdateAutomationInput,
+    @Body() body: UpdateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.updateAutomation(u, projectId, automationId, body);

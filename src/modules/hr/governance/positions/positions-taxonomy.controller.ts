@@ -16,7 +16,6 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { PositionsTaxonomyService } from "./positions-taxonomy.service";
 import {
   createPositionStatusSchema,
@@ -48,9 +47,10 @@ export class PositionsTaxonomyController {
 
   @Post("statuses")
   @RequirePermission("hr:positions:manage")
+  @Validate({ body: createPositionStatusSchema })
   async createStatus(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createPositionStatusSchema))
+    @Body()
     body: CreatePositionStatusInput,
   ) {
     return this.service.createStatus(user.orgId, body);
@@ -58,11 +58,11 @@ export class PositionsTaxonomyController {
 
   @Patch("statuses/:statusId")
   @RequirePermission("hr:positions:manage")
-  @Validate({ params: statusIdParams })
+  @Validate({ params: statusIdParams, body: updatePositionStatusSchema })
   async updateStatus(
     @CurrentUser() user: CurrentUserContext,
     @Param("statusId", ParseIntPipe) statusId: number,
-    @Body(new ZodValidationPipe(updatePositionStatusSchema))
+    @Body()
     body: UpdatePositionStatusInput,
   ) {
     return this.service.updateStatus(user.orgId, statusId, body);
@@ -87,9 +87,10 @@ export class PositionsTaxonomyController {
 
   @Post("transitions")
   @RequirePermission("hr:positions:manage")
+  @Validate({ body: createPositionTransitionSchema })
   async createTransition(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createPositionTransitionSchema))
+    @Body()
     body: CreatePositionTransitionInput,
   ) {
     return this.service.createTransition(user.orgId, user.userId, body);
@@ -97,11 +98,11 @@ export class PositionsTaxonomyController {
 
   @Patch("transitions/:transitionId")
   @RequirePermission("hr:positions:manage")
-  @Validate({ params: transitionIdParams })
+  @Validate({ params: transitionIdParams, body: updatePositionTransitionSchema })
   async updateTransition(
     @CurrentUser() user: CurrentUserContext,
     @Param("transitionId", ParseIntPipe) transitionId: number,
-    @Body(new ZodValidationPipe(updatePositionTransitionSchema))
+    @Body()
     body: UpdatePositionTransitionInput,
   ) {
     return this.service.updateTransition(user.orgId, transitionId, body);

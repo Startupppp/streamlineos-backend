@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ManagedProductsService } from "./managed-products.service";
 import {
   createManagedProductSchema,
@@ -40,8 +39,9 @@ export class ManagedProductsController {
 
   @Get()
   @RequirePermission("build:managed-products:view")
+  @Validate({ query: listManagedProductsQuerySchema })
   listManagedProducts(
-    @Query(new ZodValidationPipe(listManagedProductsQuerySchema)) query: ListManagedProductsQuery,
+    @Query() query: ListManagedProductsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listManagedProducts(u.orgId, query);
@@ -60,8 +60,9 @@ export class ManagedProductsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:managed-products:create")
+  @Validate({ body: createManagedProductSchema })
   createManagedProduct(
-    @Body(new ZodValidationPipe(createManagedProductSchema)) body: CreateManagedProductInput,
+    @Body() body: CreateManagedProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createManagedProduct(u.orgId, u.userId, body);
@@ -69,10 +70,10 @@ export class ManagedProductsController {
 
   @Patch(":managedProductId")
   @RequirePermission("build:managed-products:update")
-  @Validate({ params: managedProductIdParams })
+  @Validate({ params: managedProductIdParams, body: updateManagedProductSchema })
   updateManagedProduct(
     @Param("managedProductId", ParseIntPipe) managedProductId: number,
-    @Body(new ZodValidationPipe(updateManagedProductSchema)) body: UpdateManagedProductInput,
+    @Body() body: UpdateManagedProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateManagedProduct(u.orgId, u.userId, managedProductId, body);

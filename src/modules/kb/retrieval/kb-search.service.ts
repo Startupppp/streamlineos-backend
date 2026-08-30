@@ -284,9 +284,14 @@ export class KbSearchService {
     spaceId?: number,
   ): Promise<number[]> {
     try {
+      const cap = pool * 4;
+      const chunkRows = await this.db.execute(sql`SELECT app.search_kb_chunk_ids(${vector}::vector, ${cap}) AS id`);
+      if (chunkRows.length === 0) return [];
+      const chunkIds = chunkRows.map(r => Number(r["id"]));
+
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const conditions: SQL[] = [
-        eq(kbArticleChunks.orgId, orgId),
+        inArray(kbArticleChunks.id, chunkIds),
         isNotNull(kbArticleChunks.articleId),
         inArray(kbArticles.spaceId, spaceIds),
         eq(kbArticles.status, "published"),
@@ -303,7 +308,7 @@ export class KbSearchService {
         ))
         .where(and(...conditions))
         .orderBy(distance)
-        .limit(pool * 4);
+        .limit(cap);
 
       const seen = new Set<number>();
       const result: number[] = [];
@@ -364,6 +369,11 @@ export class KbSearchService {
     chunkVisibility: SQL,
   ): Promise<number[]> {
     try {
+      const cap = pool * 4;
+      const chunkRows = await this.db.execute(sql`SELECT app.search_kb_chunk_ids(${vector}::vector, ${cap}) AS id`);
+      if (chunkRows.length === 0) return [];
+      const chunkIds = chunkRows.map(r => Number(r["id"]));
+
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const rows = await this.db
         .select({ pageId: kbArticleChunks.pageId })
@@ -374,13 +384,13 @@ export class KbSearchService {
         ))
         .where(
           and(
-            eq(kbArticleChunks.orgId, orgId),
+            inArray(kbArticleChunks.id, chunkIds),
             isNotNull(kbArticleChunks.pageId),
             chunkVisibility,
           ),
         )
         .orderBy(distance)
-        .limit(pool * 4);
+        .limit(cap);
 
       const seen = new Set<number>();
       const result: number[] = [];
@@ -508,6 +518,12 @@ export class KbSearchService {
     try {
       const accessibleSpaceIds = await this.access.getAccessibleSpaceIds(user);
       const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
+
+      const cap = limit * 4;
+      const chunkRows = await this.db.execute(sql`SELECT app.search_kb_chunk_ids(${vector}::vector, ${cap}) AS id`);
+      if (chunkRows.length === 0) return [];
+      const chunkIds = chunkRows.map(r => Number(r["id"]));
+
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
 
       const spaceFilter = accessibleSpaceIds.length > 0
@@ -526,7 +542,7 @@ export class KbSearchService {
         .innerJoin(kbSources, eq(kbSources.id, kbArticleChunks.sourceId))
         .where(
           and(
-            eq(kbArticleChunks.orgId, user.orgId),
+            inArray(kbArticleChunks.id, chunkIds),
             eq(kbArticleChunks.source, "source"),
             isNull(kbSources.deletedAt),
             eq(kbSources.status, "ready"),
@@ -535,7 +551,7 @@ export class KbSearchService {
           ),
         )
         .orderBy(distance)
-        .limit(limit * 4);
+        .limit(cap);
 
       const seen = new Set<number>();
       const result: Array<{ sourceId: number; title: string; spaceId: number | null; snippet: string; updatedAt: Date }> = [];

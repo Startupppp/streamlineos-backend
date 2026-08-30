@@ -16,7 +16,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { authorize } from "../../access/authorize";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { ReportsService } from "./reports.service";
 import { buildCsv } from "./lib/csv";
 import { reportsQuerySchema, type ReportsQuery } from "./dto/insights.schemas";
@@ -50,8 +50,9 @@ export class ReportsController {
   }
 
   @Get("summary")
+  @Validate({ query: reportsQuerySchema })
   async getSummary(
-    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
+    @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -71,8 +72,9 @@ export class ReportsController {
   }
 
   @Get("register")
+  @Validate({ query: reportsQuerySchema })
   async getRegister(
-    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
+    @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -92,8 +94,9 @@ export class ReportsController {
   }
 
   @Get("department-cost")
+  @Validate({ query: reportsQuerySchema })
   async getDepartmentCost(
-    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
+    @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -110,8 +113,9 @@ export class ReportsController {
   }
 
   @Get("cost-center")
+  @Validate({ query: reportsQuerySchema })
   async getCostCenter(
-    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
+    @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -128,8 +132,9 @@ export class ReportsController {
   }
 
   @Get("earnings")
+  @Validate({ query: reportsQuerySchema })
   async getEarnings(
-    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
+    @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -146,8 +151,9 @@ export class ReportsController {
   }
 
   @Get("deductions")
+  @Validate({ query: reportsQuerySchema })
   async getDeductions(
-    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
+    @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -164,8 +170,9 @@ export class ReportsController {
   }
 
   @Get("reimbursements")
+  @Validate({ query: reportsQuerySchema })
   async getReimbursements(
-    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
+    @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -182,8 +189,9 @@ export class ReportsController {
   }
 
   @Get("tax")
+  @Validate({ query: reportsQuerySchema })
   async getTax(
-    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
+    @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -200,8 +208,9 @@ export class ReportsController {
   }
 
   @Get("bank-payout")
+  @Validate({ query: reportsQuerySchema })
   async getBankPayout(
-    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
+    @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -222,8 +231,9 @@ export class ReportsController {
   }
 
   @Get("variance")
+  @Validate({ query: reportsQuerySchema })
   async getVariance(
-    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
+    @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {

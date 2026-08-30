@@ -105,8 +105,9 @@ export class RecruitmentCandidatesController {
 
   @Post("bulk-reject")
   @RequirePermission("hr:employees:manage")
+  @Validate({ body: bulkRejectSchema })
   bulkReject(
-    @Body(new ZodValidationPipe(bulkRejectSchema)) body: BulkRejectInput,
+    @Body() body: BulkRejectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ops.bulkReject(u.orgId, u.userId, body);
@@ -114,8 +115,9 @@ export class RecruitmentCandidatesController {
 
   @Post("bulk-shortlist")
   @RequirePermission("hr:employees:manage")
+  @Validate({ body: bulkShortlistSchema })
   bulkShortlist(
-    @Body(new ZodValidationPipe(bulkShortlistSchema)) body: BulkShortlistInput,
+    @Body() body: BulkShortlistInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ops.bulkShortlist(u.orgId, u.userId, body);
@@ -139,10 +141,10 @@ export class RecruitmentCandidatesController {
 
   @Patch(":candidateId")
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: candidateIdParams })
+  @Validate({ params: candidateIdParams, body: updateCandidateSchema })
   update(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(updateCandidateSchema)) body: UpdateCandidateInput,
+    @Body() body: UpdateCandidateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.candidates.update(u.orgId, candidateId, body);
@@ -161,10 +163,10 @@ export class RecruitmentCandidatesController {
 
   @Patch(":candidateId/stage")
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: candidateIdParams })
+  @Validate({ params: candidateIdParams, body: stageSchema })
   moveStage(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(stageSchema)) body: StageInput,
+    @Body() body: StageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.candidates.moveStage(u.orgId, u.userId, candidateId, body);
@@ -182,10 +184,10 @@ export class RecruitmentCandidatesController {
 
   @Patch(":candidateId/sla")
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: candidateIdParams })
+  @Validate({ params: candidateIdParams, body: slaResetSchema })
   resetSla(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(slaResetSchema)) body: SlaResetInput,
+    @Body() body: SlaResetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ops.resetSla(u.orgId, candidateId, body);
@@ -194,10 +196,10 @@ export class RecruitmentCandidatesController {
   @Post(":candidateId/applications")
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
-  @Validate({ params: candidateIdParams })
+  @Validate({ params: candidateIdParams, body: createApplicationSchema })
   createApplication(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(createApplicationSchema)) body: CreateApplicationInput,
+    @Body() body: CreateApplicationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ops.createApplication(u.orgId, candidateId, body);
@@ -205,10 +207,10 @@ export class RecruitmentCandidatesController {
 
   @Post(":candidateId/link-duplicate")
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: candidateIdParams })
+  @Validate({ params: candidateIdParams, body: linkDuplicateSchema })
   linkDuplicate(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(linkDuplicateSchema)) body: LinkDuplicateInput,
+    @Body() body: LinkDuplicateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.candidates.linkDuplicate(u.orgId, candidateId, body.duplicateOfId);
@@ -226,10 +228,10 @@ export class RecruitmentCandidatesController {
 
   @Patch(":candidateId/bgv-status")
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: candidateIdParams })
+  @Validate({ params: candidateIdParams, body: bgvStatusSchema })
   updateBgvStatus(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(bgvStatusSchema)) body: BgvStatusInput,
+    @Body() body: BgvStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ops.updateBgvStatus(u.orgId, candidateId, body);

@@ -14,7 +14,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { DimensionsService } from "./dimensions.service";
 import {
   createDimensionSchema,
@@ -46,8 +45,9 @@ export class DimensionsController {
 
   @Post()
   @RequirePermission("accounting:dimensions:manage")
+  @Validate({ body: createDimensionSchema })
   create(
-    @Body(new ZodValidationPipe(createDimensionSchema)) body: CreateDimensionInput,
+    @Body() body: CreateDimensionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createDimension(u, body);
@@ -55,10 +55,10 @@ export class DimensionsController {
 
   @Patch(":dimensionId")
   @RequirePermission("accounting:dimensions:manage")
-  @Validate({ params: dimensionIdParams })
+  @Validate({ params: dimensionIdParams, body: updateDimensionSchema })
   update(
     @Param("dimensionId", ParseIntPipe) dimensionId: number,
-    @Body(new ZodValidationPipe(updateDimensionSchema)) body: UpdateDimensionInput,
+    @Body() body: UpdateDimensionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateDimension(u, dimensionId, body);
@@ -76,10 +76,10 @@ export class DimensionsController {
 
   @Post(":dimensionId/values")
   @RequirePermission("accounting:dimensions:manage")
-  @Validate({ params: dimensionIdParams })
+  @Validate({ params: dimensionIdParams, body: createDimensionValueSchema })
   createValue(
     @Param("dimensionId", ParseIntPipe) dimensionId: number,
-    @Body(new ZodValidationPipe(createDimensionValueSchema)) body: CreateDimensionValueInput,
+    @Body() body: CreateDimensionValueInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createValue(u, dimensionId, body);
@@ -87,11 +87,11 @@ export class DimensionsController {
 
   @Patch(":dimensionId/values/:valueId")
   @RequirePermission("accounting:dimensions:manage")
-  @Validate({ params: dimensionIdvalueIdParams })
+  @Validate({ params: dimensionIdvalueIdParams, body: updateDimensionValueSchema })
   updateValue(
     @Param("dimensionId", ParseIntPipe) dimensionId: number,
     @Param("valueId", ParseIntPipe) valueId: number,
-    @Body(new ZodValidationPipe(updateDimensionValueSchema)) body: UpdateDimensionValueInput,
+    @Body() body: UpdateDimensionValueInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateValue(u, dimensionId, valueId, body);

@@ -5,9 +5,9 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { OpeningBalancesService } from "./opening-balances.service";
 import { postOpeningBalancesSchema, type PostOpeningBalancesInput } from "./dto/settings.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("accounting")
 @Controller("accounting/opening-balances")
@@ -24,8 +24,9 @@ export class OpeningBalancesController {
   @Post()
   @RequirePermission("accounting:journal:create")
   @HttpCode(200)
+  @Validate({ body: postOpeningBalancesSchema })
   postOpeningBalances(
-    @Body(new ZodValidationPipe(postOpeningBalancesSchema)) body: PostOpeningBalancesInput,
+    @Body() body: PostOpeningBalancesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.postOpeningBalances(u, body);

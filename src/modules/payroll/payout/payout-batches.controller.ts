@@ -168,11 +168,11 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/items/:itemId/mark-failed")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
-  @Validate({ params: batchItemIdParams })
+  @Validate({ params: batchItemIdParams, body: markItemFailedSchema })
   markItemFailed(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Param("itemId", ParseIntPipe) itemId: number,
-    @Body(new ZodValidationPipe(markItemFailedSchema)) body: MarkItemFailedInput,
+    @Body() body: MarkItemFailedInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.batchStatus.markItemFailed(u.orgId, batchId, itemId, body.failureReason, u.userId);

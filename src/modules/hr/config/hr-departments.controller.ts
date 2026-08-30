@@ -4,7 +4,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { HrDepartmentsService } from "./hr-departments.service";
 import { createDepartmentSchema, type CreateDepartmentInput } from "./dto/departments.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -24,8 +24,9 @@ export class HrDepartmentsController {
   @Post()
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @Validate({ body: createDepartmentSchema })
   create(
-    @Body(new ZodValidationPipe(createDepartmentSchema)) body: CreateDepartmentInput,
+    @Body() body: CreateDepartmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.departments.create(u.orgId, u.userId, body.name);

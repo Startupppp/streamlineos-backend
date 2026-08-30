@@ -28,9 +28,10 @@ export class SuccessionController {
 
   @Get()
   @RequirePermission("hr:succession:view")
+  @Validate({ query: successionListSchema })
   list(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(successionListSchema)) query: SuccessionListInput,
+    @Query() query: SuccessionListInput,
   ) {
     return this.successionService.list(user.orgId, query);
   }
@@ -38,20 +39,21 @@ export class SuccessionController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:succession:manage")
+  @Validate({ body: createSuccessionPlanSchema })
   create(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createSuccessionPlanSchema)) body: CreateSuccessionPlanInput,
+    @Body() body: CreateSuccessionPlanInput,
   ) {
     return this.successionService.create(user.orgId, user.userId, body);
   }
 
   @Patch(":successionId")
   @RequirePermission("hr:succession:manage")
-  @Validate({ params: successionIdParams })
+  @Validate({ params: successionIdParams, body: updateSuccessionPlanSchema })
   update(
     @CurrentUser() user: CurrentUserContext,
     @Param("successionId", ParseIntPipe) successionId: number,
-    @Body(new ZodValidationPipe(updateSuccessionPlanSchema)) body: UpdateSuccessionPlanInput,
+    @Body() body: UpdateSuccessionPlanInput,
   ) {
     return this.successionService.update(user.orgId, successionId, body);
   }

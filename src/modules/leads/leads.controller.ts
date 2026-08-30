@@ -19,7 +19,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { LeadsService, isAssigneeNotMember } from "./leads.service";
 import { resolveLeadsViewScope } from "./leads-scope";
@@ -48,8 +47,9 @@ export class LeadsController {
 
   @Get()
   @RequirePermission("crm:leads:view")
+  @Validate({ query: listSchema })
   async list(
-    @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
+    @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveLeadsViewScope(this.access, u);
@@ -64,8 +64,9 @@ export class LeadsController {
   @HttpCode(201)
   @RequirePermission("crm:leads:create")
   @Idempotent("crm.lead.create")
+  @Validate({ body: createSchema })
   async create(
-    @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
+    @Body() body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.leads.create(u.orgId, u.userId, body);
@@ -112,10 +113,10 @@ export class LeadsController {
 
   @Patch(":leadId")
   @RequirePermission("crm:leads:update")
-  @Validate({ params: leadIdParams })
+  @Validate({ params: leadIdParams, body: updateSchema })
   async update(
     @Param("leadId", ParseIntPipe) leadId: number,
-    @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
+    @Body() body: UpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.leads.update(u.orgId, u.userId, leadId, body);

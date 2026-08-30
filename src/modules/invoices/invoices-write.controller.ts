@@ -13,7 +13,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { InvoicesWriteService } from "./invoices-write.service";
 import {
@@ -45,8 +44,9 @@ export class InvoicesWriteController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:create")
   @Idempotent("accounting.invoice.create")
+  @Validate({ body: createInvoiceSchema })
   async create(
-    @Body(new ZodValidationPipe(createInvoiceSchema)) body: CreateInvoiceInput,
+    @Body() body: CreateInvoiceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const { invoice } = await this.invoicesWrite.createInvoice(u.orgId, u.userId, body);
@@ -65,10 +65,10 @@ export class InvoicesWriteController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:update")
   @Idempotent("accounting.invoice.update")
-  @Validate({ params: invoiceIdParams })
+  @Validate({ params: invoiceIdParams, body: updateInvoiceSchema })
   async updateInvoice(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
-    @Body(new ZodValidationPipe(updateInvoiceSchema)) body: UpdateInvoiceInput,
+    @Body() body: UpdateInvoiceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.invoicesWrite.updateInvoice(u.orgId, u.userId, invoiceId, body);
@@ -80,10 +80,10 @@ export class InvoicesWriteController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:create")
   @Idempotent("accounting.invoice.payment.record")
-  @Validate({ params: invoiceIdParams })
+  @Validate({ params: invoiceIdParams, body: recordPaymentSchema })
   recordPayment(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
-    @Body(new ZodValidationPipe(recordPaymentSchema)) body: RecordPaymentInput,
+    @Body() body: RecordPaymentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.invoicesWrite.recordPayment(u.orgId, u.userId, invoiceId, body);

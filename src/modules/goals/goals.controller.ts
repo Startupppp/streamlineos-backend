@@ -17,7 +17,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { GoalsService } from "./goals.service";
 import {
   GoalLinksService,
@@ -56,8 +55,9 @@ export class GoalsController {
 
   @Get()
   @RequirePermission("build:goals:view")
+  @Validate({ query: listSchema })
   list(
-    @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
+    @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.goals.list(u, filters);
@@ -66,8 +66,9 @@ export class GoalsController {
   @Post()
   @RequirePermission("build:goals:manage")
   @HttpCode(201)
+  @Validate({ body: createSchema })
   create(
-    @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
+    @Body() body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.goals.create(u.orgId, u.userId, body);
@@ -93,10 +94,10 @@ export class GoalsController {
 
   @Patch(":goalId")
   @RequirePermission("build:goals:manage")
-  @Validate({ params: goalIdParams })
+  @Validate({ params: goalIdParams, body: updateSchema })
   async update(
     @Param("goalId", ParseIntPipe) goalId: number,
-    @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
+    @Body() body: UpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.goals.update(u.orgId, goalId, body);
@@ -118,10 +119,10 @@ export class GoalsController {
 
   @Post(":goalId/check-in")
   @RequirePermission("build:goals:manage")
-  @Validate({ params: goalIdParams })
+  @Validate({ params: goalIdParams, body: checkInSchema })
   async checkIn(
     @Param("goalId", ParseIntPipe) goalId: number,
-    @Body(new ZodValidationPipe(checkInSchema)) body: CheckInInput,
+    @Body() body: CheckInInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const goal = await this.goals.checkIn(u.orgId, u.userId, goalId, body);
@@ -142,10 +143,10 @@ export class GoalsController {
   @Post(":goalId/links")
   @RequirePermission("build:goals:manage")
   @HttpCode(201)
-  @Validate({ params: goalIdParams })
+  @Validate({ params: goalIdParams, body: createLinkSchema })
   async createLink(
     @Param("goalId", ParseIntPipe) goalId: number,
-    @Body(new ZodValidationPipe(createLinkSchema)) body: CreateLinkInput,
+    @Body() body: CreateLinkInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.links.createLink(u.orgId, goalId, body);
@@ -157,10 +158,10 @@ export class GoalsController {
 
   @Delete(":goalId/links")
   @RequirePermission("build:goals:manage")
-  @Validate({ params: goalIdParams })
+  @Validate({ params: goalIdParams, query: deleteLinkSchema })
   async removeLink(
     @Param("goalId", ParseIntPipe) goalId: number,
-    @Query(new ZodValidationPipe(deleteLinkSchema)) query: DeleteLinkInput,
+    @Query() query: DeleteLinkInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.links.removeLink(u.orgId, goalId, query.linkId);

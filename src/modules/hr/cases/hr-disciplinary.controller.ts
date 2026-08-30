@@ -39,9 +39,10 @@ export class HrDisciplinaryController {
 
   @Get()
   @RequirePermission("hr:cases:view")
+  @Validate({ query: listDisciplinarySchema })
   list(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listDisciplinarySchema)) query: ListDisciplinaryInput,
+    @Query() query: ListDisciplinaryInput,
   ) {
     return this.disciplinary.list(user.orgId, query);
   }
@@ -72,9 +73,10 @@ export class HrDisciplinaryController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:cases:manage")
+  @Validate({ body: createDisciplinaryActionSchema })
   create(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createDisciplinaryActionSchema)) body: CreateDisciplinaryActionInput,
+    @Body() body: CreateDisciplinaryActionInput,
     @Req() req: Request,
   ) {
     return this.disciplinary.create(user.orgId, user.userId, body, req.ip);
@@ -84,12 +86,11 @@ export class HrDisciplinaryController {
   @Post(":actionId/acknowledge")
   @HttpCode(200)
   @RequirePermission("self:cases")
-  @Validate({ params: actionIdParams })
+  @Validate({ params: actionIdParams, body: acknowledgeDisciplinarySchema })
   acknowledge(
     @CurrentUser() user: CurrentUserContext,
     @Param("actionId", ParseIntPipe) actionId: number,
-    @Body(new ZodValidationPipe(acknowledgeDisciplinarySchema))
-    body: AcknowledgeDisciplinaryInput,
+    @Body() body: AcknowledgeDisciplinaryInput,
   ) {
     return this.disciplinary.acknowledge(user.orgId, user.userId, actionId, body.note);
   }

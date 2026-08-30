@@ -48,30 +48,33 @@ export class HrInterviewSchedulingController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:interviews:manage")
-  create(@Body(new ZodValidationPipe(createInterviewSchema)) body: CreateInterviewInput, @CurrentUser() u: CurrentUserContext) {
+  @Validate({ body: createInterviewSchema })
+  create(@Body() body: CreateInterviewInput, @CurrentUser() u: CurrentUserContext) {
     return this.scheduling.createInterview(u.orgId, body);
   }
 
   @Post("schedule")
   @HttpCode(201)
   @RequirePermission("hr:interviews:manage")
-  schedule(@Body(new ZodValidationPipe(scheduleInterviewSchema)) body: ScheduleInterviewInput, @CurrentUser() u: CurrentUserContext) {
+  @Validate({ body: scheduleInterviewSchema })
+  schedule(@Body() body: ScheduleInterviewInput, @CurrentUser() u: CurrentUserContext) {
     return this.scheduling.scheduleInterview(u.orgId, u.userId, body);
   }
 
   @Post("self-schedule")
   @HttpCode(201)
   @RequirePermission("hr:interviews:manage")
-  selfSchedule(@Body(new ZodValidationPipe(selfScheduleSchema)) body: SelfScheduleInput, @CurrentUser() u: CurrentUserContext) {
+  @Validate({ body: selfScheduleSchema })
+  selfSchedule(@Body() body: SelfScheduleInput, @CurrentUser() u: CurrentUserContext) {
     return this.scheduling.selfSchedule(u.orgId, u.userId, body);
   }
 
   @Patch(":interviewId")
   @RequirePermission("hr:interviews:manage")
-  @Validate({ params: interviewIdParams })
+  @Validate({ params: interviewIdParams, body: updateInterviewSchema })
   update(
     @Param("interviewId", ParseIntPipe) interviewId: number,
-    @Body(new ZodValidationPipe(updateInterviewSchema)) body: UpdateInterviewInput,
+    @Body() body: UpdateInterviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.results.updateInterview(u.orgId, interviewId, body);
@@ -93,10 +96,10 @@ export class HrInterviewSchedulingController {
 
   @Post(":interviewId/scorecard")
   @RequirePermission("hr:interviews:manage")
-  @Validate({ params: interviewIdParams })
+  @Validate({ params: interviewIdParams, body: submitScorecardSchema })
   submitScorecard(
     @Param("interviewId", ParseIntPipe) interviewId: number,
-    @Body(new ZodValidationPipe(submitScorecardSchema)) body: SubmitScorecardInput,
+    @Body() body: SubmitScorecardInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.results.submitScorecard(u.orgId, u.userId, interviewId, body);

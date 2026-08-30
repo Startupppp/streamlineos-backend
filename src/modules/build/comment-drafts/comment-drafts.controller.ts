@@ -15,7 +15,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CommentDraftsService } from "./comment-drafts.service";
 import { upsertCommentDraftSchema, type UpsertCommentDraftInput } from "./dto/comment-drafts.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -38,10 +37,10 @@ export class CommentDraftsController {
 
   @Put("tickets/:ticketId")
   @RequirePermission("build:tickets:view")
-  @Validate({ params: ticketIdParams })
+  @Validate({ params: ticketIdParams, body: upsertCommentDraftSchema })
   upsert(
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(upsertCommentDraftSchema)) body: UpsertCommentDraftInput,
+    @Body() body: UpsertCommentDraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.upsert(u.orgId, u.userId, ticketId, body);
