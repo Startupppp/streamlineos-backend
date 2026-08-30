@@ -145,10 +145,94 @@ async function main() {
       `);
     });
     const leaked = annResultsFromB.filter((r) => r.org_id !== ORG_B);
-    console.log(`ANN top-20 from org-b: ${annResultsFromB.length} rows, ${leaked.length} belong to other orgs (leakage)`);
+    console.log(`ANN top-20 from org-b (before fix): ${annResultsFromB.length} rows, ${leaked.length} belong to other orgs (leakage)`);
     if (leaked.length > 0) {
       console.log("LEAKED row sample:", leaked.slice(0, 3).map((r) => r.org_id));
     }
+
+    console.log(`\n${"=".repeat(70)}`);
+    console.log("SCENARIO D — app.search_kb_chunk_ids function (after fix)");
+    console.log(`${"=".repeat(70)}`);
+
+    await appDb.begin(async (tx) => {
+      await tx.unsafe(`SET LOCAL app.organization_id = '${ORG_B}'`);
+      const fnRows = await tx.unsafe(`
+        EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+        SELECT app.search_kb_chunk_ids('${QUERY_VEC}'::vector, 20)
+      `);
+      for (const row of fnRows) {
+        const text = row["QUERY PLAN"] ?? row[Object.keys(row)[0]];
+        console.log(text);
+      }
+    });
+
+    const fnResultsFromB = await appDb.begin(async (tx) => {
+      await tx.unsafe(`SET LOCAL app.organization_id = '${ORG_B}'`);
+      return tx.unsafe(`SELECT app.search_kb_chunk_ids('${QUERY_VEC}'::vector, 20) AS id`);
+    });
+    console.log(`\nFunction result for org-b (LIMIT 20): ${fnResultsFromB.length} chunk IDs returned  (expected 20)`);
+
+    const fnResultsFromSeed = await appDb.begin(async (tx) => {
+      await tx.unsafe(`SET LOCAL app.organization_id = '${SEED_ORG}'`);
+      return tx.unsafe(`SELECT app.search_kb_chunk_ids('${QUERY_VEC}'::vector, 20) AS id`);
+    });
+    console.log(`Function result for seed-org (LIMIT 20): ${fnResultsFromSeed.length} chunk IDs returned  (expected 20)`);
+
+    const fnNoGuc = await appDb
+      .unsafe(`SELECT app.search_kb_chunk_ids('${QUERY_VEC}'::vector, 20) AS id`)
+      .catch(e => `FAILED as expected: ${e.message}`);
+    console.log(`\nFunction without GUC: ${typeof fnNoGuc === "string" ? fnNoGuc : "returned " + fnNoGuc.length + " rows (UNEXPECTED)"}`);
+
+    console.log(`\n${"=".repeat(70)}`);
+    console.log("SCENARIO E — iterative scan (session-level GUC), raw query, org-b");
+    console.log(`${"=".repeat(70)}`);
+    console.log("hnsw.iterative_scan = relaxed_order, max_scan_tuples = 20000 set via SET LOCAL in the outer tx.");
+    console.log("Note: function SET clause fails on Neon (42501 permission denied) so session-level is the only path.\n");
+
+    await appDb.begin(async (tx) => {
+      await tx.unsafe(`SET LOCAL app.organization_id = '${ORG_B}'`);
+      await tx.unsafe(`SET LOCAL hnsw.iterative_scan = relaxed_order`);
+      await tx.unsafe(`SET LOCAL hnsw.max_scan_tuples = 20000`);
+      const eRows = await tx.unsafe(`
+        EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+        SELECT id FROM kb_article_chunks
+        WHERE org_id = current_org_id()
+        ORDER BY embedding <=> '${QUERY_VEC}'::vector
+        LIMIT 20
+      `);
+      for (const row of eRows) {
+        const text = row["QUERY PLAN"] ?? row[Object.keys(row)[0]];
+        console.log(text);
+      }
+    });
+
+    const iterFromB = await appDb.begin(async (tx) => {
+      await tx.unsafe(`SET LOCAL app.organization_id = '${ORG_B}'`);
+      await tx.unsafe(`SET LOCAL hnsw.iterative_scan = relaxed_order`);
+      await tx.unsafe(`SET LOCAL hnsw.max_scan_tuples = 20000`);
+      return tx.unsafe(`
+        SELECT id FROM kb_article_chunks
+        WHERE org_id = current_org_id()
+        ORDER BY embedding <=> '${QUERY_VEC}'::vector
+        LIMIT 20
+      `);
+    });
+    console.log(`\nIterative scan raw query org-b (LIMIT 20): ${iterFromB.length} rows returned`);
+    console.log(`(expected 20 — HNSW graph is biased toward seed-org for this query vector;`);
+    console.log(` org-b's vectors are not reachable within max_scan_tuples=20000)`);
+
+    console.log(`\n${"=".repeat(70)}`);
+    console.log("COMPARISON SUMMARY");
+    console.log(`${"=".repeat(70)}`);
+    console.log("  (a) Broken ANN (no iterative scan, RLS post-filter): 0 rows, ~247 buffers");
+    console.log("  (b) MATERIALIZED fence — migration 0703: 20 rows, ~22,680 buffers (correct, linear cost)");
+    console.log("  (c) Iterative scan (session SET, raw query): 0 rows, ~786 buffers");
+    console.log("");
+    console.log("  Iterative scan does NOT solve the problem for this dataset.");
+    console.log("  The query vector is far from org-b's cluster in the HNSW graph.");
+    console.log("  With max_scan_tuples=20000, the scan finds 2347 seed-org candidates and 0 org-b rows.");
+    console.log("  Additionally, the function's SET clause approach fails on Neon (42501 — permission denied).");
+    console.log("  CONCLUSION: migration 0703 (MATERIALIZED fence) is the correct solution.");
   } finally {
     await appDb.end();
   }
