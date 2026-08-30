@@ -3,6 +3,10 @@ import { WorkflowsController } from "./workflows.controller";
 import { WorkflowsService } from "./workflows.service";
 import { WorkflowsCrudService } from "./workflows-crud.service";
 import { WorkflowsExecutionService } from "./workflows-execution.service";
+import { WorkflowsSchedulesService } from "./workflows-schedules.service";
+import { WorkflowsSecretsService } from "./workflows-secrets.service";
+import { WorkflowsVariablesService } from "./workflows-variables.service";
+import { WorkflowsAnalyticsService } from "./workflows-analytics.service";
 import { WorkflowRunnerService } from "./engine/workflow-runner.service";
 import { WorkflowNodeDispatcher } from "./engine/node-dispatcher.service";
 import { NODE_DISPATCH_PORT } from "./engine/node-outcome";
@@ -37,6 +41,10 @@ import { ComposioGateway } from "../integrations/core/composio.gateway";
   providers: [
     WorkflowsCrudService,
     WorkflowsExecutionService,
+    WorkflowsSchedulesService,
+    WorkflowsSecretsService,
+    WorkflowsVariablesService,
+    WorkflowsAnalyticsService,
     WorkflowsService,
     WorkflowRunnerService,
     WorkflowNodeDispatcher,
