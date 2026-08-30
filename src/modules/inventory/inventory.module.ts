@@ -34,6 +34,7 @@ import { InvHandlingUnitsModule } from "./handling-units/inv-handling-units.modu
 import { InvSlottingModule } from "./slotting/inv-slotting.module";
 import { InvLaborModule } from "./labor/inv-labor.module";
 import { InvKittingModule } from "./kitting/inv-kitting.module";
+import { InvStockTypesModule } from "./stock-types/inv-stock-types.module";
 
 const INVENTORY_MODULES = [
   InvProductsModule,
@@ -71,6 +72,7 @@ const INVENTORY_MODULES = [
   InvSlottingModule,
   InvLaborModule,
   InvKittingModule,
+  InvStockTypesModule,
 ];
 
 @Module({

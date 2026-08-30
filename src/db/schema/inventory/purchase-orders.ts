@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, bigint, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { invPoStatusEnum, invGrnQualityEnum, invGrnDiscrepancyEnum, invGrnStatusEnum, invTaxTreatmentEnum, invGstModeEnum } from "../common/enums";
+import { invPoStatusEnum, invGrnQualityEnum, invGrnDiscrepancyEnum, invGrnStatusEnum, invTaxTreatmentEnum, invGstModeEnum, invOwnershipEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { clients } from "../crm/contacts";
 import { businessParties } from "../party/business-parties";
@@ -212,6 +212,23 @@ export const invGrnLines = pgTable("inv_grn_lines", {
    * remainders, and a cross-docked grain nets to zero there.
    */
   crossDockSoId: integer("cross_dock_so_id"),
+  /**
+   * NEO-10 - how many physical units this line's weight came in.
+   *
+   * Only meaningful for a catch-weight SKU, where `quantity_received` is the
+   * *weight* and this is the bag count. Two facts, neither derivable from the
+   * other: two bags of chicken are two bags and 10.35 kg, and the second bag
+   * weighing 5.10 kg is not an error to be corrected.
+   */
+  quantityPieces: decimal("quantity_pieces", { precision: 18, scale: 4 }),
+  /**
+   * NEO-11 - whose the goods are once they land.
+   *
+   * `OWNED` for everything that was here before. `VENDOR` receives them as
+   * consignment: they stand in our building, they are not available to promise
+   * and they are not in our valuation until somebody takes title deliberately.
+   */
+  ownership: invOwnershipEnum("ownership").default("OWNED").notNull(),
   /**
    * E2 — the tax inputs as they stood when the goods were received.
    *

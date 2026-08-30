@@ -30,11 +30,11 @@ function recordingTx(rows: Record<string, unknown>[] = []): Recorder {
   return rec;
 }
 
-const GRAIN_A: LevelGrain = { productVariantId: 7, locationId: 3, lotId: null, serialId: null, handlingUnitId: null };
-const GRAIN_B: LevelGrain = { productVariantId: 2, locationId: 9, lotId: 4, serialId: null, handlingUnitId: null };
-const GRAIN_C: LevelGrain = { productVariantId: 2, locationId: 9, lotId: 1, serialId: null, handlingUnitId: null };
+const GRAIN_A: LevelGrain = { productVariantId: 7, locationId: 3, lotId: null, serialId: null, handlingUnitId: null, ownership: "OWNED" };
+const GRAIN_B: LevelGrain = { productVariantId: 2, locationId: 9, lotId: 4, serialId: null, handlingUnitId: null, ownership: "OWNED" };
+const GRAIN_C: LevelGrain = { productVariantId: 2, locationId: 9, lotId: 1, serialId: null, handlingUnitId: null, ownership: "OWNED" };
 /** NEO-4. Same bin, same lot, different pallet: a distinct grain, and it sorts last. */
-const GRAIN_D: LevelGrain = { productVariantId: 2, locationId: 9, lotId: 4, serialId: null, handlingUnitId: 11 };
+const GRAIN_D: LevelGrain = { productVariantId: 2, locationId: 9, lotId: 4, serialId: null, handlingUnitId: 11, ownership: "OWNED" };
 
 describe("lockLevels", () => {
   it("creates missing rows in the same order however the caller sends them", async () => {
@@ -72,6 +72,9 @@ describe("lockLevels", () => {
     const rec = recordingTx([
       {
         id: 11, product_variant_id: 7, location_id: 3, lot_id: null, serial_id: null,
+        // NEO-4 and NEO-11 both widened the natural key; a fixture row missing
+        // either lands under a different key than the caller looks up with.
+        handling_unit_id: null, ownership: "OWNED",
         on_hand: "5.0000", committed: "0.0000", blocked_qty: "0.0000",
         quality_hold_qty: "0.0000", average_cost: "2.5000",
       },
@@ -84,6 +87,7 @@ describe("lockLevels", () => {
     const rec = recordingTx([
       {
         id: 12, product_variant_id: 2, location_id: 9, lot_id: 4, serial_id: null,
+        handling_unit_id: null, ownership: "OWNED",
         on_hand: "1.0000", committed: "0.0000", blocked_qty: null,
         quality_hold_qty: null, average_cost: null,
       },

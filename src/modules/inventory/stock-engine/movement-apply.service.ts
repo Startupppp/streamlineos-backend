@@ -189,6 +189,7 @@ export class MovementApplyService {
         lotId: movement.lotId ?? null,
         serialId: movement.serialId ?? null,
         handlingUnitId: movement.handlingUnitId ?? null,
+        ownership: movement.ownership ?? "OWNED",
       });
       const level = levels.get(key);
 
@@ -274,6 +275,7 @@ export class MovementApplyService {
           lotId: movement.lotId ?? null,
           serialId: movement.serialId ?? null,
           handlingUnitId: movement.handlingUnitId ?? null,
+          ownership: movement.ownership ?? "OWNED",
           transactionType:
             movement.transactionType as (typeof invStockTransactions.$inferInsert)["transactionType"],
           quantityBucket: bucket,

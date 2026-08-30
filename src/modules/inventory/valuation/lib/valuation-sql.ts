@@ -80,6 +80,9 @@ const ROW_PROJECTION = sql`
  * is on hand today, so today's valuation reads it rather than re-deriving it from
  * the ledger — a report that disagreed with the stock screen would be reporting
  * its own arithmetic, not the warehouse.
+ *
+ * NEO-11: owned stock only. Consigned goods are on hand and are not ours, and
+ * valuing them would put a supplier's inventory on our balance sheet.
  */
 export function liveValuationSql(params: ValuationQueryParams): SQL {
   const { orgId, locationScope, warehouseId, categoryId, limit, offset } = params;
@@ -92,6 +95,11 @@ export function liveValuationSql(params: ValuationQueryParams): SQL {
       WHERE sl.org_id = ${orgId}
         AND ${locationScope("sl.location_id")}
         AND ${warehouseFilter(orgId, "sl.location_id", warehouseId)}
+        -- NEO-11. Consigned stock is standing in our building and belongs to
+        -- somebody else until it is sold. Valuing it would put a supplier's
+        -- goods on our balance sheet, which is the one thing a consignment
+        -- arrangement exists to avoid.
+        AND sl.ownership = 'OWNED'
       GROUP BY sl.product_variant_id
     ),
     layers AS (

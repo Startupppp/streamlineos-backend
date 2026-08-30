@@ -61,7 +61,17 @@ type MockTx = {
  * SELECT returns — without them every lookup misses and the engine reports the
  * location as missing.
  */
-const LEVEL_GRAIN = { product_variant_id: 1, location_id: 1, lot_id: null, serial_id: null };
+// The full natural key. NEO-4 added the handling unit and NEO-11 the ownership;
+// a fixture row missing either lands under a different key than the engine looks
+// it up with, and the movement then reports "location not found".
+const LEVEL_GRAIN = {
+  product_variant_id: 1,
+  location_id: 1,
+  lot_id: null,
+  serial_id: null,
+  handling_unit_id: null,
+  ownership: "OWNED" as const,
+};
 
 function buildTx(levelRow?: Record<string, unknown>): MockTx {
   const level = {

@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, bigint, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum, invBarcodeTypeEnum, invTaxTreatmentEnum, invDrugScheduleEnum, invSaleModeEnum, invQtyInputModeEnum } from "../common/enums";
+import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum, invBarcodeTypeEnum, invTaxTreatmentEnum, invDrugScheduleEnum, invSaleModeEnum, invQtyInputModeEnum, invMeasureModeEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 
 export const invUom = pgTable("inv_uom", {
@@ -50,6 +50,16 @@ export const invProducts = pgTable("inv_products", {
   status: invProductStatusEnum("status").default("ACTIVE").notNull(),
   productType: invProductTypeEnum("product_type").default("STOCKABLE"),
   trackingMethod: invTrackingMethodEnum("tracking_method").default("NONE"),
+  /**
+   * NEO-10 - whether this SKU's quantity is a count or a weight.
+   *
+   * `PIECES` for everything that was here before, so the column is inert until an
+   * organisation deliberately marks a SKU as catch-weight. A catch-weight SKU
+   * holds its ledger quantity in **weight**: that is the number that has to add
+   * up across receipts and issues, and the piece count rides alongside on the
+   * document for the person counting the bags.
+   */
+  measureMode: invMeasureModeEnum("measure_mode").default("PIECES").notNull(),
   costingMethod: invCostingMethodEnum("costing_method").default("WEIGHTED_AVERAGE"),
   standardCost: decimal("standard_cost", { precision: 18, scale: 4 }),
   purchaseUomId: integer("purchase_uom_id").references(() => invUom.id, { onDelete: "set null" }),

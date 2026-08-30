@@ -144,11 +144,24 @@ export function availableQty(level: {
    * `is_sellable IS NOT FALSE`.
    */
   is_sellable?: boolean | null;
+  /**
+   * NEO-11 - whose stock this is. Absent means `OWNED`, matching the column
+   * default: a caller that has not been taught about consignment gets the answer
+   * it had before, and only an explicit `VENDOR` or `CUSTOMER` withdraws stock.
+   */
+  ownership?: "OWNED" | "VENDOR" | "CUSTOMER" | null;
 }): string {
   // A2. Goods in transit are on hand and are not for sale. Callers that
   // aggregate across locations before calling this must apply the gate per row,
   // or they will promise a van.
   if (level.is_sellable === false) return "0.0000";
+
+  // NEO-11. Consigned stock is on hand and is not ours. Same shape of gate, same
+  // reason it lives here: a term the callers have to remember is a term one of
+  // them forgets, and forgetting this one offers a supplier's goods for sale.
+  if (level.ownership !== undefined && level.ownership !== null && level.ownership !== "OWNED") {
+    return "0.0000";
+  }
 
   return subDec(
     subDec(

@@ -61,6 +61,7 @@ describe("NEO-4 - the handling unit is part of the natural key", () => {
     lotId: 4,
     serialId: null,
     handlingUnitId: null,
+    ownership: "OWNED",
   };
 
   it("tells a pallet's stock apart from the loose stock beside it", () => {

@@ -32,6 +32,11 @@ export interface StockMovement {
    * pallet and a receipt onto the shelf beside it land on different rows.
    */
   handlingUnitId?: number | null;
+  /**
+   * NEO-11 - whose stock this movement is against. Absent means `OWNED`, which
+   * is what every movement in the product was before consignment existed.
+   */
+  ownership?: "OWNED" | "VENDOR" | "CUSTOMER";
   quantityDelta: string;
   unitCost?: string;
   qualityBucket?: QualityBucket;
@@ -108,6 +113,13 @@ export interface ReservationInput {
   serialId?: number;
   /** NEO-4 - the handling unit the promise is against. See `reservations.ts`. */
   handlingUnitId?: number | null;
+  /**
+   * NEO-11. A promise is always against owned stock: `availableQty` returns zero
+   * for anything else, so a consigned reservation would be refused anyway. The
+   * field exists so a caller cannot silently reserve the owned row when it meant
+   * the consigned one.
+   */
+  ownership?: "OWNED" | "VENDOR" | "CUSTOMER";
   qty: string;
   expiresAt?: Date;
   /**

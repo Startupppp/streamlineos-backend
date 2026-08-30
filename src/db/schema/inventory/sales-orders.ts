@@ -84,6 +84,13 @@ export const invSoLines = pgTable("inv_so_lines", {
   quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
   uomFactor: decimal("uom_factor", { precision: 18, scale: 6 }),
   /**
+   * NEO-10 - how many physical units this line's weight is. Only meaningful for
+   * a catch-weight SKU, where `quantity` is the weight and the price is per unit
+   * of weight: two bags of chicken at 250 a kilo are 250 x 10.35, not 250 x 2,
+   * and a system that cannot say that cannot invoice a butcher.
+   */
+  quantityPieces: decimal("quantity_pieces", { precision: 18, scale: 4 }),
+  /**
    * The rate in percent, scale 2 — 18.00, not 0.18. `amount` beside it is the
    * taxable value (entered quantity × unit price) and is tax-exclusive.
    */

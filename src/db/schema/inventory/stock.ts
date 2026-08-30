@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, date, decimal, integer, jsonb, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { desc, relations, sql } from "drizzle-orm";
-import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum, invAdjustmentStatusEnum, invQuantityBucketEnum } from "../common/enums";
+import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum, invAdjustmentStatusEnum, invQuantityBucketEnum, invOwnershipEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { invProductVariants, invUom } from "./core";
 import { invLocations, invWarehouses } from "./warehouses";
@@ -24,6 +24,16 @@ export const invStockLevels = pgTable("inv_stock_levels", {
    * double-count. See `handling-units.ts`.
    */
   handlingUnitId: integer("handling_unit_id"),
+  /**
+   * NEO-11 - whose stock this is. Part of the natural key, so a consigned pallet
+   * and an owned one at the same bin are two rows and stay tellable apart.
+   *
+   * Only `OWNED` is available to promise and only `OWNED` is in our valuation:
+   * consigned goods are standing in our building and belong to somebody else
+   * until they are sold. Both gates live in the canonical availability files, not
+   * in the callers.
+   */
+  ownership: invOwnershipEnum("ownership").default("OWNED").notNull(),
   onHand: decimal("on_hand", { precision: 18, scale: 4 }).default("0").notNull(),
   committed: decimal("committed", { precision: 18, scale: 4 }).default("0").notNull(),
   onOrder: decimal("on_order", { precision: 18, scale: 4 }).default("0").notNull(),
@@ -48,7 +58,11 @@ export const invStockLevels = pgTable("inv_stock_levels", {
     sql`coalesce(${table.lotId}, 0)`,
     sql`coalesce(${table.serialId}, 0)`,
     sql`coalesce(${table.handlingUnitId}, 0)`,
+    table.ownership,
   ),
+  index("idx_inv_stock_levels_org_ownership")
+    .on(table.orgId, table.ownership, table.productVariantId)
+    .where(sql`ownership <> 'OWNED'`),
   index("idx_inv_stock_levels_org_hu")
     .on(table.orgId, table.handlingUnitId)
     .where(sql`${table.handlingUnitId} IS NOT NULL`),
@@ -69,6 +83,8 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   /** NEO-4 - the handling unit the movement was against, when there was one. */
   handlingUnitId: integer("handling_unit_id"),
+  /** NEO-11 - whose stock this movement was against. */
+  ownership: invOwnershipEnum("ownership").default("OWNED").notNull(),
   unitCost: decimal("unit_cost", { precision: 18, scale: 4 }),
   totalCost: decimal("total_cost", { precision: 18, scale: 4 }),
   idempotencyKey: text("idempotency_key"),

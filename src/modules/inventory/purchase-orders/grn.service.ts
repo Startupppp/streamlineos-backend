@@ -30,6 +30,7 @@ import { GrnPostingService } from "./grn-post.service";
 import { GrnReadService } from "./grn-read.service";
 import { QuickCommerceInboundService } from "../channels/quick-commerce/quick-commerce-inbound.service";
 import { HandlingUnitService } from "../handling-units/handling-unit.service";
+import { assertCatchWeightLine } from "../stock-types/catch-weight";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -41,7 +42,15 @@ type GrnDraftLine = CreateGrnDraftInput["lines"][number];
 interface ReceivablePo {
   id: number;
   warehouseId: number | null;
-  lines: ReadonlyArray<{ id: number; productVariant: { id: number; productId: number } }>;
+  lines: ReadonlyArray<{
+    id: number;
+    productVariant: {
+      id: number;
+      productId: number;
+      /** NEO-10. Whether this SKU's quantity is a count or a weight. */
+      product?: { measureMode?: "PIECES" | "CATCH_WEIGHT" | null } | null;
+    };
+  }>;
 }
 
 /**
@@ -422,6 +431,14 @@ export class GrnService {
         await this.handlingUnits.assertCanHoldStockInTx(tx, orgId, line.handlingUnitId);
       }
 
+      // NEO-10. Checked before the UOM conversion, for the same reason E4's
+      // quantity capture is: converting first turns a rejected line into an
+      // accepted one behind a unit change.
+      assertCatchWeightLine(poLine.productVariant.product?.measureMode ?? "PIECES", {
+        quantity: line.quantityReceived,
+        quantityPieces: line.quantityPieces ?? null,
+      });
+
       const converted = await this.uom.convert(
         orgId,
         poLine.productVariant.productId,
@@ -447,6 +464,8 @@ export class GrnService {
           // rule lives in `HandlingUnitService` so there is one copy of it.
           handlingUnitId: line.handlingUnitId ?? null,
           crossDockSoId: line.crossDockSoId ?? null,
+          quantityPieces: line.quantityPieces ?? null,
+          ownership: line.ownership ?? "OWNED",
           lotNumber: line.lotNumber,
           expiryDate: line.expiryDate,
           manufactureDate: line.manufactureDate,
@@ -481,7 +500,7 @@ export class GrnService {
           with: {
             productVariant: {
               columns: { id: true, productId: true },
-              with: { product: { columns: { id: true, trackingMethod: true } } },
+              with: { product: { columns: { id: true, trackingMethod: true, measureMode: true } } },
             },
           },
         },

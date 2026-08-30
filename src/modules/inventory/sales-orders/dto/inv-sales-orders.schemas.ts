@@ -16,6 +16,11 @@ const soLineSchema = z.object({
   productVariantId: z.number().int().positive(),
   quantity: z.number().positive(),
   unitPrice: z.string().regex(/^\d+(\.\d{1,4})?$/),
+  /**
+   * NEO-10 - how many pieces this line's weight is. Only for a catch-weight SKU,
+   * where the price is per unit of weight and the quantity is the weight.
+   */
+  quantityPieces: z.number().positive().optional(),
   taxRate: z.string().regex(/^\d+(\.\d{1,2})?$/).default("0"),
   lineOrder: z.number().int().min(0).default(0),
 }).strict();

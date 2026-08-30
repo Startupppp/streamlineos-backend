@@ -464,6 +464,37 @@ export const invQtyInputModeEnum = pgEnum("inv_qty_input_mode", ["WHOLE", "DECIM
 
 export const invProductTypeEnum = pgEnum("inv_product_type", ["STOCKABLE", "CONSUMABLE", "SERVICE"]);
 export const invTrackingMethodEnum = pgEnum("inv_tracking_method", ["NONE", "LOT", "SERIAL"]);
+
+/**
+ * NEO-10 - how a SKU's quantity is measured.
+ *
+ * `PIECES` is everything Streamline has held until now: a quantity is a count,
+ * and 12 means twelve of them. `CATCH_WEIGHT` is the grocery and meat case: a
+ * SKU is *sold* by weight and *handled* in pieces, and the two do not derive from
+ * each other. Two bags of chicken are two bags and 10.35 kg, and the second bag
+ * weighing 5.10 kg is not an error to be corrected - it is the fact the invoice
+ * is raised on.
+ *
+ * The ledger holds the **weight** for a catch-weight SKU, because that is the
+ * number that has to add up across receipts and issues. The piece count rides
+ * alongside on the document, for the person counting the bags.
+ */
+export const invMeasureModeEnum = pgEnum("inv_measure_mode", ["PIECES", "CATCH_WEIGHT"]);
+
+/**
+ * NEO-11 - whose stock this is.
+ *
+ * `OWNED` is ours and is the default and the overwhelming majority. `VENDOR` is
+ * consignment: it is standing in our building and it belongs to a supplier until
+ * it is sold, so it is not available to promise and not in our valuation.
+ * `CUSTOMER` is the mirror - a customer's goods we are holding or working on.
+ *
+ * Part of a stock level's natural key, so a consigned pallet and an owned one at
+ * the same bin are two rows and stay tellable apart. Carrying it as a flag on the
+ * product instead would make it impossible to hold both, which every
+ * consignment arrangement eventually requires.
+ */
+export const invOwnershipEnum = pgEnum("inv_ownership", ["OWNED", "VENDOR", "CUSTOMER"]);
 export const invCostingMethodEnum = pgEnum("inv_costing_method", ["STANDARD", "WEIGHTED_AVERAGE", "FIFO"]);
 export const invReservationStatusEnum = pgEnum("inv_reservation_status", ["ACTIVE", "CONSUMED", "RELEASED", "EXPIRED"]);
 export const invLotStatusEnum = pgEnum("inv_lot_status", ["ACTIVE", "EXPIRED", "BLOCKED", "CONSUMED", "RECALLED"]);

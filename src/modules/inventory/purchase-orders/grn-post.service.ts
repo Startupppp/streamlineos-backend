@@ -52,6 +52,8 @@ interface PendingMovement {
   serialId: number | undefined;
   /** NEO-4 - the pallet the counter built this line onto, or null for loose. */
   handlingUnitId: number | null;
+  /** NEO-11 - whose the goods are once they land. */
+  ownership: "OWNED" | "VENDOR" | "CUSTOMER";
   quantityDelta: string;
   unitCost: string | undefined;
   /**
@@ -173,7 +175,7 @@ export class GrnPostingService {
         lines: {
           with: {
             productVariant: {
-              with: { product: { columns: { id: true, trackingMethod: true } } },
+              with: { product: { columns: { id: true, trackingMethod: true, measureMode: true } } },
             },
           },
         },
@@ -361,6 +363,7 @@ export class GrnPostingService {
             lotId: undefined,
             serialId,
             handlingUnitId: line.handlingUnitId ?? null,
+            ownership: line.ownership,
             quantityDelta: "1.0000",
             unitCost: poLine.unitCost ?? undefined,
           });
@@ -371,6 +374,7 @@ export class GrnPostingService {
               lotId: undefined,
               serialId,
               handlingUnitId: line.handlingUnitId ?? null,
+              ownership: line.ownership,
               quantity: "1.0000",
               stagingLocationId,
             }),
@@ -384,6 +388,7 @@ export class GrnPostingService {
           lotId,
           serialId: undefined,
           handlingUnitId: line.handlingUnitId ?? null,
+          ownership: line.ownership,
           quantityDelta: line.quantityReceived,
           unitCost: poLine.unitCost ?? undefined,
         });
@@ -394,6 +399,7 @@ export class GrnPostingService {
             lotId,
             serialId: undefined,
             handlingUnitId: line.handlingUnitId ?? null,
+            ownership: line.ownership,
             quantity: line.quantityReceived,
             stagingLocationId,
           }),
@@ -652,6 +658,7 @@ export class GrnPostingService {
       lotId: number | undefined;
       serialId: number | undefined;
       handlingUnitId: number | null;
+      ownership: "OWNED" | "VENDOR" | "CUSTOMER";
       quantity: string;
       stagingLocationId: number | null;
     },
@@ -665,6 +672,7 @@ export class GrnPostingService {
         lotId: grain.lotId,
         serialId: grain.serialId,
         handlingUnitId: grain.handlingUnitId,
+        ownership: grain.ownership,
         quantityDelta: `-${grain.quantity}`,
         unitCost: undefined,
       },
@@ -675,6 +683,7 @@ export class GrnPostingService {
         lotId: grain.lotId,
         serialId: grain.serialId,
         handlingUnitId: grain.handlingUnitId,
+        ownership: grain.ownership,
         quantityDelta: grain.quantity,
         unitCost: undefined,
         costFromMovementIndex: receiptIndex,

@@ -80,6 +80,10 @@ export class StockProjectionService {
          AND sl.lot_id IS NOT DISTINCT FROM ${grain.lotId ?? null}
          AND sl.serial_id IS NOT DISTINCT FROM ${grain.serialId ?? null}
          AND sl.handling_unit_id IS NOT DISTINCT FROM ${grain.handlingUnitId ?? null}
+         -- NEO-11. Picks are against owned stock, and the expression above is
+         -- gated the same way; without this the recompute would write an owned
+         -- figure onto a consigned row standing at the same bin.
+         AND sl.ownership = 'OWNED'
     `);
   }
 

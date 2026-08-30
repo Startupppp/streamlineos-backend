@@ -33,6 +33,7 @@ function grainsOf(cmd: StockEngineCommand): LevelGrain[] {
     lotId: m.lotId ?? null,
     serialId: m.serialId ?? null,
     handlingUnitId: m.handlingUnitId ?? null,
+    ownership: m.ownership ?? "OWNED",
   }));
 }
 

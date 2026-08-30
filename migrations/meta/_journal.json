@@ -2472,6 +2472,13 @@
       "when": 1788134409029,
       "tag": "0586_inventory_kitting",
       "breakpoints": true
+    },
+    {
+      "idx": 354,
+      "version": "7",
+      "when": 1788134409030,
+      "tag": "0587_inventory_catch_weight_consignment",
+      "breakpoints": true
     }
   ]
 }

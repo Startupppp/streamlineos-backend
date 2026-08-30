@@ -27,6 +27,11 @@ import { sql, type SQL } from "drizzle-orm";
  * location cannot be read at all (RLS, or a location that has gone) is treated
  * as sellable, matching that default rather than silently zeroing a warehouse.
  *
+ * NEO-11 added a second gate of the same kind: *whose* the stock is. Consigned
+ * goods are on hand and are not ours, and only `OWNED` may be promised. It sits
+ * beside the transit gate rather than in the five callers, for exactly the reason
+ * that one does.
+ *
  * `alias` is the table alias the caller used, because these expressions appear
  * inside joins where `inv_stock_levels` is not the only table with an `on_hand`.
  */
@@ -38,6 +43,13 @@ export function availableQtySql(alias = "sl"): SQL {
       WHERE avail_sellable_loc.id = ${a}.location_id
         AND avail_sellable_loc.is_sellable IS FALSE
     )
+    -- NEO-11. Consigned stock is standing in our building and belongs to
+    -- somebody else until it is sold, so it is never available to promise. The
+    -- gate is here, in the canonical expression, for the same reason the transit
+    -- gate is: a term each of five call sites has to remember is a term one of
+    -- them will forget, and forgetting this one offers a supplier's goods for
+    -- sale.
+    OR ${a}.ownership <> 'OWNED'
     THEN 0::numeric
     ELSE (
       ${a}.on_hand::numeric

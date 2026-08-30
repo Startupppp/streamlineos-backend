@@ -82,6 +82,19 @@ const grnLotLineSchema = z.object({
    * never reaching a storage bin and never raising a putaway task.
    */
   crossDockSoId: z.number().int().positive().optional(),
+  /**
+   * NEO-10 - how many pieces this line's weight came in. Required for a
+   * catch-weight SKU, refused for one counted in pieces; the rule is applied by
+   * `assertCatchWeightLine` where the product's measure mode is known.
+   */
+  quantityPieces: positiveDecimalQuantity.optional(),
+  /**
+   * NEO-11 - receive as consignment. Absent means owned, which is what every
+   * receipt in the product was before consignment existed; `.optional()` rather
+   * than `.default()` deliberately, so the *input* type stays optional and no
+   * existing caller has to be edited to say what it already meant.
+   */
+  ownership: z.enum(["OWNED", "VENDOR", "CUSTOMER"]).optional(),
   lotNumber: z.string().max(100).optional(),
   expiryDate: isoDate.optional(),
   manufactureDate: isoDate.optional(),

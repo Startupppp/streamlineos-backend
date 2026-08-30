@@ -377,8 +377,8 @@ export class PutawayCompleteService {
     // rather than line by line. Explicit null rather than omitted, so this reads
     // as a decision instead of an oversight.
     const grains: LevelGrain[] = resolved.flatMap((plan) => [
-      { productVariantId: plan.line.product_variant_id, locationId: context.fromLocationId, lotId: plan.line.lot_id, serialId: plan.line.serial_id, handlingUnitId: null },
-      { productVariantId: plan.line.product_variant_id, locationId: plan.destinationId, lotId: plan.line.lot_id, serialId: plan.line.serial_id, handlingUnitId: null },
+      { productVariantId: plan.line.product_variant_id, locationId: context.fromLocationId, lotId: plan.line.lot_id, serialId: plan.line.serial_id, handlingUnitId: null, ownership: "OWNED" },
+      { productVariantId: plan.line.product_variant_id, locationId: plan.destinationId, lotId: plan.line.lot_id, serialId: plan.line.serial_id, handlingUnitId: null, ownership: "OWNED" },
     ]);
     const locked = await lockLevels(tx, orgId, grains);
 
@@ -390,6 +390,7 @@ export class PutawayCompleteService {
           lotId: plan.line.lot_id,
           serialId: plan.line.serial_id,
           handlingUnitId: null,
+          ownership: "OWNED",
         }),
       );
       // A reservation holds units *at a location*, so putting them away moves

@@ -44,6 +44,12 @@ export const EXPECTED_COMMITTED: SQL = sql`
        AND res.lot_id IS NOT DISTINCT FROM sl.lot_id
        AND res.serial_id IS NOT DISTINCT FROM sl.serial_id
        AND res.handling_unit_id IS NOT DISTINCT FROM sl.handling_unit_id
+       -- NEO-11. A reservation is always against owned stock: availableQty
+       -- returns zero for anything else, so a consigned promise is impossible.
+       -- Without this gate the same reservation total would be applied to both
+       -- the owned row and the consigned one at the same bin, and committed
+       -- would be counted twice.
+       AND sl.ownership = 'OWNED'
        AND res.status = 'ACTIVE'
   ), 0)`;
 
@@ -104,6 +110,10 @@ export const EXPECTED_OUTGOING: SQL = sql`
        AND pll.lot_id IS NOT DISTINCT FROM sl.lot_id
        AND pll.serial_id IS NOT DISTINCT FROM sl.serial_id
        AND pll.handling_unit_id IS NOT DISTINCT FROM sl.handling_unit_id
+       -- NEO-11. Same reason as EXPECTED_COMMITTED above: a pick is against
+       -- owned stock, and without the gate one pick would empty the consigned
+       -- row's outgoing_qty as well as the owned one's.
+       AND sl.ownership = 'OWNED'
        AND pl.status <> 'CANCELLED'
        AND so.status IN (
          'DRAFT', 'CONFIRMED', 'PARTIALLY_RESERVED', 'RESERVED',

@@ -15,6 +15,13 @@ export interface LevelGrain {
    * rows that stay tellable apart.
    */
   handlingUnitId: number | null;
+  /**
+   * NEO-11 - whose stock this is. Defaulted by the caller rather than optional,
+   * so a new movement path has to say what it is posting: an omitted ownership
+   * silently posting into the owned row is the failure mode this grain exists to
+   * prevent.
+   */
+  ownership: "OWNED" | "VENDOR" | "CUSTOMER";
 }
 
 export interface LockedLevel {
@@ -24,6 +31,7 @@ export interface LockedLevel {
   lotId: number | null;
   serialId: number | null;
   handlingUnitId: number | null;
+  ownership: "OWNED" | "VENDOR" | "CUSTOMER";
   onHand: string;
   committed: string;
   blockedQty: string;
@@ -38,6 +46,7 @@ interface LockedLevelRow extends Record<string, unknown> {
   lot_id: number | null;
   serial_id: number | null;
   handling_unit_id: number | null;
+  ownership: "OWNED" | "VENDOR" | "CUSTOMER";
   on_hand: string;
   committed: string;
   blocked_qty: string;
@@ -52,6 +61,7 @@ export function levelKey(grain: LevelGrain): string {
     grain.lotId ?? "null",
     grain.serialId ?? "null",
     grain.handlingUnitId ?? "null",
+    grain.ownership,
   ].join(":");
 }
 
@@ -71,7 +81,8 @@ function byNaturalKey(a: LevelGrain, b: LevelGrain): number {
     a.locationId - b.locationId ||
     (a.lotId ?? 0) - (b.lotId ?? 0) ||
     (a.serialId ?? 0) - (b.serialId ?? 0) ||
-    (a.handlingUnitId ?? 0) - (b.handlingUnitId ?? 0)
+    (a.handlingUnitId ?? 0) - (b.handlingUnitId ?? 0) ||
+    a.ownership.localeCompare(b.ownership)
   );
 }
 
@@ -105,6 +116,7 @@ export async function lockLevels(
         lotId: grain.lotId,
         serialId: grain.serialId,
         handlingUnitId: grain.handlingUnitId,
+        ownership: grain.ownership,
         onHand: "0",
         committed: "0",
         onOrder: "0",
@@ -118,13 +130,13 @@ export async function lockLevels(
   const predicate = sql.join(
     ordered.map(
       (grain) =>
-        sql`(product_variant_id = ${grain.productVariantId} AND location_id = ${grain.locationId} AND (lot_id IS NOT DISTINCT FROM ${grain.lotId}) AND (serial_id IS NOT DISTINCT FROM ${grain.serialId}) AND (handling_unit_id IS NOT DISTINCT FROM ${grain.handlingUnitId}))`,
+        sql`(product_variant_id = ${grain.productVariantId} AND location_id = ${grain.locationId} AND (lot_id IS NOT DISTINCT FROM ${grain.lotId}) AND (serial_id IS NOT DISTINCT FROM ${grain.serialId}) AND (handling_unit_id IS NOT DISTINCT FROM ${grain.handlingUnitId}) AND ownership = ${grain.ownership})`,
     ),
     sql` OR `,
   );
 
   const rows = await tx.execute<LockedLevelRow>(sql`
-    SELECT id, product_variant_id, location_id, lot_id, serial_id, handling_unit_id,
+    SELECT id, product_variant_id, location_id, lot_id, serial_id, handling_unit_id, ownership,
            on_hand, committed, blocked_qty, quality_hold_qty, average_cost
     FROM inv_stock_levels
     WHERE org_id = ${orgId}
@@ -142,6 +154,7 @@ export async function lockLevels(
       lotId: row.lot_id,
       serialId: row.serial_id,
       handlingUnitId: row.handling_unit_id,
+      ownership: row.ownership,
       onHand: row.on_hand,
       committed: row.committed,
       blockedQty: row.blocked_qty ?? "0",
