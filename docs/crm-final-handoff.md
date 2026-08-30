@@ -63,6 +63,12 @@ role — and, since the merge below, against a schema that includes main's.
 | Frontend `tsc --noEmit` | clean |
 | Frontend `eslint` | **0 errors** |
 | Frontend suite | **1,435/1,435, 163/163 suites** |
+| Non-seeded e2e (`jest-e2e`) | **2,943/2,944**, 145/146 suites |
+
+The one is a transport-level flake — `Parse Error: Expected HTTP/` from supertest,
+not an assertion — which landed on a different suite in each of the two full runs
+and passes 22/22 when that suite is run alone. It is the harness booting and
+closing 146 applications in one process, not a defect in any of them.
 
 The backend unit suite was 8,382 passing with 23 failures before the merge. The
 23 are gone — fixed, not skipped — and main's suites bring the total to 10,797.
