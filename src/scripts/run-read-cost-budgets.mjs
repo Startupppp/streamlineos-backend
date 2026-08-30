@@ -146,7 +146,6 @@ async function main() {
     process.exit(1);
   }
 
-  const ORG = process.env.SEED_ORG_ID ?? "aa5627a2-a7de-4dca-97d2-135f3a5f801b";
   const SELF_TEST = process.argv.includes("--self-test");
 
   const validationErrors = validateBudgets(BUDGETS);
@@ -161,6 +160,33 @@ async function main() {
   const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
   const db = postgres(url, { max: 1, prepare: false, ssl, onnotice: () => {} });
 
+  let ORG = process.env.SEED_ORG_ID;
+  if (!ORG) {
+    const orgRows = await db`SELECT id FROM organizations LIMIT 20`;
+    let bestOrg = null;
+    let bestCount = 0;
+    for (const { id } of orgRows) {
+      try {
+        const rows = await db.begin(async (tx) => {
+          await tx`SELECT set_config('app.organization_id', ${id}, true)`;
+          return tx.unsafe(
+            `SELECT count(*)::int AS n FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE'`,
+            [id],
+          );
+        });
+        const n = rows[0]?.n ?? 0;
+        if (n > bestCount) { bestCount = n; bestOrg = id; }
+      } catch (_) {}
+    }
+    if (!bestOrg) {
+      await db.end();
+      console.error("SEED_ORG_ID not set and no org with active members found in the database.");
+      console.error("Set SEED_ORG_ID in .env to a seeded org ID, or seed the database first.");
+      process.exit(1);
+    }
+    ORG = bestOrg;
+    if (!SELF_TEST) console.log(`Auto-discovered seed org: ${ORG} (${bestCount} active members)`);
+  }
 
   try {
     // Self-test: use a budget whose params never returns null so the harness always exercises
