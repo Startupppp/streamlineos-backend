@@ -156,7 +156,17 @@ function makeDb(rec: Recorder, fixture: Fixture = {}): Db {
     return "other";
   };
 
-  return {
+  const double: Record<string, unknown> = {
+    /**
+     * Composing a hold runs in one tenant transaction now, because
+     * `autonomy_holds` is under row-level security and the decision, the
+     * message, the hold and its run have to commit together. The double runs the
+     * body against itself, so what each case records is unchanged.
+     */
+    transaction: (body: (handle: unknown) => Promise<unknown>) => body(double),
+    // `withTenant` sets the organisation GUCs through `tx.execute` before it hands
+    // the transaction on; nothing here reads the result.
+    execute: () => Promise.resolve([]),
     select: () => ({ from: (table: unknown) => chain(reads.get(table) ?? []) }),
     insert: (table: unknown) => ({
       values: (values: Record<string, unknown>) => {
@@ -170,7 +180,9 @@ function makeDb(rec: Recorder, fixture: Fixture = {}): Db {
         return chain([]);
       },
     }),
-  } as unknown as Db;
+  };
+
+  return double as unknown as Db;
 }
 
 interface Harness {
