@@ -44,7 +44,7 @@ async function buildService(activeSessions: { id: string }[]) {
       { provide: AuditService, useValue: { log: jest.fn() } },
       { provide: SessionsService, useValue: { publishRevocations } },
       { provide: EmploymentFactsService, useValue: { getFacts } },
-      { provide: UserActivityService, useValue: { listActivity: jest.fn().mockResolvedValue([]) } },
+      { provide: UserActivityService, useValue: { getUserActivity: jest.fn().mockResolvedValue([]) } },
     ],
   }).compile();
 
