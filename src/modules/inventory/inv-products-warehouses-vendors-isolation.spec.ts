@@ -26,8 +26,26 @@ function makeQueryDb(rows: unknown[]) {
   const findMany = jest.fn().mockResolvedValue(rows);
   const findFirst = jest.fn().mockResolvedValue(rows[0] ?? null);
   const handler = { findMany, findFirst };
-  const selectWhere = jest.fn().mockResolvedValue(rows);
-  const selectFrom = jest.fn().mockReturnValue({ where: selectWhere, orderBy: jest.fn().mockResolvedValue(rows) });
+
+  function makeChain(): Record<string, unknown> {
+    const chain: Record<string, unknown> = {};
+    chain.orderBy = jest.fn().mockReturnValue(chain);
+    chain.limit = jest.fn().mockReturnValue(chain);
+    chain.offset = jest.fn().mockResolvedValue(rows);
+    chain.where = jest.fn().mockReturnValue(chain);
+    chain.innerJoin = jest.fn().mockReturnValue(chain);
+    chain.leftJoin = jest.fn().mockReturnValue(chain);
+    chain.then = (
+      onFulfilled: ((value: unknown) => unknown) | null | undefined,
+      onRejected?: ((reason: unknown) => unknown) | null | undefined,
+    ) => Promise.resolve(rows).then(onFulfilled ?? undefined, onRejected ?? undefined);
+    return chain;
+  }
+
+  const rootChain = makeChain();
+  const selectWhere = rootChain.where as jest.Mock;
+  const selectFrom = jest.fn().mockReturnValue(rootChain);
+
   const db = {
     select: jest.fn().mockReturnValue({ from: selectFrom }),
     query: new Proxy({} as Record<string, typeof handler>, { get: () => handler }),

@@ -27,8 +27,8 @@ import { AccessService } from "../access/access.service";
 import { ValuationService } from "./stock-engine/valuation.service";
 import { MovementCostingService } from "./stock-engine/movement-costing.service";
 import { PeriodsService } from "../accounting/gl/periods.service";
-import { AiGatewayService } from "../../common/ai/ai-gateway.service";
-import { AiConfirmationService } from "../../common/ai/ai-confirmation.service";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
+import { AiConfirmationService } from "../ai/confirmation/ai-confirmation.service";
 import { InvVendorsService } from "./vendors/inv-vendors.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -74,7 +74,7 @@ function makeDb(rows: unknown[] = []) {
     query: new Proxy({} as Record<string, typeof handler>, { get: () => handler }),
     execute: jest.fn().mockResolvedValue(rows),
     transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
-    update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]), returning: jest.fn().mockResolvedValue([]) }) }),
+    update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows), then: (onFulfilled: ((v: unknown) => unknown) | null | undefined, onRejected?: ((r: unknown) => unknown) | null | undefined) => Promise.resolve([]).then(onFulfilled ?? undefined, onRejected ?? undefined) }), returning: jest.fn().mockResolvedValue(rows) }) }),
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]), onConflictDoNothing: jest.fn().mockResolvedValue([]) }) }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
   } as unknown as Db;
@@ -129,7 +129,7 @@ describe("NumberSequenceService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
 
   it("scopes sequence lookup to the requesting org (isolation — deny)", async () => {
-    const { db } = makeDb([]);
+    const { db } = makeDb([{ prefix: "PO", nextNumber: 2, padding: 5 }]);
     const svc = new NumberSequenceService(db);
     const num = await svc.next(ATTACKER, "PO");
     expect(num).toBeTruthy();
@@ -592,7 +592,7 @@ describe("WebhooksService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
 
   it("returns empty webhook list for a foreign org (isolation — deny)", async () => {
-    const { db, findMany } = makeDb([]);
+    const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
         WebhooksService,
@@ -603,8 +603,8 @@ describe("WebhooksService — cross-tenant isolation", () => {
 
     const result = await svc.list(ATTACKER);
     expect(result).toHaveLength(0);
-    const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-    expect(sqlValues(arg?.where)).toContain(ATTACKER);
+    const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
+    expect(sqlValues(whereArg)).toContain(ATTACKER);
   });
 
   it("returns webhooks for the owning org (isolation — control)", async () => {
@@ -710,7 +710,7 @@ describe("InvBarcodeService — cross-tenant isolation", () => {
     const svc = new InvBarcodeService(db);
 
     const result = await svc.lookup(ATTACKER, "BARCODE-123");
-    expect(result.product).toBeNull();
+    expect(result.type).toBe("not_found");
     expect(findFirst).toHaveBeenCalled();
     const arg = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(sqlValues(arg?.where)).toContain(ATTACKER);
@@ -722,7 +722,7 @@ describe("InvBarcodeService — cross-tenant isolation", () => {
     const svc = new InvBarcodeService(db);
 
     const result = await svc.lookup(OWNER, "BARCODE-123");
-    expect(result.product).toBeDefined();
+    expect(result.type).toBe("product");
   });
 });
 
@@ -741,7 +741,7 @@ describe("ExportService — cross-tenant isolation", () => {
     }).compile().then((m) => m.get(ExportService));
 
     const result = await svc.list(ATTACKER, { page: 1, limit: 20 });
-    expect(result).toHaveLength(0);
+    expect(result.items).toHaveLength(0);
     expect(selectWhere).toHaveBeenCalled();
     const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
     expect(sqlValues(whereArg)).toContain(ATTACKER);
@@ -759,7 +759,7 @@ describe("ExportService — cross-tenant isolation", () => {
     }).compile().then((m) => m.get(ExportService));
 
     const result = await svc.list(OWNER, { page: 1, limit: 20 });
-    expect(result).toHaveLength(1);
+    expect(result.items).toHaveLength(1);
   });
 });
 
@@ -779,7 +779,7 @@ describe("ImportService — cross-tenant isolation", () => {
     }).compile().then((m) => m.get(ImportService));
 
     const result = await svc.list(ATTACKER, { page: 1, limit: 20 });
-    expect(result).toHaveLength(0);
+    expect(result.items).toHaveLength(0);
     expect(selectWhere).toHaveBeenCalled();
     const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
     expect(sqlValues(whereArg)).toContain(ATTACKER);
@@ -798,6 +798,6 @@ describe("ImportService — cross-tenant isolation", () => {
     }).compile().then((m) => m.get(ImportService));
 
     const result = await svc.list(OWNER, { page: 1, limit: 20 });
-    expect(result).toHaveLength(1);
+    expect(result.items).toHaveLength(1);
   });
 });

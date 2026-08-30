@@ -300,7 +300,7 @@ describe("LoadsService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
 
   it("scopes load list to the org (isolation — deny for foreign org)", async () => {
-    const { db, findMany } = makeDb([]);
+    const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
         LoadsService,
@@ -313,8 +313,8 @@ describe("LoadsService — cross-tenant isolation", () => {
 
     const result = await svc.list(ATTACKER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
-    const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-    expect(sqlValues(arg?.where)).toContain(ATTACKER);
+    const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
+    expect(sqlValues(whereArg)).toContain(ATTACKER);
   });
 
   it("returns loads for the owning org (isolation — control)", async () => {
@@ -340,7 +340,7 @@ describe("PackagesService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
 
   it("returns empty packages for a foreign org (isolation — deny)", async () => {
-    const { db, findMany } = makeDb([]);
+    const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
         PackagesService,
@@ -353,8 +353,8 @@ describe("PackagesService — cross-tenant isolation", () => {
 
     const result = await svc.list(ATTACKER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
-    const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-    expect(sqlValues(arg?.where)).toContain(ATTACKER);
+    const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
+    expect(sqlValues(whereArg)).toContain(ATTACKER);
   });
 
   it("returns packages for the owning org (isolation — control)", async () => {
