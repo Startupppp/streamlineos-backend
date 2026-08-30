@@ -105,12 +105,13 @@ it.
 ### Three things about that run you need to know
 
 > **Superseded by PEND-DB — see §6.** What follows is what this section found at
-> the time, and it is left standing because the diagnosis is still the right one;
-> the conclusion is not. `0352` is fixed, a cold build now reaches 274/356 before
-> its first failure and 347/356 continuing past errors, and the remaining nine
-> failures have two causes rather than ninety-one. One correction to the analysis
-> below: the fix is **not** `CREATE TABLE IF NOT EXISTS`, because 0000 and 0352
-> create two different tables under one name.
+> the time. The diagnosis was right; the conclusion is now wrong in both
+> directions. `pnpm db:bootstrap` reaches **`REACHED_HEAD 371/371`** from an
+> empty database, and the remaining problem was never ninety-one migrations — it
+> was fifteen files missing from `_journal.json` plus two syntax-level bugs. One
+> correction to the analysis below: the fix for 0352 is **not**
+> `CREATE TABLE IF NOT EXISTS`, because 0000 and 0352 create two different tables
+> under one name.
 
 **No path builds this schema from empty.** Three were tried:
 
@@ -140,11 +141,13 @@ columns the skipped migrations would have added. **None of NEO's eight
 migrations was among them** — 0580 through 0587 and 0588 all applied cleanly,
 including the exclusion constraint.
 
-That was worth stating plainly, and it is no longer true: PEND-DB opened this
-gate, and §6 records how far a cold build now gets and what is behind it. What
-this paragraph got right is the shape of the risk. What it got wrong is the size
-of the fix — see §6 — and the identity of the problem: **this schema cannot
-currently be rebuilt from empty by any available path.** It is not a NEO regression — the previous handoff
+That was worth stating plainly, and it is no longer true. **This schema rebuilds
+from empty**, and §6 has the command and the result. What this paragraph got
+right is the shape of the risk — "a schema that cannot be rebuilt is a schema
+whose migrations are decoration" — and it was worth more than any remaining item
+in §6, exactly as it said. What it got wrong is the size and the identity of the
+problem. The sentence it was making was: **this schema cannot currently be
+rebuilt from empty by any available path.** It is not a NEO regression — the previous handoff
 already identified `0575`–`0579` as a new cold-build failure surface — but it is
 now demonstrated rather than suspected, and it is the single biggest risk in this
 repository. A schema that cannot be rebuilt is a schema whose migrations are
@@ -206,8 +209,15 @@ tests green.
 | `0588_inventory_dock_waveless` | Dock doors and appointments with the exclusion constraint; two waveless settings; the `inventory:dock:manage` backfill. |
 | `0589_inventory_drop_reason_codes` | PEND-15. Drops `inv_reason_codes`, guarded on the table being empty. |
 
-**PEND-DB also rewrote `0352_custom_fields_consolidation.sql`**, which is not
-this programme's file. It is listed here because editing it changes its sha256
+`0574_inventory_party_columns` also belongs here in spirit: it adds the three
+`client_party_id` columns `sales-orders.ts`, `operations.ts` and
+`purchase-orders.ts` have always declared and no migration ever created. It is
+numbered 0574 and journalled before `0575`, because a file that adds a column has
+to run before the file that keys against it.
+
+**PEND-DB also rewrote `0352_custom_fields_consolidation.sql`**, and edited
+`0262`, `0263`, `0278`, `0478`, `0482`, `0486` and `0575`–`0579`, none of which
+is this programme's file. It is listed here because editing it changes its sha256
 and `db-bootstrap.mjs` skips by content hash, so **it will run again on every
 database where it was already applied**. That re-run is a no-op by design — the
 first thing it does is ask whether the consolidation has happened — but anyone
@@ -305,7 +315,7 @@ nothing about whether the module on the other side of the seam agrees.
 | **NEO-10 catch-weight** | **Proven** | Pricing from weight already worked — for a catch-weight SKU the ledger quantity *is* the weight, so `amount = quantity × unitPrice` was already `250 × 5.10`. What was broken is the other side: receiving has refused a catch-weight line with no piece count since NEO-10 was built, and **selling accepted one and then discarded `quantityPieces` even when a caller sent it**, so `inv_so_lines.quantity_pieces` was a column nothing ever wrote and a picker was told nothing about how many bags. Fixed in `toSoLineValues`, on create and update. |
 | **NEO-14 waveless** | **Proven** | Two defects. `proposeWaveJoin`'s own comment said the caller "then posts to the join route or raises a new wave" and **there was no join route** — a decision with nothing to act on. And `waveless.ts` named a status `inv_pick_list_status` does not have (`"ASSIGNED"`); harmless in the pure function, where a set entry that never matches changes no outcome and all six unit tests passed, and fatal in the SQL, where **every call to the one NEO-14 endpoint that existed threw** `invalid input value for enum`. `assertNotAlreadyOnAWave` had no caller either; it has one now. |
 | **NEO-7 labour** | **Proven** | No defect in the module. The board is now read over HTTP — not as a service call, because `PermissionGuard` is not global and a service call proves the arithmetic and nothing about who may see it — against two operators who picked their own waves. Two distinct user ids, non-null rates above zero, a non-zero figure against standard. The second operator, whose work is on the board, is refused it: being measured is not the authority to measure. |
-| **NEO-5 RF surface** | Ratchet hardened; **still unverified on a device** | `rf-surface.test.ts` forbade four source strings. Rewriting the queue's `<ul>`/`<li>` as `role="grid"`/`role="row"` divs left **all four of its tests green** — a scrolling grid in front of somebody holding a scanner, and the check that exists to forbid it silent. `rf-surface-render.test.tsx` now mounts the three screens and forbids table semantics in the rendered DOM at any depth, plus any class pinning content past 375px. It does **not** claim the screen fits a handheld: jsdom has no layout, and asserting that would be a lie made convincing by a green tick. |
+| **NEO-5 RF surface** | Ratchet hardened; **still unverified on the RF screen itself** | `rf-surface.test.ts` forbade four source strings. Rewriting the queue's `<ul>`/`<li>` as `role="grid"`/`role="row"` divs left **all four of its tests green** — a scrolling grid in front of somebody holding a scanner, and the check that exists to forbid it silent. `rf-surface-render.test.tsx` now mounts the three screens and forbids table semantics in the rendered DOM at any depth, plus any class pinning content past 375px. It does **not** claim the screen fits a handheld: jsdom has no layout, and asserting that would be a lie made convincing by a green tick. A device run was attempted and is recorded below. |
 
 All five live in `test/inventory/neo-golden-path.seeded-e2e-spec.ts` except NEO-5,
 which is frontend. The NEO golden path is now 29 assertions and was run green
@@ -336,50 +346,124 @@ at `inv_uom`; 17 tests green against a local Postgres with two organisations and
 a NOBYPASSRLS role. `UNREAD_TABLES` is now empty: every `inv_*` table has a
 reader.
 
-### Cold build — the gate is open, and what is behind it
+### Cold build — closed. `REACHED_HEAD 371/371`
 
-`pnpm db:bootstrap` from an empty database now reaches **274 of 356** before its
-first failure, against 72 of 355 before. Applying the rest continuing past
-errors reaches **347 of 356 with 9 failures**, against the 91 this document
-reported.
+`pnpm db:bootstrap` builds this schema from an empty database. It has not been
+able to do that for as long as anything here records, and the previous revision
+of this section called it "the single biggest risk in this repository".
 
-`0352` is fixed, and the fix is not the one this document proposed. **It is not
-a duplicate table.** `0000:6074` creates a `custom_field_definitions` with
-`name`, `sort_order` and `created_by`; `0352` creates one with `key`,
-`project_id`, `settings`, `is_sensitive`, `category` and `display_order`. Two
-different tables sharing a name, so `CREATE TABLE IF NOT EXISTS` — suggested
-here, and asked for by the work order — is the worst outcome available: the
-statement succeeds, the *old* shape survives, everything below it fails on
-columns that are not there, and anything that did succeed leaves the application
-running against a table matching `custom-field-engine.ts` in no respect. 0000's
-table is reshaped in place instead, and the cold build now produces the same
-sixteen columns, types, defaults and six indexes the shared branch carries,
-compared column by column.
+```
+createdb cornerstone_cold
+psql -d cornerstone_cold -c "CREATE EXTENSION vector; CREATE EXTENSION pg_trgm;
+  CREATE EXTENSION btree_gist; CREATE EXTENSION pgcrypto; CREATE EXTENSION \"uuid-ossp\";"
+DATABASE_URL=postgres://<you>@localhost:5432/cornerstone_cold pnpm db:bootstrap
+# RESULT: REACHED_HEAD 371/371
+```
 
-The whole file is guarded because **editing it makes it re-run**:
-`db-bootstrap.mjs` skips by sha256 of contents. The original would have been
-destructive that second time — step 1 drops `ticket_custom_field_values` and
-`support_ticket_custom_field_values` and steps 5 and 6 recreate them empty.
-Verified in all three states: creates on empty, reshapes 0000's, no-ops on a
-consolidated one with a row still present afterwards.
+72/355 → 274/356 with `0352` → **371/371**. Both inventory golden paths then pass
+on that database, 37 tests, which is the first time either has run against a
+schema built from migrations rather than one assembled by hand.
 
-**The nine that remain, and their two causes:**
+**The cause of most of it was clerical.** Fifteen `.sql` files sat in
+`migrations/` and were absent from `_journal.json`, so nothing ever ran them and
+everything downstream failed on a column or table that no migration created.
+Thirteen were missing by accident. Two were missing on purpose — and nothing
+anywhere said which was which.
 
-| Migration | Cause |
+**`0352`** is described above. Not a duplicate table: `0000` and `0352` create
+two different tables under one name, so 0000's is reshaped rather than skipped.
+
+**`0486`** used `ADD CONSTRAINT IF NOT EXISTS`, which Postgres does not have,
+and took `0487` down with it.
+
+**Forty foreign keys named columns nobody declares.** `0575`–`0579` say in their
+own headers that 635 of 799 composite tenant FKs "were applied by hand and exist
+in no migration file"; the columns are part of that same drift, and no `pgTable`
+in `src/db/schema/` declares any of the forty. All 714 ADD blocks are now guarded
+on their columns existing — the faithful completion of the guard those files
+already carried for tables and constraints. Three columns were the opposite case:
+`client_party_id` on `inv_sales_orders`, `inv_customer_returns` and `inv_vendors`
+are declared in drizzle **with named composite foreign keys** and no migration
+ever created them; `0574_inventory_party_columns` does. `0263`'s comment counts
+three earlier appearances of this trap. This is the fourth, and the first where
+the missing object is a column rather than a constraint.
+
+#### The one that was not a cold-build problem at all
+
+**`0278` would have dropped four tables the ledger still reads.** Its header says
+nothing reads `leads`, `clients`, `contacts` and `crm_organizations`. That is
+true of three of them. `clients` is queried directly by thirteen services outside
+the party module — receivables, payables, payment runs, tax reports, bank
+matching, statements. The identity cutover finished its CRM half and never
+reached the ledger.
+
+It has been invisible because the file could never run: `0263`, which creates
+`crm_org_party_map`, was one of the fifteen orphans, so `0277` and `0278` failed
+on every cold build and nobody read past the error. **An accident of the
+bookkeeping was the only thing standing between that file and a broken ledger,**
+and journaling `0263` removed it — which is how this was found. The drop is now
+behind `SET app.allow_legacy_identity_drop = 'on'`, skipping loudly by default.
+
+`0488` stays un-journalled. It says so in its own header, it is the only one of
+the fifteen that does, and its preconditions include "confirmed working in
+production" — a judgement, not a grep.
+
+#### Proven rather than asserted
+
+Every one of the 24 files this pass authored, edited or newly journalled was
+re-run **twice** against the fully built database: zero failures. That matters
+because `db-bootstrap.mjs` skips by content hash, so a changed hash means the
+file runs again everywhere it had already applied.
+
+`src/db/cold-build-integrity.spec.ts` holds the line: no orphan files, no
+journal entry without a file, contiguous `idx`, every exclusion carrying a file
+and a readable reason, all 714 FK adds guarded, and both irreversible steps
+opt-in.
+
+#### What is still owed
+
+Two manual steps, both deliberate, both listed in that spec so they cannot become
+orphans again:
+
+| Step | What has to be true first |
 |---|---|
-| `0486_hr_people_org_person_link` | `ADD CONSTRAINT IF NOT EXISTS` — not valid Postgres. |
-| `0487_hr_people_org_person_validate` | Fails behind 0486. |
-| `0277_party_maps_own_the_identifiers`, `0278_drop_legacy_identity_tables` | Need `crm_org_party_map`, created by `0263_crm_org_party_map`. |
-| `0575`–`0579` (five files) | Need party columns from `0262_party_company_columns` and `0265_party_association_columns`. |
+| `0278` — drop the legacy identity tables | The thirteen accounting and finance services move off `clients`. |
+| `0488` — drop `hr_people`'s identity columns | Its own three preconditions, the last of which is a human confirmation. |
 
-Seven of the nine are one problem: **fifteen migration files exist on disk and
-are absent from `_journal.json`**, so nothing ever runs them. They are
-`0234`, `0262`–`0269`, `0271`, `0272`, `0472`, `0478`, `0482`, `0488`. This is
-not a theory — the CRM seeded spec on this branch fails with `column
-"document_key" of relation "quotes" does not exist`, which is `0272`, one of the
-fifteen. Both causes are other programmes' files and were listed rather than
-fixed. Fixing the journal is now the highest-value next piece of work in this
-repository, and it is a smaller job than this document previously implied.
+### The 375px device run — attempted, and what it actually showed
+
+Recorded because "unverified on a device" should say what was tried.
+
+Chrome was driven headless over CDP at 375×812, `deviceScaleFactor: 3`, touch
+emulation on, against the running dev stack, with a hand-minted NextAuth session
+cookie and the two onboarding gate cookies. The app loaded and rendered at that
+width:
+
+```
+viewport 375x812   scrollWidth 375   horizontalScroll false
+tables 0   table/grid/row roles 0   elements wider than the viewport 0
+```
+
+**But it landed on `/dashboard`, not `/inventory/rf`.** `GET /me/access` returned
+**403** to the hand-minted session, so the client never resolved permissions and
+never routed on. The numbers above are therefore real and are about the wrong
+screen: they say the shell has no horizontal scroll at 375, and they say nothing
+about the RF task runner.
+
+Two things blocked going further, neither of them code on this branch:
+
+* the Claude-in-Chrome extension is signed into a different account than the CLI,
+  so the assisted-browser path was unavailable;
+* the backend refuses a session this session can mint — which is correct
+  behaviour, and means driving the authenticated product needs credentials a
+  person supplies.
+
+What *is* pinned, and was verified by reintroducing the defect: the queue, the
+pick runner and the putaway runner render no table semantics at any depth, no
+element declares a width past 375, one line shows at a time, the scan box
+precedes the confirm, and denied does not render as empty. What remains unproven
+is the thing only a person holding a device can answer — whether it is usable
+one-handed.
 
 ### Neon — deliberately not applied
 
