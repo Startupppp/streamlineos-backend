@@ -1,3 +1,4 @@
+// Service under test: src/modules/inventory/webhooks/webhook-emitter.service.ts
 import type { Db } from "../../../db/drizzle.module";
 import { InventoryWebhookEmitter } from "./webhook-emitter.service";
 

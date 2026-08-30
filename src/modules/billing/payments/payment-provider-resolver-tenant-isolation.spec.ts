@@ -1,3 +1,4 @@
+// Service under test: src/modules/billing/payments/payment-provider-resolver.service.ts
 import type { Db } from "../../../db/drizzle.module";
 import { PaymentProviderResolver } from "./payment-provider-resolver.service";
 

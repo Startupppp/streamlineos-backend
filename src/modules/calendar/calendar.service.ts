@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, gte, lte, inArray } from "drizzle-orm";
+import { and, eq, gte, lte, inArray, like } from "drizzle-orm";
 import {
   calendarEvents,
   calendarEventExceptions,
@@ -10,6 +10,7 @@ import {
   organizationMembers,
   notificationOutbox,
 } from "../../db/schema";
+import type { TenantTx } from "../../db/drizzle.types";
 import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -192,6 +193,9 @@ export class CalendarService {
   }
 
   async updateEvent(orgId: string, userId: string, id: number, input: UpdateEventInput) {
+    if (input.attendeeIds !== undefined)
+      await assertUsersInOrg(this.db, orgId, input.attendeeIds);
+
     const updateData: Record<string, unknown> = {};
     if (input.title !== undefined) updateData.title = input.title;
     if (input.description !== undefined) updateData.description = input.description ?? null;
@@ -203,9 +207,6 @@ export class CalendarService {
     if (input.category !== undefined) updateData.category = input.category;
     if (input.entityType !== undefined) updateData.entityType = input.entityType ?? null;
     if (input.entityId !== undefined) updateData.entityId = input.entityId ?? null;
-    if (input.attendeeIds !== undefined) {
-      await assertUsersInOrg(this.db, orgId, input.attendeeIds);
-    }
     if (input.timezone !== undefined) updateData.timezone = input.timezone;
     if (input.agenda !== undefined) updateData.agenda = input.agenda ?? null;
     if (input.postMeetingNotes !== undefined)
@@ -217,32 +218,66 @@ export class CalendarService {
       updateData.recurrenceEnd = input.recurrenceEnd ? new Date(input.recurrenceEnd) : null;
     if (input.visibility !== undefined) updateData.visibility = input.visibility;
 
-    const [event] = await this.db
-      .update(calendarEvents)
-      .set({ ...updateData, updatedAt: new Date() })
-      .where(
-        and(
-          eq(calendarEvents.id, id),
-          eq(calendarEvents.orgId, orgId),
-          eq(calendarEvents.createdBy, userId),
-        ),
-      )
-      .returning();
+    const timeChanged =
+      input.startDate !== undefined ||
+      input.endDate !== undefined ||
+      input.timezone !== undefined ||
+      input.rrule !== undefined ||
+      input.recurrenceEnd !== undefined;
+    if (timeChanged) updateData.reminder15MinSent = false;
 
-    if (event && input.attendeeIds !== undefined) {
-      const memberships = await this.db
-        .select({ id: organizationMembers.id, userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, input.attendeeIds)));
-      await this.db.delete(eventAttendees).where(and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, id)));
-      if (memberships.length > 0)
-        await this.db.insert(eventAttendees).values(memberships.map((membership) => ({
-          orgId,
-          eventId: id,
-          membershipId: membership.id,
-          userId: membership.userId,
-        }))).onConflictDoNothing();
-    }
+    const event = await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(calendarEvents)
+        .set({ ...updateData, updatedAt: new Date() })
+        .where(
+          and(
+            eq(calendarEvents.id, id),
+            eq(calendarEvents.orgId, orgId),
+            eq(calendarEvents.createdBy, userId),
+          ),
+        )
+        .returning();
+      const updated = rows[0] ?? null;
+      if (!updated) return null;
+
+      if (timeChanged)
+        await tx
+          .update(notificationOutbox)
+          .set({ state: "DEAD" })
+          .where(
+            and(
+              eq(notificationOutbox.orgId, orgId),
+              eq(notificationOutbox.state, "PENDING"),
+              like(notificationOutbox.dedupeKey, `calendar:reminder:${id}:%`),
+            ),
+          );
+
+      const newAttendeeIds =
+        input.attendeeIds !== undefined
+          ? await this.updateAttendeesInTx(tx, orgId, id, input.attendeeIds, userId)
+          : [];
+
+      if (newAttendeeIds.length > 0)
+        await tx
+          .insert(notificationOutbox)
+          .values({
+            orgId,
+            eventKey: "calendar.event.invited",
+            dedupeKey: `calendar:event:${id}:update:${updated.updatedAt.toISOString()}:invited`,
+            actorUserId: userId,
+            targetUserIds: newAttendeeIds,
+            entityType: "calendar_event",
+            entityId: String(id),
+            title: `Calendar invite: ${updated.title}`,
+            message: `You have been invited to "${updated.title}"`,
+            link: "/calendar",
+            variables: { eventTitle: updated.title },
+          })
+          .onConflictDoNothing({ target: [notificationOutbox.orgId, notificationOutbox.dedupeKey] });
+
+      return updated;
+    });
 
     if (event?.integrationConnectionId && event.externalEventId) {
       try {
@@ -257,12 +292,49 @@ export class CalendarService {
           this.logger.warn(`External sync update skipped for ${conn.toolkit}: ${updateResult.reason}`);
       } catch (error) {
         this.logger.warn(
-          `External sync update failed for event ${event.id}: ${error instanceof Error ? error.message : String(error)}`,
+          `External sync update failed for event ${id}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
 
-    return event ?? null;
+    return event;
+  }
+
+  private async updateAttendeesInTx(
+    tx: TenantTx,
+    orgId: string,
+    eventId: number,
+    attendeeIds: string[],
+    actorUserId: string,
+  ): Promise<string[]> {
+    const current = await tx
+      .select({ userId: eventAttendees.userId })
+      .from(eventAttendees)
+      .where(and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, eventId)));
+
+    const currentUserIds = new Set(current.map((a) => a.userId));
+
+    const memberships =
+      attendeeIds.length === 0
+        ? []
+        : await tx
+            .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+            .from(organizationMembers)
+            .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, attendeeIds)));
+
+    await tx
+      .delete(eventAttendees)
+      .where(and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, eventId)));
+
+    if (memberships.length > 0)
+      await tx
+        .insert(eventAttendees)
+        .values(memberships.map((m) => ({ orgId, eventId, membershipId: m.id, userId: m.userId })))
+        .onConflictDoNothing();
+
+    return memberships
+      .filter((m) => !currentUserIds.has(m.userId) && m.userId !== actorUserId)
+      .map((m) => m.userId);
   }
 
   async deleteEvent(orgId: string, userId: string, id: number) {

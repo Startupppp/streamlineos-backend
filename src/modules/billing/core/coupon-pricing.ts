@@ -32,12 +32,29 @@ export const COUPON_EXHAUSTED = "This coupon has reached its usage limit";
 export const COUPON_WRONG_PLAN = "This coupon is not applicable to the selected plan";
 export const COUPON_ALREADY_USED = "This coupon has already been used by your organization";
 
+/** Converts a numeric(15,2) string from Postgres to integer paise with no float arithmetic. */
+function numericToPaise(valueStr: string): number {
+  const dotIndex = valueStr.indexOf(".");
+  if (dotIndex === -1) {
+    const whole = parseInt(valueStr, 10);
+    return Number.isNaN(whole) || whole < 0 ? 0 : whole * 100;
+  }
+  const whole = parseInt(valueStr.slice(0, dotIndex) || "0", 10);
+  const fracStr = valueStr.slice(dotIndex + 1).padEnd(2, "0").slice(0, 2);
+  const frac = parseInt(fracStr, 10);
+  if (Number.isNaN(whole) || Number.isNaN(frac) || whole < 0) return 0;
+  return whole * 100 + frac;
+}
+
 export function couponDiscountPaise(coupon: CouponRecord, baseAmountPaise: number): number {
-  const value = parseFloat(coupon.value);
-  if (!Number.isFinite(value) || value <= 0) return 0;
-  return coupon.type === "PERCENTAGE"
-    ? Math.round(baseAmountPaise * (value / 100))
-    : Math.round(Math.min(value * 100, baseAmountPaise));
+  if (coupon.type === "FIXED") {
+    const paise = numericToPaise(coupon.value);
+    if (paise <= 0) return 0;
+    return Math.min(paise, baseAmountPaise);
+  }
+  const rate = parseFloat(coupon.value);
+  if (!Number.isFinite(rate) || rate <= 0) return 0;
+  return Math.round(baseAmountPaise * (rate / 100));
 }
 
 // One evaluator for pricing, validation and redemption — checkout used to skip all of it.

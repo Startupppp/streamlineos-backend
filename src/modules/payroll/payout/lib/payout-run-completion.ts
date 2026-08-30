@@ -12,6 +12,8 @@ import type { AuditService } from "../../../../common/audit/audit.service";
 import type { PayrollPostingService } from "../../payroll-posting.service";
 import { systemActor } from "../../../../common/auth/system-actor";
 import type { JournalOutboxService } from "../../insights/journal-outbox.service";
+import { registerAfterCommit } from "../../../../common/tenant/tenant-context";
+import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 
 export interface RunCompletionDeps {
   db: Db;
@@ -209,7 +211,11 @@ export async function checkRunCompletion(
         .catch((e: unknown) =>
           deps.logger.warn("postPaid accounting integration failed", { error: String(e), runId, orgId }),
         );
-      void autoSnapshotJournal(deps, orgId, actorId, paidRun[0].month, runId);
+      const snapshotTask = () =>
+        autoSnapshotJournal(deps, orgId, actorId, paidRun[0].month, runId).catch(
+          logSideEffectFailure("payroll auto-snapshot journal", { orgId, runId }),
+        );
+      if (!registerAfterCommit(snapshotTask)) void snapshotTask();
     }
   }
 }

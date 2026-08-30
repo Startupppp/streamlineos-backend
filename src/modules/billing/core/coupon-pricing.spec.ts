@@ -107,6 +107,23 @@ describe("coupon arithmetic stays in integer paise", () => {
     expect(couponDiscountPaise(coupon({ type: "FIXED", value: "5000" }), 99_900)).toBe(99_900);
   });
 
+  it("FIXED: parses fractional rupees to paise with integer arithmetic — no float multiplication", () => {
+    expect(couponDiscountPaise(coupon({ type: "FIXED", value: "250.50" }), 99_900)).toBe(25_050);
+    expect(couponDiscountPaise(coupon({ type: "FIXED", value: "33.33" }), 99_900)).toBe(3_333);
+    expect(couponDiscountPaise(coupon({ type: "FIXED", value: "99.99" }), 99_900)).toBe(9_999);
+    expect(Number.isInteger(couponDiscountPaise(coupon({ type: "FIXED", value: "250.50" }), 99_900))).toBe(true);
+  });
+
+  it("FIXED: rejects a zero-paise coupon without charging the org", () => {
+    expect(couponDiscountPaise(coupon({ type: "FIXED", value: "0" }), 99_900)).toBe(0);
+    expect(couponDiscountPaise(coupon({ type: "FIXED", value: "0.00" }), 99_900)).toBe(0);
+  });
+
+  it("FIXED: ignores unparseable value strings rather than producing NaN paise", () => {
+    expect(couponDiscountPaise(coupon({ type: "FIXED", value: "not-a-number" }), 99_900)).toBe(0);
+    expect(couponDiscountPaise(coupon({ type: "FIXED", value: "" }), 99_900)).toBe(0);
+  });
+
   it("treats a zero or unparseable value as no discount rather than NaN", () => {
     expect(couponDiscountPaise(coupon({ value: "0" }), 99_900)).toBe(0);
     expect(couponDiscountPaise(coupon({ value: "not-a-number" }), 99_900)).toBe(0);

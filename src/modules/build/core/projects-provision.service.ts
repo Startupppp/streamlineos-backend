@@ -98,7 +98,7 @@ export class ProjectsProvisionService {
 
     const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
     if (additionalMembers.length > 0) {
-      void this.dispatch.emit({
+      await this.dispatch.emit({
         eventKey: "build.project.member_added",
         orgId,
         actorUserId: creatorUserId,
