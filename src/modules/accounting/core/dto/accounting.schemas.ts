@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 import { pageSizeField, pageNumberField } from "../../../../common/pagination/list-query.schema";
-import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
 const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
@@ -9,10 +8,8 @@ const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 export const accountTypeSchema = z.enum(["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"]);
 
 export const listAccountsQuerySchema = z.object({
-  cursor: idCursorSchema,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
   q: z.string().trim().max(200).optional(),
   type: accountTypeSchema.optional(),
   activeOnly: queryBoolean.optional(),
@@ -34,10 +31,8 @@ export const updateAccountSchema = z.object({
 
 export const listJournalQuerySchema = z
   .object({
-    cursor: idCursorSchema,
+    cursor: z.string().optional(),
     limit: pageSizeField(20, 100),
-    page: pageNumberField,
-    pageSize: pageSizeField(20, 100),
     from: z.coerce.date().optional(),
     to: z.coerce.date().optional(),
     sourceType: z.string().max(40).optional(),
@@ -92,8 +87,6 @@ export const listCustomerLedgerQuerySchema = z.object({
 });
 
 export const listCustomersOutstandingQuerySchema = z.object({
-  cursor: idCursorSchema,
-  limit: pageSizeField(20, 100),
   page: pageNumberField,
   pageSize: pageSizeField(20, 100),
   q: z.string().trim().max(200).optional(),
@@ -114,10 +107,8 @@ export const purchaseBillStatusSchema = z.enum([
 ]);
 
 export const listPurchaseBillsQuerySchema = z.object({
-  cursor: idCursorSchema,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
   q: z.string().trim().max(200).optional(),
   status: z.preprocess(
     (val) => {

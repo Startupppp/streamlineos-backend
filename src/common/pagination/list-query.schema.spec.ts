@@ -243,7 +243,7 @@ const schemaCases: SchemaCaseConfig[] = [
   { name: "listTeamsQuerySchema", schema: listTeamsQuerySchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 50 },
   { name: "listTeamMembersQuerySchema", schema: listTeamMembersQuerySchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 50 },
   { name: "listAccountsQuerySchema", schema: listAccountsQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "listCustomersOutstandingQuerySchema", schema: listCustomersOutstandingQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "listCustomersOutstandingQuerySchema", schema: listCustomersOutstandingQuerySchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 20 },
   { name: "listPurchaseBillsQuerySchema", schema: listPurchaseBillsQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
   { name: "listInvoicesSchema", schema: listInvoicesSchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
   { name: "listQuotesSchema", schema: listQuotesSchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 25 },
@@ -281,7 +281,7 @@ describe("migrated schemas — clamp at their ceiling and preserve their own def
         const exposesOffset = Object.prototype.hasOwnProperty.call(result, "page");
         if (exposesOffset) expect(result["page"]).toBe(1);
 
-        const exposesCursor = "cursor" in (schema.parse({ cursor: 1 }) as object);
+        const exposesCursor = "cursor" in (schema.parse({ cursor: "1" }) as object);
         expect(exposesOffset || exposesCursor).toBe(true);
       });
     });
