@@ -41,6 +41,46 @@ import { InvPharmacyService } from "../products/inv-pharmacy.service";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
+/**
+ * NEO-8 — which sales-order line a cross-docked receipt is holding stock for.
+ *
+ * The order is the only thing a receiving clerk knows: the receipt names
+ * `crossDockSoId`, not a line. Shipping needs the line, because that is the
+ * grain `postShipment` matches reservations at.
+ *
+ * The rule is "the first line for this product that is not already fully held",
+ * so two deliveries against an order with two lines of the same SKU fill them
+ * in order rather than both landing on the first. Null when the order has no
+ * line for this product at all — a receipt cross-docked to an order that never
+ * asked for it, which is a mistake nobody should silently repair.
+ */
+async function resolveCrossDockSoLine(
+  tx: Tx,
+  orgId: string,
+  soId: number,
+  productVariantId: number,
+): Promise<number | null> {
+  const [row] = await tx.execute<{ id: number }>(sql`
+    SELECT sol.id
+      FROM inv_so_lines sol
+     WHERE sol.org_id = ${orgId}
+       AND sol.so_id = ${soId}
+       AND sol.product_variant_id = ${productVariantId}
+       AND sol.quantity > COALESCE((
+             SELECT SUM(r.reserved_qty)
+               FROM inv_stock_reservations r
+              WHERE r.org_id = sol.org_id
+                AND r.source_type = 'inv_sales_order'
+                AND r.source_id = ${String(soId)}
+                AND r.source_line_id = sol.id::text
+                AND r.status = 'ACTIVE'
+           ), 0)
+     ORDER BY sol.id
+     LIMIT 1
+  `);
+  return row ? Number(row.id) : null;
+}
+
 type DiscrepancyReason = "SHORT" | "OVER" | "DAMAGED" | "WRONG_ITEM";
 
 /** What a posting movement needs, assembled per line before the engine is called. */
@@ -453,11 +493,34 @@ export class GrnPostingService {
       for (const line of crossDocked) {
         const poLine = po.lines.find((l) => l.id === line.poLineId);
         if (!poLine || line.qualityStatus !== "ACCEPTED") continue;
+
+        /**
+         * NEO-8. `source_line_id` on a sales-order reservation means *the sales
+         * order line this holds stock for*, and shipping reads it that way:
+         * `postShipment` matches each order line against
+         * `source_line_id === String(line.id)` and refuses the order outright
+         * when it finds nothing. Writing a GRN coordinate here instead produced
+         * a reservation the ledger was happy with and the dispatch desk could
+         * not use — the cross-dock arrived, stood at staging correctly, and the
+         * order it arrived for could never be shipped.
+         *
+         * Which line, when an order has several for one product, is decided by
+         * what is still owed: the first line of that variant that is not already
+         * fully held. That is the same question a picker answers by hand.
+         */
+        const soLineId = await resolveCrossDockSoLine(
+          tx,
+          orgId,
+          line.crossDockSoId!,
+          poLine.productVariantId,
+        );
+        if (soLineId === null) continue;
+
         try {
           await this.reservations.createReservationInTx(tx, orgId, userId, {
             sourceType: "inv_sales_order",
             sourceId: String(line.crossDockSoId),
-            sourceLineId: `grn:${grn.id}:${line.id}`,
+            sourceLineId: String(soLineId),
             productVariantId: poLine.productVariantId,
             locationId: stagingLocationId,
             qty: line.quantityReceived,

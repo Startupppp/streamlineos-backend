@@ -88,6 +88,8 @@ interface Scene {
   kitVariantId: number;
   componentAId: number;
   componentBId: number;
+  /** NEO-8: never stocked. It arrives and leaves on the same shift. */
+  crossDockVariantId: number;
   channelId: number;
 }
 
@@ -102,6 +104,9 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
   let asnId: number;
   let handlingUnitId: number;
   let grnId: number;
+  let crossDockSoId: number;
+  let crossDockPoId: number;
+  let crossDockPoLineId: number;
 
   const asTenant = <T>(work: () => Promise<T>): Promise<T> =>
     runInNewTenantTransaction(app.app.get<Db>(DRIZZLE), scene.orgId, work);
@@ -137,6 +142,42 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
           AND handling_unit_id = ${huId}`),
     );
     return Number(row!.qty);
+  };
+
+  /** Every level row for a variant, so "nowhere else" can be asserted rather than sampled. */
+  const levelsFor = async (
+    variantId: number,
+  ): Promise<Array<{ locationId: number; onHand: number; committed: number }>> => {
+    const rows = await asTenant(() =>
+      db().execute<{ location_id: number; on_hand: string; committed: string }>(sql`
+        SELECT location_id, on_hand::text, committed::text FROM inv_stock_levels
+        WHERE org_id = ${scene.orgId} AND product_variant_id = ${variantId}
+        ORDER BY location_id`),
+    );
+    return rows.map((r) => ({
+      locationId: Number(r.location_id),
+      onHand: Number(r.on_hand),
+      committed: Number(r.committed),
+    }));
+  };
+
+  /** NEO-8: what is actually being held for an order, and where. */
+  const reservationsFor = async (
+    soId: number,
+  ): Promise<Array<{ locationId: number; reservedQty: number; status: string }>> => {
+    const rows = await asTenant(() =>
+      db().execute<{ location_id: number | null; reserved_qty: string; status: string }>(sql`
+        SELECT location_id, reserved_qty::text, status FROM inv_stock_reservations
+        WHERE org_id = ${scene.orgId}
+          AND source_type = 'inv_sales_order' AND source_id = ${String(soId)}
+          AND status = 'ACTIVE'
+        ORDER BY id`),
+    );
+    return rows.map((r) => ({
+      locationId: Number(r.location_id),
+      reservedQty: Number(r.reserved_qty),
+      status: r.status,
+    }));
   };
 
   /** The invariant after every step: the ledger explains the projection. */
@@ -179,6 +220,7 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
       const kitVariantId = await makeVariant("NEO gift set", "NEOKIT");
       const componentAId = await makeVariant("NEO component A", "NEOCA");
       const componentBId = await makeVariant("NEO component B", "NEOCB");
+      const crossDockVariantId = await makeVariant("NEO cross-dock case", "NEOXD");
 
       // NEO-2 matches a platform line on the barcode both sides agreed on.
       const ean = `890${tag.replace(/\D/g, "0").padEnd(10, "0").slice(0, 10)}`;
@@ -244,6 +286,7 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
         kitVariantId,
         componentAId,
         componentBId,
+        crossDockVariantId,
         channelId: channel.id,
       };
     });
@@ -617,6 +660,164 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
     // Three kits of (2 x 5) + (1 x 5) = 45.
     expect(Number(built.totalCost)).toBeCloseTo(45, 4);
     await expectReconciled("NEO-9 kit assembled");
+  }, SLICE_TIMEOUT_MS);
+
+  /**
+   * NEO-8 — the cross-dock, walked rather than described.
+   *
+   * The structural spec pins leg ordering and the staging refusal. What it
+   * cannot say is whether a delivery that never touches a storage bin can be
+   * shipped: the reservation the receipt raises has to be one the *ship* command
+   * recognises, and those are two modules that agreed on a shape in prose.
+   *
+   * Read as one story: an order we cannot fill, a delivery for it, and the units
+   * leaving again without ever being sellable to anybody else.
+   */
+  it("NEO-8: an order for stock we do not have is confirmed short, reserving nothing", async () => {
+    expect(await atp(scene.crossDockVariantId)).toBe(0);
+
+    const so = await asTenant(() =>
+      app.app.get(SoCoreService).createSo(scene.orgId, scene.userId, {
+        orderDate: "2026-09-04",
+        warehouseId: scene.warehouseId,
+        currency: "INR",
+        lines: [
+          {
+            productVariantId: scene.crossDockVariantId,
+            quantity: 25,
+            unitPrice: "12.0000",
+            taxRate: "0",
+            lineOrder: 0,
+          },
+        ],
+      }),
+    );
+    crossDockSoId = (so as { id: number }).id;
+
+    await asTenant(() =>
+      app.app
+        .get(SoLifecycleService)
+        .confirmSo(scene.orgId, crossDockSoId, scene.userId, `neo-xd-confirm-${scene.tag}`),
+    );
+
+    const [row] = await asTenant(() =>
+      db().execute<{ status: string }>(sql`
+        SELECT status FROM inv_sales_orders
+        WHERE org_id = ${scene.orgId} AND id = ${crossDockSoId}`),
+    );
+    // Short, and honest about it: there is nothing on the shelf to hold.
+    expect(row!.status).toBe("PARTIALLY_RESERVED");
+    expect(await reservationsFor(crossDockSoId)).toEqual([]);
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-8: receives that delivery straight to outbound staging, reaching no storage bin", async () => {
+    const po = await asTenant(() =>
+      app.app.get(PoService).createPo(scene.orgId, scene.userId, {
+        vendorId: scene.vendorId,
+        orderDate: "2026-09-04",
+        warehouseId: scene.warehouseId,
+        currency: "INR",
+        lines: [
+          {
+            productVariantId: scene.crossDockVariantId,
+            quantity: 25,
+            unitCost: "6.0000",
+            taxRate: "0",
+            lineOrder: 0,
+          },
+        ],
+      }),
+    );
+    crossDockPoId = (po as { id: number }).id;
+    await asTenant(() => app.app.get(PoService).sendPo(scene.orgId, crossDockPoId, scene.userId));
+
+    const [line] = await asTenant(() =>
+      db().execute<{ id: number }>(sql`
+        SELECT id FROM inv_po_lines WHERE org_id = ${scene.orgId} AND po_id = ${crossDockPoId}`),
+    );
+    crossDockPoLineId = line!.id;
+
+    await asTenant(() =>
+      app.app
+        .get(GrnService)
+        .receiveGoods(scene.orgId, crossDockPoId, scene.userId, `neo-xd-receive-${scene.tag}`, {
+          receivedDate: "2026-09-04",
+          locationId: scene.receivingId,
+          lines: [
+            {
+              poLineId: crossDockPoLineId,
+              quantityReceived: "25.0000",
+              qualityStatus: "ACCEPTED",
+              crossDockSoId,
+            },
+          ],
+        }),
+    );
+
+    // The unit's whole claim: the goods are at staging and nowhere else. Read as
+    // every level row rather than three sampled bins, so a fourth location
+    // holding stock is a failure rather than a place nobody looked.
+    const levels = await levelsFor(scene.crossDockVariantId);
+    expect(levels.filter((l) => l.onHand !== 0).map((l) => [l.locationId, l.onHand])).toEqual([
+      [scene.shippingId, 25],
+    ]);
+    expect(await onHandAt(scene.crossDockVariantId, scene.receivingId)).toBe(0);
+    expect(await onHandAt(scene.crossDockVariantId, scene.goldBinId)).toBe(0);
+    expect(await onHandAt(scene.crossDockVariantId, scene.backBinId)).toBe(0);
+
+    // NEO-8: and they were never anybody else's to sell. Twenty-five stand at a
+    // pickable location, and every one is spoken for.
+    expect(await atp(scene.crossDockVariantId)).toBe(0);
+
+    const held = await reservationsFor(crossDockSoId);
+    expect(held).toEqual([
+      { locationId: scene.shippingId, reservedQty: 25, status: "ACTIVE" },
+    ]);
+
+    await expectReconciled("NEO-8 cross-docked to staging");
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-8: does not post the delivery twice when the receipt is retried", async () => {
+    // The lorry driver's tablet lost signal and sent the same receipt again.
+    await asTenant(() =>
+      app.app
+        .get(GrnService)
+        .receiveGoods(scene.orgId, crossDockPoId, scene.userId, `neo-xd-receive-${scene.tag}`, {
+          receivedDate: "2026-09-04",
+          locationId: scene.receivingId,
+          lines: [
+            {
+              poLineId: crossDockPoLineId,
+              quantityReceived: "25.0000",
+              qualityStatus: "ACCEPTED",
+              crossDockSoId,
+            },
+          ],
+        }),
+    ).catch(() => undefined);
+
+    expect(await onHandAt(scene.crossDockVariantId, scene.shippingId)).toBe(25);
+    expect(await reservationsFor(crossDockSoId)).toEqual([
+      { locationId: scene.shippingId, reservedQty: 25, status: "ACTIVE" },
+    ]);
+    await expectReconciled("NEO-8 receipt retried");
+  }, SLICE_TIMEOUT_MS);
+
+  it("NEO-8: ships the cross-docked order off the reservation the receipt raised", async () => {
+    await asTenant(() =>
+      app.app
+        .get(SoFulfillmentService)
+        .shipSo(scene.orgId, crossDockSoId, scene.userId, `neo-xd-ship-${scene.tag}`, {
+          shipDate: "2026-09-04",
+        }),
+    );
+
+    expect(await onHandAt(scene.crossDockVariantId, scene.shippingId)).toBe(0);
+    expect(await atp(scene.crossDockVariantId)).toBe(0);
+    expect(
+      (await levelsFor(scene.crossDockVariantId)).filter((l) => l.onHand !== 0),
+    ).toEqual([]);
+    await expectReconciled("NEO-8 cross-dock shipped");
   }, SLICE_TIMEOUT_MS);
 
   it("NEO-11: consigned stock is on hand and is never promisable", async () => {
