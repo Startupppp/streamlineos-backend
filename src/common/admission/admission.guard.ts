@@ -17,6 +17,7 @@ type AdmissionRequest = {
   path?: string;
   url?: string;
   _admissionOrgId?: string;
+  _admissionRelease?: () => void;
 };
 
 @Injectable()
@@ -42,8 +43,9 @@ export class AdmissionGuard implements CanActivate {
     const orgId = req.user?.orgId ?? "__public__";
     const decision = this.admissionService.tryAdmit(workClass, orgId);
 
+    const res = http.getResponse<Response>();
+
     if (!decision.admitted) {
-      const res = http.getResponse<Response>();
       res.set("Retry-After", String(decision.retryAfterSeconds));
       throw new ServiceUnavailableException({
         code: "SERVICE_UNAVAILABLE",
@@ -53,6 +55,30 @@ export class AdmissionGuard implements CanActivate {
     }
 
     req._admissionOrgId = orgId;
+
+    /*
+      Released when the response ends, however it ends.
+
+      The interceptor's `finalize` only runs if the request reaches the handler
+      pipeline, and three guards run after this one — a request refused by
+      `ModuleGuard` with a 402, or by `MfaGuard`, was admitted here and never
+      released. Each one leaked a slot permanently, so a deployment answering a
+      steady trickle of 402s sheds more and more real traffic until it sheds all
+      of it. The e-sign RBAC suite fires a hundred of them in a row and starts
+      getting 503s halfway through, which is the same thing on a shorter fuse.
+
+      Release is idempotent and the interceptor now goes through it too, so the
+      normal path still releases exactly once, as early as it did before.
+    */
+    const release = () => {
+      if (req._admissionRelease === undefined) return;
+      req._admissionRelease = undefined;
+      this.admissionService.release(orgId);
+    };
+    req._admissionRelease = release;
+    res.on("finish", release);
+    res.on("close", release);
+
     return true;
   }
 }

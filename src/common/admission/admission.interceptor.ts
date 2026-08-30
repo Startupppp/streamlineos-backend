@@ -5,6 +5,7 @@ import { AdmissionService } from "./admission.service";
 
 type AdmittedRequest = {
   _admissionOrgId?: string;
+  _admissionRelease?: () => void;
 };
 
 @Injectable()
@@ -15,8 +16,9 @@ export class AdmissionInterceptor implements NestInterceptor {
     if (context.getType() !== "http") return next.handle();
 
     const req = context.switchToHttp().getRequest<AdmittedRequest | undefined>();
-    const orgId = req?._admissionOrgId;
-    if (orgId === undefined) return next.handle();
-    return next.handle().pipe(finalize(() => this.admissionService.release(orgId)));
+    if (req?._admissionRelease === undefined) return next.handle();
+    // Through the guard's own release, which is idempotent: the response may also
+    // have ended by another route, and a slot must be given back exactly once.
+    return next.handle().pipe(finalize(() => req._admissionRelease?.()));
   }
 }
