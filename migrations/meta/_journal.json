@@ -2915,17 +2915,17 @@
       "breakpoints": true
     },
     {
-      "idx": 531,
-      "version": "7",
-      "when": 1798000031000,
-      "tag": "0711_kb_chunk_iterative_scan",
-      "breakpoints": true
-    },
-    {
       "idx": 532,
       "version": "7",
       "when": 1798000032000,
       "tag": "0704_mail_sync_checkpoints",
+      "breakpoints": true
+    },
+    {
+      "idx": 533,
+      "version": "7",
+      "when": 1798000033000,
+      "tag": "0711_timesheets_locked_by_membership_index",
       "breakpoints": true
     }
   ]
