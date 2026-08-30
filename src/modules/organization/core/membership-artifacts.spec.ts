@@ -23,6 +23,8 @@ const NOT_AN_ORG_MEMBERSHIP_GRANT: ReadonlyMap<string, string> = new Map([
 ]);
 
 const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
+  "accounting_periods.closed_by_membership_id",
+  "accounting_periods.locked_by_membership_id",
   "audit_logs.actor_membership_id",
   "calendar_events.created_by_membership_id",
   "chat_channel_invite_links.created_by_membership_id",
@@ -31,6 +33,12 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "chat_org_settings.updated_by_membership_id",
   "chat_pinned_messages.pinned_by_membership_id",
   "expense_export_jobs.requested_by_membership_id",
+  "fin_bank_imports.created_by_membership_id",
+  "fin_bank_transfers.created_by_membership_id",
+  "fin_budgets.approved_by_membership_id",
+  "fin_budgets.created_by_membership_id",
+  "fin_cash_flow_scenarios.created_by_membership_id",
+  "fin_reconciliation_matches.confirmed_by_membership_id",
   "hr_audit_logs.actor_membership_id",
   "hr_employments.archived_by_membership_id",
   "hr_employments.updated_by_membership_id",

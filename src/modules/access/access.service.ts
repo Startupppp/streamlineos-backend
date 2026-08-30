@@ -1,8 +1,6 @@
 import {
-  BadRequestException,
   Inject,
   Injectable,
-  NotFoundException,
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
@@ -29,12 +27,10 @@ import { accessVersionChannel } from "../../common/rbac/access-version-channel";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import { EntitlementsService, MODULE_CATALOG } from "./entitlements.service";
-import { ADMINISTRABLE_MODULES } from "../../common/rbac/module-vocabulary";
 import { MfaPolicyService } from "./mfa-policy.service";
 import {
   broadest,
   EMPLOYEE_SELF_SERVICE_GRANTS,
-  MANAGEABLE_MODULE_SET,
   moduleOf,
 } from "./access-policy";
 import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
@@ -203,12 +199,6 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   onModuleDestroy(): void {
     this.unsubscribeVersionBump?.();
     this.unsubscribeVersionBump = null;
-  }
-  private deleteMemberEntries(orgId: string, userId: string): void {
-    const prefix = `${orgId}:${userId}:`;
-    for (const key of this.membershipAccessCache.keys()) {
-      if (key.startsWith(prefix)) this.membershipAccessCache.delete(key);
-    }
   }
   private deleteOrgEntries<T>(cache: Map<string, T>, orgId: string): void {
     const prefix = `${orgId}:`;
@@ -469,110 +459,6 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       expiresAt: Date.now() + AccessService.DENIED_MODULES_TTL_MS,
     });
     return modules;
-  }
-  async getUserModuleAccess(
-    orgId: string,
-    userId: string,
-  ): Promise<{ moduleKey: string; enabled: boolean; core: boolean }[]> {
-    const membership = await this.getMembershipAccessState(
-      orgId,
-      userId,
-      await this.getPermissionsVersion(orgId),
-    );
-    if (!membership.exists) {
-      throw new NotFoundException("User is not a member of this organization");
-    }
-    const denied = await this.getUserDeniedModules(orgId, userId);
-    return ADMINISTRABLE_MODULES.map((moduleKey) => ({
-      moduleKey,
-      enabled: !denied.has(moduleKey),
-      core: this.entitlements.isCoreModule(moduleKey),
-    }));
-  }
-  async setUserModuleAccess(
-    orgId: string,
-    userId: string,
-    moduleKey: string,
-    enabled: boolean,
-    updatedBy: string,
-  ): Promise<{ moduleKey: string; enabled: boolean; core: boolean }[]> {
-    if (!MANAGEABLE_MODULE_SET.has(moduleKey)) {
-      throw new BadRequestException(`Unknown module "${moduleKey}"`);
-    }
-    const isCoreModule = this.entitlements.isCoreModule(moduleKey);
-    if (isCoreModule) {
-      const member = await runInTenantTransaction(
-        this.db,
-        () =>
-          this.db.query.organizationMembers.findFirst({
-            where: and(
-              eq(organizationMembers.orgId, orgId),
-              eq(organizationMembers.userId, userId),
-            ),
-            columns: { userId: true, status: true },
-          }),
-        { orgId },
-      );
-      if (!member) {
-        throw new NotFoundException(
-          "User is not a member of this organization",
-        );
-      }
-      if (member.status !== "ACTIVE") {
-        throw new BadRequestException(
-          "Module access can only be changed for active members",
-        );
-      }
-      if (!enabled) {
-        throw new BadRequestException(
-          `Module "${moduleKey}" is always available to organization members`,
-        );
-      }
-      this.deleteMemberEntries(orgId, userId);
-      return this.getUserModuleAccess(orgId, userId);
-    }
-    await runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const member = await tx.query.organizationMembers.findFirst({
-          where: and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.userId, userId),
-          ),
-          columns: { id: true, userId: true, status: true },
-        });
-        if (!member)
-          throw new NotFoundException(
-            "User is not a member of this organization",
-          );
-        if (member.status !== "ACTIVE") {
-          throw new BadRequestException(
-            "Module access can only be changed for active members",
-          );
-        }
-        await tx
-          .insert(userModuleAccess)
-          .values({
-            orgId,
-            organizationMembershipId: member.id,
-            moduleKey,
-            enabled,
-            updatedBy,
-          })
-          .onConflictDoUpdate({
-            target: [
-              userModuleAccess.orgId,
-              userModuleAccess.organizationMembershipId,
-              userModuleAccess.moduleKey,
-            ],
-            set: { enabled, updatedBy },
-          });
-        await bumpPermissionsVersion(tx, orgId);
-      },
-      { orgId },
-    );
-    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-    return this.getUserModuleAccess(orgId, userId);
   }
   async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
     return this.entitlements.isModuleEnabled(orgId, moduleKey);

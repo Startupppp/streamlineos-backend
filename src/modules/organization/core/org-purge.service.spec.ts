@@ -3,14 +3,13 @@ jest.mock("../../../common/relocation/relocation-traffic-tracker", () => ({
   isRelocationTarget: jest.fn().mockReturnValue(false),
 }));
 
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BadRequestException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { InvitationsService } from "./invitations.service";
-import { OrgLifecycleService } from "./org-lifecycle.service";
+import { OrgPurgeService } from "./org-purge.service";
 import { OrgMembershipService } from "./org-membership.service";
 import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
 
@@ -35,11 +34,10 @@ function updateResult() {
   };
 }
 
-describe("OrgLifecycleService", () => {
+describe("OrgPurgeService", () => {
   const cacheInvalidate = jest.fn().mockResolvedValue(undefined);
   const cacheInvalidateNamespace = jest.fn().mockResolvedValue(undefined);
   const revokeOrgScopedAccess = jest.fn().mockResolvedValue(undefined);
-  const revokeAllPending = jest.fn().mockResolvedValue(undefined);
   const auditLog = jest.fn();
   const sagaBegin = jest.fn();
   const sagaRunStep = jest.fn();
@@ -53,7 +51,7 @@ describe("OrgLifecycleService", () => {
     delete: jest.Mock;
     transaction: jest.Mock;
   };
-  let service: OrgLifecycleService;
+  let service: OrgPurgeService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -79,7 +77,7 @@ describe("OrgLifecycleService", () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        OrgLifecycleService,
+        OrgPurgeService,
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: auditLog } },
         {
@@ -93,7 +91,6 @@ describe("OrgLifecycleService", () => {
           provide: OrgMembershipService,
           useValue: { revokeOrgScopedAccess },
         },
-        { provide: InvitationsService, useValue: { revokeAllPending } },
         {
           provide: OrganizationSagaService,
           useValue: {
@@ -105,103 +102,81 @@ describe("OrgLifecycleService", () => {
         },
       ],
     }).compile();
-    service = moduleRef.get(OrgLifecycleService);
+    service = moduleRef.get(OrgPurgeService);
   });
 
-  it("archives atomically, moves the active org, and evicts only org-scoped access", async () => {
+  it("does not delete when confirmation belongs to another organization", async () => {
+    selectResults.push([{ id: "org-1", name: "Alpha", slug: "alpha" }]);
+
+    await expect(
+      service.deleteOrg("org-1", "user-1", "beta"),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(revokeOrgScopedAccess).not.toHaveBeenCalled();
+  });
+
+  it("returns the owner's next organization after deleting their active organization", async () => {
     selectResults.push(
-      [{ statusV2: "ACTIVE" }],
+      [{ id: "org-1", name: "Alpha", slug: "alpha", statusV2: "ACTIVE" }],
       [],
       [{ userId: "user-1" }],
       [{ orgId: "org-2" }],
     );
 
-    await expect(service.archiveOrg("org-1", "user-1")).resolves.toEqual({
-      success: true,
-      nextOrgId: "org-2",
-    });
+    await expect(
+      service.deleteOrg("org-1", "user-1", "Alpha"),
+    ).resolves.toEqual({ success: true, nextOrgId: "org-2" });
 
-    expect(db.transaction).toHaveBeenCalledTimes(4);
-    expect(revokeAllPending).toHaveBeenCalledWith("org-1", db);
     expect(revokeOrgScopedAccess).toHaveBeenCalledWith("org-1", "user-1", "removed");
     expect(cacheInvalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession("user-1"));
   });
 
-  it("hides another tenant's archived organization during restore", async () => {
-    selectResults.push([]);
-
-    await expect(service.restoreOrg("org-other", "user-1")).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
-    expect(db.update).not.toHaveBeenCalled();
-  });
-
-  it("requires an active owner membership to restore an archived organization", async () => {
-    selectResults.push([
-      { orgStatus: "ARCHIVED", isOwner: true, memberStatus: "SUSPENDED" },
-    ]);
-
-    await expect(service.restoreOrg("org-1", "user-1")).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
-  });
-
-  it("rejects restore when the organization is already active", async () => {
-    selectResults.push([
-      { orgStatus: "ACTIVE", isOwner: true, memberStatus: "ACTIVE" },
-    ]);
-
-    await expect(service.restoreOrg("org-1", "user-1")).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-  });
-
   describe("saga wiring", () => {
-    it("archiveOrg: retry skips steps already DONE and does not repeat them", async () => {
+    it("deleteOrg: failure in delete-org-data calls compensate and rethrows", async () => {
       selectResults.push(
-        [{ statusV2: "ACTIVE" }],
+        [{ id: "org-1", name: "Alpha", slug: "alpha", statusV2: "ACTIVE" }],
+        [],
+        [{ userId: "user-1" }],
+        [{ orgId: "org-2" }],
+      );
+
+      const boom = new Error("delete failed");
+      sagaRunStep.mockImplementation(
+        (_sagaId: string, stepName: string, fn: () => Promise<unknown>) => {
+          if (stepName === "delete-org-data") throw boom;
+          return fn();
+        },
+      );
+
+      await expect(service.deleteOrg("org-1", "user-1", "Alpha")).rejects.toBe(boom);
+      expect(sagaCompensate).toHaveBeenCalledWith("test-saga-1", {});
+    });
+
+    it("deleteOrg: retry skips validate steps that are already DONE", async () => {
+      selectResults.push(
+        [{ id: "org-1", name: "Alpha", slug: "alpha", statusV2: "ACTIVE" }],
         [],
         [{ userId: "user-1" }],
         [{ orgId: "org-2" }],
       );
 
       sagaBegin.mockResolvedValueOnce({
-        saga: { sagaId: "resume-saga-1" },
+        saga: { sagaId: "resume-delete-1" },
         steps: [
-          { stepName: "revoke-invitations", state: "DONE" },
-          { stepName: "set-status-archived", state: "PENDING" },
-          { stepName: "revoke-member-access", state: "PENDING" },
+          { stepName: "validate-confirmation", state: "DONE" },
+          { stepName: "validate-no-legal-hold", state: "DONE" },
+          { stepName: "delete-org-data", state: "PENDING" },
+          { stepName: "remove-placement", state: "PENDING" },
         ],
       });
 
-      await service.archiveOrg("org-1", "user-1");
+      await service.deleteOrg("org-1", "user-1", "Alpha");
 
       const runStepCalls = sagaRunStep.mock.calls.map((c) => c[1] as string);
-      expect(runStepCalls).not.toContain("revoke-invitations");
-      expect(runStepCalls).toContain("set-status-archived");
-      expect(runStepCalls).toContain("revoke-member-access");
-      expect(revokeAllPending).not.toHaveBeenCalled();
+      expect(runStepCalls).not.toContain("validate-confirmation");
+      expect(runStepCalls).not.toContain("validate-no-legal-hold");
+      expect(runStepCalls).toContain("delete-org-data");
+      expect(runStepCalls).toContain("remove-placement");
     });
-
-    it("archiveOrg: failure mid-step calls compensate and rethrows", async () => {
-      selectResults.push(
-        [{ statusV2: "ACTIVE" }],
-        [],
-        [{ userId: "user-1" }],
-        [{ orgId: "org-2" }],
-      );
-
-      const boom = new Error("DB exploded");
-      sagaRunStep.mockImplementation(
-        (_sagaId: string, stepName: string, fn: () => Promise<unknown>) => {
-          if (stepName === "set-status-archived") throw boom;
-          return fn();
-        },
-      );
-
-      await expect(service.archiveOrg("org-1", "user-1")).rejects.toBe(boom);
-      expect(sagaCompensate).toHaveBeenCalledWith("test-saga-1", {});
-    });
-
   });
 });

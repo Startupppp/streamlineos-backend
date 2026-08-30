@@ -9,6 +9,7 @@ import { OrganizationService } from "./organization.service";
 import { OrgProfileService } from "./org-profile.service";
 import { OrgMembershipService } from "./org-membership.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
+import { OrgPurgeService } from "./org-purge.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
 import { InvitationsService } from "./invitations.service";
 import { InvitationsReadService } from "./invitations-read.service";
@@ -33,6 +34,7 @@ import { IntegrationConnectionDisconnectedConsumer } from "./integration-connect
     OrgMembershipStatusService,
     OrgMemberDepartureService,
     OrgLifecycleService,
+    OrgPurgeService,
     OrganizationService,
     OrganizationSettingsService,
     InvitationsService,
