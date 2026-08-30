@@ -151,7 +151,12 @@ export const invAdjReasonEnum = pgEnum("inv_adj_reason", ["PURCHASE", "SALE", "R
  */
 export const invQuantityBucketEnum = pgEnum("inv_quantity_bucket", ["ON_HAND", "BLOCKED", "QUALITY_HOLD"]);
 
-export const invTxnTypeEnum = pgEnum("inv_txn_type", ["PURCHASE", "SALE", "ADJUSTMENT_IN", "ADJUSTMENT_OUT", "TRANSFER_IN", "TRANSFER_OUT", "RETURN_IN", "RETURN_OUT", "GRN", "OPENING_BALANCE", "VENDOR_RETURN", "CUSTOMER_RETURN", "CYCLE_COUNT_GAIN", "CYCLE_COUNT_LOSS", "SCRAP", "QUARANTINE_IN", "QUARANTINE_OUT", "RESERVATION_CREATE", "RESERVATION_RELEASE", "RESERVATION_CONSUME"]);
+export const invTxnTypeEnum = pgEnum("inv_txn_type", ["PURCHASE", "SALE", "ADJUSTMENT_IN", "ADJUSTMENT_OUT", "TRANSFER_IN", "TRANSFER_OUT", "RETURN_IN", "RETURN_OUT", "GRN", "OPENING_BALANCE", "VENDOR_RETURN", "CUSTOMER_RETURN", "CYCLE_COUNT_GAIN", "CYCLE_COUNT_LOSS", "SCRAP", "QUARANTINE_IN", "QUARANTINE_OUT", "RESERVATION_CREATE", "RESERVATION_RELEASE", "RESERVATION_CONSUME",
+  // NEO-9. Assembly is two halves of one act: components leave, a kit arrives.
+  // Their own types rather than ADJUSTMENT_IN/OUT, because an adjustment means
+  // "the count was wrong" and this means "we built something" - and a warehouse
+  // reading its own movement report should be able to tell those apart.
+  "KIT_ASSEMBLE_IN", "KIT_ASSEMBLE_OUT", "KIT_DISASSEMBLE_IN", "KIT_DISASSEMBLE_OUT"]);
 export const invPoStatusEnum = pgEnum("inv_po_status", ["DRAFT", "SENT", "PARTIAL", "RECEIVED", "CLOSED", "CANCELLED"]);
 export const invSoStatusEnum = pgEnum("inv_so_status", ["DRAFT", "CONFIRMED", "PARTIALLY_RESERVED", "RESERVED", "PICKED", "PACKED", "SHIPPED", "PARTIALLY_SHIPPED", "INVOICED", "CANCELLED", "CLOSED"]);
 export const invTransferStatusEnum = pgEnum("inv_transfer_status", ["PENDING", "RESERVED", "IN_TRANSIT", "COMPLETED", "CANCELLED"]);

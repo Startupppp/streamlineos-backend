@@ -23,8 +23,10 @@ import { InventorySettingsService } from "../stock-engine/inventory-settings.ser
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
+import { ReservationService } from "../stock-engine/reservation.service";
 import { addDec, cmpDec, divDec, mulDec, subDec, isPositive } from "../stock-engine/decimal";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
+import { findCrossDockStagingLocation } from "../putaway/putaway-destination";
 import { emitReceiptPosted } from "./lib/receipt-events";
 import { postReceiptJournal } from "./lib/receipt-journal";
 import {
@@ -52,6 +54,13 @@ interface PendingMovement {
   handlingUnitId: number | null;
   quantityDelta: string;
   unitCost: string | undefined;
+  /**
+   * NEO-8. Take this movement's cost basis from an earlier one in the same
+   * command, by index. A cross-dock's inbound leg is received at exactly what
+   * leaving the dock consumed; estimating instead is exact under weighted
+   * average and wrong under FIFO the moment an issue crosses a layer boundary.
+   */
+  costFromMovementIndex?: number;
 }
 
 /**
@@ -81,6 +90,7 @@ export class GrnPostingService {
     private readonly warehouseScope: WarehouseScopeService,
     private readonly journalPosting: InventoryAccountingBridge,
     private readonly pharmacy: InvPharmacyService,
+    private readonly reservations: ReservationService,
   ) {}
 
   /**
@@ -264,6 +274,26 @@ export class GrnPostingService {
     }
 
     const movements: PendingMovement[] = [];
+    /**
+     * NEO-8. The second and third movements of a cross-docked line: out of the
+     * receiving dock, into outbound staging. Collected separately and appended
+     * after every receipt, because `costFromMovementIndex` may only reference
+     * backwards.
+     */
+    const crossDockLegs: PendingMovement[] = [];
+
+    const crossDocked = grn.lines.filter((l) => l.crossDockSoId !== null);
+    const stagingLocationId =
+      crossDocked.length === 0
+        ? null
+        : await findCrossDockStagingLocation(tx, orgId, po.warehouseId ?? 0);
+    if (crossDocked.length > 0 && stagingLocationId === null) {
+      // Refused rather than defaulted. Putting somebody's goods in a bin nobody
+      // chose is worse than telling them the building is not set up for this.
+      throw new BadRequestException(
+        "This warehouse has no outbound staging location, so these lines cannot be cross-docked",
+      );
+    }
 
     for (const line of grn.lines) {
       const poLine = po.lines.find((l) => l.id === line.poLineId)!;
@@ -334,6 +364,17 @@ export class GrnPostingService {
             quantityDelta: "1.0000",
             unitCost: poLine.unitCost ?? undefined,
           });
+          crossDockLegs.push(
+            ...this.crossDockLegs(line, movements.length - 1, {
+              productVariantId: poLine.productVariantId,
+              locationId,
+              lotId: undefined,
+              serialId,
+              handlingUnitId: line.handlingUnitId ?? null,
+              quantity: "1.0000",
+              stagingLocationId,
+            }),
+          );
         }
       } else {
         movements.push({
@@ -346,8 +387,26 @@ export class GrnPostingService {
           quantityDelta: line.quantityReceived,
           unitCost: poLine.unitCost ?? undefined,
         });
+        crossDockLegs.push(
+          ...this.crossDockLegs(line, movements.length - 1, {
+            productVariantId: poLine.productVariantId,
+            locationId,
+            lotId,
+            serialId: undefined,
+            handlingUnitId: line.handlingUnitId ?? null,
+            quantity: line.quantityReceived,
+            stagingLocationId,
+          }),
+        );
       }
     }
+
+    // NEO-8. Appended after every receipt, not interleaved with them, so the
+    // inbound leg a cross-dock inherits its cost from is always already in the
+    // list — `costFromMovementIndex` may only reference backwards, and a leg
+    // written before its own receipt would be an estimate of a figure the engine
+    // is about to compute exactly.
+    movements.push(...crossDockLegs);
 
     const allLines = await tx.query.invPoLines.findMany({
       where: eq(invPoLines.poId, po.id),
@@ -372,6 +431,36 @@ export class GrnPostingService {
         reason: `GRN: ${grn.grnNumber}`,
         movements,
       });
+    }
+
+    // NEO-8. The units are at outbound staging and are spoken for, so they are
+    // promised to the order that pulled them across the dock immediately. Without
+    // this they would sit at a pickable location as ordinary free stock and the
+    // next order to ask would be offered them — which is exactly the "ATP never
+    // showed them as sellable" the unit is for.
+    //
+    // Best-effort per line and never fatal: a refusal here means the order it
+    // was meant for can no longer take them, which is a commercial problem for
+    // somebody to look at, not a reason to unwind a delivery that has physically
+    // arrived. The stock is real and posted either way.
+    if (stagingLocationId !== null) {
+      for (const line of crossDocked) {
+        const poLine = po.lines.find((l) => l.id === line.poLineId);
+        if (!poLine || line.qualityStatus !== "ACCEPTED") continue;
+        try {
+          await this.reservations.createReservationInTx(tx, orgId, userId, {
+            sourceType: "inv_sales_order",
+            sourceId: String(line.crossDockSoId),
+            sourceLineId: `grn:${grn.id}:${line.id}`,
+            productVariantId: poLine.productVariantId,
+            locationId: stagingLocationId,
+            qty: line.quantityReceived,
+          });
+        } catch {
+          // Recorded by the reservation's own path when it succeeds; a refusal is
+          // visible as an unreserved cross-dock on the order.
+        }
+      }
     }
 
     await tx
@@ -542,4 +631,55 @@ export class GrnPostingService {
       this.cache.invalidateNamespace(CACHE_KEYS.invGrnNamespace(orgId)),
     ]);
   }
+
+  /**
+   * NEO-8 - the two legs that take a cross-docked line off the dock.
+   *
+   * An ordinary transfer pair, so the journey is as legible in the ledger as any
+   * other move and the inbound leg inherits exactly what the receipt turned out
+   * to cost. Empty for a line that is not cross-docked, which is most of them.
+   *
+   * The units never reach a storage bin, and `readReceiptGrains` therefore never
+   * raises a putaway task for them: it sums the ledger at the receiving location
+   * and keeps only positive remainders, and these net to zero there.
+   */
+  private crossDockLegs(
+    line: { crossDockSoId: number | null },
+    receiptIndex: number,
+    grain: {
+      productVariantId: number;
+      locationId: number;
+      lotId: number | undefined;
+      serialId: number | undefined;
+      handlingUnitId: number | null;
+      quantity: string;
+      stagingLocationId: number | null;
+    },
+  ): PendingMovement[] {
+    if (line.crossDockSoId === null || grain.stagingLocationId === null) return [];
+    return [
+      {
+        transactionType: "TRANSFER_OUT",
+        productVariantId: grain.productVariantId,
+        locationId: grain.locationId,
+        lotId: grain.lotId,
+        serialId: grain.serialId,
+        handlingUnitId: grain.handlingUnitId,
+        quantityDelta: `-${grain.quantity}`,
+        unitCost: undefined,
+      },
+      {
+        transactionType: "TRANSFER_IN",
+        productVariantId: grain.productVariantId,
+        locationId: grain.stagingLocationId,
+        lotId: grain.lotId,
+        serialId: grain.serialId,
+        handlingUnitId: grain.handlingUnitId,
+        quantityDelta: grain.quantity,
+        unitCost: undefined,
+        costFromMovementIndex: receiptIndex,
+      },
+    ];
+  }
+
 }

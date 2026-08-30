@@ -113,3 +113,30 @@ export async function findQuarantineLocation(
   `);
   return row ? Number(row.id) : null;
 }
+
+/**
+ * NEO-8 - where a cross-docked line goes instead of a shelf.
+ *
+ * The warehouse's outbound staging: a `SHIPPING` location, active and pickable,
+ * because the units have to be picked out of it a few hours later. Null when the
+ * warehouse has none configured, and the receiving path refuses the cross-dock
+ * rather than inventing a bin - putting somebody's goods somewhere nobody chose
+ * is worse than telling them the building is not set up for this yet.
+ */
+export async function findCrossDockStagingLocation(
+  tx: DbOrTx,
+  orgId: string,
+  warehouseId: number,
+): Promise<number | null> {
+  const [row] = await tx.execute<{ id: number }>(sql`
+    SELECT id FROM inv_locations
+     WHERE org_id = ${orgId}
+       AND warehouse_id = ${warehouseId}
+       AND location_type = 'SHIPPING'
+       AND is_active = true
+       AND is_pickable IS NOT FALSE
+     ORDER BY id
+     LIMIT 1
+  `);
+  return row ? Number(row.id) : null;
+}

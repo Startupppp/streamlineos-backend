@@ -33,6 +33,7 @@ import { InvSyncModule } from "./sync/inv-sync.module";
 import { InvHandlingUnitsModule } from "./handling-units/inv-handling-units.module";
 import { InvSlottingModule } from "./slotting/inv-slotting.module";
 import { InvLaborModule } from "./labor/inv-labor.module";
+import { InvKittingModule } from "./kitting/inv-kitting.module";
 
 const INVENTORY_MODULES = [
   InvProductsModule,
@@ -69,6 +70,7 @@ const INVENTORY_MODULES = [
   InvHandlingUnitsModule,
   InvSlottingModule,
   InvLaborModule,
+  InvKittingModule,
 ];
 
 @Module({

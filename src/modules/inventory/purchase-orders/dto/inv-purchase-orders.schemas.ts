@@ -76,6 +76,12 @@ const grnLotLineSchema = z.object({
    * form field with no purpose.
    */
   handlingUnitId: z.number().int().positive().optional(),
+  /**
+   * NEO-8 - the outbound sales order these units are for. Set it and the line is
+   * cross-docked: received at the dock and moved straight to outbound staging,
+   * never reaching a storage bin and never raising a putaway task.
+   */
+  crossDockSoId: z.number().int().positive().optional(),
   lotNumber: z.string().max(100).optional(),
   expiryDate: isoDate.optional(),
   manufactureDate: isoDate.optional(),

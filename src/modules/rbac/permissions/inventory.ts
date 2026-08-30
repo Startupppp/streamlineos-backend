@@ -352,6 +352,13 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     description: "Print barcode labels, goods-receipt notes and pick lists",
   },
   {
+    name: "inventory:kits:assemble",
+    resource: "inventory:kits",
+    action: "assemble",
+    description:
+      "Assemble and disassemble kits: consume components and create the kit SKU, moving valuation with them",
+  },
+  {
     name: "inventory:labor:read",
     resource: "inventory:labor",
     action: "read",

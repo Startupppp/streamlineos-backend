@@ -446,6 +446,7 @@ export class GrnService {
           // contains cartons may not also hold loose stock of its own, and the
           // rule lives in `HandlingUnitService` so there is one copy of it.
           handlingUnitId: line.handlingUnitId ?? null,
+          crossDockSoId: line.crossDockSoId ?? null,
           lotNumber: line.lotNumber,
           expiryDate: line.expiryDate,
           manufactureDate: line.manufactureDate,

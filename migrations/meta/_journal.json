@@ -2458,6 +2458,20 @@
       "when": 1788134409027,
       "tag": "0584_inventory_labor",
       "breakpoints": true
+    },
+    {
+      "idx": 352,
+      "version": "7",
+      "when": 1788134409028,
+      "tag": "0585_inventory_cross_dock",
+      "breakpoints": true
+    },
+    {
+      "idx": 353,
+      "version": "7",
+      "when": 1788134409029,
+      "tag": "0586_inventory_kitting",
+      "breakpoints": true
     }
   ]
 }

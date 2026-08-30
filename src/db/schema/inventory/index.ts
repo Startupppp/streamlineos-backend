@@ -19,3 +19,4 @@ export * from "./quick-commerce";
 export * from "./handling-units";
 export * from "./slotting";
 export * from "./labor";
+export * from "./kitting";

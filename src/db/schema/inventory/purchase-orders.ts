@@ -196,6 +196,23 @@ export const invGrnLines = pgTable("inv_grn_lines", {
    */
   handlingUnitId: integer("handling_unit_id"),
   /**
+   * NEO-8 - the outbound sales order these units are for, when they are being
+   * cross-docked.
+   *
+   * Cross-docking is "this pallet is not for the shelf, it is for that lorry".
+   * Set on the line rather than the header because one delivery routinely has a
+   * few lines going straight back out and the rest going to storage, and a
+   * header flag would force the receiver to split the delivery to say so.
+   *
+   * A line with this set is received at the dock like any other and then moved
+   * to outbound staging inside the same posting - two more engine movements
+   * under the same idempotency key family. It never reaches a storage bin, and
+   * `readReceiptGrains` therefore never raises a putaway task for it: that query
+   * sums the ledger at the receiving location and keeps only positive
+   * remainders, and a cross-docked grain nets to zero there.
+   */
+  crossDockSoId: integer("cross_dock_so_id"),
+  /**
    * E2 — the tax inputs as they stood when the goods were received.
    *
    * Taken again at receipt rather than read off the purchase order: months can
@@ -252,6 +269,9 @@ export const invGrnLines = pgTable("inv_grn_lines", {
     name: "fk_inv_grn_lines_po_line_id_org",
   }),
   index("idx_inv_grn_lines_grn").on(table.grnId),
+  index("idx_inv_grn_lines_org_cross_dock")
+    .on(table.orgId, table.crossDockSoId)
+    .where(sql`cross_dock_so_id IS NOT NULL`),
 ]);
 
 /**
