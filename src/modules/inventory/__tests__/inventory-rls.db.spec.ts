@@ -38,7 +38,7 @@ const TENANT_TABLES = [
   "inv_stock_transactions",
   "inv_purchase_orders",
   "inv_po_lines",
-  "inv_reason_codes",
+  "inv_uom",
   "inv_webhook_event_subscriptions",
 ] as const;
 
@@ -185,21 +185,26 @@ describeDb("inventory row-level security", () => {
     if (orgA === orgB) {
       throw new Error("this database has fewer than two organisations; the cross-tenant probe cannot run");
     }
+    // PEND-15: this probe used `inv_reason_codes`, the one inventory table
+    // nothing read, which 0589 dropped. `inv_uom` is the same shape of
+    // fixture — tenant-scoped, nothing to satisfy before inserting — and is a
+    // table the product actually uses, so the probe now measures RLS on
+    // something a leak would matter for.
     const code = `RLS-${randomUUID().slice(0, 8)}`;
     await owner`
-      INSERT INTO inv_reason_codes (org_id, code, label, category)
-      VALUES (${orgA}, ${code}, 'RLS probe', 'ADJUSTMENT')`;
+      INSERT INTO inv_uom (org_id, name, abbreviation)
+      VALUES (${orgA}, ${code}, ${code.slice(0, 8)})`;
     try {
       const visible = await asRestrictedRole(orgA, (tx) =>
-        tx<{ n: number }[]>`SELECT count(*)::int AS n FROM inv_reason_codes WHERE code = ${code}`,
+        tx<{ n: number }[]>`SELECT count(*)::int AS n FROM inv_uom WHERE name = ${code}`,
       );
       const hidden = await asRestrictedRole(orgB, (tx) =>
-        tx<{ n: number }[]>`SELECT count(*)::int AS n FROM inv_reason_codes WHERE code = ${code}`,
+        tx<{ n: number }[]>`SELECT count(*)::int AS n FROM inv_uom WHERE name = ${code}`,
       );
       expect(visible.ok && visible.value[0]!.n).toBe(1);
       expect(hidden.ok && hidden.value[0]!.n).toBe(0);
     } finally {
-      await owner`DELETE FROM inv_reason_codes WHERE code = ${code}`;
+      await owner`DELETE FROM inv_uom WHERE name = ${code}`;
     }
   });
 
@@ -207,12 +212,12 @@ describeDb("inventory row-level security", () => {
     if (orgA === orgB) return;
     const code = `RLS-${randomUUID().slice(0, 8)}`;
     const result = await asRestrictedRole(orgA, (tx) =>
-      tx`INSERT INTO inv_reason_codes (org_id, code, label, category)
-         VALUES (${orgB}, ${code}, 'RLS probe', 'ADJUSTMENT')`,
+      tx`INSERT INTO inv_uom (org_id, name, abbreviation)
+         VALUES (${orgB}, ${code}, ${code.slice(0, 8)})`,
     );
     // WITH CHECK rejects the row rather than writing it into the wrong tenant.
     expect(result).toEqual({ ok: false, code: "42501" });
-    const leaked = await owner<{ n: number }[]>`SELECT count(*)::int AS n FROM inv_reason_codes WHERE code = ${code}`;
+    const leaked = await owner<{ n: number }[]>`SELECT count(*)::int AS n FROM inv_uom WHERE name = ${code}`;
     expect(leaked[0]!.n).toBe(0);
   });
 });

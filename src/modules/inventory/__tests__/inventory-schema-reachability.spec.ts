@@ -40,18 +40,16 @@ const MODULES_ROOT = join(__dirname, "..", "..");
  * makes for its own exemptions and the reason both files carry them this way.
  */
 const UNREAD_TABLES: ReadonlyArray<{ table: string; reason: string }> = [
-  {
-    table: "inv_reason_codes",
-    reason:
-      "NEO-15's only drop candidate. Nothing reads it: no service, no controller, no frontend " +
-      "route, and no other table carries a foreign key to it — adjustments record their reason " +
-      "as an enum and a free-text note instead. It is kept rather than dropped because the work " +
-      "order's bar is zero live rows or a proven archive, and that is a count against a real " +
-      "database rather than something this repository can assert. Before dropping it: " +
-      "SELECT count(*) FROM inv_reason_codes; if it is zero in every tenant, drop it with a " +
-      "migration and delete this entry. If it is not, the rows are somebody's configuration and " +
-      "the honest fix is to give them a reader.",
-  },
+  // Empty, and that is the finding rather than an oversight.
+  //
+  // `inv_reason_codes` was the only entry here. PEND-15 answered the question
+  // this list was holding open — zero rows in every tenant on the only database
+  // carrying real ones, and zero by construction, since the sole writer that
+  // ever existed was 0407's one-shot seed — and `0589` dropped it. Every
+  // remaining `inv_*` table has a reader.
+  //
+  // Adding an entry means writing the sentence that justifies it. An exemption
+  // nobody can read is how a check stops checking.
 ];
 
 interface TableRef {

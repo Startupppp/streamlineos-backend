@@ -3,7 +3,7 @@ import { desc, relations, sql } from "drizzle-orm";
 import {
   invReservationStrategyEnum, invCostingMethodEnum, invExpiryPolicyEnum, invNearExpiryPolicyEnum,
   invIdempotencyStatusEnum, invJobStatusEnum, invWebhookEventStatusEnum,
-  invReasonCategoryEnum, invImportRowStatusEnum, invGstModeEnum,
+  invImportRowStatusEnum, invGstModeEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { clients } from "../crm/contacts";
@@ -159,25 +159,17 @@ export const invSettings = pgTable("inv_settings", {
   index("idx_inv_settings_org").on(table.orgId),
 ]);
 
-export const invReasonCodes = pgTable("inv_reason_codes", {
-  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  code: text("code").notNull(),
-  label: text("label").notNull(),
-  category: invReasonCategoryEnum("category").default("ADJUSTMENT").notNull(),
-  requiresApproval: boolean("requires_approval").default(false).notNull(),
-  isActive: boolean("is_active").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  uniqueIndex("uniq_inv_reason_codes_org_code").on(table.orgId, table.code),
-  unique("uniq_inv_reason_codes_org_id").on(table.orgId, table.id),
-  index("idx_inv_reason_codes_org_category").on(table.orgId, table.category),
-]);
-
-export const invReasonCodesRelations = relations(invReasonCodes, ({ one }) => ({
-  organization: one(organizations, { fields: [invReasonCodes.orgId], references: [organizations.id] }),
-}));
+/**
+ * PEND-15. `inv_reason_codes` stood here and was dropped by `0589`.
+ *
+ * It arrived in 0407 to replace a fixed enum and nothing was ever built on it —
+ * no service, no controller, no route, no foreign key. The only writer that ever
+ * existed was 0407's own one-shot seed, so no organisation created since has had
+ * a single row and none ever could; adjustments still record their reason as an
+ * enum and a note. `inv_reason_category` is left in `enums.ts` deliberately:
+ * dropping a type is a separate hazard for one line of catalogue, and 0545's
+ * comment still names it.
+ */
 
 export const invNumberSequences = pgTable("inv_number_sequences", {
   id: serial("id").primaryKey(),

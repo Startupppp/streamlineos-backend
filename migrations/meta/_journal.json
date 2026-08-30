@@ -2486,6 +2486,13 @@
       "when": 1788134409031,
       "tag": "0588_inventory_dock_waveless",
       "breakpoints": true
+    },
+    {
+      "idx": 356,
+      "version": "7",
+      "when": 1788134409032,
+      "tag": "0589_inventory_drop_reason_codes",
+      "breakpoints": true
     }
   ]
 }
