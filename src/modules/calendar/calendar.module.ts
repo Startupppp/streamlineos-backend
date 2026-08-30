@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { CalendarController } from "./calendar.controller";
+import { CalendarAdminSettingsController } from "./calendar-admin-settings.controller";
 import { CalendarService } from "./calendar.service";
 import { CalendarEventsAggregateService } from "./calendar-events-aggregate.service";
 import { ExternalCalendarEventsService } from "./external-calendar-events.service";
@@ -14,7 +15,7 @@ import { CalendarReminderSweepService } from "./calendar-reminder-sweep.service"
 
 @Module({
   imports: [IntegrationsModule, NotificationsModule],
-  controllers: [CalendarController],
+  controllers: [CalendarController, CalendarAdminSettingsController],
   providers: [
     CalendarEventsAggregateService,
     CalendarService,

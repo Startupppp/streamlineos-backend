@@ -62,6 +62,18 @@ export class CalendarSourceRegistry {
     }));
   }
 
+  async getOrgLevelSources(orgId: string): Promise<ReadonlyArray<{ key: string; label: string; module: string; moduleEnabled: boolean }>> {
+    const sources = [...this.sources];
+    return Promise.all(
+      sources.map(async (s) => ({
+        key: s.key,
+        label: s.label,
+        module: s.module,
+        moduleEnabled: await this.access.isModuleEnabled(orgId, s.module),
+      })),
+    );
+  }
+
   async loadAll(ctx: CalendarSourceContext): Promise<CalendarSourceOutput> {
     const available = await this.resolveAvailable(ctx);
 

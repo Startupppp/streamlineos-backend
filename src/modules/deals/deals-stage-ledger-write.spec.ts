@@ -92,7 +92,6 @@ describe("DealsService — the stage ledger", () => {
       {
         cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()),
         invalidate: jest.fn(),
-        invalidatePattern: jest.fn().mockResolvedValue(undefined),
         invalidateNamespace: jest.fn().mockResolvedValue(undefined),
       } as unknown as CacheService,
       { log: jest.fn() } as unknown as AuditService,

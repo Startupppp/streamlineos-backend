@@ -80,7 +80,6 @@ const makeQuote = (overrides: Record<string, unknown> = {}): Record<string, unkn
 beforeEach(() => {
   jest.clearAllMocks();
   mockCache.invalidateNamespace.mockResolvedValue(undefined);
-  mockCache.invalidatePattern.mockResolvedValue(undefined);
   mockAudit.log.mockReturnValue(undefined);
   mockPlanLimits.assertWithinLimit.mockResolvedValue(undefined);
 });

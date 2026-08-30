@@ -43,7 +43,7 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
             resolveUserPermissions: async (_orgId: string, _userId: string) =>
               SIMULATE_PERMISSIONS_MAP,
             isModuleEnabled: async (_orgId: string, _moduleKey: string) => true,
-            getSnapshot: async () => ({
+            getAccessSnapshot: async () => ({
               permissions: ["settings:rbac:manage"],
               scopes: { "settings:rbac:manage": "all" },
               modules: {},

@@ -2962,6 +2962,13 @@
       "when": 1798000038000,
       "tag": "0716_build_attr_contract",
       "breakpoints": true
+    },
+    {
+      "idx": 539,
+      "version": "7",
+      "when": 1798000039000,
+      "tag": "0717_kb_chunk_search_restore_fence",
+      "breakpoints": true
     }
   ]
 }

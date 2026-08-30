@@ -34,7 +34,6 @@ const mockCache = {
   cached: jest.fn().mockImplementation((_key: string, fetcher: () => Promise<unknown>) => fetcher()),
   invalidate: jest.fn().mockResolvedValue(undefined),
   invalidateNamespace: jest.fn().mockResolvedValue(undefined),
-  invalidatePattern: jest.fn().mockResolvedValue(undefined),
   set: jest.fn().mockResolvedValue(undefined),
   get: jest.fn().mockResolvedValue(null),
 };

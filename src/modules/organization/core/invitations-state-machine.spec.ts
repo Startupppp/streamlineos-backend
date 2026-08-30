@@ -21,7 +21,6 @@ describe("InvitationsService state transitions", () => {
   const userFindFirst = jest.fn();
   const canManageOrganizationMembership = jest.fn().mockResolvedValue(true);
   const invalidate = jest.fn().mockResolvedValue(undefined);
-  const invalidatePattern = jest.fn().mockResolvedValue(undefined);
   const invalidateNamespace = jest.fn().mockResolvedValue(undefined);
   const updateReturning = jest.fn().mockResolvedValue([{ id: "invite-1" }]);
   const updateWhere = jest.fn().mockReturnValue({ returning: updateReturning });
@@ -67,7 +66,6 @@ describe("InvitationsService state transitions", () => {
           provide: CacheService,
           useValue: {
             invalidate,
-            invalidatePattern,
             invalidateNamespace,
             invalidateForOrg: (o: string, k: string) => invalidate(`${o}:${k}`),
             invalidateNamespaceForOrg: (o: string, n: string) => invalidateNamespace(`${o}:${n}`),

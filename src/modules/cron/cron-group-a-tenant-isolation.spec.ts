@@ -113,7 +113,7 @@ describe("CronAttendanceService — cross-tenant isolation", () => {
         CronAttendanceService,
         { provide: DRIZZLE, useValue: db },
         { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
-        { provide: AttendancePolicyService, useValue: { getOrgPolicy: jest.fn().mockResolvedValue(null) } },
+        { provide: AttendancePolicyService, useValue: { getAttendanceRules: jest.fn().mockResolvedValue(null) } },
       ],
     }).compile().then((m) => m.get(CronAttendanceService));
 
@@ -132,7 +132,7 @@ describe("CronAttendanceService — cross-tenant isolation", () => {
         CronAttendanceService,
         { provide: DRIZZLE, useValue: db },
         { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
-        { provide: AttendancePolicyService, useValue: { getOrgPolicy: jest.fn().mockResolvedValue(null) } },
+        { provide: AttendancePolicyService, useValue: { getAttendanceRules: jest.fn().mockResolvedValue(null) } },
       ],
     }).compile().then((m) => m.get(CronAttendanceService));
 
@@ -150,7 +150,7 @@ describe("CronBillingService — cross-tenant isolation", () => {
     aiCredits: { debitCredits: jest.fn(), creditBalance: jest.fn() },
     planLimits: { assertWithinLimit: jest.fn() },
     revenue: { recordEvent: jest.fn() },
-    dispatch: { send: jest.fn(), sendToUser: jest.fn() },
+    dispatch: { emit: jest.fn() },
   };
 
   it("processes trial expiry scoped to the attacker org only (isolation — deny)", async () => {
@@ -224,7 +224,7 @@ describe("CronBuildSnapshotsService — cross-tenant isolation", () => {
   it("snapshots projects only for the org in the forEachOrg callback (isolation — deny)", async () => {
     const { db, selectWhere } = makeDb([]);
     setupForEachOrg(db, ATTACKER);
-    const reports = { snapshotProjects: jest.fn().mockResolvedValue({ snapped: 0 }), generateDailySnapshot: jest.fn() };
+    const reports = { snapshot: jest.fn().mockResolvedValue(undefined) };
     const svc = await Test.createTestingModule({
       providers: [
         CronBuildSnapshotsService,
@@ -241,7 +241,7 @@ describe("CronBuildSnapshotsService — cross-tenant isolation", () => {
   it("snapshots projects for the owning org (isolation — control)", async () => {
     const { db, selectWhere } = makeDb([]);
     setupForEachOrg(db, OWNER);
-    const reports = { snapshotProjects: jest.fn().mockResolvedValue({ snapped: 0 }), generateDailySnapshot: jest.fn() };
+    const reports = { snapshot: jest.fn().mockResolvedValue(undefined) };
     const svc = await Test.createTestingModule({
       providers: [
         CronBuildSnapshotsService,
@@ -326,14 +326,14 @@ describe("CronHrEnginesService — cross-tenant isolation", () => {
       providers: [
         CronHrEnginesService,
         { provide: DRIZZLE, useValue: db },
-        { provide: HrWorkflowEngineService, useValue: { sweepOverdueSteps: jest.fn().mockResolvedValue({ swept: 0 }), sweepWebhookRetries: jest.fn() } },
+        { provide: HrWorkflowEngineService, useValue: { sweepOverdueSteps: jest.fn().mockResolvedValue({ swept: 0 }) } },
         { provide: HrEffectiveChangesService, useValue: { applyDueChanges: jest.fn().mockResolvedValue({ applied: 0 }) } },
         { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
-        { provide: HrWebhooksService, useValue: { retryFailed: jest.fn() } },
-        { provide: ProbationService, useValue: { sweepCompletedProbations: jest.fn() } },
-        { provide: ComplianceRequirementsService, useValue: { sweep: jest.fn() } },
-        { provide: WorkAuthorizationsService, useValue: { sweepExpiry: jest.fn() } },
-        { provide: ContractsService, useValue: { sweepExpiry: jest.fn() } },
+        { provide: HrWebhooksService, useValue: { retryPending: jest.fn() } },
+        { provide: ProbationService, useValue: { sweepDue: jest.fn() } },
+        { provide: ComplianceRequirementsService, useValue: { generateEvents: jest.fn(), markOverdueEvents: jest.fn() } },
+        { provide: WorkAuthorizationsService, useValue: { refreshExpiredStatuses: jest.fn() } },
+        { provide: ContractsService, useValue: { refreshExpiredStatuses: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronHrEnginesService));
   }
@@ -363,9 +363,9 @@ describe("CronHrService — cross-tenant isolation", () => {
       providers: [
         CronHrService,
         { provide: DRIZZLE, useValue: db },
-        { provide: AutomationService, useValue: { emit: jest.fn() } },
+        { provide: AutomationService, useValue: { runAutomationsForEvent: jest.fn() } },
         { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
-        { provide: NotificationDispatchService, useValue: { send: jest.fn(), sendToUser: jest.fn() } },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronHrService));
   }
@@ -423,7 +423,7 @@ describe("CronInvitationExpiryService — cross-tenant isolation", () => {
   it("expires invitations scoped to the org in the callback (isolation — deny)", async () => {
     const { db } = makeDb([]);
     setupForEachOrg(db, ATTACKER);
-    const seatLedger = { releaseSeats: jest.fn(), occupySeat: jest.fn() };
+    const seatLedger = { recordSeatEvent: jest.fn() };
     const svc = await Test.createTestingModule({
       providers: [
         CronInvitationExpiryService,
@@ -445,7 +445,7 @@ describe("CronInvitationExpiryService — cross-tenant isolation", () => {
       providers: [
         CronInvitationExpiryService,
         { provide: DRIZZLE, useValue: db },
-        { provide: SeatLedgerService, useValue: { releaseSeats: jest.fn(), occupySeat: jest.fn() } },
+        { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronInvitationExpiryService));
 

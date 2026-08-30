@@ -19,7 +19,6 @@ const stubCache = {
   cached: jest.fn().mockImplementation((_k: string, fn: () => Promise<unknown>) => fn()),
   invalidate: jest.fn().mockResolvedValue(undefined),
   invalidateNamespace: jest.fn().mockResolvedValue(undefined),
-  invalidatePattern: jest.fn().mockResolvedValue(undefined),
   set: jest.fn().mockResolvedValue(undefined),
   get: jest.fn().mockResolvedValue(null),
 };

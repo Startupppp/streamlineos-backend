@@ -22,7 +22,6 @@ function makeCache(): CacheService {
     set: jest.fn().mockResolvedValue(undefined),
     invalidate: jest.fn().mockResolvedValue(undefined),
     del: jest.fn().mockResolvedValue(undefined),
-    invalidatePattern: jest.fn().mockResolvedValue(undefined),
   } as unknown as CacheService;
 }
 

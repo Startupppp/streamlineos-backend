@@ -109,7 +109,7 @@ function makeCacheMock() {
   return {
     cached: jest.fn().mockImplementation((_key: string, cb: () => unknown) => cb()),
     cachedVersioned: jest.fn().mockImplementation((_k: string, _v: number, cb: () => unknown) => cb()),
-    invalidatePattern: jest.fn().mockResolvedValue(undefined),
+    invalidateNamespace: jest.fn().mockResolvedValue(undefined),
   };
 }
 

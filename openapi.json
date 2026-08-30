@@ -32865,6 +32865,23 @@
         "description": "Exposure: permission — build:workspace:manage"
       }
     },
+    "/calendar/admin/settings": {
+      "get": {
+        "operationId": "CalendarAdminSettingsController_getSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "CalendarAdminSettings"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "calendar:admin:manage",
+        "description": "Exposure: permission — calendar:admin:manage"
+      }
+    },
     "/calendar/events": {
       "get": {
         "operationId": "CalendarController_getEvents",

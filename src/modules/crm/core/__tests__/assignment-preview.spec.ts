@@ -39,7 +39,7 @@ function makeDbWithRules(rules: unknown[], leadCounts: Record<string, number> = 
   };
 }
 
-const mockCacheService = { cached: jest.fn(), invalidatePattern: jest.fn() };
+const mockCacheService = { cached: jest.fn(), invalidateNamespace: jest.fn() };
 const mockTerritoryMatch = { match: jest.fn().mockResolvedValue(null) };
 
 describe("CrmRulesService.preview", () => {

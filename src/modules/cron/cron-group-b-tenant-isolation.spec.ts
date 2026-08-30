@@ -213,7 +213,7 @@ describe("CronOrgPurgeWorkerService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: cache },
-        { provide: OrgMembershipService, useValue: { revokeAllMemberships: jest.fn() } },
+        { provide: OrgMembershipService, useValue: { revokeOrgScopedAccess: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronOrgPurgeWorkerService));
 
@@ -230,7 +230,7 @@ describe("CronOrgPurgeWorkerService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: cache },
-        { provide: OrgMembershipService, useValue: { revokeAllMemberships: jest.fn() } },
+        { provide: OrgMembershipService, useValue: { revokeOrgScopedAccess: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronOrgPurgeWorkerService));
 
@@ -250,7 +250,7 @@ describe("CronOrganizationService — cross-tenant isolation", () => {
       providers: [
         CronOrganizationService,
         { provide: DRIZZLE, useValue: db },
-        { provide: NotificationDispatchService, useValue: { send: jest.fn(), sendBatch: jest.fn() } },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronOrganizationService));
 
@@ -267,7 +267,7 @@ describe("CronOrganizationService — cross-tenant isolation", () => {
       providers: [
         CronOrganizationService,
         { provide: DRIZZLE, useValue: db },
-        { provide: NotificationDispatchService, useValue: { send: jest.fn(), sendBatch: jest.fn() } },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronOrganizationService));
 
@@ -312,7 +312,7 @@ describe("CronRecruitmentService — cross-tenant isolation", () => {
       providers: [
         CronRecruitmentService,
         { provide: DRIZZLE, useValue: db },
-        { provide: EmailService, useValue: { send: jest.fn() } },
+        { provide: EmailService, useValue: { sendEmail: jest.fn() } },
         { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } },
       ],
     }).compile().then((m) => m.get(CronRecruitmentService));
@@ -330,7 +330,7 @@ describe("CronRecruitmentService — cross-tenant isolation", () => {
       providers: [
         CronRecruitmentService,
         { provide: DRIZZLE, useValue: db },
-        { provide: EmailService, useValue: { send: jest.fn() } },
+        { provide: EmailService, useValue: { sendEmail: jest.fn() } },
         { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } },
       ],
     }).compile().then((m) => m.get(CronRecruitmentService));
@@ -351,8 +351,8 @@ describe("CronWeeklyRecapService — cross-tenant isolation", () => {
       providers: [
         CronWeeklyRecapService,
         { provide: DRIZZLE, useValue: db },
-        { provide: NotificationDispatchService, useValue: { send: jest.fn(), sendToUser: jest.fn() } },
-        { provide: AiGatewayService, useValue: { chat: jest.fn().mockResolvedValue({ message: "recap" }), chatWithUsage: jest.fn() } },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
+        { provide: AiGatewayService, useValue: { invokeText: jest.fn().mockResolvedValue({ ok: true, data: "recap" }), invokeTextWithUsage: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronWeeklyRecapService));
 
@@ -369,8 +369,8 @@ describe("CronWeeklyRecapService — cross-tenant isolation", () => {
       providers: [
         CronWeeklyRecapService,
         { provide: DRIZZLE, useValue: db },
-        { provide: NotificationDispatchService, useValue: { send: jest.fn(), sendToUser: jest.fn() } },
-        { provide: AiGatewayService, useValue: { chat: jest.fn().mockResolvedValue({ message: "recap" }), chatWithUsage: jest.fn() } },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
+        { provide: AiGatewayService, useValue: { invokeText: jest.fn().mockResolvedValue({ ok: true, data: "recap" }), invokeTextWithUsage: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronWeeklyRecapService));
 

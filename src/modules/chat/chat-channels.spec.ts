@@ -72,7 +72,6 @@ function buildMocks() {
     cached: jest.fn(),
     invalidate: jest.fn(),
     invalidateNamespace: jest.fn(),
-    invalidatePattern: jest.fn(),
   };
 
   return { mockDb, mockCache, updateSpy, resolveSpy, findManyMock };

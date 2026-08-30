@@ -85,7 +85,7 @@ describe("DealsService – blueprint transition enforcement", () => {
 
     service = new DealsService(
       mockDb,
-      { cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()), invalidate: jest.fn(), invalidatePattern: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService,
+      { cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()), invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService,
       { log: jest.fn() } as unknown as AuditService,
       { emit: jest.fn().mockResolvedValue(undefined) } as unknown as NotificationDispatchService,
       { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as unknown as AutomationService,
