@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ApprovalsService } from "./approvals.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
@@ -57,10 +56,10 @@ export class ApprovalsController {
 
   @Get()
   @RequirePermission("build:approvals:view")
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, query: listApprovalsQuerySchema })
   listApprovals(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(listApprovalsQuerySchema)) query: ListApprovalsQuery,
+    @Query() query: ListApprovalsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listApprovals(u.orgId, projectId, query);

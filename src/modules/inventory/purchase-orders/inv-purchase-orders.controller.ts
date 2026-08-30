@@ -14,7 +14,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { resolveInvPoScope } from "../stock-engine/inventory-scope";
 import { PoService } from "./po.service";
-import { GrnService } from "./grn.service";
+import { GrnReceiveService } from "./grn-receive.service";
 import {
   listPoSchema, createPoSchema, updatePoSchema, createGrnSchema,
   type ListPoInput, type CreatePoInput, type UpdatePoInput, type CreateGrnInput,
@@ -35,7 +35,7 @@ function requireIdempotencyKey(key: string | undefined): string {
 export class InvPurchaseOrdersController {
   constructor(
     private readonly pos: PoService,
-    private readonly grns: GrnService,
+    private readonly grns: GrnReceiveService,
     private readonly access: AccessService,
   ) {}
 
