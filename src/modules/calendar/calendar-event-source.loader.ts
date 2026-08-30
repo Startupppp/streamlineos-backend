@@ -3,6 +3,8 @@ import type { Db } from "../../db/drizzle.module";
 import { calendarEvents, eventAttendees, organizationMembers, projects, tickets, users } from "../../db/schema";
 import type { LinkedTicket } from "./calendar.types";
 
+const creatorMember = aliasedTable(organizationMembers, "creator_member");
+
 const callerAtt = aliasedTable(eventAttendees, "cal_src_caller_att");
 
 export class CalendarEventSourceLoader {
@@ -87,12 +89,15 @@ export class CalendarEventSourceLoader {
         entityType: calendarEvents.entityType,
         entityId: calendarEvents.entityId,
         visibility: calendarEvents.visibility,
-        createdBy: calendarEvents.createdBy,
         creatorName: users.name,
         rsvpStatus: callerAtt.status,
       })
       .from(calendarEvents)
-      .innerJoin(users, eq(users.id, calendarEvents.createdBy))
+      .innerJoin(
+        creatorMember,
+        and(eq(creatorMember.orgId, calendarEvents.orgId), eq(creatorMember.id, calendarEvents.createdByMembershipId)),
+      )
+      .innerJoin(users, eq(users.id, creatorMember.userId))
       .leftJoin(
         callerAtt,
         and(
@@ -108,7 +113,7 @@ export class CalendarEventSourceLoader {
           gt(calendarEvents.endDate, start),
           or(
             eq(calendarEvents.visibility, "org"),
-            eq(calendarEvents.createdBy, userId),
+            eq(calendarEvents.createdByMembershipId, callerMembershipId),
             isNotNull(callerAtt.id),
           ),
         ),

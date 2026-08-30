@@ -131,7 +131,7 @@ export class CalendarReminderSweepService {
 
       const eventIds = [...new Set(allCandidates.map((e) => e.id))];
       const attendees = await tx
-        .select({ eventId: eventAttendees.eventId, userId: eventAttendees.userId })
+        .select({ eventId: eventAttendees.eventId, userId: organizationMembers.userId })
         .from(eventAttendees)
         .innerJoin(
           organizationMembers,

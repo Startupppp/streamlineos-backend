@@ -2990,6 +2990,13 @@
       "when": 1798000042000,
       "tag": "0720_accounting_attr_contract",
       "breakpoints": true
+    },
+    {
+      "idx": 543,
+      "version": "7",
+      "when": 1798000043000,
+      "tag": "0721_calendar_attendee_user_id_contract",
+      "breakpoints": true
     }
   ]
 }

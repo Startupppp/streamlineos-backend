@@ -10,7 +10,7 @@ const WINDOW_END = new Date("2024-03-10T10:00:00Z");
 function makeEventRow(overrides: {
   id?: number;
   orgId?: string;
-  createdBy?: string;
+  createdByMembershipId?: number;
   startDate?: Date;
   endDate?: Date;
   allDay?: boolean;
@@ -23,13 +23,16 @@ function makeEventRow(overrides: {
     allDay: overrides.allDay ?? false,
     timezone: "UTC",
     orgId: overrides.orgId ?? "org-1",
-    createdBy: overrides.createdBy ?? "user-org",
+    createdByMembershipId: overrides.createdByMembershipId ?? 99,
   };
 }
 
 function makeTx(eventRows: ReturnType<typeof makeEventRow>[], attendeeRows: Array<{ eventId: number; status: string }>): TenantTx {
   let selectCallCount = 0;
   return {
+    query: {
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
+    },
     select: jest.fn().mockImplementation(() => {
       selectCallCount += 1;
       if (selectCallCount === 1) {
@@ -61,7 +64,7 @@ describe("CalendarConflictService.checkConflictsInTx", () => {
   });
 
   it("returns an occurrence when the organizer has a conflicting event", async () => {
-    const tx = makeTx([makeEventRow({ createdBy: "user-1" })], []);
+    const tx = makeTx([makeEventRow({ createdByMembershipId: 1 })], []);
     const result = await service.checkConflictsInTx(tx, "org-1", "user-1", WINDOW_START, WINDOW_END);
     expect(result).toHaveLength(1);
     expect(result[0]?.eventId).toBe(1);
@@ -69,7 +72,7 @@ describe("CalendarConflictService.checkConflictsInTx", () => {
 
   it("returns an occurrence when the user is an accepted attendee", async () => {
     const tx = makeTx(
-      [makeEventRow({ id: 5, createdBy: "someone-else" })],
+      [makeEventRow({ id: 5, createdByMembershipId: 2 })],
       [{ eventId: 5, status: "accepted" }],
     );
     const result = await service.checkConflictsInTx(tx, "org-1", "user-1", WINDOW_START, WINDOW_END);
@@ -78,7 +81,7 @@ describe("CalendarConflictService.checkConflictsInTx", () => {
 
   it("excludes the event when the user declined the invitation", async () => {
     const tx = makeTx(
-      [makeEventRow({ id: 7, createdBy: "someone-else" })],
+      [makeEventRow({ id: 7, createdByMembershipId: 2 })],
       [{ eventId: 7, status: "declined" }],
     );
     const result = await service.checkConflictsInTx(tx, "org-1", "user-1", WINDOW_START, WINDOW_END);
@@ -86,7 +89,7 @@ describe("CalendarConflictService.checkConflictsInTx", () => {
   });
 
   it("excludes an event the user is neither organizer of nor invited to", async () => {
-    const tx = makeTx([makeEventRow({ createdBy: "another-user" })], []);
+    const tx = makeTx([makeEventRow({ createdByMembershipId: 2 })], []);
     const result = await service.checkConflictsInTx(tx, "org-1", "user-1", WINDOW_START, WINDOW_END);
     expect(result).toHaveLength(0);
   });
@@ -104,7 +107,7 @@ describe("CalendarConflictService.checkConflictsInTx", () => {
 
   it("includes a pending attendee (not yet responded)", async () => {
     const tx = makeTx(
-      [makeEventRow({ id: 9, createdBy: "someone-else" })],
+      [makeEventRow({ id: 9, createdByMembershipId: 2 })],
       [{ eventId: 9, status: "pending" }],
     );
     const result = await service.checkConflictsInTx(tx, "org-1", "user-1", WINDOW_START, WINDOW_END);
@@ -115,7 +118,7 @@ describe("CalendarConflictService.checkConflictsInTx", () => {
     const dstStart = new Date("2024-03-10T06:59:00Z");
     const dstEnd = new Date("2024-03-10T07:30:00Z");
     const tx = makeTx(
-      [makeEventRow({ createdBy: "user-1", startDate: dstStart, endDate: dstEnd })],
+      [makeEventRow({ createdByMembershipId: 1, startDate: dstStart, endDate: dstEnd })],
       [],
     );
     const winStart = new Date("2024-03-10T06:00:00Z");
@@ -126,7 +129,7 @@ describe("CalendarConflictService.checkConflictsInTx", () => {
 
   it("cancelled/declined attendance is not a conflict", async () => {
     const tx = makeTx(
-      [makeEventRow({ id: 11, createdBy: "someone-else" })],
+      [makeEventRow({ id: 11, createdByMembershipId: 2 })],
       [{ eventId: 11, status: "declined" }],
     );
     const result = await service.checkConflictsInTx(tx, "org-1", "user-1", WINDOW_START, WINDOW_END);
@@ -147,7 +150,7 @@ describe("CalendarConflictService.checkConflicts wraps a transaction", () => {
     };
     const mockDb = {
       transaction: jest.fn(async (fn: (tx: TenantTx) => Promise<unknown>) => {
-        const tx = makeTx([makeEventRow({ createdBy: "user-1" })], []);
+        const tx = makeTx([makeEventRow({ createdByMembershipId: 1 })], []);
         return fn(tx);
       }),
     };

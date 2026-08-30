@@ -130,7 +130,6 @@ export class CalendarService {
             orgId,
             eventId: event.id,
             membershipId: membership.id,
-            userId: membership.userId,
           }))).onConflictDoNothing();
         if (event && memberships.some((membership) => membership.userId !== userId))
           await tx.insert(notificationOutbox).values({
@@ -227,6 +226,15 @@ export class CalendarService {
     if (timeChanged) updateData.reminder15MinSent = false;
 
     const event = await this.db.transaction(async (tx) => {
+      const memberRow = await tx.query.organizationMembers.findFirst({
+        columns: { id: true },
+        where: and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      });
+      if (!memberRow) return null;
       const rows = await tx
         .update(calendarEvents)
         .set({ ...updateData, updatedAt: new Date() })
@@ -234,7 +242,7 @@ export class CalendarService {
           and(
             eq(calendarEvents.id, id),
             eq(calendarEvents.orgId, orgId),
-            eq(calendarEvents.createdBy, userId),
+            eq(calendarEvents.createdByMembershipId, memberRow.id),
           ),
         )
         .returning();
@@ -308,8 +316,12 @@ export class CalendarService {
     actorUserId: string,
   ): Promise<string[]> {
     const current = await tx
-      .select({ userId: eventAttendees.userId })
+      .select({ userId: organizationMembers.userId })
       .from(eventAttendees)
+      .innerJoin(
+        organizationMembers,
+        and(eq(eventAttendees.orgId, organizationMembers.orgId), eq(eventAttendees.membershipId, organizationMembers.id)),
+      )
       .where(and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, eventId)));
 
     const currentUserIds = new Set(current.map((a) => a.userId));
@@ -329,7 +341,7 @@ export class CalendarService {
     if (memberships.length > 0)
       await tx
         .insert(eventAttendees)
-        .values(memberships.map((m) => ({ orgId, eventId, membershipId: m.id, userId: m.userId })))
+        .values(memberships.map((m) => ({ orgId, eventId, membershipId: m.id })))
         .onConflictDoNothing();
 
     return memberships
@@ -338,31 +350,42 @@ export class CalendarService {
   }
 
   async deleteEvent(orgId: string, userId: string, id: number) {
-    const rows = await this.db
-      .select({
-        integrationConnectionId: calendarEvents.integrationConnectionId,
-        externalEventId: calendarEvents.externalEventId,
-      })
-      .from(calendarEvents)
-      .where(
-        and(
-          eq(calendarEvents.id, id),
-          eq(calendarEvents.orgId, orgId),
-          eq(calendarEvents.createdBy, userId),
+    const [mapping] = await this.db.transaction(async (tx) => {
+      const memberRow = await tx.query.organizationMembers.findFirst({
+        columns: { id: true },
+        where: and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.status, "ACTIVE"),
         ),
-      )
-      .limit(1);
-    const mapping = rows[0];
-
-    await this.db
-      .delete(calendarEvents)
-      .where(
-        and(
-          eq(calendarEvents.id, id),
-          eq(calendarEvents.orgId, orgId),
-          eq(calendarEvents.createdBy, userId),
-        ),
-      );
+      });
+      if (!memberRow) return [];
+      const deleted = await tx
+        .delete(calendarEvents)
+        .where(
+          and(
+            eq(calendarEvents.id, id),
+            eq(calendarEvents.orgId, orgId),
+            eq(calendarEvents.createdByMembershipId, memberRow.id),
+          ),
+        )
+        .returning({
+          integrationConnectionId: calendarEvents.integrationConnectionId,
+          externalEventId: calendarEvents.externalEventId,
+        });
+      if (deleted.length > 0)
+        await tx
+          .update(notificationOutbox)
+          .set({ state: "DEAD" })
+          .where(
+            and(
+              eq(notificationOutbox.orgId, orgId),
+              eq(notificationOutbox.state, "PENDING"),
+              like(notificationOutbox.dedupeKey, `calendar:reminder:${id}:%`),
+            ),
+          );
+      return deleted;
+    });
 
     if (mapping?.integrationConnectionId && mapping.externalEventId) {
       try {
@@ -447,7 +470,6 @@ export class CalendarService {
         orgId,
         eventId: id,
         membershipId: membership.id,
-        userId,
         status: input.status,
         updatedAt: new Date(),
       })
@@ -464,23 +486,48 @@ export class CalendarService {
     const event = await this.getEventForOrg(orgId, id);
     if (!event) return null;
 
-    return this.db.query.eventAttendees.findMany({
-      where: and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, id)),
-      limit: 100,
-      with: {
-        user: { columns: { id: true, name: true, email: true, image: true } },
-      },
-    });
+    const rows = await this.db
+      .select({
+        id: eventAttendees.id,
+        status: eventAttendees.status,
+        userId: users.id,
+        userName: users.name,
+        userEmail: users.email,
+        userImage: users.image,
+      })
+      .from(eventAttendees)
+      .innerJoin(
+        organizationMembers,
+        and(eq(eventAttendees.orgId, organizationMembers.orgId), eq(eventAttendees.membershipId, organizationMembers.id)),
+      )
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, id)))
+      .limit(100);
+
+    return rows.map((row) => ({
+      id: row.id,
+      status: row.status,
+      user: { id: row.userId, name: row.userName, email: row.userEmail, image: row.userImage },
+    }));
   }
 
   private async getRecurringEventForOwner(orgId: string, userId: string, eventId: number) {
+    const memberRow = await this.db.query.organizationMembers.findFirst({
+      columns: { id: true },
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+    });
+    if (!memberRow) return null;
     const rows = await this.db
-      .select({ createdBy: calendarEvents.createdBy, rrule: calendarEvents.rrule })
+      .select({ createdByMembershipId: calendarEvents.createdByMembershipId, rrule: calendarEvents.rrule })
       .from(calendarEvents)
       .where(and(eq(calendarEvents.id, eventId), eq(calendarEvents.orgId, orgId)))
       .limit(1);
     const ev = rows[0];
-    if (!ev || ev.createdBy !== userId || !ev.rrule) return null;
+    if (!ev || ev.createdByMembershipId !== memberRow.id || !ev.rrule) return null;
     return ev;
   }
 

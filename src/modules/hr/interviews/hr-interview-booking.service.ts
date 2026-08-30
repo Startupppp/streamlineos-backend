@@ -141,7 +141,6 @@ export class HrInterviewBookingService {
               orgId: link.orgId,
               eventId: calendarEvent.id,
               membershipId: membership.id,
-              userId: membership.userId,
             })),
           );
 

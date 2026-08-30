@@ -210,7 +210,6 @@ export class HrInterviewSchedulingService {
           orgId,
           eventId: calendarEvent.id,
           membershipId: membership.id,
-          userId: membership.userId,
         })),
       );
     }
