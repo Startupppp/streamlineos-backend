@@ -97,12 +97,20 @@ async function main() {
     }
 
     const orgs = await sql`
-      SELECT DISTINCT ON (org_id) org_id, id FROM organization_members ORDER BY org_id, id LIMIT 2`;
+      SELECT DISTINCT ON (m.org_id) m.org_id, m.id
+      FROM organization_members m
+      WHERE EXISTS (SELECT 1 FROM roles r WHERE r.org_id = m.org_id)
+      ORDER BY m.org_id, m.id
+      LIMIT 2`;
     if (orgs.length < 2) {
-      console.log("SKIP — fewer than two organizations with memberships; negative probes need two tenants.");
+      console.log("SKIP — fewer than two organizations have BOTH a membership and a role; the role_assignments probes cannot run without one.");
     } else {
       const [a, b] = orgs;
       const [role] = await sql`SELECT id FROM roles WHERE org_id = ${a.org_id} LIMIT 1`;
+      if (!role) {
+        console.error("ABORT — selected organization has no role despite the EXISTS filter; refusing to run probes that would pass on a crash.");
+        process.exit(1);
+      }
       const results = [
         await probe(sql, "cross-tenant assigner on role_assignments", "REJECT", (tx) =>
           tx`INSERT INTO role_assignments (org_id, organization_membership_id, role_id, assigned_by_membership_id)
