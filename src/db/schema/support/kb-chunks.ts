@@ -51,7 +51,7 @@ export const kbArticleChunks = pgTable(
     pageProjectId: integer("page_project_id"),
     pageCreatedById: text("page_created_by_id"),
     pageCreatedByMembershipId: integer("page_created_by_membership_id"),
-    aclRevision: integer("acl_revision"),
+    aclRevision: integer("acl_revision").notNull().default(1),
     contentRevision: integer("content_revision"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

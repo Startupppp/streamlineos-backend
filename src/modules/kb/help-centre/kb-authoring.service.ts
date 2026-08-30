@@ -1,16 +1,13 @@
 import { Injectable, ServiceUnavailableException } from "@nestjs/common";
-import { KbCreditsService } from "../core/kb-credits.service";
+import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { KbEventsService } from "../core/kb-events.service";
-import { LlmService } from "../../ai/core/providers/llm.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { DraftInput, ImproveInput, SummarizeInput } from "./dto/kb-authoring.schemas";
-
-const COST = 1;
 
 @Injectable()
 export class KbAuthoringService {
   constructor(
-    private readonly llm: LlmService,
-    private readonly credits: KbCreditsService,
+    private readonly gateway: AiGatewayService,
     private readonly events: KbEventsService,
   ) {}
 
@@ -21,19 +18,21 @@ export class KbAuthoringService {
     system: string,
     user: string,
   ): Promise<{ content: string }> {
-    if (!this.llm.isConfigured()) {
-      throw new ServiceUnavailableException("AI assistant is not available");
-    }
-    await this.credits.consume(orgId, COST, { reason: `kb_${feature}`, feature, actorId: userId });
-    let content: string;
-    try {
-      content = await this.llm.invokeText({ model: "fast", temperature: 0.4, system, user });
-    } catch (error) {
-      await this.credits.grant(orgId, COST, { reason: `kb_${feature}_refund`, feature, actorId: userId });
-      throw error;
+    const result = await this.gateway.invokeTextWithUsage({
+      actor: { orgId, userId },
+      feature: `kb.authoring.${feature}`,
+      tier: "fast",
+      maxTokens: 2048,
+      charge: true,
+      prompt: { system, user },
+    });
+    if (!result.ok) {
+      if (result.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: result.message });
+      throw new ServiceUnavailableException("AI assistant is temporarily unavailable");
     }
     await this.events.record(orgId, "ai_answer", { actorId: userId, metadata: { feature } });
-    return { content };
+    return { content: result.data };
   }
 
   draft(orgId: string, userId: string, input: DraftInput): Promise<{ content: string }> {

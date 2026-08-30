@@ -48,6 +48,8 @@ const TIERS: Record<string, Tier> = {
   "survey:public-view": { limit: 60, windowSecs: 60 },
   "survey:public-start": { limit: 20, windowSecs: 60 },
   "survey:public-submit": { limit: 20, windowSecs: 60 },
+  "support:csat-view": { limit: 60, windowSecs: 60 },
+  "support:csat-submit": { limit: 5, windowSecs: 3600 },
   "support:portal-ticket-create": { limit: 10, windowSecs: 3600 },
   "support:inbound-email": { limit: 120, windowSecs: 60 },
   "support:inbound-whatsapp": { limit: 120, windowSecs: 60 },

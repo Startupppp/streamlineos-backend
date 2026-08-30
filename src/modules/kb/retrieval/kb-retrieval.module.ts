@@ -4,6 +4,7 @@ import { AiJobsModule } from "../../ai/jobs/ai-jobs.module";
 import { KbCoreModule } from "../core/kb-core.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { KbIndexingService } from "./kb-indexing.service";
+import { KbArticleReindexService } from "./kb-article-reindex.service";
 import { KbIngestionConsumer } from "./kb-ingestion-consumer";
 import {
   KbContentAdapterRegistry,
@@ -28,6 +29,7 @@ import { KbPageIndexingController } from "./kb-page-indexing.controller";
   controllers: [KbSearchController, KbAskController, KbResearchBriefController, KbPageIndexingController],
   providers: [
     KbIndexingService,
+    KbArticleReindexService,
     KbContentAdapterRegistry,
     KbPageAdapter,
     KbArticleAdapter,
@@ -41,6 +43,6 @@ import { KbPageIndexingController } from "./kb-page-indexing.controller";
     KbResearchBriefService,
     KbResearchBriefHandler,
   ],
-  exports: [KbIndexingService, KbPageBackfillService, KbSearchService, KbAskService],
+  exports: [KbIndexingService, KbArticleReindexService, KbPageBackfillService, KbSearchService, KbAskService],
 })
 export class KbRetrievalModule {}

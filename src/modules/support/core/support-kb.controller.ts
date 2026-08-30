@@ -19,7 +19,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { SupportKbService } from "./support-kb.service";
 import { KbAskService } from "../../kb/retrieval/kb-ask.service";
-import { KbIndexingService } from "../../kb/retrieval/kb-indexing.service";
+import { KbArticleReindexService } from "../../kb/retrieval/kb-article-reindex.service";
 import {
   createKbArticleSchema,
   createKbAttachmentSchema,
@@ -58,7 +58,7 @@ export class SupportKbController {
   constructor(
     private readonly kb: SupportKbService,
     private readonly ask: KbAskService,
-    private readonly indexing: KbIndexingService,
+    private readonly reindex: KbArticleReindexService,
   ) {}
 
   @Get("categories")
@@ -249,7 +249,7 @@ export class SupportKbController {
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.indexing.getArticleIndexStatus(u.orgId, articleId);
+    return this.reindex.getArticleIndexStatus(u.orgId, articleId);
   }
 
   @Post("articles/:articleId/reindex")
@@ -261,7 +261,7 @@ export class SupportKbController {
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.indexing.reindexArticle(u.orgId, articleId);
+    return this.reindex.reindexArticle(u.orgId, articleId);
   }
 
   @Post("reindex-all")
@@ -269,6 +269,6 @@ export class SupportKbController {
   @RequirePermission("support:kb:manage")
   @HttpCode(200)
   reindexAll(@CurrentUser() u: CurrentUserContext) {
-    return this.indexing.reindexAll(u.orgId);
+    return this.reindex.reindexAll(u.orgId);
   }
 }
