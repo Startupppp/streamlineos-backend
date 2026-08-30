@@ -79,7 +79,12 @@ export class EngagementService {
     return record;
   }
 
-  async submitFeedback(orgId: string, userId: string, feedbackId: number, input: SubmitFeedbackInput) {
+  async submitFeedback(
+    orgId: string,
+    userId: string,
+    feedbackId: number,
+    input: SubmitFeedbackInput,
+  ) {
     const [existing] = await this.db
       .select()
       .from(feedbackRequests)
@@ -92,7 +97,8 @@ export class EngagementService {
       );
 
     if (!existing) throw new NotFoundException("Feedback request not found.");
-    if (existing.isCompleted) throw new BadRequestException("Feedback already submitted.");
+    if (existing.isCompleted)
+      throw new BadRequestException("Feedback already submitted.");
 
     const [updated] = await this.db
       .update(feedbackRequests)
@@ -104,7 +110,12 @@ export class EngagementService {
         isCompleted: true,
         completedAt: new Date(),
       })
-      .where(and(eq(feedbackRequests.id, feedbackId), eq(feedbackRequests.orgId, orgId)))
+      .where(
+        and(
+          eq(feedbackRequests.id, feedbackId),
+          eq(feedbackRequests.orgId, orgId),
+        ),
+      )
       .returning();
 
     return updated;
@@ -142,7 +153,10 @@ export class EngagementService {
         const q = questions.find((item) => item.id === answer.questionId);
         if (q && q.correctIndex === answer.selectedIndex) correct++;
       }
-      const score = questions.length > 0 ? Math.round((correct / questions.length) * 100) : 0;
+      const score =
+        questions.length > 0
+          ? Math.round((correct / questions.length) * 100)
+          : 0;
       const passed = score >= (assessment.passingScore ?? 70);
 
       const [attempt] = await this.db
@@ -159,7 +173,8 @@ export class EngagementService {
       return { ...attempt, score, passed, correct, total: questions.length };
     }
 
-    if (!isAdmin) throw new ForbiddenException("Only admins can create assessments.");
+    if (!isAdmin)
+      throw new ForbiddenException("Only admins can create assessments.");
     const input = createAssessmentSchema.parse(body);
     const [assessment] = await this.db
       .insert(skillAssessments)
@@ -180,13 +195,22 @@ export class EngagementService {
   listRecognitions(orgId: string) {
     return this.db.query.recognitions.findMany({
       where: eq(recognitions.orgId, orgId),
-      with: { fromUser: true, toUser: true },
+      with: {
+        fromUser: {
+          columns: { id: true, name: true, email: true, image: true },
+        },
+        toUser: { columns: { id: true, name: true, email: true, image: true } },
+      },
       orderBy: [desc(recognitions.createdAt)],
       limit: 100,
     });
   }
 
-  async createRecognition(orgId: string, userId: string, input: CreateRecognitionInput) {
+  async createRecognition(
+    orgId: string,
+    userId: string,
+    input: CreateRecognitionInput,
+  ) {
     if (input.toUserId === userId) {
       throw new BadRequestException("You cannot send kudos to yourself.");
     }
@@ -224,7 +248,11 @@ export class EngagementService {
       entityType: "hr_recognition",
       entityId: String(recognition.id),
       action: "kudos_given",
-      after: { toUserId: input.toUserId, message: input.message, category: input.category },
+      after: {
+        toUserId: input.toUserId,
+        message: input.message,
+        category: input.category,
+      },
     });
 
     this.engagementExtras
@@ -281,10 +309,14 @@ export class EngagementService {
     if (action === "respond") {
       const input = submitSurveyResponseSchema.parse(body);
       const survey = await this.db.query.pulseSurveys.findFirst({
-        where: and(eq(pulseSurveys.id, input.surveyId), eq(pulseSurveys.orgId, orgId)),
+        where: and(
+          eq(pulseSurveys.id, input.surveyId),
+          eq(pulseSurveys.orgId, orgId),
+        ),
       });
       if (!survey) throw new NotFoundException("Survey not found.");
-      if (survey.status !== "ACTIVE") throw new BadRequestException("Survey is not active.");
+      if (survey.status !== "ACTIVE")
+        throw new BadRequestException("Survey is not active.");
 
       const [response] = await this.db
         .insert(surveyResponses)
@@ -298,7 +330,8 @@ export class EngagementService {
       return response;
     }
 
-    if (!isAdmin) throw new ForbiddenException("Only admins can create surveys.");
+    if (!isAdmin)
+      throw new ForbiddenException("Only admins can create surveys.");
     const input = createSurveySchema.parse(body);
     const [survey] = await this.db
       .insert(pulseSurveys)
@@ -316,7 +349,11 @@ export class EngagementService {
     return survey;
   }
 
-  async updateSurvey(orgId: string, surveyId: number, input: UpdateSurveyInput) {
+  async updateSurvey(
+    orgId: string,
+    surveyId: number,
+    input: UpdateSurveyInput,
+  ) {
     await this.db
       .update(pulseSurveys)
       .set({
