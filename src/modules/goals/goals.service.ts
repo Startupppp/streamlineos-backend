@@ -389,6 +389,4 @@ export class GoalsService {
 
     return goal ?? null;
   }
-
-}
 }
