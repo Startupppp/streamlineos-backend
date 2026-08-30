@@ -21,6 +21,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { CrmOrganizationsService } from "./crm-organizations.service";
+import { CrmOrganizationsMergeService } from "./crm-organizations-merge.service";
 import { CrmOrganizationsInsightsService } from "./crm-organizations-insights.service";
 import {
   organizationCreateSchema,
@@ -48,6 +49,7 @@ const organizationIdParams = z.object({ organizationId: z.coerce.number().int().
 export class CrmOrganizationsController {
   constructor(
     private readonly orgs: CrmOrganizationsService,
+    private readonly orgMerges: CrmOrganizationsMergeService,
     private readonly insights: CrmOrganizationsInsightsService,
   ) {}
 
@@ -101,7 +103,7 @@ export class CrmOrganizationsController {
     @Body(new ZodValidationPipe(mergeOrgsSchema)) body: MergeOrgsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.orgs.mergeOrganizations(u.orgId, body, u.userId);
+    return this.orgMerges.mergeOrganizations(u.orgId, body, u.userId);
   }
 
   @Get(":organizationId")

@@ -15,6 +15,7 @@ import { CrmAutomationsController } from "./crm-automations.controller";
 import { CrmProductsController } from "./crm-products.controller";
 import { CrmCustomer360Controller } from "./crm-customer360.controller";
 import { CrmOrganizationsService } from "./crm-organizations.service";
+import { CrmOrganizationsMergeService } from "./crm-organizations-merge.service";
 import { CrmPeopleService } from "./crm-people.service";
 import { CrmSlaService } from "./crm-sla.service";
 import { CrmTerritoriesService } from "./crm-territories.service";
@@ -22,6 +23,7 @@ import { CrmWebFormsService } from "./crm-web-forms.service";
 import { CrmRulesService } from "./crm-rules.service";
 import { CrmSalesDashboardService } from "./crm-sales-dashboard.service";
 import { CrmSupportDashboardService } from "./crm-support-dashboard.service";
+import { CrmCeDashboardService } from "./crm-ce-dashboard.service";
 import { CrmAutomationsService } from "./crm-automations.service";
 import { CrmProductsService } from "./crm-products.service";
 import { CrmOrganizationsInsightsService } from "./crm-organizations-insights.service";
@@ -57,6 +59,7 @@ import { CrmFollowupSweepService } from "./crm-followup-sweep.service";
     CrmCampaignsService,
     CrmAttributionReportService,
     CrmOrganizationsService,
+    CrmOrganizationsMergeService,
     CrmPeopleService,
     CrmSlaService,
     CrmTerritoriesService,
@@ -64,6 +67,7 @@ import { CrmFollowupSweepService } from "./crm-followup-sweep.service";
     CrmRulesService,
     CrmSalesDashboardService,
     CrmSupportDashboardService,
+    CrmCeDashboardService,
     CrmAutomationsService,
     CrmProductsService,
     CrmOrganizationsInsightsService,
