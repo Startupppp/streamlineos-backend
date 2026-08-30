@@ -1,7 +1,13 @@
 # InventoryOS — NEO handoff
 
 **Branch:** `feat/inventory-world-class-implementation` (both repos)
-**Written:** 2026-08-30. Re-verify anything dated before you rely on it.
+**Written:** 2026-08-30. Revised the same day by the PEND pass, which closed §6.
+Re-verify anything dated before you rely on it.
+
+> **§6 has been rewritten.** Everything it listed as unproven has now either been
+> walked end to end or is recorded here with the reason it cannot be. Four of the
+> five gaps hid a real defect; three of those made a shipped feature unusable
+> rather than merely untested. Read §6 before §2.
 
 This is the closing record for the NEO programme described in `neo_research.md`.
 It follows `docs/inventory-final-handoff.md`, which closed `inventory.md` and
@@ -57,17 +63,17 @@ The three grades from the previous handoff, used the same way.
 | NEO-2 platform PO + ASN | **Proven** | Golden path ingests a Blinkit fixture, matches on EAN, is idempotent on the platform's PO number, accepts into a Streamline PO, and receives against the ASN. |
 | NEO-3 fill rate + payout | Reachable, arithmetic proven | Golden path asserts 100 ordered / 60 accepted / 60%. The payout matcher has unit coverage; no payout file has been walked end to end. |
 | NEO-4 handling units | **Proven** | Golden path receives 100 onto a pallet, moves the pallet, and asserts on-hand at the unit, at the old bin and at the new one, with reconciliation clean after each. |
-| NEO-5 RF task shell | Reachable | Route-states green; `rf-surface.test.ts` pins no-table, capture-before-command and denied/offline/queued. Not walked by a human on a 375px device. |
+| NEO-5 RF task shell | Reachable, ratchet hardened | PEND-5 added `rf-surface-render.test.tsx`, which mounts the three screens and forbids table semantics in the rendered DOM — the text ratchet passed a `role="grid"` rewrite of the queue. Still not walked by a human on a 375px device. |
 | NEO-6 slotting | **Proven** | Golden path: no rule ⇒ the pre-NEO order; a rule ⇒ the gold-zone bin first. |
-| NEO-7 labour lite | Reachable | Standards and performance have unit coverage including the payroll ratchet. Records are written from inside pick confirm and putaway complete; no two-picker board has been read against real data. |
-| NEO-8 cross-dock | Reachable | Structural spec pins leg ordering, cost inheritance, the staging refusal and the reservation. Not walked end to end — see §6. |
+| NEO-7 labour lite | **Proven** | PEND-7: two operators pick their own waves and the board is read over HTTP with two distinct user ids, non-null rates and a figure against standard. The second operator is refused the board they appear on. |
+| NEO-8 cross-dock | **Proven**, after a fix | PEND-8: received with `crossDockSoId`, zero at every storage bin, held at staging, retried without double-posting, and shipped. Shipping could not read the reservation the receipt raised until this pass — see §6. |
 | NEO-9 kitting | **Proven** | Golden path: buildable 5, a 6-kit build refused, a 3-kit build consuming 6 and 3 and costing 45 exactly, reconciliation clean. |
-| NEO-10 catch-weight | Reachable | Rules and the work order's own fixture have unit coverage. No catch-weight SKU has been received and sold end to end — see §6. |
+| NEO-10 catch-weight | **Proven**, after a fix | PEND-10: 10.35 kg received, 5.10 kg sold, 5.25 kg left, priced from weight. The sale accepted a catch-weight line with no piece count and discarded the field — see §6. |
 | NEO-11 consignment | **Proven** | Golden path: 10 consigned, on-hand up by ten, ATP unmoved; take title of 4 and ATP moves by exactly 4. |
 | NEO-12 dock lite | **Proven** | Golden path books a slot and asserts the second overlapping booking is refused by the exclusion constraint. |
 | NEO-13 WES stub | Reachable | Unit spec asserts it reports `accepted: false`, that a throwing adapter cannot fail a pick, and that the file cannot reach the engine or a database at all. |
-| NEO-14 waveless join | Reachable | The decision is a pure function with a spec per condition. No wave has actually been joined. |
-| NEO-15 dead schema | **Proven** | 100 tables audited; 99 have a reader; one parked with its evidence. Ratchet green. |
+| NEO-14 waveless join | **Proven**, after two fixes | PEND-14: a second order joins an open wave, reserves nothing twice, and is refused twice over and behind a started picker. There was no join route, and the only endpoint that existed threw on every call — see §6. |
+| NEO-15 dead schema | **Proven**, and closed | 100 tables audited; the one parked table was `inv_reason_codes`, and PEND-15 dropped it with a guarded migration. `UNREAD_TABLES` is now empty. |
 | NEO-16 golden path | **Proven** | Green twice consecutively, with the original golden path green beside it. |
 | NEO-17 handoff | This document | — |
 
@@ -98,6 +104,14 @@ it.
 
 ### Three things about that run you need to know
 
+> **Superseded by PEND-DB — see §6.** What follows is what this section found at
+> the time, and it is left standing because the diagnosis is still the right one;
+> the conclusion is not. `0352` is fixed, a cold build now reaches 274/356 before
+> its first failure and 347/356 continuing past errors, and the remaining nine
+> failures have two causes rather than ninety-one. One correction to the analysis
+> below: the fix is **not** `CREATE TABLE IF NOT EXISTS`, because 0000 and 0352
+> create two different tables under one name.
+
 **No path builds this schema from empty.** Three were tried:
 
 | Path | What happens |
@@ -126,8 +140,11 @@ columns the skipped migrations would have added. **None of NEO's eight
 migrations was among them** — 0580 through 0587 and 0588 all applied cleanly,
 including the exclusion constraint.
 
-That is worth stating plainly: **this schema cannot currently be rebuilt from
-empty by any available path.** It is not a NEO regression — the previous handoff
+That was worth stating plainly, and it is no longer true: PEND-DB opened this
+gate, and §6 records how far a cold build now gets and what is behind it. What
+this paragraph got right is the shape of the risk. What it got wrong is the size
+of the fix — see §6 — and the identity of the problem: **this schema cannot
+currently be rebuilt from empty by any available path.** It is not a NEO regression — the previous handoff
 already identified `0575`–`0579` as a new cold-build failure surface — but it is
 now demonstrated rather than suspected, and it is the single biggest risk in this
 repository. A schema that cannot be rebuilt is a schema whose migrations are
@@ -187,6 +204,19 @@ tests green.
 | `0586_inventory_kitting` | `inv_kit_components`; four `inv_txn_type` labels; the `inventory:kits:assemble` backfill. |
 | `0587_inventory_catch_weight_consignment` | `measure_mode`, `quantity_pieces`, `ownership`; **the natural-key index is dropped and recreated again**. |
 | `0588_inventory_dock_waveless` | Dock doors and appointments with the exclusion constraint; two waveless settings; the `inventory:dock:manage` backfill. |
+| `0589_inventory_drop_reason_codes` | PEND-15. Drops `inv_reason_codes`, guarded on the table being empty. |
+
+**PEND-DB also rewrote `0352_custom_fields_consolidation.sql`**, which is not
+this programme's file. It is listed here because editing it changes its sha256
+and `db-bootstrap.mjs` skips by content hash, so **it will run again on every
+database where it was already applied**. That re-run is a no-op by design — the
+first thing it does is ask whether the consolidation has happened — but anyone
+reading this list for "what will this branch do to my database" needs to know
+that a file numbered 0352 is in the answer. See §6.
+
+**None of `0580`–`0589` is applied to the shared Neon branch.** Verified by
+probing for the objects, not by reading the bookkeeping. §6 says why, and why
+that was not this session's call to change.
 
 **Two of them rebuild `uniq_inv_stock_levels_natural_key`.** A unique index on an
 expression cannot be extended in place. Both are safe on existing data — every
@@ -226,6 +256,12 @@ instead. That is the same trade every backfill in this repository makes.
 
 ## 5. Drops
 
+> **Superseded by PEND-15 — see §6.** `inv_reason_codes` was dropped by `0589`,
+> guarded. The count this section asked for came back zero on every tenant of the
+> only database carrying real ones, and zero by construction: the sole writer that
+> ever existed is 0407's one-shot seed. The reasoning below is why the question
+> was left open, and it is preserved because the bar it sets is the right one.
+
 **Nothing was dropped, and that is the finding rather than an omission.**
 
 All 100 `inv_*` tables were audited against every non-test file under
@@ -253,22 +289,134 @@ to let any of them be parked in the exemption list at all.
 
 ---
 
-## 6. What is not proven, and what would prove it
+## 6. What was not proven — and what happened when it was
 
-Listed rather than glossed, because a handoff that reads as uniformly green is
-the document this programme keeps being burnt by.
+Rewritten by the PEND pass. The table this replaced listed seven gaps. Five were
+code units; **four of the five hid a defect, and three of those made a shipped
+feature unusable rather than merely untested.** That ratio is the finding, and it
+is the same one §1 makes: a unit suite tells you a function is right, and says
+nothing about whether the module on the other side of the seam agrees.
 
-| Gap | What would close it |
+### The five that are now walked
+
+| Unit | Status | What the walk found |
+|---|---|---|
+| **NEO-8 cross-dock** | **Proven** | A cross-docked order **could never be shipped.** `source_line_id` on a sales-order reservation means the SO line the stock is held for, and `postShipment` matches on exactly that; the receipt wrote a GRN coordinate (`grn:<id>:<lineId>`) there instead. The ledger was satisfied, reconciliation was clean, the units stood at staging correctly, and the dispatch desk got `No pick list or reservation for SO line 85`. Fixed by `resolveCrossDockSoLine`. |
+| **NEO-10 catch-weight** | **Proven** | Pricing from weight already worked — for a catch-weight SKU the ledger quantity *is* the weight, so `amount = quantity × unitPrice` was already `250 × 5.10`. What was broken is the other side: receiving has refused a catch-weight line with no piece count since NEO-10 was built, and **selling accepted one and then discarded `quantityPieces` even when a caller sent it**, so `inv_so_lines.quantity_pieces` was a column nothing ever wrote and a picker was told nothing about how many bags. Fixed in `toSoLineValues`, on create and update. |
+| **NEO-14 waveless** | **Proven** | Two defects. `proposeWaveJoin`'s own comment said the caller "then posts to the join route or raises a new wave" and **there was no join route** — a decision with nothing to act on. And `waveless.ts` named a status `inv_pick_list_status` does not have (`"ASSIGNED"`); harmless in the pure function, where a set entry that never matches changes no outcome and all six unit tests passed, and fatal in the SQL, where **every call to the one NEO-14 endpoint that existed threw** `invalid input value for enum`. `assertNotAlreadyOnAWave` had no caller either; it has one now. |
+| **NEO-7 labour** | **Proven** | No defect in the module. The board is now read over HTTP — not as a service call, because `PermissionGuard` is not global and a service call proves the arithmetic and nothing about who may see it — against two operators who picked their own waves. Two distinct user ids, non-null rates above zero, a non-zero figure against standard. The second operator, whose work is on the board, is refused it: being measured is not the authority to measure. |
+| **NEO-5 RF surface** | Ratchet hardened; **still unverified on a device** | `rf-surface.test.ts` forbade four source strings. Rewriting the queue's `<ul>`/`<li>` as `role="grid"`/`role="row"` divs left **all four of its tests green** — a scrolling grid in front of somebody holding a scanner, and the check that exists to forbid it silent. `rf-surface-render.test.tsx` now mounts the three screens and forbids table semantics in the rendered DOM at any depth, plus any class pinning content past 375px. It does **not** claim the screen fits a handheld: jsdom has no layout, and asserting that would be a lie made convincing by a green tick. |
+
+All five live in `test/inventory/neo-golden-path.seeded-e2e-spec.ts` except NEO-5,
+which is frontend. The NEO golden path is now 29 assertions and was run green
+twice consecutively, with `golden-path.seeded-e2e-spec.ts` green beside it.
+
+### The two that are not code, and are still open
+
+| Gap | Why it stays open |
 |---|---|
-| **Cross-dock (NEO-8) has no end-to-end run.** The structural spec pins leg ordering, cost inheritance and the staging refusal, but no delivery has actually been cross-docked. | A golden-path slice: receive a line with `crossDockSoId` set, assert on-hand is zero at every storage bin, assert the reservation stands at staging, ship it. |
-| **Catch-weight (NEO-10) has no end-to-end run.** The rules and the work order's fixture are unit-tested; no catch-weight SKU has been received and sold. | Mark a SKU `CATCH_WEIGHT`, receive 2 bags at 10.35 kg, sell 1 at 5.10 kg, assert 5.25 kg remains and that the invoice priced from the weight. |
-| **Waveless (NEO-14) has never joined a wave.** The decision is a pure function with full branch coverage; the join itself is a proposal endpoint the caller acts on. | Turn the setting on, confirm a second order, assert its line appears on the open wave and that the reservation was not made twice. |
-| **The labour board has not been read against real data.** Records are written from inside two commands and the arithmetic is unit-tested. | Two operators, one shift, and a look at the board. |
-| **No platform is connected.** Blinkit, Instamart and Zepto are parsers against fixtures, and the pack is off by default. This is deliberate — see the header of `quick-commerce-inbound.ts` — but it means fill-rate and payout recon have never seen a real document. | Supplier-portal credentials, and an adapter routed through Composio in the `integrations` module. Never a per-tenant provider token in our database. |
-| **No WES exists.** `NoopWesAdapter` reports `accepted: false` and says why. | A real adapter, registered beside the noop and chosen by configuration. The picking path does not change — that is why the boundary was fixed first. |
-| **The seeded suite has not been run on Neon.** Only on a local Postgres, for the reason in §3. | Apply `0580`–`0588` to the Neon branch, deliberately, when nobody else is mid-run on it. |
+| **No platform is connected.** Blinkit, Instamart and Zepto are parsers against fixtures; the pack is off by default. | Supplier-portal credentials, routed through Composio in `integrations`. Never a per-tenant provider token in our database. Out of scope by the work order, and unchanged. |
+| **No WES exists.** `NoopWesAdapter` reports `accepted: false` and says why. | A real adapter registered beside the noop and chosen by configuration. The picking path does not change — that is why the boundary was fixed first. Unchanged. |
 
----
+### `inv_reason_codes` — dropped
+
+The question NEO-15 left open was a count against a real database. It is zero,
+and zero **by construction**: the only writer that ever existed is `0407`'s own
+seed, a one-shot `INSERT ... FROM organizations` that fired once against the
+organisations present at that moment. Nothing creates reason codes for a new
+organisation, so every organisation made since 0407 has none and none ever
+could. On the shared branch all eleven organisations postdate 0407 and the table
+holds nothing.
+
+`0589` drops it, guarded: a database whose organisations predate 0407 and
+inherited the eight seeded codes keeps them and is told why. Both branches were
+run — declines with a row present, drops when empty, and a re-run reports
+"already gone". The RLS spec used it as its cross-tenant probe and is repointed
+at `inv_uom`; 17 tests green against a local Postgres with two organisations and
+a NOBYPASSRLS role. `UNREAD_TABLES` is now empty: every `inv_*` table has a
+reader.
+
+### Cold build — the gate is open, and what is behind it
+
+`pnpm db:bootstrap` from an empty database now reaches **274 of 356** before its
+first failure, against 72 of 355 before. Applying the rest continuing past
+errors reaches **347 of 356 with 9 failures**, against the 91 this document
+reported.
+
+`0352` is fixed, and the fix is not the one this document proposed. **It is not
+a duplicate table.** `0000:6074` creates a `custom_field_definitions` with
+`name`, `sort_order` and `created_by`; `0352` creates one with `key`,
+`project_id`, `settings`, `is_sensitive`, `category` and `display_order`. Two
+different tables sharing a name, so `CREATE TABLE IF NOT EXISTS` — suggested
+here, and asked for by the work order — is the worst outcome available: the
+statement succeeds, the *old* shape survives, everything below it fails on
+columns that are not there, and anything that did succeed leaves the application
+running against a table matching `custom-field-engine.ts` in no respect. 0000's
+table is reshaped in place instead, and the cold build now produces the same
+sixteen columns, types, defaults and six indexes the shared branch carries,
+compared column by column.
+
+The whole file is guarded because **editing it makes it re-run**:
+`db-bootstrap.mjs` skips by sha256 of contents. The original would have been
+destructive that second time — step 1 drops `ticket_custom_field_values` and
+`support_ticket_custom_field_values` and steps 5 and 6 recreate them empty.
+Verified in all three states: creates on empty, reshapes 0000's, no-ops on a
+consolidated one with a row still present afterwards.
+
+**The nine that remain, and their two causes:**
+
+| Migration | Cause |
+|---|---|
+| `0486_hr_people_org_person_link` | `ADD CONSTRAINT IF NOT EXISTS` — not valid Postgres. |
+| `0487_hr_people_org_person_validate` | Fails behind 0486. |
+| `0277_party_maps_own_the_identifiers`, `0278_drop_legacy_identity_tables` | Need `crm_org_party_map`, created by `0263_crm_org_party_map`. |
+| `0575`–`0579` (five files) | Need party columns from `0262_party_company_columns` and `0265_party_association_columns`. |
+
+Seven of the nine are one problem: **fifteen migration files exist on disk and
+are absent from `_journal.json`**, so nothing ever runs them. They are
+`0234`, `0262`–`0269`, `0271`, `0272`, `0472`, `0478`, `0482`, `0488`. This is
+not a theory — the CRM seeded spec on this branch fails with `column
+"document_key" of relation "quotes" does not exist`, which is `0272`, one of the
+fifteen. Both causes are other programmes' files and were listed rather than
+fixed. Fixing the journal is now the highest-value next piece of work in this
+repository, and it is a smaller job than this document previously implied.
+
+### Neon — deliberately not applied
+
+`0580`–`0588` **have not been applied to the shared Neon branch**, and neither
+has `0589` or the reshaped `0352`. This is a decision, not an omission, and the
+reason turned out to be stronger than "somebody might be mid-run":
+
+1. **The branch is in use right now.** Six connections, one of them an
+   application named `streamlineos-api` — another session's backend, live
+   against it.
+2. **None of NEO's schema is there.** Probed directly rather than through the
+   bookkeeping: `inv_channel_pools`, `inv_handling_units`, `inv_labor_records`,
+   `inv_kit_components`, `inv_dock_appointments`, `inv_grn_lines.cross_dock_so_id`,
+   `inv_products.measure_mode` and `inv_settings.waveless_picking` are all
+   **absent**.
+3. **The bookkeeping does not describe the branch.** 435 recorded hashes against
+   a 356-entry journal, and 258 entries pending by hash. So `db:migrate` there is
+   not "apply nine files" — it is a schema reconciliation of unknown extent on a
+   database somebody else is using. That is not a call to make unilaterally.
+
+Everything in this document was therefore proven on a **local Postgres**:
+
+```
+DATABASE_URL=postgres://<you>@localhost:5432/cornerstone_neo16 \
+  node --max-old-space-size=12288 ./node_modules/jest/bin/jest.js \
+  --config ./jest-e2e-seeded.json --forceExit --runInBand \
+  --testPathPattern=neo-golden-path
+```
+
+29 tests, green twice consecutively. The cold-build figures come from throwaway
+databases created for the purpose and dropped afterwards.
+
+One caveat on `cornerstone_neo16` worth knowing before trusting it further: it
+was built by applying migrations file by file continuing past failures, so it
+carries `0000`'s shape of `custom_field_definitions` while running everything
+after it — a state no in-order migration can produce. It is sound for inventory,
+which touches none of that, and it is not a substitute for a cold build.
 
 ## 7. Flags, and what off means
 
@@ -337,9 +485,21 @@ pnpm exec jest --testPathPattern=available-formula               # one ATP defin
 pnpm exec jest --testPathPattern=labor                           # labour is not payroll
 pnpm exec jest --testPathPattern=wes-adapter                     # no fake robotics
 # frontend
-pnpm exec jest --testPathPattern=rf-surface                      # the RF shell has no table
+pnpm exec jest --testPathPattern=rf-surface                      # the RF shell has no table,
+                                                                 # in source AND in the rendered DOM
 pnpm exec jest --testPathPattern=inventory-route-states          # every route answers five states
 ```
+
+PEND added two more, both of which failed when the defect they describe was
+reintroduced on purpose:
+
+* `waveless.spec.ts` reads `waveless.ts` and `pick-wave.service.ts` and compares
+  every pick-list status they name against `invPickListStatusEnum`. A rule that
+  names statuses has to name statuses that exist, and a spec written only in the
+  rule's own vocabulary cannot tell.
+* `rf-surface-render.test.tsx` mounts the RF screens and forbids table semantics
+  in the DOM. The source-text ratchet beside it passes a `role="grid"` rewrite of
+  the queue; this one does not.
 
 The sidebar digest in `sidebar-nav-inventory.test.ts` was updated three times
 during this programme, each with a note saying which routes were added and why
