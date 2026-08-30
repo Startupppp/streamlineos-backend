@@ -141,7 +141,8 @@ export type HelpdeskReplyInput = z.infer<typeof helpdeskReplySchema>;
 export const kbAskSchema = z.object({
   org: z.string().trim().min(1),
   question: z.string().trim().min(3, "Question is too short").max(1000),
-});
+}).strict();
+export type KbAskInput = z.infer<typeof kbAskSchema>;
 export const chatRequestSchema = z.object({
   messages: z
     .array(

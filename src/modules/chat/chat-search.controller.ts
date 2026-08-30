@@ -7,6 +7,13 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatSearchService } from "./chat-search.service";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import {
+  searchMessagesQuerySchema,
+  searchQuerySchema,
+  type SearchMessagesQueryInput,
+  type SearchQueryInput,
+} from "./dto/chat-search.schemas";
 
 @ApiTags("Chat Search")
 @ApiBearerAuth()
@@ -20,22 +27,19 @@ export class ChatSearchController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get("messages")
   @RequirePermission("chat:messages:read")
+  @Validate({ query: searchMessagesQuerySchema })
   searchMessages(
-    @Query("q") q: string,
-    @Query("cursor") cursor: string | undefined,
-    @Query("from") from: string | undefined,
-    @Query("to") to: string | undefined,
-    @Query("sender") sender: string | undefined,
+    @Query() query: SearchMessagesQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.search.searchMessages(
       { orgId: u.orgId, userId: u.userId, isOrgOwner: u.isOrgOwner },
-      q ?? "",
+      query.q,
       20,
-      cursor ? parseInt(cursor) : undefined,
-      from,
-      to,
-      sender,
+      query.cursor,
+      query.from,
+      query.to,
+      query.sender,
     );
   }
 
@@ -43,15 +47,17 @@ export class ChatSearchController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get("channels")
   @RequirePermission("chat:channels:read")
-  searchChannels(@Query("q") q: string, @CurrentUser() u: CurrentUserContext) {
-    return this.search.searchChannels(u.orgId, u.userId, q ?? "");
+  @Validate({ query: searchQuerySchema })
+  searchChannels(@Query() query: SearchQueryInput, @CurrentUser() u: CurrentUserContext) {
+    return this.search.searchChannels(u.orgId, u.userId, query.q);
   }
 
   @ApiOperation({ summary: "Search users in the organisation by name or email" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("users")
   @RequirePermission("chat:channels:read")
-  searchUsers(@Query("q") q: string, @CurrentUser() u: CurrentUserContext) {
-    return this.search.searchUsers(u.orgId, q ?? "");
+  @Validate({ query: searchQuerySchema })
+  searchUsers(@Query() query: SearchQueryInput, @CurrentUser() u: CurrentUserContext) {
+    return this.search.searchUsers(u.orgId, query.q);
   }
 }

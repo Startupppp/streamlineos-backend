@@ -87,7 +87,7 @@ describe("StorageController.download — cross-org file isolation", () => {
     );
 
     await expect(
-      controller.download(undefined, "key123", undefined, undefined, ctx("org-A"), mockRes()),
+      controller.download({ key: "key123", expiresIn: 3600 }, ctx("org-A"), mockRes()),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -101,7 +101,7 @@ describe("StorageController.download — cross-org file isolation", () => {
     );
 
     await expect(
-      controller.download(undefined, "key123", undefined, undefined, ctx("org-A"), mockRes()),
+      controller.download({ key: "key123", expiresIn: 3600 }, ctx("org-A"), mockRes()),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -115,7 +115,7 @@ describe("StorageController.download — cross-org file isolation", () => {
     );
 
     await expect(
-      controller.download(undefined, "key123", undefined, undefined, ctx("org-A"), mockRes()),
+      controller.download({ key: "key123", expiresIn: 3600 }, ctx("org-A"), mockRes()),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -129,7 +129,7 @@ describe("StorageController.download — cross-org file isolation", () => {
     );
     const res = mockRes();
 
-    await controller.download(undefined, "key123", undefined, undefined, ctx("org-A"), res);
+    await controller.download({ key: "key123", expiresIn: 3600 }, ctx("org-A"), res);
 
     expect(res.json).toHaveBeenCalledWith({ url: "https://signed.example.com/file" });
   });
@@ -144,7 +144,7 @@ describe("StorageController.download — cross-org file isolation", () => {
     );
 
     await expect(
-      controller.download(undefined, "payroll/run-9/payslip.pdf", undefined, undefined, ctx("org-A"), mockRes()),
+      controller.download({ key: "payroll/run-9/payslip.pdf", expiresIn: 3600 }, ctx("org-A"), mockRes()),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -158,7 +158,7 @@ describe("StorageController.download — cross-org file isolation", () => {
     );
 
     await expect(
-      controller.download(undefined, "candidates/cv.pdf", undefined, undefined, ctx("org-A"), mockRes()),
+      controller.download({ key: "candidates/cv.pdf", expiresIn: 3600 }, ctx("org-A"), mockRes()),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -172,7 +172,7 @@ describe("StorageController.download — cross-org file isolation", () => {
     );
 
     await expect(
-      controller.download(undefined, "payroll/unregistered.pdf", undefined, undefined, ctx("org-A"), mockRes()),
+      controller.download({ key: "payroll/unregistered.pdf", expiresIn: 3600 }, ctx("org-A"), mockRes()),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -186,14 +186,7 @@ describe("StorageController.download — cross-org file isolation", () => {
     );
 
     await expect(
-      controller.download(
-        undefined,
-        "payroll/run-9/payslip.pdf",
-        undefined,
-        undefined,
-        ctx("org-A"),
-        mockRes(),
-      ),
+      controller.download({ key: "payroll/run-9/payslip.pdf", expiresIn: 3600 }, ctx("org-A"), mockRes()),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -218,7 +211,7 @@ describe("StorageController.download — cross-org file isolation", () => {
     );
 
     await expect(
-      controller.download(undefined, "receipts/expense.pdf", undefined, undefined, ctx("org-A"), mockRes()),
+      controller.download({ key: "receipts/expense.pdf", expiresIn: 3600 }, ctx("org-A"), mockRes()),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -233,7 +226,7 @@ describe("StorageController.download — cross-org file isolation", () => {
     );
     const res = mockRes();
 
-    await controller.download(undefined, "receipts/expense.pdf", undefined, undefined, ctx("org-A"), res);
+    await controller.download({ key: "receipts/expense.pdf", expiresIn: 3600 }, ctx("org-A"), res);
 
     expect(res.json).toHaveBeenCalledWith({ url: "https://signed.example.com/file" });
   });

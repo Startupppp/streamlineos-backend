@@ -39,6 +39,13 @@ import { StorageService, type FileStreamResult } from "./storage.service";
 import { validateMagicBytes } from "./file-signatures";
 import { AccessService } from "../access/access.service";
 import { AvScanner } from "../../common/security/av-scan";
+import { Validate } from "../../common/validation/validate.decorator";
+import {
+  downloadQuerySchema,
+  imageQuerySchema,
+  type DownloadQueryInput,
+  type ImageQueryInput,
+} from "./dto/storage.schemas";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 
@@ -162,11 +169,9 @@ export class StorageController {
 
   @Get("download")
   @AuthorizedInService("resolveFileOwner")
+  @Validate({ query: downloadQuerySchema })
   async download(
-    @Query("url") urlParam: string | undefined,
-    @Query("key") keyParam: string | undefined,
-    @Query("expiresIn") expiresInParam: string | undefined,
-    @Query("attachment") attachmentParam: string | undefined,
+    @Query() queryParams: DownloadQueryInput,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {
@@ -174,11 +179,8 @@ export class StorageController {
       throw new ServiceUnavailableException("Cloud storage not configured");
     }
 
-    const rawExpires = parseInt(expiresInParam ?? "3600", 10);
-    const expiresIn = Number.isNaN(rawExpires) ? 3600 : Math.min(Math.max(rawExpires, 60), 86400);
+    const { url: urlParam, key: keyParam, expiresIn, attachment: attachmentParam } = queryParams;
     const attachment = attachmentParam === "1";
-
-    if (!urlParam && !keyParam) throw new BadRequestException("URL or key required");
 
     const fileKey = keyParam || (urlParam ? this.storage.getFileKeyFromUrl(urlParam) : "");
     if (!fileKey || !this.storage.isValidFileKey(fileKey)) {
@@ -215,12 +217,14 @@ export class StorageController {
 
   @Get("image")
   @AuthorizedInService("resolveFileOwner")
+  @Validate({ query: imageQuerySchema })
   async image(
-    @Query("key") keyParam: string | undefined,
+    @Query() queryParams: ImageQueryInput,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {
-    if (!keyParam || !this.storage.isValidFileKey(keyParam)) {
+    const keyParam = queryParams.key;
+    if (!this.storage.isValidFileKey(keyParam)) {
       throw new BadRequestException("Invalid key parameter");
     }
     if (!this.storage.isConfigured()) {

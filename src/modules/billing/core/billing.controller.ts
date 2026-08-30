@@ -15,14 +15,14 @@ import {
   purchaseAddonSchema,
   updateBillingProfileSchema,
   updateCouponSchema,
+  validateCouponQuerySchema,
   verifyPaymentSchema,
-  planSchema,
   type CreateCouponInput,
   type CreateOrderInput,
-  type Plan,
   type PurchaseAddonInput,
   type UpdateBillingProfileInput,
   type UpdateCouponInput,
+  type ValidateCouponQueryInput,
   type VerifyPaymentInput,
 } from "./dto/billing.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -107,15 +107,12 @@ export class BillingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
   @Get("coupons/validate")
+  @Validate({ query: validateCouponQuerySchema })
   validateCoupon(
-    @Query("code") code: string,
-    @Query("plan") plan: string,
+    @Query() query: ValidateCouponQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsedPlan = planSchema.safeParse(plan);
-    if (!parsedPlan.success)
-      return { valid: false, message: "Invalid plan" };
-    return this.billing.validateCoupon(code ?? "", u.orgId, parsedPlan.data as Plan);
+    return this.billing.validateCoupon(query.code, u.orgId, query.plan);
   }
 
   @UseGuards(PermissionGuard)

@@ -68,3 +68,9 @@ export const updateCouponSchema = createCouponSchema.partial().extend({
   isActive: z.boolean().optional(),
 });
 export type UpdateCouponInput = z.infer<typeof updateCouponSchema>;
+
+export const validateCouponQuerySchema = z.object({
+  code: z.string().min(1).max(100),
+  plan: planSchema,
+}).strict();
+export type ValidateCouponQueryInput = z.infer<typeof validateCouponQuerySchema>;

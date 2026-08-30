@@ -15181,18 +15181,25 @@
         "parameters": [
           {
             "name": "code",
-            "required": true,
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
             }
           },
           {
             "name": "plan",
-            "required": true,
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "STARTER",
+                "PROFESSIONAL",
+                "ENTERPRISE"
+              ]
             }
           }
         ],
@@ -36775,10 +36782,12 @@
         "parameters": [
           {
             "name": "url",
-            "required": true,
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 2000,
+              "format": "uri"
             }
           }
         ],
@@ -36996,10 +37005,12 @@
         "parameters": [
           {
             "name": "q",
-            "required": true,
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
             }
           }
         ],
@@ -37028,8 +37039,44 @@
         "parameters": [
           {
             "name": "q",
-            "required": true,
             "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sender",
+            "in": "query",
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -37060,10 +37107,12 @@
         "parameters": [
           {
             "name": "q",
-            "required": true,
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
             }
           }
         ],
@@ -40219,7 +40268,7 @@
           }
         ],
         "responses": {
-          "204": {
+          "200": {
             "description": ""
           }
         },
@@ -45983,7 +46032,7 @@
           }
         ],
         "responses": {
-          "204": {
+          "200": {
             "description": ""
           }
         },
@@ -55270,7 +55319,34 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:ai:use",
-        "description": "Exposure: permission — accounting:ai:use"
+        "description": "Exposure: permission — accounting:ai:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fileBase64": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "sourceDocumentName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "fileBase64",
+                  "mimeType",
+                  "sourceDocumentName"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/finance/ai/reconciliation-explain": {
@@ -55287,7 +55363,26 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:ai:use",
-        "description": "Exposure: permission — accounting:ai:use"
+        "description": "Exposure: permission — accounting:ai:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "matchId": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "matchId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/finance/ai/variance-explain": {
@@ -55304,7 +55399,56 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:ai:use",
-        "description": "Exposure: permission — accounting:ai:use"
+        "description": "Exposure: permission — accounting:ai:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "periodLabel": {
+                    "type": "string"
+                  },
+                  "accountName": {
+                    "type": "string"
+                  },
+                  "accountCode": {
+                    "type": "string"
+                  },
+                  "budgetAmount": {
+                    "type": "number"
+                  },
+                  "actualAmount": {
+                    "type": "number"
+                  },
+                  "varianceAmount": {
+                    "type": "number"
+                  },
+                  "variancePct": {
+                    "type": "number"
+                  },
+                  "priorPeriodAmount": {
+                    "type": "number"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "periodLabel",
+                  "accountName",
+                  "accountCode",
+                  "budgetAmount",
+                  "actualAmount",
+                  "varianceAmount",
+                  "variancePct"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/finance/bank-accounts": {
@@ -112409,7 +112553,41 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rating": {
+                    "type": "string",
+                    "enum": [
+                      "helpful",
+                      "not_helpful",
+                      "missing_source"
+                    ]
+                  },
+                  "question": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  },
+                  "comment": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "rating",
+                  "question"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/kb/ai/improve": {
@@ -118452,7 +118630,40 @@
           "LeadsIngest"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "company": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/leads/merge": {
@@ -141148,7 +141359,33 @@
           "KbRag"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "org": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "question": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "org",
+                  "question"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/public/kb/widget/{orgId}": {
@@ -143694,7 +143931,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 64
             }
           }
         ],
@@ -143718,7 +143956,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 64
             }
           }
         ],
@@ -143802,7 +144041,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 64
             }
           }
         ],
@@ -143829,7 +144069,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 64
             }
           }
         ],
@@ -149821,7 +150062,51 @@
     "/storage/download": {
       "get": {
         "operationId": "StorageController_download",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 2000,
+              "format": "uri"
+            }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          {
+            "name": "expiresIn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 3600,
+              "type": "integer",
+              "minimum": 60,
+              "maximum": 86400
+            }
+          },
+          {
+            "name": "attachment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "0",
+                "1"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -149838,7 +150123,18 @@
     "/storage/image": {
       "get": {
         "operationId": "StorageController_image",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
