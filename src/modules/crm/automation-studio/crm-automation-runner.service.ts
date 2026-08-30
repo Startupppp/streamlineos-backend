@@ -19,6 +19,7 @@ import { CrmOutboundEmailService } from "../consent/crm-outbound-email.service";
 import type { StudioEventPayload, RunStepLog } from "./types";
 import { evaluateConditions, type StudioCondition } from "./crm-automation-condition-evaluator";
 import { updateMirroredLeads } from "../../party/party-legacy-leads";
+import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
 
 const ALLOWLISTED_LEAD_FIELDS = ["status", "priority", "source", "assignedToId", "score"];
 const ALLOWLISTED_DEAL_FIELDS = ["stage", "priority", "assignedToId"];
@@ -227,6 +228,8 @@ export class CrmAutomationRunnerService {
         case "call_webhook": {
           const url = String(config["url"] ?? "");
           if (url) {
+            const urlCheck = await checkWebhookUrl(url);
+            if (!urlCheck.allowed) throw new Error(`SSRF: webhook URL blocked (${urlCheck.reason})`);
             const body = JSON.stringify({ event: payload.entityType, entityId: payload.entityId, data: payload.data });
             await fetch(url, {
               method: "POST",

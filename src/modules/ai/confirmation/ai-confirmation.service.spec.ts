@@ -1,4 +1,4 @@
-﻿import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
+﻿import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { AiConfirmationService } from "./ai-confirmation.service";
 
 process.env.AI_CONFIRMATION_SECRET = "test-secret-for-unit-tests-xxxxxxxxxxxxx";
@@ -634,3 +634,143 @@ function buildSweepDb(store: ReturnType<typeof makeStore>): never {
 
   return db as never;
 }
+
+function buildEmptySelectConfirmDb(): never {
+  const db: Record<string, unknown> = {};
+
+  db.select = () => ({
+    from: () => ({
+      where: () => ({
+        for: () => ({
+          limit: (n: number) => ({
+            then(resolve: (v: FakeRow[]) => void, reject: (e: unknown) => void) {
+              return Promise.resolve([].slice(0, n)).then(resolve, reject);
+            },
+          }),
+        }),
+      }),
+    }),
+  });
+
+  db.update = () => ({
+    set: () => ({
+      where: () => ({
+        then(resolve: (v: unknown) => void, reject: (e: unknown) => void) {
+          return Promise.resolve([]).then(resolve, reject);
+        },
+        returning: () => Promise.resolve([]),
+      }),
+    }),
+  });
+
+  db.execute = jest.fn().mockResolvedValue([]);
+  db.transaction = async <T>(cb: (tx: typeof db) => Promise<T>): Promise<T> => cb(db);
+
+  return db as never;
+}
+
+describe("AiConfirmationService — ORACLE-1 existence oracle fix", () => {
+  it("absent row returns NotFoundException (not ForbiddenException)", async () => {
+    const emptyDb = buildEmptySelectConfirmDb();
+    const svc = new AiConfirmationService(emptyDb, { log: jest.fn() } as never);
+
+    const fakeToken = "999.9999999999.aabbccdd0011223344556677889900aabbccdd0011223344556677889900aabb";
+    const err = await svc.confirm({ token: fakeToken, actor: { orgId: "org1", userId: "u1" } }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect((err as NotFoundException).message).not.toMatch(/forbidden|access|exist|found.*another|tenant/i);
+  });
+
+  it("proof — bypassing the orgId filter exposes the oracle: a cross-tenant hit returns ForbiddenException (actor mismatch)", async () => {
+    const store = makeStore();
+    const auditMock = { log: jest.fn() };
+
+    const fakeDb = makeFakeDb(store);
+    const svc = new AiConfirmationService(
+      new Proxy(fakeDb.db, {
+        get(target, prop) {
+          if (prop === "select") {
+            return (_table?: unknown) => ({
+              from: (_t?: unknown) => ({
+                where: (_cond: unknown) => ({
+                  for: (_mode: unknown) => ({
+                    limit: (n: number) => ({
+                      then(
+                        resolve: (v: FakeRow[]) => void,
+                        reject: (e: unknown) => void,
+                      ) {
+                        const all = Array.from(store.rows.values());
+                        return Promise.resolve(all.slice(0, n)).then(resolve, reject);
+                      },
+                    }),
+                  }),
+                }),
+              }),
+            });
+          }
+          return (target as Record<string | symbol, unknown>)[prop];
+        },
+      }) as never,
+      auditMock as never,
+    );
+
+    const proposed = await svc.propose({ orgId: "org1", userId: "user1", action: "delete", payload: {} });
+    const row = store.rows.get(proposed.proposalId)!;
+
+    const bypassDb = buildConfirmDb(row, store, proposed.proposalId);
+    const svc2 = new AiConfirmationService(bypassDb, { log: jest.fn() } as never);
+
+    const err = await svc2.confirm({
+      token: proposed.token,
+      actor: { orgId: "org-ATTACKER", userId: "user1" },
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(ForbiddenException);
+  });
+
+  it("cross-tenant probe with filtered db returns NotFoundException (no oracle)", async () => {
+    const store = makeStore();
+    const auditMock = { log: jest.fn() };
+
+    const fakeDb = makeFakeDb(store);
+    const svc = new AiConfirmationService(
+      new Proxy(fakeDb.db, {
+        get(target, prop) {
+          if (prop === "select") {
+            return (_table?: unknown) => ({
+              from: (_t?: unknown) => ({
+                where: (_cond: unknown) => ({
+                  for: (_mode: unknown) => ({
+                    limit: (n: number) => ({
+                      then(
+                        resolve: (v: FakeRow[]) => void,
+                        reject: (e: unknown) => void,
+                      ) {
+                        const all = Array.from(store.rows.values());
+                        return Promise.resolve(all.slice(0, n)).then(resolve, reject);
+                      },
+                    }),
+                  }),
+                }),
+              }),
+            });
+          }
+          return (target as Record<string | symbol, unknown>)[prop];
+        },
+      }) as never,
+      auditMock as never,
+    );
+
+    const proposed = await svc.propose({ orgId: "org1", userId: "user1", action: "delete", payload: {} });
+
+    const emptyDb = buildEmptySelectConfirmDb();
+    const svc2 = new AiConfirmationService(emptyDb, { log: jest.fn() } as never);
+
+    const err = await svc2.confirm({
+      token: proposed.token,
+      actor: { orgId: "org-ATTACKER", userId: "user1" },
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(NotFoundException);
+  });
+});
