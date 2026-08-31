@@ -3272,10 +3272,38 @@
       "breakpoints": true
     },
     {
-      "idx": 592,
+      "idx": 593,
       "version": "7",
-      "when": 1798000092000,
-      "tag": "0780_calendar_attendees_sweep_cover",
+      "when": 1798000093000,
+      "tag": "0781_hr_safety_cases_candidate_search_fns",
+      "breakpoints": true
+    },
+    {
+      "idx": 594,
+      "version": "7",
+      "when": 1798000094000,
+      "tag": "0782_hr_policies_templates_interview_search_fns",
+      "breakpoints": true
+    },
+    {
+      "idx": 595,
+      "version": "7",
+      "when": 1798000095000,
+      "tag": "0783_hr_cursor_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 596,
+      "version": "7",
+      "when": 1798000096000,
+      "tag": "0784_invitations_invited_by_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 597,
+      "version": "7",
+      "when": 1798000097000,
+      "tag": "0785_invitations_drop_invited_by",
       "breakpoints": true
     }
   ]

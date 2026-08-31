@@ -193,7 +193,6 @@ export class InvitationCreateService {
             tokenHash: hashToken(rawToken),
             expiresAt: newExpiresAt,
             role,
-            invitedBy: actorUserId,
             inviterMembershipId: actorMembership?.id ?? null,
             status: "PENDING",
             revokedAt: null,
@@ -271,7 +270,6 @@ export class InvitationCreateService {
             tokenHash: hashToken(rawToken),
             orgId,
             role,
-            invitedBy: actorUserId,
             inviterMembershipId: actorMembership?.id ?? null,
             expiresAt,
           });

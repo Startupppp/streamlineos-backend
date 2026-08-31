@@ -6,4 +6,6 @@ export interface CacheNamespaceEntry {
   namespace: string;
   description: string;
   invalidation: InvalidationTrigger;
+  dimensions?: readonly string[];
+  staleToleranceSeconds?: number;
 }

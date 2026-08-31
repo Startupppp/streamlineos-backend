@@ -8,10 +8,12 @@ export async function buildScopedDashboardCacheKey(
   resource: string,
   scope: DataScope,
   dimension?: string,
+  locale?: string,
 ): Promise<string> {
   const version = await access.getPermissionsVersion(u.orgId);
   const base = `dashboard-home:u${u.userId}:v${version}:${resource}:${scope}`;
-  return dimension ? `${base}:${dimension}` : base;
+  const withDim = dimension ? `${base}:${dimension}` : base;
+  return locale ? `${withDim}:${locale}` : withDim;
 }
 
 export async function buildOrgDashboardCacheKey(

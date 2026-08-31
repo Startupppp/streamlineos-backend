@@ -83,6 +83,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   private readonly versionCache = new Map<string, VersionEntry>();
   private readonly permsCache = new Map<string, PermsEntry>();
   private readonly membershipAccessCache = new Map<string, MembershipAccessState>();
+  private readonly permResolveInFlight = new Map<string, Promise<Map<string, DataScope>>>();
   private unsubscribeVersionBump: (() => void) | null = null;
   private readonly warnedUnknownKeys = new Set<string>();
   private readonly clock: Clock = SYSTEM_CLOCK;
@@ -262,7 +263,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    return runInTenantTransaction(
+    const existingResolution = this.permResolveInFlight.get(permsKey);
+    if (existingResolution) return existingResolution;
+    const coldResolution = runInTenantTransaction(
       this.db,
       async () => {
         const txPermsKey = `${orgId}:${userId}:${version}`;
@@ -298,6 +301,13 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       },
       { orgId },
     );
+    this.permResolveInFlight.set(permsKey, coldResolution);
+    try {
+      return await coldResolution;
+    } finally {
+      if (this.permResolveInFlight.get(permsKey) === coldResolution)
+        this.permResolveInFlight.delete(permsKey);
+    }
   }
 
   async canManageOrganizationMembership(

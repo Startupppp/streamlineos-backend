@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, lt } from "drizzle-orm";
-import { invitationEvents, invitations } from "../../db/schema";
+import { invitationEvents, invitations, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
@@ -10,7 +10,7 @@ interface ExpiredInvitation {
   id: string;
   orgId: string;
   email: string;
-  invitedBy: string | null;
+  inviterMembershipId: number | null;
 }
 
 @Injectable()
@@ -38,7 +38,7 @@ export class CronOrganizationService {
         .returning({
           id: invitations.id,
           email: invitations.email,
-          invitedBy: invitations.invitedBy,
+          inviterMembershipId: invitations.inviterMembershipId,
         });
       if (result.length === 0) return;
 
@@ -57,12 +57,20 @@ export class CronOrganizationService {
     });
 
     for (const row of expiredRows) {
-      if (!row.invitedBy) continue;
+      if (!row.inviterMembershipId) continue;
+      const inviter = await this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.id, row.inviterMembershipId),
+          eq(organizationMembers.orgId, row.orgId),
+        ),
+        columns: { userId: true },
+      });
+      if (!inviter) continue;
       void this.dispatch
         .emit({
           eventKey: "organization.invitation.expired",
           orgId: row.orgId,
-          targetUserIds: [row.invitedBy],
+          targetUserIds: [inviter.userId],
           entityType: "invitation",
           entityId: row.id,
           title: "Invitation expired",

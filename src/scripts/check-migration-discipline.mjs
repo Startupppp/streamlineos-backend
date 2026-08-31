@@ -2,7 +2,7 @@
  * check-migration-discipline.mjs
  *
  * CI gate for migration authoring discipline.
- * Fails (exit 1) when a NEW migration violates any of six rules.
+ * Fails (exit 1) when a NEW migration violates any of seven rules.
  * Historical violations are baselined; only new ones fail the gate.
  *
  * Checks:
@@ -23,11 +23,15 @@
  *   6. journal entry — every .sql file in migrations/ must have a matching
  *                      entry in meta/_journal.json; absent entries never apply
  *                      while db:migrate still prints success.
+ *   7. CONCURRENTLY   — CREATE INDEX CONCURRENTLY cannot run inside drizzle-kit
+ *                      migrate's transaction wrapper; it errors immediately.
+ *                      Use CREATE INDEX (without CONCURRENTLY) and rely on
+ *                      lock_timeout to bound the lock wait instead.
  *
  * Ratchet: historical violations are baselined explicitly. The gate fails only
  * on NEW violations. The baseline can only shrink.
  *
- *   7. journal integrity — when values strictly increasing, idx unique, no two
+ *   8. journal integrity — when values strictly increasing, idx unique, no two
  *                      files sharing a numeric prefix, and no journal entry
  *                      without a file on disk. A when value at or below the
  *                      applied watermark is skipped forever while db:migrate
@@ -36,7 +40,6 @@
  *
  * NOT COVERED (see companion check:migration-chain):
  *   - Applied-watermark ahead of journal (needs a live DB connection).
- *   - CONCURRENTLY inside a transaction.
  *   - Comments that contain keywords (e.g., "-- NOT VALID") and trick
  *     the pattern matches — this gate uses text scans, not a SQL parser.
  *
@@ -226,6 +229,9 @@ const BASELINE_NO_LOCK_TIMEOUT = new Set([
   "0651_drop_calendar_attendee_json.sql",
   "0659_expense_export_jobs.sql",
   "0663_invoice_reminder_due_index.sql",
+  "0734_operator_access_grants.sql",
+  "0747_operator_access_two_person_approval.sql",
+  "0756_fin_reminder_log_measurement.sql",
 ]);
 
 const BASELINE_FK_NOT_VALID = new Set([
@@ -299,9 +305,10 @@ const BASELINE_VALIDATE_BEFORE_BACKFILL = new Set([
   "0665_kb_article_chunks_acl_revision_not_null.sql",
 ]);
 
-// Checks 5 and 6 have zero historical violations — no baseline entries needed.
+// Checks 5, 6, and 7 have zero historical violations — no baseline entries needed.
 const BASELINE_DO_BLOCK_BREAKPOINT = new Set();
 const BASELINE_NO_JOURNAL_ENTRY = new Set();
+const BASELINE_CONCURRENTLY = new Set();
 
 const BASELINE_JOURNAL_INTEGRITY = new Set([
   "dup-prefix:0300_timesheets_launch_grade.sql",
@@ -377,6 +384,14 @@ function checkJournalEntry(filename, journalTags) {
   const tag = filename.replace(/\.sql$/, "");
   if (journalTags.has(tag)) return null;
   return `no _journal.json entry for ${filename} — db:migrate will never apply this file while printing success`;
+}
+
+function checkConcurrently(_filename, content) {
+  const nonCommentLines = content.split("\n").filter((l) => !l.trimStart().startsWith("--"));
+  const body = nonCommentLines.join("\n");
+  if (/CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY/i.test(body))
+    return "CREATE INDEX CONCURRENTLY cannot run inside drizzle-kit migrate's transaction wrapper — use CREATE INDEX (without CONCURRENTLY) and rely on lock_timeout to fail fast instead of queuing";
+  return null;
 }
 
 // ─── main scan ────────────────────────────────────────────────────────────────
@@ -483,7 +498,8 @@ function runScan(migrationsDir, { printBaseline = true } = {}) {
         `set-not-null=${BASELINE_SET_NOT_NULL.size} ` +
         `validate-order=${BASELINE_VALIDATE_BEFORE_BACKFILL.size} ` +
         `do-breakpoint=${BASELINE_DO_BLOCK_BREAKPOINT.size} ` +
-        `no-journal=${BASELINE_NO_JOURNAL_ENTRY.size}`,
+        `no-journal=${BASELINE_NO_JOURNAL_ENTRY.size} ` +
+        `concurrently=${BASELINE_CONCURRENTLY.size}`,
     );
     console.log(`  These counts can only shrink. A new file not in a baseline fails the gate.`);
     console.log(``);
@@ -500,6 +516,7 @@ function runScan(migrationsDir, { printBaseline = true } = {}) {
       [checkSetNotNullTwoStep, BASELINE_SET_NOT_NULL, "set-not-null"],
       [checkValidateBeforeBackfill, BASELINE_VALIDATE_BEFORE_BACKFILL, "validate-order"],
       [checkDoBlockBreakpoint, BASELINE_DO_BLOCK_BREAKPOINT, "do-breakpoint"],
+      [checkConcurrently, BASELINE_CONCURRENTLY, "concurrently"],
     ];
 
     for (const [checkFn, baseline, label] of checks) {
@@ -701,6 +718,37 @@ function selfTest() {
     null,
   );
 
+  // ─── Check 7: CONCURRENTLY ────────────────────────────────────────────────
+  console.log("\nCheck 7: CONCURRENTLY");
+
+  const bad7 = `SET lock_timeout = '5s';\n--> statement-breakpoint\nCREATE INDEX CONCURRENTLY idx_foo ON foo (bar);`;
+  assert(
+    "CREATE INDEX CONCURRENTLY in SQL body is caught",
+    checkConcurrently("bad.sql", bad7),
+    "violation",
+  );
+
+  const bad7b = `SET lock_timeout = '5s';\n--> statement-breakpoint\nCREATE UNIQUE INDEX CONCURRENTLY idx_foo ON foo (bar);`;
+  assert(
+    "CREATE UNIQUE INDEX CONCURRENTLY in SQL body is caught",
+    checkConcurrently("bad7b.sql", bad7b),
+    "violation",
+  );
+
+  const good7 = `SET lock_timeout = '5s';\n--> statement-breakpoint\nCREATE INDEX IF NOT EXISTS idx_foo ON foo (bar);`;
+  assert(
+    "CREATE INDEX without CONCURRENTLY passes",
+    checkConcurrently("good.sql", good7),
+    null,
+  );
+
+  const good7b = `SET lock_timeout = '5s';\n-- Not CONCURRENTLY: db:migrate runs inside a transaction.\n--> statement-breakpoint\nCREATE INDEX IF NOT EXISTS idx_foo ON foo (bar);`;
+  assert(
+    "CONCURRENTLY only in a comment does not trigger check 7",
+    checkConcurrently("good7b.sql", good7b),
+    null,
+  );
+
   // ─── Self-test anti-vacuity: verify each check actually fails on bad input ─
   console.log("\nAnti-vacuity: checks must never silently pass on unparseable input");
 
@@ -728,7 +776,7 @@ function selfTest() {
     console.log("SELF-TEST FAILED — one or more checks did not behave as expected");
     process.exit(1);
   }
-  console.log("SELF-TEST PASSED — all six check shapes are caught");
+  console.log("SELF-TEST PASSED — all seven check shapes are caught");
   process.exit(0);
 }
 
@@ -749,12 +797,13 @@ if (SELF_TEST) {
         `set-not-null=${BASELINE_SET_NOT_NULL.size} ` +
         `validate-order=${BASELINE_VALIDATE_BEFORE_BACKFILL.size} ` +
         `do-breakpoint=${BASELINE_DO_BLOCK_BREAKPOINT.size} ` +
-        `no-journal=${BASELINE_NO_JOURNAL_ENTRY.size}`,
+        `no-journal=${BASELINE_NO_JOURNAL_ENTRY.size} ` +
+        `concurrently=${BASELINE_CONCURRENTLY.size}`,
     );
     console.log(`  Also enforced: journal monotonicity, duplicate idx, duplicate numeric`);
     console.log(`  prefixes, and journal entries with no file on disk.`);
     console.log(`  Not covered: applied-watermark skipping (needs the DB),`);
-    console.log(`  CONCURRENTLY inside a transaction, and keywords in SQL comments.`);
+    console.log(`  keywords in SQL comments that trick text patterns.`);
     console.log(`  Companion: check:migration-chain`);
     process.exit(0);
   }

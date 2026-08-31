@@ -85,6 +85,13 @@ async function bootstrap(): Promise<void> {
   });
 
   app.use(helmet());
+  app.use((_req, res, next) => {
+    res.setHeader(
+      "Permissions-Policy",
+      "geolocation=(), microphone=(), camera=(), payment=(), usb=(), fullscreen=(self)",
+    );
+    next();
+  });
   app.use(compression());
   app.enableShutdownHooks();
   app.use(correlationIdMiddleware);

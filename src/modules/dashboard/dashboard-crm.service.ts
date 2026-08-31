@@ -64,6 +64,7 @@ export class DashboardCrmService {
         gte(crmActivities.createdAt, todayStart),
         lt(crmActivities.createdAt, tomorrowStart),
       ),
+      columns: { type: true, message: true },
       orderBy: (t, { asc }) => [asc(t.createdAt)],
       limit: 20,
     });

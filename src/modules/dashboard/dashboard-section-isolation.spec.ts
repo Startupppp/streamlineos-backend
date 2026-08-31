@@ -333,4 +333,39 @@ describe("DashboardStatsService — deny-before-query and section isolation", ()
     expect(result.totalEmployees).toBeNull();
     expect(result.activeProjects).toBeNull();
   });
+
+  /**
+   * ITEM C — stat-card sections must compute counts via SQL aggregates,
+   * never via findMany.
+   *
+   * Bite: installing a findManyMock that throws on every call and asserting
+   * getDashboardStats still resolves proves no findMany call occurs.
+   * Removal proof: replacing `count()` with a findMany-then-length in any
+   * stat section causes findManyMock to throw → getDashboardStats rejects →
+   * result is undefined → the toBeDefined assertion FAILS.
+   */
+  it("BITE (ITEM C): stat-card counts use SQL aggregates — findMany is never called in getDashboardStats", async () => {
+    const access = makeStatsAccess({ employees: true, attendance: true, projects: true });
+    const findManyMock = jest.fn().mockImplementation(() => {
+      throw new Error("ITEM C violation: findMany called in a stat-card section");
+    });
+    const db = {
+      query: {
+        organizations: {
+          findFirst: jest.fn().mockResolvedValue({ name: "AggregateOrg", slug: "agg" }),
+          findMany: findManyMock,
+        },
+      },
+      select: jest.fn().mockImplementation(() => ({
+        from: () => ({ where: () => Promise.resolve([{ cnt: 42 }]) }),
+      })),
+    } as unknown as Db;
+
+    const { cache } = makePassThroughCache();
+    const svc = new DashboardStatsService(db, cache, access);
+    const result = await svc.getDashboardStats(ORG, makeUser());
+
+    expect(result).toBeDefined();
+    expect(findManyMock).not.toHaveBeenCalled();
+  });
 });

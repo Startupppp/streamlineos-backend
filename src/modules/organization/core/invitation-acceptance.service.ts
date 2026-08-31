@@ -262,7 +262,7 @@ export class InvitationAcceptanceService {
       invitedOrgId,
       invitation.id,
       invitation.email,
-      invitation.invitedBy,
+      invitation.inviterMembershipId ?? null,
       joinedUserId,
     ).catch(() => undefined);
 
@@ -438,21 +438,37 @@ export class InvitationAcceptanceService {
       orgId,
       invitation.id,
       invitation.email,
-      invitation.invitedBy,
+      invitation.inviterMembershipId ?? null,
     ).catch(() => undefined);
 
     return { ok: true };
+  }
+
+  private async resolveInviterUserId(
+    orgId: string,
+    inviterMembershipId: number | null,
+  ): Promise<string | null> {
+    if (inviterMembershipId === null) return null;
+    const row = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.id, inviterMembershipId),
+        eq(organizationMembers.orgId, orgId),
+      ),
+      columns: { userId: true },
+    });
+    return row?.userId ?? null;
   }
 
   private async notifyAccepted(
     orgId: string,
     invitationId: string,
     email: string,
-    invitedBy: string | null,
+    inviterMembershipId: number | null,
     joinedUserId: string,
   ): Promise<void> {
+    const inviterUserId = await this.resolveInviterUserId(orgId, inviterMembershipId);
     const targetUserIds = (
-      await getOrgAdminRecipients(this.db, orgId, [invitedBy])
+      await getOrgAdminRecipients(this.db, orgId, [inviterUserId])
     ).filter((id) => id !== joinedUserId);
     if (targetUserIds.length === 0) return;
 
@@ -473,11 +489,10 @@ export class InvitationAcceptanceService {
     orgId: string,
     invitationId: string,
     email: string,
-    invitedBy: string | null,
+    inviterMembershipId: number | null,
   ): Promise<void> {
-    const targetUserIds = await getOrgAdminRecipients(this.db, orgId, [
-      invitedBy,
-    ]);
+    const inviterUserId = await this.resolveInviterUserId(orgId, inviterMembershipId);
+    const targetUserIds = await getOrgAdminRecipients(this.db, orgId, [inviterUserId]);
     if (targetUserIds.length === 0) return;
 
     await this.dispatch.emit({

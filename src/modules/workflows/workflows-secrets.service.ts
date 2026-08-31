@@ -4,6 +4,7 @@ import { workflows, workflowSecrets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateSecretDto } from "./dto/workflow.schemas";
+import { encryptSecret } from "../../common/security/secret-encryption.util";
 
 const SECRET_COLUMNS = {
   id: workflowSecrets.id,
@@ -43,7 +44,7 @@ export class WorkflowsSecretsService {
       .values({
         orgId,
         name: dto.name,
-        encryptedValue: dto.value,
+        encryptedValue: encryptSecret(dto.value),
         description: dto.description,
       })
       .returning(SECRET_COLUMNS);

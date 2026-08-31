@@ -55,7 +55,6 @@ export class InvitationsReadService {
           id: invitations.id,
           email: invitations.email,
           role: invitations.role,
-          invitedBy: invitations.invitedBy,
           expiresAt: invitations.expiresAt,
           acceptedAt: invitations.acceptedAt,
           createdAt: invitations.createdAt,

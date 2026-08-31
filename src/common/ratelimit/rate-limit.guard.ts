@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, HttpException, HttpStatus, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import type { Request } from "express";
+import type { Request, Response } from "express";
 import type { CurrentUserContext } from "../auth/backend-claims";
 import { RateLimitService } from "./rate-limit.service";
 import { RATE_LIMIT_TIER } from "./use-rate-limit.decorator";
@@ -31,7 +31,14 @@ export class RateLimitGuard implements CanActivate {
 
     const result = await this.rateLimitService.check(tier, identifier);
     if (!result.allowed) {
-      throw new HttpException({ message: "Rate limit exceeded" }, HttpStatus.TOO_MANY_REQUESTS);
+      context
+        .switchToHttp()
+        .getResponse<Response>()
+        .setHeader("Retry-After", String(result.retryAfterSecs));
+      throw new HttpException(
+        { message: "Rate limit exceeded", retryAfterSecs: result.retryAfterSecs },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
     return true;
   }
