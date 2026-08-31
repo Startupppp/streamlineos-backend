@@ -350,7 +350,7 @@ async function seed(db: Db): Promise<SeedSummary> {
         kind: "DEPARTMENT" as const,
         name,
         code: deptCodeMap[name] ?? name.substring(0, 6).toUpperCase(),
-        headUserId: actualDemoUserId,
+        headMembershipId: ownerMembershipId,
       })),
     )
     .onConflictDoNothing()

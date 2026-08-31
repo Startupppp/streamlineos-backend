@@ -199,9 +199,9 @@ export class ReportsService {
     const limit = Math.min(pagination.limit ?? 100, 100);
     const offset = pagination.offset ?? 0;
 
-    const whereClause = filters.workerType
-      ? and(eq(payrollRunEmployees.runId, run.id), eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]))
-      : eq(payrollRunEmployees.runId, run.id);
+    const deptConditions = [eq(payrollRunEmployees.runId, run.id)];
+    if (filters.workerType) deptConditions.push(eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]));
+    if (filters.department) deptConditions.push(eq(orgUnits.name, filters.department));
 
     const aggRows = await this.db
       .select({
@@ -216,20 +216,18 @@ export class ReportsService {
       .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
       .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .leftJoin(orgUnits, and(orgUnitInOrg(orgId, hrEmployments.departmentId), eq(orgUnits.kind, "DEPARTMENT")))
-      .where(whereClause)
+      .where(and(...deptConditions))
       .groupBy(orgUnits.name)
       .limit(limit)
       .offset(offset);
 
-    const rows: DeptCostRow[] = aggRows
-      .filter((r) => !filters.department || r.department === filters.department)
-      .map((r) => ({
-        department: r.department ?? null,
-        employeeCount: r._count,
-        grossTotal: r.grossTotal,
-        netTotal: r.netTotal,
-        employerCostTotal: r.employerCostTotal,
-      }));
+    const rows: DeptCostRow[] = aggRows.map((r) => ({
+      department: r.department ?? null,
+      employeeCount: r._count,
+      grossTotal: r.grossTotal,
+      netTotal: r.netTotal,
+      employerCostTotal: r.employerCostTotal,
+    }));
 
     return { provisional, rows };
   }
@@ -242,9 +240,9 @@ export class ReportsService {
     const limit = Math.min(pagination.limit ?? 100, 100);
     const offset = pagination.offset ?? 0;
 
-    const whereClause = filters.workerType
-      ? and(eq(payrollRunEmployees.runId, run.id), eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]))
-      : eq(payrollRunEmployees.runId, run.id);
+    const ccConditions = [eq(payrollRunEmployees.runId, run.id)];
+    if (filters.workerType) ccConditions.push(eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]));
+    if (filters.costCenter) ccConditions.push(eq(employeeSalaryProfiles.costCenter, filters.costCenter));
 
     const aggRows = await this.db
       .select({
@@ -255,19 +253,17 @@ export class ReportsService {
       })
       .from(payrollRunEmployees)
       .leftJoin(employeeSalaryProfiles, eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId))
-      .where(whereClause)
+      .where(and(...ccConditions))
       .groupBy(employeeSalaryProfiles.costCenter)
       .limit(limit)
       .offset(offset);
 
-    const rows: CostCenterRow[] = aggRows
-      .filter((r) => !filters.costCenter || (r.costCenter ?? null) === filters.costCenter)
-      .map((r) => ({
-        costCenter: r.costCenter ?? null,
-        employeeCount: r._count,
-        grossTotal: r.grossTotal,
-        netTotal: r.netTotal,
-      }));
+    const rows: CostCenterRow[] = aggRows.map((r) => ({
+      costCenter: r.costCenter ?? null,
+      employeeCount: r._count,
+      grossTotal: r.grossTotal,
+      netTotal: r.netTotal,
+    }));
 
     return { provisional, rows };
   }

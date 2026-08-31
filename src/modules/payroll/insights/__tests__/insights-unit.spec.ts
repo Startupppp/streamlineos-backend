@@ -1,4 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import { JournalService } from "../journal.service";
 import { AccountingMappingsService } from "../accounting-mappings.service";
 import { ReportsService } from "../reports.service";
@@ -323,33 +325,57 @@ describe("ReportsService — SQL cap bites at 100", () => {
   });
 });
 
-describe("report-builders — costCenter filter applied", () => {
-  it("filters enriched items by costCenter when filter is set", () => {
-    type Item = { userDept: string | null; costCenter: string | null };
-    const items: Item[] = [
-      { userDept: "Engineering", costCenter: "CC1" },
-      { userDept: "Engineering", costCenter: "CC2" },
-      { userDept: "HR", costCenter: "CC1" },
-    ];
+describe("ReportsService.getCostCenter — costCenter filter is in SQL, not JS post-filter", () => {
+  const dialect = new PgDialect();
 
-    const filtered = items.filter((e) => e.costCenter === "CC1");
-    expect(filtered).toHaveLength(2);
-    expect(filtered.every((e) => e.costCenter === "CC1")).toBe(true);
-  });
+  it("passes costCenter to WHERE clause so LIMIT/OFFSET operates on filtered rows (bites if filter moves to JS)", async () => {
+    let selectCount = 0;
+    const capturedAggWhereArgs: unknown[] = [];
 
-  it("filters by both department and costCenter when both set", () => {
-    type Item = { userDept: string | null; costCenter: string | null };
-    const items: Item[] = [
-      { userDept: "Engineering", costCenter: "CC1" },
-      { userDept: "Engineering", costCenter: "CC2" },
-      { userDept: "HR", costCenter: "CC1" },
-    ];
+    const runRow = {
+      id: 10, status: "LOCKED", month: "2026-07", orgId: "org1", runType: "REGULAR",
+      grossTotal: "0", netTotal: "0", deductionTotal: "0", employerCostTotal: "0",
+      employeeCount: 0, exceptionCount: 0,
+    };
 
-    const filtered = items.filter(
-      (e) => e.userDept === "Engineering" && e.costCenter === "CC1",
-    );
-    expect(filtered).toHaveLength(1);
-    expect(filtered[0]?.userDept).toBe("Engineering");
-    expect(filtered[0]?.costCenter).toBe("CC1");
+    const runChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([runRow]),
+    };
+
+    const aggChain = {
+      from: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockImplementation((cond: unknown) => {
+        capturedAggWhereArgs.push(cond);
+        return aggChain;
+      }),
+      groupBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      offset: jest.fn().mockResolvedValue([]),
+    };
+
+    const mockDb = {
+      select: jest.fn().mockImplementation(() => {
+        selectCount++;
+        return selectCount === 1 ? runChain : aggChain;
+      }),
+    };
+
+    const service = new ReportsService(mockDb as never);
+    await service.getCostCenter("org1", "2026-07", { costCenter: "CC-ENG" });
+
+    const allRenderedSql = capturedAggWhereArgs
+      .map((cond) => {
+        try {
+          return dialect.sqlToQuery(cond as SQL).sql;
+        } catch {
+          return "";
+        }
+      })
+      .join(" ");
+
+    expect(allRenderedSql).toContain("cost_center");
   });
 });

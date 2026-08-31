@@ -301,30 +301,30 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "chat_user_presence",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "The composite foreign key is ON DELETE SET NULL, so removal detaches the presence row rather than deleting it. Nothing in the revocation path clears presence, and nothing needs to: presence is ephemeral heartbeat state that goes stale on its own once the member can no longer authenticate. Retained through a suspension because the suspension is reversible.",
+      "The composite foreign key is ON DELETE CASCADE, so removal deletes the presence row. Presence is ephemeral heartbeat state, so nothing in the revocation path needs to clear it separately. Retained through a suspension because the suspension is reversible.",
   },
   {
     id: "calendar_source_preferences",
     mechanism: "database-cascade",
     table: "calendar_source_preferences",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "The composite foreign key is ON DELETE SET NULL. These are per-person calendar source toggles, not authority: the row also carries user_id, so the preference survives detached and is restored if the person rejoins. Retained through a suspension so a reactivated member keeps their calendar configuration.",
+      "The composite foreign key is ON DELETE CASCADE and membership_id is the only owner column, so removal deletes the toggles rather than detaching them. These are per-person calendar source preferences, not authority, so losing them on removal costs nothing. Retained through a suspension so a reactivated member keeps their calendar configuration.",
   },
   {
     id: "chat_channel_members",
-    mechanism: "database-write",
+    mechanism: "database-cascade",
     table: "chat_channel_members",
     keyedBy: "membership_id",
-    onRemoval: "blocks-removal",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "The foreign key is NO ACTION (effectively RESTRICT): a member in any chat channel cannot be removed. The FK must change to CASCADE so the channel-membership row is automatically dropped.",
+      "The composite foreign key is ON DELETE CASCADE, so the channel-membership row is dropped with the membership and no removal path is blocked. Retained through a suspension because the membership gate already denies every request while suspended.",
   },
   {
     id: "chat_messages",

@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { MailModule } from "../mail/mail.module";
+import { BuildApprovalsInboxModule } from "../build/approvals/build-approvals-inbox.module";
 import { NotificationsController } from "./notifications.controller";
 import { NotificationsService } from "./notifications.service";
 import { UnifiedInboxService } from "./unified-inbox.service";
@@ -35,7 +36,7 @@ import { NotificationPolicyService } from "./notification-policy.service";
 import { NotificationPolicyController } from "./notification-policy.controller";
 
 @Module({
-  imports: [RealtimeModule, MailModule],
+  imports: [RealtimeModule, MailModule, BuildApprovalsInboxModule],
   controllers: [
     NotificationsController,
     NotificationTemplatesController,

@@ -3130,6 +3130,27 @@
       "when": 1798000071000,
       "tag": "0759_org_unit_drop_legacy_user_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 572,
+      "version": "7",
+      "when": 1798000072000,
+      "tag": "0760_chat_channel_members_drop_user_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 573,
+      "version": "7",
+      "when": 1798000073000,
+      "tag": "0761_chat_presence_membership_fk_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 574,
+      "version": "7",
+      "when": 1798000074000,
+      "tag": "0762_chat_presence_membership_not_null",
+      "breakpoints": true
     }
   ]
 }

@@ -6,11 +6,13 @@ import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
 import { MailService } from "../mail/mail.service";
 import { BroadcastsService } from "./broadcasts.service";
+import { BuildApprovalsInboxService } from "../build/approvals/build-approvals-inbox.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import {
   decodeInboxCursor,
   encodeInboxCursor,
   type BroadcastInboxItem,
+  type BuildApprovalInboxItem,
   type InboxCursorState,
   type InboxKind,
   type MailInboxItem,
@@ -54,6 +56,7 @@ export class UnifiedInboxService {
     private readonly access: AccessService,
     private readonly mail: MailService,
     private readonly broadcasts: BroadcastsService,
+    private readonly buildApprovals: BuildApprovalsInboxService,
   ) {}
 
   async list(
@@ -72,9 +75,14 @@ export class UnifiedInboxService {
     const wantsNotifications = kindsFilter.includes("notification");
     const wantsBroadcasts = kindsFilter.includes("broadcast");
     const wantsMail = kindsFilter.includes("mail");
+    const wantsBuildApprovals = kindsFilter.includes("build_approval");
 
     const canViewMail = wantsMail
       ? await this.access.holds(user, "mail:inbox:view")
+      : false;
+
+    const canViewBuildApprovals = wantsBuildApprovals
+      ? await this.access.holds(user, "build:approvals:view")
       : false;
 
     const sources: SourceStatus[] = [
@@ -86,31 +94,46 @@ export class UnifiedInboxService {
         reason:
           wantsMail && !canViewMail ? "no permission: mail:inbox:view" : null,
       },
-      { kind: "build_approval", included: false, reason: "integration-pending" },
+      {
+        kind: "build_approval",
+        included: wantsBuildApprovals && canViewBuildApprovals,
+        reason:
+          wantsBuildApprovals && !canViewBuildApprovals
+            ? "no permission: build:approvals:view"
+            : null,
+      },
     ];
 
-    const [notifItems, broadcastItems, mailResult] = await Promise.all([
-      wantsNotifications
-        ? this.fetchNotifications(
-            orgId,
-            userId,
-            limit + 1,
-            cursorState.n,
-            query.unreadOnly ?? false,
-          )
-        : ([] as NotificationInboxItem[]),
-      wantsBroadcasts
-        ? this.fetchBroadcasts(orgId, userId, limit + 1, cursorState.b)
-        : ([] as BroadcastInboxItem[]),
-      wantsMail && canViewMail
-        ? this.fetchMail(orgId, userId, limit + 1, cursorState.m)
-        : { items: [] as MailInboxItem[], nextMailCursor: null as string | null },
-    ]);
+    const [notifItems, broadcastItems, mailResult, approvalItems] =
+      await Promise.all([
+        wantsNotifications
+          ? this.fetchNotifications(
+              orgId,
+              userId,
+              limit + 1,
+              cursorState.n,
+              query.unreadOnly ?? false,
+            )
+          : ([] as NotificationInboxItem[]),
+        wantsBroadcasts
+          ? this.fetchBroadcasts(orgId, userId, limit + 1, cursorState.b)
+          : ([] as BroadcastInboxItem[]),
+        wantsMail && canViewMail
+          ? this.fetchMail(orgId, userId, limit + 1, cursorState.m)
+          : {
+              items: [] as MailInboxItem[],
+              nextMailCursor: null as string | null,
+            },
+        wantsBuildApprovals && canViewBuildApprovals
+          ? this.fetchBuildApprovals(orgId, userId, limit + 1, cursorState.a)
+          : ([] as BuildApprovalInboxItem[]),
+      ]);
 
     const all: UnifiedInboxItem[] = [
       ...notifItems,
       ...broadcastItems,
       ...mailResult.items,
+      ...approvalItems,
     ].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
     const hasMore = all.length > limit;
@@ -125,6 +148,9 @@ export class UnifiedInboxService {
     const lastMail = [...page]
       .reverse()
       .find((i): i is MailInboxItem => i.kind === "mail");
+    const lastApproval = [...page]
+      .reverse()
+      .find((i): i is BuildApprovalInboxItem => i.kind === "build_approval");
 
     const nextState: InboxCursorState = {
       n: lastNotif ? lastNotif.id : cursorState.n,
@@ -132,6 +158,7 @@ export class UnifiedInboxService {
       m: lastMail
         ? (mailResult.nextMailCursor ?? cursorState.m)
         : cursorState.m,
+      a: lastApproval ? lastApproval.id : cursorState.a,
     };
 
     const nextCursor = hasMore ? encodeInboxCursor(nextState) : null;
@@ -272,5 +299,36 @@ export class UnifiedInboxService {
     );
 
     return { items, nextMailCursor: result.nextCursor };
+  }
+
+  private async fetchBuildApprovals(
+    orgId: string,
+    userId: string,
+    fetchLimit: number,
+    cursor: number | null,
+  ): Promise<BuildApprovalInboxItem[]> {
+    const rows = await this.buildApprovals.getInboxPage(
+      orgId,
+      userId,
+      fetchLimit,
+      cursor,
+    );
+
+    return rows.map(
+      (row): BuildApprovalInboxItem => ({
+        kind: "build_approval",
+        id: row.id,
+        projectId: row.projectId,
+        ticketId: row.entityType === "task" ? row.entityId : null,
+        status: row.status,
+        subject: row.title,
+        sourceModule: "build",
+        actor: null,
+        deepLink: null,
+        isRead: false,
+        timestamp: row.createdAt.toISOString(),
+        dueAt: row.dueAt ? row.dueAt.toISOString() : null,
+      }),
+    );
   }
 }

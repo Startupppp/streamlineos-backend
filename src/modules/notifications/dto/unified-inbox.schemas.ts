@@ -106,24 +106,21 @@ export type UnifiedInboxResponse = {
   sources: SourceStatus[];
 };
 
-/**
- * Per-source cursor state. All fields are always serialized as null when
- * absent — never undefined — so no field vanishes in JSON serialization
- * and a missing field never silently replays page one.
- */
 export type InboxCursorState = {
   n: number | null;
   b: number | null;
   m: string | null;
+  a: number | null;
 };
 
-const EMPTY_CURSOR: InboxCursorState = { n: null, b: null, m: null };
+const EMPTY_CURSOR: InboxCursorState = { n: null, b: null, m: null, a: null };
 
 export function encodeInboxCursor(state: InboxCursorState): string {
   const payload: InboxCursorState = {
     n: typeof state.n === "number" ? state.n : null,
     b: typeof state.b === "number" ? state.b : null,
     m: typeof state.m === "string" ? state.m : null,
+    a: typeof state.a === "number" ? state.a : null,
   };
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
 }
@@ -146,6 +143,7 @@ export function decodeInboxCursor(
       n: typeof obj["n"] === "number" ? obj["n"] : null,
       b: typeof obj["b"] === "number" ? obj["b"] : null,
       m: typeof obj["m"] === "string" ? obj["m"] : null,
+      a: typeof obj["a"] === "number" ? obj["a"] : null,
     };
   } catch {
     return EMPTY_CURSOR;
