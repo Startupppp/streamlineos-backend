@@ -55,7 +55,7 @@ function makeTimelineDb(overrides: {
   return {
     query: {
       chatChannels: {
-        findFirst: jest.fn().mockResolvedValue(channelFound ? { id: CHANNEL_ID } : null),
+        findFirst: jest.fn().mockResolvedValue(channelFound ? { id: CHANNEL_ID, type: "PUBLIC" } : null),
       },
       chatChannelMembers: {
         findFirst: jest.fn().mockResolvedValue(

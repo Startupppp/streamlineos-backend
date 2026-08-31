@@ -217,6 +217,7 @@ describe("ChatChannelMembersService — tenant isolation", () => {
           findFirst: jest.fn().mockResolvedValue(memberRow),
           findMany: jest.fn().mockResolvedValue(findManyResult),
         },
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 99 }) },
       },
     } as unknown as Db;
     const cache = { invalidateNamespace: jest.fn() } as unknown as CacheService;
