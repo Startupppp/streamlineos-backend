@@ -3305,6 +3305,13 @@
       "when": 1798000097000,
       "tag": "0785_invitations_drop_invited_by",
       "breakpoints": true
+    },
+    {
+      "idx": 599,
+      "version": "7",
+      "when": 1798000099000,
+      "tag": "0787_workflow_secrets_encrypt_rls",
+      "breakpoints": true
     }
   ]
 }

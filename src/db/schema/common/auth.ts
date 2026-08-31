@@ -179,7 +179,6 @@ export const invitations = pgTable("invitations", {
   tokenHash: text("token_hash").notNull().unique(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   role: text("role").default("MEMBER").notNull(),
-  invitedBy: text("invited_by").references(() => users.id),
   expiresAt: timestamp("expires_at").notNull(),
   acceptedAt: timestamp("accepted_at"),
   status: invitationStatusEnum("status").default("PENDING").notNull(),

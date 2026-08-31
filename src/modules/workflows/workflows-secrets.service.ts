@@ -93,7 +93,7 @@ export class WorkflowsSecretsService {
       .values({
         orgId,
         name: dto.name,
-        encryptedValue: dto.value,
+        encryptedValue: encryptSecret(dto.value),
         description: dto.description,
       })
       .returning({
