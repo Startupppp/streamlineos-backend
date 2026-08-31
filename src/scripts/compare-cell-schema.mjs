@@ -7,11 +7,14 @@ const argv = process.argv.slice(2);
 if (argv.includes("--help")) {
   console.log(`
 Prove a cell reached the same schema as the control plane, from pg_catalog.
+Also compares migration watermarks (drizzle.__drizzle_migrations hash set).
 
   node src/scripts/compare-cell-schema.mjs [--region=cell-2] [--show=20]
   node src/scripts/compare-cell-schema.mjs --self-test
 
 The runner's exit code is not evidence that a migration chain landed. This is.
+A cell with 0 migration entries exits 1 regardless of schema differences — the
+migration chain has not run and the schema comparison is vacuously true.
 `);
   process.exit(0);
 }
@@ -72,6 +75,11 @@ const QUERIES = {
     JOIN pg_class c ON c.oid = t.tgrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE NOT t.tgisinternal AND n.nspname <> ALL(${SYSTEM_SCHEMAS})`,
+
+  migrationHashes: (sql) => sql`
+    SELECT hash AS k
+    FROM drizzle.__drizzle_migrations
+    ORDER BY created_at`,
 };
 
 export function diff(left, right) {
@@ -101,14 +109,23 @@ async function collect(url) {
 
 function selfTest() {
   const d = diff(["a", "b", "c"], ["a", "c", "d"]);
-  const correct =
+  const diffOk =
     d.missing.length === 1 && d.missing[0] === "b" && d.extra.length === 1 && d.extra[0] === "d";
-  if (correct) {
-    console.log("SELF-TEST PASS: a missing object and an unexpected object are both reported");
+  if (!diffOk) {
+    console.error(`SELF-TEST FAIL: diff returned ${JSON.stringify(d)}`);
+    process.exitCode = 1;
     return;
   }
-  console.error(`SELF-TEST FAIL: diff returned ${JSON.stringify(d)}`);
-  process.exitCode = 1;
+
+  const emptyMigrations = diff(["hash-1", "hash-2"], []);
+  const vacuityOk = emptyMigrations.missing.length === 2;
+  if (!vacuityOk) {
+    console.error(`SELF-TEST FAIL: a cell with 0 migrations did not report missing hashes`);
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log("SELF-TEST PASS: a missing object and an unexpected object are both reported; a zero-migration cell reports missing hashes");
 }
 
 async function main() {
@@ -122,6 +139,17 @@ async function main() {
     collect(topology.cell.ownerDirect),
   ]);
 
+  const cellMigrationCount = cell.migrationHashes ? cell.migrationHashes.length : 0;
+  if (cellMigrationCount === 0) {
+    console.error(
+      `VACUITY FAIL: cell "${topology.cellId}" (database: ${topology.cell.database}) has 0 migration journal entries.\n` +
+      `  The schema comparison is vacuously true against an empty database.\n` +
+      `  Run: pnpm cell:bootstrap --region=${topology.regionKey} to apply the migration chain first.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   let differences = 0;
 
   for (const name of Object.keys(QUERIES)) {
@@ -130,7 +158,7 @@ async function main() {
     differences += d.missing.length + d.extra.length;
 
     console.log(
-      `${ok ? "PASS" : "FAIL"}  ${name.padEnd(12)}` +
+      `${ok ? "PASS" : "FAIL"}  ${name.padEnd(16)}` +
         ` control=${String(control[name].length).padStart(6)}` +
         ` cell=${String(cell[name].length).padStart(6)}` +
         `${ok ? "" : `  missing=${d.missing.length} extra=${d.extra.length}`}`,
@@ -144,7 +172,7 @@ async function main() {
 
   console.log(
     `\nRESULT: ${differences === 0 ? "SCHEMAS IDENTICAL" : "SCHEMAS DIFFER"}` +
-      ` cell=${topology.cellId} differences=${differences}`,
+      ` cell=${topology.cellId} differences=${differences} migrations=${cellMigrationCount}`,
   );
   if (differences > 0) process.exitCode = 1;
 }

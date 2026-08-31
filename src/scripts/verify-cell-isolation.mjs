@@ -68,6 +68,19 @@ async function probeDatabase() {
       "NOBYPASSRLS on the cell's application role",
     );
 
+    const [{ count: appTables }] = await cellOwner`
+      SELECT count(*)::int AS count FROM pg_tables
+      WHERE schemaname NOT IN ('pg_catalog', 'information_schema', 'pg_toast', 'drizzle')
+        AND tablename <> 'cell_isolation_probe'`;
+    record(
+      "cell application schema",
+      Number(appTables) > 0 ? "ISOLATED" : "SHARED",
+      Number(appTables) > 0
+        ? `${appTables} application table(s) confirm pnpm cell:bootstrap ran in ${cellDb}`
+        : `0 application tables in "${cellDb}" — pnpm cell:bootstrap has not run; a probe against an empty cell is vacuously true`,
+      "running pnpm cell:bootstrap --region=<cell> to apply the migration chain before this check",
+    );
+
     await controlOwner.unsafe(
       `CREATE TABLE IF NOT EXISTS cell_isolation_probe (marker text primary key)`,
     );
@@ -338,6 +351,7 @@ function probeSharedInfrastructure() {
 const MUST_BE_ISOLATED = new Set([
   "database identity",
   "application role privilege",
+  "cell application schema",
   "control-plane rows visible from the cell",
   "cell rows visible from the control plane",
   "cross-database bridge",
@@ -383,11 +397,22 @@ function report() {
 function selfTest() {
   results.length = 0;
   record("database identity", "SHARED", "both connections reached neondb", "a separate database per cell");
-  const hardFailures = results.filter(
+  const sharedDbFailures = results.filter(
     (r) => MUST_BE_ISOLATED.has(r.resource) && r.verdict !== "ISOLATED",
   );
-  if (hardFailures.length !== 1) {
+  if (sharedDbFailures.length !== 1) {
     console.error("SELF-TEST FAIL: a shared database did not fail the check");
+    process.exitCode = 1;
+    return;
+  }
+
+  results.length = 0;
+  record("cell application schema", "SHARED", "0 application tables in cell-2 — bootstrap has not run", "pnpm cell:bootstrap");
+  const vacuityFailures = results.filter(
+    (r) => MUST_BE_ISOLATED.has(r.resource) && r.verdict !== "ISOLATED",
+  );
+  if (vacuityFailures.length !== 1) {
+    console.error("SELF-TEST FAIL: a zero-table cell did not fail the check");
     process.exitCode = 1;
     return;
   }
@@ -395,12 +420,13 @@ function selfTest() {
   results.length = 0;
   record("cache (Redis)", "NAMESPACED", "prefix cell-2 applied", null);
   const namespaced = results.filter((r) => r.verdict === "NAMESPACED");
-  if (namespaced.length === 1) {
-    console.log("SELF-TEST PASS: a shared database is reported as a failure; NAMESPACED is a recognised verdict");
+  if (namespaced.length !== 1) {
+    console.error("SELF-TEST FAIL: NAMESPACED verdict was not recorded");
+    process.exitCode = 1;
     return;
   }
-  console.error("SELF-TEST FAIL: NAMESPACED verdict was not recorded");
-  process.exitCode = 1;
+
+  console.log("SELF-TEST PASS: a shared database is a failure; a zero-table cell is a failure; NAMESPACED is a recognised verdict");
 }
 
 async function main() {

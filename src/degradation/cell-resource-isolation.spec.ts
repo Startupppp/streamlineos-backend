@@ -148,6 +148,73 @@ describe("Database isolation probe bites — cell-2 DB outage is detected", () =
 });
 
 // ---------------------------------------------------------------------------
+// Vacuity guard — zero-org cells must not produce silent passes
+// ---------------------------------------------------------------------------
+
+describe("Vacuity guard — zero-org cell proves nothing; the isolation script must detect it", () => {
+  it("zero-org cell-2: forEachOrg returns organizations=0 (no rows to sweep)", async () => {
+    const { db: cell1Db } = makeMockDb([]);
+    const { db: cell2Db } = makeMockDb([]);
+
+    process.env.CELL_ID = "cell-2";
+    setRegionRegistry(makeRegistry(cell1Db, cell2Db));
+
+    const seen: string[] = [];
+    const result = await forEachOrg(cell2Db, "vacuity-probe", async (_tx, orgId) => {
+      seen.push(orgId);
+    });
+
+    expect(seen).toHaveLength(0);
+    expect(result.organizations).toBe(0);
+  });
+
+  it("vacuity bites: the isolation script guard (cell application schema SHARED → MUST_BE_ISOLATED) exits 1 on a zero-table cell", () => {
+    const vacuousResults: Array<{ resource: string; verdict: string }> = [];
+    const record = (resource: string, verdict: string) => vacuousResults.push({ resource, verdict });
+
+    record("cell application schema", "SHARED");
+
+    const mustBeIsolated = new Set([
+      "database identity",
+      "application role privilege",
+      "cell application schema",
+      "control-plane rows visible from the cell",
+      "cell rows visible from the control plane",
+      "cross-database bridge",
+      "foreign servers",
+    ]);
+
+    const hardFailures = vacuousResults.filter(
+      (r) => mustBeIsolated.has(r.resource) && r.verdict !== "ISOLATED",
+    );
+    expect(hardFailures).toHaveLength(1);
+    expect(hardFailures[0]?.resource).toBe("cell application schema");
+  });
+
+  it("vacuity does not bite when the cell has application tables (positive control)", () => {
+    const results: Array<{ resource: string; verdict: string }> = [];
+    const record = (resource: string, verdict: string) => results.push({ resource, verdict });
+
+    record("cell application schema", "ISOLATED");
+
+    const mustBeIsolated = new Set([
+      "database identity",
+      "application role privilege",
+      "cell application schema",
+      "control-plane rows visible from the cell",
+      "cell rows visible from the control plane",
+      "cross-database bridge",
+      "foreign servers",
+    ]);
+
+    const hardFailures = results.filter(
+      (r) => mustBeIsolated.has(r.resource) && r.verdict !== "ISOLATED",
+    );
+    expect(hardFailures).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Cache (Redis) budget isolation — NAMESPACED verdict
 // ---------------------------------------------------------------------------
 
