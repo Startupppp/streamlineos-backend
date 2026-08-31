@@ -42,7 +42,7 @@ export class TaxCodesService {
     paidAccountId: number | null; isActive: boolean;
     createdAt: Date | null; updatedAt: Date | null;
   }>> {
-    const cacheKey = `${query.cursor ?? ""}:${query.limit}:${query.taxType ?? ""}:${query.isActive ?? ""}`;
+    const cacheKey = `${query.cursor ?? ""}:${query.limit ?? ""}:${query.taxType ?? ""}:${query.isActive ?? ""}`;
     return this.cache.cachedVersioned(CACHE_KEYS.finTaxCodesNamespace(orgId), cacheKey, async () => {
       const pos = decodeCursor(query.cursor);
       const conditions = [eq(accTaxCodes.orgId, orgId)];

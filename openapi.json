@@ -735,18 +735,15 @@
         "operationId": "ApprovalPoliciesController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -1081,18 +1078,15 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -1304,6 +1298,25 @@
         "operationId": "ArPaymentsController_list",
         "parameters": [
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
             "name": "method",
             "in": "query",
             "required": false,
@@ -1344,28 +1357,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "pageSize",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
           }
         ],
         "responses": {
@@ -1401,18 +1392,15 @@
         "operationId": "FinanceAssetsController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -1838,18 +1826,15 @@
         "operationId": "AssetCategoriesController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -2079,18 +2064,15 @@
         "operationId": "DepreciationRunsController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -2297,18 +2279,15 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -2396,18 +2375,15 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -2505,18 +2481,15 @@
         "operationId": "FinanceBudgetsController_listBudgets",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -3511,34 +3484,31 @@
         "operationId": "CollectionsController_listActivities",
         "parameters": [
           {
-            "name": "clientId",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
               "default": 50,
               "type": "integer",
               "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "clientId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           }
@@ -3755,6 +3725,25 @@
         "operationId": "CreditNotesController_list",
         "parameters": [
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
             "name": "status",
             "in": "query",
             "required": false,
@@ -3785,28 +3774,6 @@
             "schema": {
               "type": "integer",
               "exclusiveMinimum": 0,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "pageSize",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
               "maximum": 9007199254740991
             }
           }
@@ -4752,18 +4719,15 @@
         "operationId": "ExchangeRatesController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -6409,18 +6373,15 @@
         "operationId": "PaymentRunsController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -7897,18 +7858,15 @@
         "operationId": "RecurringBillsController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -8482,7 +8440,7 @@
         "operationId": "RecurringInvoicesController_list",
         "parameters": [
           {
-            "name": "isActive",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
@@ -8490,18 +8448,7 @@
             }
           },
           {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -8509,6 +8456,14 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "isActive",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -8881,18 +8836,15 @@
         "operationId": "RecurringJournalsController_listTemplates",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -12017,18 +11969,15 @@
         "operationId": "TaxCodesController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -12768,18 +12717,15 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -12862,18 +12808,15 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -12956,18 +12899,15 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -13024,18 +12964,15 @@
         "operationId": "VendorCreditsController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -13391,18 +13328,15 @@
         "operationId": "VendorPaymentsListController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -13562,18 +13496,15 @@
         "operationId": "AccountingPayablesReceivablesController_listVendors",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -13889,13 +13820,12 @@
             }
           },
           {
-            "name": "page",
+            "name": "afterId",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
-              "minimum": 1,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           },
@@ -24270,13 +24200,12 @@
             }
           },
           {
-            "name": "page",
+            "name": "afterId",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
               "type": "integer",
-              "minimum": 1,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           },
@@ -30005,14 +29934,11 @@
             }
           },
           {
-            "name": "offset",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 0,
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           }
         ],
@@ -41966,14 +41892,11 @@
         "operationId": "ProjectsCustomersController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -42735,14 +42658,11 @@
         "operationId": "ManagedProductsController_listManagedProducts",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -43063,14 +42983,11 @@
         "operationId": "ProjectsWorkspaceMembersController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -43468,14 +43385,11 @@
         "operationId": "PortfoliosController_listPortfolios",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -44919,14 +44833,11 @@
         "operationId": "TeamsController_listTeams",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -45250,14 +45161,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -79506,18 +79414,15 @@
         "operationId": "BankAccountsController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -79791,18 +79696,15 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -79901,18 +79803,15 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -80310,18 +80209,15 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -80674,18 +80570,15 @@
         "operationId": "TransfersController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -91716,8 +91609,8 @@
           "HrDocumentTypes"
         ],
         "x-exposure": "in-service",
-        "x-authorized-in-service": "a three-key check in the handler: hr:documents:manage, hr:documents:view or self:onboarding-docs",
-        "description": "Exposure: authorized in service — a three-key check in the handler: hr:documents:manage, hr:documents:view or self:onboarding-docs"
+        "x-authorized-in-service": "a three-key check in the handler: hr:documents:view scope=all, hr:documents:view or self:onboarding-docs",
+        "description": "Exposure: authorized in service — a three-key check in the handler: hr:documents:view scope=all, hr:documents:view or self:onboarding-docs"
       },
       "post": {
         "operationId": "HrDocumentTypesController_create",
@@ -91835,8 +91728,8 @@
           "HrDocumentTypes"
         ],
         "x-exposure": "in-service",
-        "x-authorized-in-service": "a three-key check in the handler: hr:documents:manage, hr:documents:view or self:onboarding-docs",
-        "description": "Exposure: authorized in service — a three-key check in the handler: hr:documents:manage, hr:documents:view or self:onboarding-docs"
+        "x-authorized-in-service": "a three-key check in the handler: hr:documents:view scope=all, hr:documents:view or self:onboarding-docs",
+        "description": "Exposure: authorized in service — a three-key check in the handler: hr:documents:view scope=all, hr:documents:view or self:onboarding-docs"
       },
       "patch": {
         "operationId": "HrDocumentTypesController_update",
@@ -114735,7 +114628,8 @@
         "x-permission": "hr:payroll:approve",
         "description": "Exposure: permission — hr:payroll:approve",
         "x-idempotency-command": "payroll.incentive.reject",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/incentives/config": {
@@ -128084,7 +127978,23 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:employees:manage",
-        "description": "Exposure: permission — hr:employees:manage"
+        "description": "Exposure: permission — hr:employees:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "resumeText": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/hr/recruitment/candidates/{candidateId}/rollout-documents": {
@@ -163497,7 +163407,29 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:update",
-        "description": "Exposure: permission — kb:pages:update"
+        "description": "Exposure: permission — kb:pages:update",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "pageId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/kb/page-comments/{commentId}": {
@@ -167055,7 +166987,29 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:create",
-        "description": "Exposure: permission — kb:pages:create"
+        "description": "Exposure: permission — kb:pages:create",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "spaceId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/kb/sources/{sourceId}": {
@@ -173273,6 +173227,25 @@
       "get": {
         "operationId": "ModuleAccessController_listGroups",
         "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
           {
             "name": "moduleKey",
             "in": "path",
@@ -189977,7 +189950,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:accounting:manage",
-        "description": "Exposure: permission — payroll:accounting:manage"
+        "description": "Exposure: permission — payroll:accounting:manage",
+        "x-bodyless": true
       }
     },
     "/payroll/accounting/journal-batches/{batchId}/reconcile": {
@@ -190495,7 +190469,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:settings:manage",
-        "description": "Exposure: permission — payroll:settings:manage"
+        "description": "Exposure: permission — payroll:settings:manage",
+        "x-bodyless": true
       }
     },
     "/payroll/command-center": {
@@ -192682,7 +192657,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:runs:manage",
-        "description": "Exposure: permission — payroll:runs:manage"
+        "description": "Exposure: permission — payroll:runs:manage",
+        "x-bodyless": true
       }
     },
     "/payroll/manager/inbox": {
@@ -192771,7 +192747,8 @@
         "x-permission": "self:payroll",
         "description": "Exposure: permission — self:payroll",
         "x-idempotency-command": "payroll.loan.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/payroll/manager/loans/{loanId}/reject": {
@@ -192828,7 +192805,8 @@
         "x-permission": "self:payroll",
         "description": "Exposure: permission — self:payroll",
         "x-idempotency-command": "payroll.loan.reject",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/payroll/manager/reimbursements/{reimbursementId}/approve": {
@@ -192885,7 +192863,8 @@
         "x-permission": "self:payroll",
         "description": "Exposure: permission — self:payroll",
         "x-idempotency-command": "payroll.reimbursement.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/payroll/manager/reimbursements/{reimbursementId}/reject": {
@@ -193410,7 +193389,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "self:payslips",
-        "description": "Exposure: permission — self:payslips"
+        "description": "Exposure: permission — self:payslips",
+        "x-bodyless": true
       }
     },
     "/payroll/me/payslips/ai/capabilities": {
@@ -193915,6 +193895,27 @@
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "itemCursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "itemLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
             }
           }
         ],
@@ -199274,7 +199275,8 @@
         "x-permission": "payroll:tax:manage",
         "description": "Exposure: permission — payroll:tax:manage",
         "x-idempotency-command": "payroll.tax-declaration.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/payroll/tax/declarations/{declarationId}/reject": {
@@ -201981,14 +201983,11 @@
         "operationId": "PmWorkspacesController_listWorkspaces",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -202287,14 +202286,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -202831,7 +202827,168 @@
           "FeedbucketPublic"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "bug",
+                      "idea",
+                      "feature",
+                      "question",
+                      "praise",
+                      "other"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000
+                  },
+                  "pageUrl": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "format": "uri"
+                  },
+                  "reporterName": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "reporterEmail": {
+                    "type": "string",
+                    "format": "email",
+                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "browser": {
+                        "type": "string"
+                      },
+                      "browserVersion": {
+                        "type": "string"
+                      },
+                      "os": {
+                        "type": "string"
+                      },
+                      "device": {
+                        "type": "string"
+                      },
+                      "screenW": {
+                        "type": "number"
+                      },
+                      "screenH": {
+                        "type": "number"
+                      },
+                      "viewportW": {
+                        "type": "number"
+                      },
+                      "viewportH": {
+                        "type": "number"
+                      },
+                      "userAgent": {
+                        "type": "string"
+                      },
+                      "language": {
+                        "type": "string"
+                      },
+                      "referrer": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "consoleLogs": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "level": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "ts": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "level",
+                        "message"
+                      ]
+                    }
+                  },
+                  "networkLogs": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "method": {
+                          "type": "string",
+                          "maxLength": 16
+                        },
+                        "url": {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        "status": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 999
+                        },
+                        "statusText": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "durationMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "startedAt": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "xhr",
+                            "fetch"
+                          ]
+                        },
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "error": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "method",
+                        "url",
+                        "status",
+                        "statusText",
+                        "durationMs",
+                        "startedAt",
+                        "type",
+                        "ok"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/public/feedbucket/{publicKey}/ai-assist": {
@@ -202875,7 +203032,98 @@
           "FeedbucketPublic"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "bug",
+                      "idea",
+                      "feature",
+                      "question",
+                      "praise",
+                      "other"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  "pageUrl": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "format": "uri"
+                  },
+                  "networkLogs": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "method": {
+                          "type": "string",
+                          "maxLength": 16
+                        },
+                        "url": {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        "status": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 999
+                        },
+                        "statusText": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "durationMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "startedAt": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "xhr",
+                            "fetch"
+                          ]
+                        },
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "error": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "method",
+                        "url",
+                        "status",
+                        "statusText",
+                        "durationMs",
+                        "startedAt",
+                        "type",
+                        "ok"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/public/feedbucket/{publicKey}/config": {
@@ -215991,7 +216239,29 @@
         ],
         "x-exposure": "in-service",
         "x-authorized-in-service": "assertUploadAllowed",
-        "description": "Exposure: authorized in service — assertUploadAllowed"
+        "description": "Exposure: authorized in service — assertUploadAllowed",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "folder": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/support": {
@@ -230136,14 +230406,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -230494,14 +230761,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -231213,14 +231477,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -231595,14 +231856,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -231956,18 +232214,15 @@
         "operationId": "PayrollController_listExports",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {

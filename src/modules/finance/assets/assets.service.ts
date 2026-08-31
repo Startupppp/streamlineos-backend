@@ -36,7 +36,7 @@ export class AssetsService {
     const { cursor, limit } = query;
     const pos = decodeCursor(cursor);
     const pageLimit = Math.min(limit, 100);
-    const cacheKey = `${cursor ?? ""}:${limit}:${query.status ?? ""}:${query.categoryId ?? ""}`;
+    const cacheKey = `${cursor ?? ""}:${pageLimit}:${query.status ?? ""}:${query.categoryId ?? ""}`;
 
     return this.cache.cachedVersioned(CACHE_KEYS.finAssetsListNamespace(orgId), cacheKey, async () => {
       const conditions = [eq(accFixedAssets.orgId, orgId)];

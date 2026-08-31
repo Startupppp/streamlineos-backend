@@ -59,12 +59,12 @@ export class TaxReportsService {
   ) {}
 
   async getOutputReport(orgId: string, query: TaxDateRangeQuery): Promise<CursorPage<OutputTaxLine>> {
-    const cacheKey = `output:${query.from}:${query.to}:${query.rate ?? ""}:${query.cursor ?? ""}:${query.limit}`;
+    const cacheKey = `output:${query.from}:${query.to}:${query.rate ?? ""}:${query.cursor ?? ""}:${query.limit ?? ""}`;
     return this.cache.cachedVersioned(CACHE_KEYS.finTaxReportsNamespace(orgId), cacheKey, () => this.computeOutputReport(orgId, query), 120);
   }
 
   async getInputReport(orgId: string, query: TaxDateRangeQuery): Promise<CursorPage<InputTaxLine>> {
-    const cacheKey = `input:${query.from}:${query.to}:${query.rate ?? ""}:${query.cursor ?? ""}:${query.limit}`;
+    const cacheKey = `input:${query.from}:${query.to}:${query.rate ?? ""}:${query.cursor ?? ""}:${query.limit ?? ""}`;
     return this.cache.cachedVersioned(CACHE_KEYS.finTaxReportsNamespace(orgId), cacheKey, () => this.computeInputReport(orgId, query), 120);
   }
 

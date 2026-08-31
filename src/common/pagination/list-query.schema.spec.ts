@@ -282,7 +282,8 @@ describe("migrated schemas — clamp at their ceiling and preserve their own def
         if (exposesOffset) expect(result["page"]).toBe(1);
 
         const exposesCursor = "cursor" in (schema.parse({ cursor: "1" }) as object);
-        expect(exposesOffset || exposesCursor).toBe(true);
+        const exposesIdCursor = "afterId" in (schema.parse({ afterId: 1 }) as object);
+        expect(exposesOffset || exposesCursor || exposesIdCursor).toBe(true);
       });
     });
   }
@@ -380,12 +381,20 @@ describe("size-only schemas — clamp at their ceiling and preserve their own de
   }
 });
 
-describe("intakeListQuerySchema keeps its own offset field", () => {
-  it("defaults offset to 0", () => {
-    expect(intakeListQuerySchema.parse({}).offset).toBe(0);
+describe("intakeListQuerySchema paginates by cursor, not offset", () => {
+  it("exposes no offset field, so a caller cannot deep-page the intake queue", () => {
+    expect("offset" in intakeListQuerySchema.parse({})).toBe(false);
   });
 
-  it("accepts an explicit offset", () => {
-    expect(intakeListQuerySchema.parse({ offset: 40 }).offset).toBe(40);
+  it("omits the cursor entirely on the first page rather than sending an empty one", () => {
+    expect(intakeListQuerySchema.parse({}).cursor).toBeUndefined();
+  });
+
+  it("carries an explicit cursor through untouched", () => {
+    expect(intakeListQuerySchema.parse({ cursor: "eyJpZCI6NDB9" }).cursor).toBe("eyJpZCI6NDB9");
+  });
+
+  it("clamps limit to the shared page cap", () => {
+    expect(intakeListQuerySchema.parse({ limit: 5000 }).limit).toBe(100);
   });
 });
