@@ -348,23 +348,23 @@ export const MEMBERSHIP_ARTIFACTS = [
   },
   {
     id: "chat_saved_messages",
-    mechanism: "database-write",
+    mechanism: "database-cascade",
     table: "chat_saved_messages",
     keyedBy: "membership_id",
-    onRemoval: "delete",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "There is no foreign key on membership_id; the rows are personal bookmarks that are not authority. On removal the revocation path deletes them so no dangling pointer outlives the membership.",
+      "The composite foreign key fk_chat_saved_messages_org_membership is ON DELETE CASCADE, so personal bookmark rows are removed with the membership automatically.",
   },
   {
     id: "chat_huddle_participants",
-    mechanism: "database-write",
+    mechanism: "database-cascade",
     table: "chat_huddle_participants",
     keyedBy: "membership_id",
-    onRemoval: "delete",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "There is no foreign key to organization_members; the row records current session participation. On removal the revocation path deletes it so a departed member is not shown as an active participant.",
+      "The composite foreign key fk_chat_huddle_participants_org_membership is ON DELETE CASCADE, so the participant row is removed with the membership automatically.",
   },
   {
     id: "chat_reply_reminders",
@@ -374,7 +374,7 @@ export const MEMBERSHIP_ARTIFACTS = [
     onRemoval: "delete",
     onSuspension: "retain",
     reason:
-      "There is no foreign key on either membership column; a pending reminder naming a removed member as recipient would otherwise fire a notification to someone no longer in the org. The revocation path deletes all reminders involving the membership's user in either role.",
+      "Two composite foreign keys (fk_chat_reply_reminders_org_recipient_membership and fk_chat_reply_reminders_org_sender_membership) are ON DELETE SET NULL but carry no column list, so a membership deletion would attempt to null org_id, which is NOT NULL. The revocation path must delete all reminders involving the membership in either role before the membership row is removed.",
   },
   {
     id: "kb_pages",
